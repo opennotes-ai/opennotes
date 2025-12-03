@@ -1,0 +1,33 @@
+FROM node:20-alpine
+
+WORKDIR /workspace
+
+# Enable pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace configuration
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+
+# Copy workspace packages (shared dependencies)
+COPY packages ./packages
+
+# Copy OpenAPI spec for type generation
+COPY opennotes-server/openapi.json ./opennotes-server/openapi.json
+
+# Copy Discord bot package
+COPY opennotes-discord ./opennotes-discord
+
+# Install all workspace dependencies
+RUN pnpm install
+
+# Set working directory to Discord bot
+WORKDIR /workspace/opennotes-discord
+
+# Build the application
+RUN pnpm run build
+
+# Expose port for development
+EXPOSE 3000
+
+# Use nodemon for hot-reloading in development
+CMD ["pnpm", "run", "dev"]

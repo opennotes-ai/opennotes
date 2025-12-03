@@ -1,0 +1,360 @@
+# Open Notes Docker Compose - Production Override
+#
+# This file contains production-specific overrides for deploying OpenNotes
+# to a production environment. It should be combined with the base docker-compose.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+#
+# With monitoring:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring up -d
+#
+# Features:
+# - Uses pre-built images from container registry
+# - Resource limits and reservations
+# - Always restart policy for high availability
+# - JSON logging for centralized log aggregation
+# - Production-grade PostgreSQL tuning
+# - Redis persistence configuration
+
+services:
+  # PostgreSQL - Production overrides
+  postgres:
+    restart: always
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../backups:/backups
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_buffers=16MB
+      - -c
+      - default_statistics_target=100
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - work_mem=1MB
+      - -c
+      - min_wal_size=1GB
+      - -c
+      - max_wal_size=4GB
+
+  # Redis - Production overrides
+  redis:
+    restart: always
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ../config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+  # NATS - Production overrides
+  nats:
+    restart: always
+    ports:
+      - "${NATS_CLIENT_PORT:-4222}:4222"
+      - "${NATS_HTTP_PORT:-8222}:8222"
+    command:
+      - --jetstream
+      - --store_dir=/data
+      - --http_port=8222
+      - --max_payload=8MB
+      - --max_pending_size=256MB
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Open Notes Server - Production overrides
+  opennotes-server:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_REPO:-opennotes-ai/multiverse}/opennotes-server:${IMAGE_TAG:-latest}
+    restart: always
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - SCORING_ENABLED=${SCORING_ENABLED:-true}
+      - WORKER_ENABLED=${WORKER_ENABLED:-true}
+      - MAX_WORKERS=${MAX_WORKERS:-4}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Open Notes Discord - Production overrides
+  opennotes-discord:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_REPO:-opennotes-ai/multiverse}/opennotes-discord:${IMAGE_TAG:-latest}
+    restart: always
+    ports:
+      - "${DISCORD_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - discord_logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Monitoring Stack - Production overrides (enabled with --profile monitoring)
+  prometheus:
+    restart: always
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+  grafana:
+    restart: always
+    ports:
+      - "3001:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+  loki:
+    restart: always
+    ports:
+      - "3100:3100"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+  promtail:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+  tempo:
+    restart: always
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+  alertmanager:
+    restart: always
+    ports:
+      - "9093:9093"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+  node-exporter:
+    restart: always
+    ports:
+      - "9100:9100"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+  cadvisor:
+    restart: always
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - monitoring
+
+# Production: Named volumes with explicit names
+volumes:
+  postgres_data:
+    name: opennotes-prod-postgres
+  redis_data:
+    name: opennotes-prod-redis
+  nats_data:
+    name: opennotes-prod-nats
+  discord_logs:
+    name: opennotes-prod-discord-logs
+  prometheus_data:
+    name: opennotes-prod-prometheus
+  grafana_data:
+    name: opennotes-prod-grafana
+  loki_data:
+    name: opennotes-prod-loki
+  tempo_data:
+    name: opennotes-prod-tempo
+  alertmanager_data:
+    name: opennotes-prod-alertmanager
+
+# Production: Named network
+networks:
+  opennotes:
+    name: opennotes-prod-network
+  monitoring:
+    name: opennotes-prod-monitoring-network

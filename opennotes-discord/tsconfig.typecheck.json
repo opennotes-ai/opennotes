@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@opennotes/shared-types": ["./packages/shared-types/src/index.ts"],
+      "@opennotes/shared-types/*": ["./packages/shared-types/src/*.ts"],
+      "@opennotes/test-utils": ["./packages/test-utils/src/index.ts"],
+      "@opennotes/test-utils/*": ["./packages/test-utils/src/*.ts"]
+    }
+  },
+  "include": ["src/**/*", "packages/shared-types/src/**/*", "packages/test-utils/src/**/*"]
+}

@@ -1,0 +1,353 @@
+"""JSON:API v2 stats router.
+
+This module implements JSON:API 1.1 compliant endpoints for statistics:
+- GET /api/v2/stats/notes - Aggregated note statistics
+- GET /api/v2/stats/participant/{participant_id} - Participant statistics
+
+Supports filtering:
+- filter[community_server_id]: Filter by community server UUID
+- filter[date_from]: Filter notes created on or after this datetime
+- filter[date_to]: Filter notes created on or before this datetime
+
+Reference: https://jsonapi.org/format/
+"""
+
+from datetime import datetime
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
+from fastapi import Request as HTTPRequest
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import and_, desc, func, select, true
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.auth.community_dependencies import (
+    get_user_community_ids,
+    verify_community_membership_by_uuid,
+)
+from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.permissions import is_service_account
+from src.common.jsonapi import (
+    JSONAPI_CONTENT_TYPE,
+    JSONAPILinks,
+)
+from src.common.jsonapi import (
+    create_error_response as create_error_response_model,
+)
+from src.database import get_db
+from src.monitoring import get_logger
+from src.notes.models import Note, Rating
+from src.notes.schemas import NoteStatus
+from src.users.models import User
+
+logger = get_logger(__name__)
+
+router = APIRouter()
+
+
+class NoteStatsAttributes(BaseModel):
+    """Attributes for note statistics resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    total_notes: int
+    helpful_notes: int
+    not_helpful_notes: int
+    pending_notes: int
+    average_helpfulness_score: float
+
+
+class NoteStatsResource(BaseModel):
+    """JSON:API resource object for note statistics."""
+
+    type: str = "note-stats"
+    id: str = "aggregate"
+    attributes: NoteStatsAttributes
+
+
+class NoteStatsSingleResponse(BaseModel):
+    """JSON:API response for note statistics."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: NoteStatsResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
+class ParticipantStatsAttributes(BaseModel):
+    """Attributes for participant statistics resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    notes_created: int
+    ratings_given: int
+    average_helpfulness_received: float
+    top_classification: str | None = None
+
+
+class ParticipantStatsResource(BaseModel):
+    """JSON:API resource object for participant statistics."""
+
+    type: str = "participant-stats"
+    id: str
+    attributes: ParticipantStatsAttributes
+
+
+class ParticipantStatsSingleResponse(BaseModel):
+    """JSON:API response for participant statistics."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: ParticipantStatsResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
+def create_error_response(
+    status_code: int,
+    title: str,
+    detail: str | None = None,
+) -> JSONResponse:
+    """Create a JSON:API formatted error response as a JSONResponse."""
+    error_response = create_error_response_model(
+        status_code=status_code,
+        title=title,
+        detail=detail,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content=error_response.model_dump(by_alias=True),
+        media_type=JSONAPI_CONTENT_TYPE,
+    )
+
+
+@router.get("/stats/notes", response_class=JSONResponse)
+async def get_notes_stats_jsonapi(
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    filter_date_from: datetime | None = Query(None, alias="filter[date_from]"),
+    filter_date_to: datetime | None = Query(None, alias="filter[date_to]"),
+    filter_community_server_id: UUID | None = Query(None, alias="filter[community_server_id]"),
+) -> JSONResponse:
+    """Get aggregated note statistics in JSON:API format.
+
+    Returns statistics about notes including total count, helpful/not helpful counts,
+    pending count, and average helpfulness score.
+
+    Query Parameters:
+    - filter[date_from]: Notes created on or after this datetime
+    - filter[date_to]: Notes created on or before this datetime
+    - filter[community_server_id]: Filter by community server UUID
+
+    Users can only see stats from communities they are members of.
+    Service accounts can see all stats.
+    """
+    try:
+        base_filters: list = []
+
+        if filter_date_from:
+            base_filters.append(Note.created_at >= filter_date_from)
+        if filter_date_to:
+            base_filters.append(Note.created_at <= filter_date_to)
+
+        if filter_community_server_id:
+            if not is_service_account(current_user):
+                await verify_community_membership_by_uuid(
+                    filter_community_server_id, current_user, db, request
+                )
+            base_filters.append(Note.community_server_id == filter_community_server_id)
+        elif not is_service_account(current_user):
+            user_communities = await get_user_community_ids(current_user, db)
+            if user_communities:
+                base_filters.append(Note.community_server_id.in_(user_communities))
+            else:
+                response = NoteStatsSingleResponse(
+                    data=NoteStatsResource(
+                        attributes=NoteStatsAttributes(
+                            total_notes=0,
+                            helpful_notes=0,
+                            not_helpful_notes=0,
+                            pending_notes=0,
+                            average_helpfulness_score=0.0,
+                        )
+                    ),
+                    links=JSONAPILinks(self_=str(request.url)),
+                )
+                return JSONResponse(
+                    content=response.model_dump(by_alias=True, mode="json"),
+                    media_type=JSONAPI_CONTENT_TYPE,
+                )
+
+        base_where = and_(*base_filters) if base_filters else true()
+
+        total_result = await db.execute(select(func.count(Note.id)).where(base_where))
+        total_notes = total_result.scalar() or 0
+
+        helpful_result = await db.execute(
+            select(func.count(Note.id)).where(
+                and_(base_where, Note.status == NoteStatus.CURRENTLY_RATED_HELPFUL)
+            )
+        )
+        helpful_notes = helpful_result.scalar() or 0
+
+        not_helpful_result = await db.execute(
+            select(func.count(Note.id)).where(
+                and_(base_where, Note.status == NoteStatus.CURRENTLY_RATED_NOT_HELPFUL)
+            )
+        )
+        not_helpful_notes = not_helpful_result.scalar() or 0
+
+        pending_result = await db.execute(
+            select(func.count(Note.id)).where(
+                and_(base_where, Note.status == NoteStatus.NEEDS_MORE_RATINGS)
+            )
+        )
+        pending_notes = pending_result.scalar() or 0
+
+        avg_result = await db.execute(select(func.avg(Note.helpfulness_score)).where(base_where))
+        avg_score = avg_result.scalar() or 0.0
+
+        response = NoteStatsSingleResponse(
+            data=NoteStatsResource(
+                attributes=NoteStatsAttributes(
+                    total_notes=total_notes,
+                    helpful_notes=helpful_notes,
+                    not_helpful_notes=not_helpful_notes,
+                    pending_notes=pending_notes,
+                    average_helpfulness_score=float(avg_score),
+                )
+            ),
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to get note stats (JSON:API): {e}")
+        return create_error_response(
+            500,
+            "Internal Server Error",
+            "Failed to get note statistics",
+        )
+
+
+@router.get("/stats/participant/{participant_id}", response_class=JSONResponse)
+async def get_participant_stats_jsonapi(
+    participant_id: str,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    filter_community_server_id: UUID | None = Query(None, alias="filter[community_server_id]"),
+) -> JSONResponse:
+    """Get statistics for a specific participant in JSON:API format.
+
+    Returns statistics about a participant including notes created, ratings given,
+    average helpfulness received, and top classification.
+
+    Path Parameters:
+    - participant_id: The participant ID to get statistics for
+
+    Query Parameters:
+    - filter[community_server_id]: Filter by community server UUID
+
+    Users can only see stats from communities they are members of.
+    Service accounts can see all stats.
+    """
+    try:
+        note_filters: list = [Note.author_participant_id == participant_id]
+        community_filter = None
+
+        if filter_community_server_id:
+            if not is_service_account(current_user):
+                await verify_community_membership_by_uuid(
+                    filter_community_server_id, current_user, db, request
+                )
+            community_filter = Note.community_server_id == filter_community_server_id
+        elif not is_service_account(current_user):
+            user_communities = await get_user_community_ids(current_user, db)
+            if user_communities:
+                community_filter = Note.community_server_id.in_(user_communities)
+            else:
+                response = ParticipantStatsSingleResponse(
+                    data=ParticipantStatsResource(
+                        id=participant_id,
+                        attributes=ParticipantStatsAttributes(
+                            notes_created=0,
+                            ratings_given=0,
+                            average_helpfulness_received=0.0,
+                            top_classification=None,
+                        ),
+                    ),
+                    links=JSONAPILinks(self_=str(request.url)),
+                )
+                return JSONResponse(
+                    content=response.model_dump(by_alias=True, mode="json"),
+                    media_type=JSONAPI_CONTENT_TYPE,
+                )
+
+        if community_filter is not None:
+            note_filters.append(community_filter)
+
+        notes_where = and_(*note_filters)
+
+        notes_result = await db.execute(select(func.count(Note.id)).where(notes_where))
+        notes_created = notes_result.scalar() or 0
+
+        ratings_query = (
+            select(func.count(Rating.id))
+            .select_from(Rating)
+            .join(Note, Rating.note_id == Note.id)
+            .where(Rating.rater_participant_id == participant_id)
+        )
+        if community_filter is not None:
+            ratings_query = ratings_query.where(community_filter)
+        ratings_result = await db.execute(ratings_query)
+        ratings_given = ratings_result.scalar() or 0
+
+        avg_help_result = await db.execute(
+            select(func.avg(Note.helpfulness_score)).where(notes_where)
+        )
+        avg_helpfulness = avg_help_result.scalar() or 0.0
+
+        classification_result = await db.execute(
+            select(Note.classification, func.count(Note.classification))
+            .where(notes_where)
+            .group_by(Note.classification)
+            .order_by(desc(func.count(Note.classification)))
+            .limit(1)
+        )
+        top_classification_row = classification_result.first()
+        top_classification = top_classification_row[0] if top_classification_row else None
+
+        response = ParticipantStatsSingleResponse(
+            data=ParticipantStatsResource(
+                id=participant_id,
+                attributes=ParticipantStatsAttributes(
+                    notes_created=notes_created,
+                    ratings_given=ratings_given,
+                    average_helpfulness_received=float(avg_helpfulness),
+                    top_classification=top_classification,
+                ),
+            ),
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to get participant stats (JSON:API): {e}")
+        return create_error_response(
+            500,
+            "Internal Server Error",
+            "Failed to get participant statistics",
+        )

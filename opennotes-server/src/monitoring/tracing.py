@@ -1,0 +1,107 @@
+import logging
+from typing import Any
+
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
+
+logger = logging.getLogger(__name__)
+
+
+class TracingManager:
+    def __init__(
+        self,
+        service_name: str,
+        service_version: str,
+        environment: str,
+        otlp_endpoint: str | None = None,
+        otlp_insecure: bool = False,
+        enable_console_export: bool = False,
+        sample_rate: float = 0.1,
+    ) -> None:
+        self.service_name = service_name
+        self.service_version = service_version
+        self.environment = environment
+        self.otlp_endpoint = otlp_endpoint
+        self.otlp_insecure = otlp_insecure
+        self.enable_console_export = enable_console_export
+        self.sample_rate = sample_rate
+        self._tracer_provider: TracerProvider | None = None
+        self._instrumented_components: set[str] = set()
+
+    def setup(self) -> None:
+        if self._tracer_provider is not None:
+            logger.warning("Tracing already initialized, skipping setup")
+            return
+
+        resource = Resource.create(
+            {
+                "service.name": self.service_name,
+                "service.version": self.service_version,
+                "deployment.environment": self.environment,
+            }
+        )
+
+        sampler = ParentBasedTraceIdRatio(self.sample_rate)
+        self._tracer_provider = TracerProvider(resource=resource, sampler=sampler)
+        trace.set_tracer_provider(self._tracer_provider)
+
+        if self.otlp_endpoint:
+            otlp_exporter = OTLPSpanExporter(
+                endpoint=self.otlp_endpoint, insecure=self.otlp_insecure
+            )
+            self._tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+            logger.info(
+                f"OTLP tracing enabled: {self.otlp_endpoint} (insecure={self.otlp_insecure})"
+            )
+
+        if self.enable_console_export:
+            console_exporter = ConsoleSpanExporter()
+            self._tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+            logger.info("Console span export enabled")
+
+        if "redis" not in self._instrumented_components:
+            RedisInstrumentor().instrument()
+            self._instrumented_components.add("redis")
+            logger.info("Redis instrumentation enabled")
+
+        if "httpx" not in self._instrumented_components:
+            HTTPXClientInstrumentor().instrument()
+            self._instrumented_components.add("httpx")
+            logger.info("HTTPX instrumentation enabled")
+
+        logger.info(
+            f"Tracing configured (sample_rate={self.sample_rate}, version={self.service_version})"
+        )
+
+    def instrument_fastapi(self, app: Any) -> None:
+        if "fastapi" in self._instrumented_components:
+            logger.warning("FastAPI already instrumented, skipping")
+            return
+        FastAPIInstrumentor.instrument_app(app)
+        self._instrumented_components.add("fastapi")
+        logger.info("FastAPI instrumentation enabled")
+
+    def instrument_sqlalchemy(self, engine: Any) -> None:
+        if "sqlalchemy" in self._instrumented_components:
+            logger.warning("SQLAlchemy already instrumented, skipping")
+            return
+        SQLAlchemyInstrumentor().instrument(engine=engine)
+        self._instrumented_components.add("sqlalchemy")
+        logger.info("SQLAlchemy instrumentation enabled")
+
+    def shutdown(self) -> None:
+        if self._tracer_provider:
+            self._tracer_provider.shutdown()
+            logger.info("Tracing shut down")
+
+
+def get_tracer(name: str) -> trace.Tracer:
+    return trace.get_tracer(name)

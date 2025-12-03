@@ -1,0 +1,28 @@
+{
+  "sample_size": "1k",
+  "timestamp": "20251028_134750",
+  "execution_time_seconds": 0.88,
+  "data_counts": {
+    "notes": 1000,
+    "ratings": 37338,
+    "users_enrolled": 29949
+  },
+  "scoring_results": {
+    "notes_scored": 870,
+    "users_scored": 29158,
+    "status_distribution": {
+      "CURRENTLY_RATED_NOT_HELPFUL": 743,
+      "NEEDS_MORE_RATINGS": 127
+    },
+    "score_statistics": {
+      "mean": 0.0003448275862068966,
+      "std": 0.00757749011311978,
+      "min": 0.0,
+      "max": 0.2
+    }
+  },
+  "performance": {
+    "notes_per_second": 990.21,
+    "ratings_per_second": 42497.06
+  }
+}

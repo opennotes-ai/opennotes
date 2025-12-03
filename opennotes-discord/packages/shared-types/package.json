@@ -1,0 +1,38 @@
+{
+  "name": "@opennotes/shared-types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types and error definitions for Open Notes services",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "nanoid": "^5.1.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.10",
+    "typescript": "^5.2.2"
+  },
+  "keywords": [
+    "opennotes",
+    "shared",
+    "types",
+    "errors"
+  ],
+  "author": "",
+  "license": "MIT"
+}

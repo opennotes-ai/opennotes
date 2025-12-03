@@ -1,0 +1,65 @@
+"""Test to reproduce the request creation bug with large tweet IDs."""
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from src.main import app
+
+
+@pytest.mark.asyncio
+async def test_create_request_with_large_tweet_id(db_session, registered_user, auth_headers):
+    """Test that creating a request with a large platform_message_id returns string in response."""
+    from uuid import uuid4
+
+    from src.database import async_session_maker
+    from src.llm_config.models import CommunityServer
+
+    community_server_id = uuid4()
+    async with async_session_maker() as db:
+        community_server = CommunityServer(
+            id=community_server_id,
+            platform="discord",
+            platform_id="test_guild_large_tweet",
+            name="Test Guild for Large Tweet ID",
+        )
+        db.add(community_server)
+        await db.commit()
+
+    request_payload = {
+        "request_id": "test-discord-123456789",
+        "original_message_content": "I heard that hitler invented the inflatable sex doll",
+        "requested_by": "system-factcheck",
+        "platform_message_id": "1436038555091865653",
+        "platform_channel_id": "1423068966670176410",
+        "platform_author_id": "696877497287049258",
+        "platform_timestamp": "2025-11-06T17:04:31.840Z",
+        "community_server_id": str(community_server_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/v1/requests", json=request_payload, headers=auth_headers)
+
+    print(f"Status: {response.status_code}")
+    print(f"Response: {response.text}")
+
+    assert response.status_code in [
+        200,
+        201,
+    ], f"Expected 200/201, got {response.status_code}: {response.text}"
+
+    response_data = response.json()
+
+    # Verify platform_message_id is returned as a string
+    assert isinstance(response_data["platform_message_id"], str), (
+        f"platform_message_id should be string, got {type(response_data['platform_message_id'])}"
+    )
+    assert response_data["platform_message_id"] == "1436038555091865653"
+
+    # Verify note_id is None or string
+    if response_data.get("note_id") is not None:
+        assert isinstance(response_data["note_id"], str), (
+            f"note_id should be string, got {type(response_data['note_id'])}"
+        )
+
+    print("✅ Test passed!")

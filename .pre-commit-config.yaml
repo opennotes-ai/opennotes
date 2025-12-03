@@ -1,0 +1,143 @@
+# Pre-commit hooks for opennotes.
+# Install: pre-commit install (from repo root)
+# Run manually: pre-commit run --all-files
+
+repos:
+  # =============================================================================
+  # Python (opennotes-server) - Ruff linting and formatting
+  # =============================================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.1
+    hooks:
+      - id: ruff
+        name: Ruff Linter (opennotes-server)
+        args: [--fix]
+        files: ^opennotes-server/
+      - id: ruff-format
+        name: Ruff Formatter (opennotes-server)
+        files: ^opennotes-server/
+
+  # =============================================================================
+  # TypeScript (opennotes-discord) - ESLint
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: eslint-discord
+        name: ESLint (opennotes-discord)
+        entry: bash -c 'cd opennotes-discord && pnpm run lint'
+        language: system
+        files: ^opennotes-discord/src/.*\.ts$
+        pass_filenames: false
+
+  # =============================================================================
+  # Infrastructure - Terraform/OpenTofu
+  # =============================================================================
+  - repo: https://github.com/terraform-docs/terraform-docs
+    rev: v0.20.0
+    hooks:
+      - id: terraform-docs-go
+        name: terraform-docs
+        description: Validate that terraform-docs markdown is up-to-date
+        entry: bash -c 'terraform-docs markdown table --config infrastructure/modules/.terraform-docs.yml --output-file README.md infrastructure/modules/$1 2>/dev/null' --
+        language: script
+        files: infrastructure/modules/.*/.*.tf$
+        exclude: ^infrastructure/modules/examples/.*$
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.9
+    hooks:
+      - id: actionlint
+        verbose: true
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.104.0
+    hooks:
+      - id: terraform_fmt
+        name: Terraform Format
+        description: Format Terraform files
+        entry: terraform fmt
+        language: system
+        files: \.tf$
+        exclude: ^infrastructure/modules/examples/.*$
+
+      - id: terraform_validate
+        name: Terraform Validate
+        description: Validate Terraform configurations
+        entry: terraform validate
+        language: system
+        files: \.tf$
+        exclude: ^infrastructure/modules/examples/.*$
+        pass_filenames: false
+
+      - id: terraform_tflint
+        name: TFLint
+        files: \.tf$
+        exclude: ^infrastructure/modules/examples/.*$
+
+  # =============================================================================
+  # General File Checks
+  # =============================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        exclude: ^opennotes-discord/pnpm-lock\.yaml$
+
+      - id: end-of-file-fixer
+        name: Fix End of File
+        exclude: ^opennotes-discord/pnpm-lock\.yaml$
+
+      - id: check-yaml
+        name: Check YAML
+        files: \.ya?ml$
+        exclude: ^opennotes-discord/pnpm-lock\.yaml$
+
+      - id: check-json
+        name: Check JSON
+        files: \.json$
+
+      - id: check-toml
+        name: Check TOML
+        files: \.toml$
+
+      - id: check-added-large-files
+        name: Check Large Files
+        args: ['--maxkb=1000']
+
+      - id: check-merge-conflict
+        name: Check Merge Conflicts
+
+      - id: detect-private-key
+        name: Detect Private Key
+        exclude: \.pem\.example$
+
+  # =============================================================================
+  # Type Checking (opennotes-server) - Manual stage only
+  # =============================================================================
+  # Note: This hook runs manually only (stages: [manual]) to avoid pre-commit spawn issues
+  # Pre-commit runs from repo root, but uv needs to find uv.lock in the service directory
+  # Run manually with: pre-commit run basedpyright --hook-stage manual --all-files
+  - repo: local
+    hooks:
+      - id: basedpyright
+        name: basedpyright (opennotes-server)
+        entry: bash -c 'cd opennotes-server && uv run basedpyright src'
+        language: system
+        types: [python]
+        files: ^opennotes-server/
+        pass_filenames: false
+        require_serial: true
+        stages: [manual]
+
+  # =============================================================================
+  # Schema Consistency (opennotes-server)
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: schema-consistency
+        name: Schema Consistency Validation
+        entry: mise run schema:check
+        language: system
+        files: ^opennotes-server/src/.*(schemas?|models?)\.py$
+        pass_filenames: false
+        verbose: true

@@ -1,0 +1,39 @@
+{
+  "name": "opennotes-discord-edge",
+  "version": "1.0.0",
+  "description": "Discord bot for Open Notes running as serverless edge functions",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel",
+    "register-commands": "node scripts/register-commands.js",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.8.10",
+    "@types/jest": "^29.5.11",
+    "@typescript-eslint/eslint-plugin": "^6.11.0",
+    "@typescript-eslint/parser": "^6.11.0",
+    "@vercel/node": "^3.0.0",
+    "dotenv": "^16.3.1",
+    "eslint": "^8.53.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2",
+    "vercel": "^32.0.0"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "community-notes",
+    "edge-functions",
+    "serverless"
+  ],
+  "author": "",
+  "license": "MIT"
+}

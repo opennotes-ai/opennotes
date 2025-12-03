@@ -1,0 +1,214 @@
+# Open Notes Discord Bot - mise configuration
+
+[tools]
+node = "20"
+
+[env]
+_.file = ".env.yaml"
+NODE_ENV = "development"
+
+[vars]
+src_dir = "src"
+test_dir = "tests"
+
+# ========================================
+# Development Tasks
+# ========================================
+
+[tasks.install]
+description = "Install Node.js dependencies"
+run = "npm install"
+
+[tasks.dev]
+description = "Run development bot with hot reload"
+run = "npm run dev"
+env = { NODE_ENV = "development" }
+
+[tasks.start]
+description = "Start production bot"
+run = "npm start"
+env = { NODE_ENV = "production" }
+
+[tasks.build]
+description = "Build TypeScript to JavaScript"
+run = "npm run build"
+sources = ["{{vars.src_dir}}/**/*.ts", "tsconfig.json"]
+outputs = ["dist/**/*.js"]
+
+[tasks."build:ts"]
+description = "Build TypeScript to JavaScript (alias)"
+run = "npm run build"
+sources = ["{{vars.src_dir}}/**/*.ts", "tsconfig.json"]
+outputs = ["dist/**/*.js"]
+
+# ========================================
+# Testing Tasks
+# ========================================
+
+[tasks.test]
+description = "Run all tests"
+run = "npm test"
+sources = ["{{vars.src_dir}}/**/*.ts", "{{vars.test_dir}}/**/*.ts"]
+
+[tasks."test:unit"]
+description = "Run unit tests only"
+run = "jest --testPathPattern=unit"
+
+[tasks."test:integration"]
+description = "Run integration tests"
+run = "jest --testPathPattern=integration"
+
+[tasks."test:watch"]
+description = "Run tests in watch mode"
+run = "jest --watch"
+
+[tasks."test:coverage"]
+description = "Run tests with coverage report"
+run = "jest --coverage"
+
+# ========================================
+# Code Quality Tasks
+# ========================================
+
+[tasks.lint]
+description = "Run ESLint"
+run = "eslint {{vars.src_dir}} --ext .ts,.tsx"
+
+[tasks."lint:fix"]
+description = "Fix ESLint issues"
+run = "eslint {{vars.src_dir}} --ext .ts,.tsx --fix"
+alias = "fix"
+
+[tasks.format]
+description = "Format code with Prettier"
+run = "prettier --write '{{vars.src_dir}}/**/*.{ts,tsx,json}'"
+
+[tasks.typecheck]
+description = "Run TypeScript type checking"
+run = "tsc --noEmit"
+
+# ========================================
+# Discord Commands Management
+# ========================================
+
+[tasks."commands:register"]
+description = "Register slash commands with Discord"
+run = "node scripts/register-commands.js"
+confirm = "Register commands to Discord API?"
+
+[tasks."commands:delete"]
+description = "Delete all registered commands"
+run = "node scripts/delete-commands.js"
+confirm = "Delete ALL commands from Discord?"
+
+[tasks."commands:list"]
+description = "List registered Discord commands"
+run = "node scripts/list-commands.js"
+
+# ========================================
+# Edge Function Tasks
+# ========================================
+
+[tasks."edge:build"]
+description = "Build for edge deployment"
+run = [
+    "npm run build:edge",
+    "echo 'Edge functions built successfully'"
+]
+
+[tasks."edge:deploy:vercel"]
+description = "Deploy to Vercel"
+run = "vercel --prod"
+depends = ["edge:build", "test"]
+
+[tasks."edge:deploy:netlify"]
+description = "Deploy to Netlify"
+run = "netlify deploy --prod"
+depends = ["edge:build", "test"]
+
+[tasks."edge:dev"]
+description = "Run edge functions locally"
+run = "vercel dev"
+
+# ========================================
+# Docker Tasks
+# ========================================
+
+[tasks."docker:build"]
+description = "Build Docker image"
+run = "docker build -t opennotes-discord:latest ."
+
+[tasks."docker:run"]
+description = "Run in Docker container"
+run = "docker run --env-file .env opennotes-discord:latest"
+
+# ========================================
+# Utility Tasks
+# ========================================
+
+[tasks.clean]
+description = "Clean generated files"
+run = [
+    "rm -rf dist node_modules coverage",
+    "rm -rf .jest_cache .eslintcache"
+]
+
+[tasks.deps]
+description = "Check dependencies"
+run = "npm list --depth=0"
+
+[tasks.outdated]
+description = "Check for outdated packages"
+run = "npm outdated"
+
+[tasks.update]
+description = "Update dependencies"
+run = "npm update"
+
+[tasks.audit]
+description = "Run security audit"
+run = "npm audit"
+
+[tasks."audit:fix"]
+description = "Fix security issues"
+run = "npm audit fix"
+
+# ========================================
+# Performance Tasks
+# ========================================
+
+[tasks.bundle]
+description = "Analyze bundle size"
+run = "npm run analyze"
+
+[tasks.benchmark]
+description = "Run performance benchmarks"
+run = "node scripts/benchmark.js"
+
+# ========================================
+# Pre-commit Hooks
+# ========================================
+
+[tasks."pre-commit"]
+description = "Run pre-commit checks"
+depends = ["lint", "typecheck", "test:unit"]
+env = { PRE_COMMIT = "1" }
+
+# ========================================
+# Release Tasks
+# ========================================
+
+[tasks."release:patch"]
+description = "Release patch version"
+run = "npm version patch && npm publish"
+confirm = "Release new patch version?"
+
+[tasks."release:minor"]
+description = "Release minor version"
+run = "npm version minor && npm publish"
+confirm = "Release new minor version?"
+
+[tasks."release:major"]
+description = "Release major version"
+run = "npm version major && npm publish"
+confirm = "Release new MAJOR version?"

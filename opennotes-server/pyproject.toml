@@ -1,0 +1,203 @@
+[project]
+name = "opennotes-server"
+version = "0.0.1"
+description = "Open Notes scoring API"
+authors = [{name = "Open Notes Team", email = "team@opennotes.ai"}]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic[email]>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "pandas>=2.2.2",
+    "numpy>=1.26.4",
+    "redis>=5.0.0",
+    "cryptography>=41.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.0",
+    "pgvector>=0.2.0",
+    "httpx>=0.25.2",
+    "python-jose[cryptography]>=3.3.0",
+    "pyjwt>=2.10.1",
+    "passlib[bcrypt]>=1.7.4",
+    "argon2-cffi>=23.1.0",
+    "python-multipart>=0.0.6",
+    "slowapi>=0.1.9",
+    "alembic>=1.13.0",
+    "prometheus-client>=0.19.0",
+    "opentelemetry-api>=1.22.0",
+    "opentelemetry-sdk>=1.22.0",
+    "opentelemetry-instrumentation-fastapi>=0.43b0",
+    "opentelemetry-instrumentation-httpx>=0.43b0",
+    "opentelemetry-instrumentation-redis>=0.43b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.43b0",
+    "opentelemetry-exporter-otlp>=1.22.0",
+    "python-json-logger>=2.0.7",
+    "nats-py>=2.12.0",
+    "tenacity>=8.2.0",
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "cachetools>=5.3.0",
+    "aiosmtplib>=5.0.0",
+    "joblib>=1.3.0",
+    "scikit-learn>=1.7.2",
+    "torch>=2.1.2",
+    "wandb>=0.23.0",
+    "fastapi-jsonapi>=3.0.0",
+    "fastapi-filter>=2.0.1",
+]
+
+[project.optional-dependencies]
+scoring = [
+    "torch==2.1.2",
+    "scipy==1.11.4",
+    "scikit-learn>=1.3.0",
+    "joblib>=1.3.0",
+    "pyarrow>=15.0.0",
+    "wandb>=0.15.0",
+]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.21.1",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.1.0",
+    "testcontainers[redis,postgres]>=3.7.0",
+    "asyncpg>=0.29.0",
+    "ruff>=0.1.6",
+    "basedpyright>=1.0.0",
+    "pandas-stubs>=2.0.0",
+    "httpx>=0.25.2",
+    "pyyaml>=6.0.1",
+    "docker>=7.0.0",
+    "psutil>=6.0.0",
+    "torch==2.1.2",
+    "scipy==1.11.4",
+    "scikit-learn>=1.3.0",
+    "pyarrow>=15.0.0",
+    "wandb>=0.15.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "A",
+    "C4",
+    "DTZ",
+    "ISC",
+    "PIE",
+    "PT",
+    "RET",
+    "SIM",
+    "ARG",
+    "PTH",
+    "ERA",
+    "PL",
+    "RUF",
+]
+ignore = [
+    "E501",
+    "PLR0913",
+    "PLR2004",
+    "B008",
+    "N815",
+    "PLR0915",
+    "SIM105",
+    "ARG001",
+    "ARG005",
+    "B904",
+    "E712",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "F403"]
+"tests/**/*.py" = ["PLR2004", "S101", "ARG002", "PLR0912", "PLC0415"]
+"alembic/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in migrations
+"scripts/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in scripts
+"src/monitoring/logging.py" = ["PLC0415"]  # Circular dependency: imports handled in try-except blocks
+"src/llm_config/manager.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
+"src/middleware/profile_tracking.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
+"src/database.py" = ["ARG002"]  # TypeDecorator methods require dialect param for base class compatibility
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["src"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.venv", "**/scoring/**"]
+reportMissingImports = "warning"
+reportMissingTypeStubs = false
+reportMissingModuleSource = false
+reportPrivateUsage = "warning"
+reportUnusedImport = "warning"
+reportUnusedClass = "warning"
+reportUnusedFunction = "warning"
+reportUnusedVariable = "warning"
+reportDuplicateImport = "error"
+reportUnnecessaryIsInstance = "warning"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --cov=src --cov-report=term-missing --cov-report=html"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "benchmark: marks tests as benchmarks (deselect with '-m \"not benchmark\"')",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "aiohttp>=3.13.2",
+    "basedpyright>=1.34.0",
+    "docker>=7.0.0",
+    "hypothesis>=6.142.5",
+    "pynacl>=1.6.1",
+    "pytest-asyncio>=0.21.1",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.1.6",
+    "testcontainers[redis,postgres]>=3.7.0",
+]

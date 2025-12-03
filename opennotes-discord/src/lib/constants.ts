@@ -1,0 +1,34 @@
+export const COLORS = {
+  PRIMARY: 0x5865F2,
+  SUCCESS: 0x57F287,
+  WARNING: 0xFEE75C,
+  DANGER: 0xED4245,
+  INFO: 0x3498DB,
+} as const;
+
+export const COMMAND_NAMES = {
+  REQUEST_NOTE: 'request-note',
+  WRITE_NOTE: 'write-note',
+  RATE_NOTE: 'rate-note',
+  VIEW_NOTES: 'view-notes',
+  STATUS: 'status',
+} as const;
+
+export const DISCORD_LIMITS = {
+  MAX_EMBEDS_PER_MESSAGE: 10,
+  MAX_FIELDS_PER_EMBED: 25,
+  MAX_ACTION_ROWS: 5,
+} as const;
+
+export const CONTENT_LIMITS = {
+  MAX_NOTE_EXCERPT_LENGTH: 200,
+  MAX_DESCRIPTION_PREVIEW_LENGTH: 300,
+  MAX_TITLE_LENGTH: 100,
+} as const;
+
+export const TIMEOUTS = {
+  COLLECTOR_TIMEOUT_MS: 5 * 60 * 1000,
+  QUEUE_NOTES_COLLECTOR_TIMEOUT_MS: 60 * 60 * 1000,
+  QUEUE_NOTES_REPOST_TIMEOUT_MS: 5 * 60 * 1000,
+  FORCE_PUBLISH_CONFIRM_TIMEOUT_MS: 30 * 1000,
+} as const;

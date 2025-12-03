@@ -1,0 +1,232 @@
+# Open Notes Server - mise configuration
+
+[tools]
+python = "3.11"
+uv = "latest"
+
+[env]
+ENVIRONMENT = "local"
+PYTHONPATH = "."
+_.file = ".env.yaml"
+
+[vars]
+src_dir = "src"
+test_dir = "tests"
+
+# ========================================
+# Development Tasks
+# ========================================
+
+[tasks.install]
+description = "Install Python dependencies"
+run = [
+    "uv venv",
+    "uv pip install -e '.[dev]'"
+]
+
+[tasks.dev]
+description = "Run development server"
+run = "uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000"
+env = { DEBUG = "true", ENVIRONMENT = "development" }
+
+[tasks."worker:audit"]
+description = "Run audit worker for processing audit log events"
+run = "uv run python scripts/run_audit_worker.py"
+env = { DEBUG = "false", ENVIRONMENT = "development" }
+
+[tasks.shell]
+description = "Open Python shell with project context"
+run = "uv run python -i -c 'from src.main import *; from src.config import settings'"
+
+# ========================================
+# Code Quality Tasks
+# ========================================
+
+[tasks.lint]
+description = "Run all linters"
+run = [
+    "uv run ruff format --check {{vars.src_dir}} {{vars.test_dir}}",
+    "uv run ruff check {{vars.src_dir}} {{vars.test_dir}}",
+    "uv run basedpyright {{vars.src_dir}}"
+]
+
+[tasks."lint:fix"]
+description = "Fix linting issues"
+run = [
+    "uv run ruff format {{vars.src_dir}} {{vars.test_dir}}",
+    "uv run ruff check --fix {{vars.src_dir}} {{vars.test_dir}}"
+]
+alias = "fix"
+
+[tasks.format]
+description = "Format code with ruff"
+run = "uv run ruff format {{vars.src_dir}} {{vars.test_dir}}"
+
+[tasks.typecheck]
+description = "Run type checking"
+run = "uv run basedpyright {{vars.src_dir}}"
+
+[tasks.security]
+description = "Run security scans"
+run = [
+    "uv run bandit -r {{vars.src_dir}}",
+    "uv run safety check",
+    "uv run pip-audit"
+]
+
+# ========================================
+# Database Tasks
+# ========================================
+
+[tasks."db:upgrade"]
+description = "Run database migrations"
+run = "uv run alembic upgrade head"
+
+[tasks."db:downgrade"]
+description = "Rollback one migration"
+run = "uv run alembic downgrade -1"
+
+[tasks."db:history"]
+description = "Show migration history"
+run = "uv run alembic history"
+
+[tasks."db:current"]
+description = "Show current migration"
+run = "uv run alembic current"
+
+[tasks."db:create"]
+description = "Create new migration"
+run = 'uv run alembic revision --autogenerate -m "{{arg(name="message")}}"'
+usage = '''
+arg "message" description="Migration message"
+'''
+
+[tasks."db:reset"]
+description = "Reset database (drop and recreate)"
+confirm = "This will DELETE all data. Continue?"
+run = [
+    "uv run alembic downgrade base",
+    "uv run alembic upgrade head"
+]
+
+[tasks."db:seed-api-keys"]
+description = "Seed development API keys into database"
+run = "uv run python scripts/seed_api_keys.py"
+
+# ========================================
+# API Documentation
+# ========================================
+
+[tasks."docs:serve"]
+description = "Serve API documentation"
+run = "uv run python -m http.server 8001 --directory ../../docs"
+
+[tasks."docs:generate"]
+description = "Generate OpenAPI specification (JSON and YAML)"
+run = "uv run python generate_openapi.py"
+
+[tasks."docs:check"]
+description = "Check if OpenAPI schema is in sync with FastAPI app"
+run = "uv run python scripts/check-openapi-sync.py"
+
+[tasks."docs:api"]
+description = "Generate API documentation"
+depends = ["docs:generate"]
+
+[tasks."sdk:test"]
+description = "Test all SDKs"
+depends = ["sdk:test:python"]
+
+[tasks."sdk:test:python"]
+description = "Test Python SDK"
+run = "cd ../../sdks/python/opennotes-python && pytest tests/"
+
+[tasks."sdk:build:python"]
+description = "Build Python SDK package"
+run = "cd ../../sdks/python/opennotes-python && python -m build"
+
+[tasks."sdk:publish:python"]
+description = "Publish Python SDK to PyPI"
+run = "cd ../../sdks/python/opennotes-python && python -m twine upload dist/*"
+
+# ========================================
+# Build Tasks
+# ========================================
+
+[tasks.build]
+description = "Build production Docker image"
+run = "docker build -t opennotes-server:latest ."
+
+[tasks."build:minimal"]
+description = "Build minimal production image"
+run = "docker build -f Dockerfile.minimal -t opennotes-server:minimal ."
+
+# ========================================
+# Utility Tasks
+# ========================================
+
+[tasks.clean]
+description = "Clean generated files"
+run = [
+    'find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true',
+    'find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true',
+    'find . -type d -name ".basedpyright" -exec rm -rf {} + 2>/dev/null || true',
+    'find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true',
+    'find . -type d -name ".venv" -exec rm -rf {} + 2>/dev/null || true',
+    'rm -rf htmlcov .coverage'
+]
+
+[tasks.deps]
+description = "Show dependency tree"
+run = "uv pip tree"
+
+[tasks.outdated]
+description = "Check for outdated dependencies"
+run = "uv pip list --outdated"
+
+[tasks.update]
+description = "Update dependencies"
+run = [
+    "uv pip install --upgrade pip setuptools wheel",
+    "uv pip install --upgrade -r requirements.txt"
+]
+
+[tasks.freeze]
+description = "Freeze current dependencies"
+run = "uv pip freeze > requirements.txt"
+
+# ========================================
+# Performance Tasks
+# ========================================
+
+[tasks.profile]
+description = "Profile the application"
+run = "uv run python -m cProfile -o profile.stats src/main.py"
+
+# ========================================
+# Pre-commit Hooks
+# ========================================
+
+[tasks."pre-commit"]
+description = "Run pre-commit checks"
+depends = ["lint", "test:unit", "security"]
+env = { PRE_COMMIT = "1" }
+
+# ========================================
+# uv-specific Tasks
+# ========================================
+
+[tasks."uv:sync"]
+description = "Sync dependencies with pyproject.toml"
+run = "uv pip sync requirements.txt"
+
+[tasks."uv:compile"]
+description = "Compile dependencies to requirements.txt"
+run = "uv pip compile pyproject.toml -o requirements.txt"
+
+[tasks."uv:upgrade"]
+description = "Upgrade all dependencies to latest versions"
+run = [
+    "uv pip compile --upgrade pyproject.toml -o requirements.txt",
+    "uv pip sync requirements.txt"
+]

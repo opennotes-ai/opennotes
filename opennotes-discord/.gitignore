@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.yaml
+.env.*.yaml
+*.log
+.DS_Store
+
+# pnpm-specific files
+.pnpm-store/
+.pnpm-debug.log
+node_modules/.pnpm/

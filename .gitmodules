@@ -1,0 +1,3 @@
+[submodule "communitynotes"]
+	path = communitynotes
+	url = https://github.com/twitter/communitynotes.git

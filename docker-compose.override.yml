@@ -1,0 +1,199 @@
+# Open Notes Docker Compose - Development Override
+#
+# This file is automatically loaded when running `docker compose up` without
+# specifying compose files explicitly. It configures services for local development.
+#
+# Features:
+# - All ports exposed for debugging
+# - Hot reload enabled via volume mounts
+# - Debug mode and verbose logging
+# - Auto-restart on failure
+# - Development-specific build targets
+# - Named volumes for easy identification
+#
+# Usage:
+#   docker compose up              # Automatically uses this file
+#   docker compose up -d           # Background mode
+#   docker compose logs -f web     # Follow logs
+
+services:
+  # PostgreSQL - Development overrides
+  postgres:
+    # Expose port for direct database access (psql, migrations, debugging)
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+    # Development: Keep data between restarts but allow manual cleanup
+    restart: unless-stopped
+
+    # Development: Enable verbose logging for troubleshooting
+    command:
+      - postgres
+      - -c
+      - log_statement=all
+      - -c
+      - log_destination=stderr
+
+  # Redis - Development overrides
+  redis:
+    # Expose port for redis-cli debugging and inspection
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+    # Development: Keep cache between restarts
+    restart: unless-stopped
+
+  # NATS - Development overrides
+  nats:
+    # Expose both client and monitoring ports
+    ports:
+      - "${NATS_CLIENT_PORT:-4222}:4222"   # Client connections
+      - "${NATS_HTTP_PORT:-8222}:8222"     # HTTP monitoring UI
+
+    # Development: Keep stream data between restarts
+    restart: unless-stopped
+
+  # Open Notes Server - Development overrides
+  opennotes-server:
+    # Development: Build with development dependencies and tools
+    build:
+      context: .
+      dockerfile: ./opennotes-server/Dockerfile
+      target: development
+
+    # Development: Expose API port for direct access
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+
+    # Development: Auto-restart on failure for rapid iteration
+    restart: unless-stopped
+
+    # Development: Enable debug mode and hot reload
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - RELOAD=true  # FastAPI hot reload
+      - SEED_DEV_API_KEYS=true  # Auto-seed development API keys
+
+    # Development: Mount source code for hot reload
+    volumes:
+      # Source code (read-only to prevent container writes)
+      - ./opennotes-server/src:/app/src:ro
+
+      # Tests (for running tests inside container)
+      - ./opennotes-server/tests:/app/tests:ro
+
+      # Alembic migrations (for migration development)
+      - ./opennotes-server/alembic:/app/alembic:ro
+      - ./opennotes-server/alembic.ini:/app/alembic.ini:ro
+
+  # Open Notes Discord - Development overrides
+  opennotes-discord:
+    # Development: Use Dockerfile.dev for dev dependencies (nodemon, etc.)
+    build:
+      context: .
+      dockerfile: opennotes-discord/Dockerfile.dev
+
+    # Development: Expose health check port
+    ports:
+      - "${DISCORD_PORT:-3000}:3000"
+
+    # Development: Auto-restart on failure
+    restart: unless-stopped
+
+    # Development: Enable debug mode
+    environment:
+      - NODE_ENV=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+
+    # Development: Mount source code for hot reload
+    volumes:
+      # Source code (read-only to prevent container writes)
+      - ./opennotes-discord/src:/workspace/opennotes-discord/src:ro
+
+      # Persist logs locally for debugging
+      - ./opennotes-discord/logs:/workspace/opennotes-discord/logs
+
+      # Package files (for dependency changes)
+      - ./opennotes-discord/package.json:/workspace/opennotes-discord/package.json:ro
+      - ./opennotes-discord/tsconfig.json:/workspace/opennotes-discord/tsconfig.json:ro
+
+  # Monitoring Stack - Development overrides (enabled with --profile monitoring)
+  prometheus:
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  grafana:
+    ports:
+      - "3001:3000"  # Use 3001 to avoid conflict with Discord bot on 3000
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  loki:
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  tempo:
+    ports:
+      - "3200:3200"  # Tempo HTTP
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  alertmanager:
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  node-exporter:
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  cadvisor:
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+# Development: Use named volumes for easy identification and cleanup
+volumes:
+  postgres_data:
+    name: opennotes-dev-postgres
+  redis_data:
+    name: opennotes-dev-redis
+  nats_data:
+    name: opennotes-dev-nats
+  prometheus_data:
+    name: opennotes-dev-prometheus
+  grafana_data:
+    name: opennotes-dev-grafana
+  loki_data:
+    name: opennotes-dev-loki
+  tempo_data:
+    name: opennotes-dev-tempo
+  alertmanager_data:
+    name: opennotes-dev-alertmanager
+
+# Development: Named network for easy identification
+networks:
+  opennotes:
+    name: opennotes-dev-network
+  monitoring:
+    name: opennotes-dev-monitoring-network

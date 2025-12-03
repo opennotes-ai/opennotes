@@ -1,0 +1,237 @@
+import logging
+import os
+from typing import Any
+
+import redis.asyncio as redis
+
+from src.circuit_breaker import circuit_breaker_registry
+from src.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def get_redis_connection_kwargs(
+    url: str,
+    decode_responses: bool = False,
+    max_connections: int | None = None,
+    socket_timeout: float | None = None,
+    socket_connect_timeout: float | None = None,
+    retry_on_timeout: bool | None = None,
+    **extra_kwargs: Any,
+) -> dict[str, Any]:
+    """
+    Build Redis connection kwargs with proper SSL handling for GCP Memorystore.
+
+    This is the single source of truth for Redis connection configuration.
+    All Redis clients should use this function to ensure consistent SSL handling.
+
+    Args:
+        url: Redis URL (redis:// or rediss:// for TLS)
+        decode_responses: Whether to decode responses to strings (default: False returns bytes)
+        max_connections: Max pool connections (default: settings.REDIS_MAX_CONNECTIONS)
+        socket_timeout: Socket timeout in seconds (default: settings.REDIS_SOCKET_TIMEOUT)
+        socket_connect_timeout: Connection timeout (default: settings.REDIS_SOCKET_CONNECT_TIMEOUT)
+        retry_on_timeout: Retry on timeout (default: settings.REDIS_RETRY_ON_TIMEOUT)
+        **extra_kwargs: Additional kwargs passed to redis.from_url()
+
+    Returns:
+        Dict of kwargs for redis.from_url()
+
+    Raises:
+        ValueError: If production requires TLS but URL doesn't use rediss://
+    """
+    if (
+        settings.ENVIRONMENT == "production"
+        and settings.REDIS_REQUIRE_TLS
+        and not url.startswith("rediss://")
+    ):
+        raise ValueError(
+            "Redis connection must use TLS in production (rediss://). "
+            f"Current URL scheme: {url.split('://')[0]}. "
+            "Set REDIS_REQUIRE_TLS=false for GCP Memorystore VPC connections."
+        )
+
+    kwargs: dict[str, Any] = {
+        "max_connections": max_connections or settings.REDIS_MAX_CONNECTIONS,
+        "socket_timeout": socket_timeout or settings.REDIS_SOCKET_TIMEOUT,
+        "socket_connect_timeout": socket_connect_timeout or settings.REDIS_SOCKET_CONNECT_TIMEOUT,
+        "retry_on_timeout": retry_on_timeout
+        if retry_on_timeout is not None
+        else settings.REDIS_RETRY_ON_TIMEOUT,
+        "decode_responses": decode_responses,
+    }
+
+    # Handle TLS for GCP Memorystore with SERVER_AUTHENTICATION
+    # Server presents a Google-signed certificate, but we skip verification
+    # since traffic is VPC-internal via Private Service Access.
+    # Use ssl_cert_reqs="none" - this is the correct approach for redis-py async
+    if url.startswith("rediss://"):
+        kwargs["ssl_cert_reqs"] = "none"
+
+    kwargs.update(extra_kwargs)
+    return kwargs
+
+
+async def create_redis_connection(
+    url: str | None = None,
+    decode_responses: bool = False,
+    **kwargs: Any,
+) -> redis.Redis:
+    """
+    Create a Redis connection with proper SSL handling.
+
+    Args:
+        url: Redis URL (default: settings.REDIS_URL)
+        decode_responses: Whether to decode responses to strings
+        **kwargs: Additional kwargs passed to get_redis_connection_kwargs()
+
+    Returns:
+        Connected Redis client
+    """
+    redis_url = url or settings.REDIS_URL
+    connection_kwargs = get_redis_connection_kwargs(
+        redis_url, decode_responses=decode_responses, **kwargs
+    )
+    return await redis.from_url(redis_url, **connection_kwargs)  # type: ignore[no-untyped-call]
+
+
+class RedisClient:
+    def __init__(self) -> None:
+        self.client: redis.Redis | None = None
+        self.circuit_breaker = circuit_breaker_registry.get_breaker(
+            name="redis",
+            expected_exception=redis.RedisError,
+        )
+
+    async def connect(self, redis_url: str | None = None) -> None:
+        # Skip Redis connection in test environment unless explicitly needed for integration tests
+        # Integration tests set INTEGRATION_TESTS=true to bypass this check
+        if settings.TESTING and not os.environ.get("INTEGRATION_TESTS"):
+            logger.info("Skipping Redis connection in test environment (will be mocked)")
+            return
+
+        try:
+            url = redis_url or settings.REDIS_URL
+            self.client = await create_redis_connection(url, decode_responses=False)
+            await self.ping()
+            logger.info(f"Connected to Redis successfully at {url}")
+        except redis.RedisError as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            raise
+
+    async def disconnect(self) -> None:
+        if self.client:
+            await self.client.close()
+            self.client = None
+            logger.info("Disconnected from Redis")
+
+    async def ping(self) -> bool:
+        if not self.client:
+            return False
+
+        try:
+            await self.circuit_breaker.call(self.client.ping)
+            return True
+        except Exception as e:
+            logger.error(f"Redis ping failed: {e}")
+            return False
+
+    async def check_connection(self) -> bool:
+        return await self.ping()
+
+    async def get(self, key: str) -> str | None:
+        if not self.client:
+            return None
+
+        try:
+            value = await self.circuit_breaker.call(self.client.get, key)
+            if value is None:
+                return None
+            return value.decode("utf-8") if isinstance(value, bytes) else value
+        except Exception as e:
+            logger.error(f"Redis GET failed for key '{key}': {e}")
+            return None
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        ttl: int | None = None,
+    ) -> bool:
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            value_bytes = value.encode("utf-8") if isinstance(value, str) else value
+            if ttl:
+                await self.circuit_breaker.call(self.client.setex, key, ttl, value_bytes)
+            else:
+                await self.circuit_breaker.call(self.client.set, key, value_bytes)
+            return True
+        except Exception as e:
+            logger.error(f"Redis SET failed for key '{key}': {e}")
+            return False
+
+    async def delete(self, *keys: str) -> int:
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.delete, *keys)
+        except Exception as e:
+            logger.error(f"Redis DELETE failed for keys {keys}: {e}")
+            return 0
+
+    async def exists(self, *keys: str) -> int:
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.exists, *keys)
+        except Exception as e:
+            logger.error(f"Redis EXISTS failed for keys {keys}: {e}")
+            return 0
+
+    async def expire(self, key: str, ttl: int) -> bool:
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.expire, key, ttl)
+        except Exception as e:
+            logger.error(f"Redis EXPIRE failed for key '{key}': {e}")
+            return False
+
+    async def ttl(self, key: str) -> int:
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.ttl, key)
+        except Exception as e:
+            logger.error(f"Redis TTL failed for key '{key}': {e}")
+            return -2
+
+    async def keys(self, pattern: str) -> list[str]:
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            keys = await self.circuit_breaker.call(self.client.keys, pattern)
+            return [k.decode("utf-8") if isinstance(k, bytes) else k for k in keys]
+        except Exception as e:
+            logger.error(f"Redis KEYS failed for pattern '{pattern}': {e}")
+            return []
+
+    async def info(self, section: str = "all") -> dict[str, str]:
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.info, section)
+        except Exception as e:
+            logger.error(f"Redis INFO failed: {e}")
+            return {}
+
+
+redis_client = RedisClient()

@@ -1,0 +1,111 @@
+# Open Notes Docker Compose - Multi-Instance Discord Bot Configuration
+#
+# This override file configures the Discord bot for horizontal scaling with:
+# - 3 bot instances for redundancy and load distribution
+# - HAProxy load balancer for health check aggregation
+# - Shard coordination across instances
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.sharding.yml up
+#
+# Benefits:
+# - Redundancy: If one instance crashes, others continue serving
+# - Load distribution: Shards spread across multiple processes
+# - Zero-downtime deployments: Rolling restarts possible
+#
+# Notes:
+# - Discord handles WebSocket routing, not HTTP load balancing
+# - Guilds are assigned to specific shards deterministically by Discord
+# - Each instance claims specific shards via DISCORD_SHARD_LIST
+# - HAProxy monitors health endpoints but doesn't route Discord traffic
+
+services:
+  # Discord Bot Instance 1 - Shards 0, 3, 6, ...
+  opennotes-discord-1:
+    extends:
+      service: opennotes-discord
+      file: docker-compose.yml
+    container_name: opennotes-discord-1
+    environment:
+      - DISCORD_SHARDING_ENABLED=true
+      - DISCORD_TOTAL_SHARDS=9
+      - DISCORD_SHARD_LIST=0,3,6
+      - HEALTH_CHECK_ENABLED=true
+      - HEALTH_CHECK_PORT=3000
+      - INSTANCE_ID=1
+    networks:
+      - opennotes-network
+    depends_on:
+      - postgres
+      - redis
+      - nats
+      - opennotes-server
+
+  # Discord Bot Instance 2 - Shards 1, 4, 7, ...
+  opennotes-discord-2:
+    extends:
+      service: opennotes-discord
+      file: docker-compose.yml
+    container_name: opennotes-discord-2
+    environment:
+      - DISCORD_SHARDING_ENABLED=true
+      - DISCORD_TOTAL_SHARDS=9
+      - DISCORD_SHARD_LIST=1,4,7
+      - HEALTH_CHECK_ENABLED=true
+      - HEALTH_CHECK_PORT=3000
+      - INSTANCE_ID=2
+    networks:
+      - opennotes-network
+    depends_on:
+      - postgres
+      - redis
+      - nats
+      - opennotes-server
+
+  # Discord Bot Instance 3 - Shards 2, 5, 8, ...
+  opennotes-discord-3:
+    extends:
+      service: opennotes-discord
+      file: docker-compose.yml
+    container_name: opennotes-discord-3
+    environment:
+      - DISCORD_SHARDING_ENABLED=true
+      - DISCORD_TOTAL_SHARDS=9
+      - DISCORD_SHARD_LIST=2,5,8
+      - HEALTH_CHECK_ENABLED=true
+      - HEALTH_CHECK_PORT=3000
+      - INSTANCE_ID=3
+    networks:
+      - opennotes-network
+    depends_on:
+      - postgres
+      - redis
+      - nats
+      - opennotes-server
+
+  # HAProxy Load Balancer - Health Check Aggregation
+  haproxy:
+    image: haproxy:2.9-alpine
+    container_name: opennotes-haproxy
+    volumes:
+      - ./opennotes-discord/config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "8080:8080"  # Health check endpoint
+      - "8404:8404"  # HAProxy stats
+      - "9000:9000"  # HAProxy health
+    networks:
+      - opennotes-network
+    depends_on:
+      - opennotes-discord-1
+      - opennotes-discord-2
+      - opennotes-discord-3
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  opennotes-network:
+    external: true

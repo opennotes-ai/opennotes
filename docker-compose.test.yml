@@ -1,0 +1,116 @@
+# Open Notes Docker Compose - Test Override
+#
+# This file provides test-specific overrides when using docker-compose.yml as the base.
+# It configures services for automated testing with testcontainers-python.
+#
+# Features:
+# - No restart policies (tests are ephemeral)
+# - Random port allocation (testcontainers handles this)
+# - No volume persistence (fresh state each run)
+# - Only infrastructure services (no application services)
+# - Faster startup with minimal configuration
+#
+# Usage (via testcontainers-python):
+#   DockerCompose(
+#       filepath="/path/to/opennotes",
+#       compose_file_name=["docker-compose.yml", "docker-compose.test.yml"]
+#   )
+#
+# Key Principles:
+# - Inherits service definitions from docker-compose.yml
+# - Only overrides what's necessary for testing
+# - No application services (opennotes-server, opennotes-discord, etc.)
+# - Services use tmpfs for data (no persistence between runs)
+# - Environment variables set to test-safe defaults
+
+services:
+  # PostgreSQL - Test overrides
+  postgres:
+    # Test: No restart policy (ephemeral containers)
+    restart: "no"
+
+    # Test: Set all required PostgreSQL initialization variables
+    # CRITICAL: Must include POSTGRES_USER and POSTGRES_DB for PostgreSQL initialization
+    # If these are missing, PostgreSQL fails to create the role and database, causing exit(1)
+    # NOTE: This section REPLACES the base docker-compose.yml environment (not merges),
+    # so we must include all required variables including POSTGRES_INITDB_ARGS
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-opennotes}
+      POSTGRES_USER: ${POSTGRES_USER:-opennotes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-testpass}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+
+    # Test: Expose port for testcontainers service discovery
+    # Use random host port (0:5432 means Docker assigns random port)
+    ports:
+      - "0:5432"
+
+    # Test: Simplified healthcheck for faster startup
+    healthcheck:
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+    labels:
+      opennotes.test.session_id: "${COMPOSE_PROJECT_NAME:-test}"
+      opennotes.test.pid: "${PYTEST_PID:-0}"
+      opennotes.test.timestamp: "${TEST_START_TIME:-unknown}"
+      opennotes.test.hostname: "${HOSTNAME:-unknown}"
+      opennotes.test.user: "${USER:-unknown}"
+      opennotes.test.type: "isolated"
+
+  # Redis - Test overrides
+  redis:
+    # Test: No restart policy
+    restart: "no"
+
+    # Test: Expose port for testcontainers
+    ports:
+      - "0:6379"
+
+    # Test: Simplified healthcheck
+    healthcheck:
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+    labels:
+      opennotes.test.session_id: "${COMPOSE_PROJECT_NAME:-test}"
+      opennotes.test.pid: "${PYTEST_PID:-0}"
+      opennotes.test.timestamp: "${TEST_START_TIME:-unknown}"
+      opennotes.test.hostname: "${HOSTNAME:-unknown}"
+      opennotes.test.user: "${USER:-unknown}"
+      opennotes.test.type: "isolated"
+
+  # NATS - Test overrides
+  nats:
+    # Test: No restart policy
+    restart: "no"
+
+    # Test: Expose ports for testcontainers
+    ports:
+      - "0:4222"  # Client port
+      - "0:8222"  # HTTP monitoring
+
+    # Test: Simplified healthcheck
+    healthcheck:
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+    labels:
+      opennotes.test.session_id: "${COMPOSE_PROJECT_NAME:-test}"
+      opennotes.test.pid: "${PYTEST_PID:-0}"
+      opennotes.test.timestamp: "${TEST_START_TIME:-unknown}"
+      opennotes.test.hostname: "${HOSTNAME:-unknown}"
+      opennotes.test.user: "${USER:-unknown}"
+      opennotes.test.type: "isolated"
+
+# Test: Don't create named volumes (use Docker defaults)
+# This ensures each test run gets fresh, isolated volumes
+volumes:
+  postgres_data: {}
+  redis_data: {}
+  nats_data: {}
