@@ -16,6 +16,7 @@ COPY opennotes-server/src/ ./src/
 COPY opennotes-server/alembic/ ./alembic/
 COPY opennotes-server/scripts/ ./scripts/
 COPY opennotes-server/docker-entrypoint.sh ./
+COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
@@ -31,6 +32,7 @@ COPY opennotes-server/src/ ./src/
 COPY opennotes-server/alembic/ ./alembic/
 COPY opennotes-server/scripts/ ./scripts/
 COPY opennotes-server/docker-entrypoint.sh ./
+COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
