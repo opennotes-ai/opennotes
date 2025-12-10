@@ -5,11 +5,11 @@ WORKDIR /workspace
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy workspace configuration
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+# Copy workspace configuration from opennotes-discord (where workspace is defined)
+COPY opennotes-discord/pnpm-workspace.yaml opennotes-discord/package.json opennotes-discord/pnpm-lock.yaml ./
 
-# Copy workspace packages (shared dependencies)
-COPY packages ./packages
+# Copy workspace packages (shared dependencies) from opennotes-discord
+COPY opennotes-discord/packages ./packages
 
 # Copy OpenAPI spec for type generation
 COPY opennotes-server/openapi.json ./opennotes-server/openapi.json
@@ -39,7 +39,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy workspace files for production install
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY opennotes-discord/pnpm-workspace.yaml opennotes-discord/package.json opennotes-discord/pnpm-lock.yaml ./
 
 # Copy BUILT workspace packages from builder (must be before pnpm install)
 COPY --from=builder /workspace/packages ./packages
