@@ -60,11 +60,22 @@ export const V2_ICONS = {
   HELPFUL: '\u2705',
   NOT_HELPFUL: '\u274C',
   PENDING: '\u{1F50E}',
+  PENDING_TIME: '\u23F3',
   RATED: '\u{1F5F3}\uFE0F',
 
   STANDARD: '\u2B50',
   PROVISIONAL: '\u{1F535}',
   NO_DATA: '\u2B55',
+
+  WARNING: '\u26A0\uFE0F',
+  UNKNOWN: '\u2753',
+
+  SCORE_HIGH: '\u{1F7E2}',
+  SCORE_MID: '\u{1F7E1}',
+  SCORE_LOW: '\u{1F534}',
+
+  NAV_PREVIOUS: '\u25C0',
+  NAV_NEXT: '\u25B6',
 } as const;
 
 /**

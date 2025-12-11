@@ -151,7 +151,7 @@ describe('GuildOnboardingService', () => {
         const container = sendCall.components[0];
 
         const welcomeTextComponent = container.components.find(
-          (c: any) => c.data?.content?.includes('Welcome to OpenNotes')
+          (c: any) => c.data?.content?.includes('Welcome to Open Notes')
         );
         expect(welcomeTextComponent).toBeDefined();
       });

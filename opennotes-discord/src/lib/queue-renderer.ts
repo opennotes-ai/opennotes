@@ -13,6 +13,7 @@ import {
 import { logger } from '../logger.js';
 import {
   V2_COLORS,
+  V2_ICONS,
   v2MessageFlags,
   createDivider,
   createSmallSeparator,
@@ -532,7 +533,7 @@ export class QueueRendererV2 {
   ): ActionRowBuilder<ButtonBuilder> {
     const previousButton = new ButtonBuilder()
       .setCustomId(config.previousButtonId)
-      .setLabel(config.previousLabel || '\u25C0')
+      .setLabel(config.previousLabel || V2_ICONS.NAV_PREVIOUS)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(config.currentPage <= 1);
 
@@ -544,7 +545,7 @@ export class QueueRendererV2 {
 
     const nextButton = new ButtonBuilder()
       .setCustomId(config.nextButtonId)
-      .setLabel(config.nextLabel || '\u25B6')
+      .setLabel(config.nextLabel || V2_ICONS.NAV_NEXT)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(config.currentPage >= config.totalPages);
 

@@ -113,9 +113,8 @@ export class GuildOnboardingService {
     return createContainer(V2_COLORS.PRIMARY)
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          `## Welcome to OpenNotes!\n\n` +
-          `Thanks for adding Open Notes to **${guild.name}**!\n\n` +
-          `To enable all features, you'll need to configure an OpenAI API key.`
+          `## Welcome to Open Notes!\n\n` +
+          `Thanks for adding Open Notes to **${guild.name}**!`
         )
       )
       .addSeparatorComponents(createSmallSeparator())

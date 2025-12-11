@@ -29,11 +29,11 @@ export class NotesFormatter {
   static formatStatus(status: NoteStatus): string {
     switch (status) {
       case 'NEEDS_MORE_RATINGS':
-        return '⏳ Awaiting More Ratings';
+        return `${V2_ICONS.PENDING_TIME} Awaiting More Ratings`;
       case 'CURRENTLY_RATED_HELPFUL':
-        return '✅ Published';
+        return `${V2_ICONS.HELPFUL} Published`;
       case 'CURRENTLY_RATED_NOT_HELPFUL':
-        return '❌ Not Helpful';
+        return `${V2_ICONS.NOT_HELPFUL} Not Helpful`;
       default:
         return status;
     }

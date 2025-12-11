@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { MessageFlags } from 'discord.js';
 
 const mockLogger = {
   info: jest.fn<(...args: unknown[]) => void>(),
@@ -346,7 +347,7 @@ describe('config-note-publisher command', () => {
 
       await execute(mockInteraction as any);
 
-      const v2EphemeralFlags = 64 | 32768;
+      const v2EphemeralFlags = MessageFlags.Ephemeral | MessageFlags.IsComponentsV2;
       expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2EphemeralFlags });
     });
   });

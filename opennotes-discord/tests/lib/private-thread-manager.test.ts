@@ -70,10 +70,10 @@ describe('PrivateThreadManager - Rate Limiting', () => {
   describe('Rate Limit Enforcement', () => {
     it('should allow queue creation within rate limit', async () => {
       await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-      await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+      await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
 
       await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-      await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+      await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
 
       const metrics = privateThreadManager.getMetrics();
       expect(metrics.totalAttempts).toBe(2);
@@ -83,12 +83,12 @@ describe('PrivateThreadManager - Rate Limiting', () => {
     it('should block excessive queue creation attempts', async () => {
       for (let i = 0; i < 5; i++) {
         await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-        await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+        await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
       }
 
       await expect(
         privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0)
-      ).rejects.toThrow(/creating queues too quickly/);
+      ).rejects.toThrow(/creating private threads too quickly/);
 
       const metrics = privateThreadManager.getMetrics();
       expect(metrics.rateLimitViolations).toBe(1);
@@ -97,7 +97,7 @@ describe('PrivateThreadManager - Rate Limiting', () => {
     it('should provide helpful error message with remaining time', async () => {
       for (let i = 0; i < 5; i++) {
         await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-        await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+        await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
       }
 
       let errorThrown = false;
@@ -114,7 +114,7 @@ describe('PrivateThreadManager - Rate Limiting', () => {
     it('should reset rate limit after window expires', async () => {
       for (let i = 0; i < 5; i++) {
         await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-        await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+        await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
       }
 
       await expect(
@@ -133,7 +133,7 @@ describe('PrivateThreadManager - Rate Limiting', () => {
 
       for (let i = 0; i < 5; i++) {
         await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-        await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+        await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
       }
 
       await expect(
@@ -149,10 +149,10 @@ describe('PrivateThreadManager - Rate Limiting', () => {
   describe('Metrics', () => {
     it('should track total queue creation attempts', async () => {
       await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-      await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+      await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
 
       await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-      await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+      await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
 
       const metrics = privateThreadManager.getMetrics();
       expect(metrics.totalAttempts).toBe(2);
@@ -161,7 +161,7 @@ describe('PrivateThreadManager - Rate Limiting', () => {
     it('should track rate limit violations', async () => {
       for (let i = 0; i < 5; i++) {
         await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
-        await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+        await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
       }
 
       try {
@@ -184,17 +184,17 @@ describe('PrivateThreadManager - Rate Limiting', () => {
       await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
 
       const metrics = privateThreadManager.getMetrics();
-      expect(metrics.activeQueues).toBe(1);
+      expect(metrics.activePrivateThreads).toBe(1);
 
-      await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
+      await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
 
       const metricsAfter = privateThreadManager.getMetrics();
-      expect(metricsAfter.activeQueues).toBe(0);
+      expect(metricsAfter.activePrivateThreads).toBe(0);
     });
 
     it('should expose max queues per user configuration', () => {
       const metrics = privateThreadManager.getMetrics();
-      expect(metrics.maxQueuesPerUser).toBe(3);
+      expect(metrics.maxPrivateThreadsPerUser).toBe(3);
     });
   });
 
@@ -277,7 +277,7 @@ describe('PrivateThreadManager - Rate Limiting', () => {
       expect(thread1.id).not.toBe(thread2.id);
 
       const metrics = privateThreadManager.getMetrics();
-      expect(metrics.activeQueues).toBe(2);
+      expect(metrics.activePrivateThreads).toBe(2);
     });
 
     it('should track separate page state per guild for same user', async () => {
@@ -343,24 +343,24 @@ describe('PrivateThreadManager - Rate Limiting', () => {
       expect(privateThreadManager.getNotes(mockUser.id, 'guild-456')).toEqual(notesGuild2);
     });
 
-    it('should close queue independently per guild', async () => {
+    it('should close private thread independently per guild', async () => {
       const mockChannel2 = createMockChannel('channel-456', 'thread-456');
 
       await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel, 'guild-123', [], 0);
       await privateThreadManager.getOrCreateOpenNotesThread(mockUser, mockChannel2, 'guild-456', [], 0);
 
       let metrics = privateThreadManager.getMetrics();
-      expect(metrics.activeQueues).toBe(2);
+      expect(metrics.activePrivateThreads).toBe(2);
 
-      await privateThreadManager.closeQueue(mockUser.id, 'guild-123');
-
-      metrics = privateThreadManager.getMetrics();
-      expect(metrics.activeQueues).toBe(1);
-
-      await privateThreadManager.closeQueue(mockUser.id, 'guild-456');
+      await privateThreadManager.closePrivateThread(mockUser.id, 'guild-123');
 
       metrics = privateThreadManager.getMetrics();
-      expect(metrics.activeQueues).toBe(0);
+      expect(metrics.activePrivateThreads).toBe(1);
+
+      await privateThreadManager.closePrivateThread(mockUser.id, 'guild-456');
+
+      metrics = privateThreadManager.getMetrics();
+      expect(metrics.activePrivateThreads).toBe(0);
     });
   });
 });

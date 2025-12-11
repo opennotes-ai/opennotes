@@ -20,6 +20,7 @@ import { hasManageGuildPermission } from '../lib/permissions.js';
 import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import {
   V2_COLORS,
+  V2_ICONS,
   createContainer,
   createSmallSeparator,
   createDivider,
@@ -622,7 +623,7 @@ export class DiscordFormatter {
     if (response.notes.length === 0) {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          `## \u2B50 Top Scored Notes\n\nNo notes found matching the criteria.\n\n*Page ${page} of ${totalPages} | Total: ${response.total_count} notes*`
+          `## ${V2_ICONS.STANDARD} Top Scored Notes\n\nNo notes found matching the criteria.\n\n*Page ${page} of ${totalPages} | Total: ${response.total_count} notes*`
         )
       );
       return {
@@ -632,7 +633,7 @@ export class DiscordFormatter {
       };
     }
 
-    const headerLines = [`## \u2B50 Top Scored Notes`];
+    const headerLines = [`## ${V2_ICONS.STANDARD} Top Scored Notes`];
 
     const filterDescription: string[] = [];
     if (response.filters_applied) {
@@ -658,7 +659,7 @@ export class DiscordFormatter {
 
     for (const [index, note] of response.notes.entries()) {
       const rank = (page - 1) * pageSize + index + 1;
-      const scoreColor = note.score >= 0.7 ? '\u{1F7E2}' : note.score >= 0.4 ? '\u{1F7E1}' : '\u{1F534}';
+      const scoreColor = note.score >= 0.7 ? V2_ICONS.SCORE_HIGH : note.score >= 0.4 ? V2_ICONS.SCORE_MID : V2_ICONS.SCORE_LOW;
       const confidenceEmoji = this.getConfidenceEmoji(note.confidence);
       const formattedScore = this.formatScore(note.score);
 

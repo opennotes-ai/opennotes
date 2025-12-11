@@ -8,6 +8,7 @@ import {
 import { logger } from '../logger.js';
 import {
   V2_COLORS,
+  V2_ICONS,
   createContainer,
   createSmallSeparator,
   createDivider,
@@ -155,7 +156,7 @@ export function createForcePublishConfirmationButtonsV2(
 
   const container = createContainer(V2_COLORS.CRITICAL)
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('\u26A0\uFE0F **Confirm Force Publish**')
+      new TextDisplayBuilder().setContent(`${V2_ICONS.WARNING} **Confirm Force Publish**`)
     )
     .addSeparatorComponents(createSmallSeparator())
     .addTextDisplayComponents(

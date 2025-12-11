@@ -402,11 +402,11 @@ export class NotePublisherService {
   private getConfidenceBadge(confidence: string): string {
     switch (confidence) {
       case 'standard':
-        return '✅';
+        return V2_ICONS.HELPFUL;
       case 'provisional':
-        return '⚠️';
+        return V2_ICONS.WARNING;
       case 'no_data':
-        return '❓';
+        return V2_ICONS.UNKNOWN;
       default:
         return '';
     }
