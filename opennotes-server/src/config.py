@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         return v
 
     PROJECT_NAME: str = "Open Notes Scoring API"
-    VERSION: str = "1.0.0"
+    VERSION: str = "0.0.1"
     API_V1_PREFIX: str = "/api/v1"
     API_V2_PREFIX: str = "/api/v2"
 

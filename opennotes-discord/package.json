@@ -1,6 +1,6 @@
 {
   "name": "opennotes-discord",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Minimal Discord bot for Open Notes community notes",
   "type": "module",
   "main": "dist/index.js",
