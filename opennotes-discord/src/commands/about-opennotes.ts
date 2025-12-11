@@ -95,7 +95,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         new TextDisplayBuilder().setContent('*Open Notes - Community-powered context*')
       );
 
-    await interaction.editReply({ components: [container] });
+    await interaction.editReply({
+      components: [container],
+      flags: v2MessageFlags({ ephemeral: true }),
+    });
 
     logger.info('About command completed successfully', {
       error_id: errorId,
