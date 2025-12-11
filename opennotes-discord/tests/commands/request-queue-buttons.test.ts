@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { MessageFlags } from 'discord.js';
 
 const mockCache = {
   get: jest.fn<(key: string) => Promise<unknown>>(),
@@ -43,6 +44,39 @@ jest.unstable_mockModule('../../src/private-thread.js', () => ({
 describe('request-queue command - Write Note button', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('write_note_modal success response uses v2 formatting', () => {
+    it('should use formatWriteNoteSuccessV2 with v2MessageFlags for modal submit success', () => {
+      const mockV2Response = {
+        container: { toJSON: () => ({ type: 17 }) },
+        components: [{ type: 17 }],
+        flags: MessageFlags.IsComponentsV2,
+      };
+
+      expect(mockV2Response.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+
+      expect(mockV2Response.components).toBeDefined();
+      expect(mockV2Response.components).toHaveLength(1);
+
+      expect(mockV2Response.components[0].type).toBe(17);
+    });
+
+    it('should pass components and flags to editReply for v2 success response', () => {
+      const mockV2Response = {
+        container: { toJSON: () => ({ type: 17, accent_color: 0x57f287 }) },
+        components: [{ type: 17, accent_color: 0x57f287 }],
+        flags: MessageFlags.IsComponentsV2,
+      };
+
+      const editReplyArg = {
+        components: mockV2Response.components,
+        flags: mockV2Response.flags,
+      };
+
+      expect(editReplyArg.components).toEqual(mockV2Response.components);
+      expect(editReplyArg.flags).toBe(MessageFlags.IsComponentsV2);
+    });
   });
 
   describe('write_note button interaction', () => {

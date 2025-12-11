@@ -47,6 +47,14 @@ const mockDiscordFormatter = {
     separator: createMockSeparator(),
   })),
   formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatErrorV2: jest.fn().mockImplementation(() => {
+    const container = createMockContainer();
+    return {
+      container,
+      components: [container.toJSON()],
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+    };
+  }),
 };
 
 const mockApiClient = {
@@ -144,6 +152,14 @@ describe('status-bot command', () => {
       separator: createMockSeparator(),
     }));
     mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
+    mockDiscordFormatter.formatErrorV2.mockImplementation(() => {
+      const container = createMockContainer();
+      return {
+        container,
+        components: [container.toJSON()],
+        flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      };
+    });
   });
 
   describe('successful execution with v2 components', () => {
@@ -309,7 +325,7 @@ describe('status-bot command', () => {
   });
 
   describe('error handling', () => {
-    it('should handle service errors', async () => {
+    it('should handle service errors with v2 components', async () => {
       mockStatusService.execute.mockResolvedValue(
         createErrorResult(ErrorCode.API_ERROR, 'Server unavailable')
       );
@@ -332,11 +348,15 @@ describe('status-bot command', () => {
 
       await execute(mockInteraction as any);
 
+      expect(mockDiscordFormatter.formatErrorV2).toHaveBeenCalled();
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.any(String),
+          components: expect.any(Array),
+          flags: expect.any(Number),
         })
       );
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
     });
 
     it('should handle unexpected errors', async () => {

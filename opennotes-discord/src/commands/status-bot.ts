@@ -34,8 +34,11 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     const result = await statusService.execute(guilds);
 
     if (!result.success) {
-      const errorResponse = DiscordFormatter.formatError(result);
-      await interaction.editReply(errorResponse);
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
+      await interaction.editReply({
+        components: errorResponse.components,
+        flags: errorResponse.flags,
+      });
       return;
     }
 

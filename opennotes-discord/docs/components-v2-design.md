@@ -516,27 +516,27 @@ await interaction.reply({
 - [x] Add deprecation comments to v1 types (`QueueItem`, `QueueSummary`, `QueueRenderer`)
 - [x] Add deprecation comments to v1 formatter methods
 
-### In Progress / Remaining
-- [ ] Migrate `/list requests` to v2 (currently uses v1 `formatListRequestsSuccess` + `QueueRenderer`)
-- [ ] Migrate `/list top-notes` to v2 (currently uses v1 `formatTopNotesForQueue` + `QueueRenderer`)
-- [ ] Update error handling to use `formatErrorV2` in all commands
-- [ ] Remove v1 code paths after all commands migrated
+### Completed (V2 Migration)
+- [x] Migrate `/list requests` to v2 (`formatListRequestsSuccessV2`)
+- [x] Migrate `/list top-notes` to v2 (`formatTopNotesForQueueV2`)
+- [x] Update error handling to use `formatErrorV2` in all commands
+- [x] Remove v1 code paths (deprecated methods and classes removed)
 - [ ] Test on mobile Discord client
 
-### V1 Code Still in Use (Deprecated)
+### V1 Code Removed
 
-The following v1 code is marked `@deprecated` but still required:
+The following deprecated v1 code has been removed:
 
-**Types (`queue-renderer.ts`):**
-- `QueueItem` - Used by `/list requests`, `/list top-notes`
-- `QueueSummary` - Used by `/list requests`, `/list top-notes`
-- `QueueRenderer` - Used by `/list requests`, `/list top-notes`
+**Types (`queue-renderer.ts`) - REMOVED:**
+- `QueueItem` - Replaced by `QueueItemV2`
+- `QueueSummary` - Replaced by `QueueSummaryV2`
+- `QueueRenderer` - Replaced by `QueueRendererV2`
 
-**Formatter Methods (`DiscordFormatter.ts`):**
-- `formatListRequestsSuccess` - Used by `/list requests`
-- `formatTopNotesForQueue` - Used by `/list top-notes`
-- `formatWriteNoteSuccess` - Used by `/list requests` modal submit
-- `formatError` - Used by error handling in several commands
+**Formatter Methods (`DiscordFormatter.ts`) - REMOVED:**
+- `formatListRequestsSuccess` - Replaced by `formatListRequestsSuccessV2`
+- `formatTopNotesForQueue` - Replaced by `formatTopNotesForQueueV2`
+- `formatWriteNoteSuccess` - Replaced by `formatWriteNoteSuccessV2`
+- `formatError` - Replaced by `formatErrorV2`
 
 ## References
 

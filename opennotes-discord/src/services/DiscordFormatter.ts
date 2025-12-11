@@ -1,10 +1,8 @@
 import {
-  EmbedBuilder,
   Colors,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  GuildMember,
   ContainerBuilder,
   TextDisplayBuilder,
 } from 'discord.js';
@@ -15,8 +13,6 @@ import { DISCORD_LIMITS } from '../lib/constants.js';
 import { cache } from '../cache.js';
 import { generateShortId } from '../lib/validation.js';
 import { logger } from '../logger.js';
-import type { QueueItem, QueueSummary, PaginationConfig } from '../lib/queue-renderer.js';
-import { hasManageGuildPermission } from '../lib/permissions.js';
 import { extractPlatformMessageId } from '../lib/discord-utils.js';
 import {
   V2_COLORS,
@@ -36,214 +32,6 @@ export class DiscordFormatter {
       return `[${messageId}](https://discord.com/channels/${guildId}/${channelId}/${messageId})`;
     }
     return messageId;
-  }
-
-  /**
-   * @deprecated Use formatWriteNoteSuccessV2 instead. This v1 method uses EmbedBuilder.
-   * Still used by: /list requests modal submit
-   */
-  static formatWriteNoteSuccess(
-    result: WriteNoteResult,
-    messageId: string,
-    guildId?: string,
-    channelId?: string
-  ): { embeds: EmbedBuilder[] } {
-    const messageIdDisplay = this.formatMessageIdLink(messageId, guildId, channelId);
-
-    const embed = new EmbedBuilder()
-      .setColor(Colors.Blue)
-      .setTitle('Community Note Created')
-      .setDescription(result.note.content)
-      .addFields(
-        { name: 'Message ID', value: messageIdDisplay, inline: true },
-        { name: 'Author', value: `<@${result.note.authorId}>`, inline: true },
-        { name: 'Note ID', value: String(result.note.id), inline: true }
-      )
-      .setTimestamp();
-
-    return { embeds: [embed] };
-  }
-
-  /**
-   * @deprecated Use formatListRequestsSuccessV2 instead. This v1 method uses EmbedBuilder.
-   * Still used by: /list requests, request_reply:list_requests button
-   */
-  static async formatListRequestsSuccess(
-    result: ListRequestsResult,
-    options?: { status?: string; myRequestsOnly?: boolean; communityServerId?: string }
-  ): Promise<{
-    summary: QueueSummary;
-    items: QueueItem[];
-    pagination?: PaginationConfig;
-    stateId?: string;
-  }> {
-    const totalPages = Math.ceil(result.total / result.size);
-
-    // Create summary embed
-    const summaryEmbed = new EmbedBuilder()
-      .setColor(Colors.Blue)
-      .setTitle('📋 Note Requests')
-      .setFooter({ text: `Page ${result.page} of ${totalPages} • Total: ${result.total} requests` })
-      .setTimestamp();
-
-    if (result.requests.length === 0) {
-      summaryEmbed.setDescription('No requests found');
-      return {
-        summary: { embed: summaryEmbed },
-        items: [],
-      };
-    }
-
-    summaryEmbed.setDescription(
-      `Showing requests ${(result.page - 1) * result.size + 1}-${Math.min(result.page * result.size, result.total)} of ${result.total}\n\n` +
-      `Each pending request has action buttons directly below it.`
-    );
-
-    // Create one item per request (with async cache operations for button state)
-    const items: QueueItem[] = await Promise.all(
-      result.requests.map(async (request) => {
-        const statusEmojiMap: Record<RequestStatus, string> = {
-          PENDING: '⏳',
-          IN_PROGRESS: '🔄',
-          COMPLETED: '✅',
-          FAILED: '❌',
-        };
-        const statusEmoji = statusEmojiMap[request.status] || '❓';
-
-        const timestamp = Math.floor(new Date(request.requested_at).getTime() / 1000);
-        const requestedBy = `<@${request.requested_by}>`;
-        const noteInfo = request.note_id ? `Note: ${request.note_id}` : 'No note yet';
-        const effectiveMessageId = extractPlatformMessageId(request.platform_message_id, request.request_id);
-        const messageIdDisplay = effectiveMessageId || 'No message ID';
-
-        // Format message preview from archive content
-        const contentPreview = this.formatMessagePreview(request.content);
-
-        const fieldValues = [
-          `**Message:** ${messageIdDisplay}`,
-          `**Status:** ${request.status}`,
-          `**Requester:** ${requestedBy}`,
-          `**Requested:** <t:${timestamp}:R>`,
-          `**${noteInfo}**`,
-        ];
-
-        // Add content preview if available
-        if (contentPreview) {
-          fieldValues.push(`**Original message content:** ${contentPreview}`);
-        }
-
-        // Add instruction for write note buttons if status is PENDING and we have a message ID
-        if (request.status === 'PENDING' && effectiveMessageId) {
-          fieldValues.push('\n**Write a note that this message is:**');
-        }
-
-        const embed = new EmbedBuilder()
-          .setColor(Colors.Blue)
-          .setTitle(`${statusEmoji} ${request.request_id}`)
-          .setDescription(fieldValues.join('\n'))
-          .setTimestamp(new Date(request.requested_at));
-
-        // If content is an image URL, embed it directly
-        if (request.content && this.isImageUrl(request.content)) {
-          embed.setImage(request.content.trim());
-        }
-
-        // Add action buttons for PENDING requests with a message ID (from platform_message_id or extracted from request_id)
-        const buttons: ActionRowBuilder<ButtonBuilder>[] = [];
-        if (effectiveMessageId && request.status === 'PENDING') {
-          // Generate short IDs and cache the request_id to avoid exceeding 100-char custom ID limit
-          const writeNoteNotMisleadingShortId = generateShortId();
-          const writeNoteMisinformedShortId = generateShortId();
-          const aiWriteNoteShortId = generateShortId();
-
-          const writeNoteNotMisleadingCacheKey = `write_note_state:${writeNoteNotMisleadingShortId}`;
-          const writeNoteMisinformedCacheKey = `write_note_state:${writeNoteMisinformedShortId}`;
-          const aiWriteNoteCacheKey = `write_note_state:${aiWriteNoteShortId}`;
-          const ttl = 300; // 5 minutes
-
-          // Store request_id in cache
-          try {
-            await cache.set(writeNoteNotMisleadingCacheKey, request.request_id, ttl);
-            await cache.set(writeNoteMisinformedCacheKey, request.request_id, ttl);
-            await cache.set(aiWriteNoteCacheKey, request.request_id, ttl);
-            logger.debug('Stored write note button state in cache', {
-              writeNoteNotMisleadingShortId,
-              writeNoteMisinformedShortId,
-              aiWriteNoteShortId,
-              request_id: request.request_id,
-            });
-          } catch (error) {
-            logger.error('Failed to store write note button state in cache', {
-              error: error instanceof Error ? error.message : String(error),
-              request_id: request.request_id,
-            });
-          }
-
-          const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`write_note:NOT_MISLEADING:${writeNoteNotMisleadingShortId}`)
-              .setLabel('Not Misleading')
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(`write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:${writeNoteMisinformedShortId}`)
-              .setLabel('Misinformed or Misleading')
-              .setStyle(ButtonStyle.Danger),
-            new ButtonBuilder()
-              .setCustomId(`ai_write_note:${aiWriteNoteShortId}`)
-              .setLabel('✨ AI Generate')
-              .setStyle(ButtonStyle.Primary)
-          );
-          buttons.push(row);
-        }
-
-        return {
-          id: request.request_id,
-          embed,
-          buttons,
-        };
-      })
-    );
-
-    // Setup pagination if needed
-    let stateId: string | undefined;
-    let paginationConfig: PaginationConfig | undefined;
-
-    if (totalPages > 1) {
-      // Store filter options in cache with short random ID
-      stateId = generateShortId();
-      const filterState = {
-        status: options?.status,
-        myRequestsOnly: options?.myRequestsOnly,
-        communityServerId: options?.communityServerId,
-      };
-
-      const cacheKey = `pagination:${stateId}`;
-      const ttl = 300; // 5 minutes
-
-      try {
-        await cache.set(cacheKey, filterState, ttl);
-        logger.debug('Stored pagination state in cache', { stateId, cacheKey, filterState });
-      } catch (error) {
-        logger.error('Failed to store pagination state in cache', {
-          error: error instanceof Error ? error.message : String(error),
-          stateId,
-        });
-      }
-
-      paginationConfig = {
-        currentPage: result.page,
-        totalPages,
-        previousButtonId: `request_queue_page:${result.page - 1}:${stateId}`,
-        nextButtonId: `request_queue_page:${result.page + 1}:${stateId}`,
-      };
-    }
-
-    return {
-      summary: { embed: summaryEmbed },
-      items,
-      pagination: paginationConfig,
-      stateId,
-    };
   }
 
   static formatStatusSuccessV2(result: StatusResult): {
@@ -610,13 +398,16 @@ export class DiscordFormatter {
   static formatTopNotesForQueueV2(
     response: TopNotesResponse,
     page: number = 1,
-    pageSize: number = 10
+    pageSize: number = 10,
+    options?: { includeForcePublishButtons?: boolean }
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
+    forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[];
   } {
     const totalPages = Math.ceil(response.total_count / pageSize);
+    const forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[] = [];
 
     const container = createContainer(V2_COLORS.INFO);
 
@@ -630,6 +421,7 @@ export class DiscordFormatter {
         container,
         components: [container.toJSON()],
         flags: v2MessageFlags(),
+        forcePublishButtonRows,
       };
     }
 
@@ -676,6 +468,16 @@ export class DiscordFormatter {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(noteLines.join('\n'))
       );
+
+      if (options?.includeForcePublishButtons) {
+        const forcePublishButton = new ButtonBuilder()
+          .setCustomId(`force_publish:${note.note_id}`)
+          .setLabel(`Force Publish Note ${note.note_id}`)
+          .setStyle(ButtonStyle.Danger);
+        forcePublishButtonRows.push(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(forcePublishButton)
+        );
+      }
     }
 
     container.addSeparatorComponents(createDivider());
@@ -687,6 +489,7 @@ export class DiscordFormatter {
       container,
       components: [container.toJSON()],
       flags: v2MessageFlags(),
+      forcePublishButtonRows,
     };
   }
 
@@ -867,70 +670,6 @@ export class DiscordFormatter {
     };
   }
 
-  /**
-   * @deprecated Use formatErrorV2 instead. This v1 method uses EmbedBuilder.
-   * Still used by: /list requests, /list top-notes, /status-bot error handling
-   */
-  static formatError<T>(result: ServiceResult<T>): { content?: string; embeds?: EmbedBuilder[] } {
-    if (!result.error) {
-      return { content: 'An unknown error occurred' };
-    }
-
-    switch (result.error.code as ErrorCode) {
-      case ErrorCode.RATE_LIMIT_EXCEEDED: {
-        const resetAt = result.error.details?.resetAt;
-        const resetTime = typeof resetAt === 'number' ? Math.floor(resetAt / 1000) : 0;
-        return {
-          content: `Rate limit exceeded. Try again <t:${resetTime}:R>`,
-        };
-      }
-
-      case ErrorCode.VALIDATION_ERROR:
-        return {
-          content: result.error.message,
-        };
-
-      case ErrorCode.NOT_FOUND:
-        return {
-          content: result.error.message,
-        };
-
-      case ErrorCode.CONFLICT: {
-        let message = result.error.message;
-
-        if (result.error.details?.helpText) {
-          message += `\n\n💡 ${String(result.error.details.helpText)}`;
-        }
-
-        if (result.error.details?.errorId) {
-          message += `\n\nError ID: \`${String(result.error.details.errorId)}\``;
-        }
-
-        return {
-          content: message,
-        };
-      }
-
-      case ErrorCode.API_ERROR:
-        if (result.error.message.includes('API may be down')) {
-          const embed = new EmbedBuilder()
-            .setColor(Colors.Red)
-            .setTitle('Status Check Failed')
-            .setDescription(result.error.message)
-            .setTimestamp();
-          return { embeds: [embed] };
-        }
-        return {
-          content: result.error.message,
-        };
-
-      default:
-        return {
-          content: 'An unexpected error occurred. Please try again later.',
-        };
-    }
-  }
-
   static getConfidenceEmoji(confidence: ScoreConfidence): string {
     switch (confidence) {
       case 'standard':
@@ -967,110 +706,6 @@ export class DiscordFormatter {
     return score.toFixed(3);
   }
 
-  /**
-   * @deprecated Use formatTopNotesForQueueV2 instead. This v1 method uses EmbedBuilder.
-   * Still used by: /list top-notes
-   */
-  static formatTopNotesForQueue(
-    response: TopNotesResponse,
-    page: number = 1,
-    pageSize: number = 10,
-    userMember?: GuildMember | null
-  ): {
-    summary: QueueSummary;
-    items: QueueItem[];
-    pagination?: PaginationConfig;
-  } {
-    const totalPages = Math.ceil(response.total_count / pageSize);
-
-    const summaryEmbed = new EmbedBuilder()
-      .setColor(Colors.Blue)
-      .setTitle('⭐ Top Scored Notes')
-      .setFooter({ text: `Page ${page} of ${totalPages} • Total: ${response.total_count} notes` })
-      .setTimestamp();
-
-    if (response.notes.length === 0) {
-      summaryEmbed.setDescription('No notes found matching the criteria.');
-      return {
-        summary: { embed: summaryEmbed },
-        items: [],
-      };
-    }
-
-    const filterDescription: string[] = [];
-    if (response.filters_applied) {
-      if (String(response.filters_applied.min_confidence)) {
-        filterDescription.push(`Min Confidence: ${String(response.filters_applied.min_confidence)}`);
-      }
-      if (response.filters_applied.tier !== undefined) {
-        filterDescription.push(`Tier: ${String(response.filters_applied.tier)}`);
-      }
-    }
-
-    const descriptionParts = [
-      `Showing notes ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, response.total_count)} of ${response.total_count}`,
-    ];
-    if (filterDescription.length > 0) {
-      descriptionParts.push(`**Filters:** ${filterDescription.join(' | ')}`);
-    }
-    summaryEmbed.setDescription(descriptionParts.join('\n\n'));
-
-    const items: QueueItem[] = response.notes.map((note, index) => {
-      const rank = (page - 1) * pageSize + index + 1;
-      const scoreColor = note.score >= 0.7 ? '🟢' : note.score >= 0.4 ? '🟡' : '🔴';
-      const confidenceEmoji = this.getConfidenceEmoji(note.confidence);
-      const formattedScore = this.formatScore(note.score);
-
-      // Format message preview from content
-      const contentPreview = this.formatMessagePreview(note.content);
-
-      const descriptionFields = [
-        `**Score:** ${formattedScore} (0.0-1.0)`,
-        `**Confidence:** ${confidenceEmoji} ${this.getConfidenceLabel(note.confidence)}`,
-        `**Ratings:** ${note.rating_count}`,
-        `**Tier:** ${note.tier} | **Algorithm:** ${note.algorithm}`,
-      ];
-
-      // Add content preview if available
-      if (contentPreview) {
-        descriptionFields.push(`**Original message content:** ${contentPreview}`);
-      }
-
-      const embed = new EmbedBuilder()
-        .setColor(this.getScoreColor(note.score))
-        .setTitle(`${rank}. ${scoreColor} Note ${note.note_id}`)
-        .setDescription(descriptionFields.join('\n'))
-        .setTimestamp();
-
-      // If content is an image URL, embed it directly
-      if (note.content && this.isImageUrl(note.content)) {
-        embed.setImage(note.content.trim());
-      }
-
-      // Add Force Publish button for admins
-      const buttons: ActionRowBuilder<ButtonBuilder>[] = [];
-      const isAdmin = userMember && hasManageGuildPermission(userMember);
-      if (isAdmin) {
-        const forcePublishButton = new ButtonBuilder()
-          .setCustomId(`force_publish:${note.note_id}`)
-          .setLabel('Force Publish')
-          .setStyle(ButtonStyle.Danger);
-        buttons.push(new ActionRowBuilder<ButtonBuilder>().addComponents(forcePublishButton));
-      }
-
-      return {
-        id: String(note.note_id),
-        embed,
-        buttons,
-      };
-    });
-
-    return {
-      summary: { embed: summaryEmbed },
-      items,
-    };
-  }
-
   private static getScoreExplanation(scoreData: NoteScoreResponse): string {
     const isTier0 = scoreData.tier === 0;
     const explanations = [
@@ -1092,12 +727,6 @@ export class DiscordFormatter {
     }
 
     return explanations.join('\n');
-  }
-
-  private static isImageUrl(content: string): boolean {
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-    const lowerContent = content.toLowerCase().trim();
-    return imageExtensions.some(ext => lowerContent.endsWith(ext));
   }
 
   private static formatMessagePreview(content: string | null | undefined): string | null {
