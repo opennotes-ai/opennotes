@@ -25,7 +25,7 @@ interface RateLimitEntry {
   windowStart: number;
 }
 
-export class QueueManager {
+export class PrivateThreadManager {
   private activeQueues: Map<string, QueueState> = new Map();
   private rateLimits: Map<string, RateLimitEntry> = new Map();
   private queueCreationMetrics: { totalAttempts: number; rateLimitViolations: number } = {

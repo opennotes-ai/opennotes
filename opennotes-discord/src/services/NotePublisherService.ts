@@ -5,7 +5,18 @@ import {
   MessageCreateOptions,
   DiscordAPIError,
   GuildBasedChannel,
+  ContainerBuilder,
 } from 'discord.js';
+import {
+  V2_COLORS,
+  V2_ICONS,
+  createContainer,
+  createTextSection,
+  createSmallSeparator,
+  createDivider,
+  createMediaGallery,
+  v2MessageFlags,
+} from '../utils/v2-components.js';
 import { logger } from '../logger.js';
 import { apiClient } from '../api-client.js';
 import { NoteContextService } from './NoteContextService.js';
@@ -173,9 +184,9 @@ export class NotePublisherService {
         return;
       }
 
-      const message = this.formatMessage(event, noteContent, context);
+      const container = this.formatMessageV2(event, noteContent, context);
 
-      const notePublisherMessageId = await this.postReply(context, message);
+      const notePublisherMessageId = await this.postReplyV2(context, container);
 
       if (notePublisherMessageId) {
         await this.recordNotePublisher(event, context, notePublisherMessageId, true);
@@ -369,10 +380,16 @@ export class NotePublisherService {
     }
   }
 
-  private async fetchNoteContent(noteId: number): Promise<string | null> {
+  private async fetchNoteContent(noteId: number): Promise<{ summary: string; imageUrls?: string[] } | null> {
     try {
       const response = await apiClient.getNote(noteId.toString());
-      return response.summary || null;
+      if (!response.summary) {
+        return null;
+      }
+      return {
+        summary: response.summary,
+        imageUrls: (response as { image_urls?: string[] }).image_urls,
+      };
     } catch (error) {
       logger.error('Failed to fetch note content', {
         noteId,
@@ -380,46 +397,6 @@ export class NotePublisherService {
       });
       return null;
     }
-  }
-
-  private formatMessage(event: ScoreUpdateEvent, noteContent: string, context: NoteContext): string {
-    const scorePercentage = (event.score * 100).toFixed(1);
-    const confidenceBadge = this.getConfidenceBadge(event.confidence);
-    const isForcePublished = event.metadata?.force_published === true;
-
-    // Use different header for force-published notes
-    let message = isForcePublished
-      ? `🛡️ **Community Note - Admin Published**\n\n`
-      : `🤖 **Community Note - High Quality Detected**\n\n`;
-
-    message += `${noteContent}\n\n`;
-    message += `**Score:** ${scorePercentage}% ${confidenceBadge}\n`;
-    message += `**Confidence:** ${event.confidence} (${event.rating_count} ratings)\n`;
-    message += `**Algorithm:** ${event.algorithm}\n`;
-
-    if (context.authorId) {
-      message += `**Original Author:** <@${context.authorId}>\n`;
-    }
-
-    // Add force-publish metadata if present
-    if (isForcePublished) {
-      if (event.metadata?.admin_username) {
-        message += `**Published By:** ${event.metadata.admin_username}\n`;
-      }
-      if (event.metadata?.force_published_at) {
-        const publishedDate = new Date(event.metadata.force_published_at);
-        message += `**Published At:** ${publishedDate.toLocaleString('en-US', {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-          timeZone: 'UTC'
-        })} UTC\n`;
-      }
-      message += `\n*This note was manually published by an admin and may not have met automatic quality thresholds.*`;
-    } else {
-      message += `\n*This note was automatically posted because it reached the quality threshold.*`;
-    }
-
-    return message;
   }
 
   private getConfidenceBadge(confidence: string): string {
@@ -435,7 +412,71 @@ export class NotePublisherService {
     }
   }
 
-  private async postReply(context: NoteContext, message: string): Promise<string | null> {
+  private formatMessageV2(
+    event: ScoreUpdateEvent,
+    noteContent: { summary: string; imageUrls?: string[] },
+    context: NoteContext
+  ): ContainerBuilder {
+    const scorePercentage = (event.score * 100).toFixed(1);
+    const isForcePublished = event.metadata?.force_published === true;
+
+    const container = createContainer(V2_COLORS.HELPFUL);
+
+    const headerEmoji = isForcePublished ? V2_ICONS.RATED : V2_ICONS.HELPFUL;
+    const headerText = isForcePublished
+      ? `${headerEmoji} **Community Note - Admin Published**`
+      : `${headerEmoji} **Community Note - High Quality Detected**`;
+
+    container.addTextDisplayComponents(createTextSection(headerText));
+    container.addSeparatorComponents(createSmallSeparator());
+
+    container.addTextDisplayComponents(createTextSection(noteContent.summary));
+
+    if (noteContent.imageUrls && noteContent.imageUrls.length > 0) {
+      const gallery = createMediaGallery(noteContent.imageUrls);
+      if (gallery) {
+        container.addMediaGalleryComponents(gallery);
+      }
+    }
+
+    container.addSeparatorComponents(createSmallSeparator());
+
+    let metadataText = `**Score:** ${scorePercentage}% ${this.getConfidenceBadge(event.confidence)}\n`;
+    metadataText += `**Confidence:** ${event.confidence} (${event.rating_count} ratings)\n`;
+    metadataText += `**Algorithm:** ${event.algorithm}`;
+
+    if (context.authorId) {
+      metadataText += `\n**Original Author:** <@${context.authorId}>`;
+    }
+
+    if (isForcePublished) {
+      if (event.metadata?.admin_username) {
+        metadataText += `\n**Published By:** ${event.metadata.admin_username}`;
+      }
+      if (event.metadata?.force_published_at) {
+        const publishedDate = new Date(event.metadata.force_published_at);
+        metadataText += `\n**Published At:** ${publishedDate.toLocaleString('en-US', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'UTC',
+        })} UTC`;
+      }
+    }
+
+    container.addTextDisplayComponents(createTextSection(metadataText));
+
+    container.addSeparatorComponents(createDivider());
+
+    const footerText = isForcePublished
+      ? '*This note was manually published by an admin and may not have met automatic quality thresholds.*'
+      : '*This note was automatically posted because it reached the quality threshold.*';
+
+    container.addTextDisplayComponents(createTextSection(footerText));
+
+    return container;
+  }
+
+  private async postReplyV2(context: NoteContext, container: ContainerBuilder): Promise<string | null> {
     try {
       const channel = await this.client.channels.fetch(context.channelId);
 
@@ -446,7 +487,6 @@ export class NotePublisherService {
         return null;
       }
 
-      // Check if channel supports text messages (includes TextChannel, ThreadChannel, etc.)
       if (!channel.isTextBased() || channel.isDMBased()) {
         logger.warn('Channel does not support text messages or is a DM channel', {
           channelId: context.channelId,
@@ -456,7 +496,8 @@ export class NotePublisherService {
       }
 
       const options: MessageCreateOptions = {
-        content: message,
+        components: [container.toJSON()],
+        flags: v2MessageFlags(),
         reply: {
           messageReference: context.originalMessageId,
           failIfNotExists: false,

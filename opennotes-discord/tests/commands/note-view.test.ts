@@ -19,8 +19,8 @@ const mockScoringService = {
 };
 
 const mockDiscordFormatter = {
-  formatViewNotesSuccess: jest.fn().mockReturnValue({ embeds: [] }),
-  formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatViewNotesSuccessV2: jest.fn().mockReturnValue({ embeds: [] }),
+  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
 };
 
 const mockApiClient = {
@@ -93,8 +93,8 @@ describe('note-view command', () => {
     jest.clearAllMocks();
     mockServiceProvider.getViewNotesService.mockReturnValue(mockViewNotesService);
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
-    mockDiscordFormatter.formatViewNotesSuccess.mockReturnValue({ embeds: [] });
-    mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
+    mockDiscordFormatter.formatViewNotesSuccessV2.mockReturnValue({ embeds: [] });
+    mockDiscordFormatter.formatErrorV2.mockReturnValue({ content: 'Error occurred' });
   });
 
   describe('successful execution', () => {

@@ -346,7 +346,8 @@ describe('config-note-publisher command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: 64 });
+      const v2EphemeralFlags = 64 | 32768;
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2EphemeralFlags });
     });
   });
 });

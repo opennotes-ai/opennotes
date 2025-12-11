@@ -1,9 +1,10 @@
 import { jest } from '@jest/globals';
 import type { ScoreUpdateEvent } from '../../src/events/types.js';
-import { Client, TextChannel, PermissionsBitField, PermissionFlagsBits, ChannelType } from 'discord.js';
+import { Client, TextChannel, PermissionsBitField, PermissionFlagsBits, ChannelType, MessageFlags, ContainerBuilder } from 'discord.js';
 import type { NoteContext } from '../../src/services/NoteContextService.js';
 import type { NotePublisherConfig } from '../../src/services/NotePublisherConfigService.js';
 import { TEST_SCORE_THRESHOLD, TEST_SCORE_ABOVE_THRESHOLD, TEST_SCORE_BELOW_THRESHOLD } from '../test-constants.js';
+import { V2_COLORS } from '../../src/utils/v2-components.js';
 
 const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
@@ -379,8 +380,8 @@ describe('NotePublisherService', () => {
     });
   });
 
-  describe('message formatting (AC #6)', () => {
-    it('should format message with all required components', async () => {
+  describe('message formatting (AC #6 - updated for Components v2)', () => {
+    it('should format message with all required components using v2 format', async () => {
       const event: ScoreUpdateEvent = {
         note_id: 1,
         score: TEST_SCORE_ABOVE_THRESHOLD,
@@ -394,6 +395,13 @@ describe('NotePublisherService', () => {
         channel_id: 'channel-456',
         community_server_id: 'guild-123',
       };
+
+      mockConfigService.getDefaultThreshold.mockReturnValue(TEST_SCORE_THRESHOLD);
+      mockConfigService.getConfig.mockResolvedValue({
+        guildId: 'guild-123',
+        enabled: true,
+        threshold: TEST_SCORE_THRESHOLD,
+      });
 
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
       mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
@@ -411,12 +419,16 @@ describe('NotePublisherService', () => {
 
       await notePublisherService.handleScoreUpdate(event);
 
-      const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { content: string };
-      expect(sentMessage.content).toContain('🤖');
-      expect(sentMessage.content).toContain(`${(TEST_SCORE_ABOVE_THRESHOLD * 100).toFixed(1)}%`);
-      expect(sentMessage.content).toContain('standard');
-      expect(sentMessage.content).toContain('10 ratings');
-      expect(sentMessage.content).toContain('This is a helpful community note');
+      const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { components?: any[]; flags?: number };
+      const messageJson = JSON.stringify(sentMessage.components);
+
+      expect(sentMessage.components).toBeDefined();
+      expect(sentMessage.flags).toBeDefined();
+      expect((sentMessage.flags! & MessageFlags.IsComponentsV2) !== 0).toBe(true);
+      expect(messageJson).toContain(`${(TEST_SCORE_ABOVE_THRESHOLD * 100).toFixed(1)}%`);
+      expect(messageJson).toContain('standard');
+      expect(messageJson).toContain('10 ratings');
+      expect(messageJson).toContain('This is a helpful community note');
     });
   });
 
@@ -558,6 +570,344 @@ describe('NotePublisherService', () => {
       await notePublisherService.handleScoreUpdate(event);
 
       expect(permissionsForSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Components v2 migration (task-821)', () => {
+    beforeEach(() => {
+      mockConfigService.getDefaultThreshold.mockReturnValue(TEST_SCORE_THRESHOLD);
+      mockConfigService.getConfig.mockResolvedValue({
+        guildId: 'guild-123',
+        enabled: true,
+        threshold: TEST_SCORE_THRESHOLD,
+      });
+    });
+
+    describe('AC #1: Convert auto-post embed to ContainerBuilder', () => {
+      it('should send message with ContainerBuilder components', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note content' });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        expect(mockChannel.send).toHaveBeenCalled();
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as {
+          components?: any[];
+          flags?: number;
+        };
+
+        expect(sentMessage.components).toBeDefined();
+        expect(sentMessage.components?.length).toBeGreaterThan(0);
+      });
+    });
+
+    describe('AC #2: Add visual score indicator using TextDisplayBuilder', () => {
+      it('should include score percentage in message components', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note content' });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { components?: any[] };
+        const messageJson = JSON.stringify(sentMessage.components);
+
+        expect(messageJson).toContain(`${(TEST_SCORE_ABOVE_THRESHOLD * 100).toFixed(1)}%`);
+      });
+    });
+
+    describe('AC #3: Use SectionBuilder for note metadata', () => {
+      it('should include author, timestamp, and score in metadata section', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note content' });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { components?: any[] };
+        const messageJson = JSON.stringify(sentMessage.components);
+
+        expect(messageJson).toContain('standard');
+        expect(messageJson).toContain('10 ratings');
+      });
+    });
+
+    describe('AC #4: Apply accent color based on score', () => {
+      it('should use HELPFUL color for high confidence published notes', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note content' });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { components?: any[] };
+        const messageJson = JSON.stringify(sentMessage.components);
+
+        expect(messageJson).toContain(V2_COLORS.HELPFUL.toString());
+      });
+    });
+
+    describe('AC #5: Add MediaGalleryBuilder support for image references', () => {
+      it('should include media gallery when note has image URLs', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({
+          summary: 'Test note with image',
+          image_urls: ['https://example.com/image1.png', 'https://example.com/image2.jpg'],
+        });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { components?: any[] };
+        const messageJson = JSON.stringify(sentMessage.components);
+
+        expect(messageJson).toContain('"type":12');
+        expect(messageJson).toContain('https://example.com/image1.png');
+      });
+
+      it('should not include media gallery when note has no images', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note without images' });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { components?: any[] };
+        const messageJson = JSON.stringify(sentMessage.components);
+
+        expect(messageJson).not.toContain('"type":12');
+      });
+    });
+
+    describe('AC #6: Apply MessageFlags.IsComponentsV2', () => {
+      it('should include IsComponentsV2 flag in message options', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note content' });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as {
+          flags?: number;
+        };
+
+        expect(sentMessage.flags).toBeDefined();
+        expect((sentMessage.flags! & MessageFlags.IsComponentsV2) !== 0).toBe(true);
+      });
+    });
+
+    describe('force-published notes', () => {
+      it('should use different header for force-published notes', async () => {
+        const event: ScoreUpdateEvent = {
+          note_id: 1,
+          score: TEST_SCORE_ABOVE_THRESHOLD,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2',
+          timestamp: new Date().toISOString(),
+          original_message_id: 'msg-123',
+          channel_id: 'channel-456',
+          community_server_id: 'guild-123',
+          metadata: {
+            force_published: true,
+            admin_username: 'TestAdmin',
+            force_published_at: new Date().toISOString(),
+          },
+        };
+
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+        mockClient.channels.cache.set('channel-456', mockChannel);
+        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+          new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+        );
+        (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+        mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Force published note' });
+
+        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+        await notePublisherService.handleScoreUpdate(event);
+
+        const sentMessage = (mockChannel.send as jest.Mock).mock.calls[0][0] as { components?: any[] };
+        const messageJson = JSON.stringify(sentMessage.components);
+
+        expect(messageJson).toContain('Admin Published');
+        expect(messageJson).toContain('TestAdmin');
+      });
     });
   });
 });

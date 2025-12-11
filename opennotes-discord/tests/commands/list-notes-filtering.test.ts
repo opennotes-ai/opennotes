@@ -51,13 +51,14 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
-jest.unstable_mockModule('../../src/queue.js', () => ({
+jest.unstable_mockModule('../../src/private-thread.js', () => ({
   configCache: mockConfigCache,
-  getQueueManager: () => mockQueueManager,
+  getPrivateThreadManager: () => mockQueueManager,
 }));
 
 jest.unstable_mockModule('../../src/lib/queue-renderer.js', () => ({
   QueueRenderer: mockQueueRenderer,
+  QueueRendererV2: mockQueueRenderer,
 }));
 
 let execute: typeof import('../../src/commands/list.js').execute;

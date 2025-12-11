@@ -31,7 +31,7 @@ import * as statusBotCommand from './commands/status-bot.js';
 // Context menu command imports
 import * as noteRequestContextCommand from './commands/note-request-context.js';
 
-import { initializeQueueManager, getQueueManager } from './queue.js';
+import { initializePrivateThreadManager, getPrivateThreadManager } from './private-thread.js';
 import { NatsSubscriber } from './events/NatsSubscriber.js';
 import { NotePublisherService } from './services/NotePublisherService.js';
 import { NoteContextService } from './services/NoteContextService.js';
@@ -135,8 +135,8 @@ export class Bot {
       status: 'online',
     });
 
-    initializeQueueManager(this.client);
-    logger.info('Queue manager initialized');
+    initializePrivateThreadManager(this.client);
+    logger.info('Private thread manager initialized');
 
     await this.initializeNotePublisher();
     logger.info('Auto-post system initialized');
@@ -198,6 +198,14 @@ export class Bot {
             content: 'An error occurred while executing this command.',
             flags: MessageFlags.Ephemeral,
           });
+        }
+      }
+    } else if (interaction.isButton()) {
+      if (interaction.customId.startsWith('request_reply:')) {
+        try {
+          await listCommand.handleRequestReplyButton(interaction);
+        } catch (error) {
+          logger.error('Request reply button failed', { error });
         }
       }
     } else if (interaction.isModalSubmit()) {
@@ -536,10 +544,10 @@ export class Bot {
     }
 
     try {
-      const queueManager = getQueueManager();
-      await queueManager.cleanup();
+      const privateThreadManager = getPrivateThreadManager();
+      await privateThreadManager.cleanup();
     } catch (error) {
-      logger.warn('Queue manager cleanup skipped (not initialized)', { error });
+      logger.warn('Private thread manager cleanup skipped (not initialized)', { error });
     }
 
     if (this.healthCheckServer) {

@@ -8,16 +8,13 @@ import {
   TextChannel,
   ThreadChannel,
   MessageFlags,
-  EmbedBuilder,
-  Colors,
   ModalSubmitInteraction,
   TextInputBuilder,
   ButtonInteraction,
   GuildMember,
 } from 'discord.js';
 import { apiClient } from '../api-client.js';
-import { configCache, getQueueManager } from '../queue.js';
-import { NotesFormatter } from '../lib/notes-formatter.js';
+import { configCache, getPrivateThreadManager as getQueueManager } from '../private-thread.js';
 import { logger } from '../logger.js';
 import {
   classifyApiError,
@@ -34,61 +31,65 @@ import { TIMEOUTS } from '../lib/constants.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
 import {
   QueueRenderer,
-  QueueItem,
-  QueueSummary,
+  QueueRendererV2,
+  QueueItemV2,
+  QueueSummaryV2,
   PaginationConfig,
 } from '../lib/queue-renderer.js';
+import { V2_ICONS, calculateUrgency } from '../utils/v2-components.js';
 import type { ScoreConfidence } from '../services/ScoringService.js';
 import { suppressExpectedDiscordErrors, extractPlatformMessageId, createForcePublishConfirmationButtons, createDisabledForcePublishButtons } from '../lib/discord-utils.js';
 import { cache } from '../cache.js';
 
 const RATE_LIMIT_MS = 60 * 1000;
 const lastUsage = new Map<string, number>();
-const PURPLE_COLOR = 0x9b59b6;
 const RATED_NOTES_PER_PAGE = 5;
 
-function createSummaryEmbed(
+function createRatedNotesPagination(
+  currentPage: number,
+  totalPages: number,
+  stateId: string
+): PaginationConfig {
+  return {
+    currentPage,
+    totalPages,
+    previousButtonId: `rn_prev:${stateId}`,
+    nextButtonId: `rn_next:${stateId}`,
+    previousLabel: 'Previous',
+    nextLabel: 'Next',
+  };
+}
+
+function createSummaryV2(
   currentPage: number,
   totalNotes: number,
   notesPerPage: number
-): QueueSummary {
+): QueueSummaryV2 {
   const totalPages = Math.ceil(totalNotes / notesPerPage);
   const startIndex = (currentPage - 1) * notesPerPage;
   const endIndex = Math.min(startIndex + notesPerPage, totalNotes);
 
   if (totalNotes === 0) {
-    const embed = new EmbedBuilder()
-      .setColor(Colors.Green)
-      .setTitle('📋 Notes Queue')
-      .setDescription('✅ No notes need rating right now! Check back later.')
-      .setFooter({ text: 'All caught up!' })
-      .setTimestamp();
-
-    return { embed };
+    return {
+      title: `${V2_ICONS.HELPFUL} Rating Queue`,
+      subtitle: 'No notes need rating right now!',
+      stats: 'All caught up! Check back later.',
+    };
   }
 
-  const embed = new EmbedBuilder()
-    .setColor(Colors.Blue)
-    .setTitle('📋 Notes Awaiting Your Rating')
-    .setDescription(
-      `Showing notes ${startIndex + 1}-${endIndex} of ${totalNotes}\n\n` +
-      `Rate each note using the **Helpful** or **Not Helpful** buttons below.`
-    )
-    .setFooter({
-      text: `Page ${currentPage} of ${totalPages}`,
-    })
-    .setTimestamp();
-
-  return { embed };
+  return {
+    title: `${V2_ICONS.PENDING} Rating Queue`,
+    subtitle: `${totalNotes} notes need your rating`,
+    stats: `Showing notes ${startIndex + 1}-${endIndex} of ${totalNotes} (Page ${currentPage}/${totalPages})`,
+  };
 }
 
-function createNoteItem(
+function createNoteItemV2(
   note: NoteWithRatings,
   thresholds: { min_ratings_needed: number; min_raters_per_note: number },
-  guildId?: string,
   userMember?: GuildMember | null
-): QueueItem {
-  const embed = NotesFormatter.formatNoteEmbed(note, thresholds, null, guildId);
+): QueueItemV2 {
+  const urgency = calculateUrgency(note.ratings_count, thresholds.min_ratings_needed);
 
   const helpfulButton = new ButtonBuilder()
     .setCustomId(`rate:${note.id}:helpful`)
@@ -111,76 +112,68 @@ function createNoteItem(
     buttons.push(forcePublishButton);
   }
 
-  const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
+  const ratingButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
+
+  const truncatedSummary = note.summary.length > 200
+    ? note.summary.substring(0, 197) + '...'
+    : note.summary;
 
   return {
     id: note.id,
-    embed,
-    buttons: [buttonRow],
+    title: `Note #${note.id}`,
+    summary: truncatedSummary,
+    urgencyEmoji: urgency.urgencyEmoji,
+    ratingButtons,
   };
 }
 
-function createRatedNotesSummaryEmbed(
+function createRatedNotesSummaryV2(
   currentPage: number,
   totalNotes: number,
   notesPerPage: number
-): QueueSummary {
+): QueueSummaryV2 {
   const totalPages = Math.ceil(totalNotes / notesPerPage);
   const startIndex = (currentPage - 1) * notesPerPage;
   const endIndex = Math.min(startIndex + notesPerPage, totalNotes);
 
   if (totalNotes === 0) {
-    const embed = new EmbedBuilder()
-      .setColor(PURPLE_COLOR)
-      .setTitle('Your Rated Notes')
-      .setDescription(
-        'You have not rated any pending notes yet. Rate notes in the queue above to see them tracked here.'
-      )
-      .setTimestamp();
-
-    return { embed };
+    return {
+      title: `${V2_ICONS.RATED} Your Rated Notes`,
+      subtitle: 'You have not rated any pending notes yet.',
+      stats: 'Rate notes in the queue above to see them tracked here.',
+    };
   }
 
-  const embed = new EmbedBuilder()
-    .setColor(PURPLE_COLOR)
-    .setTitle('Your Rated Notes')
-    .setDescription(
-      `Showing ${startIndex + 1}-${endIndex} of ${totalNotes} notes you have rated that are still being processed.`
-    )
-    .setFooter({
-      text: `Page ${currentPage} of ${totalPages}`,
-    })
-    .setTimestamp();
-
-  return { embed };
-}
-
-function createRatedNoteItem(
-  note: NoteWithRatings,
-  userRating: boolean,
-  thresholds: { min_ratings_needed: number; min_raters_per_note: number }
-): QueueItem {
-  const embed = NotesFormatter.formatRatedNoteEmbed(note, userRating, thresholds);
-
   return {
-    id: note.id,
-    embed,
-    buttons: [],
+    title: `${V2_ICONS.RATED} Your Rated Notes`,
+    subtitle: `Showing ${startIndex + 1}-${endIndex} of ${totalNotes} notes`,
+    stats: `Notes you have rated that are still being processed (Page ${currentPage}/${totalPages})`,
   };
 }
 
-function createRatedNotesPagination(
-  currentPage: number,
-  totalPages: number,
-  stateId: string
-): PaginationConfig {
+function createRatedNoteItemV2(
+  note: NoteWithRatings,
+  userRating: boolean,
+  thresholds: { min_ratings_needed: number; min_raters_per_note: number }
+): QueueItemV2 {
+  const ratingIndicator = userRating ? V2_ICONS.HELPFUL : V2_ICONS.NOT_HELPFUL;
+  const ratingLabel = userRating ? 'Helpful' : 'Not Helpful';
+  const uniqueRaters = new Set(note.ratings.map(r => r.rater_participant_id)).size;
+
+  const truncatedSummary = note.summary.length > 150
+    ? note.summary.substring(0, 147) + '...'
+    : note.summary;
+
+  const summaryWithRating = `${ratingIndicator} You rated: **${ratingLabel}**\n\n${truncatedSummary}\n\n*Progress: ${note.ratings_count}/${thresholds.min_ratings_needed} ratings, ${uniqueRaters}/${thresholds.min_raters_per_note} raters*`;
+
+  const emptyButtonRow = new ActionRowBuilder<ButtonBuilder>();
+
   return {
-    currentPage,
-    totalPages,
-    previousButtonId: `rn_prev:${stateId}`,
-    nextButtonId: `rn_next:${stateId}`,
-    previousLabel: 'Previous',
-    nextLabel: 'Next',
+    id: note.id,
+    title: `Note #${note.id}`,
+    summary: summaryWithRating,
+    urgencyEmoji: V2_ICONS.RATED,
+    ratingButtons: emptyButtonRow,
   };
 }
 
@@ -353,12 +346,12 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
     const totalPages = Math.ceil(notesResponse.total / queueManager.getNotesPerPage());
     const hasNotes = notesResponse.total > 0;
 
-    const summary = createSummaryEmbed(1, notesResponse.total, queueManager.getNotesPerPage());
+    const summaryV2 = createSummaryV2(1, notesResponse.total, queueManager.getNotesPerPage());
 
     const member = interaction.guild?.members.cache.get(userId) || null;
 
-    const items: QueueItem[] = notesResponse.notes.map((note) =>
-      createNoteItem(note, thresholds, guildId || undefined, member)
+    const itemsV2: QueueItemV2[] = notesResponse.notes.map((note) =>
+      createNoteItemV2(note, thresholds, member)
     );
 
     const pagination: PaginationConfig | undefined =
@@ -371,14 +364,14 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
           }
         : undefined;
 
-    const renderResult = await QueueRenderer.render(thread, summary, items, pagination);
+    const renderResult = await QueueRendererV2.render(thread, summaryV2, itemsV2, pagination);
 
     await interaction.editReply({
       content: `Created notes queue in ${thread.toString()}`,
     });
 
     if (hasNotes) {
-      const allMessages = QueueRenderer.getAllMessages(renderResult);
+      const allMessages = QueueRendererV2.getAllMessages(renderResult);
     const collectors = allMessages.map((msg) =>
       msg.createMessageComponentCollector({
         componentType: ComponentType.Button,
@@ -684,14 +677,14 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
 
         queueManager.updateNotes(userId, guildId!, newNotesResponse.notes, newNotesResponse.total);
 
-        const newSummary = createSummaryEmbed(
+        const newSummaryV2 = createSummaryV2(
           currentPage,
           newNotesResponse.total,
           queueManager.getNotesPerPage()
         );
 
-        const newItems: QueueItem[] = newNotesResponse.notes.map((note) =>
-          createNoteItem(note, thresholds, guildId || undefined, member)
+        const newItemsV2: QueueItemV2[] = newNotesResponse.notes.map((note) =>
+          createNoteItemV2(note, thresholds, member)
         );
 
         const newTotalPages = Math.ceil(
@@ -708,16 +701,16 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
               }
             : undefined;
 
-        const updatedResult = await QueueRenderer.update(
+        const updatedResult = await QueueRendererV2.update(
           renderResult,
-          newSummary,
-          newItems,
+          newSummaryV2,
+          newItemsV2,
           newPagination
         );
 
         collectors.forEach((c) => c.stop());
 
-        const newMessages = QueueRenderer.getAllMessages(updatedResult);
+        const newMessages = QueueRendererV2.getAllMessages(updatedResult);
         const newCollectors = newMessages.map((msg) =>
           msg.createMessageComponentCollector({
             componentType: ComponentType.Button,
@@ -811,18 +804,18 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
           3600
         );
 
-        const ratedNotesSummary = createRatedNotesSummaryEmbed(
+        const ratedNotesSummaryV2 = createRatedNotesSummaryV2(
           ratedNotesPage,
           ratedNotesResponse.total,
           RATED_NOTES_PER_PAGE
         );
 
-        const ratedNotesItems: QueueItem[] = ratedNotesResponse.notes.map((note) => {
+        const ratedNotesItemsV2: QueueItemV2[] = ratedNotesResponse.notes.map((note) => {
           const userRatingRecord = note.ratings.find(
             (r) => String(r.rater_participant_id) === String(userId)
           );
           const isHelpful = userRatingRecord?.helpfulness_level === 'HELPFUL';
-          return createRatedNoteItem(note, isHelpful ?? false, thresholds);
+          return createRatedNoteItemV2(note, isHelpful ?? false, thresholds);
         });
 
         const ratedNotesTotalPages = Math.ceil(ratedNotesResponse.total / RATED_NOTES_PER_PAGE);
@@ -831,16 +824,16 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
             ? createRatedNotesPagination(ratedNotesPage, ratedNotesTotalPages, ratedNotesStateId)
             : undefined;
 
-        let ratedNotesRenderResult = await QueueRenderer.render(
+        let ratedNotesRenderResult = await QueueRendererV2.render(
           thread,
-          ratedNotesSummary,
-          ratedNotesItems,
+          ratedNotesSummaryV2,
+          ratedNotesItemsV2,
           ratedNotesPagination
         );
 
         // Set up collectors for rated notes pagination
         if (ratedNotesResponse.total > RATED_NOTES_PER_PAGE) {
-          const ratedNotesMessages = QueueRenderer.getAllMessages(ratedNotesRenderResult);
+          const ratedNotesMessages = QueueRendererV2.getAllMessages(ratedNotesRenderResult);
           let ratedNotesCollectors = ratedNotesMessages.map((msg) =>
             msg.createMessageComponentCollector({
               componentType: ComponentType.Button,
@@ -937,18 +930,18 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
                 3600
               );
 
-              const newRatedNotesSummary = createRatedNotesSummaryEmbed(
+              const newRatedNotesSummaryV2 = createRatedNotesSummaryV2(
                 newPage,
                 newRatedNotesResponse.total,
                 RATED_NOTES_PER_PAGE
               );
 
-              const newRatedNotesItems: QueueItem[] = newRatedNotesResponse.notes.map((note) => {
+              const newRatedNotesItemsV2: QueueItemV2[] = newRatedNotesResponse.notes.map((note) => {
                 const userRatingRecord = note.ratings.find(
                   (r) => String(r.rater_participant_id) === String(state.userId)
                 );
                 const isHelpful = userRatingRecord?.helpfulness_level === 'HELPFUL';
-                return createRatedNoteItem(note, isHelpful ?? false, thresholds);
+                return createRatedNoteItemV2(note, isHelpful ?? false, thresholds);
               });
 
               const newRatedNotesTotalPages = Math.ceil(
@@ -959,17 +952,17 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
                   ? createRatedNotesPagination(newPage, newRatedNotesTotalPages, stateId)
                   : undefined;
 
-              const updatedRatedNotesResult = await QueueRenderer.update(
+              const updatedRatedNotesResult = await QueueRendererV2.update(
                 ratedNotesRenderResult,
-                newRatedNotesSummary,
-                newRatedNotesItems,
+                newRatedNotesSummaryV2,
+                newRatedNotesItemsV2,
                 newRatedNotesPagination
               );
 
               // Stop old collectors and create new ones
               ratedNotesCollectors.forEach((c) => c.stop());
 
-              const newRatedNotesMessages = QueueRenderer.getAllMessages(updatedRatedNotesResult);
+              const newRatedNotesMessages = QueueRendererV2.getAllMessages(updatedRatedNotesResult);
               const newRatedNotesCollectors = newRatedNotesMessages.map((msg) =>
                 msg.createMessageComponentCollector({
                   componentType: ComponentType.Button,
@@ -1998,6 +1991,182 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
     } else {
       await interaction.reply({
         content: formatErrorForUser(errorId, 'Failed to create note.'),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+}
+
+export async function handleRequestReplyButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+  const userId = interaction.user.id;
+  const guildId = interaction.guildId;
+  const customId = interaction.customId;
+
+  try {
+    logger.info('Handling request reply button', {
+      error_id: errorId,
+      custom_id: customId,
+      user_id: userId,
+      community_server_id: guildId,
+    });
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    if (!(interaction.channel instanceof TextChannel || interaction.channel instanceof ThreadChannel)) {
+      await interaction.editReply({
+        content: 'This button can only be used in text channels or threads.',
+      });
+      return;
+    }
+
+    if (!guildId) {
+      await interaction.editReply({
+        content: 'This button can only be used in a server.',
+      });
+      return;
+    }
+
+    let communityServerUuid: string | undefined;
+    try {
+      const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+      communityServerUuid = communityServer.id;
+    } catch (error) {
+      logger.error('Failed to fetch community server UUID', {
+        error_id: errorId,
+        guild_id: guildId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (customId === 'request_reply:list_requests') {
+      const listRequestsService = serviceProvider.getListRequestsService();
+      const result = await listRequestsService.execute({
+        userId,
+        page: 1,
+        size: 5,
+        status: undefined,
+        myRequestsOnly: false,
+        communityServerId: communityServerUuid,
+      });
+
+      if (!result.success) {
+        const errorResponse = DiscordFormatter.formatError(result);
+        await interaction.editReply(errorResponse);
+        return;
+      }
+
+      if (!result.data) {
+        await interaction.editReply({
+          content: 'No data returned from the service.',
+        });
+        return;
+      }
+
+      const queueManager = getQueueManager();
+      const thread = await queueManager.getOrCreateOpenNotesThread(
+        interaction.user,
+        interaction.channel,
+        guildId,
+        [],
+        0
+      );
+
+      const formattedData = await DiscordFormatter.formatListRequestsSuccess(result.data, {
+        status: undefined,
+        myRequestsOnly: false,
+        communityServerId: communityServerUuid,
+      });
+
+      await QueueRenderer.render(
+        thread,
+        formattedData.summary,
+        formattedData.items,
+        formattedData.pagination
+      );
+
+      await interaction.editReply({
+        content: `Request queue posted to ${String(thread)}`,
+      });
+
+      logger.info('List requests from button completed successfully', {
+        error_id: errorId,
+        user_id: userId,
+        result_count: result.data.requests.length,
+        total: result.data.total,
+      });
+    } else if (customId === 'request_reply:list_notes') {
+      const [thresholds, notesResponse] = await Promise.all([
+        configCache.getRatingThresholds(),
+        apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, 10, communityServerUuid, userId),
+      ]);
+
+      const queueManager = getQueueManager();
+      const thread = await queueManager.getOrCreateOpenNotesThread(
+        interaction.user,
+        interaction.channel,
+        guildId,
+        notesResponse.notes,
+        notesResponse.total
+      );
+
+      const totalPages = Math.ceil(notesResponse.total / queueManager.getNotesPerPage());
+      const hasNotes = notesResponse.total > 0;
+
+      const summaryV2 = createSummaryV2(1, notesResponse.total, queueManager.getNotesPerPage());
+
+      const member = interaction.guild?.members.cache.get(userId) || null;
+
+      const itemsV2: QueueItemV2[] = notesResponse.notes.map((note) =>
+        createNoteItemV2(note, thresholds, member)
+      );
+
+      const pagination: PaginationConfig | undefined =
+        hasNotes && totalPages > 1
+          ? {
+              currentPage: 1,
+              totalPages,
+              previousButtonId: 'queue:previous',
+              nextButtonId: 'queue:next',
+            }
+          : undefined;
+
+      await QueueRendererV2.render(thread, summaryV2, itemsV2, pagination);
+
+      await interaction.editReply({
+        content: `Notes queue posted to ${String(thread)}`,
+      });
+
+      logger.info('List notes from button completed successfully', {
+        error_id: errorId,
+        user_id: userId,
+        total_notes: notesResponse.total,
+      });
+    } else {
+      await interaction.editReply({
+        content: 'Unknown button action.',
+      });
+    }
+  } catch (error) {
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Error handling request reply button', {
+      error_id: errorId,
+      custom_id: customId,
+      user_id: userId,
+      community_server_id: guildId,
+      error: errorDetails.message,
+      error_type: errorDetails.type,
+      stack: errorDetails.stack,
+    });
+
+    if (interaction.deferred) {
+      await interaction.editReply({
+        content: formatErrorForUser(errorId, 'Failed to process button click.'),
+      });
+    } else {
+      await interaction.reply({
+        content: formatErrorForUser(errorId, 'Failed to process button click.'),
         flags: MessageFlags.Ephemeral,
       });
     }

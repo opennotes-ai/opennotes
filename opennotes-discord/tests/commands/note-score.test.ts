@@ -12,8 +12,8 @@ const mockScoringService = {
 };
 
 const mockDiscordFormatter = {
-  formatNoteScore: jest.fn().mockReturnValue({ embeds: [] }),
-  formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatNoteScoreV2: jest.fn().mockReturnValue({ embeds: [] }),
+  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
 };
 
 const mockApiClient = {
@@ -85,8 +85,8 @@ describe('note-score command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
-    mockDiscordFormatter.formatNoteScore.mockReturnValue({ embeds: [] });
-    mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
+    mockDiscordFormatter.formatNoteScoreV2.mockReturnValue({ embeds: [] });
+    mockDiscordFormatter.formatErrorV2.mockReturnValue({ content: 'Error occurred' });
   });
 
   describe('successful execution', () => {

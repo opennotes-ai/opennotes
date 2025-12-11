@@ -179,10 +179,11 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
       expect(mockDiscordClient.getSentMessageCount()).toBe(1);
 
       const sentMessages = mockDiscordClient.getSentMessages();
-      expect(sentMessages[0].content).toContain('🤖');
-      expect(sentMessages[0].content).toContain(`${(TEST_SCORE_ABOVE_THRESHOLD * 100).toFixed(1)}%`);
-      expect(sentMessages[0].content).toContain('standard');
-      expect(sentMessages[0].content).toContain('This is a helpful community note');
+      const messageJson = JSON.stringify(sentMessages[0].components);
+      expect(sentMessages[0].components).toBeDefined();
+      expect(messageJson).toContain(`${(TEST_SCORE_ABOVE_THRESHOLD * 100).toFixed(1)}%`);
+      expect(messageJson).toContain('standard');
+      expect(messageJson).toContain('This is a helpful community note');
     }, 10000);
 
     it('should properly use message references for threaded replies', async () => {
@@ -212,7 +213,8 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
 
       expect(channel.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.any(String),
+          components: expect.any(Array),
+          flags: expect.any(Number),
           reply: {
             messageReference: event.original_message_id,
             failIfNotExists: false,

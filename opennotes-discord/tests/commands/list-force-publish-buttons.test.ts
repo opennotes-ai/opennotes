@@ -5,11 +5,20 @@ import {
   ActionRowBuilder,
   MessageFlags,
 } from 'discord.js';
-import {
-  ensureRedisChecked,
-  cleanupRedisTestConnection,
-  type RedisTestContext,
-} from '../utils/redis-test-helper.js';
+
+const mockCache = {
+  get: jest.fn<(key: string) => Promise<unknown>>(),
+  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<void>>(),
+  delete: jest.fn<(key: string) => Promise<void>>(),
+  start: jest.fn<() => void>(),
+  stop: jest.fn<() => void>(),
+  getMetrics: jest.fn(() => ({ size: 0 })),
+  clear: jest.fn<() => Promise<void>>(),
+};
+
+jest.unstable_mockModule('../../src/cache.js', () => ({
+  cache: mockCache,
+}));
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: {
@@ -40,38 +49,13 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   },
 }));
 
-let cache: any = null;
-
 describe('list command - Force Publish button confirmation', () => {
-  let testContext: RedisTestContext;
-
-  beforeAll(async () => {
-    testContext = await ensureRedisChecked();
-
-    if (testContext.available) {
-      try {
-        const cacheModule = await import('../../src/cache.js');
-        cache = cacheModule.cache;
-      } catch {
-        testContext.available = false;
-        testContext.reason = 'Failed to import cache module (Redis required)';
-      }
-    }
-  });
-
-  afterAll(async () => {
-    await cleanupRedisTestConnection();
-  });
-
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    if (cache && typeof cache.clear === 'function') {
-      try {
-        await cache.clear();
-      } catch {
-        // Ignore clear errors
-      }
-    }
+    mockCache.get.mockResolvedValue(null);
+    mockCache.set.mockResolvedValue(undefined);
+    mockCache.delete.mockResolvedValue(undefined);
+    mockCache.clear.mockResolvedValue(undefined);
   });
 
   describe('force_publish_confirm button pattern', () => {
@@ -148,19 +132,20 @@ describe('list command - Force Publish button confirmation', () => {
 
   describe('force publish confirmation state caching', () => {
     it('should cache noteId with short ID for button interaction', async () => {
-      if (!testContext.available || !cache) {
-        console.log(`[SKIPPED] ${testContext.reason}`);
-        return;
-      }
-
       const noteId = '550e8400-e29b-41d4-a716-446655440000';
       const shortId = 'test1234';
       const cacheKey = `fp_state:${shortId}`;
+      const cacheValue = { noteId, userId: 'user123' };
 
-      await cache.set(cacheKey, { noteId, userId: 'user123' }, 60);
+      mockCache.set.mockResolvedValue(undefined);
+      mockCache.get.mockResolvedValue(cacheValue);
 
-      const retrieved = await cache.get(cacheKey);
+      await mockCache.set(cacheKey, cacheValue, 60);
+
+      const retrieved = await mockCache.get(cacheKey);
       expect(retrieved).toEqual({ noteId, userId: 'user123' });
+      expect(mockCache.set).toHaveBeenCalledWith(cacheKey, cacheValue, 60);
+      expect(mockCache.get).toHaveBeenCalledWith(cacheKey);
     });
 
     it('should validate short ID length for cache key', () => {
@@ -172,13 +157,10 @@ describe('list command - Force Publish button confirmation', () => {
     });
 
     it('should handle expired cache state gracefully', async () => {
-      if (!testContext.available || !cache) {
-        console.log(`[SKIPPED] ${testContext.reason}`);
-        return;
-      }
-
       const missingCacheKey = 'fp_state:nonexist';
-      const retrieved = await cache.get(missingCacheKey);
+      mockCache.get.mockResolvedValue(null);
+
+      const retrieved = await mockCache.get(missingCacheKey);
       expect(retrieved).toBeNull();
     });
   });

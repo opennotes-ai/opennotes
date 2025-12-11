@@ -40,9 +40,9 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
-jest.unstable_mockModule('../../src/queue.js', () => ({
+jest.unstable_mockModule('../../src/private-thread.js', () => ({
   configCache: mockConfigCache,
-  getQueueManager: () => mockQueueManager,
+  getPrivateThreadManager: () => mockQueueManager,
 }));
 
 let execute: typeof import('../../src/commands/note.js').execute;

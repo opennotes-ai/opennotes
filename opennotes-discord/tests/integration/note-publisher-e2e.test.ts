@@ -168,25 +168,27 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      expect(mockApiClient.checkNoteDuplicate).toHaveBeenCalledWith('msg-e2e-test');
-      expect(mockApiClient.getLastNotePost).toHaveBeenCalledWith('channel-456');
+      expect(mockApiClient.checkNoteDuplicate).toHaveBeenCalledWith('msg-e2e-test', 'guild-123');
+      expect(mockApiClient.getLastNotePost).toHaveBeenCalledWith('channel-456', 'guild-123');
       expect(mockApiClient.getNote).toHaveBeenCalledWith('42');
 
       expect(mockDiscordClient.getSentMessageCount()).toBe(1);
       const sentMessages = mockDiscordClient.getSentMessages();
-      expect(sentMessages[0].content).toContain('🤖');
-      expect(sentMessages[0].content).toContain(`${(TEST_SCORE_ABOVE_THRESHOLD * 100).toFixed(1)}%`);
-      expect(sentMessages[0].content).toContain('standard');
-      expect(sentMessages[0].content).toContain(
+      const messageJson = JSON.stringify(sentMessages[0].components);
+      expect(sentMessages[0].components).toBeDefined();
+      expect(messageJson).toContain(`${(TEST_SCORE_ABOVE_THRESHOLD * 100).toFixed(1)}%`);
+      expect(messageJson).toContain('standard');
+      expect(messageJson).toContain(
         'This is an excellent community note providing valuable context'
       );
 
       expect(mockApiClient.recordNotePublisher).toHaveBeenCalledWith(
         expect.objectContaining({
-          noteId: 42,
+          noteId: '42',
           originalMessageId: 'msg-e2e-test',
           scoreAtPost: TEST_SCORE_ABOVE_THRESHOLD,
           channelId: 'channel-456',
+          guildId: 'guild-123',
         })
       );
     }, 15000);

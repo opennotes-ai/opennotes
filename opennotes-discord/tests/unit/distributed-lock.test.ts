@@ -33,7 +33,11 @@ describe('DistributedLock', () => {
     if (!testContext.available || !testContext.redis) return;
 
     redis = testContext.redis;
-    await redis.flushdb();
+    // Use key-based cleanup instead of flushdb() to avoid interfering with parallel tests
+    const lockKeys = await redis.keys('lock:*');
+    if (lockKeys.length > 0) {
+      await redis.del(...lockKeys);
+    }
     lock = new DistributedLock(redis);
   });
 

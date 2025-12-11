@@ -3,7 +3,6 @@ import {
   ApplicationCommandType,
   MessageContextMenuCommandInteraction,
   InteractionContextType,
-  MessageFlags,
 } from 'discord.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -11,6 +10,7 @@ import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { createNoteRequest } from './note.js';
 import { handleEphemeralError } from '../lib/interaction-utils.js';
+import { v2MessageFlags } from '../utils/v2-components.js';
 
 export const data = new ContextMenuCommandBuilder()
   .setName('Request Note')
@@ -42,7 +42,7 @@ export async function execute(interaction: MessageContextMenuCommandInteraction)
       ephemeral = await configService.get(guildId, ConfigKey.REQUEST_NOTE_EPHEMERAL) as boolean;
     }
 
-    await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral }) });
 
     // Validate that guildId exists (required for all requests)
     if (!guildId) {
@@ -68,7 +68,7 @@ export async function execute(interaction: MessageContextMenuCommandInteraction)
       if (ephemeral) {
         await interaction.editReply(result.response);
       } else {
-        await interaction.followUp({ ...result.response, flags: MessageFlags.Ephemeral });
+        await interaction.followUp(result.response);
         await interaction.deleteReply();
       }
       return;

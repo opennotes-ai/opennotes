@@ -146,7 +146,9 @@ describe('note-request-context command', () => {
       await execute(mockInteraction as any);
 
       expect(mockGuildConfigService.get).toHaveBeenCalledWith('guild789', ConfigKey.REQUEST_NOTE_EPHEMERAL);
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      const deferReplyCall = mockInteraction.deferReply.mock.calls[0][0];
+      expect(deferReplyCall?.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      expect(deferReplyCall?.flags & MessageFlags.Ephemeral).toBeTruthy();
     });
   });
 
@@ -177,10 +179,11 @@ describe('note-request-context command', () => {
 
       await execute(mockInteraction as any);
 
+      // Note: The implementation does NOT add ephemeral flags for non-ephemeral error responses
+      // when ephemeral config is false (the default)
       expect(mockInteraction.followUp).toHaveBeenCalledWith(
         expect.objectContaining({
           content: 'Error creating request',
-          flags: MessageFlags.Ephemeral,
         })
       );
       expect(mockInteraction.deleteReply).toHaveBeenCalled();

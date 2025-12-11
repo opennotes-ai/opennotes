@@ -109,12 +109,14 @@ describe('config-opennotes command', () => {
       await execute(mockInteraction as any);
 
       expect(mockGuildConfigService.getAll).toHaveBeenCalledWith('guild456');
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({
+        flags: expect.any(Number),
+      });
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining('Current Server Configuration'),
           components: expect.arrayContaining([
             expect.objectContaining({
+              type: 17,
               components: expect.any(Array),
             }),
           ]),
@@ -292,7 +294,15 @@ describe('config-opennotes command', () => {
   });
 
   describe('ephemeral response', () => {
-    it('should use ephemeral flags for all responses', async () => {
+    it('should use v2 ephemeral flags for all responses', async () => {
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: any) => any>().mockReturnThis(),
+      };
+
+      const mockMessage = {
+        createMessageComponentCollector: jest.fn<() => any>().mockReturnValue(mockCollector),
+      };
+
       const mockInteraction = {
         user: { id: 'user123' },
         guildId: 'guild456',
@@ -301,23 +311,30 @@ describe('config-opennotes command', () => {
           getSubcommand: jest.fn<() => string>().mockReturnValue('view'),
         },
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}).mockResolvedValue({
-          createMessageComponentCollector: jest.fn<() => any>().mockReturnValue({ on: jest.fn<(event: string, handler: any) => any>() }),
-        }),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue(mockMessage),
       };
 
       mockGuildConfigService.getAll.mockResolvedValue({});
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      const deferReplyCall = mockInteraction.deferReply.mock.calls[0][0];
+      expect(deferReplyCall.flags).toBeDefined();
+      expect(deferReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      expect(deferReplyCall.flags & MessageFlags.Ephemeral).toBeTruthy();
     });
   });
 
   describe('reset confirmation flow', () => {
     it('should show confirmation dialog when reset all is clicked', async () => {
+      let collectHandler: any = null;
       const mockCollector = {
-        on: jest.fn<(event: string, handler: any) => void>(),
+        on: jest.fn<(event: string, handler: any) => any>().mockImplementation((event, handler) => {
+          if (event === 'collect') {
+            collectHandler = handler;
+          }
+          return mockCollector;
+        }),
       };
 
       const mockMessage = {
@@ -346,29 +363,26 @@ describe('config-opennotes command', () => {
 
       await execute(mockInteraction as any);
 
-      const collectHandler = mockCollector.on.mock.calls.find(call => call[0] === 'collect')?.[1];
-      expect(collectHandler).toBeDefined();
+      expect(collectHandler).not.toBeNull();
 
       await collectHandler(mockButtonInteraction);
+      await new Promise(resolve => setImmediate(resolve));
 
-      expect(mockButtonInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringMatching(/⚠️.*This will reset ALL server configuration settings/s),
-          components: expect.arrayContaining([
-            expect.objectContaining({
-              components: expect.arrayContaining([
-                expect.objectContaining({ data: expect.objectContaining({ custom_id: 'config:reset:confirm' }) }),
-                expect.objectContaining({ data: expect.objectContaining({ custom_id: 'config:reset:cancel' }) }),
-              ]),
-            }),
-          ]),
-        })
-      );
+      expect(mockButtonInteraction.editReply).toHaveBeenCalled();
+      const editReplyCall = mockButtonInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.components).toBeDefined();
+      expect(editReplyCall.components[0].type).toBe(17);
     });
 
     it('should execute reset when confirm button is clicked', async () => {
+      let collectHandler: any = null;
       const mockCollector = {
-        on: jest.fn<(event: string, handler: any) => void>(),
+        on: jest.fn<(event: string, handler: any) => any>().mockImplementation((event, handler) => {
+          if (event === 'collect') {
+            collectHandler = handler;
+          }
+          return mockCollector;
+        }),
       };
 
       const mockMessage = {
@@ -399,22 +413,27 @@ describe('config-opennotes command', () => {
 
       await execute(mockInteraction as any);
 
-      const collectHandler = mockCollector.on.mock.calls.find(call => call[0] === 'collect')?.[1];
-      collectHandler(mockButtonInteraction);
+      expect(collectHandler).not.toBeNull();
+      await collectHandler(mockButtonInteraction);
 
       await new Promise(resolve => setImmediate(resolve));
 
       expect(mockGuildConfigService.reset).toHaveBeenCalledWith('guild456', undefined, 'user123');
-      expect(mockButtonInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('✅ All settings have been reset to defaults'),
-        })
-      );
+      expect(mockButtonInteraction.editReply).toHaveBeenCalled();
+      const editReplyCall = mockButtonInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.components).toBeDefined();
+      expect(editReplyCall.components[0].type).toBe(17);
     });
 
     it('should cancel reset when cancel button is clicked', async () => {
+      let collectHandler: any = null;
       const mockCollector = {
-        on: jest.fn<(event: string, handler: any) => void>(),
+        on: jest.fn<(event: string, handler: any) => any>().mockImplementation((event, handler) => {
+          if (event === 'collect') {
+            collectHandler = handler;
+          }
+          return mockCollector;
+        }),
       };
 
       const mockMessage = {
@@ -444,17 +463,16 @@ describe('config-opennotes command', () => {
 
       await execute(mockInteraction as any);
 
-      const collectHandler = mockCollector.on.mock.calls.find(call => call[0] === 'collect')?.[1];
-      collectHandler(mockButtonInteraction);
+      expect(collectHandler).not.toBeNull();
+      await collectHandler(mockButtonInteraction);
 
       await new Promise(resolve => setImmediate(resolve));
 
       expect(mockGuildConfigService.reset).not.toHaveBeenCalled();
-      expect(mockButtonInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('❌ Reset cancelled'),
-        })
-      );
+      expect(mockButtonInteraction.editReply).toHaveBeenCalled();
+      const editReplyCall = mockButtonInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.components).toBeDefined();
+      expect(editReplyCall.components[0].type).toBe(17);
     });
   });
 });

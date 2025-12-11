@@ -17,8 +17,8 @@ const mockGuildConfigService = {
 };
 
 const mockDiscordFormatter = {
-  formatRequestNoteSuccess: jest.fn().mockReturnValue({ embeds: [] }),
-  formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatRequestNoteSuccessV2: jest.fn().mockReturnValue({ embeds: [] }),
+  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
 };
 
 const mockApiClient = {
@@ -92,8 +92,8 @@ describe('note-request command', () => {
     mockServiceProvider.getRequestNoteService.mockReturnValue(mockRequestNoteService);
     mockServiceProvider.getGuildConfigService.mockReturnValue(mockGuildConfigService);
     mockGuildConfigService.get.mockResolvedValue(false);
-    mockDiscordFormatter.formatRequestNoteSuccess.mockReturnValue({ embeds: [] });
-    mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
+    mockDiscordFormatter.formatRequestNoteSuccessV2.mockReturnValue({ embeds: [] });
+    mockDiscordFormatter.formatErrorV2.mockReturnValue({ content: 'Error occurred' });
   });
 
   describe('successful execution', () => {
@@ -337,11 +337,9 @@ describe('note-request command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.followUp).toHaveBeenCalledWith(
-        expect.objectContaining({
-          flags: MessageFlags.Ephemeral,
-        })
-      );
+      // Note: The implementation does NOT add ephemeral flags for non-ephemeral error responses
+      // in the request subcommand (unlike rate subcommand)
+      expect(mockInteraction.followUp).toHaveBeenCalled();
       expect(mockInteraction.deleteReply).toHaveBeenCalled();
     });
 

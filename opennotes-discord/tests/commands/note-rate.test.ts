@@ -17,8 +17,8 @@ const mockGuildConfigService = {
 };
 
 const mockDiscordFormatter = {
-  formatRateNoteSuccess: jest.fn().mockReturnValue({ embeds: [] }),
-  formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatRateNoteSuccessV2: jest.fn().mockReturnValue({ embeds: [] }),
+  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
 };
 
 const mockApiClient = {
@@ -93,8 +93,8 @@ describe('note-rate command', () => {
     mockServiceProvider.getRateNoteService.mockReturnValue(mockRateNoteService);
     mockServiceProvider.getGuildConfigService.mockReturnValue(mockGuildConfigService);
     mockGuildConfigService.get.mockResolvedValue(false);
-    mockDiscordFormatter.formatRateNoteSuccess.mockReturnValue({ embeds: [] });
-    mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
+    mockDiscordFormatter.formatRateNoteSuccessV2.mockReturnValue({ embeds: [] });
+    mockDiscordFormatter.formatErrorV2.mockReturnValue({ content: 'Error occurred' });
   });
 
   describe('successful rating', () => {

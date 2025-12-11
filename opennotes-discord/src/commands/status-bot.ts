@@ -1,12 +1,12 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
-  MessageFlags,
 } from 'discord.js';
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
 import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
+import { v2MessageFlags } from '../utils/v2-components.js';
 
 export const data = new SlashCommandBuilder()
   .setName('status-bot')
@@ -25,7 +25,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       community_server_id: guildId,
     });
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     const guilds = interaction.client.guilds.cache.size;
     const statusService = serviceProvider.getStatusService();
@@ -41,18 +41,19 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
     const scoringResult = await scoringService.getScoringStatus();
 
-    const response = DiscordFormatter.formatStatusSuccess(result.data!);
+    const response = DiscordFormatter.formatStatusSuccessV2(result.data!);
 
     if (scoringResult.success && scoringResult.data) {
-      const scoringStatus = DiscordFormatter.formatScoringStatus(scoringResult.data);
-      response.embeds[0].addFields({
-        name: 'Scoring System',
-        value: scoringStatus,
-        inline: false,
-      });
+      const scoringV2 = DiscordFormatter.formatScoringStatusV2(scoringResult.data);
+      response.container
+        .addSeparatorComponents(scoringV2.separator)
+        .addTextDisplayComponents(scoringV2.textDisplay);
     }
 
-    await interaction.editReply(response);
+    await interaction.editReply({
+      components: [response.container.toJSON()],
+      flags: response.flags,
+    });
 
     logger.info('Status command completed successfully', {
       error_id: errorId,

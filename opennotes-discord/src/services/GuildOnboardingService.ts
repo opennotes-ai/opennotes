@@ -1,6 +1,14 @@
 import { ApiClient } from '../lib/api-client.js';
 import { logger } from '../logger.js';
-import { Guild, User, EmbedBuilder } from 'discord.js';
+import { Guild, User, ContainerBuilder, TextDisplayBuilder } from 'discord.js';
+import {
+  V2_COLORS,
+  createContainer,
+  createTextSection,
+  createSmallSeparator,
+  createDivider,
+  v2MessageFlags,
+} from '../utils/v2-components.js';
 
 export class GuildOnboardingService {
   constructor(private apiClient: ApiClient) {}
@@ -61,9 +69,12 @@ export class GuildOnboardingService {
         return;
       }
 
-      const embed = this.createNotificationEmbed(guild);
+      const container = this.createNotificationContainer(guild);
 
-      await owner.send({ embeds: [embed] });
+      await owner.send({
+        components: [container],
+        flags: v2MessageFlags(),
+      });
 
       logger.info('Successfully sent OpenAI API key notification to owner', {
         guildId: guild.id,
@@ -98,47 +109,51 @@ export class GuildOnboardingService {
     }
   }
 
-  private createNotificationEmbed(guild: Guild): EmbedBuilder {
-    return new EmbedBuilder()
-      .setColor(0x5865F2)
-      .setTitle('Welcome to OpenNotes!')
-      .setDescription(
-        `Thanks for adding Open Notes to **${guild.name}**!\n\n` +
-        `To enable all features, you'll need to configure an OpenAI API key.`
+  private createNotificationContainer(guild: Guild): ContainerBuilder {
+    return createContainer(V2_COLORS.PRIMARY)
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `## Welcome to OpenNotes!\n\n` +
+          `Thanks for adding Open Notes to **${guild.name}**!\n\n` +
+          `To enable all features, you'll need to configure an OpenAI API key.`
+        )
       )
-      .addFields(
-        {
-          name: 'Features that require OpenAI API',
-          value:
-            '• **Automatic fact-checking** - Similarity search against verified claims\n' +
-            '• **AI-assisted note writing** - Smart suggestions when writing community notes\n' +
-            '• **Embedding generation** - Semantic search for duplicate detection',
-          inline: false,
-        },
-        {
-          name: 'How to add your API key',
-          value:
-            '1. Get an API key from [OpenAI Platform](https://platform.openai.com/api-keys)\n' +
-            '2. Use `/config-opennotes` in your server to configure settings\n' +
-            '3. Select "OpenAI API Key" and paste your key\n\n' +
-            '*Your API key is encrypted and never shared with other servers.*',
-          inline: false,
-        },
-        {
-          name: 'What works without an API key?',
-          value:
-            'You can still use these features:\n' +
-            '• Request community notes on messages\n' +
-            '• Write notes manually\n' +
-            '• Rate notes for helpfulness\n' +
-            '• View note scores and statistics',
-          inline: false,
-        }
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        createTextSection(
+          `**Features that require OpenAI API**\n\n` +
+          `- **Automatic fact-checking** - Similarity search against verified claims\n` +
+          `- **AI-assisted note writing** - Smart suggestions when writing community notes\n` +
+          `- **Embedding generation** - Semantic search for duplicate detection`
+        )
       )
-      .setFooter({
-        text: 'You can disable this notification in server settings',
-      })
-      .setTimestamp();
+      .addSeparatorComponents(createDivider())
+      .addTextDisplayComponents(
+        createTextSection(
+          `**How to add your API key**\n\n` +
+          `1. Get an API key from [OpenAI Platform](https://platform.openai.com/api-keys)\n` +
+          `2. Use \`/config-opennotes\` in your server to configure settings\n` +
+          `3. Select "OpenAI API Key" and paste your key\n\n` +
+          `*Your API key is encrypted and never shared with other servers.*`
+        )
+      )
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        createTextSection(
+          `**What works without an API key?**\n\n` +
+          `You can still use these features:\n` +
+          `- Request community notes on messages\n` +
+          `- Write notes manually\n` +
+          `- Rate notes for helpfulness\n` +
+          `- View note scores and statistics`
+        )
+      )
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `-# You can disable this notification in server settings`
+        )
+      );
   }
 
   private isDMsDisabledError(error: unknown): boolean {

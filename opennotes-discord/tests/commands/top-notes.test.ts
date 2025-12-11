@@ -87,13 +87,14 @@ jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
   DiscordFormatter: mockDiscordFormatter,
 }));
 
-jest.unstable_mockModule('../../src/queue.js', () => ({
-  getQueueManager: () => mockQueueManager,
+jest.unstable_mockModule('../../src/private-thread.js', () => ({
+  getPrivateThreadManager: () => mockQueueManager,
   configCache: mockCache,
 }));
 
 jest.unstable_mockModule('../../src/lib/queue-renderer.js', () => ({
   QueueRenderer: mockQueueRenderer,
+  QueueRendererV2: mockQueueRenderer,
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({

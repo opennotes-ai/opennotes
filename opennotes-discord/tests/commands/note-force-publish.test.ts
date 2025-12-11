@@ -9,6 +9,19 @@ const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),
 };
 
+const mockCache = {
+  get: jest.fn<(key: string) => unknown>(),
+  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
+  delete: jest.fn<(key: string) => void>(),
+  start: jest.fn<() => void>(),
+  stop: jest.fn<() => void>(),
+  getMetrics: jest.fn(() => ({ size: 0 })),
+};
+
+jest.unstable_mockModule('../../src/cache.js', () => ({
+  cache: mockCache,
+}));
+
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
@@ -49,6 +62,46 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   }),
   formatErrorForUser: (errorId: string, message: string) => `${message} (Error ID: ${errorId})`,
   ApiError: MockApiError,
+}));
+
+const mockServiceProvider = {
+  getRateNoteService: jest.fn<() => any>(),
+  getGuildConfigService: jest.fn<() => any>(),
+  getStatusService: jest.fn<() => any>(),
+  getWriteNoteService: jest.fn<() => any>(),
+  getViewNotesService: jest.fn<() => any>(),
+  getRequestNoteService: jest.fn<() => any>(),
+  getScoringService: jest.fn<() => any>(),
+  getListRequestsService: jest.fn<() => any>(),
+};
+
+jest.unstable_mockModule('../../src/services/index.js', () => ({
+  serviceProvider: mockServiceProvider,
+}));
+
+const mockModalSubmissionRateLimiter = {
+  checkAndRecord: jest.fn<(userId: string) => boolean>().mockReturnValue(false),
+  isRateLimited: jest.fn<(userId: string) => boolean>().mockReturnValue(false),
+  recordInteraction: jest.fn<(userId: string) => void>(),
+  destroy: jest.fn<() => void>(),
+};
+
+const mockButtonInteractionRateLimiter = {
+  checkAndRecord: jest.fn<(userId: string) => boolean>().mockReturnValue(false),
+  isRateLimited: jest.fn<(userId: string) => boolean>().mockReturnValue(false),
+  recordInteraction: jest.fn<(userId: string) => void>(),
+  destroy: jest.fn<() => void>(),
+};
+
+jest.unstable_mockModule('../../src/lib/interaction-rate-limiter.js', () => ({
+  modalSubmissionRateLimiter: mockModalSubmissionRateLimiter,
+  buttonInteractionRateLimiter: mockButtonInteractionRateLimiter,
+  InteractionRateLimiter: jest.fn().mockImplementation(() => ({
+    checkAndRecord: jest.fn().mockReturnValue(false),
+    isRateLimited: jest.fn().mockReturnValue(false),
+    recordInteraction: jest.fn(),
+    destroy: jest.fn(),
+  })),
 }));
 
 const { execute } = await import('../../src/commands/note.js');

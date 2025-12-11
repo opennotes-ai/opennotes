@@ -2,13 +2,15 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   MessageFlags,
-  EmbedBuilder,
   InteractionContextType,
   ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ComponentType,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SectionBuilder,
 } from 'discord.js';
 import { apiClient } from '../api-client.js';
 import { GuildConfigService } from '../services/GuildConfigService.js';
@@ -21,6 +23,7 @@ import { TIMEOUTS } from '../lib/constants.js';
 import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { config } from '../config.js';
+import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator } from '../utils/v2-components.js';
 
 const configService = new GuildConfigService(apiClient);
 const guildSetupService = new GuildSetupService();
@@ -261,7 +264,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       community_server_id: guildId,
     });
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
 
     if (!guildId) {
       await interaction.editReply({
@@ -361,19 +364,27 @@ async function handleAdminSet(
       avatar_url: user.displayAvatarURL({ size: 256 }),
     });
 
-    const embed = new EmbedBuilder()
-      .setColor(0x00ff00)
-      .setTitle('Admin Added')
-      .setDescription(`Successfully added ${user.tag} as an Open Notes admin for this server.`)
-      .addFields(
-        { name: 'User', value: `<@${user.id}>`, inline: true },
-        { name: 'Discord ID', value: user.id, inline: true },
-        { name: 'Role', value: adminResponse.community_role || 'admin', inline: true }
+    const container = new ContainerBuilder()
+      .setAccentColor(V2_COLORS.HELPFUL)
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('## Admin Added')
       )
-      .setTimestamp();
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `Successfully added ${user.tag} as an Open Notes admin for this server.`
+        )
+      )
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**User:** <@${user.id}>\n**Discord ID:** ${user.id}\n**Role:** ${adminResponse.community_role || 'admin'}`
+        )
+      );
 
     await interaction.editReply({
-      embeds: [embed],
+      components: [container.toJSON()],
+      flags: v2MessageFlags({ ephemeral: true }),
     });
 
     logger.info('Community admin added', {
@@ -416,18 +427,25 @@ async function handleAdminRemove(
   try {
     const removeResponse = await apiClient.removeCommunityAdmin(guildId, user.id);
 
-    const embed = new EmbedBuilder()
-      .setColor(0xff9900)
-      .setTitle('Admin Removed')
-      .setDescription(removeResponse.message)
-      .addFields(
-        { name: 'User', value: `<@${user.id}>`, inline: true },
-        { name: 'Discord ID', value: user.id, inline: true }
+    const container = new ContainerBuilder()
+      .setAccentColor(V2_COLORS.HIGH)
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('## Admin Removed')
       )
-      .setTimestamp();
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(removeResponse.message)
+      )
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**User:** <@${user.id}>\n**Discord ID:** ${user.id}`
+        )
+      );
 
     await interaction.editReply({
-      embeds: [embed],
+      components: [container.toJSON()],
+      flags: v2MessageFlags({ ephemeral: true }),
     });
 
     logger.info('Community admin removed', {
@@ -475,11 +493,15 @@ async function handleAdminList(
       return;
     }
 
-    const embed = new EmbedBuilder()
-      .setColor(0x0099ff)
-      .setTitle(`Open Notes Admins (${admins.length})`)
-      .setDescription('Users with admin privileges for this server')
-      .setTimestamp();
+    const container = new ContainerBuilder()
+      .setAccentColor(V2_COLORS.INFO)
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`## Open Notes Admins (${admins.length})`)
+      )
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('Users with admin privileges for this server')
+      )
+      .addSeparatorComponents(createDivider());
 
     for (const admin of admins) {
       const adminSources = admin.admin_sources.map((source: string): string => {
@@ -495,15 +517,17 @@ async function handleAdminList(
         }
       }).join(', ');
 
-      embed.addFields({
-        name: admin.display_name,
-        value: `<@${admin.discord_id}>\n**Sources:** ${adminSources}\n**Role:** ${admin.community_role || 'member'}`,
-        inline: false,
-      });
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `**${admin.display_name}**\n<@${admin.discord_id}>\n**Sources:** ${adminSources}\n**Role:** ${admin.community_role || 'member'}`
+        )
+      );
+      container.addSeparatorComponents(createSmallSeparator());
     }
 
     await interaction.editReply({
-      embeds: [embed],
+      components: [container.toJSON()],
+      flags: v2MessageFlags({ ephemeral: true }),
     });
 
     logger.info('Community admins listed', {
@@ -690,63 +714,130 @@ async function handleOpennotesView(
     ConfigKey.NOTIFY_REQUEST_FULFILLED,
   ];
 
-  const buildConfigDisplay = (cfg: Record<string, unknown>): string[] => {
-    const displayLines: string[] = [
-      '**⚙️ Current Server Configuration**\n',
-      '**Command Visibility:**',
-    ];
-
-    const formatSetting = (key: ConfigKey): string => {
-      const schema = CONFIG_SCHEMA[key];
-      const value = cfg[key];
-      const isDefault = value === schema.default;
-      const valueDisplay = isDefault ? `\`${String(value)}\` (default)` : `**\`${String(value)}\`**`;
-      return `  • ${schema.description}: ${valueDisplay}`;
-    };
-
-    visibilityKeys.forEach(key => displayLines.push(formatSetting(key)));
-    displayLines.push('\n**Feature Toggles:**');
-    featureKeys.forEach(key => displayLines.push(formatSetting(key)));
-    displayLines.push('\n**Rate Limits:**');
-    rateLimitKeys.forEach(key => displayLines.push(formatSetting(key)));
-    displayLines.push('\n**Notifications:**');
-    notificationKeys.forEach(key => displayLines.push(formatSetting(key)));
-    displayLines.push('\n**💡 Tip:** Use the buttons below for quick actions, or `/config opennotes set` to change specific settings.');
-
-    return displayLines;
+  const formatSetting = (cfg: Record<string, unknown>, key: ConfigKey): string => {
+    const schema = CONFIG_SCHEMA[key];
+    const value = cfg[key];
+    const isDefault = value === schema.default;
+    const valueDisplay = isDefault ? `\`${String(value)}\` (default)` : `**\`${String(value)}\`**`;
+    return `${schema.description}: ${valueDisplay}`;
   };
 
-  const lines = buildConfigDisplay(currentConfig);
+  const buildConfigContainer = (cfg: Record<string, unknown>, statusMessage?: string): ContainerBuilder => {
+    const container = new ContainerBuilder()
+      .setAccentColor(V2_COLORS.PRIMARY)
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('## Server Configuration')
+      )
+      .addSeparatorComponents(createDivider());
 
-  const quickActionsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId('config:toggle:request_note_ephemeral')
-      .setLabel('Toggle Request Privacy')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('config:toggle:write_note_ephemeral')
-      .setLabel('Toggle Write Privacy')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('config:toggle:rate_note_ephemeral')
-      .setLabel('Toggle Rate Privacy')
-      .setStyle(ButtonStyle.Secondary)
-  );
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('### Command Visibility')
+    );
+    for (const key of visibilityKeys) {
+      const toggleButton = new ButtonBuilder()
+        .setCustomId(`config:toggle:${key}`)
+        .setLabel(cfg[key] ? 'Disable' : 'Enable')
+        .setStyle(ButtonStyle.Secondary);
 
-  const resetRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId('config:reset:all')
-      .setLabel('Reset All Settings')
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId('config:refresh')
-      .setLabel('🔄 Refresh')
-      .setStyle(ButtonStyle.Primary)
-  );
+      container.addSectionComponents(
+        new SectionBuilder()
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(formatSetting(cfg, key))
+          )
+          .setButtonAccessory(toggleButton)
+      );
+    }
+
+    container.addSeparatorComponents(createDivider());
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('### Feature Toggles')
+    );
+    for (const key of featureKeys) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+      );
+    }
+
+    container.addSeparatorComponents(createDivider());
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('### Rate Limits')
+    );
+    for (const key of rateLimitKeys) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+      );
+    }
+
+    container.addSeparatorComponents(createDivider());
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('### Notifications')
+    );
+    for (const key of notificationKeys) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+      );
+    }
+
+    container.addSeparatorComponents(createDivider());
+
+    let tipMessage = 'Use `/config opennotes set` to change specific settings.';
+    if (statusMessage) {
+      tipMessage = statusMessage + '\n\n' + tipMessage;
+    }
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(tipMessage)
+    );
+
+    container.addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('config:reset:all')
+          .setLabel('Reset All Settings')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('config:refresh')
+          .setLabel('Refresh')
+          .setStyle(ButtonStyle.Primary)
+      )
+    );
+
+    return container;
+  };
+
+  const buildConfirmationContainer = (): ContainerBuilder => {
+    const container = new ContainerBuilder()
+      .setAccentColor(V2_COLORS.CRITICAL)
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('## Reset Configuration')
+      )
+      .addSeparatorComponents(createSmallSeparator())
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          '**Warning:** This will reset ALL server configuration settings to their defaults.\n\nThis action cannot be undone. Are you sure you want to continue?'
+        )
+      )
+      .addSeparatorComponents(createDivider())
+      .addActionRowComponents(
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId('config:reset:confirm')
+            .setLabel('Confirm Reset All')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId('config:reset:cancel')
+            .setLabel('Cancel')
+            .setStyle(ButtonStyle.Secondary)
+        )
+      );
+
+    return container;
+  };
+
+  const configContainer = buildConfigContainer(currentConfig);
 
   const message = await interaction.editReply({
-    content: lines.join('\n'),
-    components: [quickActionsRow, resetRow],
+    components: [configContainer.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
   });
 
   const collector = message.createMessageComponentCollector({
@@ -765,7 +856,7 @@ async function handleOpennotesView(
           command: 'config',
         });
         await buttonInteraction.reply({
-          content: '❌ Only the user who ran the command can use these buttons.',
+          content: 'Only the user who ran the command can use these buttons.',
           flags: MessageFlags.Ephemeral,
         });
         return;
@@ -773,7 +864,7 @@ async function handleOpennotesView(
 
       if (buttonInteractionRateLimiter.checkAndRecord(buttonInteraction.user.id)) {
         await buttonInteraction.reply({
-          content: '⏱️ Please wait a moment before clicking again.',
+          content: 'Please wait a moment before clicking again.',
           flags: MessageFlags.Ephemeral,
         });
         return;
@@ -801,10 +892,10 @@ async function handleOpennotesView(
         if (action === 'config') {
           if (type === 'refresh') {
             const freshConfig = await configService.getAll(guildId);
-            const refreshedLines = buildConfigDisplay(freshConfig);
+            const refreshedContainer = buildConfigContainer(freshConfig);
             await buttonInteraction.editReply({
-              content: refreshedLines.join('\n'),
-              components: [quickActionsRow, resetRow],
+              components: [refreshedContainer.toJSON()],
+              flags: v2MessageFlags({ ephemeral: true }),
             });
           } else if (type === 'toggle' && key) {
             const currentValue = await configService.get(guildId, key as ConfigKey);
@@ -812,46 +903,37 @@ async function handleOpennotesView(
             await configService.set(guildId, key as ConfigKey, newValue, buttonInteraction.user.id);
 
             const updatedConfig = await configService.getAll(guildId);
-            const updatedLines = buildConfigDisplay(updatedConfig);
+            const statusMsg = `Toggled **${CONFIG_SCHEMA[key as ConfigKey].description}** to **\`${newValue}\`**`;
+            const updatedContainer = buildConfigContainer(updatedConfig, statusMsg);
             await buttonInteraction.editReply({
-              content: updatedLines.join('\n') + `\n\n✅ Toggled **${CONFIG_SCHEMA[key as ConfigKey].description}** to **\`${newValue}\`**`,
-              components: [quickActionsRow, resetRow],
+              components: [updatedContainer.toJSON()],
+              flags: v2MessageFlags({ ephemeral: true }),
             });
 
             logger.info('Config toggled via button', { guildId, key, newValue, userId: buttonInteraction.user.id });
           } else if (type === 'reset' && key === 'all') {
-            const confirmationRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-              new ButtonBuilder()
-                .setCustomId('config:reset:confirm')
-                .setLabel('⚠️ Confirm Reset All')
-                .setStyle(ButtonStyle.Danger),
-              new ButtonBuilder()
-                .setCustomId('config:reset:cancel')
-                .setLabel('Cancel')
-                .setStyle(ButtonStyle.Secondary)
-            );
-
+            const confirmContainer = buildConfirmationContainer();
             await buttonInteraction.editReply({
-              content: '⚠️ **Warning: This will reset ALL server configuration settings to their defaults.**\n\nThis action cannot be undone. Are you sure you want to continue?',
-              components: [confirmationRow],
+              components: [confirmContainer.toJSON()],
+              flags: v2MessageFlags({ ephemeral: true }),
             });
           } else if (type === 'reset' && key === 'confirm') {
             await configService.reset(guildId, undefined, buttonInteraction.user.id);
 
             const resetConfig = await configService.getAll(guildId);
-            const resetLines = buildConfigDisplay(resetConfig);
+            const resetContainer = buildConfigContainer(resetConfig, 'All settings have been reset to defaults.');
             await buttonInteraction.editReply({
-              content: resetLines.join('\n') + '\n\n✅ All settings have been reset to defaults.',
-              components: [quickActionsRow, resetRow],
+              components: [resetContainer.toJSON()],
+              flags: v2MessageFlags({ ephemeral: true }),
             });
 
             logger.info('All config reset via button', { guildId, userId: buttonInteraction.user.id });
           } else if (type === 'reset' && key === 'cancel') {
             const cancelConfig = await configService.getAll(guildId);
-            const configLines = buildConfigDisplay(cancelConfig);
+            const cancelContainer = buildConfigContainer(cancelConfig, 'Reset cancelled.');
             await buttonInteraction.editReply({
-              content: configLines.join('\n') + '\n\n❌ Reset cancelled.',
-              components: [quickActionsRow, resetRow],
+              components: [cancelContainer.toJSON()],
+              flags: v2MessageFlags({ ephemeral: true }),
             });
           }
         }
@@ -878,7 +960,6 @@ async function handleOpennotesView(
     interaction.editReply({
       components: [],
     }).catch(() => {
-      // Ignore errors if message was deleted
     });
   });
 }
@@ -1091,17 +1172,24 @@ async function handleContentMonitorEnableAll(
 
   await guildSetupService.autoRegisterChannels(guild);
 
-  const embed = new EmbedBuilder()
-    .setColor(0x00ff00)
-    .setTitle('Content Monitoring Setup Complete')
-    .setDescription(
-      'All text channels have been registered for content monitoring.\n\n' +
-      'Channels that were already monitored were skipped. ' +
-      'New channels will now be monitored for messages that may need Community Notes.'
+  const container = new ContainerBuilder()
+    .setAccentColor(V2_COLORS.HELPFUL)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('## Content Monitoring Setup Complete')
     )
-    .setTimestamp();
+    .addSeparatorComponents(createSmallSeparator())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        'All text channels have been registered for content monitoring.\n\n' +
+        'Channels that were already monitored were skipped. ' +
+        'New channels will now be monitored for messages that may need Community Notes.'
+      )
+    );
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({
+    components: [container.toJSON()],
+    flags: v2MessageFlags({ ephemeral: true }),
+  });
 
   logger.info('Content monitoring enabled for all channels', {
     error_id: errorId,

@@ -64,7 +64,8 @@ describe('config-llm command', () => {
         api_key: 'sk-test1234567890abcdef',
         enabled: true,
       });
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      const v2EphemeralFlags = MessageFlags.Ephemeral | MessageFlags.IsComponentsV2;
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2EphemeralFlags });
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining('OpenAI API Key Configured Successfully'),
@@ -599,7 +600,8 @@ describe('config-llm command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      const v2EphemeralFlags = MessageFlags.Ephemeral | MessageFlags.IsComponentsV2;
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2EphemeralFlags });
     });
   });
 

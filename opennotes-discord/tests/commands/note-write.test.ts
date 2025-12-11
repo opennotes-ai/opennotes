@@ -18,8 +18,8 @@ const mockServiceProvider = {
 };
 
 class MockDiscordFormatter {
-  static formatWriteNoteSuccess = jest.fn();
-  static formatError = jest.fn<(...args: any[]) => any>();
+  static formatWriteNoteSuccessV2 = jest.fn();
+  static formatErrorV2 = jest.fn<(...args: any[]) => any>();
 }
 
 const mockDiscordFormatter = MockDiscordFormatter;
@@ -98,8 +98,8 @@ describe('note-write command', () => {
     jest.clearAllMocks();
     mockServiceProvider.getWriteNoteService.mockReturnValue(mockWriteNoteService);
     mockServiceProvider.getGuildConfigService.mockReturnValue(mockGuildConfigService);
-    // Set default return value for formatError
-    mockDiscordFormatter.formatError.mockReturnValue({
+    // Set default return value for formatErrorV2
+    mockDiscordFormatter.formatErrorV2.mockReturnValue({
       content: 'An error occurred',
     });
   });
@@ -161,7 +161,7 @@ describe('note-write command', () => {
         data: mockNote,
       });
 
-      mockDiscordFormatter.formatWriteNoteSuccess.mockReturnValue({
+      mockDiscordFormatter.formatWriteNoteSuccessV2.mockReturnValue({
         embeds: [
           {
             data: {
@@ -204,7 +204,7 @@ describe('note-write command', () => {
         displayName: 'Test User',
         avatarUrl: 'https://example.com/avatar.png',
       });
-      expect(mockDiscordFormatter.formatWriteNoteSuccess).toHaveBeenCalledWith(
+      expect(mockDiscordFormatter.formatWriteNoteSuccessV2).toHaveBeenCalledWith(
         mockNote,
         '12345678901234567',
         undefined,
@@ -222,8 +222,8 @@ describe('note-write command', () => {
         },
       });
 
-      // Override the default formatError mock for this test
-      mockDiscordFormatter.formatError.mockReturnValue({
+      // Override the default formatErrorV2 mock for this test
+      mockDiscordFormatter.formatErrorV2.mockReturnValue({
         content: 'Failed to create note. Please try again later.',
       });
 
@@ -251,7 +251,7 @@ describe('note-write command', () => {
 
       // Debug: check if service was called
       expect(mockWriteNoteService.execute).toHaveBeenCalled();
-      expect(mockDiscordFormatter.formatError).toHaveBeenCalled();
+      expect(mockDiscordFormatter.formatErrorV2).toHaveBeenCalled();
       expect(mockInteraction.followUp).toHaveBeenCalledWith(
         expect.objectContaining({
           content: 'Failed to create note. Please try again later.',

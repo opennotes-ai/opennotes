@@ -295,11 +295,15 @@ describe('config-content-monitor command', () => {
       expect(mockGuildSetupService.autoRegisterChannels).toHaveBeenCalledWith(mockGuild);
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          embeds: expect.arrayContaining([
+          components: expect.arrayContaining([
             expect.objectContaining({
-              data: expect.objectContaining({
-                title: 'Content Monitoring Setup Complete',
-              }),
+              type: 17,
+              components: expect.arrayContaining([
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Content Monitoring Setup Complete'),
+                }),
+              ]),
             }),
           ]),
         })
