@@ -73,14 +73,19 @@ describe('config-admin command', () => {
           avatar_url: expect.any(String),
         })
       );
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      const v2EphemeralFlags = MessageFlags.Ephemeral | MessageFlags.IsComponentsV2;
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2EphemeralFlags });
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          embeds: expect.arrayContaining([
+          components: expect.arrayContaining([
             expect.objectContaining({
-              data: expect.objectContaining({
-                title: 'Admin Added',
-              }),
+              type: 17,
+              components: expect.arrayContaining([
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Admin Added'),
+                }),
+              ]),
             }),
           ]),
         })
@@ -159,11 +164,15 @@ describe('config-admin command', () => {
       expect(mockApiClient.removeCommunityAdmin).toHaveBeenCalledWith('guild789', 'user123');
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          embeds: expect.arrayContaining([
+          components: expect.arrayContaining([
             expect.objectContaining({
-              data: expect.objectContaining({
-                title: 'Admin Removed',
-              }),
+              type: 17,
+              components: expect.arrayContaining([
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Admin Removed'),
+                }),
+              ]),
             }),
           ]),
         })
@@ -248,21 +257,31 @@ describe('config-admin command', () => {
       expect(mockApiClient.listCommunityAdmins).toHaveBeenCalledWith('guild789');
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          embeds: expect.arrayContaining([
+          components: expect.arrayContaining([
             expect.objectContaining({
-              data: expect.objectContaining({
-                title: 'Open Notes Admins (2)',
-                fields: expect.arrayContaining([
-                  expect.objectContaining({
-                    name: 'Admin One',
-                    value: expect.stringContaining('Platform Admin, Community Admin'),
-                  }),
-                  expect.objectContaining({
-                    name: 'Admin Two',
-                    value: expect.stringContaining('Discord Manage Server'),
-                  }),
-                ]),
-              }),
+              type: 17,
+              components: expect.arrayContaining([
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Open Notes Admins (2)'),
+                }),
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Admin One'),
+                }),
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Platform Admin, Community Admin'),
+                }),
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Admin Two'),
+                }),
+                expect.objectContaining({
+                  type: 10,
+                  content: expect.stringContaining('Discord Manage Server'),
+                }),
+              ]),
             }),
           ]),
         })
@@ -355,7 +374,8 @@ describe('config-admin command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      const v2EphemeralFlags = MessageFlags.Ephemeral | MessageFlags.IsComponentsV2;
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: v2EphemeralFlags });
     });
   });
 });

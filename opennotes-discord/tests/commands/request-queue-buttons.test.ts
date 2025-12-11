@@ -1,9 +1,18 @@
 import { jest } from '@jest/globals';
-import {
-  ensureRedisChecked,
-  cleanupRedisTestConnection,
-  type RedisTestContext,
-} from '../utils/redis-test-helper.js';
+
+const mockCache = {
+  get: jest.fn<(key: string) => Promise<unknown>>(),
+  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<void>>(),
+  delete: jest.fn<(key: string) => Promise<void>>(),
+  start: jest.fn<() => void>(),
+  stop: jest.fn<() => void>(),
+  clear: jest.fn<() => Promise<void>>(),
+  getMetrics: jest.fn(() => ({ size: 0 })),
+};
+
+jest.unstable_mockModule('../../src/cache.js', () => ({
+  cache: mockCache,
+}));
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: {
@@ -21,48 +30,19 @@ jest.unstable_mockModule('../../src/services/index.js', () => ({
   },
 }));
 
-jest.unstable_mockModule('../../src/queue.js', () => ({
+jest.unstable_mockModule('../../src/private-thread.js', () => ({
   configCache: {
     getRatingThresholds: jest.fn(async () => ({
       min_ratings_needed: 5,
       min_raters_per_note: 2,
     })),
   },
-  getQueueManager: jest.fn(),
+  getPrivateThreadManager: jest.fn(),
 }));
 
-let cache: any = null;
-
 describe('request-queue command - Write Note button', () => {
-  let testContext: RedisTestContext;
-
-  beforeAll(async () => {
-    testContext = await ensureRedisChecked();
-
-    if (testContext.available) {
-      try {
-        const cacheModule = await import('../../src/cache.js');
-        cache = cacheModule.cache;
-      } catch {
-        testContext.available = false;
-        testContext.reason = 'Failed to import cache module (Redis required)';
-      }
-    }
-  });
-
-  afterAll(async () => {
-    await cleanupRedisTestConnection();
-  });
-
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    if (cache && typeof cache.clear === 'function') {
-      try {
-        await cache.clear();
-      } catch {
-        // Ignore clear errors
-      }
-    }
   });
 
   describe('write_note button interaction', () => {
@@ -120,29 +100,26 @@ describe('request-queue command - Write Note button', () => {
     });
 
     it('should handle missing cache state gracefully', async () => {
-      if (!testContext.available || !cache) {
-        console.log(`[SKIPPED] ${testContext.reason}`);
-        return;
-      }
+      mockCache.get.mockResolvedValue(null);
 
-      const cacheValue = await cache.get('write_note_state:missing123');
+      const cacheValue = await mockCache.get('write_note_state:missing123');
       expect(cacheValue).toBeNull();
+      expect(mockCache.get).toHaveBeenCalledWith('write_note_state:missing123');
     });
 
     it('should cache modal state with short ID', async () => {
-      if (!testContext.available || !cache) {
-        console.log(`[SKIPPED] ${testContext.reason}`);
-        return;
-      }
-
       const requestId = 'discord-1436105005051416606-1762473993351';
       const modalShortId = 'test1234';
       const modalCacheKey = `write_note_modal_state:${modalShortId}`;
 
-      await cache.set(modalCacheKey, requestId, 300);
+      mockCache.set.mockResolvedValue(undefined);
+      mockCache.get.mockResolvedValue(requestId);
 
-      const retrieved = await cache.get(modalCacheKey);
+      await mockCache.set(modalCacheKey, requestId, 300);
+
+      const retrieved = await mockCache.get(modalCacheKey);
       expect(retrieved).toBe(requestId);
+      expect(mockCache.set).toHaveBeenCalledWith(modalCacheKey, requestId, 300);
     });
 
     it('should validate modal custom ID length', () => {
@@ -162,19 +139,18 @@ describe('request-queue command - Write Note button', () => {
     });
 
     it('should cache classification from button click', async () => {
-      if (!testContext.available || !cache) {
-        console.log(`[SKIPPED] ${testContext.reason}`);
-        return;
-      }
-
       const modalShortId = 'test1234';
       const classification = 'NOT_MISLEADING';
       const classificationCacheKey = `write_note_classification:${modalShortId}`;
 
-      await cache.set(classificationCacheKey, classification, 300);
+      mockCache.set.mockResolvedValue(undefined);
+      mockCache.get.mockResolvedValue(classification);
 
-      const retrieved = await cache.get(classificationCacheKey);
+      await mockCache.set(classificationCacheKey, classification, 300);
+
+      const retrieved = await mockCache.get(classificationCacheKey);
       expect(retrieved).toBe(classification);
+      expect(mockCache.set).toHaveBeenCalledWith(classificationCacheKey, classification, 300);
     });
   });
 });

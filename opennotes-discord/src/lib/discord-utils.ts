@@ -2,12 +2,27 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
+  ContainerBuilder,
+  TextDisplayBuilder,
 } from 'discord.js';
 import { logger } from '../logger.js';
+import {
+  V2_COLORS,
+  V2_ICONS,
+  createContainer,
+  createSmallSeparator,
+  createDivider,
+  v2MessageFlags,
+} from '../utils/v2-components.js';
 
 export interface ForcePublishConfirmationResult {
   content: string;
   components: ActionRowBuilder<ButtonBuilder>[];
+}
+
+export interface ForcePublishConfirmationResultV2 {
+  container: ContainerBuilder;
+  flags: number;
 }
 
 export function createForcePublishConfirmationButtons(
@@ -109,4 +124,82 @@ export function extractPlatformMessageId(
   }
 
   return null;
+}
+
+export function createForcePublishConfirmationButtonsV2(
+  noteId: string,
+  shortId: string
+): ForcePublishConfirmationResultV2 {
+  const confirmButton = new ButtonBuilder()
+    .setCustomId(`fp_confirm:${shortId}`)
+    .setLabel('Confirm')
+    .setStyle(ButtonStyle.Danger);
+
+  const cancelButton = new ButtonBuilder()
+    .setCustomId(`fp_cancel:${shortId}`)
+    .setLabel('Cancel')
+    .setStyle(ButtonStyle.Secondary);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    confirmButton,
+    cancelButton
+  );
+
+  const warningMessage = [
+    `Are you sure you want to force publish Note #${noteId}?`,
+    '',
+    'This will:',
+    '- Bypass the normal rating threshold requirements',
+    '- Mark the note as "Admin Published"',
+    '- Immediately publish the note to the configured channel',
+  ].join('\n');
+
+  const container = createContainer(V2_COLORS.CRITICAL)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`${V2_ICONS.WARNING} **Confirm Force Publish**`)
+    )
+    .addSeparatorComponents(createSmallSeparator())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(warningMessage)
+    )
+    .addSeparatorComponents(createDivider())
+    .addActionRowComponents(row);
+
+  return {
+    container,
+    flags: v2MessageFlags({ ephemeral: true }),
+  };
+}
+
+export function createDisabledForcePublishButtonsV2(
+  shortId: string
+): ForcePublishConfirmationResultV2 {
+  const disabledConfirmButton = new ButtonBuilder()
+    .setCustomId(`fp_confirm:${shortId}`)
+    .setLabel('Confirm')
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(true);
+
+  const disabledCancelButton = new ButtonBuilder()
+    .setCustomId(`fp_cancel:${shortId}`)
+    .setLabel('Cancel')
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    disabledConfirmButton,
+    disabledCancelButton
+  );
+
+  const container = createContainer(V2_COLORS.CRITICAL)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('\u26A0\uFE0F **Force Publish Confirmation**')
+    )
+    .addSeparatorComponents(createDivider())
+    .addActionRowComponents(row);
+
+  return {
+    container,
+    flags: v2MessageFlags({ ephemeral: true }),
+  };
 }

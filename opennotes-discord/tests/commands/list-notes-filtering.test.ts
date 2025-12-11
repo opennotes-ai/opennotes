@@ -23,14 +23,14 @@ const mockConfigCache = {
   getRatingThresholds: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
-const mockQueueManager = {
+const mockPrivateThreadManager = {
   getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>(),
   getNotesPerPage: jest.fn<() => number>().mockReturnValue(4),
   getCurrentPage: jest.fn<() => number>().mockReturnValue(1),
   setPage: jest.fn<(...args: any[]) => void>(),
   updateNotes: jest.fn<(...args: any[]) => void>(),
   getNotes: jest.fn<() => any[]>().mockReturnValue([]),
-  closeQueue: jest.fn<(...args: any[]) => void>(),
+  closePrivateThread: jest.fn<(...args: any[]) => void>(),
 };
 
 const mockQueueRenderer = {
@@ -51,13 +51,14 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
-jest.unstable_mockModule('../../src/queue.js', () => ({
+jest.unstable_mockModule('../../src/private-thread.js', () => ({
   configCache: mockConfigCache,
-  getQueueManager: () => mockQueueManager,
+  getPrivateThreadManager: () => mockPrivateThreadManager,
 }));
 
 jest.unstable_mockModule('../../src/lib/queue-renderer.js', () => ({
   QueueRenderer: mockQueueRenderer,
+  QueueRendererV2: mockQueueRenderer,
 }));
 
 let execute: typeof import('../../src/commands/list.js').execute;
@@ -136,7 +137,7 @@ function setupDefaultMocks(communityUuid: string = 'community-uuid-123'): void {
   });
 
   const mockThread = createMockThread();
-  mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
+  mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
 
   mockQueueRenderer.render.mockResolvedValue({
     summaryMessage: { id: 'summary-msg-1' },
@@ -216,7 +217,7 @@ describe('list notes filtering', () => {
         total: 0,
       });
       const mockThread = createMockThread();
-      mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
+      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
       mockQueueRenderer.render.mockResolvedValue({
         summaryMessage: { id: 'summary-msg-1' },
         itemMessages: [],

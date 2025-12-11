@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { MessageFlags } from 'discord.js';
+import { MessageFlags, ContainerBuilder } from 'discord.js';
 import { createMockLogger } from '../utils/service-mocks.js';
 
 const mockLogger = createMockLogger();
@@ -24,6 +24,7 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
 }));
 
 const { execute, data } = await import('../../src/commands/about-opennotes.js');
+const { v2MessageFlags, V2_COLORS } = await import('../../src/utils/v2-components.js');
 
 describe('about-opennotes command', () => {
   beforeEach(() => {
@@ -38,7 +39,7 @@ describe('about-opennotes command', () => {
   });
 
   describe('successful execution', () => {
-    it('should send informative embed about OpenNotes', async () => {
+    it('should send Components v2 container about OpenNotes', async () => {
       const mockInteraction = {
         user: { id: 'user123' },
         guildId: 'guild456',
@@ -49,24 +50,24 @@ describe('about-opennotes command', () => {
       await execute(mockInteraction as any);
 
       expect(mockInteraction.deferReply).toHaveBeenCalledWith({
-        flags: MessageFlags.Ephemeral,
+        flags: v2MessageFlags({ ephemeral: true }),
       });
 
-      expect(mockInteraction.editReply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          embeds: expect.arrayContaining([
-            expect.objectContaining({
-              data: expect.objectContaining({
-                title: 'About OpenNotes',
-                description: expect.stringContaining('community moderation tool'),
-              }),
-            }),
-          ]),
-        })
-      );
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+
+      expect(editReplyCall).not.toHaveProperty('embeds');
+      expect(editReplyCall).toHaveProperty('components');
+      expect(editReplyCall.components).toHaveLength(1);
+
+      const containerBuilder = editReplyCall.components[0];
+      expect(containerBuilder).toBeInstanceOf(ContainerBuilder);
+
+      const container = containerBuilder.toJSON();
+      expect(container.type).toBe(17);
+      expect(container.accent_color).toBe(V2_COLORS.PRIMARY);
     });
 
-    it('should include all required information sections', async () => {
+    it('should include all required information sections in container', async () => {
       const mockInteraction = {
         user: { id: 'user123' },
         guildId: 'guild456',
@@ -77,16 +78,18 @@ describe('about-opennotes command', () => {
       await execute(mockInteraction as any);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      const embed = editReplyCall.embeds[0];
-      const fieldNames = embed.data.fields.map((f: any) => f.name);
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+      const allContent = JSON.stringify(container.components);
 
-      expect(fieldNames).toContain('📝 How It Works');
-      expect(fieldNames).toContain('⭐ Note Submission');
-      expect(fieldNames).toContain('🎯 Scoring System');
-      expect(fieldNames).toContain('🛡️ Community Moderation');
+      expect(allContent).toContain('How It Works');
+      expect(allContent).toContain('Note Submission');
+      expect(allContent).toContain('Commands');
+      expect(allContent).toContain('Scoring System');
+      expect(allContent).toContain('Community Moderation');
     });
 
-    it('should mention note submission in the content', async () => {
+    it('should include title and description in container', async () => {
       const mockInteraction = {
         user: { id: 'user123' },
         guildId: 'guild456',
@@ -97,12 +100,30 @@ describe('about-opennotes command', () => {
       await execute(mockInteraction as any);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      const embed = editReplyCall.embeds[0];
-      const fields = embed.data.fields;
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+      const allContent = JSON.stringify(container.components);
 
-      const noteSubmissionField = fields.find((f: any) => f.name === '⭐ Note Submission');
-      expect(noteSubmissionField).toBeDefined();
-      expect(noteSubmissionField.value).toContain('/note write');
+      expect(allContent).toContain('About OpenNotes');
+      expect(allContent).toContain('community moderation tool');
+    });
+
+    it('should mention note submission commands', async () => {
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+      const allContent = JSON.stringify(container.components);
+
+      expect(allContent).toContain('/note write');
     });
 
     it('should mention scoring system', async () => {
@@ -116,12 +137,11 @@ describe('about-opennotes command', () => {
       await execute(mockInteraction as any);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      const embed = editReplyCall.embeds[0];
-      const fields = embed.data.fields;
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+      const allContent = JSON.stringify(container.components);
 
-      const scoringField = fields.find((f: any) => f.name === '🎯 Scoring System');
-      expect(scoringField).toBeDefined();
-      expect(scoringField.value).toContain('rate notes');
+      expect(allContent).toContain('rate notes');
     });
 
     it('should mention community moderation features', async () => {
@@ -135,12 +155,85 @@ describe('about-opennotes command', () => {
       await execute(mockInteraction as any);
 
       const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      const embed = editReplyCall.embeds[0];
-      const fields = embed.data.fields;
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+      const allContent = JSON.stringify(container.components);
 
-      const moderationField = fields.find((f: any) => f.name === '🛡️ Community Moderation');
-      expect(moderationField).toBeDefined();
-      expect(moderationField.value).toContain('self-moderate');
+      expect(allContent).toContain('self-moderate');
+    });
+
+    it('should include footer text', async () => {
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+      const allContent = JSON.stringify(container.components);
+
+      expect(allContent).toContain('Community-powered context');
+    });
+
+    it('should use separators between sections', async () => {
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+
+      const separators = container.components.filter((c: any) => c.type === 14);
+      expect(separators.length).toBeGreaterThan(0);
+    });
+
+    it('should use TextDisplayBuilder components for information sections', async () => {
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      const containerBuilder = editReplyCall.components[0];
+      const container = containerBuilder.toJSON();
+
+      const textDisplays = container.components.filter((c: any) => c.type === 10);
+      expect(textDisplays.length).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  describe('Components v2 flags', () => {
+    it('should use v2MessageFlags with ephemeral option', async () => {
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      const deferReplyCall = mockInteraction.deferReply.mock.calls[0][0];
+      const expectedFlags = v2MessageFlags({ ephemeral: true });
+
+      expect(deferReplyCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      expect(deferReplyCall.flags & MessageFlags.Ephemeral).toBeTruthy();
+      expect(deferReplyCall.flags).toBe(expectedFlags);
     });
   });
 

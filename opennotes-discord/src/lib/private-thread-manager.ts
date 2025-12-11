@@ -3,7 +3,7 @@ import { hasCode } from '../utils/error-handlers.js';
 import { NoteWithRatings } from './types.js';
 import { logger } from '../logger.js';
 
-interface QueueState {
+interface PrivateThreadState {
   thread: ThreadChannel;
   userId: string;
   guildId: string;
@@ -14,9 +14,9 @@ interface QueueState {
   cleanupTimer: NodeJS.Timeout;
 }
 
-const QUEUE_INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour - auto-delete thread after this period of no user interaction
+const THREAD_INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour - auto-delete thread after this period of no user interaction
 const NOTES_PER_PAGE = 10; // Multi-message pattern: each note gets its own message, no action row limits
-const MAX_QUEUES_PER_USER = 3;
+const MAX_PRIVATE_THREADS_PER_USER = 3;
 const RATE_LIMIT_WINDOW_MS = 30 * 1000; // 30 seconds
 const MAX_ATTEMPTS_PER_WINDOW = 5;
 
@@ -25,10 +25,10 @@ interface RateLimitEntry {
   windowStart: number;
 }
 
-export class QueueManager {
-  private activeQueues: Map<string, QueueState> = new Map();
+export class PrivateThreadManager {
+  private activePrivateThreads: Map<string, PrivateThreadState> = new Map();
   private rateLimits: Map<string, RateLimitEntry> = new Map();
-  private queueCreationMetrics: { totalAttempts: number; rateLimitViolations: number } = {
+  private privateThreadCreationMetrics: { totalAttempts: number; rateLimitViolations: number } = {
     totalAttempts: 0,
     rateLimitViolations: 0,
   };
@@ -37,7 +37,7 @@ export class QueueManager {
     // Client is available for future use if needed
   }
 
-  private getQueueKey(userId: string, guildId: string): string {
+  private getThreadKey(userId: string, guildId: string): string {
     return `${userId}:${guildId}`;
   }
 
@@ -48,33 +48,33 @@ export class QueueManager {
     notes: NoteWithRatings[],
     totalNotes: number
   ): Promise<ThreadChannel> {
-    const queueKey = this.getQueueKey(user.id, guildId);
-    const existingQueue = this.activeQueues.get(queueKey);
+    const threadKey = this.getThreadKey(user.id, guildId);
+    const existingThreadState = this.activePrivateThreads.get(threadKey);
 
-    if (existingQueue) {
-      logger.info(`Reusing existing queue for user ${user.id} in guild ${guildId}`);
+    if (existingThreadState) {
+      logger.info(`Reusing existing private thread for user ${user.id} in guild ${guildId}`);
       this.updateActivity(user.id, guildId);
 
       try {
-        if (existingQueue.thread.archived) {
-          logger.info(`Unarchiving existing queue for user ${user.id}`);
-          await existingQueue.thread.setArchived(false);
+        if (existingThreadState.thread.archived) {
+          logger.info(`Unarchiving existing private thread for user ${user.id}`);
+          await existingThreadState.thread.setArchived(false);
         }
 
-        const threadMembers = await existingQueue.thread.members.fetch();
+        const threadMembers = await existingThreadState.thread.members.fetch();
         if (!threadMembers.has(user.id)) {
           logger.info(`Re-adding user ${user.id} to existing thread (user had left)`);
-          await existingQueue.thread.members.add(user.id);
+          await existingThreadState.thread.members.add(user.id);
         }
 
-        return existingQueue.thread;
+        return existingThreadState.thread;
       } catch (error) {
         logger.warn(`Failed to restore thread for user ${user.id}, creating new one`, { error });
-        this.activeQueues.delete(queueKey);
+        this.activePrivateThreads.delete(threadKey);
       }
     }
 
-    this.queueCreationMetrics.totalAttempts++;
+    this.privateThreadCreationMetrics.totalAttempts++;
     this.checkRateLimit(user.id);
 
     // If called from a thread, use the parent channel
@@ -101,7 +101,7 @@ export class QueueManager {
       );
     }
 
-    logger.info(`Creating new queue for user ${user.id} in channel ${parentChannel.id}`);
+    logger.info(`Creating new private thread for user ${user.id} in channel ${parentChannel.id}`);
 
     try {
       const thread = await parentChannel.threads.create({
@@ -125,7 +125,7 @@ export class QueueManager {
 
       const cleanupTimer = this.scheduleCleanup(user.id, guildId);
 
-      this.activeQueues.set(queueKey, {
+      this.activePrivateThreads.set(threadKey, {
         thread,
         userId: user.id,
         guildId,
@@ -136,7 +136,7 @@ export class QueueManager {
         cleanupTimer,
       });
 
-      logger.info(`Successfully created queue thread ${thread.id} for user ${user.id}`);
+      logger.info(`Successfully created private thread ${thread.id} for user ${user.id}`);
       return thread;
     } catch (error) {
       if (error instanceof DiscordAPIError) {
@@ -165,26 +165,26 @@ export class QueueManager {
   }
 
   updateNotes(userId: string, guildId: string, notes: NoteWithRatings[], totalNotes: number): void {
-    const queueKey = this.getQueueKey(userId, guildId);
-    const queue = this.activeQueues.get(queueKey);
-    if (queue) {
-      queue.notes = notes;
-      queue.totalNotes = totalNotes;
+    const threadKey = this.getThreadKey(userId, guildId);
+    const threadState = this.activePrivateThreads.get(threadKey);
+    if (threadState) {
+      threadState.notes = notes;
+      threadState.totalNotes = totalNotes;
       this.updateActivity(userId, guildId);
     }
   }
 
   getCurrentPage(userId: string, guildId: string): number {
-    const queueKey = this.getQueueKey(userId, guildId);
-    const queue = this.activeQueues.get(queueKey);
-    return queue?.currentPage || 1;
+    const threadKey = this.getThreadKey(userId, guildId);
+    const threadState = this.activePrivateThreads.get(threadKey);
+    return threadState?.currentPage || 1;
   }
 
   setPage(userId: string, guildId: string, page: number): void {
-    const queueKey = this.getQueueKey(userId, guildId);
-    const queue = this.activeQueues.get(queueKey);
-    if (queue) {
-      queue.currentPage = page;
+    const threadKey = this.getThreadKey(userId, guildId);
+    const threadState = this.activePrivateThreads.get(threadKey);
+    if (threadState) {
+      threadState.currentPage = page;
       this.updateActivity(userId, guildId);
     }
   }
@@ -194,22 +194,22 @@ export class QueueManager {
   }
 
   getNotes(userId: string, guildId: string): NoteWithRatings[] {
-    const queueKey = this.getQueueKey(userId, guildId);
-    const queue = this.activeQueues.get(queueKey);
-    return queue?.notes || [];
+    const threadKey = this.getThreadKey(userId, guildId);
+    const threadState = this.activePrivateThreads.get(threadKey);
+    return threadState?.notes || [];
   }
 
-  async closeQueue(userId: string, guildId: string): Promise<void> {
-    const queueKey = this.getQueueKey(userId, guildId);
-    const queue = this.activeQueues.get(queueKey);
-    if (!queue) {return;}
+  async closePrivateThread(userId: string, guildId: string): Promise<void> {
+    const threadKey = this.getThreadKey(userId, guildId);
+    const threadState = this.activePrivateThreads.get(threadKey);
+    if (!threadState) {return;}
 
-    logger.info(`Closing queue for user ${userId}`);
+    logger.info(`Closing private thread for user ${userId}`);
 
-    clearTimeout(queue.cleanupTimer);
+    clearTimeout(threadState.cleanupTimer);
 
     try {
-      await queue.thread.delete('Queue closed or timed out');
+      await threadState.thread.delete('Private thread closed or timed out');
       logger.info(`Successfully deleted thread for user ${userId}`);
     } catch (error: unknown) {
       const errorCode = hasCode(error) ? Number(error.code) : null;
@@ -219,8 +219,8 @@ export class QueueManager {
       } else if (errorCode === 50013) {
         logger.warn(`Missing permissions to delete thread for user ${userId}, attempting to archive instead`);
         try {
-          if (!queue.thread.archived) {
-            await queue.thread.setArchived(true);
+          if (!threadState.thread.archived) {
+            await threadState.thread.setArchived(true);
             logger.info(`Successfully archived thread for user ${userId} as fallback`);
           }
         } catch (archiveError) {
@@ -231,34 +231,34 @@ export class QueueManager {
       }
     }
 
-    this.activeQueues.delete(queueKey);
+    this.activePrivateThreads.delete(threadKey);
   }
 
   private updateActivity(userId: string, guildId: string): void {
-    const queueKey = this.getQueueKey(userId, guildId);
-    const queue = this.activeQueues.get(queueKey);
-    if (!queue) {return;}
+    const threadKey = this.getThreadKey(userId, guildId);
+    const threadState = this.activePrivateThreads.get(threadKey);
+    if (!threadState) {return;}
 
-    queue.lastActivity = Date.now();
+    threadState.lastActivity = Date.now();
 
-    clearTimeout(queue.cleanupTimer);
-    queue.cleanupTimer = this.scheduleCleanup(userId, guildId);
+    clearTimeout(threadState.cleanupTimer);
+    threadState.cleanupTimer = this.scheduleCleanup(userId, guildId);
   }
 
   private scheduleCleanup(userId: string, guildId: string): NodeJS.Timeout {
     return setTimeout(() => {
-      logger.info(`Queue for user ${userId} in guild ${guildId} timed out due to inactivity`);
-      void this.closeQueue(userId, guildId);
-    }, QUEUE_INACTIVITY_TIMEOUT);
+      logger.info(`Private thread for user ${userId} in guild ${guildId} timed out due to inactivity`);
+      void this.closePrivateThread(userId, guildId);
+    }, THREAD_INACTIVITY_TIMEOUT);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async cleanup(): Promise<void> {
-    logger.info('Cleaning up all active queues');
-    const queueKeys = Array.from(this.activeQueues.keys());
-    for (const queueKey of queueKeys) {
-      const [userId, guildId] = queueKey.split(':');
-      void this.closeQueue(userId, guildId);
+    logger.info('Cleaning up all active private threads');
+    const threadKeys = Array.from(this.activePrivateThreads.keys());
+    for (const threadKey of threadKeys) {
+      const [userId, guildId] = threadKey.split(':');
+      void this.closePrivateThread(userId, guildId);
     }
   }
 
@@ -275,10 +275,10 @@ export class QueueManager {
     }
 
     if (userRateLimit.attempts >= MAX_ATTEMPTS_PER_WINDOW) {
-      this.queueCreationMetrics.rateLimitViolations++;
+      this.privateThreadCreationMetrics.rateLimitViolations++;
       const remainingTime = Math.ceil((RATE_LIMIT_WINDOW_MS - (now - userRateLimit.windowStart)) / 1000);
 
-      logger.warn('Queue creation rate limit exceeded', {
+      logger.warn('Private thread creation rate limit exceeded', {
         userId,
         attempts: userRateLimit.attempts,
         maxAttempts: MAX_ATTEMPTS_PER_WINDOW,
@@ -286,7 +286,7 @@ export class QueueManager {
       });
 
       throw new Error(
-        `You are creating queues too quickly. Please wait ${remainingTime} seconds before trying again.`
+        `You are creating private threads too quickly. Please wait ${remainingTime} seconds before trying again.`
       );
     }
 
@@ -294,16 +294,16 @@ export class QueueManager {
   }
 
   getMetrics(): {
-    activeQueues: number;
-    maxQueuesPerUser: number;
+    activePrivateThreads: number;
+    maxPrivateThreadsPerUser: number;
     totalAttempts: number;
     rateLimitViolations: number;
   } {
     return {
-      activeQueues: this.activeQueues.size,
-      maxQueuesPerUser: MAX_QUEUES_PER_USER,
-      totalAttempts: this.queueCreationMetrics.totalAttempts,
-      rateLimitViolations: this.queueCreationMetrics.rateLimitViolations,
+      activePrivateThreads: this.activePrivateThreads.size,
+      maxPrivateThreadsPerUser: MAX_PRIVATE_THREADS_PER_USER,
+      totalAttempts: this.privateThreadCreationMetrics.totalAttempts,
+      rateLimitViolations: this.privateThreadCreationMetrics.rateLimitViolations,
     };
   }
 }

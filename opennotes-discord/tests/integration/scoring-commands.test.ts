@@ -153,13 +153,12 @@ describe('Scoring Service Integration', () => {
   });
 
   describe('Formatter integration', () => {
-    it('should have scoring format methods', async () => {
+    it('should have scoring format methods (v2)', async () => {
       const { DiscordFormatter } = await import('../../src/services/DiscordFormatter.js');
 
-      expect(typeof DiscordFormatter.formatNoteScore).toBe('function');
-      expect(typeof DiscordFormatter.formatTopNotes).toBe('function');
-      expect(typeof DiscordFormatter.formatScoringStatus).toBe('function');
-      expect(typeof DiscordFormatter.formatScoreInNoteEmbed).toBe('function');
+      expect(typeof DiscordFormatter.formatNoteScoreV2).toBe('function');
+      expect(typeof DiscordFormatter.formatTopNotesForQueueV2).toBe('function');
+      expect(typeof DiscordFormatter.formatScoringStatusV2).toBe('function');
       expect(typeof DiscordFormatter.getConfidenceEmoji).toBe('function');
       expect(typeof DiscordFormatter.getConfidenceLabel).toBe('function');
       expect(typeof DiscordFormatter.getScoreColor).toBe('function');

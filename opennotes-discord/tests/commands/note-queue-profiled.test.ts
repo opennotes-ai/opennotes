@@ -18,14 +18,14 @@ const mockCache = {
 const mockConfigCache = {
   getRatingThresholds: jest.fn<(...args: any[]) => Promise<any>>(),
 };
-const mockQueueManager = {
+const mockPrivateThreadManager = {
   getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>(),
   getNotesPerPage: jest.fn<() => number>().mockReturnValue(4),
   getCurrentPage: jest.fn<() => number>().mockReturnValue(1),
   setPage: jest.fn<(...args: any[]) => void>(),
   updateNotes: jest.fn<(...args: any[]) => void>(),
   getNotes: jest.fn<() => any[]>().mockReturnValue([]),
-  closeQueue: jest.fn<(...args: any[]) => void>(),
+  closePrivateThread: jest.fn<(...args: any[]) => void>(),
 };
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
@@ -40,9 +40,9 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
-jest.unstable_mockModule('../../src/queue.js', () => ({
+jest.unstable_mockModule('../../src/private-thread.js', () => ({
   configCache: mockConfigCache,
-  getQueueManager: () => mockQueueManager,
+  getPrivateThreadManager: () => mockPrivateThreadManager,
 }));
 
 let execute: typeof import('../../src/commands/note.js').execute;
@@ -126,7 +126,7 @@ describe('note-queue-profiled command', () => {
         }),
       };
 
-      mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
+      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
 
       const mockChannel = createMockTextChannel({
         type: ChannelType.GuildText,
@@ -179,7 +179,7 @@ describe('note-queue-profiled command', () => {
         toString: () => '<#thread123>',
       };
 
-      mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
+      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
 
       const mockChannel = createMockTextChannel({
         type: ChannelType.GuildText,
@@ -340,7 +340,7 @@ describe('note-queue-profiled command', () => {
         toString: () => '<#thread123>',
       };
 
-      mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
+      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
 
       const mockChannel = createMockTextChannel({
         type: ChannelType.GuildText,

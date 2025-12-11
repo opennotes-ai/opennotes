@@ -76,8 +76,8 @@ jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
   DiscordFormatter: mockDiscordFormatter,
 }));
 
-jest.unstable_mockModule('../../src/queue.js', () => ({
-  getQueueManager: jest.fn(() => mockQueueManager),
+jest.unstable_mockModule('../../src/private-thread.js', () => ({
+  getPrivateThreadManager: jest.fn(() => mockQueueManager),
   configCache: mockCache,
 }));
 

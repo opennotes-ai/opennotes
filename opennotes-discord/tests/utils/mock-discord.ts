@@ -8,14 +8,18 @@ export interface MockDiscordOptions {
   missingPermission?: 'SEND_MESSAGES' | 'CREATE_PUBLIC_THREADS';
 }
 
+export interface SentMessage {
+  channelId: string;
+  content?: string;
+  components?: any[];
+  flags?: number;
+  timestamp: Date;
+}
+
 export class MockDiscordClient {
   private mockClient: jest.Mocked<Client>;
   private mockChannels: Map<string, jest.Mocked<TextChannel>>;
-  private sentMessages: Array<{
-    channelId: string;
-    content: string;
-    timestamp: Date;
-  }>;
+  private sentMessages: SentMessage[];
 
   constructor(private options: MockDiscordOptions = {}) {
     this.mockChannels = new Map();
@@ -81,15 +85,24 @@ export class MockDiscordClient {
           throw error;
         }
 
-        this.sentMessages.push({
+        const sentMessage: SentMessage = {
           channelId,
-          content: typeof content === 'string' ? content : content.content,
           timestamp: new Date(),
-        });
+        };
+
+        if (typeof content === 'string') {
+          sentMessage.content = content;
+        } else {
+          sentMessage.content = content.content;
+          sentMessage.components = content.components;
+          sentMessage.flags = content.flags;
+        }
+
+        this.sentMessages.push(sentMessage);
 
         return {
           id: `reply-${Date.now()}`,
-          content: typeof content === 'string' ? content : content.content,
+          content: sentMessage.content,
           channelId,
         } as Message;
       }),
@@ -107,11 +120,7 @@ export class MockDiscordClient {
     return this.mockChannels.get(channelId);
   }
 
-  getSentMessages(): Array<{
-    channelId: string;
-    content: string;
-    timestamp: Date;
-  }> {
+  getSentMessages(): SentMessage[] {
     return this.sentMessages;
   }
 

@@ -14,7 +14,7 @@ import {
   User,
   GuildMember,
   PermissionFlagsBits,
-  EmbedBuilder,
+  type APIContainerComponent,
 } from 'discord.js';
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
@@ -26,7 +26,7 @@ import { extractAndSanitizeImageUrl } from '../lib/url-validation.js';
 import { handleEphemeralError } from '../lib/interaction-utils.js';
 import { modalSubmissionRateLimiter } from '../lib/interaction-rate-limiter.js';
 import { suppressExpectedDiscordErrors } from '../lib/discord-utils.js';
-import { getQueueManager } from '../queue.js';
+import { getPrivateThreadManager as getQueueManager } from '../private-thread.js';
 import { apiClient } from '../api-client.js';
 import { extractUserContext } from '../lib/user-context.js';
 
@@ -289,7 +289,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
     });
 
     if (!result.success) {
-      const errorResponse = DiscordFormatter.formatError(result);
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
       if (ephemeral) {
         await interaction.editReply(errorResponse);
       } else {
@@ -299,7 +299,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       return;
     }
 
-    const response = DiscordFormatter.formatWriteNoteSuccess(
+    const response = DiscordFormatter.formatWriteNoteSuccessV2(
       result.data!,
       messageId,
       guildId || undefined,
@@ -349,7 +349,7 @@ export async function createNoteRequest(params: {
   channel?: TextBasedChannel | null;
   errorId: string;
   user?: User;
-}): Promise<{ success: boolean; response: { content?: string; embeds?: EmbedBuilder[] } }> {
+}): Promise<{ success: boolean; response: { components?: APIContainerComponent[]; flags?: number; content?: string } }> {
   const { messageId, message, reason, userId, community_server_id, channel, errorId, user } = params;
 
   let originalMessageContent: string | undefined;
@@ -471,13 +471,13 @@ export async function createNoteRequest(params: {
   if (!result.success) {
     return {
       success: false,
-      response: DiscordFormatter.formatError(result),
+      response: DiscordFormatter.formatErrorV2(result),
     };
   }
 
   return {
     success: true,
-    response: DiscordFormatter.formatRequestNoteSuccess(
+    response: DiscordFormatter.formatRequestNoteSuccessV2(
       messageId,
       userId,
       reason,
@@ -551,7 +551,7 @@ async function handleRequestSubcommand(interaction: ChatInputCommandInteraction)
       if (ephemeral) {
         await interaction.editReply(result.response);
       } else {
-        await interaction.followUp({ ...result.response, flags: MessageFlags.Ephemeral });
+        await interaction.followUp(result.response);
         await interaction.deleteReply();
       }
       return;
@@ -662,7 +662,7 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
     const result = await viewNotesService.execute({ messageId }, userId);
 
     if (!result.success) {
-      const errorResponse = DiscordFormatter.formatError(result);
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
       await interaction.followUp({ ...errorResponse, flags: MessageFlags.Ephemeral });
       await interaction.deleteReply();
       return;
@@ -685,7 +685,7 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
       }
     }
 
-    const response = DiscordFormatter.formatViewNotesSuccess(result.data!, scoresMap);
+    const response = DiscordFormatter.formatViewNotesSuccessV2(result.data!, scoresMap);
     await interaction.editReply(response);
 
     logger.info('View-notes completed successfully', {
@@ -787,7 +787,7 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
       return;
     }
 
-    const response = DiscordFormatter.formatNoteScore(result.data!);
+    const response = DiscordFormatter.formatNoteScoreV2(result.data!);
     await interaction.editReply(response);
 
     logger.info('Note score retrieved successfully', {
@@ -875,7 +875,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
     });
 
     if (!result.success) {
-      const errorResponse = DiscordFormatter.formatError(result);
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
       if (ephemeral) {
         await interaction.editReply(errorResponse);
       } else {
@@ -885,7 +885,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
       return;
     }
 
-    const response = DiscordFormatter.formatRateNoteSuccess(result.data!, noteId, helpful);
+    const response = DiscordFormatter.formatRateNoteSuccessV2(result.data!, noteId, helpful);
     await interaction.editReply(response);
 
     logger.info('Rate-note completed successfully', {

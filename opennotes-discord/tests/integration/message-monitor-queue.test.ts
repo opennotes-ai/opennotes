@@ -62,7 +62,11 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
     if (!testContext.available || !testContext.redis) return;
 
     redis = testContext.redis;
-    await redis.flushdb();
+    // Use key-based cleanup instead of flushdb() to avoid interfering with parallel tests
+    const opennnotesKeys = await redis.keys('opennotes:*');
+    if (opennnotesKeys.length > 0) {
+      await redis.del(...opennnotesKeys);
+    }
     service = new MessageMonitorService(mockClient, mockGuildOnboardingService as any, redis);
   });
 
