@@ -12,6 +12,7 @@ import {
   TextInputBuilder,
   ButtonInteraction,
   GuildMember,
+  Message,
 } from 'discord.js';
 import { apiClient } from '../api-client.js';
 import { configCache, getPrivateThreadManager as getQueueManager } from '../private-thread.js';
@@ -30,7 +31,6 @@ import { buttonInteractionRateLimiter } from '../lib/interaction-rate-limiter.js
 import { TIMEOUTS } from '../lib/constants.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
 import {
-  QueueRenderer,
   QueueRendererV2,
   QueueItemV2,
   QueueSummaryV2,
@@ -612,10 +612,10 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
           });
 
           if (!result.success) {
-            const errorResponse = DiscordFormatter.formatError(result);
+            const errorResponse = DiscordFormatter.formatErrorV2(result);
             await buttonInteraction.followUp({
-              content: errorResponse.content || 'Failed to submit rating.',
-              flags: MessageFlags.Ephemeral,
+              components: errorResponse.components,
+              flags: errorResponse.flags,
             });
             return;
           }
@@ -1122,8 +1122,11 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
     });
 
     if (!result.success) {
-      const errorResponse = DiscordFormatter.formatError(result);
-      await interaction.editReply(errorResponse);
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
+      await interaction.editReply({
+        components: errorResponse.components,
+        flags: errorResponse.flags,
+      });
       return;
     }
 
@@ -1143,18 +1146,24 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       0
     );
 
-    const formattedData = await DiscordFormatter.formatListRequestsSuccess(result.data, {
+    const formattedData = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
       status: status || undefined,
       myRequestsOnly,
       communityServerId: communityServerUuid,
     });
 
-    const renderResult = await QueueRenderer.render(
-      thread,
-      formattedData.summary,
-      formattedData.items,
-      formattedData.pagination
-    );
+    const containerMessage = await thread.send({
+      components: [formattedData.container.toJSON()],
+      flags: formattedData.flags,
+    });
+
+    const actionRowMessages: Message[] = [];
+    for (const actionRow of formattedData.actionRows) {
+      const msg = await thread.send({
+        components: [actionRow.toJSON()],
+      });
+      actionRowMessages.push(msg);
+    }
 
     await interaction.editReply({
       content: `Request queue posted to ${String(thread)}`,
@@ -1168,7 +1177,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       total: result.data.total,
     });
 
-    const allMessages = QueueRenderer.getAllMessages(renderResult);
+    const allMessages = [containerMessage, ...actionRowMessages];
     const collectors = allMessages.map((msg) =>
       msg.createMessageComponentCollector({
         componentType: ComponentType.Button,
@@ -1239,8 +1248,11 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
               });
 
               if (!result.success) {
-                const errorResponse = DiscordFormatter.formatError(result);
-                await buttonInteraction.editReply(errorResponse);
+                const errorResponse = DiscordFormatter.formatErrorV2(result);
+                await buttonInteraction.editReply({
+                  components: errorResponse.components,
+                  flags: errorResponse.flags,
+                });
                 return;
               }
 
@@ -1252,22 +1264,32 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
                 return;
               }
 
-              const newFormattedData = await DiscordFormatter.formatListRequestsSuccess(result.data, {
+              const newFormattedData = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
                 status: filterState.status,
                 myRequestsOnly: filterState.myRequestsOnly,
                 communityServerId: filterState.communityServerId,
               });
 
-              const updatedResult = await QueueRenderer.update(
-                renderResult,
-                newFormattedData.summary,
-                newFormattedData.items,
-                newFormattedData.pagination
-              );
-
               collectors.forEach((c) => c.stop());
 
-              const newMessages = QueueRenderer.getAllMessages(updatedResult);
+              await containerMessage.edit({
+                components: [newFormattedData.container.toJSON()],
+                flags: newFormattedData.flags,
+              });
+
+              for (const msg of actionRowMessages) {
+                await msg.delete().catch(() => {});
+              }
+              actionRowMessages.length = 0;
+
+              for (const actionRow of newFormattedData.actionRows) {
+                const msg = await thread.send({
+                  components: [actionRow.toJSON()],
+                });
+                actionRowMessages.push(msg);
+              }
+
+              const newMessages = [containerMessage, ...actionRowMessages];
               const newCollectors = newMessages.map((msg) =>
                 msg.createMessageComponentCollector({
                   componentType: ComponentType.Button,
@@ -1276,14 +1298,15 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
               );
 
               newCollectors.forEach((collector) => {
-                collector.on('collect', (interaction) => {
-                  void handleButtonInteraction(interaction);
+                collector.on('collect', (btnInteraction: ButtonInteraction) => {
+                  void handleButtonInteraction(btnInteraction);
                 });
               });
 
               collectors.length = 0;
               collectors.push(...newCollectors);
-              Object.assign(renderResult, updatedResult);
+              allMessages.length = 0;
+              allMessages.push(...newMessages);
 
               logger.info('Request queue page changed', {
                 error_id: errorId,
@@ -1489,8 +1512,8 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
     };
 
     collectors.forEach((collector) => {
-      collector.on('collect', (interaction) => {
-        void handleButtonInteraction(interaction);
+      collector.on('collect', (btnInteraction: ButtonInteraction) => {
+        void handleButtonInteraction(btnInteraction);
       });
     });
   } catch (error) {
@@ -1590,23 +1613,31 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
     );
 
     const member = interaction.guild?.members.cache.get(userId) || null;
+    const hasAdminButtons = member && hasManageGuildPermission(member);
 
-    const formattedData = DiscordFormatter.formatTopNotesForQueue(result.data!, 1, limit, member);
+    const formattedData = DiscordFormatter.formatTopNotesForQueueV2(result.data!, 1, limit, {
+      includeForcePublishButtons: hasAdminButtons ?? false,
+    });
 
-    const renderResult = await QueueRenderer.render(
-      thread,
-      formattedData.summary,
-      formattedData.items,
-      formattedData.pagination
-    );
+    const containerMessage = await thread.send({
+      components: [formattedData.container.toJSON()],
+      flags: formattedData.flags,
+    });
+
+    const forcePublishMessages: Message[] = [];
+    for (const actionRow of formattedData.forcePublishButtonRows) {
+      const msg = await thread.send({
+        components: [actionRow.toJSON()],
+      });
+      forcePublishMessages.push(msg);
+    }
 
     await interaction.editReply({
       content: `Top notes posted to ${String(thread)}`,
     });
 
-    const hasAdminButtons = member && hasManageGuildPermission(member);
-    if (hasAdminButtons) {
-      const allMessages = QueueRenderer.getAllMessages(renderResult);
+    if (hasAdminButtons && forcePublishMessages.length > 0) {
+      const allMessages = [containerMessage, ...forcePublishMessages];
       const collectors = allMessages.map((msg) =>
         msg.createMessageComponentCollector({
           componentType: ComponentType.Button,
@@ -1959,13 +1990,24 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
     });
 
     if (!result.success) {
-      const errorResponse = DiscordFormatter.formatError(result);
-      await interaction.editReply(errorResponse);
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
+      await interaction.editReply({
+        components: errorResponse.components,
+        flags: errorResponse.flags,
+      });
       return;
     }
 
-    const response = DiscordFormatter.formatWriteNoteSuccess(result.data!, messageId);
-    await interaction.editReply(response);
+    const response = DiscordFormatter.formatWriteNoteSuccessV2(
+      result.data!,
+      messageId,
+      interaction.guildId || undefined,
+      interaction.channelId || undefined
+    );
+    await interaction.editReply({
+      components: response.components,
+      flags: response.flags,
+    });
 
     logger.info('Note created from request queue', {
       error_id: errorId,
@@ -2051,8 +2093,11 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       });
 
       if (!result.success) {
-        const errorResponse = DiscordFormatter.formatError(result);
-        await interaction.editReply(errorResponse);
+        const errorResponse = DiscordFormatter.formatErrorV2(result);
+        await interaction.editReply({
+          components: errorResponse.components,
+          flags: errorResponse.flags,
+        });
         return;
       }
 
@@ -2072,18 +2117,22 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         0
       );
 
-      const formattedData = await DiscordFormatter.formatListRequestsSuccess(result.data, {
+      const formattedData = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
         status: undefined,
         myRequestsOnly: false,
         communityServerId: communityServerUuid,
       });
 
-      await QueueRenderer.render(
-        thread,
-        formattedData.summary,
-        formattedData.items,
-        formattedData.pagination
-      );
+      await thread.send({
+        components: [formattedData.container.toJSON()],
+        flags: formattedData.flags,
+      });
+
+      for (const actionRow of formattedData.actionRows) {
+        await thread.send({
+          components: [actionRow.toJSON()],
+        });
+      }
 
       await interaction.editReply({
         content: `Request queue posted to ${String(thread)}`,

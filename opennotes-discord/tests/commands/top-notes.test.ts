@@ -36,6 +36,12 @@ const mockDiscordFormatter = {
     summary: { embed: {} },
     items: [],
   }),
+  formatTopNotesForQueueV2: jest.fn().mockReturnValue({
+    container: { toJSON: () => ({}) },
+    components: [{}],
+    flags: MessageFlags.IsComponentsV2,
+    forcePublishButtonRows: [],
+  }),
   formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
 };
 
@@ -161,6 +167,12 @@ describe('top-notes command', () => {
       summary: { embed: {} },
       items: [],
     });
+    mockDiscordFormatter.formatTopNotesForQueueV2.mockReturnValue({
+      container: { toJSON: () => ({}) },
+      components: [{}],
+      flags: MessageFlags.IsComponentsV2,
+      forcePublishButtonRows: [],
+    });
     mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
     mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
     mockQueueRenderer.render.mockResolvedValue({
@@ -211,8 +223,11 @@ describe('top-notes command', () => {
         tier: undefined,
       });
       expect(mockQueueManager.getOrCreateOpenNotesThread).toHaveBeenCalled();
-      expect(mockDiscordFormatter.formatTopNotesForQueue).toHaveBeenCalled();
-      expect(mockQueueRenderer.render).toHaveBeenCalled();
+      expect(mockDiscordFormatter.formatTopNotesForQueueV2).toHaveBeenCalled();
+      expect(mockThread.send).toHaveBeenCalledWith({
+        components: expect.any(Array),
+        flags: MessageFlags.IsComponentsV2,
+      });
       expect(mockInteraction.editReply).toHaveBeenCalledWith({
         content: expect.stringContaining('Top notes posted to'),
       });
