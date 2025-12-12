@@ -768,19 +768,25 @@ describe('DiscordFormatter', () => {
       expect(allContent).toContain('No requests found');
     });
 
-    it('should return action rows for pending requests', async () => {
+    it('should embed action rows in container for pending requests', async () => {
       const result = createMockListRequestsResult(1);
       result.requests[0].status = 'PENDING';
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
-      expect(formatted.actionRows.length).toBeGreaterThan(0);
+      const container = formatted.container.toJSON();
+      const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
+      expect(actionRowComponents.length).toBeGreaterThan(0);
+      expect(formatted.actionRows).toHaveLength(0);
     });
 
-    it('should not return action rows for non-pending requests', async () => {
+    it('should not have action rows for non-pending requests', async () => {
       const result = createMockListRequestsResult(1);
       result.requests[0].status = 'COMPLETED';
       const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
 
+      const container = formatted.container.toJSON();
+      const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
+      expect(actionRowComponents).toHaveLength(0);
       expect(formatted.actionRows).toHaveLength(0);
     });
 
@@ -805,6 +811,57 @@ describe('DiscordFormatter', () => {
       const mediaGalleryComponents = container.components.filter((c: { type: number }) => c.type === 12);
 
       expect(mediaGalleryComponents.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should embed action rows inside container for pending requests', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const actionRowComponents = container.components.filter((c: { type: number }) => c.type === 1);
+
+      expect(actionRowComponents.length).toBeGreaterThan(0);
+    });
+
+    it('should place action row immediately after its associated request entry', async () => {
+      const result = createMockListRequestsResult(2);
+      result.requests[0].status = 'PENDING';
+      result.requests[1].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      const container = formatted.container.toJSON();
+      const components = container.components;
+
+      let requestTextIndices: number[] = [];
+      let actionRowIndices: number[] = [];
+
+      components.forEach((c: { type: number; content?: string }, idx: number) => {
+        if (c.type === 10 && c.content?.includes('discord-123-')) {
+          requestTextIndices.push(idx);
+        }
+        if (c.type === 1) {
+          actionRowIndices.push(idx);
+        }
+      });
+
+      expect(actionRowIndices.length).toBe(2);
+      actionRowIndices.forEach((arIdx, i) => {
+        const requestIdx = requestTextIndices[i];
+        expect(arIdx).toBeGreaterThan(requestIdx);
+        const nextRequestIdx = requestTextIndices[i + 1];
+        if (nextRequestIdx !== undefined) {
+          expect(arIdx).toBeLessThan(nextRequestIdx);
+        }
+      });
+    });
+
+    it('should not return separate actionRows array when rows are embedded', async () => {
+      const result = createMockListRequestsResult(1);
+      result.requests[0].status = 'PENDING';
+      const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result);
+
+      expect(formatted.actionRows).toHaveLength(0);
     });
   });
 

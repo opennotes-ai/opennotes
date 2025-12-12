@@ -1157,14 +1157,6 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       flags: formattedData.flags,
     });
 
-    const actionRowMessages: Message[] = [];
-    for (const actionRow of formattedData.actionRows) {
-      const msg = await thread.send({
-        components: [actionRow.toJSON()],
-      });
-      actionRowMessages.push(msg);
-    }
-
     await interaction.editReply({
       content: `Request queue posted to ${String(thread)}`,
     });
@@ -1177,13 +1169,12 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
       total: result.data.total,
     });
 
-    const allMessages = [containerMessage, ...actionRowMessages];
-    const collectors = allMessages.map((msg) =>
-      msg.createMessageComponentCollector({
+    const collectors = [
+      containerMessage.createMessageComponentCollector({
         componentType: ComponentType.Button,
         time: TIMEOUTS.QUEUE_NOTES_COLLECTOR_TIMEOUT_MS,
-      })
-    );
+      }),
+    ];
 
     const handleButtonInteraction = async (buttonInteraction: ButtonInteraction): Promise<void> => {
       if (buttonInteraction.user.id !== userId) {
@@ -1277,36 +1268,17 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
                 flags: newFormattedData.flags,
               });
 
-              for (const msg of actionRowMessages) {
-                await msg.delete().catch(() => {});
-              }
-              actionRowMessages.length = 0;
+              const newCollector = containerMessage.createMessageComponentCollector({
+                componentType: ComponentType.Button,
+                time: TIMEOUTS.QUEUE_NOTES_COLLECTOR_TIMEOUT_MS,
+              });
 
-              for (const actionRow of newFormattedData.actionRows) {
-                const msg = await thread.send({
-                  components: [actionRow.toJSON()],
-                });
-                actionRowMessages.push(msg);
-              }
-
-              const newMessages = [containerMessage, ...actionRowMessages];
-              const newCollectors = newMessages.map((msg) =>
-                msg.createMessageComponentCollector({
-                  componentType: ComponentType.Button,
-                  time: TIMEOUTS.QUEUE_NOTES_COLLECTOR_TIMEOUT_MS,
-                })
-              );
-
-              newCollectors.forEach((collector) => {
-                collector.on('collect', (btnInteraction: ButtonInteraction) => {
-                  void handleButtonInteraction(btnInteraction);
-                });
+              newCollector.on('collect', (btnInteraction: ButtonInteraction) => {
+                void handleButtonInteraction(btnInteraction);
               });
 
               collectors.length = 0;
-              collectors.push(...newCollectors);
-              allMessages.length = 0;
-              allMessages.push(...newMessages);
+              collectors.push(newCollector);
 
               logger.info('Request queue page changed', {
                 error_id: errorId,
@@ -2127,12 +2099,6 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
         components: [formattedData.container.toJSON()],
         flags: formattedData.flags,
       });
-
-      for (const actionRow of formattedData.actionRows) {
-        await thread.send({
-          components: [actionRow.toJSON()],
-        });
-      }
 
       await interaction.editReply({
         content: `Request queue posted to ${String(thread)}`,
