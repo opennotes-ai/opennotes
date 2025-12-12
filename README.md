@@ -4,6 +4,10 @@
 </h1>
 
 [Homepage](https://opennotes.ai) • [Philosophy](docs/PHILOSOPHY.md) • [Architecture](docs/ARCHITECTURE.md)
+
+
+<a href="https://discord.gg/CsxBasRrte"><img alt="Discord" src="https://img.shields.io/discord/1448846366938759308?label=Discord"></a>
+
 </div>
 
 <hr/>
