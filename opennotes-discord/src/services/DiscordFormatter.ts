@@ -531,8 +531,6 @@ export class DiscordFormatter {
       )
     );
 
-    const allActionRows: ActionRowBuilder<ButtonBuilder>[] = [];
-
     for (const request of result.requests.slice(0, 5)) {
       const statusEmojiMap: Record<RequestStatus, string> = {
         PENDING: '\u{23F3}',
@@ -611,7 +609,7 @@ export class DiscordFormatter {
             .setLabel('AI Generate')
             .setStyle(ButtonStyle.Primary)
         );
-        allActionRows.push(row);
+        container.addActionRowComponents(row);
       }
     }
 
@@ -658,14 +656,14 @@ export class DiscordFormatter {
           .setStyle(ButtonStyle.Secondary)
           .setDisabled(result.page >= totalPages)
       );
-      allActionRows.push(paginationRow);
+      container.addActionRowComponents(paginationRow);
     }
 
     return {
       container,
       components: [container.toJSON()],
       flags: v2MessageFlags(),
-      actionRows: allActionRows,
+      actionRows: [],
       stateId,
     };
   }
