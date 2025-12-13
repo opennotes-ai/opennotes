@@ -165,26 +165,12 @@ class NATSClientManager:
             raise RuntimeError("NATS client not connected")
 
         try:
-            # Publish to JetStream for persistence
-            ack = await self.circuit_breaker.call(
+            return await self.circuit_breaker.call(
                 self.js.publish,
                 subject,
                 data,
                 headers=headers,
             )
-
-            # ALSO publish to core NATS for subscribers using fallback
-            # This is a workaround for JetStream subscription timeout issues
-            # where subscribers fall back to core NATS but publishers use JetStream
-            try:
-                await self.nc.publish(subject, data, headers=headers)
-            except Exception as core_error:
-                # Don't fail the publish if core NATS fails - JetStream is primary
-                logger.warning(
-                    f"Failed to publish to core NATS (JetStream succeeded): {core_error}"
-                )
-
-            return ack
         except Exception as e:
             logger.error(f"Failed to publish to subject '{subject}': {e}")
             raise
