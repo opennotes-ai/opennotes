@@ -255,10 +255,11 @@ export class Bot {
 
       logger.info('Auto-post system connected to NATS and subscribed to score updates');
     } catch (error) {
-      logger.error('Failed to initialize auto-post system', {
+      logger.error('Failed to initialize auto-post system - JetStream is required', {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
+      throw error;
     }
   }
 
