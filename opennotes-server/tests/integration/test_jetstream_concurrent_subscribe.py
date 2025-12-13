@@ -23,14 +23,24 @@ logger = logging.getLogger(__name__)
 
 pytestmark = pytest.mark.integration_messaging
 
-NATS_URL = os.environ.get("NATS_URL", "nats://localhost:4222")
 STREAM_NAME = "JETSTREAM_TEST"
 
 
+def get_nats_url() -> str:
+    """Get NATS URL dynamically - must be called after testcontainers starts."""
+    return os.environ.get("NATS_URL", "nats://localhost:4222")
+
+
 @pytest.fixture
-async def nats_client() -> Any:
-    """Create a fresh NATS connection for testing."""
-    nc = await nats.connect(NATS_URL, max_reconnect_attempts=3)
+async def nats_client(db_session: Any) -> Any:
+    """Create a fresh NATS connection for testing.
+
+    Note: Depends on db_session to ensure testcontainers is started and
+    environment variables (NATS_URL) are set before we try to connect.
+    """
+    nats_url = get_nats_url()
+    logger.info(f"Connecting to NATS at: {nats_url}")
+    nc = await nats.connect(nats_url, max_reconnect_attempts=3)
     js = nc.jetstream(timeout=30.0)
 
     # Create a test stream
@@ -260,33 +270,34 @@ class TestNATSServerInfo:
     @pytest.mark.asyncio
     async def test_server_version(self, nats_client: dict[str, Any]) -> None:
         """Log NATS server version for diagnosis."""
+        import re
+
         nc = nats_client["nc"]
-        server_info = nc.connected_server_info
+        # nats-py uses connected_server_version for version string
+        version = nc.connected_server_version
 
         logger.info("=" * 60)
         logger.info("NATS SERVER DIAGNOSTICS")
         logger.info("=" * 60)
-        logger.info(f"Server ID: {server_info.server_id}")
-        logger.info(f"Server Name: {server_info.server_name}")
-        logger.info(f"Version: {server_info.version}")
-        logger.info(f"Go Version: {server_info.go}")
-        logger.info(f"JetStream: {server_info.jetstream}")
-        logger.info(f"Max Payload: {server_info.max_payload}")
-        logger.info(f"Protocol: {server_info.proto}")
+        logger.info(f"Version: {version}")
+        logger.info(f"Connected URL: {nc.connected_url}")
+        logger.info(f"Client ID: {nc.client_id}")
         logger.info("=" * 60)
 
         # Log for later analysis
-        version = server_info.version
-        logger.info(f"Current NATS server version: {version}")
+        version_str = str(version)
+        logger.info(f"Current NATS server version: {version_str}")
 
         # Check if we're on a version known to have issues
-        major, minor = map(int, version.split(".")[:2])
-        if major == 2 and minor == 9:
-            logger.warning(
-                f"NATS {version} - Version 2.9.15 known to have consumer timeout issues. "
-                "Consider upgrading to 2.10+ or 2.12+"
-            )
-        elif major == 2 and minor >= 12:
-            logger.info(f"NATS {version} - Latest stable version, good!")
+        match = re.search(r"(\d+)\.(\d+)", version_str)
+        if match:
+            major, minor = int(match.group(1)), int(match.group(2))
+            if major == 2 and minor == 9:
+                logger.warning(
+                    f"NATS {version_str} - Version 2.9.15 known to have consumer timeout issues. "
+                    "Consider upgrading to 2.10+ or 2.12+"
+                )
+            elif major == 2 and minor >= 12:
+                logger.info(f"NATS {version_str} - Latest stable version, good!")
 
-        assert server_info is not None
+        assert version is not None
