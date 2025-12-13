@@ -142,7 +142,6 @@ class EventSubscriber:
             queue=queue,
             callback=callback,
             durable=None,
-            use_jetstream=True,
         )
         self.subscriptions.append(subscription)
         logger.info(f"Subscribed to {subject} with JetStream ephemeral consumer (queue: {queue})")

@@ -181,67 +181,35 @@ class NATSClientManager:
         queue: str,
         callback: MessageCallback,
         durable: str | None = None,
-        use_jetstream: bool = True,
     ) -> Subscription:
         if not self.nc:
             raise RuntimeError("NATS client not connected")
 
-        if use_jetstream:
-            if not self.js:
-                raise RuntimeError("JetStream context not initialized")
+        if not self.js:
+            raise RuntimeError("JetStream context not initialized")
 
-            # Build consumer config - only include durable_name if provided
-            config_params: dict[str, int | str] = {
-                "max_deliver": settings.NATS_MAX_DELIVER_ATTEMPTS,
-                "ack_wait": settings.NATS_ACK_WAIT_SECONDS,
-            }
-            if durable is not None:
-                config_params["durable_name"] = durable
+        config_params: dict[str, int | str] = {
+            "max_deliver": settings.NATS_MAX_DELIVER_ATTEMPTS,
+            "ack_wait": settings.NATS_ACK_WAIT_SECONDS,
+        }
+        if durable is not None:
+            config_params["durable_name"] = durable
 
-            consumer_config = ConsumerConfig(**config_params)  # type: ignore[arg-type]
+        consumer_config = ConsumerConfig(**config_params)  # type: ignore[arg-type]
 
-            try:
-                # Bypass circuit breaker for subscriptions - they're one-time setup operations
-                # Circuit breaker's lock can cause timeouts during concurrent startup operations
-                # Wrap with timeout to prevent indefinite hangs (nats-py issue #437)
-                return await asyncio.wait_for(
-                    self.js.subscribe(
-                        subject,
-                        queue=queue,
-                        cb=callback,
-                        config=consumer_config,
-                    ),
-                    timeout=10.0,  # 10s timeout for consumer creation
-                )
-            except TimeoutError:
-                logger.error(
-                    f"JetStream subscription to '{subject}' timed out after 10s. "
-                    f"This is a known issue with nats-py ephemeral consumer creation. "
-                    f"Falling back to core NATS subscription."
-                )
-                # Fall back to core NATS subscription
-                logger.info(f"Using core NATS subscription for {subject} (queue: {queue})")
-                return await self.nc.subscribe(
+        try:
+            return await asyncio.wait_for(
+                self.js.subscribe(
                     subject,
                     queue=queue,
                     cb=callback,
-                )
-            except Exception as e:
-                logger.error(f"Failed to subscribe to subject '{subject}': {e}")
-                raise
-        else:
-            # Use core NATS subscription (no JetStream persistence)
-            # More reliable during development but loses messages if service is down
-            try:
-                logger.info(f"Using core NATS subscription for {subject} (queue: {queue})")
-                return await self.nc.subscribe(
-                    subject,
-                    queue=queue,
-                    cb=callback,
-                )
-            except Exception as e:
-                logger.error(f"Failed to core-subscribe to subject '{subject}': {e}")
-                raise
+                    config=consumer_config,
+                ),
+                timeout=10.0,
+            )
+        except Exception as e:
+            logger.error(f"Failed to subscribe to subject '{subject}': {e}")
+            raise
 
     async def is_connected(self) -> bool:
         if not self.nc:
