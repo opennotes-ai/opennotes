@@ -1,7 +1,7 @@
 """task_838_add_fts_search_vector_to_fact_check_items
 
 Revision ID: 8d343d576c05
-Revises: e304e0f3f0e1
+Revises: c1e6dcebae91
 Create Date: 2025-12-16 18:05:38.072798
 
 Adds PostgreSQL full-text search (FTS) support to the fact_check_items table:
@@ -23,7 +23,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from alembic import op
 
 revision: str = "8d343d576c05"
-down_revision: str | Sequence[str] | None = "e304e0f3f0e1"
+down_revision: str | Sequence[str] | None = "c1e6dcebae91"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
