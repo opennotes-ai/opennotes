@@ -19,6 +19,10 @@ export enum ConfigKey {
   // Notifications
   NOTIFY_NOTE_HELPFUL = 'notify_note_helpful',
   NOTIFY_REQUEST_FULFILLED = 'notify_request_fulfilled',
+
+  // Bot Channel
+  BOT_CHANNEL_NAME = 'bot_channel_name',
+  OPENNOTES_ROLE_NAME = 'opennotes_role_name',
 }
 
 export type ConfigValue = boolean | number | string;
@@ -124,6 +128,20 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     type: 'boolean',
     default: true,
     description: 'Send DM when your request gets a note',
+  },
+
+  // Bot Channel
+  [ConfigKey.BOT_CHANNEL_NAME]: {
+    key: ConfigKey.BOT_CHANNEL_NAME,
+    type: 'string',
+    default: 'open-notes',
+    description: 'Name of the dedicated OpenNotes bot channel',
+  },
+  [ConfigKey.OPENNOTES_ROLE_NAME]: {
+    key: ConfigKey.OPENNOTES_ROLE_NAME,
+    type: 'string',
+    default: 'OpenNotes',
+    description: 'Name of the role that can send messages in the bot channel',
   },
 };
 

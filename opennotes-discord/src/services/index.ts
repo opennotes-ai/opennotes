@@ -21,3 +21,4 @@ export * from './RateLimitFactory.js';
 export * from './ServiceProvider.js';
 export * from './GuildConfigService.js';
 export * from './GuildOnboardingService.js';
+export * from './BotChannelService.js';
