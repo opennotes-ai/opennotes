@@ -32,6 +32,7 @@ from src.fact_checking.previously_seen_jsonapi_router import (
     router as previously_seen_jsonapi_router,
 )
 from src.fact_checking.previously_seen_router import router as previously_seen_router
+from src.fact_checking.search_router import router as search_router
 from src.health import router as health_router
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
@@ -352,6 +353,7 @@ app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(monitored_channel_router, prefix=settings.API_V1_PREFIX)
 app.include_router(embedding_router, prefix=settings.API_V1_PREFIX)
 app.include_router(previously_seen_router, prefix=settings.API_V1_PREFIX)
+app.include_router(search_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes
 app.include_router(health_router)
