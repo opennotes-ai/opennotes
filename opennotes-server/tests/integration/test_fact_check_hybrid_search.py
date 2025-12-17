@@ -551,3 +551,48 @@ class TestHybridSearchDatasetTagsFiltering:
         assert len(results_empty) == len(results_none), (
             "Empty list and None should behave the same (no filtering)"
         )
+
+
+class TestHybridSearchPreFilterConstant:
+    """Tests for the RRF CTE pre-filter limit constant."""
+
+    def test_rrf_cte_prelimit_constant_exists(self):
+        """Test that RRF_CTE_PRELIMIT constant is defined and exported."""
+        from src.fact_checking.repository import RRF_CTE_PRELIMIT
+
+        assert RRF_CTE_PRELIMIT == 20, (
+            "RRF_CTE_PRELIMIT should be 20 (each CTE fetches 20 candidates)"
+        )
+
+    def test_rrf_cte_prelimit_is_positive_integer(self):
+        """Test that RRF_CTE_PRELIMIT is a valid positive integer."""
+        from src.fact_checking.repository import RRF_CTE_PRELIMIT
+
+        assert isinstance(RRF_CTE_PRELIMIT, int), "RRF_CTE_PRELIMIT should be an integer"
+        assert RRF_CTE_PRELIMIT > 0, "RRF_CTE_PRELIMIT should be positive"
+
+    async def test_hybrid_search_max_results_bounded_by_prelimit(self, hybrid_search_test_items):
+        """Test that hybrid search is bounded by CTE pre-filter limit.
+
+        Each CTE (semantic and keyword) fetches RRF_CTE_PRELIMIT results.
+        After RRF fusion, maximum unique results = 2 * RRF_CTE_PRELIMIT.
+        When limit exceeds this, we still only get fused candidates.
+        """
+        from src.fact_checking.repository import RRF_CTE_PRELIMIT, hybrid_search
+
+        query_text = "fact check"
+        query_embedding = generate_test_embedding(seed=1)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                limit=100,
+            )
+
+        max_possible = 2 * RRF_CTE_PRELIMIT
+        assert len(results) <= max_possible, (
+            f"Results should be bounded by 2 * RRF_CTE_PRELIMIT ({max_possible}), "
+            f"but got {len(results)}"
+        )

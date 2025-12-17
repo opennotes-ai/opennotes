@@ -21,6 +21,22 @@ logger = get_logger(__name__)
 # Higher k values reduce the impact of rank differences; k=60 is the de facto standard.
 RRF_K_CONSTANT = 60
 
+# Pre-filter limit for each CTE (Common Table Expression) in hybrid search.
+# Each search method (semantic and keyword) retrieves this many candidates
+# before RRF fusion combines them into final rankings.
+#
+# Why 20?
+# - Balances performance vs. recall for typical fact-checking queries
+# - Maximum unique results after RRF = 2 * RRF_CTE_PRELIMIT (40) when
+#   semantic and keyword results have zero overlap
+# - In practice, good queries have overlap, so final results < 40
+# - Higher values increase recall but slow down vector distance calculations
+#
+# If you need more results, increase this value, but be aware:
+# - Semantic search cost scales with this limit (pgvector distance computations)
+# - Keyword search is cheaper but still benefits from bounded results
+RRF_CTE_PRELIMIT = 20
+
 
 @dataclass
 class HybridSearchResult:
@@ -45,11 +61,12 @@ async def hybrid_search(
     - pgvector embedding similarity (cosine distance)
 
     The RRF formula: score = 1/(k + rank_semantic) + 1/(k + rank_keyword)
-    where k=60 is the standard RRF constant that balances the contribution
-    of high and low ranked results.
+    where k=60 (RRF_K_CONSTANT) is the standard RRF constant that balances
+    the contribution of high and low ranked results.
 
-    Note: Each search method (semantic/keyword) pre-filters to top 20 results
-    before RRF combination, so maximum possible results is 40 (when no overlap).
+    Note: Each search method (semantic/keyword) pre-filters to top
+    RRF_CTE_PRELIMIT (20) results before RRF combination, so maximum
+    possible results is 2 * RRF_CTE_PRELIMIT (40) when no overlap.
 
     Args:
         session: Async database session
@@ -85,14 +102,14 @@ async def hybrid_search(
             FROM fact_check_items
             WHERE embedding IS NOT NULL {tags_filter}
             ORDER BY embedding <=> CAST(:embedding AS vector)
-            LIMIT 20
+            LIMIT {RRF_CTE_PRELIMIT}
         ),
         keyword AS (
             SELECT id, RANK() OVER (ORDER BY ts_rank_cd(search_vector, query) DESC) AS rank
             FROM fact_check_items, plainto_tsquery('english', :query_text) query
             WHERE search_vector @@ query {tags_filter}
             ORDER BY ts_rank_cd(search_vector, query) DESC
-            LIMIT 20
+            LIMIT {RRF_CTE_PRELIMIT}
         )
         SELECT
             fci.id,
