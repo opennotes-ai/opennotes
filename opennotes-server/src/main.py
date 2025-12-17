@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -79,7 +78,6 @@ from src.users.profiles_jsonapi_router import router as profiles_jsonapi_router
 from src.users.router import router as auth_router
 from src.webhooks.cache import interaction_cache
 from src.webhooks.discord_client import close_discord_client
-from src.webhooks.queue import process_task_worker, retry_processor_worker, task_queue
 from src.webhooks.rate_limit import rate_limiter
 from src.webhooks.router import router as webhook_router
 from src.workers.vision_worker import VisionDescriptionHandler
@@ -118,7 +116,7 @@ distributed_health = DistributedHealthCoordinator()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0912
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Debug mode: {settings.DEBUG}")
@@ -143,7 +141,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0912
     logger.info("Database initialized")
 
     await redis_client.connect()
-    await task_queue.connect()
     await rate_limiter.connect()
     await interaction_cache.connect()
     logger.info("Redis connections established")
@@ -229,27 +226,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0912
     await distributed_health.start_heartbeat(health_checker.check_all)
     logger.info(f"Distributed health heartbeat started for instance {settings.INSTANCE_ID}")
 
-    task_worker = None
-    retry_worker = None
-    if not settings.TESTING:
-        task_worker = asyncio.create_task(process_task_worker())
-        retry_worker = asyncio.create_task(retry_processor_worker())
-        logger.info("Background workers started")
-    else:
-        logger.info("Background workers skipped (TESTING=True)")
-
     yield
-
-    if task_worker and retry_worker:
-        task_worker.cancel()
-        retry_worker.cancel()
-
-        try:
-            await asyncio.gather(task_worker, retry_worker, return_exceptions=True)
-        except asyncio.CancelledError:
-            pass
-
-        logger.info("Background workers stopped")
 
     await distributed_health.stop_heartbeat()
     logger.info("Distributed health heartbeat stopped")
@@ -268,7 +245,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: PLR0912
     await close_discord_client()
     logger.info("Discord client closed")
 
-    await task_queue.disconnect()
     await rate_limiter.disconnect()
     await interaction_cache.disconnect()
     await redis_client.disconnect()

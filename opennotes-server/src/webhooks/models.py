@@ -58,29 +58,3 @@ class Interaction(Base):
         nullable=False,
         index=True,
     )
-
-
-class Task(Base):
-    __tablename__ = "tasks"
-
-    id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()"), index=True
-    )
-    task_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
-    interaction_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    interaction_token: Mapped[str] = mapped_column(String(200), nullable=False)
-    application_id: Mapped[str] = mapped_column(String(50), nullable=False)
-    task_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True)
-    task_data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
-    result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
-    error: Mapped[str] = mapped_column(Text, nullable=True)
-    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        nullable=False,
-        index=True,
-    )
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
