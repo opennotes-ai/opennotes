@@ -24,6 +24,9 @@ from src.fact_checking.embedding_router import router as embedding_router
 from src.fact_checking.embeddings_jsonapi_router import (
     router as embeddings_jsonapi_router,
 )
+from src.fact_checking.hybrid_searches_jsonapi_router import (
+    router as hybrid_searches_jsonapi_router,
+)
 from src.fact_checking.monitored_channel_router import router as monitored_channel_router
 from src.fact_checking.monitored_channels_jsonapi_router import (
     router as monitored_channels_jsonapi_router,
@@ -335,6 +338,11 @@ app.include_router(
 )
 app.include_router(
     embeddings_jsonapi_router, prefix=settings.API_V2_PREFIX, tags=["embeddings-jsonapi"]
+)
+app.include_router(
+    hybrid_searches_jsonapi_router,
+    prefix=settings.API_V2_PREFIX,
+    tags=["hybrid-searches-jsonapi"],
 )
 
 # API v1 routes

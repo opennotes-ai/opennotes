@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import ARRAY, CheckConstraint, Index, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -33,6 +33,7 @@ class FactCheckItem(Base):
         rating: Fact-check verdict (e.g., 'false', 'mostly-true', 'mixture')
         embedding: pgvector embedding for semantic search (1536 dimensions)
         extra_metadata: Flexible JSONB for dataset-specific fields (database column: 'metadata')
+        search_vector: PostgreSQL tsvector for full-text search (auto-populated by trigger)
         created_at: Timestamp when record was created
         updated_at: Timestamp of last update
     """
@@ -83,6 +84,10 @@ class FactCheckItem(Base):
         "metadata", JSONB, nullable=False, server_default="{}"
     )
 
+    # Full-text search vector (auto-populated by database trigger)
+    # Weight 'A' for title, weight 'B' for content
+    search_vector: Mapped[Any | None] = mapped_column(TSVECTOR(), nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -116,6 +121,8 @@ class FactCheckItem(Base):
             postgresql_using="ivfflat",
             postgresql_with={"lists": 100},
         ),
+        # GIN index for full-text search on search_vector
+        Index("ix_fact_check_items_search_vector", "search_vector", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:

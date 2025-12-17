@@ -63,7 +63,7 @@ async def list_monitored_channels(
     )
 
     if enabled_only:
-        query = query.where(MonitoredChannel.enabled == True)
+        query = query.where(MonitoredChannel.enabled.is_(True))
 
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())

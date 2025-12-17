@@ -1,14 +1,18 @@
-"""JSON:API v2 similarity-searches router.
+"""JSON:API v2 hybrid-searches router.
 
-This module implements JSON:API 1.1 compliant endpoint for similarity searches.
+This module implements JSON:API 1.1 compliant endpoint for hybrid searches.
 It provides:
-- POST /similarity-searches: Perform semantic similarity search on fact-check items
+- POST /hybrid-searches: Perform hybrid search (FTS + semantic) on fact-check items
 - Standard JSON:API response envelope structure
 - Proper content-type headers (application/vnd.api+json)
+
+Hybrid search combines PostgreSQL full-text search with pgvector semantic
+similarity using Reciprocal Rank Fusion (RRF) for result ranking.
 
 Reference: https://jsonapi.org/format/
 """
 
+import time
 import uuid
 from datetime import datetime
 from functools import lru_cache
@@ -36,6 +40,7 @@ from src.common.jsonapi import (
 from src.config import settings
 from src.database import get_db
 from src.fact_checking.embedding_service import EmbeddingService
+from src.fact_checking.repository import hybrid_search
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.models import CommunityServer
@@ -100,61 +105,45 @@ async def get_community_server_uuid(
     return result.scalar_one_or_none()
 
 
-class SimilaritySearchCreateAttributes(StrictInputSchema):
-    """Attributes for performing a similarity search via JSON:API."""
+class HybridSearchCreateAttributes(StrictInputSchema):
+    """Attributes for performing a hybrid search via JSON:API."""
 
     text: str = Field(
         ...,
-        min_length=1,
+        min_length=3,
         max_length=50000,
-        description="Message text to search for similar fact-checks",
+        description="Query text to search for (minimum 3 characters). Uses hybrid search combining FTS and semantic similarity.",
     )
     community_server_id: str = Field(
         ...,
         max_length=64,
         description="Community server (guild) ID",
     )
-    dataset_tags: list[str] = Field(
-        default_factory=lambda: ["snopes"],
-        description="Dataset tags to filter by (e.g., ['snopes', 'politifact'])",
-    )
-    similarity_threshold: float = Field(
-        default_factory=lambda: settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
-        description="Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering",
-        ge=0.0,
-        le=1.0,
-    )
-    rrf_score_threshold: float = Field(
-        0.1,
-        description="Minimum scaled RRF score (0.0-1.0) for post-fusion filtering",
-        ge=0.0,
-        le=1.0,
-    )
     limit: int = Field(
-        5,
+        10,
         description="Maximum number of results to return",
         ge=1,
         le=20,
     )
 
 
-class SimilaritySearchCreateData(BaseModel):
-    """JSON:API data object for similarity search."""
+class HybridSearchCreateData(BaseModel):
+    """JSON:API data object for hybrid search."""
 
-    type: Literal["similarity-searches"] = Field(
-        ..., description="Resource type must be 'similarity-searches'"
+    type: Literal["hybrid-searches"] = Field(
+        ..., description="Resource type must be 'hybrid-searches'"
     )
-    attributes: SimilaritySearchCreateAttributes
+    attributes: HybridSearchCreateAttributes
 
 
-class SimilaritySearchRequest(BaseModel):
-    """JSON:API request body for performing a similarity search."""
+class HybridSearchRequest(BaseModel):
+    """JSON:API request body for performing a hybrid search."""
 
-    data: SimilaritySearchCreateData
+    data: HybridSearchCreateData
 
 
-class FactCheckMatchResource(BaseModel):
-    """JSON:API-compatible fact-check match in search results."""
+class HybridSearchMatchResource(BaseModel):
+    """JSON:API-compatible fact-check match in hybrid search results."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -168,40 +157,39 @@ class FactCheckMatchResource(BaseModel):
     source_url: str | None = Field(None, description="URL to original article")
     published_date: datetime | None = Field(None, description="Publication date")
     author: str | None = Field(None, description="Author name")
-    embedding_provider: str | None = Field(None, description="LLM provider used for embedding")
-    embedding_model: str | None = Field(None, description="Model name used for embedding")
-    similarity_score: float = Field(
-        ..., description="Cosine similarity score (0.0-1.0)", ge=0.0, le=1.0
+    rrf_score: float = Field(
+        ...,
+        description="Reciprocal Rank Fusion score combining FTS and semantic rankings",
+        ge=0.0,
     )
 
 
-class SimilaritySearchResultAttributes(BaseModel):
-    """Attributes for similarity search result."""
+class HybridSearchResultAttributes(BaseModel):
+    """Attributes for hybrid search result."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    matches: list[FactCheckMatchResource] = Field(..., description="Matching fact-check items")
+    matches: list[HybridSearchMatchResource] = Field(
+        ..., description="Matching fact-check items ranked by RRF score"
+    )
     query_text: str = Field(..., description="Original query text")
-    dataset_tags: list[str] = Field(..., description="Dataset tags used for filtering")
-    similarity_threshold: float = Field(..., description="Cosine similarity threshold applied")
-    rrf_score_threshold: float = Field(..., description="Scaled RRF score threshold applied")
     total_matches: int = Field(..., description="Number of matches found")
 
 
-class SimilaritySearchResultResource(BaseModel):
-    """JSON:API resource object for similarity search results."""
+class HybridSearchResultResource(BaseModel):
+    """JSON:API resource object for hybrid search results."""
 
-    type: str = "similarity-search-results"
+    type: str = "hybrid-search-results"
     id: str
-    attributes: SimilaritySearchResultAttributes
+    attributes: HybridSearchResultAttributes
 
 
-class SimilaritySearchResultResponse(BaseModel):
-    """JSON:API response for similarity search results."""
+class HybridSearchResultResponse(BaseModel):
+    """JSON:API response for hybrid search results."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    data: SimilaritySearchResultResource
+    data: HybridSearchResultResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
@@ -224,25 +212,30 @@ def create_error_response(
     )
 
 
-@router.post("/similarity-searches", response_class=JSONResponse)
+@router.post("/hybrid-searches", response_class=JSONResponse)
 @limiter.limit("100/hour")
-async def similarity_search_jsonapi(
+async def hybrid_search_jsonapi(
     request: HTTPRequest,
-    body: SimilaritySearchRequest,
+    body: HybridSearchRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
     usage_tracker: Annotated[LLMUsageTracker, Depends(get_usage_tracker)],
 ) -> JSONResponse:
-    """Perform semantic similarity search on fact-check items.
+    """Perform hybrid search on fact-check items combining FTS and semantic similarity.
 
     This endpoint:
     1. Verifies user is authorized member of community server
     2. Validates community server has OpenAI configuration
     3. Generates embedding using text-embedding-3-small (1536 dimensions)
-    4. Queries fact_check_items table with pgvector cosine similarity
-    5. Filters by dataset_tags (e.g., 'snopes', 'politifact')
-    6. Returns top matches above similarity threshold
+    4. Executes hybrid search combining:
+       - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
+       - pgvector embedding similarity (cosine distance)
+    5. Uses Reciprocal Rank Fusion (RRF) to combine rankings
+    6. Returns top matches ranked by combined RRF score
+
+    The RRF formula: score = 1/(k + rank_semantic) + 1/(k + rank_keyword)
+    where k=60 is the standard RRF constant.
 
     JSON:API 1.1 action endpoint that returns search results.
 
@@ -251,6 +244,7 @@ async def similarity_search_jsonapi(
     - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
     """
+    total_start = time.perf_counter()
     try:
         attrs = body.data.attributes
 
@@ -259,15 +253,14 @@ async def similarity_search_jsonapi(
         )
 
         logger.info(
-            f"User {current_user.id} performing similarity search via JSON:API",
+            f"User {current_user.id} performing hybrid search via JSON:API",
             extra={
                 "user_id": str(current_user.id),
                 "profile_id": str(membership.profile_id),
                 "community_server_id": attrs.community_server_id,
                 "community_role": membership.role,
                 "text_length": len(attrs.text),
-                "dataset_tags": attrs.dataset_tags,
-                "threshold": attrs.similarity_threshold,
+                "limit": attrs.limit,
             },
         )
 
@@ -298,59 +291,64 @@ async def similarity_search_jsonapi(
                     reason or "LLM usage limit exceeded",
                 )
 
-        response = await embedding_service.similarity_search(
+        embedding_start = time.perf_counter()
+        query_embedding = await embedding_service.generate_embedding(
             db=db,
-            query_text=attrs.text,
+            text=attrs.text,
             community_server_id=attrs.community_server_id,
-            dataset_tags=attrs.dataset_tags,
-            similarity_threshold=attrs.similarity_threshold,
-            rrf_score_threshold=attrs.rrf_score_threshold,
+        )
+        embedding_duration_ms = (time.perf_counter() - embedding_start) * 1000
+
+        search_start = time.perf_counter()
+        search_results = await hybrid_search(
+            session=db,
+            query_text=attrs.text,
+            query_embedding=query_embedding,
             limit=attrs.limit,
         )
+        search_duration_ms = (time.perf_counter() - search_start) * 1000
 
         match_resources = [
-            FactCheckMatchResource(
-                id=str(match.id),
-                dataset_name=match.dataset_name,
-                dataset_tags=match.dataset_tags,
-                title=match.title,
-                content=match.content,
-                summary=match.summary,
-                rating=match.rating,
-                source_url=match.source_url,
-                published_date=match.published_date,
-                author=match.author,
-                embedding_provider=match.embedding_provider,
-                embedding_model=match.embedding_model,
-                similarity_score=match.similarity_score,
+            HybridSearchMatchResource(
+                id=str(result.item.id),
+                dataset_name=result.item.dataset_name,
+                dataset_tags=result.item.dataset_tags,
+                title=result.item.title,
+                content=result.item.content,
+                summary=result.item.summary,
+                rating=result.item.rating,
+                source_url=result.item.source_url,
+                published_date=result.item.published_date,
+                author=result.item.author,
+                rrf_score=result.rrf_score,
             )
-            for match in response.matches
+            for result in search_results
         ]
 
-        result = SimilaritySearchResultResource(
-            type="similarity-search-results",
+        result = HybridSearchResultResource(
+            type="hybrid-search-results",
             id=str(uuid.uuid4()),
-            attributes=SimilaritySearchResultAttributes(
+            attributes=HybridSearchResultAttributes(
                 matches=match_resources,
-                query_text=response.query_text,
-                dataset_tags=response.dataset_tags,
-                similarity_threshold=response.similarity_threshold,
-                rrf_score_threshold=response.rrf_score_threshold,
-                total_matches=response.total_matches,
+                query_text=attrs.text,
+                total_matches=len(search_results),
             ),
         )
 
+        total_duration_ms = (time.perf_counter() - total_start) * 1000
         logger.info(
-            "Similarity search completed successfully via JSON:API",
+            "Hybrid search completed successfully via JSON:API",
             extra={
                 "user_id": str(current_user.id),
                 "community_server_id": attrs.community_server_id,
-                "matches_found": response.total_matches,
-                "top_score": response.matches[0].similarity_score if response.matches else None,
+                "matches_found": len(search_results),
+                "total_duration_ms": round(total_duration_ms, 2),
+                "embedding_duration_ms": round(embedding_duration_ms, 2),
+                "search_duration_ms": round(search_duration_ms, 2),
             },
         )
 
-        json_response = SimilaritySearchResultResponse(
+        json_response = HybridSearchResultResponse(
             data=result,
             links=JSONAPILinks(self_=str(request.url)),
         )
@@ -376,7 +374,7 @@ async def similarity_search_jsonapi(
         )
     except HTTPException as e:
         logger.warning(
-            "Similarity search authorization error (JSON:API)",
+            "Hybrid search authorization error (JSON:API)",
             extra={
                 "user_id": str(current_user.id),
                 "community_server_id": body.data.attributes.community_server_id,
@@ -391,7 +389,7 @@ async def similarity_search_jsonapi(
         )
     except ValueError as e:
         logger.warning(
-            "Similarity search validation error (JSON:API)",
+            "Hybrid search validation error (JSON:API)",
             extra={
                 "user_id": str(current_user.id),
                 "community_server_id": body.data.attributes.community_server_id,
@@ -405,7 +403,7 @@ async def similarity_search_jsonapi(
         )
     except Exception as e:
         logger.error(
-            "Similarity search failed (JSON:API)",
+            "Hybrid search failed (JSON:API)",
             extra={
                 "user_id": str(current_user.id),
                 "community_server_id": body.data.attributes.community_server_id,
@@ -416,5 +414,5 @@ async def similarity_search_jsonapi(
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
-            f"Similarity search failed: {e!s}",
+            f"Hybrid search failed: {e!s}",
         )
