@@ -70,24 +70,12 @@ class EventSubscriber:
         event_type: EventType,
         msg: Msg,
     ) -> None:
-        is_jetstream = False
-        delivery_count = 1
-
         try:
             event_class = self._get_event_class(event_type)
-            # Use model_validate_json to handle JSON directly, which properly deserializes
-            # datetime and UUID strings even with strict=True
             event = event_class.model_validate_json(msg.data)  # type: ignore[attr-defined]
 
-            # Check if this is a JetStream message or a core NATS message
-            try:
-                metadata = msg.metadata
-                is_jetstream = True
-                delivery_count = metadata.num_delivered if metadata else 1
-            except Exception:
-                # This is a core NATS message, not a JetStream message
-                # Core NATS doesn't support ack/nak, so we'll just process it
-                pass
+            metadata = msg.metadata
+            delivery_count = metadata.num_delivered if metadata else 1
 
             logger.info(
                 f"Received event {event.event_id} of type {event_type.value} "
@@ -121,25 +109,22 @@ class EventSubscriber:
                     )
                     failed = True
 
-            if is_jetstream:
-                if failed:
-                    await msg.nak()
-                    logger.warning(
-                        f"Negative acknowledged event {event.event_id} due to handler failure "
-                        f"(attempt {delivery_count})"
-                    )
-                else:
-                    await msg.ack()
-                    logger.debug(f"Acknowledged event {event.event_id}")
+            if failed:
+                await msg.nak()
+                logger.warning(
+                    f"Negative acknowledged event {event.event_id} due to handler failure "
+                    f"(attempt {delivery_count})"
+                )
+            else:
+                await msg.ack()
+                logger.debug(f"Acknowledged event {event.event_id}")
 
         except TimeoutError:
             logger.error("Handler timeout for event processing")
-            if is_jetstream:
-                await msg.nak()
+            await msg.nak()
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
-            if is_jetstream:
-                await msg.nak()
+            await msg.nak()
 
     async def subscribe_all(self) -> None:
         for event_type in EventType:
@@ -152,68 +137,14 @@ class EventSubscriber:
         async def callback(msg: Msg) -> None:
             await self._message_handler(event_type, msg)
 
-        # Try JetStream first for persistence, fall back to core NATS if it times out
-        try:
-            # Use ephemeral consumers - durable consumers have timeout issues in nats-py
-            # See: https://github.com/nats-io/nats.py/issues/437
-            # Add timeout to prevent subscribe() from hanging indefinitely during startup
-            # JetStream consumer creation can be slow or timeout under concurrent load
-            subscription = await asyncio.wait_for(
-                self.nats.subscribe(
-                    subject=subject,
-                    queue=queue,
-                    callback=callback,
-                    durable=None,  # Ephemeral consumer
-                    use_jetstream=True,
-                ),
-                timeout=15.0,  # 15 second timeout for JetStream subscription
-            )
-            self.subscriptions.append(subscription)
-            logger.info(
-                f"Subscribed to {subject} with JetStream ephemeral consumer (queue: {queue})"
-            )
-        except TimeoutError:
-            logger.warning(
-                f"JetStream subscription timed out for {subject} after 15 seconds. "
-                "Falling back to core NATS subscription (no persistence)."
-            )
-            try:
-                # Fall back to core NATS subscription (no JetStream persistence)
-                # This is less reliable but works during development/startup
-                subscription = await self.nats.subscribe(
-                    subject=subject,
-                    queue=queue,
-                    callback=callback,
-                    use_jetstream=False,
-                )
-                self.subscriptions.append(subscription)
-                logger.info(f"Subscribed to {subject} with core NATS (queue: {queue})")
-            except Exception as core_error:
-                logger.error(
-                    f"Failed to subscribe to {subject} (both JetStream and core NATS): {core_error}"
-                )
-                raise
-        except Exception as jetstream_error:
-            logger.warning(
-                f"JetStream subscription failed for {subject}: {jetstream_error}. "
-                "Falling back to core NATS subscription (no persistence)."
-            )
-            try:
-                # Fall back to core NATS subscription (no JetStream persistence)
-                # This is less reliable but works during development/startup
-                subscription = await self.nats.subscribe(
-                    subject=subject,
-                    queue=queue,
-                    callback=callback,
-                    use_jetstream=False,
-                )
-                self.subscriptions.append(subscription)
-                logger.info(f"Subscribed to {subject} with core NATS (queue: {queue})")
-            except Exception as core_error:
-                logger.error(
-                    f"Failed to subscribe to {subject} (both JetStream and core NATS): {core_error}"
-                )
-                raise
+        subscription = await self.nats.subscribe(
+            subject=subject,
+            queue=queue,
+            callback=callback,
+            durable=None,
+        )
+        self.subscriptions.append(subscription)
+        logger.info(f"Subscribed to {subject} with JetStream ephemeral consumer (queue: {queue})")
 
     async def unsubscribe_all(self) -> None:
         for subscription in self.subscriptions:
