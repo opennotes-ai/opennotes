@@ -27,6 +27,9 @@ RUN rm -rf packages/*/dist packages/*/*.tsbuildinfo && \
 # Set working directory to Discord bot
 WORKDIR /workspace/opennotes-discord
 
+# Link workspace dependencies to this package (creates node_modules with symlinks)
+RUN pnpm install --frozen-lockfile
+
 # Build the application
 RUN pnpm run build
 

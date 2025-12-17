@@ -226,18 +226,18 @@ description = "Deploy Discord bot (rebuild and restart - works with OpenTofu or 
 depends = ["_env:convert"]
 run = '''
 echo "🔨 Building Discord bot..."
-cd {{vars.discord_dir}}
-docker build -t opennotes-discord:local .
-cd ..
+# Build from project root - Dockerfile expects parent directory as context
+docker build -t opennotes-discord:local -f {{vars.discord_dir}}/Dockerfile .
 
 echo "🔄 Restarting Discord bot..."
 # Check if using OpenTofu (state file exists)
-if [ -f "../infrastructure/environments/local/terraform.tfstate" ]; then
+# Uses MULTIVERSE_ROOT from parent mise.toml to work in both opennotes/ and worktrees/
+if [ -f "$MULTIVERSE_ROOT/infrastructure/environments/local/terraform.tfstate" ]; then
     echo "   Detected OpenTofu management - recreating container..."
-    cd ../infrastructure/environments/local
+    cd "$MULTIVERSE_ROOT/infrastructure/environments/local"
     export SOPS_AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
     tofu apply -replace="docker_container.opennotes_discord[0]" -auto-approve
-    cd ../../opennotes
+    cd - >/dev/null
 else
     echo "   Using docker restart..."
     docker restart opennotes-discord
@@ -266,18 +266,18 @@ description = "Deploy server (rebuild and restart - works with OpenTofu or docke
 depends = ["_env:convert"]
 run = '''
 echo "🔨 Building server..."
-cd {{vars.server_dir}}
-docker build -t opennotes-server:local .
-cd ..
+# Build from project root - Dockerfile expects parent directory as context
+docker build -t opennotes-server:local -f {{vars.server_dir}}/Dockerfile .
 
 echo "🔄 Restarting server..."
 # Check if using OpenTofu (state file exists)
-if [ -f "../infrastructure/environments/local/terraform.tfstate" ]; then
+# Uses MULTIVERSE_ROOT from parent mise.toml to work in both opennotes/ and worktrees/
+if [ -f "$MULTIVERSE_ROOT/infrastructure/environments/local/terraform.tfstate" ]; then
     echo "   Detected OpenTofu management - recreating container..."
-    cd ../infrastructure/environments/local
+    cd "$MULTIVERSE_ROOT/infrastructure/environments/local"
     export SOPS_AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
     tofu apply -replace="docker_container.opennotes_server[0]" -auto-approve
-    cd ../../opennotes
+    cd - >/dev/null
 else
     echo "   Using docker restart..."
     docker restart opennotes-server
@@ -300,20 +300,19 @@ description = "Deploy all services (rebuild and restart - works with OpenTofu or
 depends = ["_env:convert"]
 run = '''
 echo "🔨 Building all services..."
-cd {{vars.server_dir}}
-docker build -t opennotes-server:local .
-cd ../{{vars.discord_dir}}
-docker build -t opennotes-discord:local .
-cd ..
+# Build from project root - Dockerfiles expect parent directory as context
+docker build -t opennotes-server:local -f {{vars.server_dir}}/Dockerfile .
+docker build -t opennotes-discord:local -f {{vars.discord_dir}}/Dockerfile .
 
 echo "🔄 Restarting all services..."
 # Check if using OpenTofu (state file exists)
-if [ -f "../infrastructure/environments/local/terraform.tfstate" ]; then
+# Uses MULTIVERSE_ROOT from parent mise.toml to work in both opennotes/ and worktrees/
+if [ -f "$MULTIVERSE_ROOT/infrastructure/environments/local/terraform.tfstate" ]; then
     echo "   Detected OpenTofu management - recreating containers..."
-    cd ../infrastructure/environments/local
+    cd "$MULTIVERSE_ROOT/infrastructure/environments/local"
     export SOPS_AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
     tofu apply -replace="docker_container.opennotes_server[0]" -replace="docker_container.opennotes_discord[0]" -auto-approve
-    cd ../../opennotes
+    cd - >/dev/null
 else
     echo "   Using docker restart..."
     docker restart opennotes-server opennotes-discord
