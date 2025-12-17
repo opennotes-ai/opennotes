@@ -139,7 +139,7 @@ export class Bot {
     logger.info('Private thread manager initialized');
 
     await this.initializeNotePublisher();
-    logger.info('Auto-post system initialized');
+    logger.info('Note publisher system initialized');
 
     this.guildSetupService = new GuildSetupService();
     logger.info('Guild setup service initialized');
@@ -253,9 +253,9 @@ export class Bot {
         this.notePublisherService.handleScoreUpdate.bind(this.notePublisherService)
       );
 
-      logger.info('Auto-post system connected to NATS and subscribed to score updates');
+      logger.info('Note publisher system connected to NATS and subscribed to score updates');
     } catch (error) {
-      logger.error('Failed to initialize auto-post system - JetStream is required', {
+      logger.error('Failed to initialize note publisher system - JetStream is required', {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
