@@ -47,14 +47,10 @@ COPY opennotes-discord/pnpm-workspace.yaml opennotes-discord/package.json openno
 # Copy BUILT workspace packages from builder (must be before pnpm install)
 COPY --from=builder /workspace/packages ./packages
 
-COPY opennotes-discord/package.json ./opennotes-discord/package.json
-
 # Install only production dependencies (packages already have dist/)
-RUN pnpm install --frozen-lockfile --prod --filter=opennotes-discord...
+RUN pnpm install --frozen-lockfile --prod
 
-# Copy built application from builder
-COPY --from=builder /workspace/opennotes-discord/dist ./opennotes-discord/dist
-
-WORKDIR /app/opennotes-discord
+# Copy built application directly to /app/dist (matches package.json start script)
+COPY --from=builder /workspace/opennotes-discord/dist ./dist
 
 CMD ["node", "dist/index.js"]
