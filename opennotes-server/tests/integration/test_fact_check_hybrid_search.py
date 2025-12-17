@@ -596,3 +596,77 @@ class TestHybridSearchPreFilterConstant:
             f"Results should be bounded by 2 * RRF_CTE_PRELIMIT ({max_possible}), "
             f"but got {len(results)}"
         )
+
+
+class TestHybridSearchPerformanceMetrics:
+    """Tests for performance monitoring metrics in hybrid search."""
+
+    async def test_hybrid_search_logs_query_duration(self, hybrid_search_test_items, caplog):
+        """Test that hybrid_search logs query_duration_ms for performance monitoring.
+
+        The log output should include timing information to help identify
+        slow queries in production.
+        """
+        import logging
+
+        from src.fact_checking.repository import hybrid_search
+
+        query_text = "moon landing"
+        query_embedding = generate_test_embedding(seed=1)
+
+        with caplog.at_level(logging.INFO, logger="src.fact_checking.repository"):
+            async with get_session_maker()() as session:
+                await hybrid_search(
+                    session=session,
+                    query_text=query_text,
+                    query_embedding=query_embedding,
+                    limit=10,
+                )
+
+        log_messages = [record.message for record in caplog.records]
+
+        assert any("Hybrid search completed" in msg for msg in log_messages), (
+            "Should log 'Hybrid search completed' message"
+        )
+
+        found_duration = False
+        for record in caplog.records:
+            if hasattr(record, "query_duration_ms"):
+                found_duration = True
+                duration = record.query_duration_ms
+                assert isinstance(duration, (int, float)), "query_duration_ms should be numeric"
+                assert duration >= 0, "query_duration_ms should be non-negative"
+                break
+
+        assert found_duration, "Hybrid search should log query_duration_ms in extra data"
+
+    async def test_hybrid_search_query_duration_is_reasonable(
+        self, hybrid_search_test_items, caplog
+    ):
+        """Test that query duration is within reasonable bounds.
+
+        Query duration should be positive and less than 30 seconds
+        (our timeout threshold) for normal operations.
+        """
+        import logging
+
+        from src.fact_checking.repository import hybrid_search
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=1)
+
+        with caplog.at_level(logging.INFO, logger="src.fact_checking.repository"):
+            async with get_session_maker()() as session:
+                await hybrid_search(
+                    session=session,
+                    query_text=query_text,
+                    query_embedding=query_embedding,
+                    limit=5,
+                )
+
+        for record in caplog.records:
+            if hasattr(record, "query_duration_ms"):
+                duration = record.query_duration_ms
+                assert 0 < duration < 30000, (
+                    f"Query duration should be positive and < 30s, got {duration}ms"
+                )

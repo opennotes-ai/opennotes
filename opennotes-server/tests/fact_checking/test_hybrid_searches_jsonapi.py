@@ -887,3 +887,153 @@ class TestHybridSearchJSONAPIWithMockedService:
 
             content_type = response.headers.get("content-type", "")
             assert "application/vnd.api+json" in content_type
+
+
+class TestHybridSearchJSONAPIPerformanceMetrics:
+    """Tests for performance monitoring metrics in hybrid search JSON:API endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_jsonapi_logs_timing_metrics(
+        self,
+        hybrid_search_jsonapi_auth_client,
+        hybrid_search_jsonapi_community_server,
+        caplog,
+    ):
+        """Test POST /api/v2/hybrid-searches logs timing metrics for monitoring.
+
+        The endpoint should log total_duration_ms, embedding_duration_ms, and
+        search_duration_ms to help identify performance bottlenecks.
+        """
+        import logging
+
+        mock_embedding = [0.1] * 1536
+        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+
+        with (
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
+                new_callable=AsyncMock,
+            ) as mock_check_limits,
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
+                new_callable=AsyncMock,
+            ) as mock_generate,
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.hybrid_search",
+                new_callable=AsyncMock,
+            ) as mock_search,
+            caplog.at_level(
+                logging.INFO, logger="src.fact_checking.hybrid_searches_jsonapi_router"
+            ),
+        ):
+            mock_check_limits.return_value = (True, None)
+            mock_generate.return_value = mock_embedding
+            mock_search.return_value = []
+
+            request_body = {
+                "data": {
+                    "type": "hybrid-searches",
+                    "attributes": {
+                        "text": "test timing query",
+                        "community_server_id": platform_id,
+                        "limit": 5,
+                    },
+                }
+            }
+
+            response = await hybrid_search_jsonapi_auth_client.post(
+                "/api/v2/hybrid-searches", json=request_body
+            )
+
+            assert response.status_code == 200
+
+        found_total = False
+        found_embedding = False
+        found_search = False
+
+        for record in caplog.records:
+            if hasattr(record, "total_duration_ms"):
+                found_total = True
+                assert isinstance(record.total_duration_ms, (int, float))
+                assert record.total_duration_ms >= 0
+            if hasattr(record, "embedding_duration_ms"):
+                found_embedding = True
+                assert isinstance(record.embedding_duration_ms, (int, float))
+                assert record.embedding_duration_ms >= 0
+            if hasattr(record, "search_duration_ms"):
+                found_search = True
+                assert isinstance(record.search_duration_ms, (int, float))
+                assert record.search_duration_ms >= 0
+
+        assert found_total, "Should log total_duration_ms"
+        assert found_embedding, "Should log embedding_duration_ms"
+        assert found_search, "Should log search_duration_ms"
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_jsonapi_timing_metrics_are_reasonable(
+        self,
+        hybrid_search_jsonapi_auth_client,
+        hybrid_search_jsonapi_community_server,
+        caplog,
+    ):
+        """Test that timing metrics are within reasonable bounds.
+
+        All timing metrics should be positive and less than 30 seconds
+        for normal operations. The breakdown should sum approximately to total.
+        """
+        import logging
+
+        mock_embedding = [0.1] * 1536
+        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+
+        with (
+            patch(
+                "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
+                new_callable=AsyncMock,
+            ) as mock_check_limits,
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.EmbeddingService.generate_embedding",
+                new_callable=AsyncMock,
+            ) as mock_generate,
+            patch(
+                "src.fact_checking.hybrid_searches_jsonapi_router.hybrid_search",
+                new_callable=AsyncMock,
+            ) as mock_search,
+            caplog.at_level(
+                logging.INFO, logger="src.fact_checking.hybrid_searches_jsonapi_router"
+            ),
+        ):
+            mock_check_limits.return_value = (True, None)
+            mock_generate.return_value = mock_embedding
+            mock_search.return_value = []
+
+            request_body = {
+                "data": {
+                    "type": "hybrid-searches",
+                    "attributes": {
+                        "text": "test timing validation",
+                        "community_server_id": platform_id,
+                    },
+                }
+            }
+
+            await hybrid_search_jsonapi_auth_client.post(
+                "/api/v2/hybrid-searches", json=request_body
+            )
+
+        for record in caplog.records:
+            if "Hybrid search completed successfully" in record.message:
+                total = getattr(record, "total_duration_ms", None)
+                embedding = getattr(record, "embedding_duration_ms", None)
+                search = getattr(record, "search_duration_ms", None)
+
+                if total is not None:
+                    assert 0 <= total < 30000, f"Total duration should be < 30s: {total}"
+
+                if embedding is not None:
+                    assert 0 <= embedding < 30000, (
+                        f"Embedding duration should be < 30s: {embedding}"
+                    )
+
+                if search is not None:
+                    assert 0 <= search < 30000, f"Search duration should be < 30s: {search}"

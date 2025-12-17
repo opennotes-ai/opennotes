@@ -4,6 +4,7 @@ Provides database access patterns for fact-checking features, including
 hybrid search combining full-text search (FTS) and vector similarity.
 """
 
+import time
 from dataclasses import dataclass
 
 from sqlalchemy import text
@@ -147,10 +148,13 @@ async def hybrid_search(
     if dataset_tags:
         params["dataset_tags"] = dataset_tags
 
+    query_start = time.perf_counter()
     try:
         result = await session.execute(rrf_query, params)
         rows = result.fetchall()
+        query_duration_ms = (time.perf_counter() - query_start) * 1000
     except Exception as e:
+        query_duration_ms = (time.perf_counter() - query_start) * 1000
         logger.error(
             "Hybrid search query failed",
             extra={
@@ -158,6 +162,7 @@ async def hybrid_search(
                 "embedding_dimensions": len(query_embedding),
                 "limit": limit,
                 "dataset_tags": dataset_tags,
+                "query_duration_ms": round(query_duration_ms, 2),
                 "error": str(e),
             },
         )
@@ -194,6 +199,7 @@ async def hybrid_search(
             "results_count": len(results),
             "limit": limit,
             "dataset_tags": dataset_tags,
+            "query_duration_ms": round(query_duration_ms, 2),
         },
     )
 

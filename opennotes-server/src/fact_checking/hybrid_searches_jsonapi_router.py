@@ -12,6 +12,7 @@ similarity using Reciprocal Rank Fusion (RRF) for result ranking.
 Reference: https://jsonapi.org/format/
 """
 
+import time
 import uuid
 from datetime import datetime
 from functools import lru_cache
@@ -243,6 +244,7 @@ async def hybrid_search_jsonapi(
     - Per-community rate limits: Based on configured LLM usage limits
     - OpenAI API rate limits: Automatic detection with retry guidance
     """
+    total_start = time.perf_counter()
     try:
         attrs = body.data.attributes
 
@@ -289,18 +291,22 @@ async def hybrid_search_jsonapi(
                     reason or "LLM usage limit exceeded",
                 )
 
+        embedding_start = time.perf_counter()
         query_embedding = await embedding_service.generate_embedding(
             db=db,
             text=attrs.text,
             community_server_id=attrs.community_server_id,
         )
+        embedding_duration_ms = (time.perf_counter() - embedding_start) * 1000
 
+        search_start = time.perf_counter()
         search_results = await hybrid_search(
             session=db,
             query_text=attrs.text,
             query_embedding=query_embedding,
             limit=attrs.limit,
         )
+        search_duration_ms = (time.perf_counter() - search_start) * 1000
 
         match_resources = [
             HybridSearchMatchResource(
@@ -329,12 +335,16 @@ async def hybrid_search_jsonapi(
             ),
         )
 
+        total_duration_ms = (time.perf_counter() - total_start) * 1000
         logger.info(
             "Hybrid search completed successfully via JSON:API",
             extra={
                 "user_id": str(current_user.id),
                 "community_server_id": attrs.community_server_id,
                 "matches_found": len(search_results),
+                "total_duration_ms": round(total_duration_ms, 2),
+                "embedding_duration_ms": round(embedding_duration_ms, 2),
+                "search_duration_ms": round(search_duration_ms, 2),
             },
         )
 
