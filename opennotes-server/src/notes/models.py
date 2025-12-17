@@ -255,6 +255,7 @@ class Request(Base, TimestampMixin):
         Index("idx_requests_status", "status"),
         Index("idx_requests_requested_at", "requested_at"),
         Index("idx_requests_message_archive", "message_archive_id"),
+        Index("idx_requests_note_status", "note_id", "status"),
     )
 
 
