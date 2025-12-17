@@ -334,6 +334,103 @@ class TestHybridSearchJSONAPI:
         )
 
     @pytest.mark.asyncio
+    async def test_hybrid_search_jsonapi_query_too_short_single_char(
+        self,
+        hybrid_search_jsonapi_auth_client,
+        hybrid_search_jsonapi_community_server,
+    ):
+        """Test POST /api/v2/hybrid-searches returns 422 for single character query.
+
+        Single character queries like "a" waste API credits and return poor results.
+        The minimum query length should be 3 characters.
+        """
+        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+
+        request_body = {
+            "data": {
+                "type": "hybrid-searches",
+                "attributes": {
+                    "text": "a",
+                    "community_server_id": platform_id,
+                },
+            }
+        }
+
+        response = await hybrid_search_jsonapi_auth_client.post(
+            "/api/v2/hybrid-searches", json=request_body
+        )
+
+        assert response.status_code == 422, (
+            f"Expected 422 for single char query, got {response.status_code}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_jsonapi_query_too_short_two_chars(
+        self,
+        hybrid_search_jsonapi_auth_client,
+        hybrid_search_jsonapi_community_server,
+    ):
+        """Test POST /api/v2/hybrid-searches returns 422 for two character query.
+
+        Two character queries like "ab" waste API credits and return poor results.
+        The minimum query length should be 3 characters.
+        """
+        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+
+        request_body = {
+            "data": {
+                "type": "hybrid-searches",
+                "attributes": {
+                    "text": "ab",
+                    "community_server_id": platform_id,
+                },
+            }
+        }
+
+        response = await hybrid_search_jsonapi_auth_client.post(
+            "/api/v2/hybrid-searches", json=request_body
+        )
+
+        assert response.status_code == 422, (
+            f"Expected 422 for two char query, got {response.status_code}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_hybrid_search_jsonapi_query_minimum_valid_length(
+        self,
+        hybrid_search_jsonapi_auth_client,
+        hybrid_search_jsonapi_community_server,
+    ):
+        """Test POST /api/v2/hybrid-searches accepts 3+ character queries.
+
+        Three character queries like "abc" should pass validation.
+        Note: The request may fail for other reasons (e.g., no OpenAI config),
+        but should NOT fail with 422 for text length validation.
+        """
+        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+
+        request_body = {
+            "data": {
+                "type": "hybrid-searches",
+                "attributes": {
+                    "text": "abc",
+                    "community_server_id": platform_id,
+                },
+            }
+        }
+
+        response = await hybrid_search_jsonapi_auth_client.post(
+            "/api/v2/hybrid-searches", json=request_body
+        )
+
+        if response.status_code == 422:
+            data = response.json()
+            error_details = str(data.get("detail", ""))
+            assert "at least 3" not in error_details.lower(), (
+                f"3-character query should pass length validation, got: {error_details}"
+            )
+
+    @pytest.mark.asyncio
     async def test_hybrid_search_jsonapi_default_values(
         self,
         hybrid_search_jsonapi_auth_client,

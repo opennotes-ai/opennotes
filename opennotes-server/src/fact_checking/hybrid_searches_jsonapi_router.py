@@ -109,9 +109,9 @@ class HybridSearchCreateAttributes(StrictInputSchema):
 
     text: str = Field(
         ...,
-        min_length=1,
+        min_length=3,
         max_length=50000,
-        description="Query text to search for similar fact-checks using hybrid search (FTS + semantic)",
+        description="Query text to search for (minimum 3 characters). Uses hybrid search combining FTS and semantic similarity.",
     )
     community_server_id: str = Field(
         ...,
