@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import RedisMock from 'ioredis-mock';
 import type { Redis } from 'ioredis';
 import { RedisRateLimitService } from '../../src/services/RedisRateLimitService.js';
@@ -170,6 +170,25 @@ describe('RedisRateLimitService', () => {
       const metrics = await rateLimiter.getMetrics();
 
       expect(metrics.keysCount).toBe(0);
+    });
+
+    it('should use scanStream instead of keys for non-blocking iteration', async () => {
+      const scanStreamSpy = jest.spyOn(redis, 'scanStream');
+      const keysSpy = jest.spyOn(redis, 'keys');
+
+      await rateLimiter.check('user1');
+      await rateLimiter.check('user2');
+
+      await rateLimiter.getMetrics();
+
+      expect(scanStreamSpy).toHaveBeenCalledWith({
+        match: 'test:ratelimit:*',
+        count: 100,
+      });
+      expect(keysSpy).not.toHaveBeenCalled();
+
+      scanStreamSpy.mockRestore();
+      keysSpy.mockRestore();
     });
   });
 

@@ -208,14 +208,14 @@ def _reset_database_for_test_loop() -> None:
     are bound to the event loop they were created in. Reusing them across
     tests causes "Task got Future attached to a different loop" errors.
 
-    This function resets the module-level variables so the next call to
+    This function disposes the engine's connection pool (synchronously via
+    sync_engine) and resets the module-level variables so the next call to
     get_engine() or get_session_maker() creates new ones bound to the
     current event loop.
-
-    Note: Does NOT dispose connections - that's handled by the cleanup
-    fixture's sync_engine.dispose() call after test teardown.
     """
     global _engine, _async_session_maker, _engine_loop  # noqa: PLW0603 - Reset singletons for fresh event loop in tests
+    if _engine is not None:
+        _engine.sync_engine.dispose()
     _engine = None
     _async_session_maker = None
     _engine_loop = None

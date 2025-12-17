@@ -47,6 +47,7 @@ dependencies = [
     "wandb>=0.23.0",
     "fastapi-jsonapi>=3.0.0",
     "fastapi-filter>=2.0.1",
+    "xxhash>=3.6.0",
 ]
 
 [project.optional-dependencies]

@@ -105,13 +105,15 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
   apiClient: mockApiClient,
 }));
 
-jest.mock('../../src/logger.js', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
+const mockLogger = {
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+  debug: jest.fn(),
+};
+
+jest.unstable_mockModule('../../src/logger.js', () => ({
+  logger: mockLogger,
 }));
 
 const { MessageMonitorService } = await import('../../src/services/MessageMonitorService.js');
@@ -121,6 +123,11 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
   const mockRedis = {} as any;
 
   beforeEach(() => {
+    mockChannelService.getChannelConfig.mockReset();
+    mockLogger.info.mockReset();
+    mockLogger.warn.mockReset();
+    mockLogger.error.mockReset();
+    mockLogger.debug.mockReset();
     service = new MessageMonitorService(mockClient, mockGuildOnboardingService as any, mockRedis);
   });
 
@@ -235,6 +242,54 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
       expect(metrics.queueSize).toBe(100);
 
       service.shutdown();
+    });
+  });
+
+  describe('queueMessage error handling', () => {
+    it('should log errors when queueMessage fails during handleMessage', async () => {
+      const mockMessage = {
+        id: 'msg-123',
+        channelId: 'channel-123',
+        guildId: 'guild-123',
+        author: {
+          id: 'user-123',
+          bot: false,
+        },
+        system: false,
+        webhookId: null,
+        content: 'Test message content',
+        createdTimestamp: Date.now(),
+        embeds: [],
+      };
+
+      (service as any).monitoredChannelService = {
+        getChannelConfig: jest.fn<() => Promise<any>>().mockResolvedValue({
+          id: 'channel-123',
+          community_server_id: 'guild-123',
+          channel_id: 'channel-123',
+          enabled: true,
+          dataset_tags: ['health'],
+          similarity_threshold: 0.7,
+        }),
+      };
+
+      const redisError = new Error('Redis connection failed');
+      const originalQueueMessage = (service as any).queueMessage.bind(service);
+      (service as any).queueMessage = jest.fn<() => Promise<void>>().mockRejectedValue(redisError);
+
+      await service.handleMessage(mockMessage as any);
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to queue message',
+        expect.objectContaining({
+          messageId: 'msg-123',
+          error: 'Redis connection failed',
+        })
+      );
+
+      (service as any).queueMessage = originalQueueMessage;
     });
   });
 });

@@ -1,10 +1,11 @@
 import asyncio
-import hashlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar
+
+import xxhash
 
 from src.cache.adapters import RedisCacheAdapter
 from src.cache.interfaces import CacheConfig
@@ -47,7 +48,7 @@ class CacheManager:
         key_string = ":".join(key_parts)
 
         if len(key_string) > 100:
-            key_hash = hashlib.md5(key_string.encode()).hexdigest()
+            key_hash = xxhash.xxh3_64(key_string.encode()).hexdigest()
             return f"{prefix}:{key_hash}"
 
         return f"{prefix}:{key_string}" if key_string else prefix
