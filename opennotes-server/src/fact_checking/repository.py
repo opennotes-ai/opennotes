@@ -9,13 +9,11 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import settings
 from src.fact_checking.models import FactCheckItem
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
-
-
-EMBEDDING_DIMENSIONS = 1536
 
 
 @dataclass
@@ -59,9 +57,9 @@ async def hybrid_search(
     Raises:
         ValueError: If embedding has wrong dimensions
     """
-    if len(query_embedding) != EMBEDDING_DIMENSIONS:
+    if len(query_embedding) != settings.EMBEDDING_DIMENSIONS:
         raise ValueError(
-            f"Embedding must have {EMBEDDING_DIMENSIONS} dimensions, got {len(query_embedding)}"
+            f"Embedding must have {settings.EMBEDDING_DIMENSIONS} dimensions, got {len(query_embedding)}"
         )
 
     query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
