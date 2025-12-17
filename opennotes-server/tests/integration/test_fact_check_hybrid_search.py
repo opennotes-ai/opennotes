@@ -149,7 +149,7 @@ class TestHybridSearchRepository:
 
         assert len(results) >= 1, "Should find at least one keyword match"
 
-        result_titles = [r.title for r in results]
+        result_titles = [r.item.title for r in results]
         assert any("moon" in title.lower() for title in result_titles), (
             "Results should include items with 'moon' in title or content"
         )
@@ -197,9 +197,9 @@ class TestHybridSearchRepository:
         assert len(results) >= 1, "Should return combined results"
 
         top_result = results[0]
-        assert "moon" in top_result.title.lower() or "moon" in top_result.content.lower(), (
-            "Top result should have strong keyword relevance"
-        )
+        assert (
+            "moon" in top_result.item.title.lower() or "moon" in top_result.item.content.lower()
+        ), "Top result should have strong keyword relevance"
 
     async def test_hybrid_search_title_ranks_higher_than_content(self, hybrid_search_test_items):
         """Test title matches (weight A) rank higher than content matches (weight B).
@@ -221,11 +221,13 @@ class TestHybridSearchRepository:
             )
 
         if len(results) >= 2:
-            title_match_indices = [i for i, r in enumerate(results) if "moon" in r.title.lower()]
+            title_match_indices = [
+                i for i, r in enumerate(results) if "moon" in r.item.title.lower()
+            ]
             content_only_match_indices = [
                 i
                 for i, r in enumerate(results)
-                if "moon" not in r.title.lower() and "moon" in r.content.lower()
+                if "moon" not in r.item.title.lower() and "moon" in r.item.content.lower()
             ]
 
             if title_match_indices and content_only_match_indices:
@@ -268,7 +270,7 @@ class TestHybridSearchRepository:
         assert len(results) <= 2, "Should respect the limit parameter"
 
     async def test_hybrid_search_returns_fact_check_items(self, hybrid_search_test_items):
-        """Test that results are proper FactCheckItem objects with all fields."""
+        """Test that results are proper HybridSearchResult objects containing FactCheckItem."""
         from src.fact_checking.repository import hybrid_search
 
         query_text = "moon"
@@ -284,11 +286,14 @@ class TestHybridSearchRepository:
 
         if len(results) > 0:
             result = results[0]
-            assert hasattr(result, "id"), "Result should have id"
-            assert hasattr(result, "title"), "Result should have title"
-            assert hasattr(result, "content"), "Result should have content"
-            assert hasattr(result, "dataset_name"), "Result should have dataset_name"
-            assert hasattr(result, "rating"), "Result should have rating"
+            assert hasattr(result, "item"), "Result should have item (FactCheckItem)"
+            assert hasattr(result, "rrf_score"), "Result should have rrf_score"
+            assert hasattr(result.item, "id"), "FactCheckItem should have id"
+            assert hasattr(result.item, "title"), "FactCheckItem should have title"
+            assert hasattr(result.item, "content"), "FactCheckItem should have content"
+            assert hasattr(result.item, "dataset_name"), "FactCheckItem should have dataset_name"
+            assert hasattr(result.item, "rating"), "FactCheckItem should have rating"
+            assert float(result.rrf_score) >= 0.0, "rrf_score should be non-negative"
 
     async def test_hybrid_search_with_default_limit(self, hybrid_search_test_items):
         """Test that default limit of 10 is applied when not specified."""

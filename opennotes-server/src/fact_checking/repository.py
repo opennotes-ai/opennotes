@@ -4,6 +4,8 @@ Provides database access patterns for fact-checking features, including
 hybrid search combining full-text search (FTS) and vector similarity.
 """
 
+from dataclasses import dataclass
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,12 +18,20 @@ logger = get_logger(__name__)
 EMBEDDING_DIMENSIONS = 1536
 
 
+@dataclass
+class HybridSearchResult:
+    """Result from hybrid search including RRF score."""
+
+    item: FactCheckItem
+    rrf_score: float
+
+
 async def hybrid_search(
     session: AsyncSession,
     query_text: str,
     query_embedding: list[float],
     limit: int = 10,
-) -> list[FactCheckItem]:
+) -> list[HybridSearchResult]:
     """
     Perform hybrid search combining FTS and vector similarity using RRF.
 
@@ -43,7 +53,8 @@ async def hybrid_search(
         limit: Maximum results to return (default: 10)
 
     Returns:
-        List of FactCheckItem ranked by combined RRF score, highest first
+        List of HybridSearchResult containing FactCheckItem and RRF score,
+        ranked by combined RRF score (highest first)
 
     Raises:
         ValueError: If embedding has wrong dimensions
@@ -120,7 +131,7 @@ async def hybrid_search(
         )
         raise
 
-    items = []
+    results = []
     for row in rows:
         item = FactCheckItem(
             id=row.id,
@@ -142,15 +153,15 @@ async def hybrid_search(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        items.append(item)
+        results.append(HybridSearchResult(item=item, rrf_score=row.rrf_score))
 
     logger.info(
         "Hybrid search completed",
         extra={
             "query_text_length": len(query_text),
-            "results_count": len(items),
+            "results_count": len(results),
             "limit": limit,
         },
     )
 
-    return items
+    return results

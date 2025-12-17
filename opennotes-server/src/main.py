@@ -24,6 +24,9 @@ from src.fact_checking.embedding_router import router as embedding_router
 from src.fact_checking.embeddings_jsonapi_router import (
     router as embeddings_jsonapi_router,
 )
+from src.fact_checking.hybrid_searches_jsonapi_router import (
+    router as hybrid_searches_jsonapi_router,
+)
 from src.fact_checking.monitored_channel_router import router as monitored_channel_router
 from src.fact_checking.monitored_channels_jsonapi_router import (
     router as monitored_channels_jsonapi_router,
@@ -32,7 +35,6 @@ from src.fact_checking.previously_seen_jsonapi_router import (
     router as previously_seen_jsonapi_router,
 )
 from src.fact_checking.previously_seen_router import router as previously_seen_router
-from src.fact_checking.search_router import router as search_router
 from src.health import router as health_router
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
@@ -337,6 +339,11 @@ app.include_router(
 app.include_router(
     embeddings_jsonapi_router, prefix=settings.API_V2_PREFIX, tags=["embeddings-jsonapi"]
 )
+app.include_router(
+    hybrid_searches_jsonapi_router,
+    prefix=settings.API_V2_PREFIX,
+    tags=["hybrid-searches-jsonapi"],
+)
 
 # API v1 routes
 app.include_router(notes_router, prefix=settings.API_V1_PREFIX, tags=["notes"])
@@ -353,7 +360,6 @@ app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(monitored_channel_router, prefix=settings.API_V1_PREFIX)
 app.include_router(embedding_router, prefix=settings.API_V1_PREFIX)
 app.include_router(previously_seen_router, prefix=settings.API_V1_PREFIX)
-app.include_router(search_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes
 app.include_router(health_router)

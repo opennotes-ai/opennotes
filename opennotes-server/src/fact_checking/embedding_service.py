@@ -10,11 +10,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.fact_checking.previously_seen_schemas import PreviouslySeenMessageMatch
+from src.fact_checking.repository import hybrid_search
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
+
+# Scale factor to convert RRF scores to similarity-like scores (0.0-1.0 range).
+#
+# RRF (Reciprocal Rank Fusion) scores are calculated as 1/(k+rank) where k=60.
+# For top 20 results: rank 1 gives ~0.0164, rank 20 gives ~0.0125.
+# Expected range is approximately 0.007 to 0.067 for reasonable result sets.
+#
+# We scale by 15.0 to convert to a 0.0-1.0 range for backward compatibility with
+# the similarity_threshold parameter used by the API. This is an approximation
+# since RRF scores don't map linearly to cosine similarity, but provides a
+# reasonable mapping for threshold filtering.
+RRF_TO_SIMILARITY_SCALE_FACTOR = 15.0
 
 
 class EmbeddingService:
@@ -91,15 +104,31 @@ class EmbeddingService:
         limit: int = 5,
     ) -> SimilaritySearchResponse:
         """
-        Search for similar fact-check items using pgvector cosine similarity.
+        Search for similar fact-check items using hybrid search (FTS + vector similarity).
+
+        Uses Reciprocal Rank Fusion (RRF) to combine full-text search and
+        vector similarity for improved retrieval quality.
+
+        Note on dataset_tags filtering:
+            Dataset tags filtering is applied post-search (after RRF ranking) rather
+            than at the database level. This means the method may return fewer results
+            than the requested limit if many top-ranked results don't match the tags.
+            To compensate, we fetch 3x the limit from the database, but this is not
+            guaranteed to always yield `limit` results.
+
+        Note on similarity_threshold:
+            After converting RRF scores to similarity-like scores (via scaling),
+            results below the threshold are filtered out. This filtering happens
+            after dataset_tags filtering but before truncating to the limit.
 
         Args:
             db: Database session
             query_text: Query text to search for
             community_server_id: Community server (guild) ID
             dataset_tags: Dataset tags to filter by (e.g., ['snopes'])
-            similarity_threshold: Minimum similarity score (0.0-1.0)
-            limit: Maximum number of results
+            similarity_threshold: Minimum similarity score (0.0-1.0) - results with
+                scaled RRF scores below this are excluded
+            limit: Maximum number of results (may return fewer, see notes above)
 
         Returns:
             Similarity search response with matching items
@@ -110,7 +139,7 @@ class EmbeddingService:
         threshold = similarity_threshold or settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
 
         logger.debug(
-            "Starting similarity search",
+            "Starting hybrid similarity search",
             extra={
                 "text_length": len(query_text),
                 "community_server_id": community_server_id,
@@ -122,66 +151,44 @@ class EmbeddingService:
 
         query_embedding = await self.generate_embedding(db, query_text, community_server_id)
 
-        max_distance = 1.0 - threshold
-
-        # Convert embedding list to PostgreSQL vector format string: '[1.0,2.0,3.0]'
-        query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
-
-        query = text("""
-            SELECT
-                id,
-                dataset_name,
-                dataset_tags,
-                title,
-                content,
-                summary,
-                rating,
-                source_url,
-                published_date,
-                author,
-                1 - (embedding <=> CAST(:embedding AS vector)) AS similarity_score
-            FROM fact_check_items
-            WHERE
-                dataset_tags && CAST(:tags AS text[])
-                AND embedding IS NOT NULL
-                AND (embedding <=> CAST(:embedding AS vector)) <= :max_dist
-            ORDER BY embedding <=> CAST(:embedding AS vector)
-            LIMIT :result_limit
-        """)
-
-        result = await db.execute(
-            query,
-            {
-                "embedding": query_embedding_str,
-                "tags": dataset_tags,
-                "max_dist": max_distance,
-                "result_limit": limit,
-            },
+        hybrid_results = await hybrid_search(
+            session=db,
+            query_text=query_text,
+            query_embedding=query_embedding,
+            limit=limit * 3,
         )
 
-        rows = result.fetchall()
+        filtered_results = [
+            result
+            for result in hybrid_results
+            if any(tag in result.item.dataset_tags for tag in dataset_tags)
+        ]
 
         matches = [
             FactCheckMatch(
-                id=row[0],
-                dataset_name=row[1],
-                dataset_tags=row[2],
-                title=row[3],
-                content=row[4],
-                summary=row[5],
-                rating=row[6],
-                source_url=row[7],
-                published_date=row[8],
-                author=row[9],
-                embedding_provider=None,
-                embedding_model=None,
-                similarity_score=row[10],
+                id=result.item.id,
+                dataset_name=result.item.dataset_name,
+                dataset_tags=result.item.dataset_tags,
+                title=result.item.title,
+                content=result.item.content,
+                summary=result.item.summary,
+                rating=result.item.rating,
+                source_url=result.item.source_url,
+                published_date=result.item.published_date,
+                author=result.item.author,
+                embedding_provider=result.item.embedding_provider,
+                embedding_model=result.item.embedding_model,
+                similarity_score=min(result.rrf_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0),
             )
-            for row in rows
+            for result in filtered_results
         ]
 
+        matches = [m for m in matches if m.similarity_score >= threshold]
+
+        matches = matches[:limit]
+
         logger.info(
-            "Similarity search completed",
+            "Hybrid similarity search completed",
             extra={
                 "text_length": len(query_text),
                 "community_server_id": community_server_id,
@@ -189,6 +196,7 @@ class EmbeddingService:
                 "threshold": threshold,
                 "matches_found": len(matches),
                 "top_score": matches[0].similarity_score if matches else None,
+                "pre_filter_count": len(hybrid_results),
             },
         )
 
