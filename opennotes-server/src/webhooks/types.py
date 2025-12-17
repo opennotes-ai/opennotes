@@ -1,18 +1,10 @@
 from enum import IntEnum
-from typing import Any, TypedDict
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import StrictEventSchema, StrictInputSchema
-
-
-class InteractionType(IntEnum):
-    PING = 1
-    APPLICATION_COMMAND = 2
-    MESSAGE_COMPONENT = 3
-    APPLICATION_COMMAND_AUTOCOMPLETE = 4
-    MODAL_SUBMIT = 5
+from src.common.base_schemas import StrictInputSchema
 
 
 class InteractionResponseType(IntEnum):
@@ -99,57 +91,6 @@ class InteractionResponse(BaseModel):
     data: InteractionCallbackData | None = None
 
 
-class DiscordUser(BaseModel):
-    id: str
-    username: str
-    discriminator: str
-    avatar: str | None = None
-
-
-class DiscordMember(BaseModel):
-    user: DiscordUser | None = None
-    nick: str | None = None
-    roles: list[str] = Field(default_factory=list)
-
-
-class InteractionData(BaseModel):
-    id: str | None = None
-    name: str | None = None
-    type: int | None = None
-    options: list[dict[str, Any]] | None = None
-    custom_id: str | None = None
-    components: list[dict[str, Any]] | None = None
-    values: list[str] | None = None
-
-
-class DiscordInteraction(StrictEventSchema):
-    id: str
-    application_id: str
-    type: int
-    data: InteractionData | None = None
-    community_server_id: str | None = None
-    channel_id: str | None = None
-    member: DiscordMember | None = None
-    user: DiscordUser | None = None
-    token: str
-    version: int = 1
-    message: dict[str, Any] | None = None
-
-    @property
-    def user_id(self) -> str:
-        if self.member and self.member.user:
-            return self.member.user.id
-        if self.user:
-            return self.user.id
-        return "unknown"
-
-    @property
-    def command_name(self) -> str | None:
-        if self.data:
-            return self.data.name
-        return None
-
-
 class WebhookConfig(BaseModel):
     id: UUID | None = None
     url: str
@@ -198,62 +139,3 @@ class WebhookUpdateRequest(StrictInputSchema):
     secret: str | None = None
     channel_id: str | None = None
     active: bool | None = None
-
-
-class TaskStatus(BaseModel):
-    task_id: str
-    interaction_id: str
-    task_type: str
-    status: str
-    result: dict[str, Any] | None = Field(
-        None,
-        description="Task result data. Kept as dict - structure varies by task type",
-    )
-    error: str | None = None
-    retry_count: int
-    created_at: str
-    started_at: str | None = None
-    completed_at: str | None = None
-
-
-class BaseTaskData(TypedDict):
-    interaction_id: str
-    interaction_token: str
-    application_id: str
-    community_server_id: str | None
-    channel_id: str | None
-    user_id: str
-    data: dict[str, Any] | None
-
-
-class CommandTaskData(BaseTaskData):
-    command_name: str | None
-
-
-class ComponentTaskData(BaseTaskData):
-    custom_id: str
-
-
-class ModalTaskData(BaseTaskData):
-    custom_id: str
-
-
-class QueueTaskData(TypedDict):
-    id: str
-    type: str
-    data: dict[str, Any]
-
-
-class CommandResultData(TypedDict, total=False):
-    command: str
-    processed_at: str
-
-
-class ComponentResultData(TypedDict, total=False):
-    custom_id: str
-    processed_at: str
-
-
-class ModalResultData(TypedDict, total=False):
-    custom_id: str
-    processed_at: str

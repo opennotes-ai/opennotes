@@ -7,9 +7,7 @@ from src.webhooks.cache import InteractionCache
 from src.webhooks.dependencies import (
     get_new_interaction_cache,
     get_new_rate_limiter,
-    get_new_task_queue,
 )
-from src.webhooks.queue import TaskQueue
 from src.webhooks.rate_limit import RateLimiter
 from tests.redis_mock import create_stateful_redis_mock
 
@@ -196,61 +194,6 @@ class TestRateLimiterLifecycle:
             mock_from_url.assert_called()
 
 
-class TestTaskQueueLifecycle:
-    @pytest.mark.asyncio
-    async def test_context_manager_connects_and_disconnects(self):
-        with patch("redis.asyncio.from_url", new_callable=AsyncMock) as mock_from_url:
-            mock_redis = create_stateful_redis_mock()
-            mock_redis.ping = AsyncMock(return_value=True)
-            mock_redis.close = AsyncMock()
-            mock_from_url.return_value = mock_redis
-
-            async with TaskQueue() as queue:
-                assert queue.redis_client is not None
-                mock_from_url.assert_called_once()
-
-            mock_redis.close.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_is_connected(self):
-        queue = TaskQueue()
-        assert await queue.is_connected() is False
-
-        mock_redis = create_stateful_redis_mock()
-        mock_redis.ping = AsyncMock(return_value=True)
-        queue.redis_client = mock_redis
-
-        assert await queue.is_connected() is True
-
-    @pytest.mark.asyncio
-    async def test_auto_reconnection_on_enqueue(self):
-        queue = TaskQueue()
-
-        with patch("redis.asyncio.from_url", new_callable=AsyncMock) as mock_from_url:
-            mock_redis = create_stateful_redis_mock()
-            mock_redis.ping = AsyncMock(return_value=True)
-            mock_redis.zadd = AsyncMock()
-            mock_from_url.return_value = mock_redis
-
-            task_id = await queue.enqueue("test_task", {"data": "test"})
-
-            assert task_id is not None
-            mock_from_url.assert_called()
-            mock_redis.zadd.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_disconnect_sets_client_to_none(self):
-        queue = TaskQueue()
-        mock_redis = create_stateful_redis_mock()
-        mock_redis.close = AsyncMock()
-        queue.redis_client = mock_redis
-
-        await queue.disconnect()
-
-        assert queue.redis_client is None
-        mock_redis.close.assert_called_once()
-
-
 class TestDependencyInjection:
     @pytest.mark.asyncio
     async def test_get_new_interaction_cache_cleanup(self):
@@ -275,18 +218,5 @@ class TestDependencyInjection:
 
             async for limiter in get_new_rate_limiter():
                 assert limiter.redis_client is not None
-
-            mock_redis.close.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_get_new_task_queue_cleanup(self):
-        with patch("redis.asyncio.from_url", new_callable=AsyncMock) as mock_from_url:
-            mock_redis = create_stateful_redis_mock()
-            mock_redis.ping = AsyncMock(return_value=True)
-            mock_redis.close = AsyncMock()
-            mock_from_url.return_value = mock_redis
-
-            async for queue in get_new_task_queue():
-                assert queue.redis_client is not None
 
             mock_redis.close.assert_called_once()

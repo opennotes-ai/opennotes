@@ -1,83 +1,24 @@
-import json
 import logging
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.exc import DatabaseError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
-from src.webhooks.handler import webhook_handler
-from src.webhooks.models import Task, Webhook
-from src.webhooks.queue import task_queue
+from src.webhooks.models import Webhook
 from src.webhooks.rate_limit import rate_limiter
 from src.webhooks.types import (
-    DiscordInteraction,
-    TaskStatus,
     WebhookConfigResponse,
     WebhookConfigSecure,
     WebhookCreateRequest,
     WebhookUpdateRequest,
 )
-from src.webhooks.verification import verify_discord_signature
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
-
-
-@router.post("/discord/interactions")
-async def handle_discord_interaction(
-    request: Request,
-    x_signature_ed25519: Annotated[str, Header()],
-    x_signature_timestamp: Annotated[str, Header()],
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    body = await request.body()
-
-    if not verify_discord_signature(
-        body=body,
-        signature=x_signature_ed25519,
-        timestamp=x_signature_timestamp,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid request signature",
-        )
-
-    try:
-        interaction_data = await request.json()
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid JSON: {e!s}",
-        )
-
-    try:
-        interaction = DiscordInteraction(**interaction_data)
-    except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid interaction data: {e.errors()}",
-        )
-
-    try:
-        return await webhook_handler.handle_interaction(interaction, db)
-    except DatabaseError as e:
-        logger.exception(f"Database error handling interaction: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service temporarily unavailable",
-        )
-    except Exception as e:
-        logger.exception(f"Error handling interaction: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process interaction",
-        )
 
 
 @router.post("/register", response_model=WebhookConfigSecure)
@@ -187,24 +128,6 @@ async def delete_webhook(
     return {"message": "Webhook deactivated successfully"}
 
 
-@router.get("/health/webhooks")
-async def webhook_health() -> dict[str, Any]:
-    try:
-        queue_stats = await task_queue.get_queue_stats()
-
-        return {
-            "status": "healthy",
-            "service": "webhooks",
-            "queue": queue_stats,
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service unhealthy",
-        )
-
-
 @router.get("/stats/{community_server_id}")
 async def get_community_server_stats(
     community_server_id: str,
@@ -215,59 +138,3 @@ async def get_community_server_stats(
         "community_server_id": community_server_id,
         "rate_limit": rate_limit_info,
     }
-
-
-@router.get("/tasks/by-interaction/{interaction_id}", response_model=TaskStatus)
-async def get_task_by_interaction(
-    interaction_id: str,
-    db: AsyncSession = Depends(get_db),
-) -> TaskStatus:
-    result = await db.execute(select(Task).where(Task.interaction_id == interaction_id))
-    task = result.scalar_one_or_none()
-
-    if not task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found",
-        )
-
-    return TaskStatus(
-        task_id=task.task_id,
-        interaction_id=task.interaction_id,
-        task_type=task.task_type,
-        status=task.status,
-        result=task.result,
-        error=task.error,
-        retry_count=task.retry_count,
-        created_at=task.created_at.isoformat(),
-        started_at=task.started_at.isoformat() if task.started_at else None,
-        completed_at=task.completed_at.isoformat() if task.completed_at else None,
-    )
-
-
-@router.get("/tasks/{task_id}", response_model=TaskStatus)
-async def get_task_by_id(
-    task_id: str,
-    db: AsyncSession = Depends(get_db),
-) -> TaskStatus:
-    result = await db.execute(select(Task).where(Task.task_id == task_id))
-    task = result.scalar_one_or_none()
-
-    if not task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found",
-        )
-
-    return TaskStatus(
-        task_id=task.task_id,
-        interaction_id=task.interaction_id,
-        task_type=task.task_type,
-        status=task.status,
-        result=task.result,
-        error=task.error,
-        retry_count=task.retry_count,
-        created_at=task.created_at.isoformat(),
-        started_at=task.started_at.isoformat() if task.started_at else None,
-        completed_at=task.completed_at.isoformat() if task.completed_at else None,
-    )

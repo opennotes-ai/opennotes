@@ -1212,9 +1212,6 @@ async def async_client(test_services):
 
     Function-scoped to ensure each test gets a clean client that connects
     to the correct per-test database created by setup_database fixture.
-
-    Background workers (process_task_worker, retry_processor_worker) are skipped
-    during TESTING mode, so no task cancellation is needed.
     """
     from httpx import ASGITransport, AsyncClient
 
@@ -1513,7 +1510,6 @@ async def mock_external_services(request):
     from src.events.nats_client import nats_client
     from src.middleware.rate_limiting import limiter
     from src.webhooks.cache import interaction_cache
-    from src.webhooks.queue import task_queue
     from src.webhooks.rate_limit import rate_limiter
     from tests.redis_mock import create_stateful_redis_mock
 
@@ -1543,15 +1539,6 @@ async def mock_external_services(request):
     redis_client.ping = mock_redis.ping
     redis_client.keys = mock_redis.keys
     redis_client.setex = mock_redis.setex
-
-    # Mock task queue methods
-    task_queue.client = mock_redis
-    task_queue.connect = AsyncMock()
-    task_queue.disconnect = AsyncMock()
-    task_queue.enqueue = AsyncMock(return_value="test-task-uuid-12345")
-    task_queue.get_queue_stats = AsyncMock(
-        return_value={"pending": 0, "processing": 0, "completed": 0, "failed": 0}
-    )
 
     # Mock rate limiter to bypass rate limiting in tests
     rate_limiter.redis_client = mock_redis
@@ -1592,11 +1579,6 @@ async def mock_external_services(request):
 
     redis_client.connect.reset_mock()
     redis_client.disconnect.reset_mock()
-
-    task_queue.connect.reset_mock()
-    task_queue.disconnect.reset_mock()
-    task_queue.enqueue.reset_mock()
-    task_queue.get_queue_stats.reset_mock()
 
     rate_limiter.connect.reset_mock()
     rate_limiter.disconnect.reset_mock()
