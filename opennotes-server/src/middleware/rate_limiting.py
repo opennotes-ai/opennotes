@@ -1,13 +1,11 @@
-import asyncio
 import logging
 from typing import Any
 
 from fastapi import Request
-from jose import jwt
+from jose import JWTError, jwt
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.auth.auth import verify_token
 from src.config import settings
 
 logger = logging.getLogger(__name__)
@@ -39,27 +37,30 @@ def get_client_ip(request: Request) -> str:
 
 
 def get_user_identifier(request: Request) -> str:
+    """Extract user identifier from request for rate limiting.
+
+    For rate limiting purposes, we only need to identify the user - we don't
+    need full token verification with revocation checks. Using synchronous
+    jwt.decode is sufficient and avoids event loop complications in FastAPI
+    middleware (where the loop is always running).
+    """
     auth_header = request.headers.get("authorization")
 
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                payload = jwt.decode(
-                    token,
-                    settings.JWT_SECRET_KEY,
-                    algorithms=[settings.JWT_ALGORITHM],
-                )
-                user_id = payload.get("sub")
-                if user_id:
-                    return f"user:{user_id}"
-            else:
-                token_data = loop.run_until_complete(verify_token(token))
-                if token_data:
-                    return f"user:{token_data.user_id}"
+            payload = jwt.decode(
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+            )
+            user_id = payload.get("sub")
+            if user_id:
+                return f"user:{user_id}"
+        except JWTError as e:
+            logger.debug(f"Failed to decode token for rate limiting: {e}")
         except Exception as e:
-            logger.debug(f"Failed to extract user from token for rate limiting: {e}")
+            logger.debug(f"Unexpected error extracting user for rate limiting: {e}")
 
     return f"ip:{get_client_ip(request)}"
 

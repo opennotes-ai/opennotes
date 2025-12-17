@@ -127,7 +127,12 @@ export class MessageMonitorService {
         channelConfig,
       };
 
-      void this.queueMessage(messageContent);
+      void this.queueMessage(messageContent).catch((error: unknown) => {
+        logger.error('Failed to queue message', {
+          messageId: messageContent.messageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
       logger.info('Message queued for monitoring', {
         messageId: message.id,

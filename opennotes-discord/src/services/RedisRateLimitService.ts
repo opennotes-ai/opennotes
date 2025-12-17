@@ -97,14 +97,18 @@ export class RedisRateLimitService {
   }> {
     try {
       const pattern = `${this.keyPrefix}:*`;
-      const keys = await this.redis.keys(pattern);
+      let keysCount = 0;
+      const stream = this.redis.scanStream({ match: pattern, count: 100 });
+      for await (const batch of stream) {
+        keysCount += (batch as string[]).length;
+      }
 
       const info = await this.redis.info('memory');
       const memoryMatch = info.match(/used_memory_human:(.+)/);
       const memoryUsage = memoryMatch ? memoryMatch[1].trim() : 'unknown';
 
       return {
-        keysCount: keys.length,
+        keysCount,
         memoryUsage,
       };
     } catch (error) {
