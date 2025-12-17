@@ -94,7 +94,7 @@ async def get_community_server_uuid(
         select(CommunityServer.id).where(
             CommunityServer.platform == platform,
             CommunityServer.platform_id == platform_id,
-            CommunityServer.is_active == True,
+            CommunityServer.is_active.is_(True),
         )
     )
     return result.scalar_one_or_none()
