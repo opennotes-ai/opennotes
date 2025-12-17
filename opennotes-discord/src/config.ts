@@ -12,7 +12,6 @@ interface Config {
   environment: 'development' | 'production';
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   autoMonitorChannels: boolean;
-  notifyMissingOpenAIKey: boolean;
   useRedisRateLimiting: boolean;
   instanceId: string;
   similaritySearchDefaultThreshold: number;
@@ -134,7 +133,6 @@ export const config: Config = {
   environment,
   logLevel: (getEnvVar('LOG_LEVEL', 'info') as 'debug' | 'info' | 'warn' | 'error'),
   autoMonitorChannels: getEnvVar('AUTO_MONITOR_CHANNELS', 'true').toLowerCase() === 'true',
-  notifyMissingOpenAIKey: getEnvVar('NOTIFY_MISSING_OPENAI_KEY', 'true').toLowerCase() === 'true',
   useRedisRateLimiting: getEnvVar('USE_REDIS_RATE_LIMITING', 'false').toLowerCase() === 'true',
   instanceId: getEnvVar('INSTANCE_ID', `${process.env.HOSTNAME || 'unknown'}-${process.pid}`),
   similaritySearchDefaultThreshold: parseFloat(getEnvVar('SIMILARITY_SEARCH_DEFAULT_THRESHOLD', '0.6')),

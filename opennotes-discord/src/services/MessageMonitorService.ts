@@ -1,11 +1,8 @@
 import type { Message, Client } from 'discord.js';
 import { logger } from '../logger.js';
 import { MonitoredChannelService } from './MonitoredChannelService.js';
-import { GuildOnboardingService } from './GuildOnboardingService.js';
 import { apiClient } from '../api-client.js';
 import { RedisQueue } from '../utils/redis-queue.js';
-import { NotificationRateLimiter } from '../utils/notification-rate-limiter.js';
-import { ApiError } from '../lib/errors.js';
 import type { MonitoredChannelResponse, SimilaritySearchResponse } from '../lib/api-client.js';
 import { CONTENT_LIMITS } from '../lib/constants.js';
 import type Redis from 'ioredis';
@@ -50,7 +47,6 @@ export class MessageMonitorService {
   private processingInterval?: NodeJS.Timeout;
   private isProcessing: boolean = false;
   private readonly maxQueueSize: number = 1000;
-  private notificationRateLimiter: NotificationRateLimiter;
 
   // Batch processing configuration
   private readonly BATCH_SIZE: number = 10;
@@ -64,11 +60,9 @@ export class MessageMonitorService {
 
   constructor(
     private client: Client,
-    private guildOnboardingService: GuildOnboardingService,
     redis: Redis
   ) {
     this.monitoredChannelService = new MonitoredChannelService();
-    this.notificationRateLimiter = new NotificationRateLimiter(redis);
     this.redisQueue = new RedisQueue<MessageContent>(redis, 'message-monitor', {
       maxSize: this.maxQueueSize,
       keyPrefix: 'opennotes',
@@ -445,10 +439,6 @@ export class MessageMonitorService {
         });
       }
     } catch (error) {
-      if (this.isProviderNotConfiguredError(error)) {
-        await this.handleMissingOpenAIConfig(messageContent.guildId);
-      }
-
       logger.error('Failed to process message for similarity search', {
         messageId: messageContent.messageId,
         channelId: messageContent.channelId,
@@ -566,50 +556,6 @@ export class MessageMonitorService {
         messageId: messageContent.messageId,
         channelId: messageContent.channelId,
         guildId: messageContent.guildId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-    }
-  }
-
-  private isProviderNotConfiguredError(error: unknown): boolean {
-    if (error instanceof ApiError) {
-      const detail = error.detail?.toLowerCase() || '';
-      return detail.includes('provider not configured') || detail.includes('provider') && detail.includes('disabled');
-    }
-    return false;
-  }
-
-  private async handleMissingOpenAIConfig(guildId: string): Promise<void> {
-    try {
-      const shouldNotify = await this.notificationRateLimiter.shouldNotify(guildId, 'missing-openai-config');
-
-      if (!shouldNotify) {
-        logger.debug('Skipping OpenAI config notification due to rate limit', {
-          guildId,
-        });
-        return;
-      }
-
-      const guild = this.client.guilds.cache.get(guildId);
-
-      if (!guild) {
-        logger.warn('Could not find guild to notify about missing OpenAI config', {
-          guildId,
-        });
-        return;
-      }
-
-      await this.guildOnboardingService.checkAndNotifyMissingOpenAIKey(guild);
-      await this.notificationRateLimiter.markNotified(guildId, 'missing-openai-config');
-
-      logger.info('Successfully notified guild owner about missing OpenAI configuration', {
-        guildId,
-        guildName: guild.name,
-      });
-    } catch (error) {
-      logger.error('Failed to notify guild owner about missing OpenAI configuration', {
-        guildId,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
