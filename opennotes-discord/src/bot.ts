@@ -31,7 +31,6 @@ import * as statusBotCommand from './commands/status-bot.js';
 // Context menu command imports
 import * as noteRequestContextCommand from './commands/note-request-context.js';
 
-import { initializePrivateThreadManager, getPrivateThreadManager } from './private-thread.js';
 import { NatsSubscriber } from './events/NatsSubscriber.js';
 import { NotePublisherService } from './services/NotePublisherService.js';
 import { NoteContextService } from './services/NoteContextService.js';
@@ -138,9 +137,6 @@ export class Bot {
       activities: [{ name: 'Community Notes', type: ActivityType.Watching }],
       status: 'online',
     });
-
-    initializePrivateThreadManager(this.client);
-    logger.info('Private thread manager initialized');
 
     await this.initializeNotePublisher();
     logger.info('Note publisher system initialized');
@@ -596,13 +592,6 @@ export class Bot {
       }
     } catch (error) {
       logger.warn('NATS subscriber cleanup failed', { error });
-    }
-
-    try {
-      const privateThreadManager = getPrivateThreadManager();
-      await privateThreadManager.cleanup();
-    } catch (error) {
-      logger.warn('Private thread manager cleanup skipped (not initialized)', { error });
     }
 
     if (this.healthCheckServer) {

@@ -438,4 +438,173 @@ describe('BotChannelService', () => {
       expect(result).toBe(mockRole);
     });
   });
+
+  describe('migrateChannel', () => {
+    let mockGuildConfigService: any;
+    let newMockChannel: any;
+    let oldMockChannel: any;
+
+    beforeEach(() => {
+      mockGuildConfigService = {
+        get: jest.fn<(...args: any[]) => Promise<any>>(),
+      };
+
+      oldMockChannel = {
+        id: 'old-channel-123',
+        name: 'old-channel',
+        type: ChannelType.GuildText,
+        guild: mockGuild,
+        delete: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+        permissionOverwrites: {
+          set: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+        },
+      };
+
+      newMockChannel = {
+        id: 'new-channel-123',
+        name: 'new-channel',
+        type: ChannelType.GuildText,
+        guild: mockGuild,
+        delete: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+        permissionOverwrites: {
+          set: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+        },
+      };
+
+      mockGuild.channels.cache = new Collection([['old-channel-123', oldMockChannel]]);
+      mockGuild.channels.create.mockResolvedValue(newMockChannel);
+      mockGuildConfigService.get.mockResolvedValue('OpenNotes');
+    });
+
+    it('should create new channel with new name', async () => {
+      const result = await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(mockGuild.channels.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'new-channel',
+        })
+      );
+      expect(result.newChannel).toBe(newMockChannel);
+    });
+
+    it('should delete old channel after creating new one', async () => {
+      const result = await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(oldMockChannel.delete).toHaveBeenCalled();
+      expect(result.oldChannelDeleted).toBe(true);
+    });
+
+    it('should set up permissions on new channel', async () => {
+      await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(newMockChannel.permissionOverwrites.set).toHaveBeenCalled();
+    });
+
+    it('should handle missing old channel gracefully', async () => {
+      mockGuild.channels.cache = new Collection();
+
+      const result = await service.migrateChannel(
+        mockGuild,
+        'nonexistent-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(result.newChannel).toBe(newMockChannel);
+      expect(result.oldChannelDeleted).toBe(false);
+    });
+
+    it('should continue if old channel deletion fails', async () => {
+      oldMockChannel.delete.mockRejectedValue(new Error('Permission denied'));
+
+      const result = await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(result.newChannel).toBe(newMockChannel);
+      expect(result.oldChannelDeleted).toBe(false);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to delete old channel'),
+        expect.any(Object)
+      );
+    });
+
+    it('should throw if new channel creation fails', async () => {
+      mockGuild.channels.create.mockRejectedValue(new Error('Cannot create channel'));
+
+      await expect(
+        service.migrateChannel(
+          mockGuild,
+          'old-channel',
+          'new-channel',
+          mockGuildConfigService
+        )
+      ).rejects.toThrow('Cannot create channel');
+
+      expect(oldMockChannel.delete).not.toHaveBeenCalled();
+    });
+
+    it('should log migration start and completion', async () => {
+      await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Starting bot channel migration'),
+        expect.objectContaining({
+          guildId: 'guild-123',
+          oldChannelName: 'old-channel',
+          newChannelName: 'new-channel',
+        })
+      );
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('Bot channel migration completed'),
+        expect.objectContaining({
+          guildId: 'guild-123',
+          newChannelId: 'new-channel-123',
+          oldChannelDeleted: true,
+        })
+      );
+    });
+
+    it('should handle missing OpenNotes role during migration', async () => {
+      mockGuildConfigService.get.mockResolvedValue('NonexistentRole');
+      mockGuild.roles.cache = new Collection();
+
+      const result = await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(result.newChannel).toBe(newMockChannel);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('OpenNotes role not found during migration'),
+        expect.any(Object)
+      );
+    });
+  });
 });

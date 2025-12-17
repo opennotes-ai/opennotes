@@ -15,6 +15,11 @@ export interface EnsureChannelResult {
   wasCreated: boolean;
 }
 
+export interface MigrateChannelResult {
+  newChannel: TextChannel;
+  oldChannelDeleted: boolean;
+}
+
 export class BotChannelService {
   findChannel(guild: Guild, channelName: string): TextChannel | undefined {
     const lowerName = channelName.toLowerCase();
@@ -170,5 +175,67 @@ export class BotChannelService {
     }
 
     return { channel, wasCreated: true };
+  }
+
+  async migrateChannel(
+    guild: Guild,
+    oldChannelName: string,
+    newChannelName: string,
+    guildConfigService: GuildConfigService
+  ): Promise<MigrateChannelResult> {
+    logger.info('Starting bot channel migration', {
+      guildId: guild.id,
+      oldChannelName,
+      newChannelName,
+    });
+
+    const oldChannel = this.findChannel(guild, oldChannelName);
+
+    const newChannel = await this.createChannel(guild, newChannelName);
+
+    const roleName = (await guildConfigService.get(
+      guild.id,
+      ConfigKey.OPENNOTES_ROLE_NAME
+    )) as string;
+    const openNotesRole = this.findRole(guild, roleName);
+
+    if (openNotesRole) {
+      const botMember = guild.members.me;
+      if (botMember) {
+        await this.setupPermissions(newChannel, openNotesRole, botMember);
+      }
+    } else {
+      logger.warn('OpenNotes role not found during migration, skipping permission setup', {
+        guildId: guild.id,
+        roleName,
+      });
+    }
+
+    let oldChannelDeleted = false;
+    if (oldChannel) {
+      try {
+        await this.deleteChannel(guild, oldChannel);
+        oldChannelDeleted = true;
+      } catch (error) {
+        logger.error('Failed to delete old channel during migration', {
+          guildId: guild.id,
+          oldChannelId: oldChannel.id,
+          oldChannelName,
+          newChannelId: newChannel.id,
+          newChannelName,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    logger.info('Bot channel migration completed', {
+      guildId: guild.id,
+      oldChannelName,
+      newChannelName,
+      newChannelId: newChannel.id,
+      oldChannelDeleted,
+    });
+
+    return { newChannel, oldChannelDeleted };
   }
 }

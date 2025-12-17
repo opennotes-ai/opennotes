@@ -10,7 +10,6 @@ import {
   ModalSubmitInteraction,
   Message,
   TextBasedChannel,
-  TextChannel,
   User,
   GuildMember,
   PermissionFlagsBits,
@@ -26,7 +25,6 @@ import { extractAndSanitizeImageUrl } from '../lib/url-validation.js';
 import { handleEphemeralError } from '../lib/interaction-utils.js';
 import { modalSubmissionRateLimiter } from '../lib/interaction-rate-limiter.js';
 import { suppressExpectedDiscordErrors } from '../lib/discord-utils.js';
-import { getPrivateThreadManager as getQueueManager } from '../private-thread.js';
 import { apiClient } from '../api-client.js';
 import { extractUserContext } from '../lib/user-context.js';
 
@@ -558,37 +556,6 @@ async function handleRequestSubcommand(interaction: ChatInputCommandInteraction)
     }
 
     await interaction.editReply(result.response);
-
-    if (interaction.channel instanceof TextChannel) {
-      const queueManager = getQueueManager();
-      try {
-        const thread = await queueManager.getOrCreateOpenNotesThread(
-          interaction.user,
-          interaction.channel,
-          guildId,
-          [],
-          0
-        );
-
-        await thread.send({
-          content: `Note request created for message \`${messageId}\`${reason ? `\n**Reason:** ${reason}` : ''}`,
-        });
-
-        logger.info('Posted note request to Open Notes thread', {
-          error_id: errorId,
-          user_id: userId,
-          message_id: messageId,
-          thread_id: thread.id,
-        });
-      } catch (threadError) {
-        logger.warn('Failed to post note request to thread', {
-          error_id: errorId,
-          user_id: userId,
-          message_id: messageId,
-          error: threadError instanceof Error ? threadError.message : String(threadError),
-        });
-      }
-    }
 
     logger.info('Request-note completed successfully', {
       error_id: errorId,
