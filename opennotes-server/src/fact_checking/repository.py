@@ -53,6 +53,8 @@ async def hybrid_search(
     query_embedding: list[float],
     limit: int = 10,
     dataset_tags: list[str] | None = None,
+    semantic_similarity_threshold: float = 0.0,
+    keyword_relevance_threshold: float = 0.0,
 ) -> list[HybridSearchResult]:
     """
     Perform hybrid search combining FTS and vector similarity using RRF.
@@ -78,6 +80,12 @@ async def hybrid_search(
             only items with at least one matching tag are returned. Uses
             PostgreSQL array overlap operator (&&) for efficient filtering
             at the SQL level.
+        semantic_similarity_threshold: Minimum cosine similarity (0.0-1.0) for
+            semantic search results. Results below this threshold are excluded
+            from the semantic ranking. Default 0.0 (no filtering).
+        keyword_relevance_threshold: Minimum ts_rank_cd score for keyword search
+            results. Results below this threshold are excluded from the keyword
+            ranking. Default 0.0 (no filtering).
 
     Returns:
         List of HybridSearchResult containing FactCheckItem and RRF score,
@@ -97,18 +105,25 @@ async def hybrid_search(
     if dataset_tags:
         tags_filter = "AND dataset_tags && CAST(:dataset_tags AS text[])"
 
+    # Convert similarity threshold to max distance (cosine distance = 1 - similarity)
+    max_semantic_distance = 1.0 - semantic_similarity_threshold
+
     rrf_query = text(f"""
         WITH semantic AS (
             SELECT id, RANK() OVER (ORDER BY embedding <=> CAST(:embedding AS vector)) AS rank
             FROM fact_check_items
-            WHERE embedding IS NOT NULL {tags_filter}
+            WHERE embedding IS NOT NULL
+                AND (embedding <=> CAST(:embedding AS vector)) <= :max_semantic_distance
+                {tags_filter}
             ORDER BY embedding <=> CAST(:embedding AS vector)
             LIMIT {RRF_CTE_PRELIMIT}
         ),
         keyword AS (
             SELECT id, RANK() OVER (ORDER BY ts_rank_cd(search_vector, query) DESC) AS rank
             FROM fact_check_items, plainto_tsquery('english', :query_text) query
-            WHERE search_vector @@ query {tags_filter}
+            WHERE search_vector @@ query
+                AND ts_rank_cd(search_vector, query) >= :min_keyword_relevance
+                {tags_filter}
             ORDER BY ts_rank_cd(search_vector, query) DESC
             LIMIT {RRF_CTE_PRELIMIT}
         )
@@ -140,10 +155,12 @@ async def hybrid_search(
         LIMIT :limit
     """)
 
-    params: dict[str, str | int | list[str]] = {
+    params: dict[str, str | int | float | list[str]] = {
         "embedding": query_embedding_str,
         "query_text": query_text,
         "limit": limit,
+        "max_semantic_distance": max_semantic_distance,
+        "min_keyword_relevance": keyword_relevance_threshold,
     }
     if dataset_tags:
         params["dataset_tags"] = dataset_tags

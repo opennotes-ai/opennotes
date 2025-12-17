@@ -120,7 +120,13 @@ class SimilaritySearchCreateAttributes(StrictInputSchema):
     )
     similarity_threshold: float = Field(
         default_factory=lambda: settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
-        description="Minimum similarity score (0.0-1.0)",
+        description="Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering",
+        ge=0.0,
+        le=1.0,
+    )
+    rrf_score_threshold: float = Field(
+        0.1,
+        description="Minimum scaled RRF score (0.0-1.0) for post-fusion filtering",
         ge=0.0,
         le=1.0,
     )
@@ -177,7 +183,8 @@ class SimilaritySearchResultAttributes(BaseModel):
     matches: list[FactCheckMatchResource] = Field(..., description="Matching fact-check items")
     query_text: str = Field(..., description="Original query text")
     dataset_tags: list[str] = Field(..., description="Dataset tags used for filtering")
-    similarity_threshold: float = Field(..., description="Similarity threshold applied")
+    similarity_threshold: float = Field(..., description="Cosine similarity threshold applied")
+    rrf_score_threshold: float = Field(..., description="Scaled RRF score threshold applied")
     total_matches: int = Field(..., description="Number of matches found")
 
 
@@ -297,6 +304,7 @@ async def similarity_search_jsonapi(
             community_server_id=attrs.community_server_id,
             dataset_tags=attrs.dataset_tags,
             similarity_threshold=attrs.similarity_threshold,
+            rrf_score_threshold=attrs.rrf_score_threshold,
             limit=attrs.limit,
         )
 
@@ -327,6 +335,7 @@ async def similarity_search_jsonapi(
                 query_text=response.query_text,
                 dataset_tags=response.dataset_tags,
                 similarity_threshold=response.similarity_threshold,
+                rrf_score_threshold=response.rrf_score_threshold,
                 total_matches=response.total_matches,
             ),
         )

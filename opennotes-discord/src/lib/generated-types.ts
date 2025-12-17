@@ -1630,6 +1630,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/hybrid-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hybrid Search Jsonapi
+         * @description Perform hybrid search on fact-check items combining FTS and semantic similarity.
+         *
+         *     This endpoint:
+         *     1. Verifies user is authorized member of community server
+         *     2. Validates community server has OpenAI configuration
+         *     3. Generates embedding using text-embedding-3-small (1536 dimensions)
+         *     4. Executes hybrid search combining:
+         *        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
+         *        - pgvector embedding similarity (cosine distance)
+         *     5. Uses Reciprocal Rank Fusion (RRF) to combine rankings
+         *     6. Returns top matches ranked by combined RRF score
+         *
+         *     The RRF formula: score = 1/(k + rank_semantic) + 1/(k + rank_keyword)
+         *     where k=60 is the standard RRF constant.
+         *
+         *     JSON:API 1.1 action endpoint that returns search results.
+         *
+         *     Rate Limiting:
+         *     - Per-user rate limit: 100 requests/hour
+         *     - Per-community rate limits: Based on configured LLM usage limits
+         *     - OpenAI API rate limits: Automatic detection with retry guidance
+         */
+        post: operations["hybrid_search_jsonapi_api_v2_hybrid_searches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notes": {
         parameters: {
             query?: never;
@@ -2128,23 +2168,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhooks/discord/interactions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Handle Discord Interaction */
-        post: operations["handle_discord_interaction_api_v1_webhooks_discord_interactions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -2197,23 +2220,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhooks/health/webhooks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Webhook Health */
-        get: operations["webhook_health_api_v1_webhooks_health_webhooks_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/webhooks/stats/{community_server_id}": {
         parameters: {
             query?: never;
@@ -2223,40 +2229,6 @@ export interface paths {
         };
         /** Get Community Server Stats */
         get: operations["get_community_server_stats_api_v1_webhooks_stats__community_server_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/webhooks/tasks/by-interaction/{interaction_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Task By Interaction */
-        get: operations["get_task_by_interaction_api_v1_webhooks_tasks_by_interaction__interaction_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/webhooks/tasks/{task_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Task By Id */
-        get: operations["get_task_by_id_api_v1_webhooks_tasks__task_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3699,6 +3671,48 @@ export interface components {
          * @enum {string}
          */
         HelpfulnessLevel: "HELPFUL" | "SOMEWHAT_HELPFUL" | "NOT_HELPFUL";
+        /**
+         * HybridSearchCreateAttributes
+         * @description Attributes for performing a hybrid search via JSON:API.
+         */
+        HybridSearchCreateAttributes: {
+            /**
+             * Text
+             * @description Query text to search for (minimum 3 characters). Uses hybrid search combining FTS and semantic similarity.
+             */
+            text: string;
+            /**
+             * Community Server Id
+             * @description Community server (guild) ID
+             */
+            community_server_id: string;
+            /**
+             * Limit
+             * @description Maximum number of results to return
+             * @default 10
+             */
+            limit: number;
+        };
+        /**
+         * HybridSearchCreateData
+         * @description JSON:API data object for hybrid search.
+         */
+        HybridSearchCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'hybrid-searches'
+             * @constant
+             */
+            type: "hybrid-searches";
+            attributes: components["schemas"]["HybridSearchCreateAttributes"];
+        };
+        /**
+         * HybridSearchRequest
+         * @description JSON:API request body for performing a hybrid search.
+         */
+        HybridSearchRequest: {
+            data: components["schemas"]["HybridSearchCreateData"];
+        };
         /**
          * IdentityCreateAttributes
          * @description Attributes for identity create request.
@@ -5624,9 +5638,15 @@ export interface components {
             dataset_tags?: string[];
             /**
              * Similarity Threshold
-             * @description Minimum similarity score (0.0-1.0)
+             * @description Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering
              */
             similarity_threshold?: number;
+            /**
+             * Rrf Score Threshold
+             * @description Minimum scaled RRF score (0.0-1.0) for post-fusion filtering
+             * @default 0.1
+             */
+            rrf_score_threshold: number;
             /**
              * Limit
              * @description Maximum number of results to return
@@ -5666,42 +5686,19 @@ export interface components {
             dataset_tags: string[];
             /**
              * Similarity Threshold
-             * @description Similarity threshold applied
+             * @description Cosine similarity threshold applied
              */
             similarity_threshold: number;
+            /**
+             * Rrf Score Threshold
+             * @description Scaled RRF score threshold applied
+             */
+            rrf_score_threshold: number;
             /**
              * Total Matches
              * @description Number of matches found
              */
             total_matches: number;
-        };
-        /** TaskStatus */
-        TaskStatus: {
-            /** Task Id */
-            task_id: string;
-            /** Interaction Id */
-            interaction_id: string;
-            /** Task Type */
-            task_type: string;
-            /** Status */
-            status: string;
-            /**
-             * Result
-             * @description Task result data. Kept as dict - structure varies by task type
-             */
-            result?: {
-                [key: string]: unknown;
-            } | null;
-            /** Error */
-            error?: string | null;
-            /** Retry Count */
-            retry_count: number;
-            /** Created At */
-            created_at: string;
-            /** Started At */
-            started_at?: string | null;
-            /** Completed At */
-            completed_at?: string | null;
         };
         /** TierInfo */
         TierInfo: {
@@ -6205,9 +6202,15 @@ export interface components {
             dataset_tags?: string[];
             /**
              * Similarity Threshold
-             * @description Minimum similarity score (0.0-1.0)
+             * @description Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering
              */
             similarity_threshold?: number;
+            /**
+             * Rrf Score Threshold
+             * @description Minimum scaled RRF score (0.0-1.0) for post-fusion filtering
+             * @default 0.1
+             */
+            rrf_score_threshold: number;
             /**
              * Limit
              * @description Maximum number of results to return
@@ -8667,6 +8670,41 @@ export interface operations {
             };
         };
     };
+    hybrid_search_jsonapi_api_v2_hybrid_searches_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HybridSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_notes_api_v1_notes_get: {
         parameters: {
             query?: {
@@ -9499,40 +9537,6 @@ export interface operations {
             };
         };
     };
-    handle_discord_interaction_api_v1_webhooks_discord_interactions_post: {
-        parameters: {
-            query?: never;
-            header: {
-                "x-signature-ed25519": string;
-                "x-signature-timestamp": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     register_webhook_api_v1_webhooks_register_post: {
         parameters: {
             query?: never;
@@ -9665,28 +9669,6 @@ export interface operations {
             };
         };
     };
-    webhook_health_api_v1_webhooks_health_webhooks_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
     get_community_server_stats_api_v1_webhooks_stats__community_server_id__get: {
         parameters: {
             query?: never;
@@ -9707,68 +9689,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_task_by_interaction_api_v1_webhooks_tasks_by_interaction__interaction_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                interaction_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_task_by_id_api_v1_webhooks_tasks__task_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskStatus"];
                 };
             };
             /** @description Validation Error */

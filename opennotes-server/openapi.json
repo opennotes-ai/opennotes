@@ -4595,6 +4595,69 @@
         }
       }
     },
+    "/api/v2/hybrid-searches": {
+      "post": {
+        "tags": [
+          "hybrid-searches-jsonapi"
+        ],
+        "summary": "Hybrid Search Jsonapi",
+        "description": "Perform hybrid search on fact-check items combining FTS and semantic similarity.\n\nThis endpoint:\n1. Verifies user is authorized member of community server\n2. Validates community server has OpenAI configuration\n3. Generates embedding using text-embedding-3-small (1536 dimensions)\n4. Executes hybrid search combining:\n   - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)\n   - pgvector embedding similarity (cosine distance)\n5. Uses Reciprocal Rank Fusion (RRF) to combine rankings\n6. Returns top matches ranked by combined RRF score\n\nThe RRF formula: score = 1/(k + rank_semantic) + 1/(k + rank_keyword)\nwhere k=60 is the standard RRF constant.\n\nJSON:API 1.1 action endpoint that returns search results.\n\nRate Limiting:\n- Per-user rate limit: 100 requests/hour\n- Per-community rate limits: Based on configured LLM usage limits\n- OpenAI API rate limits: Automatic detection with retry guidance",
+        "operationId": "hybrid_search_jsonapi_api_v2_hybrid_searches_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HybridSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/notes": {
       "post": {
         "tags": [
@@ -6524,59 +6587,6 @@
         }
       }
     },
-    "/api/v1/webhooks/discord/interactions": {
-      "post": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Handle Discord Interaction",
-        "operationId": "handle_discord_interaction_api_v1_webhooks_discord_interactions_post",
-        "parameters": [
-          {
-            "name": "x-signature-ed25519",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Signature-Ed25519"
-            }
-          },
-          {
-            "name": "x-signature-timestamp",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Signature-Timestamp"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Handle Discord Interaction Api V1 Webhooks Discord Interactions Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/webhooks/register": {
       "post": {
         "tags": [
@@ -6761,29 +6771,6 @@
         }
       }
     },
-    "/api/v1/webhooks/health/webhooks": {
-      "get": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Webhook Health",
-        "operationId": "webhook_health_api_v1_webhooks_health_webhooks_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Webhook Health Api V1 Webhooks Health Webhooks Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/webhooks/stats/{community_server_id}": {
       "get": {
         "tags": [
@@ -6811,90 +6798,6 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Community Server Stats Api V1 Webhooks Stats  Community Server Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/webhooks/tasks/by-interaction/{interaction_id}": {
-      "get": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Get Task By Interaction",
-        "operationId": "get_task_by_interaction_api_v1_webhooks_tasks_by_interaction__interaction_id__get",
-        "parameters": [
-          {
-            "name": "interaction_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Interaction Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskStatus"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/webhooks/tasks/{task_id}": {
-      "get": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Get Task By Id",
-        "operationId": "get_task_by_id_api_v1_webhooks_tasks__task_id__get",
-        "parameters": [
-          {
-            "name": "task_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Task Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskStatus"
                 }
               }
             }
@@ -10152,6 +10055,72 @@
           "NOT_HELPFUL"
         ],
         "title": "HelpfulnessLevel"
+      },
+      "HybridSearchCreateAttributes": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 50000,
+            "minLength": 3,
+            "title": "Text",
+            "description": "Query text to search for (minimum 3 characters). Uses hybrid search combining FTS and semantic similarity."
+          },
+          "community_server_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Community Server Id",
+            "description": "Community server (guild) ID"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "description": "Maximum number of results to return",
+            "default": 10
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "community_server_id"
+        ],
+        "title": "HybridSearchCreateAttributes",
+        "description": "Attributes for performing a hybrid search via JSON:API."
+      },
+      "HybridSearchCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "hybrid-searches",
+            "title": "Type",
+            "description": "Resource type must be 'hybrid-searches'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/HybridSearchCreateAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "HybridSearchCreateData",
+        "description": "JSON:API data object for hybrid search."
+      },
+      "HybridSearchRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HybridSearchCreateData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "HybridSearchRequest",
+        "description": "JSON:API request body for performing a hybrid search."
       },
       "IdentityCreateAttributes": {
         "properties": {
@@ -14082,7 +14051,15 @@
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Similarity Threshold",
-            "description": "Minimum similarity score (0.0-1.0)"
+            "description": "Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering"
+          },
+          "rrf_score_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Rrf Score Threshold",
+            "description": "Minimum scaled RRF score (0.0-1.0) for post-fusion filtering",
+            "default": 0.1
           },
           "limit": {
             "type": "integer",
@@ -14148,7 +14125,12 @@
           "similarity_threshold": {
             "type": "number",
             "title": "Similarity Threshold",
-            "description": "Similarity threshold applied"
+            "description": "Cosine similarity threshold applied"
+          },
+          "rrf_score_threshold": {
+            "type": "number",
+            "title": "Rrf Score Threshold",
+            "description": "Scaled RRF score threshold applied"
           },
           "total_matches": {
             "type": "integer",
@@ -14162,93 +14144,10 @@
           "query_text",
           "dataset_tags",
           "similarity_threshold",
+          "rrf_score_threshold",
           "total_matches"
         ],
         "title": "SimilaritySearchResponse"
-      },
-      "TaskStatus": {
-        "properties": {
-          "task_id": {
-            "type": "string",
-            "title": "Task Id"
-          },
-          "interaction_id": {
-            "type": "string",
-            "title": "Interaction Id"
-          },
-          "task_type": {
-            "type": "string",
-            "title": "Task Type"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "result": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result",
-            "description": "Task result data. Kept as dict - structure varies by task type"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "retry_count": {
-            "type": "integer",
-            "title": "Retry Count"
-          },
-          "created_at": {
-            "type": "string",
-            "title": "Created At"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Started At"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "task_id",
-          "interaction_id",
-          "task_type",
-          "status",
-          "retry_count",
-          "created_at"
-        ],
-        "title": "TaskStatus"
       },
       "TierInfo": {
         "properties": {
@@ -15214,7 +15113,15 @@
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Similarity Threshold",
-            "description": "Minimum similarity score (0.0-1.0)"
+            "description": "Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering"
+          },
+          "rrf_score_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Rrf Score Threshold",
+            "description": "Minimum scaled RRF score (0.0-1.0) for post-fusion filtering",
+            "default": 0.1
           },
           "limit": {
             "type": "integer",
