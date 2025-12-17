@@ -15,6 +15,12 @@ from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 
+# RRF (Reciprocal Rank Fusion) constant 'k'.
+# Standard value (60) that balances contribution of high and low ranked results.
+# Used in formula: score = 1/(k + rank)
+# Higher k values reduce the impact of rank differences; k=60 is the de facto standard.
+RRF_K_CONSTANT = 60
+
 
 @dataclass
 class HybridSearchResult:
@@ -107,7 +113,7 @@ async def hybrid_search(
             fci.search_vector,
             fci.created_at,
             fci.updated_at,
-            COALESCE(1.0/(60+s.rank), 0.0) + COALESCE(1.0/(60+k.rank), 0.0) AS rrf_score
+            COALESCE(1.0/({RRF_K_CONSTANT}+s.rank), 0.0) + COALESCE(1.0/({RRF_K_CONSTANT}+k.rank), 0.0) AS rrf_score
         FROM fact_check_items fci
         LEFT JOIN semantic s ON fci.id = s.id
         LEFT JOIN keyword k ON fci.id = k.id

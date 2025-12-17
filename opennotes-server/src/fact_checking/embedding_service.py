@@ -10,24 +10,96 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.fact_checking.previously_seen_schemas import PreviouslySeenMessageMatch
-from src.fact_checking.repository import hybrid_search
+from src.fact_checking.repository import RRF_K_CONSTANT, hybrid_search
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 
-# Scale factor to convert RRF scores to similarity-like scores (0.0-1.0 range).
+# =============================================================================
+# RRF (Reciprocal Rank Fusion) Score Scaling Documentation
+# =============================================================================
 #
-# RRF (Reciprocal Rank Fusion) scores are calculated as 1/(k+rank) where k=60.
-# For top 20 results: rank 1 gives ~0.0164, rank 20 gives ~0.0125.
-# Expected range is approximately 0.007 to 0.067 for reasonable result sets.
+# BACKGROUND
+# ----------
+# Hybrid search combines full-text search (FTS) and vector similarity rankings
+# using Reciprocal Rank Fusion (RRF). RRF scores have a very different scale
+# than cosine similarity (which ranges 0.0-1.0), so we apply a scaling factor
+# for API compatibility.
 #
-# We scale by 15.0 to convert to a 0.0-1.0 range for backward compatibility with
-# the similarity_threshold parameter used by the API. This is an approximation
-# since RRF scores don't map linearly to cosine similarity, but provides a
-# reasonable mapping for threshold filtering.
+# RRF SCORE CALCULATION
+# ---------------------
+# For each search method (semantic/keyword), RRF score = 1/(k + rank)
+# where k = RRF_K_CONSTANT (60, the de facto standard).
+#
+# For hybrid search, we sum scores from both methods:
+#   total_rrf = 1/(k + semantic_rank) + 1/(k + keyword_rank)  # noqa: ERA001
+#
+# If a result appears in only one ranking (semantic OR keyword), the other
+# term contributes 0.
+#
+# EXPECTED RRF SCORE RANGES
+# -------------------------
+# Single-source results (appears in semantic OR keyword only):
+#   - Rank 1:  1/61 ≈ 0.0164
+#   - Rank 5:  1/65 ≈ 0.0154
+#   - Rank 10: 1/70 ≈ 0.0143
+#   - Rank 20: 1/80 = 0.0125
+#
+# Dual-source results (appears in BOTH rankings):
+#   - Both rank 1:  2/61 ≈ 0.0328 (maximum possible)
+#   - Both rank 10: 2/70 ≈ 0.0286
+#   - Both rank 20: 2/80 = 0.0250
+#
+# WHY SCALE FACTOR = 15.0?
+# ------------------------
+# We scale by 15.0 to map RRF scores to a 0.0-1.0 range for backward
+# compatibility with the similarity_threshold API parameter:
+#
+#   scaled_score = min(rrf_score * 15.0, 1.0)  # noqa: ERA001
+#
+# Approximate mapping (RRF Rank → Raw RRF Score → Scaled Score):
+#
+#   Single-source results:
+#   | Rank |  RRF Score | Scaled |
+#   |------|------------|--------|
+#   |    1 |    0.0164  |  0.246 |
+#   |    5 |    0.0154  |  0.231 |
+#   |   10 |    0.0143  |  0.214 |
+#   |   20 |    0.0125  |  0.187 |
+#
+#   Dual-source results (same rank in both):
+#   | Rank |  RRF Score | Scaled |
+#   |------|------------|--------|
+#   |    1 |    0.0328  |  0.492 |
+#   |    5 |    0.0308  |  0.462 |
+#   |   10 |    0.0286  |  0.429 |
+#   |   20 |    0.0250  |  0.375 |
+#
+# With 15.0, top dual-source results map to ~0.5, and top single-source
+# results map to ~0.25. This provides reasonable threshold filtering:
+#   - threshold >= 0.4: Only top dual-source matches
+#   - threshold >= 0.2: Top results from either method
+#   - threshold >= 0.1: Broader results including lower ranks
+#
+# ⚠️  IMPORTANT WARNING
+# ---------------------
+# These scaled scores are NOT cosine similarity scores! They are derived
+# from ranking positions, not vector distances. A scaled score of 0.3 does
+# NOT mean "30% similar" - it indicates relative ranking position in the
+# combined FTS + vector search results.
+#
+# For true cosine similarity, use the search_previously_seen() method which
+# performs direct vector distance calculations.
+#
+# =============================================================================
 RRF_TO_SIMILARITY_SCALE_FACTOR = 15.0
+
+# Re-export RRF_K_CONSTANT for documentation purposes and to avoid unused import warnings.
+# The actual value is used in repository.py SQL; we import it here for documentation coherence.
+__all__ = ["RRF_K_CONSTANT", "RRF_TO_SIMILARITY_SCALE_FACTOR", "EmbeddingService"]
+_RRF_K = RRF_K_CONSTANT  # Reference to suppress F401; value is 60
 
 
 class EmbeddingService:
