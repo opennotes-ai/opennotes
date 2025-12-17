@@ -29,6 +29,7 @@ async def hybrid_search(
     query_text: str,
     query_embedding: list[float],
     limit: int = 10,
+    dataset_tags: list[str] | None = None,
 ) -> list[HybridSearchResult]:
     """
     Perform hybrid search combining FTS and vector similarity using RRF.
@@ -49,6 +50,10 @@ async def hybrid_search(
         query_text: Text query for keyword search
         query_embedding: Vector embedding for semantic search (1536 dimensions)
         limit: Maximum results to return (default: 10)
+        dataset_tags: Optional list of dataset tags to filter by. If provided,
+            only items with at least one matching tag are returned. Uses
+            PostgreSQL array overlap operator (&&) for efficient filtering
+            at the SQL level.
 
     Returns:
         List of HybridSearchResult containing FactCheckItem and RRF score,
@@ -64,18 +69,22 @@ async def hybrid_search(
 
     query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
 
-    rrf_query = text("""
+    tags_filter = ""
+    if dataset_tags:
+        tags_filter = "AND dataset_tags && CAST(:dataset_tags AS text[])"
+
+    rrf_query = text(f"""
         WITH semantic AS (
             SELECT id, RANK() OVER (ORDER BY embedding <=> CAST(:embedding AS vector)) AS rank
             FROM fact_check_items
-            WHERE embedding IS NOT NULL
+            WHERE embedding IS NOT NULL {tags_filter}
             ORDER BY embedding <=> CAST(:embedding AS vector)
             LIMIT 20
         ),
         keyword AS (
             SELECT id, RANK() OVER (ORDER BY ts_rank_cd(search_vector, query) DESC) AS rank
             FROM fact_check_items, plainto_tsquery('english', :query_text) query
-            WHERE search_vector @@ query
+            WHERE search_vector @@ query {tags_filter}
             ORDER BY ts_rank_cd(search_vector, query) DESC
             LIMIT 20
         )
@@ -107,15 +116,16 @@ async def hybrid_search(
         LIMIT :limit
     """)
 
+    params: dict[str, str | int | list[str]] = {
+        "embedding": query_embedding_str,
+        "query_text": query_text,
+        "limit": limit,
+    }
+    if dataset_tags:
+        params["dataset_tags"] = dataset_tags
+
     try:
-        result = await session.execute(
-            rrf_query,
-            {
-                "embedding": query_embedding_str,
-                "query_text": query_text,
-                "limit": limit,
-            },
-        )
+        result = await session.execute(rrf_query, params)
         rows = result.fetchall()
     except Exception as e:
         logger.error(
@@ -124,6 +134,7 @@ async def hybrid_search(
                 "query_text_length": len(query_text),
                 "embedding_dimensions": len(query_embedding),
                 "limit": limit,
+                "dataset_tags": dataset_tags,
                 "error": str(e),
             },
         )
@@ -159,6 +170,7 @@ async def hybrid_search(
             "query_text_length": len(query_text),
             "results_count": len(results),
             "limit": limit,
+            "dataset_tags": dataset_tags,
         },
     )
 

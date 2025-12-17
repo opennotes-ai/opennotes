@@ -110,16 +110,13 @@ class EmbeddingService:
         vector similarity for improved retrieval quality.
 
         Note on dataset_tags filtering:
-            Dataset tags filtering is applied post-search (after RRF ranking) rather
-            than at the database level. This means the method may return fewer results
-            than the requested limit if many top-ranked results don't match the tags.
-            To compensate, we fetch 3x the limit from the database, but this is not
-            guaranteed to always yield `limit` results.
+            Dataset tags filtering is applied at the SQL level via the hybrid_search
+            repository function. This ensures efficient filtering and guarantees
+            that up to `limit` results matching the tags are returned.
 
         Note on similarity_threshold:
             After converting RRF scores to similarity-like scores (via scaling),
-            results below the threshold are filtered out. This filtering happens
-            after dataset_tags filtering but before truncating to the limit.
+            results below the threshold are filtered out.
 
         Args:
             db: Database session
@@ -128,7 +125,7 @@ class EmbeddingService:
             dataset_tags: Dataset tags to filter by (e.g., ['snopes'])
             similarity_threshold: Minimum similarity score (0.0-1.0) - results with
                 scaled RRF scores below this are excluded
-            limit: Maximum number of results (may return fewer, see notes above)
+            limit: Maximum number of results
 
         Returns:
             Similarity search response with matching items
@@ -155,14 +152,9 @@ class EmbeddingService:
             session=db,
             query_text=query_text,
             query_embedding=query_embedding,
-            limit=limit * 3,
+            limit=limit,
+            dataset_tags=dataset_tags if dataset_tags else None,
         )
-
-        filtered_results = [
-            result
-            for result in hybrid_results
-            if any(tag in result.item.dataset_tags for tag in dataset_tags)
-        ]
 
         matches = [
             FactCheckMatch(
@@ -180,7 +172,7 @@ class EmbeddingService:
                 embedding_model=result.item.embedding_model,
                 similarity_score=min(result.rrf_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0),
             )
-            for result in filtered_results
+            for result in hybrid_results
         ]
 
         matches = [m for m in matches if m.similarity_score >= threshold]
@@ -196,7 +188,7 @@ class EmbeddingService:
                 "threshold": threshold,
                 "matches_found": len(matches),
                 "top_score": matches[0].similarity_score if matches else None,
-                "pre_filter_count": len(hybrid_results),
+                "hybrid_search_count": len(hybrid_results),
             },
         )
 

@@ -310,3 +310,244 @@ class TestHybridSearchRepository:
             )
 
         assert len(results) <= 10, "Default limit should be 10"
+
+
+@pytest.fixture
+async def dataset_tags_test_items():
+    """Create test FactCheckItem records with different dataset_tags.
+
+    Creates items with specific tags for testing SQL-level filtering:
+    - Items with 'snopes' tag
+    - Items with 'politifact' tag
+    - Items with 'reuters' tag
+    - Items with multiple tags
+    """
+    item_ids = []
+
+    async with get_session_maker()() as session:
+        item_snopes = FactCheckItem(
+            dataset_name="snopes",
+            dataset_tags=["snopes", "health"],
+            title="COVID vaccine safety fact check",
+            content="Fact checking claims about COVID vaccine safety and efficacy.",
+            summary="Vaccine safety verification",
+            rating="True",
+            embedding=generate_test_embedding(seed=1),
+        )
+        session.add(item_snopes)
+
+        item_politifact = FactCheckItem(
+            dataset_name="politifact",
+            dataset_tags=["politifact", "politics"],
+            title="Political claim about vaccines",
+            content="Fact checking political statements about vaccine mandates.",
+            summary="Political vaccine claim check",
+            rating="Mostly True",
+            embedding=generate_test_embedding(seed=2),
+        )
+        session.add(item_politifact)
+
+        item_reuters = FactCheckItem(
+            dataset_name="reuters",
+            dataset_tags=["reuters", "health"],
+            title="Reuters health vaccine report",
+            content="Reuters fact check on vaccine distribution claims.",
+            summary="Reuters vaccine report",
+            rating="True",
+            embedding=generate_test_embedding(seed=3),
+        )
+        session.add(item_reuters)
+
+        item_multi_tags = FactCheckItem(
+            dataset_name="combined",
+            dataset_tags=["snopes", "politifact", "health"],
+            title="Combined source vaccine analysis",
+            content="Cross-referenced vaccine fact check from multiple sources.",
+            summary="Multi-source vaccine check",
+            rating="True",
+            embedding=generate_test_embedding(seed=1),
+        )
+        session.add(item_multi_tags)
+
+        item_other = FactCheckItem(
+            dataset_name="other",
+            dataset_tags=["other", "climate"],
+            title="Climate change fact check",
+            content="Unrelated content about climate change for negative test.",
+            summary="Climate check",
+            rating="True",
+            embedding=generate_test_embedding(seed=10),
+        )
+        session.add(item_other)
+
+        await session.commit()
+
+        await session.refresh(item_snopes)
+        await session.refresh(item_politifact)
+        await session.refresh(item_reuters)
+        await session.refresh(item_multi_tags)
+        await session.refresh(item_other)
+
+        item_ids = [
+            item_snopes.id,
+            item_politifact.id,
+            item_reuters.id,
+            item_multi_tags.id,
+            item_other.id,
+        ]
+
+        yield {
+            "snopes": item_snopes,
+            "politifact": item_politifact,
+            "reuters": item_reuters,
+            "multi_tags": item_multi_tags,
+            "other": item_other,
+        }
+
+    async with get_session_maker()() as session:
+        for item_id in item_ids:
+            result = await session.execute(select(FactCheckItem).where(FactCheckItem.id == item_id))
+            item = result.scalar_one_or_none()
+            if item:
+                await session.delete(item)
+        await session.commit()
+
+
+class TestHybridSearchDatasetTagsFiltering:
+    """Tests for dataset_tags filtering in hybrid_search at the SQL level."""
+
+    async def test_hybrid_search_filters_by_single_dataset_tag(self, dataset_tags_test_items):
+        """Test that hybrid_search filters results by a single dataset_tag at the SQL level.
+
+        When searching with dataset_tags=['snopes'], only items that have 'snopes'
+        in their dataset_tags array should be returned.
+        """
+        from src.fact_checking.repository import hybrid_search
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=1)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=["snopes"],
+                limit=10,
+            )
+
+        assert len(results) >= 1, "Should find at least one result with 'snopes' tag"
+
+        for result in results:
+            assert "snopes" in result.item.dataset_tags, (
+                f"All results should have 'snopes' tag, but got: {result.item.dataset_tags}"
+            )
+
+    async def test_hybrid_search_filters_by_multiple_dataset_tags(self, dataset_tags_test_items):
+        """Test that hybrid_search returns items matching ANY of the provided tags.
+
+        When searching with dataset_tags=['snopes', 'politifact'], items with either
+        tag should be returned (array overlap behavior).
+        """
+        from src.fact_checking.repository import hybrid_search
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=1)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=["snopes", "politifact"],
+                limit=10,
+            )
+
+        assert len(results) >= 2, "Should find results from both snopes and politifact"
+
+        for result in results:
+            has_snopes = "snopes" in result.item.dataset_tags
+            has_politifact = "politifact" in result.item.dataset_tags
+            assert has_snopes or has_politifact, (
+                f"All results should have 'snopes' or 'politifact' tag, but got: {result.item.dataset_tags}"
+            )
+
+    async def test_hybrid_search_excludes_non_matching_tags(self, dataset_tags_test_items):
+        """Test that items with non-matching tags are excluded.
+
+        When searching with dataset_tags=['snopes'], items with only 'reuters'
+        or 'other' tags should NOT be returned.
+        """
+        from src.fact_checking.repository import hybrid_search
+
+        query_text = "fact check"
+        query_embedding = generate_test_embedding(seed=1)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=["snopes"],
+                limit=10,
+            )
+
+        result_dataset_names = [r.item.dataset_name for r in results]
+
+        assert "reuters" not in result_dataset_names or any(
+            "snopes" in r.item.dataset_tags for r in results if r.item.dataset_name == "reuters"
+        ), "Reuters-only items should be excluded"
+
+        assert "other" not in result_dataset_names, "Items with only 'other' tag should be excluded"
+
+    async def test_hybrid_search_without_dataset_tags_returns_all(self, dataset_tags_test_items):
+        """Test backward compatibility - no dataset_tags returns all results.
+
+        When dataset_tags is None or not provided, all items should be considered
+        (no filtering applied).
+        """
+        from src.fact_checking.repository import hybrid_search
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=1)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                limit=10,
+            )
+
+        result_dataset_names = {r.item.dataset_name for r in results}
+        assert len(result_dataset_names) >= 2, (
+            "Without dataset_tags filter, should return items from multiple datasets"
+        )
+
+    async def test_hybrid_search_empty_dataset_tags_returns_all(self, dataset_tags_test_items):
+        """Test that empty dataset_tags list returns all results (no filtering)."""
+        from src.fact_checking.repository import hybrid_search
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=1)
+
+        async with get_session_maker()() as session:
+            results_empty = await hybrid_search(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=[],
+                limit=10,
+            )
+
+            results_none = await hybrid_search(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=None,
+                limit=10,
+            )
+
+        assert len(results_empty) == len(results_none), (
+            "Empty list and None should behave the same (no filtering)"
+        )
