@@ -86,6 +86,7 @@ class TestBulkScanMessageBatchEvent:
         from src.events.schemas import BulkScanMessageBatchEvent
 
         scan_id = uuid4()
+        community_server_id = uuid4()
         messages = [
             {
                 "message_id": "msg_1",
@@ -99,12 +100,14 @@ class TestBulkScanMessageBatchEvent:
         event = BulkScanMessageBatchEvent(
             event_id="evt_123",
             scan_id=scan_id,
+            community_server_id=community_server_id,
             messages=messages,
             batch_number=1,
             is_final_batch=False,
         )
 
         assert event.scan_id == scan_id
+        assert event.community_server_id == community_server_id
         assert len(event.messages) == 1
         assert event.batch_number == 1
         assert event.is_final_batch is False
@@ -116,6 +119,7 @@ class TestBulkScanMessageBatchEvent:
         event = BulkScanMessageBatchEvent(
             event_id="evt_123",
             scan_id=uuid4(),
+            community_server_id=uuid4(),
             messages=[],
             batch_number=1,
             is_final_batch=True,

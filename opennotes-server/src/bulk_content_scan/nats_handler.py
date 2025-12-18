@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bulk_content_scan.schemas import BulkScanMessage
 from src.bulk_content_scan.service import BulkContentScanService
 from src.database import get_session_maker
 from src.events.schemas import (
@@ -55,25 +56,50 @@ async def handle_message_batch(
     event: BulkScanMessageBatchEvent,
     service: BulkContentScanService,
 ) -> None:
-    """Handle incoming message batch from Discord bot.
+    """Handle message batch by processing each message immediately.
 
     Args:
         event: Message batch event
         service: Bulk scan service
     """
     logger.info(
-        "Received message batch",
+        "Processing message batch",
         extra={
             "scan_id": str(event.scan_id),
             "batch_number": event.batch_number,
             "message_count": len(event.messages),
-            "is_final_batch": event.is_final_batch,
         },
     )
 
-    await service.collect_messages(
+    platform_id = await get_platform_id(service.session, event.community_server_id)
+    if not platform_id:
+        logger.error(
+            "Platform ID not found for community server",
+            extra={
+                "scan_id": str(event.scan_id),
+                "community_server_id": str(event.community_server_id),
+            },
+        )
+        return
+
+    typed_messages = [BulkScanMessage.model_validate(msg) for msg in event.messages]
+
+    flagged = await service.process_messages(
         scan_id=event.scan_id,
-        messages=event.messages,
+        messages=typed_messages,
+        platform_id=platform_id,
+    )
+
+    for msg in flagged:
+        await service.append_flagged_result(event.scan_id, msg)
+
+    logger.debug(
+        "Batch processed",
+        extra={
+            "scan_id": str(event.scan_id),
+            "messages_processed": len(event.messages),
+            "messages_flagged": len(flagged),
+        },
     )
 
 
@@ -82,7 +108,7 @@ async def handle_scan_completed(
     service: BulkContentScanService,
     publisher: EventPublisher,
 ) -> None:
-    """Process all collected messages when scan is complete.
+    """Mark scan as complete and publish final results.
 
     Args:
         event: Scan completion event
@@ -93,39 +119,11 @@ async def handle_scan_completed(
         "Processing scan completion",
         extra={
             "scan_id": str(event.scan_id),
-            "community_server_id": str(event.community_server_id),
             "messages_scanned": event.messages_scanned,
         },
     )
 
-    platform_id = await get_platform_id(service.session, event.community_server_id)
-
-    if not platform_id:
-        logger.error(
-            "Platform ID not found for community server",
-            extra={
-                "scan_id": str(event.scan_id),
-                "community_server_id": str(event.community_server_id),
-            },
-        )
-        await service.complete_scan(
-            scan_id=event.scan_id,
-            messages_scanned=event.messages_scanned,
-            messages_flagged=0,
-            status="failed",
-        )
-        return
-
-    flagged = await service.process_collected_messages(
-        scan_id=event.scan_id,
-        community_server_id=event.community_server_id,
-        platform_id=platform_id,
-    )
-
-    await service.store_flagged_results(
-        scan_id=event.scan_id,
-        flagged_messages=flagged,
-    )
+    flagged = await service.get_flagged_results(event.scan_id)
 
     await service.complete_scan(
         scan_id=event.scan_id,
@@ -141,7 +139,7 @@ async def handle_scan_completed(
     )
 
     logger.info(
-        "Scan completion processed successfully",
+        "Scan completion processed",
         extra={
             "scan_id": str(event.scan_id),
             "messages_scanned": event.messages_scanned,
@@ -202,8 +200,8 @@ class BulkScanEventHandler:
     """Event handler for bulk content scan events.
 
     This handler processes message batches and scan completion events
-    from the Discord bot, performing similarity analysis on collected
-    messages and storing flagged results.
+    from the Discord bot, performing similarity analysis on messages
+    as they arrive and storing flagged results incrementally.
     """
 
     def __init__(

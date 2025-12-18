@@ -260,12 +260,15 @@ class BulkScanMessageBatchEvent(BaseEvent):
 
     event_type: EventType = EventType.BULK_SCAN_MESSAGE_BATCH
     scan_id: UUID = Field(..., description="Scan this batch belongs to")
+    community_server_id: UUID = Field(
+        ..., description="Community server UUID (needed for platform_id lookup)"
+    )
     messages: list[dict[str, Any]] = Field(
         ...,
         description="Batch of messages: [{message_id, channel_id, content, author_id, timestamp}]",
     )
     batch_number: int = Field(..., ge=1, description="Batch sequence number")
-    is_final_batch: bool = Field(..., description="Whether this is the last batch")
+    is_final_batch: bool = Field(default=False, description="Whether this is the last batch")
 
 
 class BulkScanCompletedEvent(BaseEvent):
