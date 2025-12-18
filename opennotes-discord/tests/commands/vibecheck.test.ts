@@ -1369,4 +1369,273 @@ describe('vibecheck command', () => {
       );
     });
   });
+
+  describe('User ID authorization for button collectors', () => {
+    const createMockInteractionForUserIdTest = () => {
+      const now = Date.now();
+      let capturedFilter: ((interaction: any) => boolean) | undefined;
+
+      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
+          collectHandlers.set(event, handler);
+          return mockCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockFetchReply = jest.fn<() => Promise<any>>().mockResolvedValue({
+        createMessageComponentCollector: jest.fn((options: any) => {
+          capturedFilter = options?.filter;
+          return mockCollector;
+        }),
+      });
+
+      const mockChannel = {
+        id: 'channel123',
+        name: 'test-channel',
+        type: 0,
+        isTextBased: () => true,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
+            .mockResolvedValueOnce(new Map([
+              ['1234567890123456789', {
+                id: '1234567890123456789',
+                content: 'Test message',
+                author: { id: 'author1', username: 'user1', bot: false },
+                createdTimestamp: now - 1000 * 60,
+                createdAt: new Date(now - 1000 * 60),
+                channelId: 'channel123',
+                attachments: new Map(),
+                embeds: [],
+              }],
+            ]))
+            .mockResolvedValue(new Map()),
+        },
+      };
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map([['channel123', mockChannel]]);
+      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
+        const result = new Map();
+        for (const [k, v] of channelsCache) {
+          if (fn(v)) result.set(k, v);
+        }
+        return result;
+      };
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const originalUserId = 'admin123';
+
+      const mockInteraction = {
+        user: { id: originalUserId, username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        fetchReply: mockFetchReply,
+      };
+
+      return { mockInteraction, mockCollector, collectHandlers, getCapturedFilter: () => capturedFilter, originalUserId };
+    };
+
+    describe('main button collector (Create/Dismiss)', () => {
+      it('should filter button interactions by original user ID', async () => {
+        const { mockInteraction, getCapturedFilter, originalUserId } = createMockInteractionForUserIdTest();
+
+        const flaggedMessages: FlaggedMessage[] = [
+          {
+            message_id: '1234567890123456789',
+            channel_id: 'channel123',
+            content: 'Misinformation content',
+            author_id: 'author1',
+            timestamp: new Date().toISOString(),
+            match_score: 0.85,
+            matched_claim: 'False claim',
+            matched_source: 'snopes',
+          },
+        ];
+
+        mockApiClient.initiateBulkScan.mockResolvedValue({
+          scan_id: 'scan-123',
+          status: 'pending',
+          community_server_id: 'guild789',
+          scan_window_days: 7,
+        });
+
+        mockApiClient.getBulkScanResults.mockResolvedValue({
+          scan_id: 'scan-123',
+          status: 'completed',
+          messages_scanned: 1,
+          flagged_messages: flaggedMessages,
+        });
+
+        await execute(mockInteraction as any);
+
+        const filter = getCapturedFilter();
+        expect(filter).toBeDefined();
+
+        const originalUserInteraction = {
+          user: { id: originalUserId },
+          customId: 'vibecheck_dismiss:scan-123',
+        };
+        expect(filter!(originalUserInteraction)).toBe(true);
+
+        const differentUserInteraction = {
+          user: { id: 'different-user-456' },
+          customId: 'vibecheck_dismiss:scan-123',
+        };
+        expect(filter!(differentUserInteraction)).toBe(false);
+      });
+
+      it('should allow original user to dismiss results', async () => {
+        const { mockInteraction, collectHandlers, getCapturedFilter, originalUserId } = createMockInteractionForUserIdTest();
+
+        const flaggedMessages: FlaggedMessage[] = [
+          {
+            message_id: '1234567890123456789',
+            channel_id: 'channel123',
+            content: 'Misinformation content',
+            author_id: 'author1',
+            timestamp: new Date().toISOString(),
+            match_score: 0.85,
+            matched_claim: 'False claim',
+            matched_source: 'snopes',
+          },
+        ];
+
+        mockApiClient.initiateBulkScan.mockResolvedValue({
+          scan_id: 'scan-123',
+          status: 'pending',
+          community_server_id: 'guild789',
+          scan_window_days: 7,
+        });
+
+        mockApiClient.getBulkScanResults.mockResolvedValue({
+          scan_id: 'scan-123',
+          status: 'completed',
+          messages_scanned: 1,
+          flagged_messages: flaggedMessages,
+        });
+
+        await execute(mockInteraction as any);
+
+        const filter = getCapturedFilter();
+        expect(filter).toBeDefined();
+
+        const originalUserInteraction = {
+          customId: 'vibecheck_dismiss:scan-123',
+          user: { id: originalUserId },
+          update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+          reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        };
+
+        expect(filter!(originalUserInteraction)).toBe(true);
+
+        const collectHandler = collectHandlers.get('collect');
+        if (collectHandler) {
+          await collectHandler(originalUserInteraction);
+        }
+
+        expect(originalUserInteraction.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            content: expect.stringMatching(/dismiss/i),
+            components: [],
+          })
+        );
+      });
+    });
+
+    describe('AI generation button collector', () => {
+      it('should filter AI button interactions by original user ID', async () => {
+        const { mockInteraction, collectHandlers, originalUserId } = createMockInteractionForUserIdTest();
+
+        const flaggedMessages: FlaggedMessage[] = [
+          {
+            message_id: '1234567890123456789',
+            channel_id: 'channel123',
+            content: 'Misinformation content',
+            author_id: 'author1',
+            timestamp: new Date().toISOString(),
+            match_score: 0.85,
+            matched_claim: 'False claim',
+            matched_source: 'snopes',
+          },
+        ];
+
+        mockApiClient.initiateBulkScan.mockResolvedValue({
+          scan_id: 'scan-123',
+          status: 'pending',
+          community_server_id: 'guild789',
+          scan_window_days: 7,
+        });
+
+        mockApiClient.getBulkScanResults.mockResolvedValue({
+          scan_id: 'scan-123',
+          status: 'completed',
+          messages_scanned: 1,
+          flagged_messages: flaggedMessages,
+        });
+
+        await execute(mockInteraction as any);
+
+        let capturedAiFilter: ((interaction: any) => boolean) | undefined;
+        const aiCollectorHandlers: Map<string, (...args: any[]) => void> = new Map();
+        const mockAiCollector = {
+          on: jest.fn((event: string, handler: (...args: any[]) => void) => {
+            aiCollectorHandlers.set(event, handler);
+            return mockAiCollector;
+          }),
+          stop: jest.fn(),
+        };
+
+        const mockCreateButtonInteraction = {
+          customId: 'vibecheck_create:scan-123',
+          user: { id: originalUserId },
+          update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+          message: {
+            createMessageComponentCollector: jest.fn((options: any) => {
+              capturedAiFilter = options?.filter;
+              return mockAiCollector;
+            }),
+          },
+        };
+
+        const collectHandler = collectHandlers.get('collect');
+        if (collectHandler) {
+          await collectHandler(mockCreateButtonInteraction);
+        }
+
+        expect(capturedAiFilter).toBeDefined();
+
+        const originalUserAiInteraction = {
+          user: { id: originalUserId },
+          customId: 'vibecheck_ai_yes:scan-123',
+        };
+        expect(capturedAiFilter!(originalUserAiInteraction)).toBe(true);
+
+        const differentUserAiInteraction = {
+          user: { id: 'unauthorized-user-789' },
+          customId: 'vibecheck_ai_yes:scan-123',
+        };
+        expect(capturedAiFilter!(differentUserAiInteraction)).toBe(false);
+      });
+    });
+  });
 });

@@ -204,9 +204,11 @@ async function displayFlaggedResults(
   });
 
   const reply = await interaction.fetchReply();
+  const originalUserId = interaction.user.id;
   const collector = reply.createMessageComponentCollector({
     componentType: ComponentType.Button,
     time: 300000,
+    filter: (i) => i.user.id === originalUserId,
   });
 
   collector.on('collect', (buttonInteraction: ButtonInteraction) => {
@@ -227,7 +229,7 @@ async function displayFlaggedResults(
     }
 
     if (action === 'vibecheck_create') {
-      void showAiGenerationPrompt(buttonInteraction, scanId, flaggedMessages);
+      void showAiGenerationPrompt(buttonInteraction, scanId, flaggedMessages, originalUserId);
     }
   });
 
@@ -247,7 +249,8 @@ async function displayFlaggedResults(
 async function showAiGenerationPrompt(
   buttonInteraction: ButtonInteraction,
   scanId: string,
-  flaggedMessages: FlaggedMessage[]
+  flaggedMessages: FlaggedMessage[],
+  originalUserId: string
 ): Promise<void> {
   const yesAiButton = new ButtonBuilder()
     .setCustomId(`vibecheck_ai_yes:${scanId}`)
@@ -271,7 +274,7 @@ async function showAiGenerationPrompt(
   const aiCollector = message.createMessageComponentCollector({
     componentType: ComponentType.Button,
     time: 60000,
-    filter: (i) => i.customId.startsWith('vibecheck_ai_'),
+    filter: (i) => i.customId.startsWith('vibecheck_ai_') && i.user.id === originalUserId,
   });
 
   aiCollector.on('collect', (aiButtonInteraction: ButtonInteraction) => {
