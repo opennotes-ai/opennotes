@@ -1,0 +1,657 @@
+"""JSON:API v2 router for Bulk Content Scan.
+
+This module implements JSON:API 1.1 compliant endpoints for bulk content scanning.
+It provides:
+- POST /bulk-scans - Initiate a bulk content scan
+- GET /bulk-scans/{scan_id} - Get scan status and flagged results
+- GET /bulk-scans/communities/{community_server_id}/recent - Check for recent scan
+- POST /bulk-scans/{scan_id}/note-requests - Create note requests from flagged messages
+
+Reference: https://jsonapi.org/format/
+"""
+
+import uuid as uuid_module
+from datetime import datetime
+from typing import Annotated, Any, Literal
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Request as HTTPRequest
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.auth.dependencies import get_current_user_or_api_key
+from src.bulk_content_scan.repository import has_recent_scan
+from src.bulk_content_scan.schemas import FlaggedMessage
+from src.bulk_content_scan.service import BulkContentScanService
+from src.cache.redis_client import redis_client
+from src.common.base_schemas import StrictInputSchema
+from src.common.jsonapi import (
+    JSONAPI_CONTENT_TYPE,
+    JSONAPILinks,
+)
+from src.common.jsonapi import (
+    create_error_response as create_error_response_model,
+)
+from src.database import get_db
+from src.fact_checking.embedding_router import get_embedding_service
+from src.fact_checking.embedding_service import EmbeddingService
+from src.monitoring import get_logger
+from src.notes.request_service import RequestService
+from src.users.models import User
+
+logger = get_logger(__name__)
+
+router = APIRouter()
+
+
+class BulkScanCreateAttributes(StrictInputSchema):
+    """Attributes for creating a bulk scan."""
+
+    community_server_id: UUID = Field(..., description="Community server UUID to scan")
+    scan_window_days: int = Field(
+        default=7,
+        ge=1,
+        le=30,
+        description="Number of days to scan back",
+    )
+    channel_ids: list[str] = Field(
+        default_factory=list,
+        description="Specific channel IDs to scan (empty = all channels)",
+    )
+
+
+class BulkScanCreateData(BaseModel):
+    """JSON:API data object for bulk scan creation."""
+
+    type: Literal["bulk-scans"] = Field(..., description="Resource type must be 'bulk-scans'")
+    attributes: BulkScanCreateAttributes
+
+
+class BulkScanCreateRequest(BaseModel):
+    """JSON:API request body for creating a bulk scan."""
+
+    data: BulkScanCreateData
+
+
+class BulkScanAttributes(BaseModel):
+    """Attributes for a bulk scan resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str = Field(..., description="Scan status: pending, in_progress, completed, failed")
+    initiated_at: datetime = Field(..., description="When the scan was initiated")
+    completed_at: datetime | None = Field(None, description="When the scan completed")
+    messages_scanned: int = Field(default=0, description="Total messages scanned")
+    messages_flagged: int = Field(default=0, description="Number of flagged messages")
+
+
+class BulkScanResource(BaseModel):
+    """JSON:API resource object for a bulk scan."""
+
+    type: str = "bulk-scans"
+    id: str
+    attributes: BulkScanAttributes
+
+
+class BulkScanSingleResponse(BaseModel):
+    """JSON:API response for a single bulk scan resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: BulkScanResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
+class FlaggedMessageAttributes(BaseModel):
+    """Attributes for a flagged message resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    channel_id: str = Field(..., description="Channel ID where message was found")
+    content: str = Field(..., description="Message content")
+    author_id: str = Field(..., description="Author ID")
+    timestamp: datetime = Field(..., description="Message timestamp")
+    match_score: float = Field(..., description="Similarity match score")
+    matched_claim: str = Field(..., description="The claim that was matched")
+    matched_source: str = Field(..., description="Source of the matched claim")
+    scan_type: str = Field(default="similarity", description="Type of scan that flagged this")
+
+
+class FlaggedMessageResource(BaseModel):
+    """JSON:API resource object for a flagged message."""
+
+    type: str = "flagged-messages"
+    id: str
+    attributes: FlaggedMessageAttributes
+
+
+class BulkScanResultsAttributes(BaseModel):
+    """Attributes for bulk scan results."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str = Field(..., description="Scan status")
+    messages_scanned: int = Field(default=0, description="Total messages scanned")
+    messages_flagged: int = Field(default=0, description="Number of flagged messages")
+
+
+class BulkScanResultsResource(BaseModel):
+    """JSON:API resource object for bulk scan results."""
+
+    type: str = "bulk-scans"
+    id: str
+    attributes: BulkScanResultsAttributes
+    relationships: dict[str, Any] | None = None
+
+
+class BulkScanResultsResponse(BaseModel):
+    """JSON:API response for bulk scan results with included flagged messages."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: BulkScanResultsResource
+    included: list[FlaggedMessageResource] = Field(default_factory=list)
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
+class RecentScanAttributes(BaseModel):
+    """Attributes for recent scan check."""
+
+    has_recent_scan: bool = Field(..., description="Whether community has a recent scan")
+
+
+class RecentScanResource(BaseModel):
+    """JSON:API resource for recent scan status."""
+
+    type: str = "bulk-scan-status"
+    id: str
+    attributes: RecentScanAttributes
+
+
+class RecentScanResponse(BaseModel):
+    """JSON:API response for recent scan check."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: RecentScanResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
+class NoteRequestsCreateAttributes(StrictInputSchema):
+    """Attributes for creating note requests from flagged messages."""
+
+    message_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        description="List of message IDs to create note requests for",
+    )
+    generate_ai_notes: bool = Field(
+        default=False,
+        description="Whether to generate AI draft notes",
+    )
+
+
+class NoteRequestsCreateData(BaseModel):
+    """JSON:API data object for note requests creation."""
+
+    type: Literal["note-requests"] = Field(..., description="Resource type must be 'note-requests'")
+    attributes: NoteRequestsCreateAttributes
+
+
+class NoteRequestsCreateRequest(BaseModel):
+    """JSON:API request body for creating note requests."""
+
+    data: NoteRequestsCreateData
+
+
+class NoteRequestsResultAttributes(BaseModel):
+    """Attributes for note requests creation result."""
+
+    created_count: int = Field(..., description="Number of note requests created")
+    request_ids: list[str] = Field(default_factory=list, description="Created request IDs")
+
+
+class NoteRequestsResultResource(BaseModel):
+    """JSON:API resource for note requests creation result."""
+
+    type: str = "note-request-batches"
+    id: str
+    attributes: NoteRequestsResultAttributes
+
+
+class NoteRequestsResultResponse(BaseModel):
+    """JSON:API response for note requests creation."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: NoteRequestsResultResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
+def create_error_response(
+    status_code: int,
+    title: str,
+    detail: str | None = None,
+) -> JSONResponse:
+    """Create a JSON:API formatted error response as a JSONResponse."""
+    error_response = create_error_response_model(
+        status_code=status_code,
+        title=title,
+        detail=detail,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content=error_response.model_dump(by_alias=True),
+        media_type=JSONAPI_CONTENT_TYPE,
+    )
+
+
+async def get_redis() -> Redis:
+    """Get Redis client for bulk scan operations."""
+    if redis_client.client is None:
+        await redis_client.connect()
+    return redis_client.client
+
+
+async def get_bulk_scan_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
+    redis: Annotated[Redis, Depends(get_redis)],
+) -> BulkContentScanService:
+    """Get bulk scan service with dependencies."""
+    return BulkContentScanService(
+        session=session,
+        embedding_service=embedding_service,
+        redis_client=redis,
+    )
+
+
+def flagged_message_to_resource(msg: FlaggedMessage) -> FlaggedMessageResource:
+    """Convert a FlaggedMessage to a JSON:API resource."""
+    return FlaggedMessageResource(
+        type="flagged-messages",
+        id=msg.message_id,
+        attributes=FlaggedMessageAttributes(
+            channel_id=msg.channel_id,
+            content=msg.content,
+            author_id=msg.author_id,
+            timestamp=msg.timestamp,
+            match_score=msg.match_score,
+            matched_claim=msg.matched_claim,
+            matched_source=msg.matched_source,
+            scan_type=msg.scan_type,
+        ),
+    )
+
+
+async def create_note_requests_for_messages(
+    message_ids: list[str],
+    scan_id: UUID,
+    session: AsyncSession,
+    user_id: UUID,
+    community_server_id: UUID,
+    flagged_messages: list[FlaggedMessage],
+    generate_ai_notes: bool = False,
+) -> list[str]:
+    """Create note requests for flagged messages.
+
+    Creates Request entries in the database for selected flagged messages
+    from a bulk content scan.
+
+    Args:
+        message_ids: List of Discord message IDs to create requests for
+        scan_id: UUID of the scan these messages came from
+        session: Database session
+        user_id: UUID of the user making the request
+        community_server_id: UUID of the community server
+        flagged_messages: List of FlaggedMessage objects from the scan results
+        generate_ai_notes: Whether to generate AI draft notes
+
+    Returns:
+        List of created request IDs
+    """
+    logger.info(
+        "Creating note requests from bulk scan (JSON:API)",
+        extra={
+            "scan_id": str(scan_id),
+            "message_count": len(message_ids),
+            "user_id": str(user_id),
+            "community_server_id": str(community_server_id),
+            "generate_ai_notes": generate_ai_notes,
+        },
+    )
+
+    flagged_by_message_id = {msg.message_id: msg for msg in flagged_messages}
+
+    created_ids: list[str] = []
+    for msg_id in message_ids:
+        flagged_msg = flagged_by_message_id.get(msg_id)
+        if not flagged_msg:
+            logger.warning(
+                "Message ID not found in flagged results",
+                extra={
+                    "message_id": msg_id,
+                    "scan_id": str(scan_id),
+                },
+            )
+            continue
+
+        request_id = f"bulkscan_{scan_id.hex[:8]}_{uuid_module.uuid4().hex[:8]}"
+
+        try:
+            request = await RequestService.create_from_message(
+                db=session,
+                request_id=request_id,
+                content=flagged_msg.content,
+                community_server_id=community_server_id,
+                requested_by=str(user_id),
+                platform_message_id=flagged_msg.message_id,
+                platform_channel_id=flagged_msg.channel_id,
+                platform_author_id=flagged_msg.author_id,
+                platform_timestamp=flagged_msg.timestamp,
+                similarity_score=flagged_msg.match_score,
+                dataset_name="bulk_scan",
+                status="PENDING",
+                priority="normal",
+                reason=f"Flagged by bulk scan {scan_id}",
+                request_metadata={
+                    "scan_id": str(scan_id),
+                    "matched_claim": flagged_msg.matched_claim,
+                    "matched_source": flagged_msg.matched_source,
+                    "match_score": flagged_msg.match_score,
+                    "generate_ai_notes": generate_ai_notes,
+                },
+            )
+
+            created_ids.append(request.request_id)
+
+            logger.debug(
+                "Created note request from bulk scan",
+                extra={
+                    "request_id": request.request_id,
+                    "message_id": msg_id,
+                    "scan_id": str(scan_id),
+                    "match_score": flagged_msg.match_score,
+                },
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to create note request",
+                extra={
+                    "message_id": msg_id,
+                    "scan_id": str(scan_id),
+                    "error": str(e),
+                },
+            )
+            continue
+
+    await session.commit()
+
+    logger.info(
+        "Note requests created from bulk scan (JSON:API)",
+        extra={
+            "scan_id": str(scan_id),
+            "requested_count": len(message_ids),
+            "created_count": len(created_ids),
+            "user_id": str(user_id),
+        },
+    )
+
+    return created_ids
+
+
+@router.post("/bulk-scans", response_class=JSONResponse)
+async def initiate_scan(
+    body: BulkScanCreateRequest,
+    request: HTTPRequest,
+    service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    """Initiate a new bulk content scan.
+
+    JSON:API request body must contain:
+    - data.type: "bulk-scans"
+    - data.attributes.community_server_id: UUID of community to scan
+    - data.attributes.scan_window_days: Number of days to scan back (1-30)
+    - data.attributes.channel_ids: Optional list of specific channel IDs
+
+    Returns a bulk-scans resource with scan_id and initial status.
+    """
+    try:
+        attrs = body.data.attributes
+
+        logger.info(
+            "Initiating bulk content scan (JSON:API)",
+            extra={
+                "community_server_id": str(attrs.community_server_id),
+                "user_id": str(current_user.id),
+                "scan_window_days": attrs.scan_window_days,
+                "channel_count": len(attrs.channel_ids),
+            },
+        )
+
+        scan_log = await service.initiate_scan(
+            community_server_id=attrs.community_server_id,
+            initiated_by_user_id=current_user.id,
+            scan_window_days=attrs.scan_window_days,
+        )
+
+        resource = BulkScanResource(
+            type="bulk-scans",
+            id=str(scan_log.id),
+            attributes=BulkScanAttributes(
+                status=scan_log.status,
+                initiated_at=scan_log.initiated_at,
+                completed_at=scan_log.completed_at,
+                messages_scanned=scan_log.messages_scanned or 0,
+                messages_flagged=scan_log.messages_flagged or 0,
+            ),
+        )
+
+        response = BulkScanSingleResponse(
+            data=resource,
+            links=JSONAPILinks(self_=str(request.url) + "/" + str(scan_log.id)),
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to initiate bulk scan (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to initiate bulk scan",
+        )
+
+
+@router.get("/bulk-scans/{scan_id}", response_class=JSONResponse)
+async def get_scan_results(
+    scan_id: UUID,
+    request: HTTPRequest,
+    service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
+) -> JSONResponse:
+    """Get scan status and flagged results.
+
+    Returns the bulk scan resource with flagged messages included as related resources.
+    Uses JSON:API compound documents with 'included' array.
+    """
+    try:
+        scan_log = await service.get_scan(scan_id)
+
+        if not scan_log:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Scan {scan_id} not found",
+            )
+
+        flagged_messages = await service.get_flagged_results(scan_id)
+
+        resource = BulkScanResultsResource(
+            type="bulk-scans",
+            id=str(scan_id),
+            attributes=BulkScanResultsAttributes(
+                status=scan_log.status,
+                messages_scanned=scan_log.messages_scanned or 0,
+                messages_flagged=len(flagged_messages),
+            ),
+            relationships={
+                "flagged-messages": {
+                    "data": [
+                        {"type": "flagged-messages", "id": msg.message_id}
+                        for msg in flagged_messages
+                    ],
+                },
+            },
+        )
+
+        included = [flagged_message_to_resource(msg) for msg in flagged_messages]
+
+        response = BulkScanResultsResponse(
+            data=resource,
+            included=included,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to get scan results (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to retrieve scan results",
+        )
+
+
+@router.get("/bulk-scans/communities/{community_server_id}/recent", response_class=JSONResponse)
+async def check_recent_scan(
+    community_server_id: UUID,
+    request: HTTPRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Check if community has a recent scan within the configured window.
+
+    Returns a bulk-scan-status singleton resource with has_recent_scan boolean.
+    """
+    try:
+        result = await has_recent_scan(session, community_server_id)
+
+        resource = RecentScanResource(
+            type="bulk-scan-status",
+            id=str(community_server_id),
+            attributes=RecentScanAttributes(has_recent_scan=result),
+        )
+
+        response = RecentScanResponse(
+            data=resource,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to check recent scan (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to check recent scan status",
+        )
+
+
+@router.post("/bulk-scans/{scan_id}/note-requests", response_class=JSONResponse)
+async def create_note_requests(
+    scan_id: UUID,
+    body: NoteRequestsCreateRequest,
+    request: HTTPRequest,
+    service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Create note requests for selected flagged messages.
+
+    JSON:API request body must contain:
+    - data.type: "note-requests"
+    - data.attributes.message_ids: List of message IDs from flagged results
+    - data.attributes.generate_ai_notes: Whether to generate AI drafts
+
+    Returns a note-request-batches resource with created count and IDs.
+    """
+    try:
+        scan_log = await service.get_scan(scan_id)
+
+        if not scan_log:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Scan {scan_id} not found",
+            )
+
+        flagged_messages = await service.get_flagged_results(scan_id)
+
+        if not flagged_messages:
+            return create_error_response(
+                status.HTTP_400_BAD_REQUEST,
+                "Bad Request",
+                "No flagged results available for this scan",
+            )
+
+        attrs = body.data.attributes
+        created_ids = await create_note_requests_for_messages(
+            message_ids=attrs.message_ids,
+            scan_id=scan_id,
+            session=session,
+            user_id=current_user.id,
+            community_server_id=scan_log.community_server_id,
+            flagged_messages=flagged_messages,
+            generate_ai_notes=attrs.generate_ai_notes,
+        )
+
+        batch_id = f"batch_{scan_id.hex[:8]}_{uuid_module.uuid4().hex[:8]}"
+        resource = NoteRequestsResultResource(
+            type="note-request-batches",
+            id=batch_id,
+            attributes=NoteRequestsResultAttributes(
+                created_count=len(created_ids),
+                request_ids=created_ids,
+            ),
+        )
+
+        response = NoteRequestsResultResponse(
+            data=resource,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to create note requests (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to create note requests",
+        )

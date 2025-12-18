@@ -1942,21 +1942,36 @@ export class ApiClient {
   ): Promise<{
     scan_id: string;
     status: string;
-    community_server_id: string;
-    scan_window_days: number;
   }> {
-    return this.fetchWithRetry<{
-      scan_id: string;
-      status: string;
-      community_server_id: string;
-      scan_window_days: number;
-    }>('/api/v1/bulk-content-scan/scans', {
+    const response = await this.fetchWithRetry<{
+      data: {
+        type: string;
+        id: string;
+        attributes: {
+          status: string;
+          initiated_at: string;
+          completed_at: string | null;
+          messages_scanned: number;
+          messages_flagged: number;
+        };
+      };
+      jsonapi: { version: string };
+    }>('/api/v2/bulk-scans', {
       method: 'POST',
       body: JSON.stringify({
-        community_server_id: communityServerId,
-        scan_window_days: scanWindowDays,
+        data: {
+          type: 'bulk-scans',
+          attributes: {
+            community_server_id: communityServerId,
+            scan_window_days: scanWindowDays,
+          },
+        },
       }),
     });
+    return {
+      scan_id: response.data.id,
+      status: response.data.attributes.status,
+    };
   }
 
   async getBulkScanResults(scanId: string): Promise<{
@@ -1974,7 +1989,48 @@ export class ApiClient {
       matched_source: string;
     }>;
   }> {
-    return this.fetchWithRetry(`/api/v1/bulk-content-scan/scans/${scanId}`);
+    const response = await this.fetchWithRetry<{
+      data: {
+        type: string;
+        id: string;
+        attributes: {
+          status: 'pending' | 'in_progress' | 'completed' | 'failed';
+          messages_scanned: number;
+          messages_flagged: number;
+        };
+      };
+      included: Array<{
+        type: string;
+        id: string;
+        attributes: {
+          channel_id: string;
+          content: string;
+          author_id: string;
+          timestamp: string;
+          match_score: number;
+          matched_claim: string;
+          matched_source: string;
+          scan_type: string;
+        };
+      }>;
+      jsonapi: { version: string };
+    }>(`/api/v2/bulk-scans/${scanId}`);
+
+    return {
+      scan_id: response.data.id,
+      status: response.data.attributes.status,
+      messages_scanned: response.data.attributes.messages_scanned,
+      flagged_messages: (response.included || []).map((item) => ({
+        message_id: item.id,
+        channel_id: item.attributes.channel_id,
+        content: item.attributes.content,
+        author_id: item.attributes.author_id,
+        timestamp: item.attributes.timestamp,
+        match_score: item.attributes.match_score,
+        matched_claim: item.attributes.matched_claim,
+        matched_source: item.attributes.matched_source,
+      })),
+    };
   }
 
   async createNoteRequestsFromScan(
@@ -1983,21 +2039,47 @@ export class ApiClient {
     generateAiNotes: boolean
   ): Promise<{
     created_count: number;
-    scan_id: string;
+    request_ids: string[];
   }> {
-    return this.fetchWithRetry(`/api/v1/bulk-content-scan/scans/${scanId}/note-requests`, {
+    const response = await this.fetchWithRetry<{
+      data: {
+        type: string;
+        id: string;
+        attributes: {
+          created_count: number;
+          request_ids: string[];
+        };
+      };
+      jsonapi: { version: string };
+    }>(`/api/v2/bulk-scans/${scanId}/note-requests`, {
       method: 'POST',
       body: JSON.stringify({
-        message_ids: messageIds,
-        generate_ai_notes: generateAiNotes,
+        data: {
+          type: 'note-requests',
+          attributes: {
+            message_ids: messageIds,
+            generate_ai_notes: generateAiNotes,
+          },
+        },
       }),
     });
+    return {
+      created_count: response.data.attributes.created_count,
+      request_ids: response.data.attributes.request_ids,
+    };
   }
 
   async checkRecentScan(communityServerId: string): Promise<boolean> {
-    const response = await this.fetchWithRetry<{ has_recent_scan: boolean }>(
-      `/api/v1/bulk-content-scan/communities/${communityServerId}/has-recent-scan`
-    );
-    return response.has_recent_scan;
+    const response = await this.fetchWithRetry<{
+      data: {
+        type: string;
+        id: string;
+        attributes: {
+          has_recent_scan: boolean;
+        };
+      };
+      jsonapi: { version: string };
+    }>(`/api/v2/bulk-scans/communities/${communityServerId}/recent`);
+    return response.data.attributes.has_recent_scan;
   }
 }
