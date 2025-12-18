@@ -2,6 +2,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /workspace
 
+# Set CI mode to prevent interactive prompts
+ENV CI=true
+
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
@@ -37,6 +40,9 @@ RUN pnpm run build
 FROM node:20-alpine
 
 WORKDIR /app
+
+# Set CI mode to prevent interactive prompts
+ENV CI=true
 
 # Enable pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
