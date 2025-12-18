@@ -32,8 +32,6 @@ class BatchProcessingError(Exception):
     preventing silent batch dropping.
     """
 
-    pass
-
 
 class EventPublisher(Protocol):
     """Protocol for event publishing."""
@@ -83,9 +81,7 @@ async def handle_message_batch(
 
     platform_id = await get_platform_id(service.session, event.community_server_id)
     if not platform_id:
-        error_msg = (
-            f"Platform ID not found for community server {event.community_server_id}"
-        )
+        error_msg = f"Platform ID not found for community server {event.community_server_id}"
         logger.error(
             error_msg,
             extra={

@@ -155,12 +155,14 @@ class TestHandleMessageBatch:
             is_final_batch=False,
         )
 
-        with patch(
-            "src.bulk_content_scan.nats_handler.get_platform_id",
-            new=AsyncMock(return_value=None),
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.get_platform_id",
+                new=AsyncMock(return_value=None),
+            ),
+            pytest.raises(BatchProcessingError) as exc_info,
         ):
-            with pytest.raises(BatchProcessingError) as exc_info:
-                await handle_message_batch(event, mock_service)
+            await handle_message_batch(event, mock_service)
 
         assert "Platform ID not found" in str(exc_info.value)
         assert str(community_server_id) in str(exc_info.value)
@@ -192,12 +194,14 @@ class TestHandleMessageBatch:
             is_final_batch=False,
         )
 
-        with patch(
-            "src.bulk_content_scan.nats_handler.get_platform_id",
-            new=AsyncMock(return_value="test_platform_123"),
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.get_platform_id",
+                new=AsyncMock(return_value="test_platform_123"),
+            ),
+            pytest.raises(RuntimeError) as exc_info,
         ):
-            with pytest.raises(RuntimeError) as exc_info:
-                await handle_message_batch(event, mock_service)
+            await handle_message_batch(event, mock_service)
 
         assert "Embedding service unavailable" in str(exc_info.value)
 
