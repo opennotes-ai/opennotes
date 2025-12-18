@@ -4,16 +4,20 @@ import uuid as uuid_module
 from typing import Any, Protocol
 from uuid import UUID
 
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.service import BulkContentScanService
+from src.database import get_session_maker
 from src.events.schemas import (
     BulkScanCompletedEvent,
     BulkScanMessageBatchEvent,
     BulkScanResultsEvent,
     EventType,
 )
+from src.events.subscriber import event_subscriber
+from src.fact_checking.embedding_service import EmbeddingService
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 
@@ -192,3 +196,63 @@ class BulkScanResultsPublisher:
                 "event_id": event.event_id,
             },
         )
+
+
+class BulkScanEventHandler:
+    """Event handler for bulk content scan events.
+
+    This handler processes message batches and scan completion events
+    from the Discord bot, performing similarity analysis on collected
+    messages and storing flagged results.
+    """
+
+    def __init__(
+        self,
+        embedding_service: EmbeddingService,
+        redis_client: Redis,
+        nats_client: Any,
+    ) -> None:
+        """Initialize the handler.
+
+        Args:
+            embedding_service: Service for similarity searches
+            redis_client: Redis client for temporary storage
+            nats_client: NATS client for publishing results
+        """
+        self.embedding_service = embedding_service
+        self.redis_client = redis_client
+        self.publisher = BulkScanResultsPublisher(nats_client)
+        self.subscriber = event_subscriber
+
+    async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
+        """Handle incoming message batch from Discord bot."""
+        async with get_session_maker()() as session:
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=self.embedding_service,
+                redis_client=self.redis_client,
+            )
+            await handle_message_batch(event, service)
+
+    async def _handle_scan_completed(self, event: BulkScanCompletedEvent) -> None:
+        """Process all collected messages when scan is complete."""
+        async with get_session_maker()() as session:
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=self.embedding_service,
+                redis_client=self.redis_client,
+            )
+            await handle_scan_completed(event, service, self.publisher)
+
+    def register(self) -> None:
+        """Register bulk scan event handlers with the subscriber."""
+        logger.info("Registering bulk scan event handlers")
+        self.subscriber.register_handler(
+            EventType.BULK_SCAN_MESSAGE_BATCH,
+            self._handle_message_batch,
+        )
+        self.subscriber.register_handler(
+            EventType.BULK_SCAN_COMPLETED,
+            self._handle_scan_completed,
+        )
+        logger.info("Bulk scan event handlers registered")

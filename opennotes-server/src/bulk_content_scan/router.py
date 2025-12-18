@@ -1,5 +1,6 @@
 """API router for Bulk Content Scan endpoints."""
 
+import uuid as uuid_module
 from typing import Annotated
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from src.bulk_content_scan.schemas import (
     BulkScanResponse,
     BulkScanResultsResponse,
     CreateNoteRequestsRequest,
+    FlaggedMessage,
     NoteRequestsResponse,
 )
 from src.bulk_content_scan.service import BulkContentScanService
@@ -22,6 +24,7 @@ from src.database import get_db
 from src.fact_checking.embedding_router import get_embedding_service
 from src.fact_checking.embedding_service import EmbeddingService
 from src.monitoring import get_logger
+from src.notes.request_service import RequestService
 from src.users.models import User
 
 logger = get_logger(__name__)
@@ -61,22 +64,27 @@ async def create_note_requests_for_messages(
     scan_id: UUID,
     session: AsyncSession,
     user_id: UUID,
+    community_server_id: UUID,
+    flagged_messages: list[FlaggedMessage],
     generate_ai_notes: bool = False,
 ) -> list[str]:
     """Create note requests for flagged messages.
 
-    This is a placeholder that would integrate with the existing
-    Request model and optionally trigger AI note generation.
+    Creates Request entries in the database for selected flagged messages
+    from a bulk content scan. Each request includes the message content,
+    match information, and metadata for potential AI note generation.
 
     Args:
-        message_ids: List of message IDs to create requests for
+        message_ids: List of Discord message IDs to create requests for
         scan_id: UUID of the scan these messages came from
         session: Database session
         user_id: UUID of the user making the request
+        community_server_id: UUID of the community server
+        flagged_messages: List of FlaggedMessage objects from the scan results
         generate_ai_notes: Whether to generate AI draft notes
 
     Returns:
-        List of created request IDs
+        List of created request IDs (string request_id values)
     """
     logger.info(
         "Creating note requests from bulk scan",
@@ -84,13 +92,87 @@ async def create_note_requests_for_messages(
             "scan_id": str(scan_id),
             "message_count": len(message_ids),
             "user_id": str(user_id),
+            "community_server_id": str(community_server_id),
             "generate_ai_notes": generate_ai_notes,
         },
     )
 
-    created_ids = []
+    flagged_by_message_id = {msg.message_id: msg for msg in flagged_messages}
+
+    created_ids: list[str] = []
     for msg_id in message_ids:
-        created_ids.append(f"req_{msg_id}")
+        flagged_msg = flagged_by_message_id.get(msg_id)
+        if not flagged_msg:
+            logger.warning(
+                "Message ID not found in flagged results",
+                extra={
+                    "message_id": msg_id,
+                    "scan_id": str(scan_id),
+                },
+            )
+            continue
+
+        request_id = f"bulkscan_{scan_id.hex[:8]}_{uuid_module.uuid4().hex[:8]}"
+
+        try:
+            request = await RequestService.create_from_message(
+                db=session,
+                request_id=request_id,
+                content=flagged_msg.content,
+                community_server_id=community_server_id,
+                requested_by=str(user_id),
+                platform_message_id=flagged_msg.message_id,
+                platform_channel_id=flagged_msg.channel_id,
+                platform_author_id=flagged_msg.author_id,
+                platform_timestamp=flagged_msg.timestamp,
+                similarity_score=flagged_msg.match_score,
+                dataset_name="bulk_scan",
+                status="PENDING",
+                priority="normal",
+                reason=f"Flagged by bulk scan {scan_id}",
+                request_metadata={
+                    "scan_id": str(scan_id),
+                    "matched_claim": flagged_msg.matched_claim,
+                    "matched_source": flagged_msg.matched_source,
+                    "match_score": flagged_msg.match_score,
+                    "generate_ai_notes": generate_ai_notes,
+                },
+            )
+
+            created_ids.append(request.request_id)
+
+            logger.debug(
+                "Created note request from bulk scan",
+                extra={
+                    "request_id": request.request_id,
+                    "message_id": msg_id,
+                    "scan_id": str(scan_id),
+                    "match_score": flagged_msg.match_score,
+                },
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to create note request",
+                extra={
+                    "message_id": msg_id,
+                    "scan_id": str(scan_id),
+                    "error": str(e),
+                },
+            )
+            continue
+
+    await session.commit()
+
+    logger.info(
+        "Note requests created from bulk scan",
+        extra={
+            "scan_id": str(scan_id),
+            "requested_count": len(message_ids),
+            "created_count": len(created_ids),
+            "user_id": str(user_id),
+        },
+    )
 
     return created_ids
 
@@ -243,11 +325,21 @@ async def create_note_requests(
             detail=f"Scan {scan_id} not found",
         )
 
+    flagged_messages = await service.get_flagged_results(scan_id)
+
+    if not flagged_messages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No flagged results available for this scan",
+        )
+
     created_ids = await create_note_requests_for_messages(
         message_ids=request.message_ids,
         scan_id=scan_id,
         session=session,
         user_id=current_user.id,
+        community_server_id=scan_log.community_server_id,
+        flagged_messages=flagged_messages,
         generate_ai_notes=request.generate_ai_notes,
     )
 

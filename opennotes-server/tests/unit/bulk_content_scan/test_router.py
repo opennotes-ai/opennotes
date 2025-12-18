@@ -10,7 +10,46 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def mock_service():
+def mock_flagged_messages():
+    """Create mock flagged messages for testing."""
+    from src.bulk_content_scan.schemas import FlaggedMessage
+
+    return [
+        FlaggedMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            content="Test message 1",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            match_score=0.85,
+            matched_claim="Test claim 1",
+            matched_source="https://example.com/1",
+        ),
+        FlaggedMessage(
+            message_id="msg_2",
+            channel_id="ch_1",
+            content="Test message 2",
+            author_id="user_2",
+            timestamp=datetime.now(UTC),
+            match_score=0.75,
+            matched_claim="Test claim 2",
+            matched_source="https://example.com/2",
+        ),
+        FlaggedMessage(
+            message_id="msg_3",
+            channel_id="ch_2",
+            content="Test message 3",
+            author_id="user_3",
+            timestamp=datetime.now(UTC),
+            match_score=0.65,
+            matched_claim="Test claim 3",
+            matched_source="https://example.com/3",
+        ),
+    ]
+
+
+@pytest.fixture
+def mock_service(mock_flagged_messages):
     """Create a mock BulkContentScanService."""
     from src.bulk_content_scan.models import BulkContentScanLog
 
@@ -18,6 +57,7 @@ def mock_service():
 
     mock_scan_log = MagicMock(spec=BulkContentScanLog)
     mock_scan_log.id = uuid4()
+    mock_scan_log.community_server_id = uuid4()
     mock_scan_log.status = "pending"
     mock_scan_log.initiated_at = datetime.now(UTC)
     mock_scan_log.completed_at = None
@@ -26,7 +66,7 @@ def mock_service():
 
     service.initiate_scan = AsyncMock(return_value=mock_scan_log)
     service.get_scan = AsyncMock(return_value=mock_scan_log)
-    service.get_flagged_results = AsyncMock(return_value=[])
+    service.get_flagged_results = AsyncMock(return_value=mock_flagged_messages)
 
     return service
 
@@ -246,3 +286,18 @@ class TestCreateNoteRequestsEndpoint:
         )
 
         assert response.status_code == 404
+
+    def test_create_note_requests_returns_400_for_no_flagged_results(self, client, mock_service):
+        """Should return 400 if scan has no flagged results."""
+        scan_id = mock_service.get_scan.return_value.id
+        mock_service.get_flagged_results = AsyncMock(return_value=[])
+
+        response = client.post(
+            f"/api/v1/bulk-content-scan/scans/{scan_id}/note-requests",
+            json={
+                "message_ids": ["msg_1"],
+            },
+        )
+
+        assert response.status_code == 400
+        assert "No flagged results" in response.json()["detail"]
