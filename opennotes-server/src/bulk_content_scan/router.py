@@ -4,10 +4,11 @@ import uuid as uuid_module
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
 from src.bulk_content_scan.repository import has_recent_scan
 from src.bulk_content_scan.schemas import (
@@ -26,6 +27,7 @@ from src.fact_checking.embedding_service import EmbeddingService
 from src.monitoring import get_logger
 from src.notes.request_service import RequestService
 from src.users.models import User
+from src.users.profile_models import CommunityMember
 
 logger = get_logger(__name__)
 
@@ -57,6 +59,39 @@ async def get_current_user_for_bulk_scan(
 ) -> User:
     """Get current user for bulk scan operations."""
     return current_user
+
+
+async def verify_scan_admin_access(
+    community_server_id: UUID,
+    current_user: User,
+    db: AsyncSession,
+    request: Request,
+) -> CommunityMember:
+    """
+    Verify the current user has admin access to a community for bulk scan operations.
+
+    This is a helper function that wraps verify_community_admin_by_uuid to:
+    1. Handle the case where community_server_id comes from request body or scan lookup
+    2. Maintain consistent authorization checks across all bulk scan endpoints
+
+    Args:
+        community_server_id: UUID of the community server to check access for
+        current_user: The authenticated user
+        db: Database session
+        request: HTTP request (for Discord claims)
+
+    Returns:
+        CommunityMember: The user's membership record with admin access
+
+    Raises:
+        HTTPException: 403 if user lacks admin access
+    """
+    return await verify_community_admin_by_uuid(
+        community_server_id=community_server_id,
+        current_user=current_user,
+        db=db,
+        request=request,
+    )
 
 
 async def create_note_requests_for_messages(
@@ -183,37 +218,55 @@ async def create_note_requests_for_messages(
     status_code=status.HTTP_201_CREATED,
     summary="Initiate a bulk content scan",
     description="Start a new bulk content scan for a community server. "
-    "This will scan message history and flag potentially misleading content.",
+    "This will scan message history and flag potentially misleading content. "
+    "Requires admin access to the target community. Service accounts have unrestricted access.",
 )
 async def initiate_scan(
-    request: BulkScanCreateRequest,
+    body: BulkScanCreateRequest,
+    http_request: Request,
     service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
     current_user: Annotated[User, Depends(get_current_user_for_bulk_scan)],
+    session: Annotated[AsyncSession, Depends(get_db)],
 ) -> BulkScanResponse:
     """Initiate a new bulk content scan.
 
+    Authorization: Requires admin access to the target community.
+    Service accounts have unrestricted access.
+
     Args:
-        request: Scan initiation request
+        body: Scan initiation request
+        http_request: HTTP request (for Discord claims)
         service: Bulk scan service
         current_user: Authenticated user
+        session: Database session
 
     Returns:
         BulkScanResponse with scan_id and status
+
+    Raises:
+        HTTPException: 403 if user lacks admin access to the community
     """
+    await verify_scan_admin_access(
+        community_server_id=body.community_server_id,
+        current_user=current_user,
+        db=session,
+        request=http_request,
+    )
+
     logger.info(
         "Initiating bulk content scan",
         extra={
-            "community_server_id": str(request.community_server_id),
+            "community_server_id": str(body.community_server_id),
             "user_id": str(current_user.id),
-            "scan_window_days": request.scan_window_days,
-            "channel_count": len(request.channel_ids),
+            "scan_window_days": body.scan_window_days,
+            "channel_count": len(body.channel_ids),
         },
     )
 
     scan_log = await service.initiate_scan(
-        community_server_id=request.community_server_id,
+        community_server_id=body.community_server_id,
         initiated_by_user_id=current_user.id,
-        scan_window_days=request.scan_window_days,
+        scan_window_days=body.scan_window_days,
     )
 
     return BulkScanResponse(
@@ -230,23 +283,33 @@ async def initiate_scan(
     "/scans/{scan_id}",
     response_model=BulkScanResultsResponse,
     summary="Get scan results",
-    description="Retrieve the status and flagged results for a bulk content scan.",
+    description="Retrieve the status and flagged results for a bulk content scan. "
+    "Requires admin access to the community that was scanned. Service accounts have unrestricted access.",
 )
 async def get_scan_results(
     scan_id: UUID,
+    http_request: Request,
     service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
+    current_user: Annotated[User, Depends(get_current_user_for_bulk_scan)],
+    session: Annotated[AsyncSession, Depends(get_db)],
 ) -> BulkScanResultsResponse:
     """Get scan status and flagged results.
 
+    Authorization: Requires admin access to the community that was scanned.
+    Service accounts have unrestricted access.
+
     Args:
         scan_id: UUID of the scan
+        http_request: HTTP request (for Discord claims)
         service: Bulk scan service
+        current_user: Authenticated user
+        session: Database session
 
     Returns:
         BulkScanResultsResponse with status and flagged messages
 
     Raises:
-        HTTPException: 404 if scan not found
+        HTTPException: 404 if scan not found, 403 if user lacks admin access
     """
     scan_log = await service.get_scan(scan_id)
 
@@ -255,6 +318,13 @@ async def get_scan_results(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scan {scan_id} not found",
         )
+
+    await verify_scan_admin_access(
+        community_server_id=scan_log.community_server_id,
+        current_user=current_user,
+        db=session,
+        request=http_request,
+    )
 
     flagged_messages = await service.get_flagged_results(scan_id)
 
@@ -269,21 +339,39 @@ async def get_scan_results(
 @router.get(
     "/communities/{community_server_id}/has-recent-scan",
     summary="Check for recent scan",
-    description="Check if a community server has had a recent bulk content scan.",
+    description="Check if a community server has had a recent bulk content scan. "
+    "Requires admin access to the specified community. Service accounts have unrestricted access.",
 )
 async def check_recent_scan(
     community_server_id: UUID,
+    http_request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_for_bulk_scan)],
 ) -> dict:
     """Check if community has a recent scan within the configured window.
 
+    Authorization: Requires admin access to the specified community.
+    Service accounts have unrestricted access.
+
     Args:
         community_server_id: UUID of the community server
+        http_request: HTTP request (for Discord claims)
         session: Database session
+        current_user: Authenticated user
 
     Returns:
         Dict with has_recent_scan boolean
+
+    Raises:
+        HTTPException: 403 if user lacks admin access to the community
     """
+    await verify_scan_admin_access(
+        community_server_id=community_server_id,
+        current_user=current_user,
+        db=session,
+        request=http_request,
+    )
+
     result = await has_recent_scan(session, community_server_id)
     return {"has_recent_scan": result}
 
@@ -293,20 +381,26 @@ async def check_recent_scan(
     response_model=NoteRequestsResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create note requests from scan",
-    description="Create note requests for selected flagged messages from a bulk scan.",
+    description="Create note requests for selected flagged messages from a bulk scan. "
+    "Requires admin access to the community that was scanned. Service accounts have unrestricted access.",
 )
 async def create_note_requests(
     scan_id: UUID,
-    request: CreateNoteRequestsRequest,
+    body: CreateNoteRequestsRequest,
+    http_request: Request,
     service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
     current_user: Annotated[User, Depends(get_current_user_for_bulk_scan)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> NoteRequestsResponse:
     """Create note requests for selected flagged messages.
 
+    Authorization: Requires admin access to the community that was scanned.
+    Service accounts have unrestricted access.
+
     Args:
         scan_id: UUID of the scan
-        request: Request with message IDs
+        body: Request with message IDs
+        http_request: HTTP request (for Discord claims)
         service: Bulk scan service
         current_user: Authenticated user
         session: Database session
@@ -315,7 +409,7 @@ async def create_note_requests(
         NoteRequestsResponse with created count
 
     Raises:
-        HTTPException: 404 if scan not found
+        HTTPException: 404 if scan not found, 403 if user lacks admin access
     """
     scan_log = await service.get_scan(scan_id)
 
@@ -324,6 +418,13 @@ async def create_note_requests(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scan {scan_id} not found",
         )
+
+    await verify_scan_admin_access(
+        community_server_id=scan_log.community_server_id,
+        current_user=current_user,
+        db=session,
+        request=http_request,
+    )
 
     flagged_messages = await service.get_flagged_results(scan_id)
 
@@ -334,13 +435,13 @@ async def create_note_requests(
         )
 
     created_ids = await create_note_requests_for_messages(
-        message_ids=request.message_ids,
+        message_ids=body.message_ids,
         scan_id=scan_id,
         session=session,
         user_id=current_user.id,
         community_server_id=scan_log.community_server_id,
         flagged_messages=flagged_messages,
-        generate_ai_notes=request.generate_ai_notes,
+        generate_ai_notes=body.generate_ai_notes,
     )
 
     return NoteRequestsResponse(

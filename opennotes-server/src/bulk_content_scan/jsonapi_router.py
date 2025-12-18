@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
 from src.bulk_content_scan.repository import has_recent_scan
 from src.bulk_content_scan.schemas import FlaggedMessage
@@ -41,6 +42,7 @@ from src.fact_checking.embedding_service import EmbeddingService
 from src.monitoring import get_logger
 from src.notes.request_service import RequestService
 from src.users.models import User
+from src.users.profile_models import CommunityMember
 
 logger = get_logger(__name__)
 
@@ -253,6 +255,39 @@ def create_error_response(
     )
 
 
+async def verify_scan_admin_access(
+    community_server_id: UUID,
+    current_user: User,
+    db: AsyncSession,
+    request: HTTPRequest,
+) -> CommunityMember:
+    """
+    Verify the current user has admin access to a community for bulk scan operations.
+
+    This is a helper function that wraps verify_community_admin_by_uuid to:
+    1. Handle the case where community_server_id comes from request body or scan lookup
+    2. Convert HTTPExceptions to JSON:API error responses
+
+    Args:
+        community_server_id: UUID of the community server to check access for
+        current_user: The authenticated user
+        db: Database session
+        request: HTTP request (for Discord claims)
+
+    Returns:
+        CommunityMember: The user's membership record with admin access
+
+    Raises:
+        HTTPException: 403 if user lacks admin access, with JSON:API formatted detail
+    """
+    return await verify_community_admin_by_uuid(
+        community_server_id=community_server_id,
+        current_user=current_user,
+        db=db,
+        request=request,
+    )
+
+
 async def get_redis() -> Redis:
     """Get Redis client for bulk scan operations."""
     if redis_client.client is None:
@@ -414,6 +449,7 @@ async def initiate_scan(
     request: HTTPRequest,
     service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    session: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
     """Initiate a new bulk content scan.
 
@@ -423,10 +459,27 @@ async def initiate_scan(
     - data.attributes.scan_window_days: Number of days to scan back (1-30)
     - data.attributes.channel_ids: Optional list of specific channel IDs
 
+    Authorization: Requires admin access to the target community.
+    Service accounts have unrestricted access.
+
     Returns a bulk-scans resource with scan_id and initial status.
     """
     try:
         attrs = body.data.attributes
+
+        try:
+            await verify_scan_admin_access(
+                community_server_id=attrs.community_server_id,
+                current_user=current_user,
+                db=session,
+                request=request,
+            )
+        except HTTPException as e:
+            return create_error_response(
+                status_code=e.status_code,
+                title="Forbidden" if e.status_code == 403 else "Not Found",
+                detail=e.detail,
+            )
 
         logger.info(
             "Initiating bulk content scan (JSON:API)",
@@ -481,8 +534,13 @@ async def get_scan_results(
     scan_id: UUID,
     request: HTTPRequest,
     service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    session: Annotated[AsyncSession, Depends(get_db)],
 ) -> JSONResponse:
     """Get scan status and flagged results.
+
+    Authorization: Requires admin access to the community that was scanned.
+    Service accounts have unrestricted access.
 
     Returns the bulk scan resource with flagged messages included as related resources.
     Uses JSON:API compound documents with 'included' array.
@@ -495,6 +553,20 @@ async def get_scan_results(
                 status.HTTP_404_NOT_FOUND,
                 "Not Found",
                 f"Scan {scan_id} not found",
+            )
+
+        try:
+            await verify_scan_admin_access(
+                community_server_id=scan_log.community_server_id,
+                current_user=current_user,
+                db=session,
+                request=request,
+            )
+        except HTTPException as e:
+            return create_error_response(
+                status_code=e.status_code,
+                title="Forbidden" if e.status_code == 403 else "Not Found",
+                detail=e.detail,
             )
 
         flagged_messages = await service.get_flagged_results(scan_id)
@@ -544,12 +616,30 @@ async def check_recent_scan(
     community_server_id: UUID,
     request: HTTPRequest,
     session: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> JSONResponse:
     """Check if community has a recent scan within the configured window.
+
+    Authorization: Requires admin access to the specified community.
+    Service accounts have unrestricted access.
 
     Returns a bulk-scan-status singleton resource with has_recent_scan boolean.
     """
     try:
+        try:
+            await verify_scan_admin_access(
+                community_server_id=community_server_id,
+                current_user=current_user,
+                db=session,
+                request=request,
+            )
+        except HTTPException as e:
+            return create_error_response(
+                status_code=e.status_code,
+                title="Forbidden" if e.status_code == 403 else "Not Found",
+                detail=e.detail,
+            )
+
         result = await has_recent_scan(session, community_server_id)
 
         resource = RecentScanResource(
@@ -593,6 +683,9 @@ async def create_note_requests(
     - data.attributes.message_ids: List of message IDs from flagged results
     - data.attributes.generate_ai_notes: Whether to generate AI drafts
 
+    Authorization: Requires admin access to the community that was scanned.
+    Service accounts have unrestricted access.
+
     Returns a note-request-batches resource with created count and IDs.
     """
     try:
@@ -603,6 +696,20 @@ async def create_note_requests(
                 status.HTTP_404_NOT_FOUND,
                 "Not Found",
                 f"Scan {scan_id} not found",
+            )
+
+        try:
+            await verify_scan_admin_access(
+                community_server_id=scan_log.community_server_id,
+                current_user=current_user,
+                db=session,
+                request=request,
+            )
+        except HTTPException as e:
+            return create_error_response(
+                status_code=e.status_code,
+                title="Forbidden" if e.status_code == 403 else "Not Found",
+                detail=e.detail,
             )
 
         flagged_messages = await service.get_flagged_results(scan_id)

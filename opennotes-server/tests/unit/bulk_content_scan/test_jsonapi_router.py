@@ -70,7 +70,27 @@ def mock_user():
 
 
 @pytest.fixture
-def app_with_router(mock_service, mock_user):
+def mock_session():
+    """Create a mock database session."""
+    return AsyncMock()
+
+
+@pytest.fixture
+def mock_community_member():
+    """Create a mock community member for authorization."""
+    from unittest.mock import MagicMock
+
+    member = MagicMock()
+    member.profile_id = uuid4()
+    member.community_id = uuid4()
+    member.role = "admin"
+    member.is_active = True
+    member.banned_at = None
+    return member
+
+
+@pytest.fixture
+def app_with_router(mock_service, mock_user, mock_session, mock_community_member):
     """Create a FastAPI app with the bulk content scan JSON:API router."""
     from src.bulk_content_scan.jsonapi_router import router
 
@@ -83,10 +103,16 @@ def app_with_router(mock_service, mock_user):
     async def override_get_current_user():
         return mock_user
 
+    async def override_get_db():
+        return mock_session
+
+    from src.auth.dependencies import get_current_user_or_api_key
     from src.bulk_content_scan import jsonapi_router as router_module
+    from src.database import get_db
 
     app.dependency_overrides[router_module.get_bulk_scan_service] = override_get_service
-    app.dependency_overrides[router_module.get_current_user_or_api_key] = override_get_current_user
+    app.dependency_overrides[get_current_user_or_api_key] = override_get_current_user
+    app.dependency_overrides[get_db] = override_get_db
 
     return app
 
@@ -100,22 +126,28 @@ def client(app_with_router):
 class TestInitiateScanEndpoint:
     """Test POST /bulk-scans endpoint."""
 
-    def test_initiate_scan_returns_201_with_jsonapi_format(self, client, mock_service):
+    def test_initiate_scan_returns_201_with_jsonapi_format(
+        self, client, mock_service, mock_community_member
+    ):
         """POST /bulk-scans returns JSON:API formatted response."""
         community_server_id = str(uuid4())
 
-        response = client.post(
-            "/api/v2/bulk-scans",
-            json={
-                "data": {
-                    "type": "bulk-scans",
-                    "attributes": {
-                        "community_server_id": community_server_id,
-                        "scan_window_days": 7,
+        with patch(
+            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+            new=AsyncMock(return_value=mock_community_member),
+        ):
+            response = client.post(
+                "/api/v2/bulk-scans",
+                json={
+                    "data": {
+                        "type": "bulk-scans",
+                        "attributes": {
+                            "community_server_id": community_server_id,
+                            "scan_window_days": 7,
+                        },
                     },
                 },
-            },
-        )
+            )
 
         assert response.status_code == 201
         data = response.json()
@@ -126,20 +158,26 @@ class TestInitiateScanEndpoint:
         assert "jsonapi" in data
         mock_service.initiate_scan.assert_called_once()
 
-    def test_initiate_scan_includes_status_in_attributes(self, client, mock_service):
+    def test_initiate_scan_includes_status_in_attributes(
+        self, client, mock_service, mock_community_member
+    ):
         """Response attributes should include status."""
-        response = client.post(
-            "/api/v2/bulk-scans",
-            json={
-                "data": {
-                    "type": "bulk-scans",
-                    "attributes": {
-                        "community_server_id": str(uuid4()),
-                        "scan_window_days": 7,
+        with patch(
+            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+            new=AsyncMock(return_value=mock_community_member),
+        ):
+            response = client.post(
+                "/api/v2/bulk-scans",
+                json={
+                    "data": {
+                        "type": "bulk-scans",
+                        "attributes": {
+                            "community_server_id": str(uuid4()),
+                            "scan_window_days": 7,
+                        },
                     },
                 },
-            },
-        )
+            )
 
         attrs = response.json()["data"]["attributes"]
         assert "status" in attrs
@@ -166,11 +204,17 @@ class TestInitiateScanEndpoint:
 class TestGetScanResultsEndpoint:
     """Test GET /bulk-scans/{scan_id} endpoint."""
 
-    def test_get_scan_returns_200_with_jsonapi_format(self, client, mock_service):
+    def test_get_scan_returns_200_with_jsonapi_format(
+        self, client, mock_service, mock_community_member
+    ):
         """GET returns JSON:API formatted response with included flagged messages."""
         scan_id = mock_service.get_scan.return_value.id
 
-        response = client.get(f"/api/v2/bulk-scans/{scan_id}")
+        with patch(
+            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+            new=AsyncMock(return_value=mock_community_member),
+        ):
+            response = client.get(f"/api/v2/bulk-scans/{scan_id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -180,11 +224,15 @@ class TestGetScanResultsEndpoint:
         assert "jsonapi" in data
         mock_service.get_scan.assert_called_once()
 
-    def test_get_scan_includes_flagged_messages(self, client, mock_service):
+    def test_get_scan_includes_flagged_messages(self, client, mock_service, mock_community_member):
         """Response should include flagged messages as related resources."""
         scan_id = mock_service.get_scan.return_value.id
 
-        response = client.get(f"/api/v2/bulk-scans/{scan_id}")
+        with patch(
+            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+            new=AsyncMock(return_value=mock_community_member),
+        ):
+            response = client.get(f"/api/v2/bulk-scans/{scan_id}")
 
         data = response.json()
         assert len(data["included"]) == 2
@@ -208,11 +256,17 @@ class TestGetScanResultsEndpoint:
 class TestCheckRecentScanEndpoint:
     """Test GET /bulk-scans/communities/{community_server_id}/recent endpoint."""
 
-    def test_check_recent_scan_returns_200_with_jsonapi_format(self, client):
+    def test_check_recent_scan_returns_200_with_jsonapi_format(self, client, mock_community_member):
         """Should return JSON:API formatted response."""
-        with patch(
-            "src.bulk_content_scan.jsonapi_router.has_recent_scan",
-            new=AsyncMock(return_value=True),
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.has_recent_scan",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
         ):
             response = client.get(f"/api/v2/bulk-scans/communities/{uuid4()}/recent")
 
@@ -222,11 +276,17 @@ class TestCheckRecentScanEndpoint:
         assert data["data"]["type"] == "bulk-scan-status"
         assert data["data"]["attributes"]["has_recent_scan"] is True
 
-    def test_check_recent_scan_returns_false(self, client):
+    def test_check_recent_scan_returns_false(self, client, mock_community_member):
         """Should return false when no recent scan exists."""
-        with patch(
-            "src.bulk_content_scan.jsonapi_router.has_recent_scan",
-            new=AsyncMock(return_value=False),
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.has_recent_scan",
+                new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
         ):
             response = client.get(f"/api/v2/bulk-scans/communities/{uuid4()}/recent")
 
@@ -237,13 +297,21 @@ class TestCheckRecentScanEndpoint:
 class TestCreateNoteRequestsEndpoint:
     """Test POST /bulk-scans/{scan_id}/note-requests endpoint."""
 
-    def test_create_note_requests_returns_201_with_jsonapi_format(self, client, mock_service):
+    def test_create_note_requests_returns_201_with_jsonapi_format(
+        self, client, mock_service, mock_community_member
+    ):
         """POST creates note requests with JSON:API response."""
         scan_id = mock_service.get_scan.return_value.id
 
-        with patch(
-            "src.bulk_content_scan.jsonapi_router.create_note_requests_for_messages",
-            new=AsyncMock(return_value=["req_1", "req_2"]),
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.create_note_requests_for_messages",
+                new=AsyncMock(return_value=["req_1", "req_2"]),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
         ):
             response = client.post(
                 f"/api/v2/bulk-scans/{scan_id}/note-requests",
@@ -263,13 +331,21 @@ class TestCreateNoteRequestsEndpoint:
         assert "data" in data
         assert data["data"]["type"] == "note-request-batches"
 
-    def test_create_note_requests_includes_created_count(self, client, mock_service):
+    def test_create_note_requests_includes_created_count(
+        self, client, mock_service, mock_community_member
+    ):
         """Response should include count and IDs of created requests."""
         scan_id = mock_service.get_scan.return_value.id
 
-        with patch(
-            "src.bulk_content_scan.jsonapi_router.create_note_requests_for_messages",
-            new=AsyncMock(return_value=["req_1", "req_2", "req_3"]),
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.create_note_requests_for_messages",
+                new=AsyncMock(return_value=["req_1", "req_2", "req_3"]),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
         ):
             response = client.post(
                 f"/api/v2/bulk-scans/{scan_id}/note-requests",
@@ -324,22 +400,28 @@ class TestCreateNoteRequestsEndpoint:
         assert response.status_code == 404
         assert "errors" in response.json()
 
-    def test_create_note_requests_returns_400_for_no_flagged_results(self, client, mock_service):
+    def test_create_note_requests_returns_400_for_no_flagged_results(
+        self, client, mock_service, mock_community_member
+    ):
         """Should return 400 in JSON:API error format."""
         scan_id = mock_service.get_scan.return_value.id
         mock_service.get_flagged_results = AsyncMock(return_value=[])
 
-        response = client.post(
-            f"/api/v2/bulk-scans/{scan_id}/note-requests",
-            json={
-                "data": {
-                    "type": "note-requests",
-                    "attributes": {
-                        "message_ids": ["msg_1"],
+        with patch(
+            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+            new=AsyncMock(return_value=mock_community_member),
+        ):
+            response = client.post(
+                f"/api/v2/bulk-scans/{scan_id}/note-requests",
+                json={
+                    "data": {
+                        "type": "note-requests",
+                        "attributes": {
+                            "message_ids": ["msg_1"],
+                        },
                     },
                 },
-            },
-        )
+            )
 
         assert response.status_code == 400
         assert "errors" in response.json()
