@@ -1051,3 +1051,360 @@ class TestRedisKeyEnvironmentPrefix:
         assert redis_key_used.startswith("development:"), (
             f"Redis key should start with 'development:', got: {redis_key_used}"
         )
+
+
+class TestRedisErrorPropagation:
+    """Test that Redis errors propagate correctly for caller handling - task-849.19."""
+
+    @pytest.mark.asyncio
+    async def test_append_flagged_result_propagates_redis_connection_error(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #4: Redis connection errors should propagate for caller handling.
+
+        When Redis is unavailable, the exception should propagate up so that
+        the NATS handler can NAK the message for retry.
+        """
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_redis.lpush = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        flagged_message = FlaggedMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            content="Test content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            match_score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
+
+        with pytest.raises(RedisConnectionError):
+            await service.append_flagged_result(scan_id=scan_id, flagged_message=flagged_message)
+
+    @pytest.mark.asyncio
+    async def test_get_flagged_results_propagates_redis_connection_error(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #4: Redis connection errors should propagate for caller handling."""
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_redis.lrange = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        with pytest.raises(RedisConnectionError):
+            await service.get_flagged_results(scan_id=uuid4())
+
+    @pytest.mark.asyncio
+    async def test_store_flagged_results_propagates_redis_connection_error(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #4: Redis connection errors should propagate for caller handling."""
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_redis.lpush = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        flagged_messages = [
+            FlaggedMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                content="Test",
+                author_id="user_1",
+                timestamp=datetime.now(UTC),
+                match_score=0.85,
+                matched_claim="Claim",
+                matched_source="https://example.com",
+            )
+        ]
+
+        with pytest.raises(RedisConnectionError):
+            await service.store_flagged_results(scan_id=uuid4(), flagged_messages=flagged_messages)
+
+    @pytest.mark.asyncio
+    async def test_redis_timeout_error_propagates(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #4: Redis timeout errors should propagate for caller handling."""
+        from redis.exceptions import TimeoutError as RedisTimeoutError
+
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_redis.lpush = AsyncMock(side_effect=RedisTimeoutError("Operation timed out"))
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        flagged_message = FlaggedMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            content="Test content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            match_score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
+
+        with pytest.raises(RedisTimeoutError):
+            await service.append_flagged_result(scan_id=uuid4(), flagged_message=flagged_message)
+
+
+class TestEmbeddingServiceErrorHandling:
+    """Test embedding service error handling in similarity scan - task-849.19."""
+
+    @pytest.mark.asyncio
+    async def test_similarity_scan_handles_embedding_error_gracefully(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #3: Embedding service errors should be caught and logged, message skipped.
+
+        The _similarity_scan method should catch exceptions from the embedding
+        service, log them, and return None (skip the message) rather than
+        propagating the error and failing the entire scan.
+        """
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            side_effect=Exception("Embedding service unavailable")
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        msg = BulkScanMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="Test message content that should trigger embedding search",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+        )
+
+        result = await service.process_messages(
+            scan_id=scan_id,
+            messages=msg,
+            community_server_platform_id="guild_123",
+        )
+
+        assert result == [], "Message should be skipped when embedding service fails"
+        mock_embedding_service.similarity_search.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_embedding_error_doesnt_stop_batch_processing(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #3: Embedding errors on one message shouldn't stop processing others.
+
+        When the embedding service fails for one message, subsequent messages
+        should still be processed.
+        """
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+        from src.fact_checking.embedding_schemas import (
+            FactCheckMatch,
+            SimilaritySearchResponse,
+        )
+
+        call_count = 0
+
+        async def conditional_failure(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("First message fails")
+
+            mock_match = FactCheckMatch(
+                id=uuid4(),
+                dataset_name="snopes",
+                dataset_tags=["snopes"],
+                title="Test Fact Check",
+                content="Claim content",
+                source_url="https://snopes.com/test",
+                similarity_score=0.85,
+            )
+            return SimilaritySearchResponse(
+                matches=[mock_match],
+                query_text="Test message",
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                rrf_score_threshold=0.1,
+                total_matches=1,
+            )
+
+        mock_embedding_service.similarity_search = AsyncMock(side_effect=conditional_failure)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="First message that will fail embedding",
+                author_id="user_1",
+                timestamp=datetime.now(UTC),
+            ),
+            BulkScanMessage(
+                message_id="msg_2",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Second message that should succeed",
+                author_id="user_2",
+                timestamp=datetime.now(UTC),
+            ),
+        ]
+
+        result = await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id="guild_123",
+        )
+
+        assert len(result) == 1, "Second message should still be processed"
+        assert result[0].message_id == "msg_2"
+        assert mock_embedding_service.similarity_search.call_count == 2
+
+
+class TestConcurrentCompleteScanBehavior:
+    """Test concurrent complete_scan() behavior - task-849.19."""
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_already_completed_returns_gracefully(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #5: Second complete_scan() call on already-completed scan should be safe.
+
+        If a scan is already completed (e.g., by a concurrent call), subsequent
+        calls should handle this gracefully without errors.
+        """
+        from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_scan_log = MagicMock(spec=BulkContentScanLog)
+        mock_scan_log.id = uuid4()
+        mock_scan_log.status = BulkScanStatus.COMPLETED
+        mock_scan_log.completed_at = datetime.now(UTC)
+        mock_scan_log.messages_scanned = 100
+        mock_scan_log.messages_flagged = 5
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=100,
+            messages_flagged=5,
+        )
+
+        mock_session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_lock_prevents_concurrent_modification(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #5: The FOR UPDATE lock ensures only one concurrent completion succeeds.
+
+        This test verifies the behavior when two complete_scan calls would
+        happen concurrently: the second should wait for the lock and then
+        find the record already updated.
+        """
+        from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        original_status = BulkScanStatus.IN_PROGRESS
+        mock_scan_log = MagicMock(spec=BulkContentScanLog)
+        mock_scan_log.id = uuid4()
+        mock_scan_log.status = original_status
+        mock_scan_log.completed_at = None
+
+        call_count = 0
+
+        async def execute_with_lock(stmt):
+            nonlocal call_count
+            call_count += 1
+
+            assert stmt._for_update_arg is not None, "Query must use FOR UPDATE locking"
+
+            mock_result = MagicMock()
+            if call_count == 1:
+                mock_scan_log.status = original_status
+                mock_scan_log.completed_at = None
+                mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+            else:
+                mock_scan_log.status = BulkScanStatus.COMPLETED
+                mock_scan_log.completed_at = datetime.now(UTC)
+                mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+            return mock_result
+
+        mock_session.execute = AsyncMock(side_effect=execute_with_lock)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=100,
+            messages_flagged=5,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=100,
+            messages_flagged=5,
+        )
+
+        assert mock_session.execute.call_count == 2
+        assert mock_session.commit.call_count == 2
