@@ -128,6 +128,32 @@ class TestInitiateScan:
         assert result == mock_scan_log
 
 
+class TestParameterNaming:
+    """Test that parameter naming follows project conventions (task-849.16)."""
+
+    def test_process_messages_uses_community_server_platform_id_parameter(self):
+        """Verify process_messages uses community_server_platform_id, not platform_id.
+
+        The parameter should be named community_server_platform_id to clarify it
+        corresponds to CommunityServer.platform_id (the Discord guild ID).
+        """
+        import inspect
+
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        sig = inspect.signature(BulkContentScanService.process_messages)
+        param_names = list(sig.parameters.keys())
+
+        assert "community_server_platform_id" in param_names, (
+            f"process_messages should have 'community_server_platform_id' parameter, "
+            f"but found: {param_names}"
+        )
+        assert "platform_id" not in param_names, (
+            "process_messages should NOT have 'platform_id' parameter "
+            "(use 'community_server_platform_id' instead)"
+        )
+
+
 class TestProcessMessages:
     """Test streaming message processing with process_messages()."""
 
@@ -182,7 +208,7 @@ class TestProcessMessages:
         result = await service.process_messages(
             scan_id=scan_id,
             messages=msg,
-            platform_id="guild_123",
+            community_server_platform_id="guild_123",
         )
 
         assert isinstance(result, list)
@@ -252,7 +278,7 @@ class TestProcessMessages:
         result = await service.process_messages(
             scan_id=scan_id,
             messages=messages,
-            platform_id="guild_123",
+            community_server_platform_id="guild_123",
         )
 
         assert isinstance(result, list)
@@ -286,7 +312,7 @@ class TestProcessMessages:
         result = await service.process_messages(
             scan_id=scan_id,
             messages=msg,
-            platform_id="guild_123",
+            community_server_platform_id="guild_123",
         )
 
         assert result == []
@@ -344,7 +370,7 @@ class TestProcessMessages:
         result = await service.process_messages(
             scan_id=scan_id,
             messages=msg,
-            platform_id="guild_123",
+            community_server_platform_id="guild_123",
             scan_types=(ScanType.SIMILARITY,),
         )
 
@@ -378,7 +404,7 @@ class TestProcessMessages:
         result = await service.process_messages(
             scan_id=scan_id,
             messages=msg,
-            platform_id="guild_123",
+            community_server_platform_id="guild_123",
             scan_types=(),
         )
 

@@ -96,7 +96,7 @@ async def handle_message_batch(
     flagged = await service.process_messages(
         scan_id=event.scan_id,
         messages=typed_messages,
-        platform_id=platform_id,
+        community_server_platform_id=platform_id,
     )
 
     for msg in flagged:

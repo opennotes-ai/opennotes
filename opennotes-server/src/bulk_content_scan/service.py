@@ -94,7 +94,7 @@ class BulkContentScanService:
         self,
         scan_id: UUID,
         messages: BulkScanMessage | Sequence[BulkScanMessage],
-        platform_id: str,
+        community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
     ) -> list[FlaggedMessage]:
         """Process one or more messages through specified scan types.
@@ -102,7 +102,7 @@ class BulkContentScanService:
         Args:
             scan_id: UUID of the scan
             messages: Single BulkScanMessage OR sequence of messages
-            platform_id: Platform-specific ID for embedding service
+            community_server_platform_id: CommunityServer.platform_id (e.g., Discord guild ID)
             scan_types: Sequence of ScanType to run (default: all)
 
         Returns:
@@ -118,7 +118,9 @@ class BulkContentScanService:
                 continue
 
             for scan_type in scan_types:
-                result = await self._run_scanner(scan_id, msg, platform_id, scan_type)
+                result = await self._run_scanner(
+                    scan_id, msg, community_server_platform_id, scan_type
+                )
                 if result:
                     flagged.append(result)
                     break
@@ -129,13 +131,13 @@ class BulkContentScanService:
         self,
         scan_id: UUID,
         message: BulkScanMessage,
-        platform_id: str,
+        community_server_platform_id: str,
         scan_type: ScanType,
     ) -> FlaggedMessage | None:
         """Run a specific scanner on a message."""
         match scan_type:
             case ScanType.SIMILARITY:
-                return await self._similarity_scan(scan_id, message, platform_id)
+                return await self._similarity_scan(scan_id, message, community_server_platform_id)
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
@@ -144,14 +146,14 @@ class BulkContentScanService:
         self,
         scan_id: UUID,
         message: BulkScanMessage,
-        platform_id: str,
+        community_server_platform_id: str,
     ) -> FlaggedMessage | None:
         """Run similarity search on a message."""
         try:
             search_response = await self.embedding_service.similarity_search(
                 db=self.session,
                 query_text=message.content,
-                community_server_id=platform_id,
+                community_server_id=community_server_platform_id,
                 dataset_tags=[],
                 similarity_threshold=settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
                 rrf_score_threshold=0.1,

@@ -96,7 +96,7 @@ class TestHandleMessageBatch:
         mock_service.process_messages.assert_called_once()
         call_kwargs = mock_service.process_messages.call_args[1]
         assert call_kwargs["scan_id"] == scan_id
-        assert call_kwargs["platform_id"] == "test_platform_123"
+        assert call_kwargs["community_server_platform_id"] == "test_platform_123"
         assert len(call_kwargs["messages"]) == 2
 
     @pytest.mark.asyncio

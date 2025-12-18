@@ -625,6 +625,271 @@ class TestJSONAPICreateNoteRequestsAuthorization(TestBulkScanAuthorizationFixtur
             assert response.status_code == 403
 
 
+class TestNoteRequestScanOwnerAuthorization(TestBulkScanAuthorizationFixtures):
+    """
+    Tests for POST /api/v2/bulk-scans/{id}/note-requests owner-based authorization.
+
+    Task: task-849.02
+
+    Note requests should be creatable by:
+    1. The user who initiated the scan (scan owner)
+    2. Community admins
+
+    Non-owner non-admins should receive 403 Forbidden.
+    """
+
+    @pytest.fixture
+    async def scan_initiated_by_regular_user(self, db, community_a, regular_user_in_community_a):
+        """
+        Create a scan initiated by a regular (non-admin) user.
+        This tests that scan owners can create note requests even without admin role.
+        """
+        from src.bulk_content_scan.models import BulkContentScanLog
+
+        scan = BulkContentScanLog(
+            id=uuid4(),
+            community_server_id=community_a.id,
+            initiated_by_user_id=regular_user_in_community_a["profile"].id,
+            scan_window_days=7,
+            status="completed",
+            initiated_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+            messages_scanned=50,
+            messages_flagged=3,
+        )
+        db.add(scan)
+        await db.commit()
+        await db.refresh(scan)
+        return scan
+
+    @pytest.fixture
+    async def another_regular_user_in_community_a(self, db, community_a):
+        """
+        Create another regular (non-admin) user in Community A.
+        Used to test that non-owner regular users cannot create note requests.
+        """
+        from src.users.models import User
+        from src.users.profile_crud import create_community_member, create_profile_with_identity
+        from src.users.profile_schemas import (
+            AuthProvider,
+            CommunityMemberCreate,
+            CommunityRole,
+            UserProfileCreate,
+        )
+
+        user = User(
+            id=uuid4(),
+            username="bulk_scan_another_regular_user_a",
+            email="bulk_scan_another_regular_a@test.local",
+            hashed_password="hashed_password_placeholder",
+            role="user",
+            is_active=True,
+            is_superuser=False,
+            discord_id="discord_bulk_scan_another_regular_a",
+        )
+        db.add(user)
+        await db.flush()
+
+        profile_create = UserProfileCreate(
+            display_name="Bulk Scan Another Regular User A",
+            avatar_url=None,
+            bio="Another regular user in Community A for bulk scan tests",
+            role="user",
+            is_opennotes_admin=False,
+            is_human=True,
+            is_active=True,
+            is_banned=False,
+            banned_at=None,
+            banned_reason=None,
+        )
+
+        profile, identity = await create_profile_with_identity(
+            db=db,
+            profile_create=profile_create,
+            provider=AuthProvider.DISCORD,
+            provider_user_id=user.discord_id,
+            credentials=None,
+        )
+
+        member_create = CommunityMemberCreate(
+            community_id=community_a.id,
+            profile_id=profile.id,
+            is_external=False,
+            role=CommunityRole.MEMBER,
+            permissions=None,
+            joined_at=datetime.now(UTC),
+            invited_by=None,
+            invitation_reason="Test fixture for bulk scan owner authorization tests",
+        )
+        await create_community_member(db, member_create)
+
+        await db.commit()
+        await db.refresh(user)
+
+        return {
+            "user": user,
+            "profile": profile,
+            "identity": identity,
+            "community": community_a,
+        }
+
+    @pytest.fixture
+    def another_regular_user_headers(self, another_regular_user_in_community_a):
+        """Auth headers for another regular user in Community A."""
+        return self._create_auth_headers(another_regular_user_in_community_a)
+
+    @pytest.mark.asyncio
+    async def test_scan_owner_can_create_note_requests_without_admin(
+        self,
+        regular_user_headers,
+        scan_initiated_by_regular_user,
+    ):
+        """
+        Scan owner (non-admin) should be able to create note requests.
+
+        The regular user who initiated the scan should be authorized to create
+        note requests for that scan, even without admin permissions.
+        Authorization should pass (not 403) - actual creation may fail for
+        other reasons (e.g., missing flagged results).
+        """
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v2/bulk-scans/{scan_initiated_by_regular_user.id}/note-requests",
+                headers={
+                    **regular_user_headers,
+                    "Content-Type": "application/vnd.api+json",
+                },
+                json={
+                    "data": {
+                        "type": "note-requests",
+                        "attributes": {
+                            "message_ids": ["msg_123"],
+                            "generate_ai_notes": False,
+                        },
+                    }
+                },
+            )
+
+            assert response.status_code != 403, (
+                f"Scan owner should not receive 403 Forbidden. "
+                f"Response: {response.status_code} - {response.text}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_admin_non_owner_can_create_note_requests(
+        self,
+        admin_a_headers,
+        scan_initiated_by_regular_user,
+    ):
+        """
+        Admin (non-owner) should be able to create note requests.
+
+        Community admin should be authorized to create note requests for any
+        scan in their community, even if they didn't initiate it.
+        Authorization should pass (not 403) - actual creation may fail for
+        other reasons (e.g., missing flagged results).
+        """
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v2/bulk-scans/{scan_initiated_by_regular_user.id}/note-requests",
+                headers={
+                    **admin_a_headers,
+                    "Content-Type": "application/vnd.api+json",
+                },
+                json={
+                    "data": {
+                        "type": "note-requests",
+                        "attributes": {
+                            "message_ids": ["msg_123"],
+                            "generate_ai_notes": False,
+                        },
+                    }
+                },
+            )
+
+            assert response.status_code != 403, (
+                f"Admin should not receive 403 Forbidden. "
+                f"Response: {response.status_code} - {response.text}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_non_owner_non_admin_cannot_create_note_requests(
+        self,
+        another_regular_user_headers,
+        scan_initiated_by_regular_user,
+    ):
+        """
+        Non-owner, non-admin user should receive 403 Forbidden.
+
+        A regular member who did not initiate the scan and is not a community
+        admin should not be able to create note requests.
+        """
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v2/bulk-scans/{scan_initiated_by_regular_user.id}/note-requests",
+                headers={
+                    **another_regular_user_headers,
+                    "Content-Type": "application/vnd.api+json",
+                },
+                json={
+                    "data": {
+                        "type": "note-requests",
+                        "attributes": {
+                            "message_ids": ["msg_123"],
+                            "generate_ai_notes": False,
+                        },
+                    }
+                },
+            )
+
+            assert response.status_code == 403, (
+                f"Non-owner non-admin should receive 403 Forbidden. "
+                f"Response: {response.status_code} - {response.text}"
+            )
+            response_data = response.json()
+            assert "errors" in response_data
+            assert response_data["errors"][0]["status"] == "403"
+
+    @pytest.mark.asyncio
+    async def test_service_account_can_create_note_requests(
+        self,
+        service_account_headers,
+        scan_initiated_by_regular_user,
+    ):
+        """
+        Service accounts should be able to create note requests for any scan.
+
+        Service accounts have unrestricted access and should be authorized
+        regardless of scan ownership or community admin status.
+        """
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v2/bulk-scans/{scan_initiated_by_regular_user.id}/note-requests",
+                headers={
+                    **service_account_headers,
+                    "Content-Type": "application/vnd.api+json",
+                },
+                json={
+                    "data": {
+                        "type": "note-requests",
+                        "attributes": {
+                            "message_ids": ["msg_123"],
+                            "generate_ai_notes": False,
+                        },
+                    }
+                },
+            )
+
+            assert response.status_code != 403, (
+                f"Service account should not receive 403 Forbidden. "
+                f"Response: {response.status_code} - {response.text}"
+            )
+
+
 class TestJSONAPICheckRecentScanAuthorization(TestBulkScanAuthorizationFixtures):
     """Tests for GET /api/v2/bulk-scans/communities/{id}/recent endpoint authorization."""
 

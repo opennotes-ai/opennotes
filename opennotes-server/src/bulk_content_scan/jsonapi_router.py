@@ -22,8 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.community_dependencies import verify_community_admin_by_uuid
+from src.auth.community_dependencies import (
+    _get_profile_id_from_user,
+    verify_community_admin_by_uuid,
+)
 from src.auth.dependencies import get_current_user_or_api_key
+from src.auth.permissions import is_service_account
+from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import has_recent_scan
 from src.bulk_content_scan.schemas import FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
@@ -286,6 +291,51 @@ async def verify_scan_admin_access(
         db=db,
         request=request,
     )
+
+
+async def verify_scan_owner_or_admin_access(
+    scan: BulkContentScanLog,
+    current_user: User,
+    db: AsyncSession,
+    request: HTTPRequest,
+) -> None:
+    """
+    Verify the current user has access to create note requests for a scan.
+
+    Authorization allows:
+    1. Service accounts - always have access
+    2. Scan owner - user who initiated the scan
+    3. Community admin - admin of the scanned community
+
+    Args:
+        scan: The bulk content scan log to check access for
+        current_user: The authenticated user
+        db: Database session
+        request: HTTP request (for Discord claims)
+
+    Raises:
+        HTTPException: 403 if user is not the scan owner and lacks admin access
+    """
+    if is_service_account(current_user):
+        return
+
+    user_profile_id = await _get_profile_id_from_user(db, current_user)
+
+    if user_profile_id and scan.initiated_by_user_id == user_profile_id:
+        return
+
+    try:
+        await verify_scan_admin_access(
+            community_server_id=scan.community_server_id,
+            current_user=current_user,
+            db=db,
+            request=request,
+        )
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. Only the scan initiator or community admins can create note requests from this scan.",
+        )
 
 
 async def get_redis() -> Redis:
@@ -683,7 +733,7 @@ async def create_note_requests(
     - data.attributes.message_ids: List of message IDs from flagged results
     - data.attributes.generate_ai_notes: Whether to generate AI drafts
 
-    Authorization: Requires admin access to the community that was scanned.
+    Authorization: User must be the scan initiator OR a community admin.
     Service accounts have unrestricted access.
 
     Returns a note-request-batches resource with created count and IDs.
@@ -699,8 +749,8 @@ async def create_note_requests(
             )
 
         try:
-            await verify_scan_admin_access(
-                community_server_id=scan_log.community_server_id,
+            await verify_scan_owner_or_admin_access(
+                scan=scan_log,
                 current_user=current_user,
                 db=session,
                 request=request,
