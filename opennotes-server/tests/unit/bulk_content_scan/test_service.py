@@ -885,3 +885,143 @@ class TestBulkScanStatusEnumUsage:
 
         assert mock_scan_log.status == BulkScanStatus.COMPLETED
         assert isinstance(mock_scan_log.status, BulkScanStatus)
+
+
+class TestRedisKeyEnvironmentPrefix:
+    """Test Redis key prefixing for environment isolation - task-849.14."""
+
+    @pytest.mark.asyncio
+    async def test_redis_key_includes_environment_prefix(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #1: Redis keys include environment prefix (e.g., prod:bulk_scan:, staging:bulk_scan:)."""
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        flagged_message = FlaggedMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            content="Test content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            match_score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.ENVIRONMENT = "production"
+            await service.append_flagged_result(scan_id=scan_id, flagged_message=flagged_message)
+
+        redis_key_used = mock_redis.lpush.call_args[0][0]
+        assert redis_key_used.startswith("production:"), (
+            f"Redis key should start with environment prefix 'production:', got: {redis_key_used}"
+        )
+        assert "bulk_scan" in redis_key_used, (
+            f"Redis key should contain 'bulk_scan', got: {redis_key_used}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_redis_key_prefix_changes_with_environment(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #2: Prefix is configurable via environment variable."""
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        flagged_message = FlaggedMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            content="Test content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            match_score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.ENVIRONMENT = "staging"
+            await service.append_flagged_result(scan_id=scan_id, flagged_message=flagged_message)
+
+        redis_key_used = mock_redis.lpush.call_args[0][0]
+        assert redis_key_used.startswith("staging:"), (
+            f"Redis key should start with 'staging:' when ENVIRONMENT=staging, got: {redis_key_used}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_flagged_results_uses_environment_prefix(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """get_flagged_results should use environment-prefixed key."""
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_redis.lrange = AsyncMock(return_value=[])
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.ENVIRONMENT = "test"
+            await service.get_flagged_results(scan_id=scan_id)
+
+        redis_key_used = mock_redis.lrange.call_args[0][0]
+        assert redis_key_used.startswith("test:"), (
+            f"Redis key should start with 'test:' when ENVIRONMENT=test, got: {redis_key_used}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_store_flagged_results_uses_environment_prefix(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """store_flagged_results should use environment-prefixed key."""
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        flagged_messages = [
+            FlaggedMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                content="Test",
+                author_id="user_1",
+                timestamp=datetime.now(UTC),
+                match_score=0.85,
+                matched_claim="Claim",
+                matched_source="https://example.com",
+            )
+        ]
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.ENVIRONMENT = "development"
+            await service.store_flagged_results(scan_id=scan_id, flagged_messages=flagged_messages)
+
+        redis_key_used = mock_redis.lpush.call_args[0][0]
+        assert redis_key_used.startswith("development:"), (
+            f"Redis key should start with 'development:', got: {redis_key_used}"
+        )

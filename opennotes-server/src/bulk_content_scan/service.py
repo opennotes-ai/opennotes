@@ -19,8 +19,16 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 REDIS_KEY_PREFIX = "bulk_scan"
-REDIS_RESULTS_KEY = f"{REDIS_KEY_PREFIX}:results"
 REDIS_TTL_SECONDS = 86400  # 24 hours
+
+
+def _get_redis_results_key(scan_id: UUID) -> str:
+    """Get environment-prefixed Redis key for scan results.
+
+    Format: {environment}:{prefix}:results:{scan_id}
+    Example: production:bulk_scan:results:abc-123
+    """
+    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:results:{scan_id}"
 
 
 class BulkContentScanService:
@@ -187,7 +195,7 @@ class BulkContentScanService:
         flagged_message: FlaggedMessage,
     ) -> None:
         """Append a single flagged result to Redis list."""
-        redis_key = f"{REDIS_RESULTS_KEY}:{scan_id}"
+        redis_key = _get_redis_results_key(scan_id)
         await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())
         await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)
 
@@ -252,7 +260,7 @@ class BulkContentScanService:
             scan_id: UUID of the scan
             flagged_messages: List of flagged messages to store
         """
-        redis_key = f"{REDIS_RESULTS_KEY}:{scan_id}"
+        redis_key = _get_redis_results_key(scan_id)
 
         for msg in flagged_messages:
             await self.redis_client.lpush(redis_key, msg.model_dump_json())
@@ -276,7 +284,7 @@ class BulkContentScanService:
         Returns:
             List of FlaggedMessage objects
         """
-        redis_key = f"{REDIS_RESULTS_KEY}:{scan_id}"
+        redis_key = _get_redis_results_key(scan_id)
 
         raw_messages = await self.redis_client.lrange(redis_key, 0, -1)
         results = []
