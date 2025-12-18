@@ -199,6 +199,40 @@ export class QueueRendererV2 {
   }
 
   /**
+   * Builds containers for a queue without sending them.
+   * Useful for returning containers to be sent via interaction.editReply().
+   *
+   * @param summary - Configuration for the summary header
+   * @param items - Array of queue items to render
+   * @param pagination - Optional pagination configuration
+   * @returns Array of ContainerBuilder objects ready to be sent
+   */
+  static buildContainers(
+    summary: QueueSummaryV2,
+    items: QueueItemV2[],
+    pagination?: PaginationConfig
+  ): ContainerBuilder[] {
+    const batches = this.batchItems(items, pagination);
+    const containers: ContainerBuilder[] = [];
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const isFirstBatch = i === 0;
+      const isLastBatch = i === batches.length - 1;
+
+      const container = this.buildContainer(
+        isFirstBatch ? summary : undefined,
+        batch,
+        isLastBatch ? pagination : undefined
+      );
+
+      containers.push(container);
+    }
+
+    return containers;
+  }
+
+  /**
    * Batches items to fit within Discord's 5 action row limit per container.
    * Each item uses 1 action row (rating buttons).
    * Pagination uses 1 action row if present.

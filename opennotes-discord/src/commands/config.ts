@@ -16,6 +16,8 @@ import { apiClient } from '../api-client.js';
 import { GuildConfigService } from '../services/GuildConfigService.js';
 import { GuildSetupService } from '../services/GuildSetupService.js';
 import { NotePublisherConfigService } from '../services/NotePublisherConfigService.js';
+import { BotChannelService } from '../services/BotChannelService.js';
+import { GuildOnboardingService } from '../services/GuildOnboardingService.js';
 import { ConfigKey, ConfigValidator, CONFIG_SCHEMA } from '../lib/config-schema.js';
 import { parseCustomId } from '../lib/validation.js';
 import { buttonInteractionRateLimiter } from '../lib/interaction-rate-limiter.js';
@@ -28,6 +30,8 @@ import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator } from '
 const configService = new GuildConfigService(apiClient);
 const guildSetupService = new GuildSetupService();
 const notePublisherConfigService = new NotePublisherConfigService();
+const botChannelService = new BotChannelService();
+const guildOnboardingService = new GuildOnboardingService();
 
 export const data = new SlashCommandBuilder()
   .setName('config')
@@ -967,7 +971,7 @@ async function handleOpennotesView(
 async function handleOpennotesSet(
   interaction: ChatInputCommandInteraction,
   guildId: string,
-  _errorId: string
+  errorId: string
 ): Promise<void> {
   const key = interaction.options.getString('key', true) as ConfigKey;
   const valueStr = interaction.options.getString('value', true);
@@ -981,6 +985,60 @@ async function handleOpennotesSet(
   }
 
   const updatedBy = interaction.user.id;
+
+  if (key === ConfigKey.BOT_CHANNEL_NAME && interaction.guild) {
+    const oldChannelName = (await configService.get(guildId, ConfigKey.BOT_CHANNEL_NAME)) as string;
+    const newChannelName = validation.parsedValue as string;
+
+    if (oldChannelName !== newChannelName) {
+      try {
+        const result = await botChannelService.migrateChannel(
+          interaction.guild,
+          oldChannelName,
+          newChannelName,
+          configService
+        );
+
+        await guildOnboardingService.postWelcomeToChannel(result.newChannel);
+
+        await configService.set(guildId, key, newChannelName, updatedBy);
+
+        const schema = CONFIG_SCHEMA[key];
+        const deleteMessage = result.oldChannelDeleted
+          ? `Old channel \`#${oldChannelName}\` has been deleted.`
+          : `Old channel \`#${oldChannelName}\` could not be deleted (you may need to remove it manually).`;
+
+        await interaction.editReply({
+          content: `✅ Updated **${schema.description}** to **${newChannelName}**\n\nNew bot channel ${result.newChannel.toString()} has been created with welcome message.\n${deleteMessage}`,
+        });
+
+        logger.info('Bot channel migrated via config command', {
+          error_id: errorId,
+          guildId,
+          oldChannelName,
+          newChannelName,
+          newChannelId: result.newChannel.id,
+          oldChannelDeleted: result.oldChannelDeleted,
+          updatedBy,
+        });
+        return;
+      } catch (error) {
+        logger.error('Failed to migrate bot channel', {
+          error_id: errorId,
+          guildId,
+          oldChannelName,
+          newChannelName,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        await interaction.editReply({
+          content: `❌ Failed to migrate bot channel: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        });
+        return;
+      }
+    }
+  }
+
   await configService.set(guildId, key, validation.parsedValue!, updatedBy);
 
   const schema = CONFIG_SCHEMA[key];

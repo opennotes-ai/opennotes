@@ -1,252 +1,140 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { MessageFlags } from 'discord.js';
-import { GuildOnboardingService } from '../../src/services/GuildOnboardingService.js';
-import type { ApiClient, LLMConfigResponse } from '../../src/lib/api-client.js';
+import { MessageFlags, ContainerBuilder } from 'discord.js';
 import { V2_COLORS } from '../../src/utils/v2-components.js';
 
+const mockLogger = {
+  info: jest.fn<(...args: unknown[]) => void>(),
+  debug: jest.fn<(...args: unknown[]) => void>(),
+  error: jest.fn<(...args: unknown[]) => void>(),
+  warn: jest.fn<(...args: unknown[]) => void>(),
+};
+
+jest.unstable_mockModule('../../src/logger.js', () => ({
+  logger: mockLogger,
+}));
+
+const { GuildOnboardingService } = await import('../../src/services/GuildOnboardingService.js');
+
 describe('GuildOnboardingService', () => {
-  let service: GuildOnboardingService;
-  let mockApiClient: any;
+  let service: InstanceType<typeof GuildOnboardingService>;
+  let mockChannel: any;
   let mockGuild: any;
-  let mockOwner: any;
-  let mockUser: any;
 
   beforeEach(() => {
-    mockApiClient = {
-      listLLMConfigs: jest.fn<(guildId: string) => Promise<LLMConfigResponse[]>>(),
-    };
-
-    mockUser = {
-      id: 'owner-user-id',
-      send: jest.fn<(...args: any[]) => Promise<any>>(),
-    };
-
-    mockOwner = {
-      user: mockUser,
-    };
-
     mockGuild = {
-      id: 'test-guild-id',
+      id: 'guild-123',
       name: 'Test Guild',
-      ownerId: 'owner-user-id',
-      fetchOwner: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockOwner),
     };
 
-    service = new GuildOnboardingService(mockApiClient as ApiClient);
+    mockChannel = {
+      id: 'channel-123',
+      name: 'open-notes',
+      guild: mockGuild,
+      send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+    };
+
+    service = new GuildOnboardingService();
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('checkAndNotifyMissingOpenAIKey', () => {
-    it('should not send DM if OpenAI key is configured', async () => {
-      const mockConfig: Partial<LLMConfigResponse> = {
-        provider: 'openai',
-        enabled: true,
-      };
+  describe('postWelcomeToChannel', () => {
+    it('should send welcome message to channel', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-      mockApiClient.listLLMConfigs.mockResolvedValue([mockConfig]);
-
-      await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-      expect(mockApiClient.listLLMConfigs).toHaveBeenCalledWith('test-guild-id');
-      expect(mockGuild.fetchOwner).not.toHaveBeenCalled();
-      expect(mockUser.send).not.toHaveBeenCalled();
+      expect(mockChannel.send).toHaveBeenCalledTimes(1);
     });
 
-    it('should send DM to owner if OpenAI key is missing', async () => {
-      mockApiClient.listLLMConfigs.mockResolvedValue([]);
+    it('should send Components v2 message with container', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-      await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-      expect(mockApiClient.listLLMConfigs).toHaveBeenCalledWith('test-guild-id');
-      expect(mockGuild.fetchOwner).toHaveBeenCalled();
-      expect(mockUser.send).toHaveBeenCalled();
+      const sendCall = mockChannel.send.mock.calls[0][0];
+      expect(sendCall).toHaveProperty('components');
+      expect(sendCall.components).toHaveLength(1);
+      expect(sendCall.components[0]).toBeInstanceOf(ContainerBuilder);
     });
 
-    it('should send DM if OpenAI config exists but is disabled', async () => {
-      const mockConfig: Partial<LLMConfigResponse> = {
-        provider: 'openai',
-        enabled: false,
-      };
+    it('should use IsComponentsV2 flag without ephemeral', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-      mockApiClient.listLLMConfigs.mockResolvedValue([mockConfig]);
-
-      await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-      expect(mockGuild.fetchOwner).toHaveBeenCalled();
-      expect(mockUser.send).toHaveBeenCalled();
+      const sendCall = mockChannel.send.mock.calls[0][0];
+      expect(sendCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
+      expect(sendCall.flags & MessageFlags.Ephemeral).toBeFalsy();
     });
 
-    it('should handle DMs disabled error gracefully', async () => {
-      mockApiClient.listLLMConfigs.mockResolvedValue([]);
+    it('should use PRIMARY accent color on container', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-      const dmError: any = new Error('Cannot send messages to this user');
-      dmError.code = 50007;
-      mockUser.send.mockRejectedValue(dmError);
-
-      await expect(
-        service.checkAndNotifyMissingOpenAIKey(mockGuild)
-      ).resolves.not.toThrow();
-
-      expect(mockUser.send).toHaveBeenCalled();
+      const sendCall = mockChannel.send.mock.calls[0][0];
+      const container = sendCall.components[0];
+      expect(container.data.accent_color).toBe(V2_COLORS.PRIMARY);
     });
 
-    it('should handle owner fetch failure gracefully', async () => {
-      mockApiClient.listLLMConfigs.mockResolvedValue([]);
-      mockGuild.fetchOwner.mockRejectedValue(new Error('Failed to fetch owner'));
+    it('should include About OpenNotes header', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-      await expect(
-        service.checkAndNotifyMissingOpenAIKey(mockGuild)
-      ).resolves.not.toThrow();
+      const sendCall = mockChannel.send.mock.calls[0][0];
+      const container = sendCall.components[0];
+      const allContent = JSON.stringify(container.toJSON().components);
 
-      expect(mockGuild.fetchOwner).toHaveBeenCalled();
-      expect(mockUser.send).not.toHaveBeenCalled();
+      expect(allContent).toContain('About OpenNotes');
     });
 
-    it('should handle API failure gracefully by assuming no key', async () => {
-      mockApiClient.listLLMConfigs.mockRejectedValue(new Error('API error'));
+    it('should include all information sections', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-      await expect(
-        service.checkAndNotifyMissingOpenAIKey(mockGuild)
-      ).resolves.not.toThrow();
+      const sendCall = mockChannel.send.mock.calls[0][0];
+      const container = sendCall.components[0];
+      const allContent = JSON.stringify(container.toJSON().components);
 
-      expect(mockGuild.fetchOwner).toHaveBeenCalled();
+      expect(allContent).toContain('How It Works');
+      expect(allContent).toContain('Note Submission');
+      expect(allContent).toContain('Commands');
+      expect(allContent).toContain('Scoring System');
+      expect(allContent).toContain('Community Moderation');
     });
 
-    describe('Components v2 notification format', () => {
-      beforeEach(() => {
-        mockApiClient.listLLMConfigs.mockResolvedValue([]);
-      });
+    it('should log successful message posting', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-      it('should send message with IsComponentsV2 flag', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Posted welcome message to bot channel',
+        expect.objectContaining({
+          channelId: 'channel-123',
+          guildId: 'guild-123',
+          channelName: 'open-notes',
+        })
+      );
+    });
 
-        expect(mockUser.send).toHaveBeenCalledWith(
-          expect.objectContaining({
-            flags: expect.any(Number),
-          })
-        );
+    it('should handle send errors gracefully without throwing', async () => {
+      mockChannel.send.mockRejectedValue(new Error('Missing permissions'));
 
-        const sendCall = mockUser.send.mock.calls[0][0];
-        expect(sendCall.flags & MessageFlags.IsComponentsV2).toBeTruthy();
-      });
+      await expect(service.postWelcomeToChannel(mockChannel)).resolves.not.toThrow();
+    });
 
-      it('should use ContainerBuilder with brand accent color', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
+    it('should log errors when send fails', async () => {
+      mockChannel.send.mockRejectedValue(new Error('Missing permissions'));
 
-        const sendCall = mockUser.send.mock.calls[0][0];
-        expect(sendCall.components).toBeDefined();
-        expect(sendCall.components).toHaveLength(1);
+      await service.postWelcomeToChannel(mockChannel);
 
-        const container = sendCall.components[0];
-        expect(container.data.accent_color).toBe(V2_COLORS.PRIMARY);
-      });
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to post welcome message to bot channel',
+        expect.objectContaining({
+          channelId: 'channel-123',
+          guildId: 'guild-123',
+          error: 'Missing permissions',
+        })
+      );
+    });
 
-      it('should include welcome title with guild name', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
+    it('should not include embeds (using v2 components instead)', async () => {
+      await service.postWelcomeToChannel(mockChannel);
 
-        const sendCall = mockUser.send.mock.calls[0][0];
-        const container = sendCall.components[0];
-
-        const welcomeTextComponent = container.components.find(
-          (c: any) => c.data?.content?.includes('Welcome to Open Notes')
-        );
-        expect(welcomeTextComponent).toBeDefined();
-      });
-
-      it('should include guild name in message', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-        const sendCall = mockUser.send.mock.calls[0][0];
-        const container = sendCall.components[0];
-
-        const guildNameComponent = container.components.find(
-          (c: any) => c.data?.content?.includes('Test Guild')
-        );
-        expect(guildNameComponent).toBeDefined();
-      });
-
-      it('should have separator components between sections', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-        const sendCall = mockUser.send.mock.calls[0][0];
-        const container = sendCall.components[0];
-
-        const separators = container.components.filter((c: any) =>
-          c.constructor.name === 'SeparatorBuilder'
-        );
-        expect(separators.length).toBeGreaterThanOrEqual(2);
-      });
-
-      it('should include feature highlights section', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-        const sendCall = mockUser.send.mock.calls[0][0];
-        const container = sendCall.components[0];
-
-        const allTextContent = container.components
-          .flatMap((c: any) => {
-            if (c.data?.content) return [c.data.content];
-            if (c.components) {
-              return c.components.map((inner: any) => inner.data?.content || '');
-            }
-            return [];
-          })
-          .join(' ');
-
-        expect(allTextContent).toContain('fact-checking');
-        expect(allTextContent).toContain('AI-assisted');
-        expect(allTextContent).toContain('Embedding');
-      });
-
-      it('should include setup instructions section', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-        const sendCall = mockUser.send.mock.calls[0][0];
-        const container = sendCall.components[0];
-
-        const allTextContent = container.components
-          .flatMap((c: any) => {
-            if (c.data?.content) return [c.data.content];
-            if (c.components) {
-              return c.components.map((inner: any) => inner.data?.content || '');
-            }
-            return [];
-          })
-          .join(' ');
-
-        expect(allTextContent).toContain('OpenAI Platform');
-        expect(allTextContent).toContain('/config-opennotes');
-      });
-
-      it('should include features that work without API key', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-        const sendCall = mockUser.send.mock.calls[0][0];
-        const container = sendCall.components[0];
-
-        const allTextContent = container.components
-          .flatMap((c: any) => {
-            if (c.data?.content) return [c.data.content];
-            if (c.components) {
-              return c.components.map((inner: any) => inner.data?.content || '');
-            }
-            return [];
-          })
-          .join(' ');
-
-        expect(allTextContent).toContain('Request community notes');
-        expect(allTextContent).toContain('Write notes manually');
-      });
-
-      it('should not include embeds (using v2 components instead)', async () => {
-        await service.checkAndNotifyMissingOpenAIKey(mockGuild);
-
-        const sendCall = mockUser.send.mock.calls[0][0];
-        expect(sendCall.embeds).toBeUndefined();
-      });
+      const sendCall = mockChannel.send.mock.calls[0][0];
+      expect(sendCall.embeds).toBeUndefined();
     });
   });
 });

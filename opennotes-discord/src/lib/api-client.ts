@@ -295,6 +295,7 @@ export interface SimilaritySearchResultAttributes {
   query_text: string;
   dataset_tags: string[];
   similarity_threshold: number;
+  rrf_score_threshold: number;
   total_matches: number;
 }
 
@@ -1430,6 +1431,7 @@ export class ApiClient {
       query_text: attrs.query_text,
       dataset_tags: attrs.dataset_tags,
       similarity_threshold: attrs.similarity_threshold,
+      rrf_score_threshold: attrs.rrf_score_threshold,
       total_matches: attrs.total_matches,
     };
   }

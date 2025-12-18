@@ -31,14 +31,13 @@ jest.unstable_mockModule('../../src/services/index.js', () => ({
   },
 }));
 
-jest.unstable_mockModule('../../src/private-thread.js', () => ({
-  configCache: {
+jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
+  ConfigCache: jest.fn(() => ({
     getRatingThresholds: jest.fn(async () => ({
       min_ratings_needed: 5,
       min_raters_per_note: 2,
     })),
-  },
-  getPrivateThreadManager: jest.fn(),
+  })),
 }));
 
 describe('request-queue command - Write Note button', () => {

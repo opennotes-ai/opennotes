@@ -11,17 +11,6 @@ const mockScoringService = {
   getScoringStatus: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
-const mockThread = {
-  id: 'thread123',
-  name: 'Test Thread',
-  toString: () => '<#thread123>',
-  send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'msg123' }),
-};
-
-const mockQueueManager = {
-  getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockThread),
-};
-
 const mockQueueRenderer = {
   render: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
     summaryMessage: { id: 'summary123' },
@@ -63,6 +52,12 @@ const mockCache = {
   getMetrics: jest.fn(() => ({ size: 0 })),
 };
 
+const mockGuildConfigService = {
+  get: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue('open-notes'),
+  set: jest.fn<(...args: any[]) => Promise<any>>(),
+  delete: jest.fn<(...args: any[]) => Promise<any>>(),
+};
+
 const mockServiceProvider = {
   getScoringService: jest.fn(() => mockScoringService),
   getStatusService: jest.fn<() => any>(),
@@ -70,7 +65,7 @@ const mockServiceProvider = {
   getViewNotesService: jest.fn<() => any>(),
   getRateNoteService: jest.fn<() => any>(),
   getRequestNoteService: jest.fn<() => any>(),
-  getGuildConfigService: jest.fn<(...args: any[]) => any>(),
+  getGuildConfigService: jest.fn(() => mockGuildConfigService),
 };
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
@@ -93,9 +88,8 @@ jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
   DiscordFormatter: mockDiscordFormatter,
 }));
 
-jest.unstable_mockModule('../../src/private-thread.js', () => ({
-  getPrivateThreadManager: () => mockQueueManager,
-  configCache: mockCache,
+jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
+  ConfigCache: jest.fn(() => mockCache),
 }));
 
 jest.unstable_mockModule('../../src/lib/queue-renderer.js', () => ({
@@ -128,6 +122,32 @@ jest.unstable_mockModule('../../src/lib/discord-utils.js', () => ({
   createDisabledForcePublishButtons: jest.fn(() => []),
 }));
 
+jest.unstable_mockModule('../../src/lib/bot-channel-helper.js', () => {
+  return {
+    getBotChannelOrRedirect: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+    }),
+    checkBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    }),
+    ensureBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'channel123', name: 'open-notes' }),
+  };
+});
+
+jest.unstable_mockModule('../../src/services/BotChannelService.js', () => ({
+  BotChannelService: class MockBotChannelService {
+    findChannel() {
+      return { id: 'channel123', name: 'open-notes' };
+    }
+    async ensureChannelExists() {
+      return { channel: { id: 'channel123', name: 'open-notes' }, wasCreated: false };
+    }
+  },
+}));
+
 const { execute } = await import('../../src/commands/list.js');
 
 function createMockTextChannel() {
@@ -148,18 +168,23 @@ function createMockTextChannel() {
       has: jest.fn().mockReturnValue(true),
     }),
     threads: {
-      create: (jest.fn() as any).mockResolvedValue(mockThread),
+      create: (jest.fn() as any).mockResolvedValue({
+        id: 'thread123',
+        name: 'test-thread',
+        send: (jest.fn() as any).mockResolvedValue({}),
+      }),
     },
   };
 
-  // Make instanceof TextChannel work
   Object.setPrototypeOf(mock, TextChannel.prototype);
 
   return mock as any;
 }
 
+let mockBotChannelHelper: any;
+
 describe('top-notes command', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
     mockDiscordFormatter.formatTopNotes.mockReturnValue({ embeds: [] });
@@ -174,16 +199,27 @@ describe('top-notes command', () => {
       forcePublishButtonRows: [],
     });
     mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
-    mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
     mockQueueRenderer.render.mockResolvedValue({
       summaryMessage: { id: 'summary123' },
       itemMessages: new Map(),
       paginationMessage: null,
     });
+
+    mockBotChannelHelper = await import('../../src/lib/bot-channel-helper.js');
+    (mockBotChannelHelper.getBotChannelOrRedirect as any).mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+    });
+    (mockBotChannelHelper.checkBotChannel as any).mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    });
+    (mockBotChannelHelper.ensureBotChannel as any).mockResolvedValue({ id: 'channel123', name: 'open-notes' });
   });
 
   describe('successful execution', () => {
-    it('should display top notes with default limit in a thread', async () => {
+    it('should display top notes with default limit as ephemeral message', async () => {
       mockScoringService.getTopNotes.mockResolvedValue(
         createSuccessResult({
           notes: [
@@ -198,6 +234,14 @@ describe('top-notes command', () => {
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
+        guild: {
+          id: 'guild456',
+          members: {
+            cache: {
+              get: jest.fn().mockReturnValue(null),
+            },
+          },
+        },
         channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),
@@ -222,14 +266,10 @@ describe('top-notes command', () => {
         minConfidence: undefined,
         tier: undefined,
       });
-      expect(mockQueueManager.getOrCreateOpenNotesThread).toHaveBeenCalled();
       expect(mockDiscordFormatter.formatTopNotesForQueueV2).toHaveBeenCalled();
-      expect(mockThread.send).toHaveBeenCalledWith({
+      expect(mockInteraction.editReply).toHaveBeenCalledWith({
         components: expect.any(Array),
         flags: MessageFlags.IsComponentsV2,
-      });
-      expect(mockInteraction.editReply).toHaveBeenCalledWith({
-        content: expect.stringContaining('Top notes posted to'),
       });
     });
 
@@ -245,6 +285,14 @@ describe('top-notes command', () => {
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
+        guild: {
+          id: 'guild456',
+          members: {
+            cache: {
+              get: jest.fn().mockReturnValue(null),
+            },
+          },
+        },
         channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),
@@ -282,6 +330,14 @@ describe('top-notes command', () => {
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
+        guild: {
+          id: 'guild456',
+          members: {
+            cache: {
+              get: jest.fn().mockReturnValue(null),
+            },
+          },
+        },
         channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),
@@ -315,6 +371,14 @@ describe('top-notes command', () => {
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
+        guild: {
+          id: 'guild456',
+          members: {
+            cache: {
+              get: jest.fn().mockReturnValue(null),
+            },
+          },
+        },
         channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),
@@ -351,6 +415,14 @@ describe('top-notes command', () => {
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
+        guild: {
+          id: 'guild456',
+          members: {
+            cache: {
+              get: jest.fn().mockReturnValue(null),
+            },
+          },
+        },
         channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),
@@ -370,16 +442,18 @@ describe('top-notes command', () => {
       });
     });
 
-    it('should reject non-text channels', async () => {
-      const mockNonTextChannel = {
-        id: 'channel123',
-        type: ChannelType.GuildVoice,
-      };
+    it('should redirect to bot channel when not in bot channel', async () => {
+      const botChannelHelper = await import('../../src/lib/bot-channel-helper.js');
+      (botChannelHelper.getBotChannelOrRedirect as any).mockResolvedValueOnce({
+        shouldProceed: false,
+        botChannel: { id: 'bot-channel-123', name: 'open-notes' },
+      });
 
+      const mockChannel = createMockTextChannel();
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
-        channel: mockNonTextChannel,
+        channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),
           getInteger: jest.fn<() => number | null>().mockReturnValue(null),
@@ -391,9 +465,7 @@ describe('top-notes command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.editReply).toHaveBeenCalledWith({
-        content: 'This command can only be used in text channels or threads.',
-      });
+      expect(mockScoringService.getTopNotes).not.toHaveBeenCalled();
     });
   });
 
@@ -516,7 +588,7 @@ describe('top-notes command', () => {
       await execute(mockInteraction as any);
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Top notes retrieved successfully',
+        'Top notes rendered as ephemeral message',
         expect.objectContaining({
           note_count: 1,
           total_count: 10,

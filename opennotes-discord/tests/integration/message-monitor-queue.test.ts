@@ -19,13 +19,6 @@ const mockApiClient = {
 
 const mockClient = {} as Client;
 
-const mockGuildOnboardingService = {
-  isOnboarded: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
-  getOnboardingStatus: jest.fn<() => Promise<any>>(),
-  startOnboarding: jest.fn<() => Promise<any>>(),
-  completeOnboarding: jest.fn<() => Promise<any>>(),
-};
-
 jest.unstable_mockModule('../../src/services/MonitoredChannelService.js', () => ({
   MonitoredChannelService: jest.fn(() => mockChannelService),
 }));
@@ -67,7 +60,7 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
     if (opennnotesKeys.length > 0) {
       await redis.del(...opennnotesKeys);
     }
-    service = new MessageMonitorService(mockClient, mockGuildOnboardingService as any, redis);
+    service = new MessageMonitorService(mockClient, redis);
   });
 
   afterEach(() => {

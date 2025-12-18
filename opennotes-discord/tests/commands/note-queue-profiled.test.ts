@@ -18,15 +18,6 @@ const mockCache = {
 const mockConfigCache = {
   getRatingThresholds: jest.fn<(...args: any[]) => Promise<any>>(),
 };
-const mockPrivateThreadManager = {
-  getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>(),
-  getNotesPerPage: jest.fn<() => number>().mockReturnValue(4),
-  getCurrentPage: jest.fn<() => number>().mockReturnValue(1),
-  setPage: jest.fn<(...args: any[]) => void>(),
-  updateNotes: jest.fn<(...args: any[]) => void>(),
-  getNotes: jest.fn<() => any[]>().mockReturnValue([]),
-  closePrivateThread: jest.fn<(...args: any[]) => void>(),
-};
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -40,9 +31,8 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
-jest.unstable_mockModule('../../src/private-thread.js', () => ({
-  configCache: mockConfigCache,
-  getPrivateThreadManager: () => mockPrivateThreadManager,
+jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
+  ConfigCache: jest.fn(() => mockConfigCache),
 }));
 
 let execute: typeof import('../../src/commands/note.js').execute;
@@ -118,16 +108,6 @@ describe('note-queue-profiled command', () => {
         total: 0,
       });
 
-      const mockThread = {
-        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-          createMessageComponentCollector: jest.fn<() => any>().mockReturnValue({
-            on: jest.fn<(event: string, handler: any) => any>(),
-          }),
-        }),
-      };
-
-      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
-
       const mockChannel = createMockTextChannel({
         type: ChannelType.GuildText,
       });
@@ -170,17 +150,6 @@ describe('note-queue-profiled command', () => {
         total: 0,
       });
 
-      const mockThread = {
-        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-          createMessageComponentCollector: jest.fn<() => any>().mockReturnValue({
-            on: jest.fn<(event: string, handler: any) => any>(),
-          }),
-        }),
-        toString: () => '<#thread123>',
-      };
-
-      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
-
       const mockChannel = createMockTextChannel({
         type: ChannelType.GuildText,
       });
@@ -202,7 +171,6 @@ describe('note-queue-profiled command', () => {
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferred: true,
       };
-
 
       await execute(mockInteraction as any);
 
@@ -331,17 +299,6 @@ describe('note-queue-profiled command', () => {
         total: 2,
       });
 
-      const mockThread = {
-        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-          createMessageComponentCollector: jest.fn<() => any>().mockReturnValue({
-            on: jest.fn<(event: string, handler: any) => any>(),
-          }),
-        }),
-        toString: () => '<#thread123>',
-      };
-
-      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
-
       const mockChannel = createMockTextChannel({
         type: ChannelType.GuildText,
       });
@@ -369,7 +326,6 @@ describe('note-queue-profiled command', () => {
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferred: true,
       };
-
 
       await execute(mockInteraction as any);
 

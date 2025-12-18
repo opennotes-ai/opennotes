@@ -12,13 +12,6 @@ const mockApiClient = {
 
 const mockClient = {} as Client;
 
-const mockGuildOnboardingService = {
-  isOnboarded: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
-  getOnboardingStatus: jest.fn<() => Promise<any>>(),
-  startOnboarding: jest.fn<() => Promise<any>>(),
-  completeOnboarding: jest.fn<() => Promise<any>>(),
-};
-
 // Mock RedisQueue to avoid needing real Redis
 class MockRedisQueue<T> {
   private items: T[] = [];
@@ -128,7 +121,7 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
     mockLogger.warn.mockReset();
     mockLogger.error.mockReset();
     mockLogger.debug.mockReset();
-    service = new MessageMonitorService(mockClient, mockGuildOnboardingService as any, mockRedis);
+    service = new MessageMonitorService(mockClient, mockRedis);
   });
 
   afterEach(() => {

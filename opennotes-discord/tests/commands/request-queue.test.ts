@@ -10,7 +10,12 @@ const mockListRequestsService = {
 
 const mockDiscordFormatter = {
   formatListRequestsSuccess: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ embeds: [] }),
+  formatListRequestsSuccessV2: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+    container: { toJSON: () => ({}) },
+    flags: 0,
+  }),
   formatError: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({ components: [], flags: 0 }),
 };
 
 const mockApiClient = {
@@ -32,17 +37,10 @@ const mockCache = {
   getMetrics: jest.fn(() => ({ size: 0 })),
 };
 
-const mockThread = {
-  send: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({
-    createMessageComponentCollector: jest.fn().mockReturnValue({
-      on: jest.fn(),
-    }),
-  }),
-  toString: () => '<#thread123>',
-};
-
-const mockQueueManager = {
-  getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockThread),
+const mockGuildConfigService = {
+  get: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue('open-notes'),
+  set: jest.fn<(...args: any[]) => Promise<any>>(),
+  delete: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
 const mockServiceProvider = {
@@ -52,7 +50,7 @@ const mockServiceProvider = {
   getViewNotesService: jest.fn<() => any>(),
   getRateNoteService: jest.fn<() => any>(),
   getRequestNoteService: jest.fn<() => any>(),
-  getGuildConfigService: jest.fn<(...args: any[]) => any>(),
+  getGuildConfigService: jest.fn(() => mockGuildConfigService),
   getScoringService: jest.fn<() => any>(),
 };
 
@@ -76,9 +74,8 @@ jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
   DiscordFormatter: mockDiscordFormatter,
 }));
 
-jest.unstable_mockModule('../../src/private-thread.js', () => ({
-  getPrivateThreadManager: jest.fn(() => mockQueueManager),
-  configCache: mockCache,
+jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
+  ConfigCache: jest.fn(() => mockCache),
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
@@ -96,20 +93,65 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../../src/lib/bot-channel-helper.js', () => {
+  return {
+    getBotChannelOrRedirect: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+    }),
+    checkBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    }),
+    ensureBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'channel123', name: 'open-notes' }),
+  };
+});
+
+jest.unstable_mockModule('../../src/services/BotChannelService.js', () => ({
+  BotChannelService: class MockBotChannelService {
+    findChannel() {
+      return { id: 'channel123', name: 'open-notes' };
+    }
+    async ensureChannelExists() {
+      return { channel: { id: 'channel123', name: 'open-notes' }, wasCreated: false };
+    }
+  },
+}));
+
 const { execute } = await import('../../src/commands/list.js');
 
+function createMockRequestsInteraction(overrides: Record<string, any> = {}) {
+  const mockChannel = Object.create(TextChannel.prototype);
+  return {
+    user: { id: 'user123' },
+    guildId: 'guild456',
+    channel: mockChannel,
+    guild: {
+      members: {
+        cache: new Map(),
+      },
+    },
+    options: {
+      getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
+      getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
+      getBoolean: jest.fn<() => boolean>().mockReturnValue(false),
+      getInteger: jest.fn<() => number | null>().mockReturnValue(null),
+    },
+    deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+    editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+    ...overrides,
+  };
+}
+
+let mockBotChannelHelper: any;
+
 describe('request-queue command', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     mockServiceProvider.getListRequestsService.mockReturnValue(mockListRequestsService);
     mockDiscordFormatter.formatListRequestsSuccess.mockResolvedValue({ embeds: [], components: [] });
     mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
-    mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
-    mockThread.send.mockResolvedValue({
-      createMessageComponentCollector: jest.fn().mockReturnValue({
-        on: jest.fn(),
-      }),
-    });
     mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
       id: 'guild456',
       platform: 'discord',
@@ -117,6 +159,18 @@ describe('request-queue command', () => {
       name: 'Test Guild',
       is_active: true,
     });
+
+    mockBotChannelHelper = await import('../../src/lib/bot-channel-helper.js');
+    (mockBotChannelHelper.getBotChannelOrRedirect as any).mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+    });
+    (mockBotChannelHelper.checkBotChannel as any).mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    });
+    (mockBotChannelHelper.ensureBotChannel as any).mockResolvedValue({ id: 'channel123', name: 'open-notes' });
   });
 
   describe('successful execution', () => {
@@ -133,22 +187,12 @@ describe('request-queue command', () => {
         })
       );
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
-          getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
-          getBoolean: jest.fn<() => boolean>().mockReturnValue(false),
-          getInteger: jest.fn<() => number | null>().mockReturnValue(null),
-        },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      const mockInteraction = createMockRequestsInteraction();
 
       await execute(mockInteraction as any);
+
+      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+      expect(mockInteraction.editReply).toHaveBeenCalled();
 
       expect(mockListRequestsService.execute).toHaveBeenCalledWith({
         userId: 'user123',
@@ -158,8 +202,6 @@ describe('request-queue command', () => {
         myRequestsOnly: false,
         communityServerId: 'guild456',
       });
-      expect(mockInteraction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
-      expect(mockInteraction.editReply).toHaveBeenCalled();
     });
 
     it('should filter by status', async () => {
@@ -172,20 +214,14 @@ describe('request-queue command', () => {
         })
       );
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
+      const mockInteraction = createMockRequestsInteraction({
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
           getString: jest.fn<() => string>().mockReturnValue('PENDING'),
           getBoolean: jest.fn<() => boolean>().mockReturnValue(false),
           getInteger: jest.fn<() => number | null>().mockReturnValue(null),
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      });
 
       await execute(mockInteraction as any);
 
@@ -209,20 +245,14 @@ describe('request-queue command', () => {
         })
       );
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
+      const mockInteraction = createMockRequestsInteraction({
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
           getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
           getBoolean: jest.fn<() => boolean>().mockReturnValue(true),
           getInteger: jest.fn<() => number | null>().mockReturnValue(null),
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      });
 
       await execute(mockInteraction as any);
 
@@ -246,11 +276,7 @@ describe('request-queue command', () => {
         })
       );
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
+      const mockInteraction = createMockRequestsInteraction({
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
           getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
@@ -261,9 +287,7 @@ describe('request-queue command', () => {
             return null;
           }),
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      });
 
       await execute(mockInteraction as any);
 
@@ -285,20 +309,7 @@ describe('request-queue command', () => {
         createErrorResult(ErrorCode.API_ERROR, 'Failed to fetch requests')
       );
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
-          getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
-          getBoolean: jest.fn<() => boolean>().mockReturnValue(false),
-          getInteger: jest.fn<() => number | null>().mockReturnValue(null),
-        },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      const mockInteraction = createMockRequestsInteraction();
 
       await execute(mockInteraction as any);
 
@@ -314,45 +325,21 @@ describe('request-queue command', () => {
         createSuccessResult(null as any)
       );
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
-          getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
-          getBoolean: jest.fn<() => boolean>().mockReturnValue(false),
-          getInteger: jest.fn<() => number | null>().mockReturnValue(null),
-        },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      const mockInteraction = createMockRequestsInteraction();
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.editReply).toHaveBeenCalledWith({
-        content: 'No data returned from the service.',
-      });
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: 'No data returned from the service.',
+        })
+      );
     });
 
     it('should handle unexpected errors', async () => {
       mockListRequestsService.execute.mockRejectedValue(new Error('Unexpected error'));
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
-          getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
-          getBoolean: jest.fn<() => boolean>().mockReturnValue(false),
-          getInteger: jest.fn<() => number | null>().mockReturnValue(null),
-        },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      const mockInteraction = createMockRequestsInteraction();
 
       await execute(mockInteraction as any);
 
@@ -376,20 +363,7 @@ describe('request-queue command', () => {
         })
       );
 
-      const mockChannel = Object.create(TextChannel.prototype);
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('requests'),
-          getString: jest.fn<(name: string) => string | null>().mockReturnValue(null),
-          getBoolean: jest.fn<() => boolean>().mockReturnValue(false),
-          getInteger: jest.fn<() => number | null>().mockReturnValue(null),
-        },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      const mockInteraction = createMockRequestsInteraction();
 
       await execute(mockInteraction as any);
 

@@ -31,7 +31,6 @@ import * as statusBotCommand from './commands/status-bot.js';
 // Context menu command imports
 import * as noteRequestContextCommand from './commands/note-request-context.js';
 
-import { initializePrivateThreadManager, getPrivateThreadManager } from './private-thread.js';
 import { NatsSubscriber } from './events/NatsSubscriber.js';
 import { NotePublisherService } from './services/NotePublisherService.js';
 import { NoteContextService } from './services/NoteContextService.js';
@@ -39,6 +38,8 @@ import { NotePublisherConfigService } from './services/NotePublisherConfigServic
 import { MessageMonitorService } from './services/MessageMonitorService.js';
 import { GuildSetupService } from './services/GuildSetupService.js';
 import { GuildOnboardingService } from './services/GuildOnboardingService.js';
+import { BotChannelService } from './services/BotChannelService.js';
+import { GuildConfigService } from './services/GuildConfigService.js';
 import { apiClient } from './api-client.js';
 import { closeRedisClient } from './redis-client.js';
 import express, { Express } from 'express';
@@ -57,6 +58,8 @@ export class Bot {
   private messageMonitorService?: MessageMonitorService;
   private guildSetupService?: GuildSetupService;
   private guildOnboardingService?: GuildOnboardingService;
+  private botChannelService?: BotChannelService;
+  private guildConfigService?: GuildConfigService;
   private healthCheckServer?: Express;
   private healthCheckPort?: number;
 
@@ -135,17 +138,20 @@ export class Bot {
       status: 'online',
     });
 
-    initializePrivateThreadManager(this.client);
-    logger.info('Private thread manager initialized');
-
     await this.initializeNotePublisher();
     logger.info('Note publisher system initialized');
 
     this.guildSetupService = new GuildSetupService();
     logger.info('Guild setup service initialized');
 
-    this.guildOnboardingService = new GuildOnboardingService(apiClient);
+    this.guildOnboardingService = new GuildOnboardingService();
     logger.info('Guild onboarding service initialized');
+
+    this.botChannelService = new BotChannelService();
+    this.guildConfigService = new GuildConfigService(apiClient);
+    logger.info('Bot channel service initialized');
+
+    await this.ensureBotChannelsForAllGuilds();
 
     await this.initializeMessageMonitoring();
     logger.info('Message monitoring system initialized');
@@ -272,13 +278,8 @@ export class Bot {
         throw new Error('Redis is required for MessageMonitorService');
       }
 
-      if (!this.guildOnboardingService) {
-        throw new Error('GuildOnboardingService must be initialized before MessageMonitorService');
-      }
-
       this.messageMonitorService = new MessageMonitorService(
         this.client,
-        this.guildOnboardingService,
         redisClient
       );
       this.messageMonitorService.initialize();
@@ -310,6 +311,39 @@ export class Bot {
     }
   }
 
+  private async ensureBotChannelsForAllGuilds(): Promise<void> {
+    if (!this.botChannelService || !this.guildConfigService || !this.guildOnboardingService) {
+      logger.warn('Bot channel services not initialized, skipping channel check');
+      return;
+    }
+
+    logger.info('Ensuring bot channels exist for all guilds', {
+      guildCount: this.client.guilds.cache.size,
+    });
+
+    for (const guild of this.client.guilds.cache.values()) {
+      try {
+        const result = await this.botChannelService.ensureChannelExists(
+          guild,
+          this.guildConfigService
+        );
+
+        if (result.wasCreated) {
+          await this.guildOnboardingService.postWelcomeToChannel(result.channel);
+        }
+      } catch (error) {
+        logger.error('Failed to ensure bot channel for guild on startup', {
+          guildId: guild.id,
+          guildName: guild.name,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      }
+    }
+
+    logger.info('Finished ensuring bot channels for all guilds');
+  }
+
   private async onGuildCreate(guild: Guild): Promise<void> {
     try {
       logger.info('Bot joined new guild', {
@@ -318,10 +352,26 @@ export class Bot {
         memberCount: guild.memberCount,
       });
 
-      if (config.notifyMissingOpenAIKey && this.guildOnboardingService) {
-        await this.guildOnboardingService.checkAndNotifyMissingOpenAIKey(guild);
-      } else if (!config.notifyMissingOpenAIKey) {
-        logger.debug('Missing OpenAI key notification disabled', {
+      if (this.botChannelService && this.guildConfigService && this.guildOnboardingService) {
+        try {
+          const result = await this.botChannelService.ensureChannelExists(
+            guild,
+            this.guildConfigService
+          );
+
+          if (result.wasCreated) {
+            await this.guildOnboardingService.postWelcomeToChannel(result.channel);
+          }
+        } catch (error) {
+          logger.error('Failed to create bot channel for new guild', {
+            guildId: guild.id,
+            guildName: guild.name,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+        }
+      } else {
+        logger.warn('Bot channel services not initialized for new guild', {
           guildId: guild.id,
         });
       }
@@ -542,13 +592,6 @@ export class Bot {
       }
     } catch (error) {
       logger.warn('NATS subscriber cleanup failed', { error });
-    }
-
-    try {
-      const privateThreadManager = getPrivateThreadManager();
-      await privateThreadManager.cleanup();
-    } catch (error) {
-      logger.warn('Private thread manager cleanup skipped (not initialized)', { error });
     }
 
     if (this.healthCheckServer) {
