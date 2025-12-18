@@ -542,6 +542,13 @@ class Settings(BaseSettings):
         description="System prompt for AI note generation",
     )
 
+    BULK_CONTENT_SCAN_REPROMPT_DAYS: int = Field(
+        default=90,
+        description="Days after which to re-prompt for bulk content scan. "
+        "If a community server has no completed scan within this window, "
+        "the system will suggest running a bulk scan.",
+    )
+
     @model_validator(mode="after")
     def validate_encryption_key_entropy(self) -> "Settings":
         if self.TESTING or not self.ENCRYPTION_MASTER_KEY:
