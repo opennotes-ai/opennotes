@@ -1993,4 +1993,11 @@ export class ApiClient {
       }),
     });
   }
+
+  async checkRecentScan(communityServerId: string): Promise<boolean> {
+    const response = await this.fetchWithRetry<{ has_recent_scan: boolean }>(
+      `/api/v1/bulk-content-scan/communities/${communityServerId}/has-recent-scan`
+    );
+    return response.has_recent_scan;
+  }
 }

@@ -362,7 +362,9 @@ export class Bot {
           );
 
           if (result.wasCreated) {
-            await this.guildOnboardingService.postWelcomeToChannel(result.channel);
+            await this.guildOnboardingService.postWelcomeToChannel(result.channel, {
+              adminId: guild.ownerId,
+            });
           }
         } catch (error) {
           logger.error('Failed to create bot channel for new guild', {
