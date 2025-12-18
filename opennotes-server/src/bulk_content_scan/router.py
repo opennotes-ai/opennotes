@@ -1,6 +1,5 @@
 """API router for Bulk Content Scan endpoints."""
 
-import uuid as uuid_module
 from typing import Annotated
 from uuid import UUID
 
@@ -21,17 +20,18 @@ from src.bulk_content_scan.schemas import (
     BulkScanResponse,
     BulkScanResultsResponse,
     CreateNoteRequestsRequest,
-    FlaggedMessage,
     NoteRequestsResponse,
 )
-from src.bulk_content_scan.service import BulkContentScanService
+from src.bulk_content_scan.service import (
+    BulkContentScanService,
+    create_note_requests_from_flagged_messages,
+)
 from src.cache.redis_client import redis_client
 from src.database import get_db
 from src.fact_checking.embedding_router import get_embedding_service
 from src.fact_checking.embedding_service import EmbeddingService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
-from src.notes.request_service import RequestService
 from src.users.models import User
 from src.users.profile_models import CommunityMember
 
@@ -145,124 +145,6 @@ async def verify_scan_owner_or_admin_access(
         )
 
 
-async def create_note_requests_for_messages(
-    message_ids: list[str],
-    scan_id: UUID,
-    session: AsyncSession,
-    user_id: UUID,
-    community_server_id: UUID,
-    flagged_messages: list[FlaggedMessage],
-    generate_ai_notes: bool = False,
-) -> list[str]:
-    """Create note requests for flagged messages.
-
-    Creates Request entries in the database for selected flagged messages
-    from a bulk content scan. Each request includes the message content,
-    match information, and metadata for potential AI note generation.
-
-    Args:
-        message_ids: List of Discord message IDs to create requests for
-        scan_id: UUID of the scan these messages came from
-        session: Database session
-        user_id: UUID of the user making the request
-        community_server_id: UUID of the community server
-        flagged_messages: List of FlaggedMessage objects from the scan results
-        generate_ai_notes: Whether to generate AI draft notes
-
-    Returns:
-        List of created request IDs (string request_id values)
-    """
-    logger.info(
-        "Creating note requests from bulk scan",
-        extra={
-            "scan_id": str(scan_id),
-            "message_count": len(message_ids),
-            "user_id": str(user_id),
-            "community_server_id": str(community_server_id),
-            "generate_ai_notes": generate_ai_notes,
-        },
-    )
-
-    flagged_by_message_id = {msg.message_id: msg for msg in flagged_messages}
-
-    created_ids: list[str] = []
-    for msg_id in message_ids:
-        flagged_msg = flagged_by_message_id.get(msg_id)
-        if not flagged_msg:
-            logger.warning(
-                "Message ID not found in flagged results",
-                extra={
-                    "message_id": msg_id,
-                    "scan_id": str(scan_id),
-                },
-            )
-            continue
-
-        request_id = f"bulkscan_{scan_id.hex[:8]}_{uuid_module.uuid4().hex[:8]}"
-
-        try:
-            request = await RequestService.create_from_message(
-                db=session,
-                request_id=request_id,
-                content=flagged_msg.content,
-                community_server_id=community_server_id,
-                requested_by=str(user_id),
-                platform_message_id=flagged_msg.message_id,
-                platform_channel_id=flagged_msg.channel_id,
-                platform_author_id=flagged_msg.author_id,
-                platform_timestamp=flagged_msg.timestamp,
-                similarity_score=flagged_msg.match_score,
-                dataset_name="bulk_scan",
-                status="PENDING",
-                priority="normal",
-                reason=f"Flagged by bulk scan {scan_id}",
-                request_metadata={
-                    "scan_id": str(scan_id),
-                    "matched_claim": flagged_msg.matched_claim,
-                    "matched_source": flagged_msg.matched_source,
-                    "match_score": flagged_msg.match_score,
-                    "generate_ai_notes": generate_ai_notes,
-                },
-            )
-
-            created_ids.append(request.request_id)
-
-            logger.debug(
-                "Created note request from bulk scan",
-                extra={
-                    "request_id": request.request_id,
-                    "message_id": msg_id,
-                    "scan_id": str(scan_id),
-                    "match_score": flagged_msg.match_score,
-                },
-            )
-
-        except Exception as e:
-            logger.error(
-                "Failed to create note request",
-                extra={
-                    "message_id": msg_id,
-                    "scan_id": str(scan_id),
-                    "error": str(e),
-                },
-            )
-            continue
-
-    await session.commit()
-
-    logger.info(
-        "Note requests created from bulk scan",
-        extra={
-            "scan_id": str(scan_id),
-            "requested_count": len(message_ids),
-            "created_count": len(created_ids),
-            "user_id": str(user_id),
-        },
-    )
-
-    return created_ids
-
-
 @router.post(
     "/scans",
     response_model=BulkScanResponse,
@@ -336,6 +218,7 @@ async def initiate_scan(
     response_model=BulkScanResultsResponse,
     summary="Get scan results",
     description="Retrieve the status and flagged results for a bulk content scan. "
+    "Supports pagination via page and page_size query parameters. "
     "Requires admin access to the community that was scanned. Service accounts have unrestricted access.",
 )
 async def get_scan_results(
@@ -344,8 +227,10 @@ async def get_scan_results(
     service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
     current_user: Annotated[User, Depends(get_current_user_for_bulk_scan)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    page: int = 1,
+    page_size: int = 50,
 ) -> BulkScanResultsResponse:
-    """Get scan status and flagged results.
+    """Get scan status and flagged results with pagination.
 
     Authorization: Requires admin access to the community that was scanned.
     Service accounts have unrestricted access.
@@ -356,13 +241,27 @@ async def get_scan_results(
         service: Bulk scan service
         current_user: Authenticated user
         session: Database session
+        page: Page number (1-indexed, default: 1)
+        page_size: Number of results per page (default: 50, max: 100)
 
     Returns:
-        BulkScanResultsResponse with status and flagged messages
+        BulkScanResultsResponse with status, paginated flagged messages, and pagination metadata
 
     Raises:
-        HTTPException: 404 if scan not found, 403 if user lacks admin access
+        HTTPException: 404 if scan not found, 403 if user lacks admin access, 422 if invalid pagination
     """
+    if page < 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Page must be at least 1",
+        )
+
+    if page_size < 1 or page_size > 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Page size must be between 1 and 100",
+        )
+
     scan_log = await service.get_scan(scan_id)
 
     if not scan_log:
@@ -378,13 +277,20 @@ async def get_scan_results(
         request=http_request,
     )
 
-    flagged_messages = await service.get_flagged_results(scan_id)
+    all_flagged_messages = await service.get_flagged_results(scan_id)
+    total = len(all_flagged_messages)
+
+    offset = (page - 1) * page_size
+    paginated_messages = all_flagged_messages[offset : offset + page_size]
 
     return BulkScanResultsResponse(
         scan_id=scan_log.id,
         status=scan_log.status,
         messages_scanned=scan_log.messages_scanned,
-        flagged_messages=flagged_messages,
+        flagged_messages=paginated_messages,
+        total=total,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -487,7 +393,7 @@ async def create_note_requests(
             detail="No flagged results available for this scan",
         )
 
-    created_ids = await create_note_requests_for_messages(
+    created_ids = await create_note_requests_from_flagged_messages(
         message_ids=body.message_ids,
         scan_id=scan_id,
         session=session,

@@ -91,7 +91,7 @@ class FlaggedMessage(SQLAlchemySchema):
 
 
 class BulkScanResultsResponse(SQLAlchemySchema):
-    """Response schema for scan results including flagged messages."""
+    """Response schema for scan results including flagged messages with pagination."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -100,7 +100,23 @@ class BulkScanResultsResponse(SQLAlchemySchema):
     messages_scanned: int = Field(..., description="Total messages processed")
     flagged_messages: list[FlaggedMessage] = Field(
         default_factory=list,
-        description="List of flagged messages with match info",
+        description="List of flagged messages with match info (paginated)",
+    )
+    total: int = Field(
+        default=0,
+        ge=0,
+        description="Total number of flagged messages across all pages",
+    )
+    page: int = Field(
+        default=1,
+        ge=1,
+        description="Current page number (1-indexed)",
+    )
+    page_size: int = Field(
+        default=50,
+        ge=1,
+        le=100,
+        description="Number of results per page",
     )
 
 

@@ -544,9 +544,11 @@ class Settings(BaseSettings):
 
     BULK_CONTENT_SCAN_REPROMPT_DAYS: int = Field(
         default=90,
+        ge=1,
+        le=365,
         description="Days after which to re-prompt for bulk content scan. "
         "If a community server has no completed scan within this window, "
-        "the system will suggest running a bulk scan.",
+        "the system will suggest running a bulk scan. Valid range: 1-365 days.",
     )
 
     BULK_SCAN_RATE_LIMIT_PER_HOUR: int = Field(
