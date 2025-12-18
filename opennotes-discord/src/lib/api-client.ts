@@ -1935,4 +1935,62 @@ export class ApiClient {
     validateNoteListResponse(response);
     return response;
   }
+
+  async initiateBulkScan(
+    communityServerId: string,
+    scanWindowDays: number
+  ): Promise<{
+    scan_id: string;
+    status: string;
+    community_server_id: string;
+    scan_window_days: number;
+  }> {
+    return this.fetchWithRetry<{
+      scan_id: string;
+      status: string;
+      community_server_id: string;
+      scan_window_days: number;
+    }>('/api/v1/bulk-content-scan/scans', {
+      method: 'POST',
+      body: JSON.stringify({
+        community_server_id: communityServerId,
+        scan_window_days: scanWindowDays,
+      }),
+    });
+  }
+
+  async getBulkScanResults(scanId: string): Promise<{
+    scan_id: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    messages_scanned: number;
+    flagged_messages: Array<{
+      message_id: string;
+      channel_id: string;
+      content: string;
+      author_id: string;
+      timestamp: string;
+      match_score: number;
+      matched_claim: string;
+      matched_source: string;
+    }>;
+  }> {
+    return this.fetchWithRetry(`/api/v1/bulk-content-scan/scans/${scanId}`);
+  }
+
+  async createNoteRequestsFromScan(
+    scanId: string,
+    messageIds: string[],
+    generateAiNotes: boolean
+  ): Promise<{
+    created_count: number;
+    scan_id: string;
+  }> {
+    return this.fetchWithRetry(`/api/v1/bulk-content-scan/scans/${scanId}/note-requests`, {
+      method: 'POST',
+      body: JSON.stringify({
+        message_ids: messageIds,
+        generate_ai_notes: generateAiNotes,
+      }),
+    });
+  }
 }

@@ -1,6 +1,11 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { MessageFlags, PermissionFlagsBits } from 'discord.js';
-import { VIBE_CHECK_DAYS_OPTIONS } from '../../src/types/bulk-scan.js';
+import { MessageFlags, PermissionFlagsBits, ButtonStyle } from 'discord.js';
+import {
+  VIBE_CHECK_DAYS_OPTIONS,
+  type BulkScanInitiateResponse,
+  type BulkScanResultsResponse,
+  type FlaggedMessage,
+} from '../../src/types/bulk-scan.js';
 
 const mockLogger = {
   info: jest.fn<(...args: unknown[]) => void>(),
@@ -16,6 +21,9 @@ const mockNatsPublisher = {
 
 const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),
+  initiateBulkScan: jest.fn<(guildId: string, days: number) => Promise<BulkScanInitiateResponse>>(),
+  getBulkScanResults: jest.fn<(scanId: string) => Promise<BulkScanResultsResponse>>(),
+  createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<any>>(),
 };
 
 const mockCache = {
@@ -60,6 +68,25 @@ const { data, execute } = await import('../../src/commands/vibecheck.js');
 describe('vibecheck command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockApiClient.initiateBulkScan.mockResolvedValue({
+      scan_id: 'test-scan-123',
+      status: 'pending',
+      community_server_id: 'guild789',
+      scan_window_days: 7,
+    });
+
+    mockApiClient.getBulkScanResults.mockResolvedValue({
+      scan_id: 'test-scan-123',
+      status: 'completed',
+      messages_scanned: 0,
+      flagged_messages: [],
+    });
+
+    mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
+      created_count: 0,
+      scan_id: 'test-scan-123',
+    });
   });
 
   describe('slash command registration', () => {
@@ -667,6 +694,679 @@ describe('vibecheck command', () => {
 
       const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
       expect(lastEditCall.content).toMatch(/complete|finished|done|scan/i);
+    });
+  });
+
+  describe('AC #6: server-side scan initiation and results display', () => {
+    const createMockInteractionWithCollector = () => {
+      const now = Date.now();
+
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>(),
+        stop: jest.fn(),
+      };
+
+      const mockFetchReply = jest.fn<() => Promise<any>>().mockResolvedValue({
+        createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
+      });
+
+      const mockChannel = {
+        id: 'channel123',
+        name: 'test-channel',
+        type: 0,
+        isTextBased: () => true,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
+            .mockResolvedValueOnce(new Map([
+              ['1234567890123456789', {
+                id: '1234567890123456789',
+                content: 'Test message with misinformation',
+                author: { id: 'author1', username: 'user1', bot: false },
+                createdTimestamp: now - 1000 * 60,
+                createdAt: new Date(now - 1000 * 60),
+                channelId: 'channel123',
+                attachments: new Map(),
+                embeds: [],
+              }],
+            ]))
+            .mockResolvedValue(new Map()),
+        },
+      };
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map([['channel123', mockChannel]]);
+      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
+        const result = new Map();
+        for (const [k, v] of channelsCache) {
+          if (fn(v)) result.set(k, v);
+        }
+        return result;
+      };
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        fetchReply: mockFetchReply,
+      };
+
+      return { mockInteraction, mockCollector };
+    };
+
+    it('should call initiateBulkScan API after NATS batches are published', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 1,
+        flagged_messages: [],
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.initiateBulkScan).toHaveBeenCalledWith('guild789', 7);
+    });
+
+    it('should poll for scan results until completed', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults
+        .mockResolvedValueOnce({
+          scan_id: 'scan-123',
+          status: 'in_progress',
+          messages_scanned: 0,
+          flagged_messages: [],
+        })
+        .mockResolvedValueOnce({
+          scan_id: 'scan-123',
+          status: 'in_progress',
+          messages_scanned: 1,
+          flagged_messages: [],
+        })
+        .mockResolvedValue({
+          scan_id: 'scan-123',
+          status: 'completed',
+          messages_scanned: 1,
+          flagged_messages: [],
+        });
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.getBulkScanResults).toHaveBeenCalled();
+      expect(mockApiClient.getBulkScanResults.mock.calls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should display flagged results with message link, confidence score, and matched claim', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      const flaggedMessages: FlaggedMessage[] = [
+        {
+          message_id: '1234567890123456789',
+          channel_id: 'channel123',
+          content: 'This vaccine causes autism',
+          author_id: 'author1',
+          timestamp: new Date().toISOString(),
+          match_score: 0.95,
+          matched_claim: 'Vaccines cause autism',
+          matched_source: 'snopes',
+        },
+      ];
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 1,
+        flagged_messages: flaggedMessages,
+      });
+
+      await execute(mockInteraction as any);
+
+      const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
+
+      expect(lastEditCall.content).toContain('95%');
+      expect(lastEditCall.content).toContain('Vaccines cause autism');
+      expect(lastEditCall.content).toMatch(/discord\.com\/channels/);
+    });
+
+    it('should show no flagged content message when scan completes with no matches', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 100,
+        flagged_messages: [],
+      });
+
+      await execute(mockInteraction as any);
+
+      const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
+      expect(lastEditCall.content).toMatch(/no.*flagged|clean|no.*misinformation/i);
+    });
+  });
+
+  describe('AC #7: action buttons for note requests', () => {
+    const createMockInteractionWithFlaggedResults = () => {
+      const now = Date.now();
+
+      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
+          collectHandlers.set(event, handler);
+          return mockCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockFetchReply = jest.fn<() => Promise<any>>().mockResolvedValue({
+        createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
+      });
+
+      const mockChannel = {
+        id: 'channel123',
+        name: 'test-channel',
+        type: 0,
+        isTextBased: () => true,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
+            .mockResolvedValueOnce(new Map([
+              ['1234567890123456789', {
+                id: '1234567890123456789',
+                content: 'Test message',
+                author: { id: 'author1', username: 'user1', bot: false },
+                createdTimestamp: now - 1000 * 60,
+                createdAt: new Date(now - 1000 * 60),
+                channelId: 'channel123',
+                attachments: new Map(),
+                embeds: [],
+              }],
+            ]))
+            .mockResolvedValue(new Map()),
+        },
+      };
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map([['channel123', mockChannel]]);
+      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
+        const result = new Map();
+        for (const [k, v] of channelsCache) {
+          if (fn(v)) result.set(k, v);
+        }
+        return result;
+      };
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        fetchReply: mockFetchReply,
+      };
+
+      return { mockInteraction, mockCollector, collectHandlers };
+    };
+
+    it('should show Create Note Requests and Dismiss buttons when flagged results exist', async () => {
+      const { mockInteraction } = createMockInteractionWithFlaggedResults();
+
+      const flaggedMessages: FlaggedMessage[] = [
+        {
+          message_id: '1234567890123456789',
+          channel_id: 'channel123',
+          content: 'Misinformation content',
+          author_id: 'author1',
+          timestamp: new Date().toISOString(),
+          match_score: 0.85,
+          matched_claim: 'False claim',
+          matched_source: 'snopes',
+        },
+      ];
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 1,
+        flagged_messages: flaggedMessages,
+      });
+
+      await execute(mockInteraction as any);
+
+      const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
+
+      expect(lastEditCall.components).toBeDefined();
+      expect(lastEditCall.components.length).toBeGreaterThan(0);
+
+      const buttonRow = lastEditCall.components[0];
+      const buttons = buttonRow.components || buttonRow.toJSON?.()?.components;
+
+      expect(buttons.length).toBe(2);
+
+      const buttonLabels = buttons.map((b: any) => b.label || b.data?.label);
+      expect(buttonLabels).toContain('Create Note Requests');
+      expect(buttonLabels).toContain('Dismiss');
+    });
+
+    it('should dismiss results when Dismiss button is clicked', async () => {
+      const { mockInteraction, collectHandlers } = createMockInteractionWithFlaggedResults();
+
+      const flaggedMessages: FlaggedMessage[] = [
+        {
+          message_id: '1234567890123456789',
+          channel_id: 'channel123',
+          content: 'Misinformation content',
+          author_id: 'author1',
+          timestamp: new Date().toISOString(),
+          match_score: 0.85,
+          matched_claim: 'False claim',
+          matched_source: 'snopes',
+        },
+      ];
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 1,
+        flagged_messages: flaggedMessages,
+      });
+
+      await execute(mockInteraction as any);
+
+      const mockButtonInteraction = {
+        customId: 'vibecheck_dismiss:scan-123',
+        user: { id: 'admin123' },
+        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const collectHandler = collectHandlers.get('collect');
+      if (collectHandler) {
+        await collectHandler(mockButtonInteraction);
+      }
+
+      expect(mockButtonInteraction.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/dismiss/i),
+          components: [],
+        })
+      );
+    });
+  });
+
+  describe('AC #8: AI generation prompt on Create Note Requests', () => {
+    const createMockInteractionForAIPrompt = () => {
+      const now = Date.now();
+
+      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
+          collectHandlers.set(event, handler);
+          return mockCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockFetchReply = jest.fn<() => Promise<any>>().mockResolvedValue({
+        createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
+      });
+
+      const mockChannel = {
+        id: 'channel123',
+        name: 'test-channel',
+        type: 0,
+        isTextBased: () => true,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
+            .mockResolvedValueOnce(new Map([
+              ['1234567890123456789', {
+                id: '1234567890123456789',
+                content: 'Test message',
+                author: { id: 'author1', username: 'user1', bot: false },
+                createdTimestamp: now - 1000 * 60,
+                createdAt: new Date(now - 1000 * 60),
+                channelId: 'channel123',
+                attachments: new Map(),
+                embeds: [],
+              }],
+            ]))
+            .mockResolvedValue(new Map()),
+        },
+      };
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map([['channel123', mockChannel]]);
+      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
+        const result = new Map();
+        for (const [k, v] of channelsCache) {
+          if (fn(v)) result.set(k, v);
+        }
+        return result;
+      };
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        fetchReply: mockFetchReply,
+      };
+
+      return { mockInteraction, mockCollector, collectHandlers };
+    };
+
+    it('should show AI generation prompt when Create Note Requests is clicked', async () => {
+      const { mockInteraction, collectHandlers } = createMockInteractionForAIPrompt();
+
+      const flaggedMessages: FlaggedMessage[] = [
+        {
+          message_id: '1234567890123456789',
+          channel_id: 'channel123',
+          content: 'Misinformation content',
+          author_id: 'author1',
+          timestamp: new Date().toISOString(),
+          match_score: 0.85,
+          matched_claim: 'False claim',
+          matched_source: 'snopes',
+        },
+      ];
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 1,
+        flagged_messages: flaggedMessages,
+      });
+
+      await execute(mockInteraction as any);
+
+      const aiCollectorHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockAiCollector = {
+        on: jest.fn((event: string, handler: (...args: any[]) => void) => {
+          aiCollectorHandlers.set(event, handler);
+          return mockAiCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockButtonInteraction = {
+        customId: 'vibecheck_create:scan-123',
+        user: { id: 'admin123' },
+        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        message: {
+          createMessageComponentCollector: jest.fn().mockReturnValue(mockAiCollector),
+        },
+      };
+
+      const collectHandler = collectHandlers.get('collect');
+      if (collectHandler) {
+        await collectHandler(mockButtonInteraction);
+      }
+
+      expect(mockButtonInteraction.update).toHaveBeenCalled();
+      const updateCall = mockButtonInteraction.update.mock.calls[0][0];
+      expect(updateCall.content).toMatch(/ai|generate/i);
+      expect(updateCall.components.length).toBeGreaterThan(0);
+    });
+
+    it('should call API with generate_ai_notes=true when AI Yes button clicked', async () => {
+      const { mockInteraction, collectHandlers } = createMockInteractionForAIPrompt();
+
+      const flaggedMessages: FlaggedMessage[] = [
+        {
+          message_id: '1234567890123456789',
+          channel_id: 'channel123',
+          content: 'Misinformation content',
+          author_id: 'author1',
+          timestamp: new Date().toISOString(),
+          match_score: 0.85,
+          matched_claim: 'False claim',
+          matched_source: 'snopes',
+        },
+      ];
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 1,
+        flagged_messages: flaggedMessages,
+      });
+
+      mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
+        created_count: 1,
+        scan_id: 'scan-123',
+      });
+
+      await execute(mockInteraction as any);
+
+      const aiCollectorHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockAiCollector = {
+        on: jest.fn((event: string, handler: (...args: any[]) => void) => {
+          aiCollectorHandlers.set(event, handler);
+          return mockAiCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockCreateButtonInteraction = {
+        customId: 'vibecheck_create:scan-123',
+        user: { id: 'admin123' },
+        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        message: {
+          createMessageComponentCollector: jest.fn().mockReturnValue(mockAiCollector),
+        },
+      };
+
+      const collectHandler = collectHandlers.get('collect');
+      if (collectHandler) {
+        await collectHandler(mockCreateButtonInteraction);
+      }
+
+      const aiYesInteraction = {
+        customId: 'vibecheck_ai_yes:scan-123',
+        user: { id: 'admin123' },
+        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const aiCollectHandler = aiCollectorHandlers.get('collect');
+      if (aiCollectHandler) {
+        await aiCollectHandler(aiYesInteraction);
+      }
+
+      expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
+        'scan-123',
+        ['1234567890123456789'],
+        true
+      );
+    });
+
+    it('should call API with generate_ai_notes=false when AI No button clicked', async () => {
+      const { mockInteraction, collectHandlers } = createMockInteractionForAIPrompt();
+
+      const flaggedMessages: FlaggedMessage[] = [
+        {
+          message_id: '1234567890123456789',
+          channel_id: 'channel123',
+          content: 'Misinformation content',
+          author_id: 'author1',
+          timestamp: new Date().toISOString(),
+          match_score: 0.85,
+          matched_claim: 'False claim',
+          matched_source: 'snopes',
+        },
+      ];
+
+      mockApiClient.initiateBulkScan.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'pending',
+        community_server_id: 'guild789',
+        scan_window_days: 7,
+      });
+
+      mockApiClient.getBulkScanResults.mockResolvedValue({
+        scan_id: 'scan-123',
+        status: 'completed',
+        messages_scanned: 1,
+        flagged_messages: flaggedMessages,
+      });
+
+      mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
+        created_count: 1,
+        scan_id: 'scan-123',
+      });
+
+      await execute(mockInteraction as any);
+
+      const aiCollectorHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockAiCollector = {
+        on: jest.fn((event: string, handler: (...args: any[]) => void) => {
+          aiCollectorHandlers.set(event, handler);
+          return mockAiCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockCreateButtonInteraction = {
+        customId: 'vibecheck_create:scan-123',
+        user: { id: 'admin123' },
+        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        message: {
+          createMessageComponentCollector: jest.fn().mockReturnValue(mockAiCollector),
+        },
+      };
+
+      const collectHandler = collectHandlers.get('collect');
+      if (collectHandler) {
+        await collectHandler(mockCreateButtonInteraction);
+      }
+
+      const aiNoInteraction = {
+        customId: 'vibecheck_ai_no:scan-123',
+        user: { id: 'admin123' },
+        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const aiCollectHandler = aiCollectorHandlers.get('collect');
+      if (aiCollectHandler) {
+        await aiCollectHandler(aiNoInteraction);
+      }
+
+      expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
+        'scan-123',
+        ['1234567890123456789'],
+        false
+      );
     });
   });
 });

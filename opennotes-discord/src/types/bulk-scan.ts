@@ -74,3 +74,43 @@ export const NATS_SUBJECTS = {
   BULK_SCAN_COMPLETE: 'OPENNOTES.bulk_scan.complete',
   BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan.result',
 } as const;
+
+export interface BulkScanInitiateRequest {
+  community_server_id: string;
+  scan_window_days: number;
+}
+
+export interface BulkScanInitiateResponse {
+  scan_id: string;
+  status: string;
+  community_server_id: string;
+  scan_window_days: number;
+}
+
+export interface FlaggedMessage {
+  message_id: string;
+  channel_id: string;
+  content: string;
+  author_id: string;
+  timestamp: string;
+  match_score: number;
+  matched_claim: string;
+  matched_source: string;
+}
+
+export interface BulkScanResultsResponse {
+  scan_id: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  messages_scanned: number;
+  flagged_messages: FlaggedMessage[];
+}
+
+export interface CreateNoteRequestsRequest {
+  message_ids: string[];
+  generate_ai_notes: boolean;
+}
+
+export interface CreateNoteRequestsResponse {
+  created_count: number;
+  scan_id: string;
+}
