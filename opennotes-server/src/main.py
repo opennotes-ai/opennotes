@@ -9,6 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
+from src.bulk_content_scan.router import router as bulk_content_scan_router
 from src.cache.cache import cache_manager
 from src.cache.redis_client import redis_client
 from src.community_config.router import router as community_config_router
@@ -360,6 +361,7 @@ app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(monitored_channel_router, prefix=settings.API_V1_PREFIX)
 app.include_router(embedding_router, prefix=settings.API_V1_PREFIX)
 app.include_router(previously_seen_router, prefix=settings.API_V1_PREFIX)
+app.include_router(bulk_content_scan_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes
 app.include_router(health_router)
