@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator
 
+from src.bulk_content_scan.scan_types import ScanType
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
 
@@ -16,6 +17,22 @@ class BulkScanStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class BulkScanMessage(StrictInputSchema):
+    """Schema for a message to be scanned in bulk content scanning."""
+
+    message_id: str = Field(..., description="Discord message ID")
+    channel_id: str = Field(..., description="Discord channel ID")
+    community_server_id: str = Field(
+        ..., description="Community server ID (platform-agnostic identifier)"
+    )
+    content: str = Field(..., description="Message text content")
+    author_id: str = Field(..., description="Discord author ID")
+    author_username: str | None = Field(None, description="Discord author username")
+    timestamp: datetime = Field(..., description="When the message was posted")
+    attachment_urls: list[str] | None = Field(None, description="URLs of message attachments")
+    embed_content: str | None = Field(None, description="Extracted text from message embeds")
 
 
 class BulkScanCreateRequest(StrictInputSchema):
@@ -67,6 +84,10 @@ class FlaggedMessage(SQLAlchemySchema):
     )
     matched_claim: str = Field(..., description="Fact-check claim that matched")
     matched_source: str = Field(..., description="URL to the fact-check source")
+    scan_type: ScanType = Field(
+        default=ScanType.SIMILARITY,
+        description="Type of scan that flagged this message",
+    )
 
 
 class BulkScanResultsResponse(SQLAlchemySchema):
