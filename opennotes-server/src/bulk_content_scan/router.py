@@ -29,6 +29,7 @@ from src.cache.redis_client import redis_client
 from src.database import get_db
 from src.fact_checking.embedding_router import get_embedding_service
 from src.fact_checking.embedding_service import EmbeddingService
+from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.notes.request_service import RequestService
 from src.users.models import User
@@ -271,6 +272,7 @@ async def create_note_requests_for_messages(
     "This will scan message history and flag potentially misleading content. "
     "Requires admin access to the target community. Service accounts have unrestricted access.",
 )
+@limiter.limit("5/hour")
 async def initiate_scan(
     body: BulkScanCreateRequest,
     http_request: Request,

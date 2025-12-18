@@ -549,6 +549,12 @@ class Settings(BaseSettings):
         "the system will suggest running a bulk scan.",
     )
 
+    BULK_SCAN_RATE_LIMIT_PER_HOUR: int = Field(
+        default=5,
+        description="Maximum number of bulk content scans per hour per user. "
+        "Bulk scans are computationally expensive, so this limit prevents abuse.",
+    )
+
     @model_validator(mode="after")
     def validate_encryption_key_entropy(self) -> "Settings":
         if self.TESTING or not self.ENCRYPTION_MASTER_KEY:
