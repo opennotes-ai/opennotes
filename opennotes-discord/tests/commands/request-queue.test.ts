@@ -37,19 +37,6 @@ const mockCache = {
   getMetrics: jest.fn(() => ({ size: 0 })),
 };
 
-const mockThread = {
-  send: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({
-    createMessageComponentCollector: jest.fn().mockReturnValue({
-      on: jest.fn(),
-    }),
-  }),
-  toString: () => '<#thread123>',
-};
-
-const mockQueueManager = {
-  getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockThread),
-};
-
 const mockGuildConfigService = {
   get: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue('open-notes'),
   set: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -87,9 +74,8 @@ jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
   DiscordFormatter: mockDiscordFormatter,
 }));
 
-jest.unstable_mockModule('../../src/private-thread.js', () => ({
-  getPrivateThreadManager: jest.fn(() => mockQueueManager),
-  configCache: mockCache,
+jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
+  ConfigCache: jest.fn(() => mockCache),
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
@@ -158,18 +144,14 @@ function createMockRequestsInteraction(overrides: Record<string, any> = {}) {
   };
 }
 
+let mockBotChannelHelper: any;
+
 describe('request-queue command', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     mockServiceProvider.getListRequestsService.mockReturnValue(mockListRequestsService);
     mockDiscordFormatter.formatListRequestsSuccess.mockResolvedValue({ embeds: [], components: [] });
     mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
-    mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
-    mockThread.send.mockResolvedValue({
-      createMessageComponentCollector: jest.fn().mockReturnValue({
-        on: jest.fn(),
-      }),
-    });
     mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
       id: 'guild456',
       platform: 'discord',
@@ -177,10 +159,22 @@ describe('request-queue command', () => {
       name: 'Test Guild',
       is_active: true,
     });
+
+    mockBotChannelHelper = await import('../../src/lib/bot-channel-helper.js');
+    (mockBotChannelHelper.getBotChannelOrRedirect as any).mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+    });
+    (mockBotChannelHelper.checkBotChannel as any).mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    });
+    (mockBotChannelHelper.ensureBotChannel as any).mockResolvedValue({ id: 'channel123', name: 'open-notes' });
   });
 
   describe('successful execution', () => {
-    it.skip('should list all requests with default parameters', async () => {
+    it('should list all requests with default parameters', async () => {
       mockListRequestsService.execute.mockResolvedValue(
         createSuccessResult({
           requests: [
@@ -210,7 +204,7 @@ describe('request-queue command', () => {
       });
     });
 
-    it.skip('should filter by status', async () => {
+    it('should filter by status', async () => {
       mockListRequestsService.execute.mockResolvedValue(
         createSuccessResult({
           requests: [{ id: 'req1', status: 'PENDING', messageId: 'msg1' }],
@@ -241,7 +235,7 @@ describe('request-queue command', () => {
       });
     });
 
-    it.skip('should filter by my-requests-only', async () => {
+    it('should filter by my-requests-only', async () => {
       mockListRequestsService.execute.mockResolvedValue(
         createSuccessResult({
           requests: [],
@@ -272,7 +266,7 @@ describe('request-queue command', () => {
       });
     });
 
-    it.skip('should handle custom pagination', async () => {
+    it('should handle custom pagination', async () => {
       mockListRequestsService.execute.mockResolvedValue(
         createSuccessResult({
           requests: [],
@@ -337,7 +331,7 @@ describe('request-queue command', () => {
 
       expect(mockInteraction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining('Failed to retrieve request list'),
+          content: 'No data returned from the service.',
         })
       );
     });

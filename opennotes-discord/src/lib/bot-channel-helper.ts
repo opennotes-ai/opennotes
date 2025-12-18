@@ -9,6 +9,32 @@ import { GuildConfigService } from '../services/GuildConfigService.js';
 import { ConfigKey } from './config-schema.js';
 import { logger } from '../logger.js';
 
+async function replyToInteraction(
+  interaction: ChatInputCommandInteraction,
+  content: string,
+  ephemeral: boolean = true
+): Promise<void> {
+  try {
+    if (interaction.replied || interaction.deferred) {
+      await interaction.editReply({ content });
+    } else {
+      await interaction.reply({
+        content,
+        flags: ephemeral ? MessageFlags.Ephemeral : undefined,
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to reply to interaction', {
+      guildId: interaction.guildId,
+      userId: interaction.user.id,
+      channelId: interaction.channelId,
+      command: interaction.commandName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
 export interface BotChannelCheckResult {
   isInBotChannel: boolean;
   botChannel: TextChannel | null;
@@ -87,17 +113,7 @@ export async function getBotChannelOrRedirect(
     });
 
     const redirectMessage = `Please use this command in ${botChannel.toString()}`;
-
-    if (interaction.deferred) {
-      await interaction.editReply({
-        content: redirectMessage,
-      });
-    } else {
-      await interaction.reply({
-        content: redirectMessage,
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+    await replyToInteraction(interaction, redirectMessage);
 
     return {
       shouldProceed: false,
@@ -113,17 +129,7 @@ export async function getBotChannelOrRedirect(
   });
 
   const noChannelMessage = `The bot channel "${botChannelName}" was not found. Please ask an administrator to set up the OpenNotes bot channel.`;
-
-  if (interaction.deferred) {
-    await interaction.editReply({
-      content: noChannelMessage,
-    });
-  } else {
-    await interaction.reply({
-      content: noChannelMessage,
-      flags: MessageFlags.Ephemeral,
-    });
-  }
+  await replyToInteraction(interaction, noChannelMessage);
 
   return {
     shouldProceed: false,

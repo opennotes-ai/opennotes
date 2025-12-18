@@ -244,6 +244,9 @@ describe('Bot Channel Welcome Flow Integration', () => {
     });
 
     it('should continue with other guilds if one fails on startup', async () => {
+      // Reset mock to clear beforeEach values
+      mockGuildConfigService.get.mockReset();
+
       const failingGuild = {
         ...mockGuild,
         id: 'failing-guild',
@@ -254,17 +257,17 @@ describe('Bot Channel Welcome Flow Integration', () => {
         },
       };
 
-      mockGuildConfigService.get
-        .mockResolvedValueOnce('open-notes')
-        .mockResolvedValueOnce('OpenNotes');
+      // Failing guild only consumes 1 mock value (channel name) before throwing
+      mockGuildConfigService.get.mockResolvedValueOnce('open-notes');
 
       await expect(
         botChannelService.ensureChannelExists(failingGuild, mockGuildConfigService)
       ).rejects.toThrow('Guild error');
 
+      // Second guild needs both channel name and role name
       mockGuildConfigService.get
         .mockResolvedValueOnce('open-notes')
-        .mockResolvedValueOnce('OpenNotes');
+        .mockResolvedValueOnce('opennotes');
       const secondGuild = { ...mockGuild, id: 'second-guild' };
       secondGuild.channels = {
         cache: new Collection<string, any>(),

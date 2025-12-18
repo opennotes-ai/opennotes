@@ -11,17 +11,6 @@ const mockScoringService = {
   getScoringStatus: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
-const mockThread = {
-  id: 'thread123',
-  name: 'Test Thread',
-  toString: () => '<#thread123>',
-  send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'msg123' }),
-};
-
-const mockQueueManager = {
-  getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockThread),
-};
-
 const mockQueueRenderer = {
   render: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
     summaryMessage: { id: 'summary123' },
@@ -99,9 +88,8 @@ jest.unstable_mockModule('../../src/services/DiscordFormatter.js', () => ({
   DiscordFormatter: mockDiscordFormatter,
 }));
 
-jest.unstable_mockModule('../../src/private-thread.js', () => ({
-  getPrivateThreadManager: () => mockQueueManager,
-  configCache: mockCache,
+jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
+  ConfigCache: jest.fn(() => mockCache),
 }));
 
 jest.unstable_mockModule('../../src/lib/queue-renderer.js', () => ({
@@ -134,18 +122,20 @@ jest.unstable_mockModule('../../src/lib/discord-utils.js', () => ({
   createDisabledForcePublishButtons: jest.fn(() => []),
 }));
 
-jest.unstable_mockModule('../../src/lib/bot-channel-helper.js', () => ({
-  getBotChannelOrRedirect: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-    shouldProceed: true,
-    botChannel: { id: 'channel123', name: 'open-notes' },
-  }),
-  checkBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-    isInBotChannel: true,
-    botChannel: { id: 'channel123', name: 'open-notes' },
-    botChannelName: 'open-notes',
-  }),
-  ensureBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'channel123', name: 'open-notes' }),
-}));
+jest.unstable_mockModule('../../src/lib/bot-channel-helper.js', () => {
+  return {
+    getBotChannelOrRedirect: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+    }),
+    checkBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    }),
+    ensureBotChannel: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'channel123', name: 'open-notes' }),
+  };
+});
 
 jest.unstable_mockModule('../../src/services/BotChannelService.js', () => ({
   BotChannelService: class MockBotChannelService {
@@ -178,18 +168,23 @@ function createMockTextChannel() {
       has: jest.fn().mockReturnValue(true),
     }),
     threads: {
-      create: (jest.fn() as any).mockResolvedValue(mockThread),
+      create: (jest.fn() as any).mockResolvedValue({
+        id: 'thread123',
+        name: 'test-thread',
+        send: (jest.fn() as any).mockResolvedValue({}),
+      }),
     },
   };
 
-  // Make instanceof TextChannel work
   Object.setPrototypeOf(mock, TextChannel.prototype);
 
   return mock as any;
 }
 
+let mockBotChannelHelper: any;
+
 describe('top-notes command', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
     mockDiscordFormatter.formatTopNotes.mockReturnValue({ embeds: [] });
@@ -204,16 +199,27 @@ describe('top-notes command', () => {
       forcePublishButtonRows: [],
     });
     mockDiscordFormatter.formatError.mockReturnValue({ content: 'Error occurred' });
-    mockQueueManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
     mockQueueRenderer.render.mockResolvedValue({
       summaryMessage: { id: 'summary123' },
       itemMessages: new Map(),
       paginationMessage: null,
     });
+
+    mockBotChannelHelper = await import('../../src/lib/bot-channel-helper.js');
+    (mockBotChannelHelper.getBotChannelOrRedirect as any).mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+    });
+    (mockBotChannelHelper.checkBotChannel as any).mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel123', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    });
+    (mockBotChannelHelper.ensureBotChannel as any).mockResolvedValue({ id: 'channel123', name: 'open-notes' });
   });
 
   describe('successful execution', () => {
-    it.skip('should display top notes with default limit as ephemeral message', async () => {
+    it('should display top notes with default limit as ephemeral message', async () => {
       mockScoringService.getTopNotes.mockResolvedValue(
         createSuccessResult({
           notes: [
@@ -267,7 +273,7 @@ describe('top-notes command', () => {
       });
     });
 
-    it.skip('should respect custom limit parameter', async () => {
+    it('should respect custom limit parameter', async () => {
       mockScoringService.getTopNotes.mockResolvedValue(
         createSuccessResult({
           notes: [],
@@ -312,7 +318,7 @@ describe('top-notes command', () => {
       });
     });
 
-    it.skip('should filter by confidence level', async () => {
+    it('should filter by confidence level', async () => {
       mockScoringService.getTopNotes.mockResolvedValue(
         createSuccessResult({
           notes: [{ note_id: 'note1', score: 0.95, confidence: 'standard', tier: 5, rating_count: 10, algorithm: 'matrix_factorization' }],
@@ -353,7 +359,7 @@ describe('top-notes command', () => {
       });
     });
 
-    it.skip('should filter by tier', async () => {
+    it('should filter by tier', async () => {
       mockScoringService.getTopNotes.mockResolvedValue(
         createSuccessResult({
           notes: [{ note_id: 'note1', score: 0.95, confidence: 'standard', tier: 5, rating_count: 10, algorithm: 'matrix_factorization' }],
@@ -397,7 +403,7 @@ describe('top-notes command', () => {
       });
     });
 
-    it.skip('should handle empty results', async () => {
+    it('should handle empty results', async () => {
       mockScoringService.getTopNotes.mockResolvedValue(
         createSuccessResult({
           notes: [],
@@ -436,16 +442,18 @@ describe('top-notes command', () => {
       });
     });
 
-    it.skip('should reject non-text channels', async () => {
-      const mockNonTextChannel = {
-        id: 'channel123',
-        type: ChannelType.GuildVoice,
-      };
+    it('should redirect to bot channel when not in bot channel', async () => {
+      const botChannelHelper = await import('../../src/lib/bot-channel-helper.js');
+      (botChannelHelper.getBotChannelOrRedirect as any).mockResolvedValueOnce({
+        shouldProceed: false,
+        botChannel: { id: 'bot-channel-123', name: 'open-notes' },
+      });
 
+      const mockChannel = createMockTextChannel();
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
-        channel: mockNonTextChannel,
+        channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),
           getInteger: jest.fn<() => number | null>().mockReturnValue(null),
@@ -457,9 +465,7 @@ describe('top-notes command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockInteraction.editReply).toHaveBeenCalledWith({
-        content: 'This command can only be used in text channels or threads.',
-      });
+      expect(mockScoringService.getTopNotes).not.toHaveBeenCalled();
     });
   });
 
@@ -555,7 +561,7 @@ describe('top-notes command', () => {
   });
 
   describe('logging', () => {
-    it.skip('should log successful execution', async () => {
+    it('should log successful execution', async () => {
       mockScoringService.getTopNotes.mockResolvedValue(
         createSuccessResult({
           notes: [{ note_id: 'note1', score: 0.95, confidence: 'standard', tier: 5, rating_count: 10, algorithm: 'matrix_factorization' }],
@@ -582,7 +588,7 @@ describe('top-notes command', () => {
       await execute(mockInteraction as any);
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Top notes retrieved successfully',
+        'Top notes rendered as ephemeral message',
         expect.objectContaining({
           note_count: 1,
           total_count: 10,

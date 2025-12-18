@@ -61,6 +61,7 @@ describe('bot-channel-helper', () => {
       user: { id: 'user-123' },
       commandName: 'list',
       deferred: false,
+      replied: false,
       reply: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
       editReply: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
     };
@@ -195,6 +196,43 @@ describe('bot-channel-helper', () => {
       expect(mockInteraction.reply).not.toHaveBeenCalled();
     });
 
+    it('should use editReply when interaction is already replied', async () => {
+      mockInteraction.channelId = 'other-channel-456';
+      mockInteraction.replied = true;
+      mockInteraction.deferred = false;
+
+      const result = await getBotChannelOrRedirect(
+        mockInteraction,
+        botChannelService,
+        mockGuildConfigService
+      );
+
+      expect(result.shouldProceed).toBe(false);
+      expect(mockInteraction.editReply).toHaveBeenCalledWith({
+        content: expect.stringContaining('<#bot-channel-123>'),
+      });
+      expect(mockInteraction.reply).not.toHaveBeenCalled();
+    });
+
+    it('should use editReply for bot channel not found when interaction is replied', async () => {
+      mockGuild.channels.cache = new Collection();
+      mockInteraction.replied = true;
+      mockInteraction.deferred = false;
+
+      const result = await getBotChannelOrRedirect(
+        mockInteraction,
+        botChannelService,
+        mockGuildConfigService
+      );
+
+      expect(result.shouldProceed).toBe(false);
+      expect(result.botChannel).toBeNull();
+      expect(mockInteraction.editReply).toHaveBeenCalledWith({
+        content: expect.stringContaining('not found'),
+      });
+      expect(mockInteraction.reply).not.toHaveBeenCalled();
+    });
+
     it('should show error when bot channel not found', async () => {
       mockGuild.channels.cache = new Collection();
 
@@ -246,6 +284,65 @@ describe('bot-channel-helper', () => {
           userId: 'user-123',
           guildId: 'guild-123',
           expectedChannelName: 'open-notes',
+        })
+      );
+    });
+
+    it('should log error and re-throw when reply fails', async () => {
+      mockInteraction.channelId = 'other-channel-456';
+      const replyError = new Error('Discord API error');
+      mockInteraction.reply.mockRejectedValue(replyError);
+
+      await expect(
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+      ).rejects.toThrow('Discord API error');
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to reply'),
+        expect.objectContaining({
+          guildId: 'guild-123',
+          userId: 'user-123',
+        })
+      );
+    });
+
+    it('should log error and re-throw when editReply fails', async () => {
+      mockInteraction.channelId = 'other-channel-456';
+      mockInteraction.deferred = true;
+      const editError = new Error('Interaction expired');
+      mockInteraction.editReply.mockRejectedValue(editError);
+
+      await expect(
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+      ).rejects.toThrow('Interaction expired');
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to reply'),
+        expect.objectContaining({
+          guildId: 'guild-123',
+          userId: 'user-123',
+        })
+      );
+    });
+
+    it('should include command and channel context in error logs', async () => {
+      mockInteraction.channelId = 'other-channel-456';
+      mockInteraction.commandName = 'test-command';
+      const replyError = new Error('API timeout');
+      mockInteraction.reply.mockRejectedValue(replyError);
+
+      await expect(
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+      ).rejects.toThrow('API timeout');
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to reply to interaction',
+        expect.objectContaining({
+          guildId: 'guild-123',
+          userId: 'user-123',
+          channelId: 'other-channel-456',
+          command: 'test-command',
+          error: 'API timeout',
         })
       );
     });

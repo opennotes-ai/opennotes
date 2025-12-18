@@ -999,9 +999,9 @@ async function handleOpennotesSet(
           configService
         );
 
-        await configService.set(guildId, key, newChannelName, updatedBy);
-
         await guildOnboardingService.postWelcomeToChannel(result.newChannel);
+
+        await configService.set(guildId, key, newChannelName, updatedBy);
 
         const schema = CONFIG_SCHEMA[key];
         const deleteMessage = result.oldChannelDeleted

@@ -417,6 +417,109 @@ describe('BotChannelService', () => {
         expect.any(Object)
       );
     });
+
+    it('should handle race condition when channel is created by another process (AC1)', async () => {
+      mockGuildConfigService.get
+        .mockResolvedValueOnce('new-channel')
+        .mockResolvedValueOnce('OpenNotes');
+      mockGuild.channels.cache = new Collection();
+
+      const duplicateError = new Error('Duplicate channel') as Error & { code: number };
+      duplicateError.code = 50035;
+      mockGuild.channels.create.mockRejectedValue(duplicateError);
+
+      const existingChannel = {
+        id: 'existing-channel-123',
+        name: 'new-channel',
+        type: ChannelType.GuildText,
+        permissionOverwrites: {
+          set: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+        },
+        guild: mockGuild,
+      };
+
+      const findChannelSpy = jest.spyOn(service, 'findChannel');
+      findChannelSpy
+        .mockReturnValueOnce(undefined)
+        .mockReturnValueOnce(existingChannel as any);
+
+      const result = await service.ensureChannelExists(mockGuild, mockGuildConfigService);
+
+      expect(result.channel).toBe(existingChannel);
+      expect(result.wasCreated).toBe(false);
+      expect(findChannelSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('should rethrow non-duplicate errors during channel creation (AC1)', async () => {
+      mockGuildConfigService.get.mockResolvedValue('new-channel');
+      mockGuild.channels.cache = new Collection();
+
+      const otherError = new Error('Permission denied') as Error & { code: number };
+      otherError.code = 50013;
+      mockGuild.channels.create.mockRejectedValue(otherError);
+
+      await expect(
+        service.ensureChannelExists(mockGuild, mockGuildConfigService)
+      ).rejects.toThrow('Permission denied');
+    });
+
+    it('should use fetchMe when guild.members.me is null (AC2)', async () => {
+      mockGuildConfigService.get
+        .mockResolvedValueOnce('new-channel')
+        .mockResolvedValueOnce('OpenNotes');
+      mockGuild.channels.cache = new Collection();
+      mockGuild.members.me = null;
+      mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockBotMember);
+
+      const newChannel = {
+        id: 'new-channel-123',
+        name: 'new-channel',
+        type: ChannelType.GuildText,
+        permissionOverwrites: {
+          set: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+        },
+        guild: mockGuild,
+      };
+      mockGuild.channels.create.mockResolvedValue(newChannel);
+
+      const result = await service.ensureChannelExists(mockGuild, mockGuildConfigService);
+
+      expect(result.channel).toBe(newChannel);
+      expect(result.wasCreated).toBe(true);
+      expect(mockGuild.members.fetchMe).toHaveBeenCalled();
+      expect(newChannel.permissionOverwrites.set).toHaveBeenCalled();
+    });
+
+    it('should skip permissions when fetchMe fails (AC2)', async () => {
+      mockGuildConfigService.get
+        .mockResolvedValueOnce('new-channel')
+        .mockResolvedValueOnce('OpenNotes');
+      mockGuild.channels.cache = new Collection();
+      mockGuild.members.me = null;
+      mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockRejectedValue(new Error('Fetch failed'));
+
+      const newChannel = {
+        id: 'new-channel-123',
+        name: 'new-channel',
+        type: ChannelType.GuildText,
+        permissionOverwrites: {
+          set: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+        },
+        guild: mockGuild,
+      };
+      mockGuild.channels.create.mockResolvedValue(newChannel);
+
+      const result = await service.ensureChannelExists(mockGuild, mockGuildConfigService);
+
+      expect(result.channel).toBe(newChannel);
+      expect(result.wasCreated).toBe(true);
+      expect(mockGuild.members.fetchMe).toHaveBeenCalled();
+      expect(newChannel.permissionOverwrites.set).not.toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Could not fetch bot member'),
+        expect.any(Object)
+      );
+    });
   });
 
   describe('findRole', () => {
@@ -605,6 +708,114 @@ describe('BotChannelService', () => {
         expect.stringContaining('OpenNotes role not found during migration'),
         expect.any(Object)
       );
+    });
+
+    it('should use fetchMe when guild.members.me is null during migration (AC2)', async () => {
+      mockGuildConfigService.get.mockResolvedValue('OpenNotes');
+      mockGuild.members.me = null;
+      mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockBotMember);
+
+      const result = await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(result.newChannel).toBe(newMockChannel);
+      expect(mockGuild.members.fetchMe).toHaveBeenCalled();
+      expect(newMockChannel.permissionOverwrites.set).toHaveBeenCalled();
+    });
+
+    it('should skip permissions when fetchMe fails during migration (AC2)', async () => {
+      mockGuildConfigService.get.mockResolvedValue('OpenNotes');
+      mockGuild.members.me = null;
+      mockGuild.members.fetchMe = jest.fn<(...args: any[]) => Promise<any>>().mockRejectedValue(new Error('Fetch failed'));
+
+      const result = await service.migrateChannel(
+        mockGuild,
+        'old-channel',
+        'new-channel',
+        mockGuildConfigService
+      );
+
+      expect(result.newChannel).toBe(newMockChannel);
+      expect(mockGuild.members.fetchMe).toHaveBeenCalled();
+      expect(newMockChannel.permissionOverwrites.set).not.toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Could not fetch bot member'),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('validateChannelName (AC9)', () => {
+    it('should accept valid channel names', () => {
+      const validNames = [
+        'open-notes',
+        'bot-channel',
+        'test_channel',
+        'channel123',
+        'a',
+        'a'.repeat(100),
+      ];
+
+      for (const name of validNames) {
+        expect(() => service.validateChannelName(name)).not.toThrow();
+      }
+    });
+
+    it('should reject empty channel name', () => {
+      expect(() => service.validateChannelName('')).toThrow(
+        'Channel name must be 1-100 characters'
+      );
+    });
+
+    it('should reject channel name longer than 100 characters', () => {
+      const longName = 'a'.repeat(101);
+
+      expect(() => service.validateChannelName(longName)).toThrow(
+        'Channel name must be 1-100 characters'
+      );
+    });
+
+    it('should reject channel name with uppercase letters', () => {
+      expect(() => service.validateChannelName('Open-Notes')).toThrow(
+        'Channel name can only contain lowercase letters, numbers, hyphens, and underscores'
+      );
+    });
+
+    it('should reject channel name with spaces', () => {
+      expect(() => service.validateChannelName('open notes')).toThrow(
+        'Channel name can only contain lowercase letters, numbers, hyphens, and underscores'
+      );
+    });
+
+    it('should reject channel name with special characters', () => {
+      const invalidNames = ['open@notes', 'open!notes', 'open#notes', 'open$notes'];
+
+      for (const name of invalidNames) {
+        expect(() => service.validateChannelName(name)).toThrow(
+          'Channel name can only contain lowercase letters, numbers, hyphens, and underscores'
+        );
+      }
+    });
+  });
+
+  describe('createChannel with validation (AC9)', () => {
+    it('should validate channel name before creating', async () => {
+      await expect(service.createChannel(mockGuild, 'Invalid Name')).rejects.toThrow(
+        'Channel name can only contain lowercase letters, numbers, hyphens, and underscores'
+      );
+
+      expect(mockGuild.channels.create).not.toHaveBeenCalled();
+    });
+
+    it('should create channel when name is valid', async () => {
+      const result = await service.createChannel(mockGuild, 'valid-name');
+
+      expect(mockGuild.channels.create).toHaveBeenCalled();
+      expect(result).toBe(mockChannel);
     });
   });
 });

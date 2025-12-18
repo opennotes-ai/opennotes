@@ -23,16 +23,6 @@ const mockConfigCache = {
   getRatingThresholds: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
-const mockPrivateThreadManager = {
-  getOrCreateOpenNotesThread: jest.fn<(...args: any[]) => Promise<any>>(),
-  getNotesPerPage: jest.fn<() => number>().mockReturnValue(4),
-  getCurrentPage: jest.fn<() => number>().mockReturnValue(1),
-  setPage: jest.fn<(...args: any[]) => void>(),
-  updateNotes: jest.fn<(...args: any[]) => void>(),
-  getNotes: jest.fn<() => any[]>().mockReturnValue([]),
-  closePrivateThread: jest.fn<(...args: any[]) => void>(),
-};
-
 const mockQueueRenderer = {
   render: jest.fn<(...args: any[]) => Promise<any>>(),
   update: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -51,9 +41,8 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
-jest.unstable_mockModule('../../src/private-thread.js', () => ({
-  configCache: mockConfigCache,
-  getPrivateThreadManager: () => mockPrivateThreadManager,
+jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
+  ConfigCache: jest.fn(() => mockConfigCache),
 }));
 
 jest.unstable_mockModule('../../src/lib/queue-renderer.js', () => ({
@@ -141,18 +130,6 @@ function createMockTextChannel(overrides?: any): any {
   return mockChannel;
 }
 
-function createMockThread(): any {
-  return {
-    id: 'thread-123',
-    send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-      createMessageComponentCollector: jest.fn<() => any>().mockReturnValue({
-        on: jest.fn<(event: string, handler: any) => any>(),
-      }),
-    }),
-    toString: () => '<#thread-123>',
-  };
-}
-
 function setupDefaultMocks(communityUuid: string = 'community-uuid-123'): void {
   mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
     id: communityUuid,
@@ -176,9 +153,6 @@ function setupDefaultMocks(communityUuid: string = 'community-uuid-123'): void {
     notes: [],
     total: 0,
   });
-
-  const mockThread = createMockThread();
-  mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
 
   mockQueueRenderer.render.mockResolvedValue({
     summaryMessage: { id: 'summary-msg-1' },
@@ -216,9 +190,31 @@ function createMockInteraction(userId: string = 'user-123', guildId: string = 'g
   };
 }
 
+let mockBotChannelHelper: any;
+let mockQueueRendererModule: any;
+
 describe('list notes filtering', () => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    mockBotChannelHelper = await import('../../src/lib/bot-channel-helper.js');
+    (mockBotChannelHelper.getBotChannelOrRedirect as any).mockResolvedValue({
+      shouldProceed: true,
+      botChannel: { id: 'channel-456', name: 'open-notes' },
+    });
+    (mockBotChannelHelper.checkBotChannel as any).mockResolvedValue({
+      isInBotChannel: true,
+      botChannel: { id: 'channel-456', name: 'open-notes' },
+      botChannelName: 'open-notes',
+    });
+    (mockBotChannelHelper.ensureBotChannel as any).mockResolvedValue({ id: 'channel-456', name: 'open-notes' });
+
+    mockQueueRendererModule = await import('../../src/lib/queue-renderer.js');
+    (mockQueueRendererModule.QueueRendererV2.buildContainers as any).mockReturnValue([{ toJSON: () => ({}) }]);
+  });
+
   describe('Notes queue API call', () => {
-    it.skip('should call listNotesWithStatus with NEEDS_MORE_RATINGS filter excluding user rated notes', async () => {
+    it('should call listNotesWithStatus with NEEDS_MORE_RATINGS filter excluding user rated notes', async () => {
       setupDefaultMocks();
       const mockInteraction = createMockInteraction('user-123', 'guild-456');
 
@@ -243,7 +239,7 @@ describe('list notes filtering', () => {
       expect(excludeRatedByUserId).toBe('user-123');
     }, 10000);
 
-    it.skip('should still call listNotesWithStatus when community server UUID is unavailable', async () => {
+    it('should still call listNotesWithStatus when community server UUID is unavailable', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockRejectedValue(
         new Error('Community server not found')
       );
@@ -255,8 +251,6 @@ describe('list notes filtering', () => {
         notes: [],
         total: 0,
       });
-      const mockThread = createMockThread();
-      mockPrivateThreadManager.getOrCreateOpenNotesThread.mockResolvedValue(mockThread);
       mockQueueRenderer.render.mockResolvedValue({
         summaryMessage: { id: 'summary-msg-1' },
         itemMessages: [],
@@ -268,7 +262,7 @@ describe('list notes filtering', () => {
         }),
       }]);
 
-      const mockInteraction = createMockInteraction('user-123', 'guild-456');
+      const mockInteraction = createMockInteraction('user-456', 'guild-456');
 
       await execute(mockInteraction as any);
 
@@ -277,7 +271,7 @@ describe('list notes filtering', () => {
         1,
         4,
         undefined,
-        'user-123'
+        'user-456'
       );
     }, 10000);
   });
