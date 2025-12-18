@@ -9,6 +9,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
+from src.bulk_content_scan.jsonapi_router import router as bulk_content_scan_jsonapi_router
+from src.bulk_content_scan.nats_handler import BulkScanEventHandler
 from src.cache.cache import cache_manager
 from src.cache.redis_client import redis_client
 from src.community_config.router import router as community_config_router
@@ -21,6 +23,7 @@ from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
 from src.fact_checking.embedding_router import router as embedding_router
+from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import (
     router as embeddings_jsonapi_router,
 )
@@ -118,6 +121,26 @@ health_checker = HealthChecker(
 distributed_health = DistributedHealthCoordinator()
 
 
+async def _register_bulk_scan_handlers() -> None:
+    """Register bulk scan event handlers if NATS is connected."""
+    if await nats_client.is_connected():
+        embedding_service = EmbeddingService()
+        bulk_scan_handler = BulkScanEventHandler(
+            embedding_service=embedding_service,
+            redis_client=redis_client.client,
+            nats_client=nats_client,
+        )
+        bulk_scan_handler.register()
+        await event_subscriber.subscribe(EventType.BULK_SCAN_MESSAGE_BATCH)
+        await event_subscriber.subscribe(EventType.BULK_SCAN_COMPLETED)
+        logger.info("Bulk scan event handlers registered and subscribed")
+    else:
+        logger.warning(
+            "NATS not connected - bulk scan event handlers NOT registered. "
+            "Bulk scans will not process message batches."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
@@ -190,6 +213,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
     else:
         logger.info("AI Note Writer and Vision services disabled (AI_NOTE_WRITING_ENABLED=False)")
+
+    await _register_bulk_scan_handlers()
 
     # Store in app state for dependency injection
     app.state.ai_note_writer = ai_note_writer
@@ -343,6 +368,11 @@ app.include_router(
     hybrid_searches_jsonapi_router,
     prefix=settings.API_V2_PREFIX,
     tags=["hybrid-searches-jsonapi"],
+)
+app.include_router(
+    bulk_content_scan_jsonapi_router,
+    prefix=settings.API_V2_PREFIX,
+    tags=["bulk-scans-jsonapi"],
 )
 
 # API v1 routes

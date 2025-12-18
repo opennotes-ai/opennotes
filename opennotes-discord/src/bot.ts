@@ -27,11 +27,13 @@ import * as listCommand from './commands/list.js';
 // Standalone command imports
 import * as aboutOpenNotesCommand from './commands/about-opennotes.js';
 import * as statusBotCommand from './commands/status-bot.js';
+import * as vibecheckCommand from './commands/vibecheck.js';
 
 // Context menu command imports
 import * as noteRequestContextCommand from './commands/note-request-context.js';
 
 import { NatsSubscriber } from './events/NatsSubscriber.js';
+import { initializeNatsPublisher, closeNatsPublisher } from './events/NatsPublisher.js';
 import { NotePublisherService } from './services/NotePublisherService.js';
 import { NoteContextService } from './services/NoteContextService.js';
 import { NotePublisherConfigService } from './services/NotePublisherConfigService.js';
@@ -88,6 +90,7 @@ export class Bot {
       // Standalone commands
       aboutOpenNotesCommand,
       statusBotCommand,
+      vibecheckCommand,
       // Context menu commands
       noteRequestContextCommand,
     ];
@@ -360,7 +363,18 @@ export class Bot {
           );
 
           if (result.wasCreated) {
-            await this.guildOnboardingService.postWelcomeToChannel(result.channel);
+            try {
+              const owner = await guild.fetchOwner();
+              await this.guildOnboardingService.postWelcomeToChannel(result.channel, {
+                admin: owner.user,
+              });
+            } catch (ownerError) {
+              logger.debug('Failed to fetch guild owner for vibe check prompt, skipping', {
+                guildId: guild.id,
+                error: ownerError instanceof Error ? ownerError.message : String(ownerError),
+              });
+              await this.guildOnboardingService.postWelcomeToChannel(result.channel);
+            }
           }
         } catch (error) {
           logger.error('Failed to create bot channel for new guild', {
@@ -405,6 +419,18 @@ export class Bot {
   async start(): Promise<void> {
     try {
       logger.info('Starting bot initialization');
+
+      logger.info('Initializing NATS publisher connection');
+      try {
+        await initializeNatsPublisher();
+        logger.info('NATS publisher initialized successfully');
+      } catch (error) {
+        logger.error('Failed to initialize NATS publisher - bot cannot start without NATS', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        throw error;
+      }
 
       logger.info('Starting cache service');
       cache.start();
@@ -592,6 +618,13 @@ export class Bot {
       }
     } catch (error) {
       logger.warn('NATS subscriber cleanup failed', { error });
+    }
+
+    try {
+      await closeNatsPublisher();
+      logger.info('NATS publisher closed');
+    } catch (error) {
+      logger.warn('NATS publisher cleanup failed', { error });
     }
 
     if (this.healthCheckServer) {

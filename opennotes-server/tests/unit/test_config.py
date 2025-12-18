@@ -486,3 +486,158 @@ class TestSettingsSingleton:
                 id2 = id(settings2)
 
                 assert id1 != id2
+
+
+class TestBulkContentScanRepromptDaysValidation:
+    """Test BULK_CONTENT_SCAN_REPROMPT_DAYS config validation (task-849.18)."""
+
+    def test_bulk_content_scan_reprompt_days_default_value(self):
+        """Default value should be 90 days."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.BULK_CONTENT_SCAN_REPROMPT_DAYS == 90
+
+    def test_bulk_content_scan_reprompt_days_rejects_zero(self):
+        """Value of 0 should be rejected (ge=1)."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "BULK_CONTENT_SCAN_REPROMPT_DAYS": "0",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("BULK_CONTENT_SCAN_REPROMPT_DAYS",)
+                and "greater than or equal to 1" in str(error["msg"]).lower()
+                for error in errors
+            ), f"Expected validation error for ge=1, got: {errors}"
+
+    def test_bulk_content_scan_reprompt_days_rejects_negative(self):
+        """Negative values should be rejected (ge=1)."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "BULK_CONTENT_SCAN_REPROMPT_DAYS": "-10",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(error["loc"] == ("BULK_CONTENT_SCAN_REPROMPT_DAYS",) for error in errors), (
+                f"Expected validation error for negative value, got: {errors}"
+            )
+
+    def test_bulk_content_scan_reprompt_days_rejects_over_365(self):
+        """Values over 365 should be rejected (le=365)."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "BULK_CONTENT_SCAN_REPROMPT_DAYS": "366",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("BULK_CONTENT_SCAN_REPROMPT_DAYS",)
+                and "less than or equal to 365" in str(error["msg"]).lower()
+                for error in errors
+            ), f"Expected validation error for le=365, got: {errors}"
+
+    def test_bulk_content_scan_reprompt_days_rejects_large_value(self):
+        """Very large values should be rejected (le=365)."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "BULK_CONTENT_SCAN_REPROMPT_DAYS": "1000",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(error["loc"] == ("BULK_CONTENT_SCAN_REPROMPT_DAYS",) for error in errors), (
+                f"Expected validation error for value over 365, got: {errors}"
+            )
+
+    def test_bulk_content_scan_reprompt_days_accepts_minimum_boundary(self):
+        """Value of 1 should be accepted (boundary test for ge=1)."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "BULK_CONTENT_SCAN_REPROMPT_DAYS": "1",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.BULK_CONTENT_SCAN_REPROMPT_DAYS == 1
+
+    def test_bulk_content_scan_reprompt_days_accepts_maximum_boundary(self):
+        """Value of 365 should be accepted (boundary test for le=365)."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "BULK_CONTENT_SCAN_REPROMPT_DAYS": "365",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.BULK_CONTENT_SCAN_REPROMPT_DAYS == 365
+
+    def test_bulk_content_scan_reprompt_days_accepts_mid_range(self):
+        """Mid-range values should be accepted."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "BULK_CONTENT_SCAN_REPROMPT_DAYS": "180",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.BULK_CONTENT_SCAN_REPROMPT_DAYS == 180

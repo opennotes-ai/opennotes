@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import Field, field_validator
 
+from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
 from src.common.base_schemas import StrictEventSchema
 
 
@@ -68,6 +69,10 @@ class EventType(str, Enum):
     USER_REGISTERED = "user.registered"
     WEBHOOK_RECEIVED = "webhook.received"
     AUDIT_LOG_CREATED = "audit.log.created"
+    BULK_SCAN_INITIATED = "bulk_scan.initiated"
+    BULK_SCAN_MESSAGE_BATCH = "bulk_scan.message_batch"
+    BULK_SCAN_COMPLETED = "bulk_scan.completed"
+    BULK_SCAN_RESULTS = "bulk_scan.results"
 
 
 class BaseEvent(StrictEventSchema):
@@ -238,6 +243,57 @@ class AuditLogCreatedEvent(BaseEvent):
     )
 
 
+class BulkScanInitiatedEvent(BaseEvent):
+    """Event published when a bulk content scan is initiated by a user."""
+
+    event_type: EventType = EventType.BULK_SCAN_INITIATED
+    scan_id: UUID = Field(..., description="Unique scan identifier")
+    community_server_id: UUID = Field(..., description="Community server being scanned")
+    initiated_by_user_id: UUID = Field(..., description="User who initiated the scan")
+    scan_window_days: int = Field(..., ge=1, le=30, description="Number of days to scan back")
+    channel_ids: list[str] = Field(
+        default_factory=list, description="Specific channel IDs to scan (empty = all channels)"
+    )
+
+
+class BulkScanMessageBatchEvent(BaseEvent):
+    """Event published with a batch of messages for bulk scan processing."""
+
+    event_type: EventType = EventType.BULK_SCAN_MESSAGE_BATCH
+    scan_id: UUID = Field(..., description="Scan this batch belongs to")
+    community_server_id: UUID = Field(
+        ..., description="Community server UUID (needed for platform_id lookup)"
+    )
+    messages: list[BulkScanMessage] = Field(
+        ...,
+        description="Batch of messages to scan",
+    )
+    batch_number: int = Field(..., ge=1, description="Batch sequence number")
+    is_final_batch: bool = Field(default=False, description="Whether this is the last batch")
+
+
+class BulkScanCompletedEvent(BaseEvent):
+    """Event published when message collection phase is complete."""
+
+    event_type: EventType = EventType.BULK_SCAN_COMPLETED
+    scan_id: UUID = Field(..., description="Completed scan identifier")
+    community_server_id: UUID = Field(..., description="Community server that was scanned")
+    messages_scanned: int = Field(..., ge=0, description="Total messages collected")
+
+
+class BulkScanResultsEvent(BaseEvent):
+    """Event published with scan results after processing is complete."""
+
+    event_type: EventType = EventType.BULK_SCAN_RESULTS
+    scan_id: UUID = Field(..., description="Scan results belong to")
+    messages_scanned: int = Field(..., ge=0, description="Total messages processed")
+    messages_flagged: int = Field(..., ge=0, description="Number of messages flagged")
+    flagged_messages: list[FlaggedMessage] = Field(
+        default_factory=list,
+        description="Flagged messages with match info",
+    )
+
+
 EventUnion = (
     NoteCreatedEvent
     | NoteRatedEvent
@@ -248,4 +304,8 @@ EventUnion = (
     | UserRegisteredEvent
     | WebhookReceivedEvent
     | AuditLogCreatedEvent
+    | BulkScanInitiatedEvent
+    | BulkScanMessageBatchEvent
+    | BulkScanCompletedEvent
+    | BulkScanResultsEvent
 )
