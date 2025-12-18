@@ -1,6 +1,6 @@
 """Service layer for Bulk Content Scan operations."""
 
-import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -9,7 +9,8 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.models import BulkContentScanLog
-from src.bulk_content_scan.schemas import FlaggedMessage
+from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
+from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
 from src.config import settings
 from src.fact_checking.embedding_service import EmbeddingService
 from src.monitoring import get_logger
@@ -17,7 +18,6 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 REDIS_KEY_PREFIX = "bulk_scan"
-REDIS_MESSAGES_KEY = f"{REDIS_KEY_PREFIX}:messages"
 REDIS_RESULTS_KEY = f"{REDIS_KEY_PREFIX}:results"
 REDIS_TTL_SECONDS = 86400  # 24 hours
 
@@ -81,122 +81,114 @@ class BulkContentScanService:
 
         return scan_log
 
-    async def collect_messages(
+    async def process_messages(
         self,
         scan_id: UUID,
-        messages: list[dict[str, Any]],
-    ) -> None:
-        """Collect messages during scan iteration and store in Redis.
-
-        Args:
-            scan_id: UUID of the scan these messages belong to
-            messages: List of message dicts with message_id, channel_id, content, author_id, timestamp
-        """
-        redis_key = f"{REDIS_MESSAGES_KEY}:{scan_id}"
-
-        for msg in messages:
-            await self.redis_client.lpush(redis_key, json.dumps(msg))
-
-        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)
-
-        logger.debug(
-            "Collected messages for bulk scan",
-            extra={
-                "scan_id": str(scan_id),
-                "message_count": len(messages),
-            },
-        )
-
-    async def process_collected_messages(
-        self,
-        scan_id: UUID,
-        community_server_id: UUID,  # noqa: ARG002 - kept for API consistency
+        messages: BulkScanMessage | Sequence[BulkScanMessage],
         platform_id: str,
+        scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
     ) -> list[FlaggedMessage]:
-        """Run similarity search on all collected messages.
+        """Process one or more messages through specified scan types.
 
         Args:
-            scan_id: UUID of the scan to process
-            community_server_id: UUID of the community server
-            platform_id: Platform-specific ID (e.g., Discord guild ID) for embedding service
+            scan_id: UUID of the scan
+            messages: Single BulkScanMessage OR sequence of messages
+            platform_id: Platform-specific ID for embedding service
+            scan_types: Sequence of ScanType to run (default: all)
 
         Returns:
-            List of flagged messages with match information
+            List of FlaggedMessage for messages that matched any scanner
         """
-        redis_key = f"{REDIS_MESSAGES_KEY}:{scan_id}"
-
-        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)
-        messages = [json.loads(msg) for msg in raw_messages]
-
-        logger.info(
-            "Processing collected messages for bulk scan",
-            extra={
-                "scan_id": str(scan_id),
-                "message_count": len(messages),
-            },
-        )
+        if isinstance(messages, BulkScanMessage):
+            messages = [messages]
 
         flagged: list[FlaggedMessage] = []
 
         for msg in messages:
-            content = msg.get("content", "")
-            if not content or len(content.strip()) < 10:
+            if not msg.content or len(msg.content.strip()) < 10:
                 continue
 
-            try:
-                search_response = await self.embedding_service.similarity_search(
-                    db=self.session,
-                    query_text=content,
-                    community_server_id=platform_id,
-                    dataset_tags=[],  # Search all datasets
-                    similarity_threshold=settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
-                    rrf_score_threshold=0.1,
-                    limit=1,
-                )
-
-                if search_response.matches:
-                    best_match = search_response.matches[0]
-
-                    timestamp_str = msg.get("timestamp", "")
-                    if isinstance(timestamp_str, str):
-                        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                    else:
-                        timestamp = timestamp_str
-
-                    flagged.append(
-                        FlaggedMessage(
-                            message_id=msg["message_id"],
-                            channel_id=msg["channel_id"],
-                            content=content,
-                            author_id=msg["author_id"],
-                            timestamp=timestamp,
-                            match_score=best_match.similarity_score,
-                            matched_claim=best_match.content or best_match.title or "",
-                            matched_source=best_match.source_url or "",
-                        )
-                    )
-
-            except Exception as e:
-                logger.warning(
-                    "Error processing message for bulk scan",
-                    extra={
-                        "scan_id": str(scan_id),
-                        "message_id": msg.get("message_id"),
-                        "error": str(e),
-                    },
-                )
-                continue
-
-        logger.info(
-            "Bulk scan processing completed",
-            extra={
-                "scan_id": str(scan_id),
-                "messages_processed": len(messages),
-                "messages_flagged": len(flagged),
-            },
-        )
+            for scan_type in scan_types:
+                result = await self._run_scanner(scan_id, msg, platform_id, scan_type)
+                if result:
+                    flagged.append(result)
+                    break
 
         return flagged
+
+    async def _run_scanner(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        platform_id: str,
+        scan_type: ScanType,
+    ) -> FlaggedMessage | None:
+        """Run a specific scanner on a message."""
+        match scan_type:
+            case ScanType.SIMILARITY:
+                return await self._similarity_scan(scan_id, message, platform_id)
+            case _:
+                logger.warning(f"Unknown scan type: {scan_type}")
+                return None
+
+    async def _similarity_scan(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        platform_id: str,
+    ) -> FlaggedMessage | None:
+        """Run similarity search on a message."""
+        try:
+            search_response = await self.embedding_service.similarity_search(
+                db=self.session,
+                query_text=message.content,
+                community_server_id=platform_id,
+                dataset_tags=[],
+                similarity_threshold=settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
+                rrf_score_threshold=0.1,
+                limit=1,
+            )
+
+            if search_response.matches:
+                best_match = search_response.matches[0]
+                return self._build_flagged_message(message, best_match, ScanType.SIMILARITY)
+
+        except Exception as e:
+            logger.warning(
+                "Error in similarity scan",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None
+
+    def _build_flagged_message(
+        self,
+        message: BulkScanMessage,
+        match: Any,
+        scan_type: ScanType,
+    ) -> FlaggedMessage:
+        """Build FlaggedMessage from a match result."""
+        return FlaggedMessage(
+            message_id=message.message_id,
+            channel_id=message.channel_id,
+            content=message.content,
+            author_id=message.author_id,
+            timestamp=message.timestamp,
+            match_score=match.similarity_score,
+            matched_claim=match.content or match.title or "",
+            matched_source=match.source_url or "",
+            scan_type=scan_type,
+        )
+
+    async def append_flagged_result(
+        self,
+        scan_id: UUID,
+        flagged_message: FlaggedMessage,
+    ) -> None:
+        """Append a single flagged result to Redis list."""
+        redis_key = f"{REDIS_RESULTS_KEY}:{scan_id}"
+        await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())
+        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)
 
     async def complete_scan(
         self,
@@ -232,9 +224,6 @@ class BulkContentScanService:
                 },
             )
 
-        redis_key = f"{REDIS_MESSAGES_KEY}:{scan_id}"
-        await self.redis_client.delete(redis_key)
-
     async def get_scan(self, scan_id: UUID) -> BulkContentScanLog | None:
         """Get scan log by ID.
 
@@ -251,7 +240,7 @@ class BulkContentScanService:
         scan_id: UUID,
         flagged_messages: list[FlaggedMessage],
     ) -> None:
-        """Store flagged results in Redis for later retrieval.
+        """Store flagged results in Redis list for later retrieval.
 
         Args:
             scan_id: UUID of the scan
@@ -259,8 +248,10 @@ class BulkContentScanService:
         """
         redis_key = f"{REDIS_RESULTS_KEY}:{scan_id}"
 
-        serialized = json.dumps([msg.model_dump(mode="json") for msg in flagged_messages])
-        await self.redis_client.set(redis_key, serialized, ex=REDIS_TTL_SECONDS)
+        for msg in flagged_messages:
+            await self.redis_client.lpush(redis_key, msg.model_dump_json())
+        if flagged_messages:
+            await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)
 
         logger.debug(
             "Stored flagged results for bulk scan",
@@ -271,7 +262,7 @@ class BulkContentScanService:
         )
 
     async def get_flagged_results(self, scan_id: UUID) -> list[FlaggedMessage]:
-        """Get flagged results from Redis.
+        """Get flagged results from Redis list.
 
         Args:
             scan_id: UUID of the scan
@@ -281,12 +272,9 @@ class BulkContentScanService:
         """
         redis_key = f"{REDIS_RESULTS_KEY}:{scan_id}"
 
-        data = await self.redis_client.get(redis_key)
-        if not data:
-            return []
-
-        if isinstance(data, bytes):
-            data = data.decode()
-
-        raw_messages = json.loads(data)
-        return [FlaggedMessage.model_validate(msg) for msg in raw_messages]
+        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)
+        results = []
+        for raw_msg in raw_messages:
+            msg_str = raw_msg.decode() if isinstance(raw_msg, bytes) else raw_msg
+            results.append(FlaggedMessage.model_validate_json(msg_str))
+        return results

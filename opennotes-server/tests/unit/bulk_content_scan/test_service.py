@@ -128,74 +128,15 @@ class TestInitiateScan:
         assert result == mock_scan_log
 
 
-class TestCollectMessages:
-    """Test message collection during scan."""
+class TestProcessMessages:
+    """Test streaming message processing with process_messages()."""
 
     @pytest.mark.asyncio
-    async def test_collect_messages_stores_in_redis(
+    async def test_process_messages_single_message(
         self, mock_session, mock_embedding_service, mock_redis
     ):
-        """AC #2: Server NATS handlers receive and temporarily store messages."""
-        from src.bulk_content_scan.service import BulkContentScanService
-
-        service = BulkContentScanService(
-            session=mock_session,
-            embedding_service=mock_embedding_service,
-            redis_client=mock_redis,
-        )
-
-        scan_id = uuid4()
-        messages = [
-            {
-                "message_id": "msg_1",
-                "channel_id": "ch_1",
-                "content": "Test message 1",
-                "author_id": "user_1",
-                "timestamp": datetime.now(UTC).isoformat(),
-            },
-            {
-                "message_id": "msg_2",
-                "channel_id": "ch_1",
-                "content": "Test message 2",
-                "author_id": "user_2",
-                "timestamp": datetime.now(UTC).isoformat(),
-            },
-        ]
-
-        await service.collect_messages(scan_id=scan_id, messages=messages)
-
-        mock_redis.lpush.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_collect_messages_sets_ttl(
-        self, mock_session, mock_embedding_service, mock_redis
-    ):
-        """Collected messages should have a TTL to prevent memory leaks."""
-        from src.bulk_content_scan.service import BulkContentScanService
-
-        service = BulkContentScanService(
-            session=mock_session,
-            embedding_service=mock_embedding_service,
-            redis_client=mock_redis,
-        )
-
-        scan_id = uuid4()
-        await service.collect_messages(
-            scan_id=scan_id,
-            messages=[{"message_id": "msg_1", "content": "Test"}],
-        )
-
-        mock_redis.expire.assert_called()
-
-
-class TestProcessCollectedMessages:
-    """Test processing of collected messages for similarity search."""
-
-    @pytest.mark.asyncio
-    async def test_process_runs_similarity_search(
-        self, mock_session, mock_embedding_service, mock_redis
-    ):
-        """AC #3: Similarity search runs on collected messages using EmbeddingService."""
+        """process_messages should accept a single BulkScanMessage."""
+        from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
         from src.bulk_content_scan.service import BulkContentScanService
         from src.fact_checking.embedding_schemas import (
             FactCheckMatch,
@@ -208,33 +149,18 @@ class TestProcessCollectedMessages:
             dataset_tags=["snopes"],
             title="Test Fact Check",
             content="Original claim content",
+            source_url="https://snopes.com/test",
             similarity_score=0.85,
         )
         mock_embedding_service.similarity_search = AsyncMock(
             return_value=SimilaritySearchResponse(
                 matches=[mock_match],
-                query_text="Test message",
+                query_text="Test message content",
                 dataset_tags=["snopes"],
                 similarity_threshold=0.6,
                 rrf_score_threshold=0.1,
                 total_matches=1,
             )
-        )
-
-        import json
-
-        mock_redis.lrange = AsyncMock(
-            return_value=[
-                json.dumps(
-                    {
-                        "message_id": "msg_1",
-                        "channel_id": "ch_1",
-                        "content": "Test message",
-                        "author_id": "user_1",
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    }
-                ).encode()
-            ]
         )
 
         service = BulkContentScanService(
@@ -244,22 +170,33 @@ class TestProcessCollectedMessages:
         )
 
         scan_id = uuid4()
-        community_server_id = uuid4()
-
-        await service.process_collected_messages(
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            platform_id="test_platform_123",
+        msg = BulkScanMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="Test message content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
         )
 
-        mock_embedding_service.similarity_search.assert_called()
+        result = await service.process_messages(
+            scan_id=scan_id,
+            messages=msg,
+            platform_id="guild_123",
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], FlaggedMessage)
+        assert result[0].message_id == "msg_1"
+        mock_embedding_service.similarity_search.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_process_returns_flagged_messages(
+    async def test_process_messages_multiple_messages(
         self, mock_session, mock_embedding_service, mock_redis
     ):
-        """AC #4: Results aggregated with match scores, source info, and original content."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        """process_messages should accept a sequence of messages."""
+        from src.bulk_content_scan.schemas import BulkScanMessage
         from src.bulk_content_scan.service import BulkContentScanService
         from src.fact_checking.embedding_schemas import (
             FactCheckMatch,
@@ -286,20 +223,106 @@ class TestProcessCollectedMessages:
             )
         )
 
-        import json
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
 
-        mock_redis.lrange = AsyncMock(
-            return_value=[
-                json.dumps(
-                    {
-                        "message_id": "msg_1",
-                        "channel_id": "ch_1",
-                        "content": "Test message",
-                        "author_id": "user_1",
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    }
-                ).encode()
-            ]
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message 1",
+                author_id="user_1",
+                timestamp=datetime.now(UTC),
+            ),
+            BulkScanMessage(
+                message_id="msg_2",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message 2",
+                author_id="user_2",
+                timestamp=datetime.now(UTC),
+            ),
+        ]
+
+        result = await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            platform_id="guild_123",
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert mock_embedding_service.similarity_search.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_process_messages_skips_short_content(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Messages with content < 10 chars should be skipped."""
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        msg = BulkScanMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="short",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+        )
+
+        result = await service.process_messages(
+            scan_id=scan_id,
+            messages=msg,
+            platform_id="guild_123",
+        )
+
+        assert result == []
+        mock_embedding_service.similarity_search.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_process_messages_with_specific_scan_types(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """process_messages should accept scan_types parameter."""
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+        from src.fact_checking.embedding_schemas import (
+            FactCheckMatch,
+            SimilaritySearchResponse,
+        )
+
+        mock_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["snopes"],
+            title="Test Fact Check",
+            content="Original claim content",
+            source_url="https://snopes.com/test",
+            similarity_score=0.85,
+        )
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[mock_match],
+                query_text="Test message content",
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                rrf_score_threshold=0.1,
+                total_matches=1,
+            )
         )
 
         service = BulkContentScanService(
@@ -308,17 +331,149 @@ class TestProcessCollectedMessages:
             redis_client=mock_redis,
         )
 
-        flagged = await service.process_collected_messages(
-            scan_id=uuid4(),
-            community_server_id=uuid4(),
-            platform_id="test_platform_123",
+        scan_id = uuid4()
+        msg = BulkScanMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="Test message content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
         )
 
-        assert len(flagged) == 1
-        assert isinstance(flagged[0], FlaggedMessage)
-        assert flagged[0].message_id == "msg_1"
-        assert flagged[0].match_score == 0.85
-        assert flagged[0].matched_source == "https://snopes.com/test"
+        result = await service.process_messages(
+            scan_id=scan_id,
+            messages=msg,
+            platform_id="guild_123",
+            scan_types=(ScanType.SIMILARITY,),
+        )
+
+        assert len(result) == 1
+        assert result[0].scan_type == ScanType.SIMILARITY
+
+    @pytest.mark.asyncio
+    async def test_process_messages_with_empty_scan_types(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Empty scan_types should return empty results."""
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        msg = BulkScanMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="Test message content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+        )
+
+        result = await service.process_messages(
+            scan_id=scan_id,
+            messages=msg,
+            platform_id="guild_123",
+            scan_types=(),
+        )
+
+        assert result == []
+        mock_embedding_service.similarity_search.assert_not_called()
+
+
+class TestAppendFlaggedResult:
+    """Test incremental result storage with append_flagged_result()."""
+
+    @pytest.mark.asyncio
+    async def test_append_flagged_result_stores_in_redis(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """append_flagged_result should use lpush to store in Redis."""
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        flagged_message = FlaggedMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            content="Test content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            match_score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
+
+        await service.append_flagged_result(scan_id=scan_id, flagged_message=flagged_message)
+
+        mock_redis.lpush.assert_called_once()
+        mock_redis.expire.assert_called_once()
+
+
+class TestGetFlaggedResultsFromList:
+    """Test retrieval of flagged results from Redis list format."""
+
+    @pytest.mark.asyncio
+    async def test_get_flagged_results_from_list(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """get_flagged_results should retrieve from lpush list format."""
+        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        scan_id = uuid4()
+        stored_messages = [
+            FlaggedMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                content="Test",
+                author_id="user_1",
+                timestamp=datetime.now(UTC),
+                match_score=0.85,
+                matched_claim="Claim",
+                matched_source="https://example.com",
+            )
+            .model_dump_json()
+            .encode(),
+            FlaggedMessage(
+                message_id="msg_2",
+                channel_id="ch_2",
+                content="Test 2",
+                author_id="user_2",
+                timestamp=datetime.now(UTC),
+                match_score=0.75,
+                matched_claim="Claim 2",
+                matched_source="https://example2.com",
+            )
+            .model_dump_json()
+            .encode(),
+        ]
+        mock_redis.lrange = AsyncMock(return_value=stored_messages)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        results = await service.get_flagged_results(scan_id=scan_id)
+
+        assert len(results) == 2
+        assert isinstance(results[0], FlaggedMessage)
+        assert results[0].message_id == "msg_1"
+        assert results[1].message_id == "msg_2"
+        mock_redis.lrange.assert_called_once()
 
 
 class TestCompleteScan:
@@ -357,10 +512,10 @@ class TestCompleteScan:
         mock_session.commit.assert_called()
 
     @pytest.mark.asyncio
-    async def test_complete_scan_cleans_up_redis(
+    async def test_complete_scan_does_not_clean_up_messages_key(
         self, mock_session, mock_embedding_service, mock_redis
     ):
-        """Completion should clean up collected messages from Redis."""
+        """Completion should not clean up messages key (we no longer store raw messages)."""
         from src.bulk_content_scan.models import BulkContentScanLog
         from src.bulk_content_scan.service import BulkContentScanService
 
@@ -380,7 +535,7 @@ class TestCompleteScan:
             messages_flagged=2,
         )
 
-        mock_redis.delete.assert_called()
+        mock_redis.delete.assert_not_called()
 
 
 class TestGetScanResults:
@@ -433,13 +588,13 @@ class TestGetScanResults:
 
 
 class TestStoreFlaggedResults:
-    """Test storing flagged results in Redis for retrieval."""
+    """Test storing flagged results in Redis list for retrieval."""
 
     @pytest.mark.asyncio
-    async def test_store_flagged_results_in_redis(
+    async def test_store_flagged_results_in_redis_list(
         self, mock_session, mock_embedding_service, mock_redis
     ):
-        """Flagged results should be stored in Redis for later retrieval."""
+        """Flagged results should be stored in Redis list for later retrieval."""
         from src.bulk_content_scan.schemas import FlaggedMessage
         from src.bulk_content_scan.service import BulkContentScanService
 
@@ -465,43 +620,5 @@ class TestStoreFlaggedResults:
 
         await service.store_flagged_results(scan_id=scan_id, flagged_messages=flagged_messages)
 
-        mock_redis.set.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_get_flagged_results_from_redis(
-        self, mock_session, mock_embedding_service, mock_redis
-    ):
-        """Flagged results should be retrievable from Redis."""
-        import json
-
-        from src.bulk_content_scan.schemas import FlaggedMessage
-        from src.bulk_content_scan.service import BulkContentScanService
-
-        scan_id = uuid4()
-        stored_data = json.dumps(
-            [
-                {
-                    "message_id": "msg_1",
-                    "channel_id": "ch_1",
-                    "content": "Test",
-                    "author_id": "user_1",
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "match_score": 0.85,
-                    "matched_claim": "Claim",
-                    "matched_source": "https://example.com",
-                }
-            ]
-        )
-        mock_redis.get = AsyncMock(return_value=stored_data.encode())
-
-        service = BulkContentScanService(
-            session=mock_session,
-            embedding_service=mock_embedding_service,
-            redis_client=mock_redis,
-        )
-
-        results = await service.get_flagged_results(scan_id=scan_id)
-
-        assert len(results) == 1
-        assert isinstance(results[0], FlaggedMessage)
-        assert results[0].message_id == "msg_1"
+        mock_redis.lpush.assert_called()
+        mock_redis.expire.assert_called()
