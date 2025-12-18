@@ -33,32 +33,6 @@ export interface BulkScanBatch {
   cutoff_timestamp: string;
 }
 
-export interface FlaggedContent {
-  messageId: string;
-  channelId: string;
-  guildId: string;
-  content: string;
-  authorId: string;
-  authorUsername?: string;
-  timestamp: string;
-  matchType: 'misinformation' | 'harmful' | 'misleading' | 'needs_context';
-  confidence: number;
-  matchReason: string;
-  messageUrl: string;
-}
-
-export interface BulkScanResult {
-  scanId: string;
-  guildId: string;
-  initiatedBy: string;
-  startedAt: string;
-  completedAt: string;
-  messagesScanned: number;
-  channelsScanned: number;
-  flaggedCount: number;
-  flaggedContent: FlaggedContent[];
-}
-
 export interface ScanProgress {
   channelsProcessed: number;
   totalChannels: number;
