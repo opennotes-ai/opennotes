@@ -305,7 +305,7 @@ class TestCreateNoteRequestsEndpoint:
 
         with (
             patch(
-                "src.bulk_content_scan.jsonapi_router.create_note_requests_for_messages",
+                "src.bulk_content_scan.jsonapi_router.create_note_requests_from_flagged_messages",
                 new=AsyncMock(return_value=["req_1", "req_2"]),
             ),
             patch(
@@ -339,7 +339,7 @@ class TestCreateNoteRequestsEndpoint:
 
         with (
             patch(
-                "src.bulk_content_scan.jsonapi_router.create_note_requests_for_messages",
+                "src.bulk_content_scan.jsonapi_router.create_note_requests_from_flagged_messages",
                 new=AsyncMock(return_value=["req_1", "req_2", "req_3"]),
             ),
             patch(
