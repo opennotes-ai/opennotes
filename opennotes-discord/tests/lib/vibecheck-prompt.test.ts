@@ -1,5 +1,5 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { MessageFlags, ButtonStyle, ComponentType, type APIButtonComponentWithCustomId } from 'discord.js';
+import { ButtonStyle, ComponentType, type APIButtonComponentWithCustomId } from 'discord.js';
 import { VIBE_CHECK_DAYS_OPTIONS } from '../../src/types/bulk-scan.js';
 
 const mockLogger = {
@@ -9,28 +9,21 @@ const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
 };
 
-const mockApiClient = {
-  checkRecentScan: jest.fn<(communityServerId: string) => Promise<boolean>>(),
-  initiateBulkScan: jest.fn<(guildId: string, days: number) => Promise<any>>(),
-  getBulkScanResults: jest.fn<(scanId: string) => Promise<any>>(),
-  createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<any>>(),
-};
-
-const mockNatsPublisher = {
-  publishBulkScanBatch: jest.fn<(...args: unknown[]) => Promise<void>>().mockResolvedValue(undefined),
-  isConnected: jest.fn<() => boolean>().mockReturnValue(true),
-};
+const mockExecuteBulkScan = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+  scanId: 'scan-123',
+  messagesScanned: 100,
+  channelsScanned: 5,
+  batchesPublished: 1,
+  status: 'completed',
+  flaggedMessages: [],
+});
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
 
-jest.unstable_mockModule('../../src/api-client.js', () => ({
-  apiClient: mockApiClient,
-}));
-
-jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({
-  natsPublisher: mockNatsPublisher,
+jest.unstable_mockModule('../../src/lib/bulk-scan-executor.js', () => ({
+  executeBulkScan: mockExecuteBulkScan,
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
@@ -116,7 +109,7 @@ describe('vibecheck-prompt', () => {
   });
 
   describe('sendVibeCheckPrompt', () => {
-    const createMockChannel = (includeTextChannels = false) => {
+    const createMockSetup = () => {
       const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
       const mockCollector = {
         on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
@@ -126,26 +119,34 @@ describe('vibecheck-prompt', () => {
         stop: jest.fn(),
       };
 
-      const mockMessage = {
-        id: 'message-123',
+      const mockDmMessage = {
+        id: 'dm-message-123',
         createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
         edit: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      const channelsCache = new Map();
+      const mockDmChannel = {
+        id: 'dm-channel-123',
+        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockDmMessage),
+      };
 
-      if (includeTextChannels) {
-        const textChannel = {
-          id: 'text-channel-1',
-          name: 'general',
-          type: 0,
-          viewable: true,
-          messages: {
-            fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
-          },
-        };
-        channelsCache.set('text-channel-1', textChannel);
-      }
+      const mockAdmin = {
+        id: 'admin-123',
+        username: 'testadmin',
+        createDM: jest.fn<() => Promise<any>>().mockResolvedValue(mockDmChannel),
+      };
+
+      const channelsCache = new Map();
+      const textChannel = {
+        id: 'text-channel-1',
+        name: 'general',
+        type: 0,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
+        },
+      };
+      channelsCache.set('text-channel-1', textChannel);
 
       (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
         const result = new Map();
@@ -155,8 +156,8 @@ describe('vibecheck-prompt', () => {
         return result;
       };
 
-      const mockChannel = {
-        id: 'channel-123',
+      const mockBotChannel = {
+        id: 'bot-channel-123',
         name: 'open-notes',
         guild: {
           id: 'guild-123',
@@ -165,59 +166,85 @@ describe('vibecheck-prompt', () => {
             cache: channelsCache,
           },
         },
-        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockMessage),
       };
 
-      return { mockChannel, mockCollector, collectHandlers, mockMessage };
+      return {
+        mockAdmin,
+        mockBotChannel,
+        mockDmChannel,
+        mockDmMessage,
+        mockCollector,
+        collectHandlers,
+      };
     };
 
-    it('should send an ephemeral message with days select and buttons', async () => {
-      const { mockChannel } = createMockChannel();
+    it('should send a DM to the admin with days select and buttons', async () => {
+      const { mockAdmin, mockBotChannel, mockDmChannel } = createMockSetup();
 
       await sendVibeCheckPrompt({
-        channel: mockChannel as any,
-        adminId: 'admin-123',
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
         guildId: 'guild-123',
       });
 
-      expect(mockChannel.send).toHaveBeenCalledTimes(1);
-      const sendCall = mockChannel.send.mock.calls[0][0];
+      expect(mockAdmin.createDM).toHaveBeenCalledTimes(1);
+      expect(mockDmChannel.send).toHaveBeenCalledTimes(1);
 
+      const sendCall = mockDmChannel.send.mock.calls[0][0];
       expect(sendCall.content).toBeDefined();
       expect(sendCall.content).toContain('Vibe Check');
       expect(sendCall.components).toHaveLength(2);
     });
 
     it('should include introductory text explaining the vibe check feature', async () => {
-      const { mockChannel } = createMockChannel();
+      const { mockAdmin, mockBotChannel, mockDmChannel } = createMockSetup();
 
       await sendVibeCheckPrompt({
-        channel: mockChannel as any,
-        adminId: 'admin-123',
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
         guildId: 'guild-123',
       });
 
-      const sendCall = mockChannel.send.mock.calls[0][0];
+      const sendCall = mockDmChannel.send.mock.calls[0][0];
       expect(sendCall.content.toLowerCase()).toContain('scan');
       expect(sendCall.content.toLowerCase()).toContain('misinformation');
     });
 
+    it('should handle admin with DMs disabled gracefully', async () => {
+      const { mockAdmin, mockBotChannel } = createMockSetup();
+      mockAdmin.createDM.mockRejectedValue(new Error('Cannot send DM to this user'));
+
+      await expect(sendVibeCheckPrompt({
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
+        guildId: 'guild-123',
+      })).resolves.not.toThrow();
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Failed to send vibe check DM to admin, they may have DMs disabled',
+        expect.objectContaining({
+          admin_id: 'admin-123',
+          guild_id: 'guild-123',
+        })
+      );
+    });
+
     it('should filter interactions to only the admin who triggered the prompt', async () => {
-      const { mockChannel, mockMessage } = createMockChannel();
+      const { mockAdmin, mockBotChannel, mockDmMessage } = createMockSetup();
 
       await sendVibeCheckPrompt({
-        channel: mockChannel as any,
-        adminId: 'admin-123',
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
         guildId: 'guild-123',
       });
 
-      expect(mockMessage.createMessageComponentCollector).toHaveBeenCalledWith(
+      expect(mockDmMessage.createMessageComponentCollector).toHaveBeenCalledWith(
         expect.objectContaining({
           filter: expect.any(Function),
         })
       );
 
-      const collectorOptions = mockMessage.createMessageComponentCollector.mock.calls[0][0] as { filter: (i: { user: { id: string } }) => boolean };
+      const collectorOptions = mockDmMessage.createMessageComponentCollector.mock.calls[0][0] as { filter: (i: { user: { id: string } }) => boolean };
       const filter = collectorOptions.filter;
 
       const adminInteraction = { user: { id: 'admin-123' } };
@@ -228,11 +255,11 @@ describe('vibecheck-prompt', () => {
     });
 
     it('should handle No Thanks button click by dismissing the prompt', async () => {
-      const { mockChannel, collectHandlers } = createMockChannel();
+      const { mockAdmin, mockBotChannel, collectHandlers } = createMockSetup();
 
       await sendVibeCheckPrompt({
-        channel: mockChannel as any,
-        adminId: 'admin-123',
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
         guildId: 'guild-123',
       });
 
@@ -260,11 +287,11 @@ describe('vibecheck-prompt', () => {
     });
 
     it('should update buttons when days are selected from dropdown', async () => {
-      const { mockChannel, collectHandlers } = createMockChannel();
+      const { mockAdmin, mockBotChannel, collectHandlers } = createMockSetup();
 
       await sendVibeCheckPrompt({
-        channel: mockChannel as any,
-        adminId: 'admin-123',
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
         guildId: 'guild-123',
       });
 
@@ -301,25 +328,11 @@ describe('vibecheck-prompt', () => {
     });
 
     it('should trigger vibecheck scan when Start button is clicked after selecting days', async () => {
-      const { mockChannel, collectHandlers, mockMessage } = createMockChannel(true);
-
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild-123',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: [],
-      });
+      const { mockAdmin, mockBotChannel, collectHandlers } = createMockSetup();
 
       await sendVibeCheckPrompt({
-        channel: mockChannel as any,
-        adminId: 'admin-123',
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
         guildId: 'guild-123',
       });
 
@@ -343,38 +356,38 @@ describe('vibecheck-prompt', () => {
         isButton: () => true,
         isStringSelectMenu: () => false,
         update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        channel: mockChannel,
-        guild: mockChannel.guild,
       };
 
       if (collectHandler) {
         await collectHandler(mockStartInteraction);
       }
 
-      expect(mockApiClient.initiateBulkScan).toHaveBeenCalledWith('guild-123', 7);
+      expect(mockExecuteBulkScan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guild: mockBotChannel.guild,
+          days: 7,
+          initiatorId: 'admin-123',
+        })
+      );
     });
 
-    it('should handle timeout by cleaning up the message', async () => {
-      const { mockChannel, collectHandlers, mockMessage } = createMockChannel();
+    it('should handle timeout by cleaning up the DM message', async () => {
+      const { mockAdmin, mockBotChannel, collectHandlers, mockDmMessage } = createMockSetup();
 
       await sendVibeCheckPrompt({
-        channel: mockChannel as any,
-        adminId: 'admin-123',
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
         guildId: 'guild-123',
       });
 
       const endHandler = collectHandlers.get('end');
       expect(endHandler).toBeDefined();
 
-      const mockEdit = jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({});
-      (mockMessage as any).edit = mockEdit;
-
       if (endHandler) {
         await endHandler(new Map(), 'time');
       }
 
-      expect(mockEdit).toHaveBeenCalledWith(
+      expect(mockDmMessage.edit).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining('expired'),
           components: [],

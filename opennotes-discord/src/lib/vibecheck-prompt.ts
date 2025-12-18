@@ -6,23 +6,13 @@ import {
   ButtonStyle,
   ButtonInteraction,
   MessageComponentInteraction,
-  ChannelType,
-  Collection,
+  User,
   Message as DiscordMessage,
 } from 'discord.js';
-import type { TextChannel as GuildTextChannel } from 'discord.js';
 import { logger } from '../logger.js';
-import { apiClient } from '../api-client.js';
-import { natsPublisher } from '../events/NatsPublisher.js';
 import { generateErrorId, extractErrorDetails } from './errors.js';
-import {
-  VIBE_CHECK_DAYS_OPTIONS,
-  BULK_SCAN_BATCH_SIZE,
-  NATS_SUBJECTS,
-  type BulkScanMessage,
-  type BulkScanBatch,
-} from '../types/bulk-scan.js';
-import { DiscordSnowflake } from '@sapphire/snowflake';
+import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
+import { executeBulkScan } from './bulk-scan-executor.js';
 
 export const VIBECHECK_PROMPT_CUSTOM_IDS = {
   DAYS_SELECT: 'vibecheck_prompt_days',
@@ -31,12 +21,10 @@ export const VIBECHECK_PROMPT_CUSTOM_IDS = {
 } as const;
 
 const COLLECTOR_TIMEOUT_MS = 300000;
-const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 60000;
 
 export interface VibeCheckPromptOptions {
-  channel: TextChannel;
-  adminId: string;
+  botChannel: TextChannel;
+  admin: User;
   guildId: string;
 }
 
@@ -69,13 +57,13 @@ export function createPromptButtons(startEnabled = false): ActionRowBuilder<Butt
 }
 
 export async function sendVibeCheckPrompt(options: VibeCheckPromptOptions): Promise<void> {
-  const { channel, adminId, guildId } = options;
+  const { botChannel, admin, guildId } = options;
   const errorId = generateErrorId();
 
-  logger.info('Sending vibe check prompt to admin', {
+  logger.info('Sending vibe check prompt to admin via DM', {
     error_id: errorId,
-    channel_id: channel.id,
-    admin_id: adminId,
+    bot_channel_id: botChannel.id,
+    admin_id: admin.id,
     guild_id: guildId,
   });
 
@@ -90,15 +78,27 @@ Select how many days back you'd like to scan:`;
   );
   const buttonRow = createPromptButtons(false);
 
-  const message = await channel.send({
-    content,
-    components: [selectRow, buttonRow],
-  });
+  let message: DiscordMessage;
+  try {
+    const dmChannel = await admin.createDM();
+    message = await dmChannel.send({
+      content,
+      components: [selectRow, buttonRow],
+    });
+  } catch (dmError) {
+    logger.warn('Failed to send vibe check DM to admin, they may have DMs disabled', {
+      error_id: errorId,
+      admin_id: admin.id,
+      guild_id: guildId,
+      error: dmError instanceof Error ? dmError.message : String(dmError),
+    });
+    return;
+  }
 
   let selectedDays: number | null = null;
 
   const collector = message.createMessageComponentCollector({
-    filter: (interaction: MessageComponentInteraction) => interaction.user.id === adminId,
+    filter: (interaction: MessageComponentInteraction) => interaction.user.id === admin.id,
     time: COLLECTOR_TIMEOUT_MS,
   });
 
@@ -137,8 +137,8 @@ Selected: **${selectedDays} day${selectedDays === 1 ? '' : 's'}**`,
             interaction,
             guildId,
             days: selectedDays,
-            channel,
-            message,
+            botChannel,
+            dmMessage: message,
             errorId,
           });
 
@@ -180,192 +180,55 @@ interface RunVibeCheckScanOptions {
   interaction: ButtonInteraction;
   guildId: string;
   days: number;
-  channel: TextChannel;
-  message: DiscordMessage;
+  botChannel: TextChannel;
+  dmMessage: DiscordMessage;
   errorId: string;
 }
 
 async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void> {
-  const { interaction, guildId, days, channel, message, errorId } = options;
+  const { interaction, guildId, days, botChannel, dmMessage, errorId } = options;
 
-  const guild = channel.guild;
+  const guild = botChannel.guild;
   if (!guild) {
-    await message.edit({
+    await dmMessage.edit({
       content: 'Unable to access server information. Please try `/vibecheck` instead.',
     });
     return;
   }
 
   try {
-    const cutoffTimestamp = Date.now() - days * 24 * 60 * 60 * 1000;
-    const cutoffSnowflake = DiscordSnowflake.generate({ timestamp: BigInt(cutoffTimestamp) });
+    const result = await executeBulkScan({
+      guild,
+      days,
+      initiatorId: interaction.user.id,
+      errorId,
+    });
 
-    const textChannels = guild.channels.cache.filter(
-      (ch): ch is GuildTextChannel =>
-        ch.type === ChannelType.GuildText && ch.viewable === true
-    );
-
-    const totalChannels = textChannels.size;
-
-    if (totalChannels === 0) {
-      await message.edit({
+    if (result.channelsScanned === 0) {
+      await dmMessage.edit({
         content: 'No accessible text channels found to scan.',
       });
       return;
     }
 
-    const scanResponse = await apiClient.initiateBulkScan(guildId, days);
-    const scanId = scanResponse.scan_id;
-
-    logger.info('Initiated bulk scan from prompt', {
-      error_id: errorId,
-      scan_id: scanId,
-      guild_id: guildId,
-      days,
+    await dmMessage.edit({
+      content: `Scan complete! Analyzing ${result.messagesScanned} messages for potential misinformation...\n\n**Scan ID:** \`${result.scanId}\``,
     });
 
-    let messagesProcessed = 0;
-    let batchIndex = 0;
-    let currentBatch: BulkScanMessage[] = [];
-
-    const publishBatch = async (): Promise<void> => {
-      if (currentBatch.length === 0) {
-        return;
-      }
-
-      const batch: BulkScanBatch = {
-        scanId,
-        guildId,
-        initiatedBy: interaction.user.id,
-        batchIndex,
-        totalBatches: -1,
-        messages: currentBatch,
-        cutoffTimestamp: new Date(cutoffTimestamp).toISOString(),
-      };
-
-      try {
-        await natsPublisher.publishBulkScanBatch(NATS_SUBJECTS.BULK_SCAN_BATCH, batch);
-        logger.debug('Published batch from prompt', {
-          scanId,
-          batchIndex,
-          messageCount: currentBatch.length,
-        });
-      } catch (error) {
-        logger.warn('Failed to publish batch to NATS, continuing scan', {
-          error: error instanceof Error ? error.message : String(error),
-          scanId,
-          batchIndex,
-        });
-      }
-
-      batchIndex++;
-      currentBatch = [];
-    };
-
-    for (const [, ch] of textChannels) {
-      try {
-        let lastMessageId: string | undefined;
-        let reachedCutoff = false;
-
-        while (!reachedCutoff) {
-          const fetchOptions: { limit: number; before?: string } = { limit: 100 };
-          if (lastMessageId) {
-            fetchOptions.before = lastMessageId;
-          }
-
-          let messages: Collection<string, DiscordMessage>;
-          try {
-            messages = await ch.messages.fetch(fetchOptions);
-          } catch {
-            break;
-          }
-
-          if (messages.size === 0) {
-            break;
-          }
-
-          for (const [messageId, msg] of messages) {
-            if (BigInt(messageId) < cutoffSnowflake) {
-              reachedCutoff = true;
-              break;
-            }
-
-            if (msg.author.bot) {
-              continue;
-            }
-
-            if (!msg.content && msg.attachments.size === 0 && msg.embeds.length === 0) {
-              continue;
-            }
-
-            const scanMessage: BulkScanMessage = {
-              messageId: msg.id,
-              channelId: ch.id,
-              guildId,
-              content: msg.content,
-              authorId: msg.author.id,
-              authorUsername: msg.author.username,
-              timestamp: msg.createdAt.toISOString(),
-              attachmentUrls: msg.attachments.size > 0
-                ? Array.from(msg.attachments.values()).map((a) => a.url)
-                : undefined,
-              embedContent: msg.embeds.length > 0
-                ? msg.embeds.map((e) => e.description || e.title || '').filter(Boolean).join('\n')
-                : undefined,
-            };
-
-            currentBatch.push(scanMessage);
-            messagesProcessed++;
-
-            if (currentBatch.length >= BULK_SCAN_BATCH_SIZE) {
-              await publishBatch();
-            }
-
-            lastMessageId = messageId;
-          }
-
-          if (messages.size < 100) {
-            break;
-          }
-
-          lastMessageId = messages.last()?.id;
-          if (!lastMessageId) {
-            break;
-          }
-        }
-      } catch (channelError) {
-        logger.debug('Error processing channel in vibe check', {
-          error_id: errorId,
-          channel_id: ch.id,
-          error: channelError instanceof Error ? channelError.message : String(channelError),
-        });
-      }
-    }
-
-    if (currentBatch.length > 0) {
-      await publishBatch();
-    }
-
-    await message.edit({
-      content: `Scan complete! Analyzing ${messagesProcessed} messages for potential misinformation...\n\n**Scan ID:** \`${scanId}\``,
-    });
-
-    const results = await pollForResults(scanId, errorId);
-
-    if (!results || results.status === 'failed') {
-      await message.edit({
-        content: `Scan analysis failed. Please try again later.\n\n**Scan ID:** \`${scanId}\``,
+    if (result.status === 'failed' || result.status === 'timeout') {
+      await dmMessage.edit({
+        content: `Scan analysis failed. Please try again later.\n\n**Scan ID:** \`${result.scanId}\``,
       });
       return;
     }
 
-    if (results.flagged_messages.length === 0) {
-      await message.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${scanId}\`\n**Messages scanned:** ${results.messages_scanned}\n**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\nNo potential misinformation was detected. Your community looks healthy!`,
+    if (result.flaggedMessages.length === 0) {
+      await dmMessage.edit({
+        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\nNo potential misinformation was detected. Your community looks healthy!`,
       });
     } else {
-      await message.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${scanId}\`\n**Messages scanned:** ${results.messages_scanned}\n**Flagged:** ${results.flagged_messages.length}\n\nUse \`/vibecheck ${days}\` for detailed results and to create note requests.`,
+      await dmMessage.edit({
+        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Flagged:** ${result.flaggedMessages.length}\n\nUse \`/vibecheck ${days}\` for detailed results and to create note requests.`,
       });
     }
   } catch (error) {
@@ -378,42 +241,8 @@ async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void>
       stack: errorDetails.stack,
     });
 
-    await message.edit({
+    await dmMessage.edit({
       content: 'The scan encountered an error. Please try using `/vibecheck` instead.',
     });
   }
-}
-
-async function pollForResults(
-  scanId: string,
-  errorId: string
-): Promise<Awaited<ReturnType<typeof apiClient.getBulkScanResults>> | null> {
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < POLL_TIMEOUT_MS) {
-    try {
-      const results = await apiClient.getBulkScanResults(scanId);
-
-      if (results.status === 'completed' || results.status === 'failed') {
-        return results;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    } catch (error) {
-      logger.warn('Error polling for scan results', {
-        error_id: errorId,
-        scan_id: scanId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    }
-  }
-
-  logger.warn('Scan polling timed out', {
-    error_id: errorId,
-    scan_id: scanId,
-    timeout_ms: POLL_TIMEOUT_MS,
-  });
-
-  return null;
 }

@@ -362,9 +362,18 @@ export class Bot {
           );
 
           if (result.wasCreated) {
-            await this.guildOnboardingService.postWelcomeToChannel(result.channel, {
-              adminId: guild.ownerId,
-            });
+            try {
+              const owner = await guild.fetchOwner();
+              await this.guildOnboardingService.postWelcomeToChannel(result.channel, {
+                admin: owner.user,
+              });
+            } catch (ownerError) {
+              logger.debug('Failed to fetch guild owner for vibe check prompt, skipping', {
+                guildId: guild.id,
+                error: ownerError instanceof Error ? ownerError.message : String(ownerError),
+              });
+              await this.guildOnboardingService.postWelcomeToChannel(result.channel);
+            }
           }
         } catch (error) {
           logger.error('Failed to create bot channel for new guild', {

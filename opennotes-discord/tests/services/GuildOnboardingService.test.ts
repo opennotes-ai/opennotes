@@ -34,6 +34,7 @@ describe('GuildOnboardingService', () => {
   let service: InstanceType<typeof GuildOnboardingService>;
   let mockChannel: any;
   let mockGuild: any;
+  let mockAdmin: any;
 
   beforeEach(() => {
     mockGuild = {
@@ -46,6 +47,14 @@ describe('GuildOnboardingService', () => {
       name: 'open-notes',
       guild: mockGuild,
       send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+    };
+
+    mockAdmin = {
+      id: 'admin-123',
+      username: 'testadmin',
+      createDM: jest.fn<() => Promise<any>>().mockResolvedValue({
+        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+      }),
     };
 
     service = new GuildOnboardingService();
@@ -161,7 +170,7 @@ describe('GuildOnboardingService', () => {
       mockSendVibeCheckPrompt.mockResolvedValue(undefined);
     });
 
-    it('should send vibe check prompt when adminId is provided and no recent scan exists', async () => {
+    it('should send vibe check prompt when admin is provided and no recent scan exists', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
         id: 'community-server-123',
         platform: 'discord',
@@ -171,16 +180,16 @@ describe('GuildOnboardingService', () => {
       });
       mockApiClient.checkRecentScan.mockResolvedValue(false);
 
-      await service.postWelcomeToChannel(mockChannel, { adminId: 'admin-123' });
+      await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
       expect(mockSendVibeCheckPrompt).toHaveBeenCalledWith({
-        channel: mockChannel,
-        adminId: 'admin-123',
+        botChannel: mockChannel,
+        admin: mockAdmin,
         guildId: 'guild-123',
       });
     });
 
-    it('should not send vibe check prompt when adminId is not provided', async () => {
+    it('should not send vibe check prompt when admin is not provided', async () => {
       await service.postWelcomeToChannel(mockChannel);
 
       expect(mockSendVibeCheckPrompt).not.toHaveBeenCalled();
@@ -188,7 +197,7 @@ describe('GuildOnboardingService', () => {
 
     it('should not send vibe check prompt when skipVibeCheckPrompt is true', async () => {
       await service.postWelcomeToChannel(mockChannel, {
-        adminId: 'admin-123',
+        admin: mockAdmin,
         skipVibeCheckPrompt: true,
       });
 
@@ -205,7 +214,7 @@ describe('GuildOnboardingService', () => {
       });
       mockApiClient.checkRecentScan.mockResolvedValue(true);
 
-      await service.postWelcomeToChannel(mockChannel, { adminId: 'admin-123' });
+      await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
       expect(mockSendVibeCheckPrompt).not.toHaveBeenCalled();
     });
@@ -213,7 +222,7 @@ describe('GuildOnboardingService', () => {
     it('should not send vibe check prompt when community server lookup fails', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockRejectedValue(new Error('Not found'));
 
-      await service.postWelcomeToChannel(mockChannel, { adminId: 'admin-123' });
+      await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
       expect(mockSendVibeCheckPrompt).not.toHaveBeenCalled();
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -232,11 +241,11 @@ describe('GuildOnboardingService', () => {
       });
       mockApiClient.checkRecentScan.mockRejectedValue(new Error('API error'));
 
-      await service.postWelcomeToChannel(mockChannel, { adminId: 'admin-123' });
+      await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
       expect(mockSendVibeCheckPrompt).toHaveBeenCalledWith({
-        channel: mockChannel,
-        adminId: 'admin-123',
+        botChannel: mockChannel,
+        admin: mockAdmin,
         guildId: 'guild-123',
       });
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -260,7 +269,7 @@ describe('GuildOnboardingService', () => {
       mockSendVibeCheckPrompt.mockRejectedValue(new Error('Discord API error'));
 
       await expect(
-        service.postWelcomeToChannel(mockChannel, { adminId: 'admin-123' })
+        service.postWelcomeToChannel(mockChannel, { admin: mockAdmin })
       ).resolves.not.toThrow();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -283,10 +292,10 @@ describe('GuildOnboardingService', () => {
       });
       mockApiClient.checkRecentScan.mockResolvedValue(false);
 
-      await service.postWelcomeToChannel(mockChannel, { adminId: 'admin-123' });
+      await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Sent vibe check prompt to admin',
+        'Sent vibe check prompt to admin via DM',
         expect.objectContaining({
           channelId: 'channel-123',
           guildId: 'guild-123',

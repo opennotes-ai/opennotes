@@ -1,12 +1,12 @@
 import { logger } from '../logger.js';
-import { TextChannel } from 'discord.js';
+import { TextChannel, User } from 'discord.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
 import { sendVibeCheckPrompt } from '../lib/vibecheck-prompt.js';
 import { apiClient } from '../api-client.js';
 
 export interface PostWelcomeOptions {
-  adminId?: string;
+  admin?: User;
   skipVibeCheckPrompt?: boolean;
 }
 
@@ -26,8 +26,8 @@ export class GuildOnboardingService {
         channelName: channel.name,
       });
 
-      if (!options?.skipVibeCheckPrompt && options?.adminId) {
-        await this.maybeShowVibeCheckPrompt(channel, options.adminId);
+      if (!options?.skipVibeCheckPrompt && options?.admin) {
+        await this.maybeShowVibeCheckPrompt(channel, options.admin);
       }
     } catch (error) {
       logger.error('Failed to post welcome message to bot channel', {
@@ -40,7 +40,7 @@ export class GuildOnboardingService {
     }
   }
 
-  private async maybeShowVibeCheckPrompt(channel: TextChannel, adminId: string): Promise<void> {
+  private async maybeShowVibeCheckPrompt(channel: TextChannel, admin: User): Promise<void> {
     const guildId = channel.guild.id;
 
     try {
@@ -76,21 +76,21 @@ export class GuildOnboardingService {
       }
 
       await sendVibeCheckPrompt({
-        channel,
-        adminId,
+        botChannel: channel,
+        admin,
         guildId,
       });
 
-      logger.info('Sent vibe check prompt to admin', {
+      logger.info('Sent vibe check prompt to admin via DM', {
         channelId: channel.id,
         guildId,
-        adminId,
+        adminId: admin.id,
       });
     } catch (error) {
       logger.error('Failed to send vibe check prompt', {
         channelId: channel.id,
         guildId,
-        adminId,
+        adminId: admin.id,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });

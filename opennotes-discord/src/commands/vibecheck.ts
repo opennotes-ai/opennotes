@@ -4,31 +4,26 @@ import {
   MessageFlags,
   PermissionFlagsBits,
   GuildMember,
-  TextChannel,
-  ChannelType,
-  Message,
-  Collection,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ComponentType,
   ButtonInteraction,
 } from 'discord.js';
-import { DiscordSnowflake } from '@sapphire/snowflake';
 import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser } from '../lib/errors.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
-import { natsPublisher } from '../events/NatsPublisher.js';
 import { apiClient } from '../api-client.js';
 import {
   VIBE_CHECK_DAYS_OPTIONS,
-  BULK_SCAN_BATCH_SIZE,
-  NATS_SUBJECTS,
-  type BulkScanMessage,
-  type BulkScanBatch,
-  type ScanProgress,
   type FlaggedMessage,
 } from '../types/bulk-scan.js';
+import {
+  executeBulkScan,
+  formatMatchScore,
+  formatMessageLink,
+  truncateContent,
+} from '../lib/bulk-scan-executor.js';
 
 export const data = new SlashCommandBuilder()
   .setName('vibecheck')
@@ -87,218 +82,50 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   });
 
   try {
-    const cutoffTimestamp = Date.now() - days * 24 * 60 * 60 * 1000;
-    const cutoffSnowflake = DiscordSnowflake.generate({ timestamp: BigInt(cutoffTimestamp) });
+    const result = await executeBulkScan({
+      guild,
+      days,
+      initiatorId: userId,
+      errorId,
+      progressCallback: async (progress) => {
+        const percent = progress.totalChannels > 0
+          ? Math.round((progress.channelsProcessed / progress.totalChannels) * 100)
+          : 0;
 
-    const textChannels = guild.channels.cache.filter(
-      (channel): channel is TextChannel =>
-        channel.type === ChannelType.GuildText && channel.viewable
-    );
+        await interaction.editReply({
+          content: `Scanning... ${percent}% complete\n` +
+            `Channels: ${progress.channelsProcessed}/${progress.totalChannels}\n` +
+            `Messages processed: ${progress.messagesProcessed}\n` +
+            (progress.currentChannel ? `Current channel: #${progress.currentChannel}` : ''),
+        });
+      },
+    });
 
-    const totalChannels = textChannels.size;
-
-    if (totalChannels === 0) {
+    if (result.channelsScanned === 0) {
       await interaction.editReply({
         content: 'No accessible text channels found to scan.',
       });
       return;
     }
 
-    const scanResponse = await apiClient.initiateBulkScan(guildId, days);
-    const scanId = scanResponse.scan_id;
-
-    logger.info('Initiated bulk scan on server', {
-      error_id: errorId,
-      scan_id: scanId,
-      guild_id: guildId,
-      days,
-    });
-
-    let messagesProcessed = 0;
-    let channelsProcessed = 0;
-    let batchIndex = 0;
-    let currentBatch: BulkScanMessage[] = [];
-
-    const updateProgress = async (progress: ScanProgress): Promise<void> => {
-      const percent = totalChannels > 0
-        ? Math.round((progress.channelsProcessed / progress.totalChannels) * 100)
-        : 0;
-
-      await interaction.editReply({
-        content: `Scanning... ${percent}% complete\n` +
-          `Channels: ${progress.channelsProcessed}/${progress.totalChannels}\n` +
-          `Messages processed: ${progress.messagesProcessed}\n` +
-          (progress.currentChannel ? `Current channel: #${progress.currentChannel}` : ''),
-      });
-    };
-
-    const publishBatch = async (): Promise<void> => {
-      if (currentBatch.length === 0) {
-        return;
-      }
-
-      const batch: BulkScanBatch = {
-        scanId,
-        guildId,
-        initiatedBy: userId,
-        batchIndex,
-        totalBatches: -1,
-        messages: currentBatch,
-        cutoffTimestamp: new Date(cutoffTimestamp).toISOString(),
-      };
-
-      try {
-        await natsPublisher.publishBulkScanBatch(NATS_SUBJECTS.BULK_SCAN_BATCH, batch);
-        logger.debug('Published batch', {
-          scanId,
-          batchIndex,
-          messageCount: currentBatch.length,
-        });
-      } catch (error) {
-        logger.warn('Failed to publish batch to NATS, continuing scan', {
-          error: error instanceof Error ? error.message : String(error),
-          scanId,
-          batchIndex,
-        });
-      }
-
-      batchIndex++;
-      currentBatch = [];
-    };
-
-    for (const [, channel] of textChannels) {
-      try {
-        await updateProgress({
-          channelsProcessed,
-          totalChannels,
-          messagesProcessed,
-          currentChannel: channel.name,
-        });
-
-        let lastMessageId: string | undefined;
-        let reachedCutoff = false;
-
-        while (!reachedCutoff) {
-          const fetchOptions: { limit: number; before?: string } = { limit: 100 };
-          if (lastMessageId) {
-            fetchOptions.before = lastMessageId;
-          }
-
-          let messages: Collection<string, Message>;
-          try {
-            messages = await channel.messages.fetch(fetchOptions);
-          } catch (fetchError) {
-            logger.warn('Failed to fetch messages from channel', {
-              error_id: errorId,
-              channel_id: channel.id,
-              channel_name: channel.name,
-              error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-            });
-            break;
-          }
-
-          if (messages.size === 0) {
-            break;
-          }
-
-          for (const [messageId, message] of messages) {
-            if (BigInt(messageId) < cutoffSnowflake) {
-              reachedCutoff = true;
-              break;
-            }
-
-            if (message.author.bot) {
-              continue;
-            }
-
-            if (!message.content && message.attachments.size === 0 && message.embeds.length === 0) {
-              continue;
-            }
-
-            const scanMessage: BulkScanMessage = {
-              messageId: message.id,
-              channelId: channel.id,
-              guildId,
-              content: message.content,
-              authorId: message.author.id,
-              authorUsername: message.author.username,
-              timestamp: message.createdAt.toISOString(),
-              attachmentUrls: message.attachments.size > 0
-                ? Array.from(message.attachments.values()).map(a => a.url)
-                : undefined,
-              embedContent: message.embeds.length > 0
-                ? message.embeds.map(e => e.description || e.title || '').filter(Boolean).join('\n')
-                : undefined,
-            };
-
-            currentBatch.push(scanMessage);
-            messagesProcessed++;
-
-            if (currentBatch.length >= BULK_SCAN_BATCH_SIZE) {
-              await publishBatch();
-            }
-
-            lastMessageId = messageId;
-          }
-
-          if (messages.size < 100) {
-            break;
-          }
-
-          lastMessageId = messages.last()?.id;
-          if (!lastMessageId) {
-            break;
-          }
-        }
-
-        channelsProcessed++;
-      } catch (channelError) {
-        logger.error('Error processing channel', {
-          error_id: errorId,
-          channel_id: channel.id,
-          channel_name: channel.name,
-          error: channelError instanceof Error ? channelError.message : String(channelError),
-        });
-        channelsProcessed++;
-      }
-    }
-
-    if (currentBatch.length > 0) {
-      await publishBatch();
-    }
-
-    const totalBatches = batchIndex;
-
-    logger.info('Vibecheck Discord scan complete, polling for results', {
-      error_id: errorId,
-      scan_id: scanId,
-      guild_id: guildId,
-      days,
-      channels_scanned: channelsProcessed,
-      messages_processed: messagesProcessed,
-      batches_published: totalBatches,
-    });
-
     await interaction.editReply({
-      content: `Scan complete! Analyzing ${messagesProcessed} messages for potential misinformation...\n\n` +
-        `**Scan ID:** \`${scanId}\``,
+      content: `Scan complete! Analyzing ${result.messagesScanned} messages for potential misinformation...\n\n` +
+        `**Scan ID:** \`${result.scanId}\``,
     });
 
-    const results = await pollForResults(scanId, errorId);
-
-    if (!results || results.status === 'failed') {
+    if (result.status === 'failed' || result.status === 'timeout') {
       await interaction.editReply({
         content: `Scan analysis failed. Please try again later.\n\n` +
-          `**Scan ID:** \`${scanId}\``,
+          `**Scan ID:** \`${result.scanId}\``,
       });
       return;
     }
 
-    if (results.flagged_messages.length === 0) {
+    if (result.flaggedMessages.length === 0) {
       await interaction.editReply({
         content: `Scan complete! No flagged content found.\n\n` +
-          `**Scan ID:** \`${scanId}\`\n` +
-          `**Messages scanned:** ${results.messages_scanned}\n` +
+          `**Scan ID:** \`${result.scanId}\`\n` +
+          `**Messages scanned:** ${result.messagesScanned}\n` +
           `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\n` +
           `No potential misinformation was detected.`,
       });
@@ -307,11 +134,11 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
     await displayFlaggedResults(
       interaction,
-      scanId,
+      result.scanId,
       guildId,
       days,
-      results.messages_scanned,
-      results.flagged_messages
+      result.messagesScanned,
+      result.flaggedMessages
     );
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -330,58 +157,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       content: formatErrorForUser(errorId, 'The scan encountered an error. Please try again later.'),
     });
   }
-}
-
-const POLL_INTERVAL_MS = 2000;
-const POLL_TIMEOUT_MS = 60000;
-
-async function pollForResults(
-  scanId: string,
-  errorId: string
-): Promise<Awaited<ReturnType<typeof apiClient.getBulkScanResults>> | null> {
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < POLL_TIMEOUT_MS) {
-    try {
-      const results = await apiClient.getBulkScanResults(scanId);
-
-      if (results.status === 'completed' || results.status === 'failed') {
-        return results;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-    } catch (error) {
-      logger.warn('Error polling for scan results', {
-        error_id: errorId,
-        scan_id: scanId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-    }
-  }
-
-  logger.warn('Scan polling timed out', {
-    error_id: errorId,
-    scan_id: scanId,
-    timeout_ms: POLL_TIMEOUT_MS,
-  });
-
-  return null;
-}
-
-function formatMatchScore(score: number): string {
-  return `${Math.round(score * 100)}%`;
-}
-
-function formatMessageLink(guildId: string, channelId: string, messageId: string): string {
-  return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
-}
-
-function truncateContent(content: string, maxLength: number = 100): string {
-  if (content.length <= maxLength) {
-    return content;
-  }
-  return content.slice(0, maxLength - 3) + '...';
 }
 
 async function displayFlaggedResults(
