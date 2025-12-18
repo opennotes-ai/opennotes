@@ -34,8 +34,10 @@ export interface BulkScanResult {
   messagesScanned: number;
   channelsScanned: number;
   batchesPublished: number;
-  status: 'completed' | 'failed' | 'timeout';
+  failedBatches: number;
+  status: 'completed' | 'partial' | 'failed' | 'timeout';
   flaggedMessages: FlaggedMessage[];
+  warningMessage?: string;
 }
 
 export async function executeBulkScan(options: BulkScanOptions): Promise<BulkScanResult> {
@@ -58,6 +60,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
       messagesScanned: 0,
       channelsScanned: 0,
       batchesPublished: 0,
+      failedBatches: 0,
       status: 'completed',
       flaggedMessages: [],
     };
@@ -77,6 +80,8 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   let messagesProcessed = 0;
   let channelsProcessed = 0;
   let batchIndex = 0;
+  let batchesPublished = 0;
+  let failedBatches = 0;
   let currentBatch: BulkScanMessage[] = [];
 
   const publishBatch = async (): Promise<void> => {
@@ -96,12 +101,14 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
 
     try {
       await natsPublisher.publishBulkScanBatch(NATS_SUBJECTS.BULK_SCAN_BATCH, batch);
+      batchesPublished++;
       logger.debug('Published batch', {
         scanId,
         batchIndex,
         messageCount: currentBatch.length,
       });
     } catch (error) {
+      failedBatches++;
       logger.warn('Failed to publish batch to NATS, continuing scan', {
         error: error instanceof Error ? error.message : String(error),
         scanId,
@@ -225,8 +232,23 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     days,
     channels_scanned: channelsProcessed,
     messages_processed: messagesProcessed,
-    batches_published: totalBatches,
+    batches_published: batchesPublished,
+    failed_batches: failedBatches,
+    total_batches: totalBatches,
   });
+
+  if (batchesPublished === 0 && failedBatches > 0) {
+    return {
+      scanId,
+      messagesScanned: messagesProcessed,
+      channelsScanned: channelsProcessed,
+      batchesPublished: 0,
+      failedBatches,
+      status: 'failed',
+      flaggedMessages: [],
+      warningMessage: 'Scan failed: unable to publish any message batches for analysis.',
+    };
+  }
 
   const results = await pollForResults(scanId, errorId);
 
@@ -235,9 +257,23 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
       scanId,
       messagesScanned: messagesProcessed,
       channelsScanned: channelsProcessed,
-      batchesPublished: totalBatches,
+      batchesPublished,
+      failedBatches,
       status: results?.status === 'failed' ? 'failed' : 'timeout',
       flaggedMessages: [],
+    };
+  }
+
+  if (failedBatches > 0) {
+    return {
+      scanId,
+      messagesScanned: results.messages_scanned,
+      channelsScanned: channelsProcessed,
+      batchesPublished,
+      failedBatches,
+      status: 'partial',
+      flaggedMessages: results.flagged_messages,
+      warningMessage: 'Scan encountered some issues so results may be incomplete.',
     };
   }
 
@@ -245,7 +281,8 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     scanId,
     messagesScanned: results.messages_scanned,
     channelsScanned: channelsProcessed,
-    batchesPublished: totalBatches,
+    batchesPublished,
+    failedBatches: 0,
     status: 'completed',
     flaggedMessages: results.flagged_messages,
   };

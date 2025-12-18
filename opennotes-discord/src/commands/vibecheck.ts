@@ -121,13 +121,17 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       return;
     }
 
+    const warningText = result.warningMessage
+      ? `\n\n**Warning:** ${result.warningMessage}`
+      : '';
+
     if (result.flaggedMessages.length === 0) {
       await interaction.editReply({
         content: `Scan complete! No flagged content found.\n\n` +
           `**Scan ID:** \`${result.scanId}\`\n` +
           `**Messages scanned:** ${result.messagesScanned}\n` +
           `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\n` +
-          `No potential misinformation was detected.`,
+          `No potential misinformation was detected.${warningText}`,
       });
       return;
     }
@@ -138,7 +142,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       guildId,
       days,
       result.messagesScanned,
-      result.flaggedMessages
+      result.flaggedMessages,
+      result.warningMessage
     );
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -165,7 +170,8 @@ async function displayFlaggedResults(
   guildId: string,
   days: number,
   messagesScanned: number,
-  flaggedMessages: FlaggedMessage[]
+  flaggedMessages: FlaggedMessage[],
+  warningMessage?: string
 ): Promise<void> {
   const resultsContent = flaggedMessages.slice(0, 10).map((msg, index) => {
     const messageLink = formatMessageLink(guildId, msg.channel_id, msg.message_id);
@@ -193,13 +199,17 @@ async function displayFlaggedResults(
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(createButton, dismissButton);
 
+  const warningText = warningMessage
+    ? `\n\n**Warning:** ${warningMessage}`
+    : '';
+
   await interaction.editReply({
     content: `**Scan Results**\n\n` +
       `**Scan ID:** \`${scanId}\`\n` +
       `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n` +
       `**Messages scanned:** ${messagesScanned}\n` +
       `**Flagged:** ${flaggedMessages.length}\n\n` +
-      `${resultsContent}${moreText}`,
+      `${resultsContent}${moreText}${warningText}`,
     components: [row],
   });
 

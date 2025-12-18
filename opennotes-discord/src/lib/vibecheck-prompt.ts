@@ -222,13 +222,17 @@ async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void>
       return;
     }
 
+    const warningText = result.warningMessage
+      ? `\n\n**Warning:** ${result.warningMessage}`
+      : '';
+
     if (result.flaggedMessages.length === 0) {
       await dmMessage.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\nNo potential misinformation was detected. Your community looks healthy!`,
+        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\nNo potential misinformation was detected. Your community looks healthy!${warningText}`,
       });
     } else {
       await dmMessage.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Flagged:** ${result.flaggedMessages.length}\n\nUse \`/vibecheck ${days}\` for detailed results and to create note requests.`,
+        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Flagged:** ${result.flaggedMessages.length}\n\nUse \`/vibecheck ${days}\` for detailed results and to create note requests.${warningText}`,
       });
     }
   } catch (error) {
