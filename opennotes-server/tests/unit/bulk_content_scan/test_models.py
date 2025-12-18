@@ -1,6 +1,6 @@
 """Unit tests for BulkContentScanLog model.
 
-Tests verify that required indexes exist on the model to match migration schema.
+Tests verify that required indexes and server_defaults exist on the model to match migration schema.
 """
 
 from src.bulk_content_scan.models import BulkContentScanLog
@@ -42,3 +42,45 @@ class TestBulkContentScanLogModelIndexes:
         table = BulkContentScanLog.__table__
         index_names = [idx.name for idx in table.indexes]
         assert "ix_bulk_content_scan_logs_initiated_by_user_id" in index_names
+
+
+class TestBulkContentScanLogModelServerDefaults:
+    """Tests for BulkContentScanLog model server_default definitions.
+
+    These tests ensure the model uses server_default instead of Python default
+    to match the migration schema and ensure defaults are applied at the database level.
+    """
+
+    def test_messages_scanned_has_server_default(self) -> None:
+        """messages_scanned column should use server_default=text('0') to match migration.
+
+        The migration defines: sa.Column("messages_scanned", sa.Integer(), server_default="0", nullable=False)
+        so the model must use server_default=text("0"), not default=0.
+        """
+        table = BulkContentScanLog.__table__
+        column = table.c.messages_scanned
+
+        assert column.server_default is not None, (
+            "messages_scanned should have server_default=text('0'), not default=0. "
+            "Using server_default ensures the default is applied at the database level."
+        )
+        assert str(column.server_default.arg) == "0", (
+            f"messages_scanned server_default should be '0', got '{column.server_default.arg}'"
+        )
+
+    def test_messages_flagged_has_server_default(self) -> None:
+        """messages_flagged column should use server_default=text('0') to match migration.
+
+        The migration defines: sa.Column("messages_flagged", sa.Integer(), server_default="0", nullable=False)
+        so the model must use server_default=text("0"), not default=0.
+        """
+        table = BulkContentScanLog.__table__
+        column = table.c.messages_flagged
+
+        assert column.server_default is not None, (
+            "messages_flagged should have server_default=text('0'), not default=0. "
+            "Using server_default ensures the default is applied at the database level."
+        )
+        assert str(column.server_default.arg) == "0", (
+            f"messages_flagged server_default should be '0', got '{column.server_default.arg}'"
+        )

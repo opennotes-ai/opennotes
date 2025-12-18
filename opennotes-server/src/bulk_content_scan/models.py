@@ -46,8 +46,8 @@ class BulkContentScanLog(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
-    messages_scanned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    messages_flagged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    messages_scanned: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    messages_flagged: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), server_default="in_progress", nullable=False)
 
     community_server: Mapped[CommunityServer] = relationship("CommunityServer", lazy="raise")
