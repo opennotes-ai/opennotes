@@ -10,7 +10,7 @@ import {
   GuildMember,
 } from 'discord.js';
 import { apiClient } from '../api-client.js';
-import { configCache } from '../private-thread.js';
+import { ConfigCache } from '../lib/config-cache.js';
 import { logger } from '../logger.js';
 import { getBotChannelOrRedirect } from '../lib/bot-channel-helper.js';
 import { BotChannelService } from '../services/BotChannelService.js';
@@ -37,6 +37,7 @@ import type { ScoreConfidence } from '../services/ScoringService.js';
 import { suppressExpectedDiscordErrors, extractPlatformMessageId } from '../lib/discord-utils.js';
 import { cache } from '../cache.js';
 
+const configCache = new ConfigCache(apiClient);
 const lastUsage = new Map<string, number>();
 
 function createSummaryV2(
