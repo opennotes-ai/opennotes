@@ -60,14 +60,14 @@ export async function sendVibeCheckPrompt(options: VibeCheckPromptOptions): Prom
   const { botChannel, admin, guildId } = options;
   const errorId = generateErrorId();
 
-  logger.info('Sending vibe check prompt to admin via DM', {
+  logger.info('Sending vibe check prompt to admin in bot channel', {
     error_id: errorId,
     bot_channel_id: botChannel.id,
     admin_id: admin.id,
     guild_id: guildId,
   });
 
-  const content = `**Vibe Check Available**
+  const content = `<@${admin.id}> **Vibe Check Available**
 
 Would you like to scan your server for potential misinformation? This will check recent messages against known fact-checking databases.
 
@@ -80,17 +80,17 @@ Select how many days back you'd like to scan:`;
 
   let message: DiscordMessage;
   try {
-    const dmChannel = await admin.createDM();
-    message = await dmChannel.send({
+    message = await botChannel.send({
       content,
       components: [selectRow, buttonRow],
     });
-  } catch (dmError) {
-    logger.warn('Failed to send vibe check DM to admin, they may have DMs disabled', {
+  } catch (sendError) {
+    logger.warn('Failed to send vibe check prompt in bot channel', {
       error_id: errorId,
       admin_id: admin.id,
       guild_id: guildId,
-      error: dmError instanceof Error ? dmError.message : String(dmError),
+      bot_channel_id: botChannel.id,
+      error: sendError instanceof Error ? sendError.message : String(sendError),
     });
     return;
   }
@@ -138,7 +138,7 @@ Selected: **${selectedDays} day${selectedDays === 1 ? '' : 's'}**`,
             guildId,
             days: selectedDays,
             botChannel,
-            dmMessage: message,
+            promptMessage: message,
             errorId,
           });
 
@@ -181,16 +181,16 @@ interface RunVibeCheckScanOptions {
   guildId: string;
   days: number;
   botChannel: TextChannel;
-  dmMessage: DiscordMessage;
+  promptMessage: DiscordMessage;
   errorId: string;
 }
 
 async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void> {
-  const { interaction, guildId, days, botChannel, dmMessage, errorId } = options;
+  const { interaction, guildId, days, botChannel, promptMessage, errorId } = options;
 
   const guild = botChannel.guild;
   if (!guild) {
-    await dmMessage.edit({
+    await promptMessage.edit({
       content: 'Unable to access server information. Please try `/vibecheck` instead.',
     });
     return;
@@ -205,18 +205,18 @@ async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void>
     });
 
     if (result.channelsScanned === 0) {
-      await dmMessage.edit({
+      await promptMessage.edit({
         content: 'No accessible text channels found to scan.',
       });
       return;
     }
 
-    await dmMessage.edit({
+    await promptMessage.edit({
       content: `Scan complete! Analyzing ${result.messagesScanned} messages for potential misinformation...\n\n**Scan ID:** \`${result.scanId}\``,
     });
 
     if (result.status === 'failed' || result.status === 'timeout') {
-      await dmMessage.edit({
+      await promptMessage.edit({
         content: `Scan analysis failed. Please try again later.\n\n**Scan ID:** \`${result.scanId}\``,
       });
       return;
@@ -227,11 +227,11 @@ async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void>
       : '';
 
     if (result.flaggedMessages.length === 0) {
-      await dmMessage.edit({
+      await promptMessage.edit({
         content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\nNo potential misinformation was detected. Your community looks healthy!${warningText}`,
       });
     } else {
-      await dmMessage.edit({
+      await promptMessage.edit({
         content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Flagged:** ${result.flaggedMessages.length}\n\nUse \`/vibecheck ${days}\` for detailed results and to create note requests.${warningText}`,
       });
     }
@@ -245,7 +245,7 @@ async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void>
       stack: errorDetails.stack,
     });
 
-    await dmMessage.edit({
+    await promptMessage.edit({
       content: 'The scan encountered an error. Please try using `/vibecheck` instead.',
     });
   }

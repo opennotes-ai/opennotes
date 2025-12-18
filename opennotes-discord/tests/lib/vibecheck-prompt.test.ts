@@ -119,21 +119,16 @@ describe('vibecheck-prompt', () => {
         stop: jest.fn(),
       };
 
-      const mockDmMessage = {
-        id: 'dm-message-123',
+      const mockPromptMessage = {
+        id: 'prompt-message-123',
         createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
         edit: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      const mockDmChannel = {
-        id: 'dm-channel-123',
-        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockDmMessage),
       };
 
       const mockAdmin = {
         id: 'admin-123',
         username: 'testadmin',
-        createDM: jest.fn<() => Promise<any>>().mockResolvedValue(mockDmChannel),
+        createDM: jest.fn<() => Promise<any>>(),
       };
 
       const channelsCache = new Map();
@@ -159,6 +154,7 @@ describe('vibecheck-prompt', () => {
       const mockBotChannel = {
         id: 'bot-channel-123',
         name: 'open-notes',
+        send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockPromptMessage),
         guild: {
           id: 'guild-123',
           name: 'Test Guild',
@@ -171,15 +167,14 @@ describe('vibecheck-prompt', () => {
       return {
         mockAdmin,
         mockBotChannel,
-        mockDmChannel,
-        mockDmMessage,
+        mockPromptMessage,
         mockCollector,
         collectHandlers,
       };
     };
 
-    it('should send a DM to the admin with days select and buttons', async () => {
-      const { mockAdmin, mockBotChannel, mockDmChannel } = createMockSetup();
+    it('should send message to bot channel (not DM) with days select and buttons', async () => {
+      const { mockAdmin, mockBotChannel } = createMockSetup();
 
       await sendVibeCheckPrompt({
         botChannel: mockBotChannel as any,
@@ -187,17 +182,17 @@ describe('vibecheck-prompt', () => {
         guildId: 'guild-123',
       });
 
-      expect(mockAdmin.createDM).toHaveBeenCalledTimes(1);
-      expect(mockDmChannel.send).toHaveBeenCalledTimes(1);
+      expect(mockAdmin.createDM).not.toHaveBeenCalled();
+      expect(mockBotChannel.send).toHaveBeenCalledTimes(1);
 
-      const sendCall = mockDmChannel.send.mock.calls[0][0];
+      const sendCall = mockBotChannel.send.mock.calls[0][0];
       expect(sendCall.content).toBeDefined();
       expect(sendCall.content).toContain('Vibe Check');
       expect(sendCall.components).toHaveLength(2);
     });
 
-    it('should include introductory text explaining the vibe check feature', async () => {
-      const { mockAdmin, mockBotChannel, mockDmChannel } = createMockSetup();
+    it('should include @mention of the admin in the message', async () => {
+      const { mockAdmin, mockBotChannel } = createMockSetup();
 
       await sendVibeCheckPrompt({
         botChannel: mockBotChannel as any,
@@ -205,32 +200,26 @@ describe('vibecheck-prompt', () => {
         guildId: 'guild-123',
       });
 
-      const sendCall = mockDmChannel.send.mock.calls[0][0];
+      const sendCall = mockBotChannel.send.mock.calls[0][0];
+      expect(sendCall.content).toContain('<@admin-123>');
+    });
+
+    it('should include introductory text explaining the vibe check feature', async () => {
+      const { mockAdmin, mockBotChannel } = createMockSetup();
+
+      await sendVibeCheckPrompt({
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
+        guildId: 'guild-123',
+      });
+
+      const sendCall = mockBotChannel.send.mock.calls[0][0];
       expect(sendCall.content.toLowerCase()).toContain('scan');
       expect(sendCall.content.toLowerCase()).toContain('misinformation');
     });
 
-    it('should handle admin with DMs disabled gracefully', async () => {
-      const { mockAdmin, mockBotChannel } = createMockSetup();
-      mockAdmin.createDM.mockRejectedValue(new Error('Cannot send DM to this user'));
-
-      await expect(sendVibeCheckPrompt({
-        botChannel: mockBotChannel as any,
-        admin: mockAdmin as any,
-        guildId: 'guild-123',
-      })).resolves.not.toThrow();
-
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Failed to send vibe check DM to admin, they may have DMs disabled',
-        expect.objectContaining({
-          admin_id: 'admin-123',
-          guild_id: 'guild-123',
-        })
-      );
-    });
-
     it('should filter interactions to only the admin who triggered the prompt', async () => {
-      const { mockAdmin, mockBotChannel, mockDmMessage } = createMockSetup();
+      const { mockAdmin, mockBotChannel, mockPromptMessage } = createMockSetup();
 
       await sendVibeCheckPrompt({
         botChannel: mockBotChannel as any,
@@ -238,13 +227,13 @@ describe('vibecheck-prompt', () => {
         guildId: 'guild-123',
       });
 
-      expect(mockDmMessage.createMessageComponentCollector).toHaveBeenCalledWith(
+      expect(mockPromptMessage.createMessageComponentCollector).toHaveBeenCalledWith(
         expect.objectContaining({
           filter: expect.any(Function),
         })
       );
 
-      const collectorOptions = mockDmMessage.createMessageComponentCollector.mock.calls[0][0] as { filter: (i: { user: { id: string } }) => boolean };
+      const collectorOptions = mockPromptMessage.createMessageComponentCollector.mock.calls[0][0] as { filter: (i: { user: { id: string } }) => boolean };
       const filter = collectorOptions.filter;
 
       const adminInteraction = { user: { id: 'admin-123' } };
@@ -371,8 +360,8 @@ describe('vibecheck-prompt', () => {
       );
     });
 
-    it('should handle timeout by cleaning up the DM message', async () => {
-      const { mockAdmin, mockBotChannel, collectHandlers, mockDmMessage } = createMockSetup();
+    it('should handle timeout by cleaning up the prompt message', async () => {
+      const { mockAdmin, mockBotChannel, collectHandlers, mockPromptMessage } = createMockSetup();
 
       await sendVibeCheckPrompt({
         botChannel: mockBotChannel as any,
@@ -387,7 +376,7 @@ describe('vibecheck-prompt', () => {
         await endHandler(new Map(), 'time');
       }
 
-      expect(mockDmMessage.edit).toHaveBeenCalledWith(
+      expect(mockPromptMessage.edit).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining('expired'),
           components: [],

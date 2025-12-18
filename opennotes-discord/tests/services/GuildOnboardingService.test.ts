@@ -295,7 +295,7 @@ describe('GuildOnboardingService', () => {
       await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Sent vibe check prompt to admin via DM',
+        'Sent vibe check prompt to admin in bot channel',
         expect.objectContaining({
           channelId: 'channel-123',
           guildId: 'guild-123',

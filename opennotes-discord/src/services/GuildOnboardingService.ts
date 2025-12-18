@@ -81,7 +81,7 @@ export class GuildOnboardingService {
         guildId,
       });
 
-      logger.info('Sent vibe check prompt to admin via DM', {
+      logger.info('Sent vibe check prompt to admin in bot channel', {
         channelId: channel.id,
         guildId,
         adminId: admin.id,
