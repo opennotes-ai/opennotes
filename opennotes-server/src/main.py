@@ -121,10 +121,27 @@ health_checker = HealthChecker(
 distributed_health = DistributedHealthCoordinator()
 
 
-async def _register_bulk_scan_handlers() -> None:
-    """Register bulk scan event handlers if NATS is connected."""
+async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) -> None:
+    """Register bulk scan event handlers if NATS is connected.
+
+    Args:
+        llm_service: Optional LLM service for embeddings. If not provided, one will be created.
+    """
     if await nats_client.is_connected():
-        embedding_service = EmbeddingService()
+        if redis_client.client is None:
+            logger.warning(
+                "Redis not connected - bulk scan event handlers NOT registered. "
+                "Bulk scans will not process message batches."
+            )
+            return
+
+        if llm_service is None:
+            llm_client_manager = LLMClientManager(
+                encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
+            )
+            llm_service = LLMService(client_manager=llm_client_manager)
+
+        embedding_service = EmbeddingService(llm_service=llm_service)
         bulk_scan_handler = BulkScanEventHandler(
             embedding_service=embedding_service,
             redis_client=redis_client.client,
@@ -184,6 +201,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize AI Note Writer and Vision services if enabled
     ai_note_writer = None
     vision_service = None
+    llm_service: LLMService | None = None
     if settings.AI_NOTE_WRITING_ENABLED:
         llm_client_manager = LLMClientManager(
             encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
@@ -214,7 +232,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("AI Note Writer and Vision services disabled (AI_NOTE_WRITING_ENABLED=False)")
 
-    await _register_bulk_scan_handlers()
+    await _register_bulk_scan_handlers(llm_service=llm_service)
 
     # Store in app state for dependency injection
     app.state.ai_note_writer = ai_note_writer

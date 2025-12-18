@@ -199,8 +199,8 @@ class BulkContentScanService:
     ) -> None:
         """Append a single flagged result to Redis list."""
         redis_key = _get_redis_results_key(scan_id)
-        await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())
-        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)
+        await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())  # type: ignore[misc]
+        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
 
     async def complete_scan(
         self,
@@ -266,9 +266,9 @@ class BulkContentScanService:
         redis_key = _get_redis_results_key(scan_id)
 
         for msg in flagged_messages:
-            await self.redis_client.lpush(redis_key, msg.model_dump_json())
+            await self.redis_client.lpush(redis_key, msg.model_dump_json())  # type: ignore[misc]
         if flagged_messages:
-            await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)
+            await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
 
         logger.debug(
             "Stored flagged results for bulk scan",
@@ -289,7 +289,7 @@ class BulkContentScanService:
         """
         redis_key = _get_redis_results_key(scan_id)
 
-        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)
+        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)  # type: ignore[misc]
         results = []
         for raw_msg in raw_messages:
             msg_str = raw_msg.decode() if isinstance(raw_msg, bytes) else raw_msg

@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bulk_content_scan.schemas import BulkScanMessage
+from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
 from src.database import get_session_maker
 from src.events.schemas import (
@@ -144,7 +144,7 @@ async def handle_scan_completed(
         scan_id=event.scan_id,
         messages_scanned=event.messages_scanned,
         messages_flagged=len(flagged),
-        flagged_messages=[msg.model_dump(mode="json") for msg in flagged],
+        flagged_messages=flagged,
     )
 
     logger.info(
@@ -170,10 +170,11 @@ class BulkScanResultsPublisher:
 
     async def publish(
         self,
-        scan_id: UUID,
-        messages_scanned: int,
-        messages_flagged: int,
-        flagged_messages: list[dict],
+        scan_id: UUID | None = None,
+        messages_scanned: int = 0,
+        messages_flagged: int = 0,
+        flagged_messages: list[FlaggedMessage] | None = None,
+        **_kwargs: Any,
     ) -> None:
         """Publish bulk scan results event.
 
@@ -181,14 +182,18 @@ class BulkScanResultsPublisher:
             scan_id: UUID of the scan
             messages_scanned: Total messages processed
             messages_flagged: Number flagged
-            flagged_messages: List of flagged message dicts
+            flagged_messages: List of FlaggedMessage objects
+            **_kwargs: Additional arguments (ignored, for protocol compatibility)
         """
+        if scan_id is None:
+            raise ValueError("scan_id is required")
+
         event = BulkScanResultsEvent(
             event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
             scan_id=scan_id,
             messages_scanned=messages_scanned,
             messages_flagged=messages_flagged,
-            flagged_messages=flagged_messages,
+            flagged_messages=flagged_messages or [],
         )
 
         await self.nats_client.publish(
