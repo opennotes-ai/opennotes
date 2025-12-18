@@ -345,6 +345,8 @@ async def get_redis() -> Redis:
     """Get Redis client for bulk scan operations."""
     if redis_client.client is None:
         await redis_client.connect()
+    if redis_client.client is None:
+        raise RuntimeError("Failed to establish Redis connection")
     return redis_client.client
 
 
