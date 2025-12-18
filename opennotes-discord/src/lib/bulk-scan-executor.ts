@@ -18,8 +18,10 @@ import {
   type FlaggedMessage,
 } from '../types/bulk-scan.js';
 
-export const POLL_INTERVAL_MS = 2000;
 export const POLL_TIMEOUT_MS = 60000;
+export const BACKOFF_INITIAL_MS = 1000;
+export const BACKOFF_MULTIPLIER = 2;
+export const BACKOFF_MAX_MS = 30000;
 
 export interface BulkScanOptions {
   guild: Guild;
@@ -295,11 +297,17 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   };
 }
 
+function calculateBackoffDelay(attempt: number): number {
+  const delay = BACKOFF_INITIAL_MS * Math.pow(BACKOFF_MULTIPLIER, attempt);
+  return Math.min(delay, BACKOFF_MAX_MS);
+}
+
 export async function pollForResults(
   scanId: string,
   errorId: string
 ): Promise<Awaited<ReturnType<typeof apiClient.getBulkScanResults>> | null> {
   const startTime = Date.now();
+  let attempt = 0;
 
   while (Date.now() - startTime < POLL_TIMEOUT_MS) {
     try {
@@ -309,14 +317,18 @@ export async function pollForResults(
         return results;
       }
 
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      const delay = calculateBackoffDelay(attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
     } catch (error) {
       logger.warn('Error polling for scan results', {
         error_id: errorId,
         scan_id: scanId,
         error: error instanceof Error ? error.message : String(error),
       });
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      const delay = calculateBackoffDelay(attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
     }
   }
 
@@ -341,5 +353,24 @@ export function truncateContent(content: string, maxLength: number = 100): strin
   if (content.length <= maxLength) {
     return content;
   }
-  return content.slice(0, maxLength - 3) + '...';
+
+  const ellipsis = '...';
+  const targetLength = maxLength - ellipsis.length;
+
+  if (targetLength <= 0) {
+    return ellipsis;
+  }
+
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  const segments = Array.from(segmenter.segment(content));
+
+  let result = '';
+  for (const { segment } of segments) {
+    if (result.length + segment.length > targetLength) {
+      break;
+    }
+    result += segment;
+  }
+
+  return result + ellipsis;
 }

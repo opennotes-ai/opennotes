@@ -36,7 +36,15 @@ jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({
   },
 }));
 
-const { executeBulkScan, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } = await import('../../src/lib/bulk-scan-executor.js');
+const {
+  executeBulkScan,
+  pollForResults,
+  truncateContent,
+  POLL_TIMEOUT_MS,
+  BACKOFF_INITIAL_MS,
+  BACKOFF_MULTIPLIER,
+  BACKOFF_MAX_MS,
+} = await import('../../src/lib/bulk-scan-executor.js');
 const { BULK_SCAN_BATCH_SIZE } = await import('../../src/types/bulk-scan.js');
 
 function generateRecentSnowflake(offsetMs: number = 0): string {
@@ -498,6 +506,172 @@ describe('bulk-scan-executor', () => {
         const batch = publishCalls[0][1];
         expect(batch.messages.every((m: any) => m.author_id !== 'bot-123')).toBe(true);
       }
+    });
+  });
+
+  describe('exponential backoff configuration', () => {
+    it('should export backoff configuration constants', () => {
+      expect(BACKOFF_INITIAL_MS).toBe(1000);
+      expect(BACKOFF_MULTIPLIER).toBe(2);
+      expect(BACKOFF_MAX_MS).toBe(30000);
+    });
+
+    it('should use exponential backoff timing on consecutive polls', async () => {
+      const pollDelays: number[] = [];
+      let pollCount = 0;
+
+      mockGetBulkScanResults
+        .mockImplementation(async () => {
+          pollCount++;
+          if (pollCount < 5) {
+            return {
+              scan_id: 'test-scan-backoff',
+              status: 'pending' as const,
+              messages_scanned: 0,
+              flagged_messages: [],
+            };
+          }
+          return {
+            scan_id: 'test-scan-backoff',
+            status: 'completed' as const,
+            messages_scanned: 100,
+            flagged_messages: [],
+          };
+        });
+
+      const originalSetTimeout = global.setTimeout;
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout')
+        .mockImplementation((fn, delay) => {
+          if (typeof delay === 'number' && delay >= BACKOFF_INITIAL_MS) {
+            pollDelays.push(delay);
+          }
+          return originalSetTimeout(fn, 0);
+        });
+
+      await pollForResults('test-scan-backoff', 'err-test');
+
+      setTimeoutSpy.mockRestore();
+
+      expect(pollDelays.length).toBeGreaterThanOrEqual(3);
+      expect(pollDelays[0]).toBe(BACKOFF_INITIAL_MS);
+      expect(pollDelays[1]).toBe(BACKOFF_INITIAL_MS * BACKOFF_MULTIPLIER);
+      expect(pollDelays[2]).toBe(BACKOFF_INITIAL_MS * BACKOFF_MULTIPLIER * BACKOFF_MULTIPLIER);
+    });
+
+    it('should cap backoff delay at maximum value', async () => {
+      let pollCount = 0;
+
+      mockGetBulkScanResults
+        .mockImplementation(async () => {
+          pollCount++;
+          if (pollCount < 10) {
+            return {
+              scan_id: 'test-scan-max',
+              status: 'pending' as const,
+              messages_scanned: 0,
+              flagged_messages: [],
+            };
+          }
+          return {
+            scan_id: 'test-scan-max',
+            status: 'completed' as const,
+            messages_scanned: 100,
+            flagged_messages: [],
+          };
+        });
+
+      const pollDelays: number[] = [];
+      const originalSetTimeout = global.setTimeout;
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout')
+        .mockImplementation((fn, delay) => {
+          if (typeof delay === 'number' && delay >= BACKOFF_INITIAL_MS) {
+            pollDelays.push(delay);
+          }
+          return originalSetTimeout(fn, 0);
+        });
+
+      await pollForResults('test-scan-max', 'err-test');
+
+      setTimeoutSpy.mockRestore();
+
+      const maxObserved = Math.max(...pollDelays);
+      expect(maxObserved).toBeLessThanOrEqual(BACKOFF_MAX_MS);
+    });
+  });
+
+  describe('truncateContent - grapheme-aware truncation', () => {
+    it('should truncate basic ASCII text correctly', () => {
+      const text = 'Hello, World!';
+      expect(truncateContent(text, 5)).toBe('He...');
+      expect(truncateContent(text, 13)).toBe('Hello, World!');
+      expect(truncateContent(text, 20)).toBe('Hello, World!');
+    });
+
+    it('should handle text shorter than or equal to maxLength', () => {
+      expect(truncateContent('Hi', 100)).toBe('Hi');
+      expect(truncateContent('Hi', 2)).toBe('Hi');
+    });
+
+    it('should not break emoji characters when truncating', () => {
+      const emoji = '😀';
+      expect(emoji.length).toBe(2);
+
+      expect(truncateContent(emoji + 'abc', 3)).toBe('...');
+      expect(truncateContent(emoji + 'abc', 4)).toBe('...');
+      expect(truncateContent(emoji + 'abc', 5)).toBe(emoji + 'abc');
+      expect(truncateContent(emoji + 'ab', 4)).toBe(emoji + 'ab');
+      expect(truncateContent(emoji + 'abcd', 5)).toBe(emoji + '...');
+    });
+
+    it('should handle family emoji (multi-codepoint grapheme) as single unit', () => {
+      const familyEmoji = '👨‍👩‍👧‍👦';
+      expect(familyEmoji.length).toBe(11);
+
+      const result = truncateContent(familyEmoji + 'test', 14);
+      expect(result).toBe(familyEmoji + '...');
+
+      const shortResult = truncateContent(familyEmoji + 'test', 10);
+      expect(shortResult).toBe('...');
+    });
+
+    it('should handle flag emoji correctly', () => {
+      const flag = '🇺🇸';
+      expect(flag.length).toBe(4);
+
+      expect(truncateContent(flag + 'hello', 7)).toBe(flag + '...');
+      expect(truncateContent(flag + 'hello', 6)).toBe('...');
+    });
+
+    it('should handle mixed content with emojis', () => {
+      const text = 'Hello 👋 World 🌍';
+      const result = truncateContent(text, 10);
+      expect(result.endsWith('...')).toBe(true);
+      expect(result.length).toBeLessThanOrEqual(13);
+    });
+
+    it('should handle empty string', () => {
+      expect(truncateContent('', 10)).toBe('');
+    });
+
+    it('should handle string with only emojis', () => {
+      const emojis = '🔥🎉💯';
+      expect(emojis.length).toBe(6);
+
+      expect(truncateContent(emojis, 5)).toBe('🔥...');
+      expect(truncateContent(emojis, 6)).toBe('🔥🎉💯');
+      expect(truncateContent(emojis, 9)).toBe('🔥🎉💯');
+    });
+
+    it('should preserve entire grapheme or exclude it - never break mid-grapheme', () => {
+      const text = 'abcdef';
+      const result = truncateContent(text, 5);
+      expect(result).toBe('ab...');
+
+      const simpleEmoji = '😀test';
+      const emoji = '😀';
+      expect(truncateContent(simpleEmoji, 5)).toBe(emoji + '...');
+      expect(truncateContent(simpleEmoji, 6)).toBe(emoji + 'test');
+      expect(truncateContent(simpleEmoji, 4)).toBe('...');
     });
   });
 });

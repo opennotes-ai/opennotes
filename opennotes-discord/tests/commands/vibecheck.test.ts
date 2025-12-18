@@ -63,7 +63,7 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   },
 }));
 
-const { data, execute } = await import('../../src/commands/vibecheck.js');
+const { data, execute, VIBECHECK_COOLDOWN_MS, getVibecheckCooldownKey } = await import('../../src/commands/vibecheck.js');
 
 describe('vibecheck command', () => {
   beforeEach(() => {
@@ -1636,6 +1636,230 @@ describe('vibecheck command', () => {
         };
         expect(capturedAiFilter!(differentUserAiInteraction)).toBe(false);
       });
+    });
+  });
+
+  describe('per-guild cooldown', () => {
+    it('should export cooldown constant', () => {
+      expect(VIBECHECK_COOLDOWN_MS).toBe(5 * 60 * 1000);
+    });
+
+    it('should generate correct cooldown key format', () => {
+      const key = getVibecheckCooldownKey('guild123');
+      expect(key).toBe('vibecheck:cooldown:guild123');
+    });
+
+    it('should reject scan if guild is in cooldown period', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild-cooldown-test',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild-cooldown-test',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockCache.get.mockReturnValue(Date.now() - 60000);
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/cooldown|wait|recently/i),
+        })
+      );
+    });
+
+    it('should allow scan if guild cooldown has expired', async () => {
+      const now = Date.now();
+      const mockChannel = {
+        id: 'channel123',
+        name: 'test-channel',
+        type: 0,
+        isTextBased: () => true,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
+        },
+      };
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map([['channel123', mockChannel]]);
+      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
+        const result = new Map();
+        for (const [k, v] of channelsCache) {
+          if (fn(v)) result.set(k, v);
+        }
+        return result;
+      };
+
+      const mockGuild = {
+        id: 'guild-expired-cooldown',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild-expired-cooldown',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockCache.get.mockReturnValue(now - VIBECHECK_COOLDOWN_MS - 1000);
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.deferReply).toHaveBeenCalled();
+    });
+
+    it('should allow scan if no cooldown exists for guild', async () => {
+      const mockChannel = {
+        id: 'channel123',
+        name: 'test-channel',
+        type: 0,
+        isTextBased: () => true,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
+        },
+      };
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map([['channel123', mockChannel]]);
+      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
+        const result = new Map();
+        for (const [k, v] of channelsCache) {
+          if (fn(v)) result.set(k, v);
+        }
+        return result;
+      };
+
+      const mockGuild = {
+        id: 'guild-no-cooldown',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild-no-cooldown',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockCache.get.mockReturnValue(null);
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.deferReply).toHaveBeenCalled();
+    });
+
+    it('should set cooldown after successful scan initiation', async () => {
+      const mockChannel = {
+        id: 'channel123',
+        name: 'test-channel',
+        type: 0,
+        isTextBased: () => true,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
+        },
+      };
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map([['channel123', mockChannel]]);
+      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
+        const result = new Map();
+        for (const [k, v] of channelsCache) {
+          if (fn(v)) result.set(k, v);
+        }
+        return result;
+      };
+
+      const mockGuild = {
+        id: 'guild-set-cooldown',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild-set-cooldown',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockCache.get.mockReturnValue(null);
+
+      await execute(mockInteraction as any);
+
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'vibecheck:cooldown:guild-set-cooldown',
+        expect.any(Number),
+        VIBECHECK_COOLDOWN_MS / 1000
+      );
+    });
+
+    it('should have independent cooldowns per guild', async () => {
+      const keyGuildA = getVibecheckCooldownKey('guildA');
+      const keyGuildB = getVibecheckCooldownKey('guildB');
+
+      expect(keyGuildA).toBe('vibecheck:cooldown:guildA');
+      expect(keyGuildB).toBe('vibecheck:cooldown:guildB');
+      expect(keyGuildA).not.toBe(keyGuildB);
     });
   });
 });

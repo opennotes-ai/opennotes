@@ -11,6 +11,7 @@ import {
   ButtonInteraction,
 } from 'discord.js';
 import { logger } from '../logger.js';
+import { cache } from '../cache.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser } from '../lib/errors.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
 import { apiClient } from '../api-client.js';
@@ -24,6 +25,12 @@ import {
   formatMessageLink,
   truncateContent,
 } from '../lib/bulk-scan-executor.js';
+
+export const VIBECHECK_COOLDOWN_MS = 5 * 60 * 1000;
+
+export function getVibecheckCooldownKey(guildId: string): string {
+  return `vibecheck:cooldown:${guildId}`;
+}
 
 export const data = new SlashCommandBuilder()
   .setName('vibecheck')
@@ -66,6 +73,22 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     return;
   }
 
+  const cooldownKey = getVibecheckCooldownKey(guildId);
+  const lastScanTime = await cache.get<number>(cooldownKey);
+
+  if (lastScanTime !== null) {
+    const elapsed = Date.now() - lastScanTime;
+    if (elapsed < VIBECHECK_COOLDOWN_MS) {
+      const remainingMs = VIBECHECK_COOLDOWN_MS - elapsed;
+      const remainingMinutes = Math.ceil(remainingMs / 60000);
+      await interaction.reply({
+        content: `This server is on cooldown. Please wait ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''} before running another vibecheck.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+  }
+
   const days = interaction.options.getInteger('days', true);
 
   logger.info('Starting vibecheck scan', {
@@ -80,6 +103,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await interaction.deferReply({
     flags: MessageFlags.Ephemeral,
   });
+
+  await cache.set(cooldownKey, Date.now(), VIBECHECK_COOLDOWN_MS / 1000);
 
   try {
     const result = await executeBulkScan({
