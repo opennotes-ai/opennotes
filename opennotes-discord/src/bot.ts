@@ -33,6 +33,7 @@ import * as vibecheckCommand from './commands/vibecheck.js';
 import * as noteRequestContextCommand from './commands/note-request-context.js';
 
 import { NatsSubscriber } from './events/NatsSubscriber.js';
+import { initializeNatsPublisher, closeNatsPublisher } from './events/NatsPublisher.js';
 import { NotePublisherService } from './services/NotePublisherService.js';
 import { NoteContextService } from './services/NoteContextService.js';
 import { NotePublisherConfigService } from './services/NotePublisherConfigService.js';
@@ -419,6 +420,18 @@ export class Bot {
     try {
       logger.info('Starting bot initialization');
 
+      logger.info('Initializing NATS publisher connection');
+      try {
+        await initializeNatsPublisher();
+        logger.info('NATS publisher initialized successfully');
+      } catch (error) {
+        logger.error('Failed to initialize NATS publisher - bot cannot start without NATS', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        throw error;
+      }
+
       logger.info('Starting cache service');
       cache.start();
       logger.info('Cache service started');
@@ -605,6 +618,13 @@ export class Bot {
       }
     } catch (error) {
       logger.warn('NATS subscriber cleanup failed', { error });
+    }
+
+    try {
+      await closeNatsPublisher();
+      logger.info('NATS publisher closed');
+    } catch (error) {
+      logger.warn('NATS publisher cleanup failed', { error });
     }
 
     if (this.healthCheckServer) {

@@ -103,6 +103,21 @@ export function getNatsPublisher(): NatsPublisher {
   return natsPublisherInstance;
 }
 
+export async function initializeNatsPublisher(): Promise<NatsPublisher> {
+  const publisher = getNatsPublisher();
+  if (!publisher.isConnected()) {
+    await publisher.connect();
+  }
+  return publisher;
+}
+
+export async function closeNatsPublisher(): Promise<void> {
+  if (natsPublisherInstance) {
+    await natsPublisherInstance.close();
+    natsPublisherInstance = null;
+  }
+}
+
 export const natsPublisher = {
   publishBulkScanBatch: async (
     subject: typeof NATS_SUBJECTS[keyof typeof NATS_SUBJECTS],
