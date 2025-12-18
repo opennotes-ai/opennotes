@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import Field, field_validator
 
+from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
 from src.common.base_schemas import StrictEventSchema
 
 
@@ -263,9 +264,9 @@ class BulkScanMessageBatchEvent(BaseEvent):
     community_server_id: UUID = Field(
         ..., description="Community server UUID (needed for platform_id lookup)"
     )
-    messages: list[dict[str, Any]] = Field(
+    messages: list[BulkScanMessage] = Field(
         ...,
-        description="Batch of messages: [{message_id, channel_id, content, author_id, timestamp}]",
+        description="Batch of messages to scan",
     )
     batch_number: int = Field(..., ge=1, description="Batch sequence number")
     is_final_batch: bool = Field(default=False, description="Whether this is the last batch")
@@ -287,10 +288,9 @@ class BulkScanResultsEvent(BaseEvent):
     scan_id: UUID = Field(..., description="Scan results belong to")
     messages_scanned: int = Field(..., ge=0, description="Total messages processed")
     messages_flagged: int = Field(..., ge=0, description="Number of messages flagged")
-    flagged_messages: list[dict[str, Any]] = Field(
+    flagged_messages: list[FlaggedMessage] = Field(
         default_factory=list,
-        description="Flagged messages with match info: [{message_id, channel_id, content, "
-        "author_id, timestamp, match_score, matched_claim, matched_source}]",
+        description="Flagged messages with match info",
     )
 
 

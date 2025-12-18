@@ -91,9 +91,10 @@ class TestBulkScanMessageBatchEvent:
             {
                 "message_id": "msg_1",
                 "channel_id": "ch_1",
+                "community_server_id": "guild_123",
                 "content": "Test message",
                 "author_id": "user_1",
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": datetime.now(UTC),
             }
         ]
 
