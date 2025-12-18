@@ -1,7 +1,7 @@
 """task_846_add_bulk_content_scan_log
 
 Revision ID: a37eb031fffa
-Revises: 56e80052d351
+Revises: 27c60ef54e22
 Create Date: 2025-12-17 17:41:36.851063
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a37eb031fffa"
-down_revision: str | Sequence[str] | None = "56e80052d351"
+down_revision: str | Sequence[str] | None = "27c60ef54e22"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
