@@ -747,3 +747,141 @@ class TestCompleteScanRowLocking:
         assert mock_scan_log.messages_flagged == 5
         assert mock_scan_log.completed_at is not None
         mock_session.commit.assert_called_once()
+
+
+class TestBulkScanStatusEnumUsage:
+    """Test that BulkScanStatus enum is used consistently instead of string literals."""
+
+    @pytest.mark.asyncio
+    async def test_initiate_scan_uses_enum_for_status(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """initiate_scan should pass BulkScanStatus enum value, not string literal."""
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        captured_kwargs = {}
+
+        def capture_scan_log(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            mock_log = MagicMock()
+            mock_log.id = uuid4()
+            return mock_log
+
+        with patch(
+            "src.bulk_content_scan.service.BulkContentScanLog",
+            side_effect=capture_scan_log,
+        ):
+            service = BulkContentScanService(
+                session=mock_session,
+                embedding_service=mock_embedding_service,
+                redis_client=mock_redis,
+            )
+
+            await service.initiate_scan(
+                community_server_id=uuid4(),
+                initiated_by_user_id=uuid4(),
+                scan_window_days=7,
+            )
+
+        assert "status" in captured_kwargs, "status should be passed to BulkContentScanLog"
+        assert isinstance(captured_kwargs["status"], BulkScanStatus), (
+            f"status should be BulkScanStatus enum, got {type(captured_kwargs['status'])}"
+        )
+        assert captured_kwargs["status"] == BulkScanStatus.PENDING
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_accepts_enum_status(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """complete_scan should accept BulkScanStatus enum for status parameter."""
+        from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_scan_log = MagicMock(spec=BulkContentScanLog)
+        mock_scan_log.id = uuid4()
+        mock_scan_log.status = BulkScanStatus.IN_PROGRESS
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=100,
+            messages_flagged=5,
+            status=BulkScanStatus.COMPLETED,
+        )
+
+        assert mock_scan_log.status == BulkScanStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_accepts_failed_status(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """complete_scan should accept BulkScanStatus.FAILED for error cases."""
+        from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_scan_log = MagicMock(spec=BulkContentScanLog)
+        mock_scan_log.id = uuid4()
+        mock_scan_log.status = BulkScanStatus.IN_PROGRESS
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=50,
+            messages_flagged=0,
+            status=BulkScanStatus.FAILED,
+        )
+
+        assert mock_scan_log.status == BulkScanStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_default_status_is_completed_enum(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """complete_scan default status should be BulkScanStatus.COMPLETED enum value."""
+        from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_scan_log = MagicMock(spec=BulkContentScanLog)
+        mock_scan_log.id = uuid4()
+        mock_scan_log.status = BulkScanStatus.IN_PROGRESS
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=100,
+            messages_flagged=5,
+        )
+
+        assert mock_scan_log.status == BulkScanStatus.COMPLETED
+        assert isinstance(mock_scan_log.status, BulkScanStatus)

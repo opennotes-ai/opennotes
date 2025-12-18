@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
-from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
+from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
 from src.config import settings
 from src.fact_checking.embedding_service import EmbeddingService
 from src.monitoring import get_logger
@@ -63,7 +63,7 @@ class BulkContentScanService:
             community_server_id=community_server_id,
             initiated_by_user_id=initiated_by_user_id,
             scan_window_days=scan_window_days,
-            status="pending",
+            status=BulkScanStatus.PENDING,
         )
 
         self.session.add(scan_log)
@@ -196,7 +196,7 @@ class BulkContentScanService:
         scan_id: UUID,
         messages_scanned: int,
         messages_flagged: int,
-        status: str = "completed",
+        status: BulkScanStatus = BulkScanStatus.COMPLETED,
     ) -> None:
         """Update scan log with completion data.
 
@@ -207,7 +207,7 @@ class BulkContentScanService:
             scan_id: UUID of the scan to complete
             messages_scanned: Total messages scanned
             messages_flagged: Number of messages flagged
-            status: Final status (default: "completed")
+            status: Final status (default: BulkScanStatus.COMPLETED)
         """
         stmt = select(BulkContentScanLog).where(BulkContentScanLog.id == scan_id).with_for_update()
         result = await self.session.execute(stmt)
