@@ -491,7 +491,10 @@ class TestCompleteScan:
         mock_scan_log.id = uuid4()
         mock_scan_log.status = "in_progress"
         mock_scan_log.completed_at = None
-        mock_session.get = AsyncMock(return_value=mock_scan_log)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         service = BulkContentScanService(
             session=mock_session,
@@ -520,7 +523,10 @@ class TestCompleteScan:
         from src.bulk_content_scan.service import BulkContentScanService
 
         mock_scan_log = MagicMock(spec=BulkContentScanLog)
-        mock_session.get = AsyncMock(return_value=mock_scan_log)
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         service = BulkContentScanService(
             session=mock_session,
@@ -622,3 +628,122 @@ class TestStoreFlaggedResults:
 
         mock_redis.lpush.assert_called()
         mock_redis.expire.assert_called()
+
+
+class TestCompleteScanRowLocking:
+    """Test row-level locking in complete_scan() - task-849.06."""
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_uses_for_update_locking(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #1: complete_scan() uses with_for_update() for row-level locking."""
+        from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_scan_log = MagicMock(spec=BulkContentScanLog)
+        mock_scan_log.id = uuid4()
+        mock_scan_log.status = "in_progress"
+        mock_scan_log.completed_at = None
+
+        captured_stmt = None
+
+        async def capture_execute(stmt):
+            nonlocal captured_stmt
+            captured_stmt = stmt
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+            return mock_result
+
+        mock_session.execute = AsyncMock(side_effect=capture_execute)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=100,
+            messages_flagged=5,
+        )
+
+        assert captured_stmt is not None, "session.execute() should have been called"
+        assert hasattr(captured_stmt, "_for_update_arg"), (
+            "Statement should be a SQLAlchemy select with for_update capability"
+        )
+        assert captured_stmt._for_update_arg is not None, (
+            "Statement should have with_for_update() applied for row-level locking"
+        )
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_handles_nonexistent_scan_gracefully(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #2: Concurrent completion attempts are handled gracefully.
+
+        When a scan is not found (e.g., already deleted or never existed),
+        the method should not raise an exception and should not commit.
+        """
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        async def return_none_execute(stmt):
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none = MagicMock(return_value=None)
+            return mock_result
+
+        mock_session.execute = AsyncMock(side_effect=return_none_execute)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=uuid4(),
+            messages_scanned=100,
+            messages_flagged=5,
+        )
+
+        mock_session.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_complete_scan_commits_after_update_with_lock(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #3: Tests verify correct behavior - lock acquired, update made, commit called."""
+        from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_scan_log = MagicMock(spec=BulkContentScanLog)
+        mock_scan_log.id = uuid4()
+        mock_scan_log.status = "in_progress"
+        mock_scan_log.completed_at = None
+
+        async def return_scan_execute(stmt):
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
+            return mock_result
+
+        mock_session.execute = AsyncMock(side_effect=return_scan_execute)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        await service.complete_scan(
+            scan_id=mock_scan_log.id,
+            messages_scanned=100,
+            messages_flagged=5,
+            status="completed",
+        )
+
+        assert mock_scan_log.status == "completed"
+        assert mock_scan_log.messages_scanned == 100
+        assert mock_scan_log.messages_flagged == 5
+        assert mock_scan_log.completed_at is not None
+        mock_session.commit.assert_called_once()

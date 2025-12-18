@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.models import BulkContentScanLog
@@ -199,13 +200,18 @@ class BulkContentScanService:
     ) -> None:
         """Update scan log with completion data.
 
+        Uses row-level locking (SELECT ... FOR UPDATE) to prevent race conditions
+        when concurrent calls attempt to complete the same scan.
+
         Args:
             scan_id: UUID of the scan to complete
             messages_scanned: Total messages scanned
             messages_flagged: Number of messages flagged
             status: Final status (default: "completed")
         """
-        scan_log = await self.session.get(BulkContentScanLog, scan_id)
+        stmt = select(BulkContentScanLog).where(BulkContentScanLog.id == scan_id).with_for_update()
+        result = await self.session.execute(stmt)
+        scan_log = result.scalar_one_or_none()
 
         if scan_log:
             scan_log.completed_at = datetime.now(UTC)
