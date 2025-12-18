@@ -132,9 +132,15 @@ class TestHandleMessageBatch:
         mock_service.append_flagged_result.assert_called_once_with(scan_id, sample_flagged_message)
 
     @pytest.mark.asyncio
-    async def test_handles_missing_platform_id(self, mock_service, sample_messages):
-        """Verify graceful handling when platform_id lookup fails."""
-        from src.bulk_content_scan.nats_handler import handle_message_batch
+    async def test_raises_error_when_platform_id_not_found(self, mock_service, sample_messages):
+        """Verify BatchProcessingError is raised when platform_id lookup fails.
+
+        This ensures the message is NAKed for retry instead of being silently dropped.
+        """
+        from src.bulk_content_scan.nats_handler import (
+            BatchProcessingError,
+            handle_message_batch,
+        )
         from src.events.schemas import BulkScanMessageBatchEvent
 
         scan_id = uuid4()
@@ -153,10 +159,47 @@ class TestHandleMessageBatch:
             "src.bulk_content_scan.nats_handler.get_platform_id",
             new=AsyncMock(return_value=None),
         ):
-            await handle_message_batch(event, mock_service)
+            with pytest.raises(BatchProcessingError) as exc_info:
+                await handle_message_batch(event, mock_service)
 
+        assert "Platform ID not found" in str(exc_info.value)
+        assert str(community_server_id) in str(exc_info.value)
         mock_service.process_messages.assert_not_called()
         mock_service.append_flagged_result.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_raises_error_when_process_messages_fails(self, mock_service, sample_messages):
+        """Verify exceptions from process_messages propagate to cause NAK.
+
+        This ensures failed batch processing doesn't silently drop batches.
+        """
+        from src.bulk_content_scan.nats_handler import handle_message_batch
+        from src.events.schemas import BulkScanMessageBatchEvent
+
+        scan_id = uuid4()
+        community_server_id = uuid4()
+
+        mock_service.process_messages = AsyncMock(
+            side_effect=RuntimeError("Embedding service unavailable")
+        )
+
+        event = BulkScanMessageBatchEvent(
+            event_id="evt_123",
+            scan_id=scan_id,
+            community_server_id=community_server_id,
+            messages=sample_messages,
+            batch_number=1,
+            is_final_batch=False,
+        )
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_platform_id",
+            new=AsyncMock(return_value="test_platform_123"),
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                await handle_message_batch(event, mock_service)
+
+        assert "Embedding service unavailable" in str(exc_info.value)
 
 
 class TestHandleScanCompleted:

@@ -25,6 +25,16 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 
+class BatchProcessingError(Exception):
+    """Exception raised when batch processing fails.
+
+    Raising this exception causes the NATS message to be NAKed for retry,
+    preventing silent batch dropping.
+    """
+
+    pass
+
+
 class EventPublisher(Protocol):
     """Protocol for event publishing."""
 
@@ -73,14 +83,17 @@ async def handle_message_batch(
 
     platform_id = await get_platform_id(service.session, event.community_server_id)
     if not platform_id:
+        error_msg = (
+            f"Platform ID not found for community server {event.community_server_id}"
+        )
         logger.error(
-            "Platform ID not found for community server",
+            error_msg,
             extra={
                 "scan_id": str(event.scan_id),
                 "community_server_id": str(event.community_server_id),
             },
         )
-        return
+        raise BatchProcessingError(error_msg)
 
     typed_messages = [BulkScanMessage.model_validate(msg) for msg in event.messages]
 

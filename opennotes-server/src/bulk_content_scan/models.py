@@ -43,7 +43,9 @@ class BulkContentScanLog(Base, TimestampMixin):
     initiated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     messages_scanned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     messages_flagged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(20), server_default="in_progress", nullable=False)
