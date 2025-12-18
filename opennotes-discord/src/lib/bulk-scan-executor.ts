@@ -123,11 +123,18 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   for (const [, channel] of textChannels) {
     try {
       if (progressCallback) {
-        await progressCallback({
+        progressCallback({
           channelsProcessed,
           totalChannels,
           messagesProcessed,
           currentChannel: channel.name,
+        }).catch((error) => {
+          logger.warn('Progress callback failed', {
+            error: error instanceof Error ? error.message : String(error),
+            scanId,
+            channelsProcessed,
+            totalChannels,
+          });
         });
       }
 

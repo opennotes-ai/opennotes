@@ -321,6 +321,138 @@ describe('bulk-scan-executor', () => {
     });
   });
 
+  describe('executeBulkScan - progress callback behavior', () => {
+    it('should not block scan execution when progress callback is slow', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channels = new Map();
+      for (let c = 0; c < 3; c++) {
+        channels.set(`ch-${c}`, createMockChannel(`ch-${c}`, messages));
+      }
+
+      const guild = createMockGuild(channels);
+
+      const slowCallback = jest.fn<(progress: any) => Promise<void>>()
+        .mockImplementation(async () => {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        });
+
+      const startTime = Date.now();
+
+      const resultPromise = executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        progressCallback: slowCallback,
+      });
+
+      await jest.advanceTimersByTimeAsync(100);
+      const result = await resultPromise;
+
+      const duration = Date.now() - startTime;
+
+      expect(result.status).toBe('completed');
+      expect(slowCallback).toHaveBeenCalled();
+      expect(duration).toBeLessThan(500);
+    });
+
+    it('should continue scan when progress callback throws an error', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const errorCallback = jest.fn<(progress: any) => Promise<void>>()
+        .mockRejectedValue(new Error('Progress callback failed'));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        progressCallback: errorCallback,
+      });
+
+      expect(result.status).toBe('completed');
+      expect(errorCallback).toHaveBeenCalled();
+    });
+
+    it('should log warning when progress callback fails', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const errorCallback = jest.fn<(progress: any) => Promise<void>>()
+        .mockRejectedValue(new Error('Discord API error'));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        progressCallback: errorCallback,
+      });
+
+      await jest.advanceTimersByTimeAsync(10);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Progress callback failed'),
+        expect.objectContaining({
+          error: 'Discord API error',
+        })
+      );
+    });
+
+    it('should call progress callback for each channel with correct data', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channels = new Map();
+      channels.set('ch-1', createMockChannel('ch-1', messages));
+      channels.set('ch-2', createMockChannel('ch-2', messages));
+
+      const guild = createMockGuild(channels);
+
+      const progressCallback = jest.fn<(progress: any) => Promise<void>>()
+        .mockResolvedValue(undefined);
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        progressCallback,
+      });
+
+      expect(progressCallback).toHaveBeenCalledTimes(2);
+
+      expect(progressCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channelsProcessed: 0,
+          totalChannels: 2,
+          currentChannel: expect.any(String),
+        })
+      );
+    });
+  });
+
   describe('executeBulkScan - basic functionality', () => {
     it('should return empty result for guild with no accessible channels', async () => {
       const guild = createMockGuild(new Map());
