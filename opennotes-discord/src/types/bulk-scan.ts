@@ -12,25 +12,25 @@ export const VIBE_CHECK_DAYS_OPTIONS: VibeCheckDaysOption[] = [
 ];
 
 export interface BulkScanMessage {
-  messageId: string;
-  channelId: string;
-  guildId: string;
+  message_id: string;
+  channel_id: string;
+  community_server_id: string;
   content: string;
-  authorId: string;
-  authorUsername?: string;
+  author_id: string;
+  author_username?: string;
   timestamp: string;
-  attachmentUrls?: string[];
-  embedContent?: string;
+  attachment_urls?: string[];
+  embed_content?: string;
 }
 
 export interface BulkScanBatch {
-  scanId: string;
-  guildId: string;
-  initiatedBy: string;
-  batchIndex: number;
-  totalBatches: number;
+  scan_id: string;
+  community_server_id: string;
+  initiated_by: string;
+  batch_index: number;
+  total_batches: number;
   messages: BulkScanMessage[];
-  cutoffTimestamp: string;
+  cutoff_timestamp: string;
 }
 
 export interface FlaggedContent {

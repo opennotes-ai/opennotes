@@ -64,17 +64,17 @@ export class NatsPublisher {
 
       logger.debug('Published bulk scan batch to NATS', {
         subject,
-        scanId: batch.scanId,
-        batchIndex: batch.batchIndex,
-        totalBatches: batch.totalBatches,
-        messageCount: batch.messages.length,
+        scan_id: batch.scan_id,
+        batch_index: batch.batch_index,
+        total_batches: batch.total_batches,
+        message_count: batch.messages.length,
       });
     } catch (error) {
       logger.error('Failed to publish bulk scan batch', {
         error: error instanceof Error ? error.message : String(error),
         subject,
-        scanId: batch.scanId,
-        batchIndex: batch.batchIndex,
+        scan_id: batch.scan_id,
+        batch_index: batch.batch_index,
       });
       throw error;
     }

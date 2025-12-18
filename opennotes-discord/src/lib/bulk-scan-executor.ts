@@ -85,13 +85,13 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     }
 
     const batch: BulkScanBatch = {
-      scanId,
-      guildId,
-      initiatedBy: initiatorId,
-      batchIndex,
-      totalBatches: -1,
+      scan_id: scanId,
+      community_server_id: guildId,
+      initiated_by: initiatorId,
+      batch_index: batchIndex,
+      total_batches: -1,
       messages: currentBatch,
-      cutoffTimestamp: new Date(cutoffTimestamp).toISOString(),
+      cutoff_timestamp: new Date(cutoffTimestamp).toISOString(),
     };
 
     try {
@@ -165,17 +165,17 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
           }
 
           const scanMessage: BulkScanMessage = {
-            messageId: message.id,
-            channelId: channel.id,
-            guildId,
+            message_id: message.id,
+            channel_id: channel.id,
+            community_server_id: guildId,
             content: message.content,
-            authorId: message.author.id,
-            authorUsername: message.author.username,
+            author_id: message.author.id,
+            author_username: message.author.username,
             timestamp: message.createdAt.toISOString(),
-            attachmentUrls: message.attachments.size > 0
+            attachment_urls: message.attachments.size > 0
               ? Array.from(message.attachments.values()).map(a => a.url)
               : undefined,
-            embedContent: message.embeds.length > 0
+            embed_content: message.embeds.length > 0
               ? message.embeds.map(e => e.description || e.title || '').filter(Boolean).join('\n')
               : undefined,
           };
