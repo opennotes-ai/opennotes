@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@opennotes/shared-types": "workspace:*",
+    "@sapphire/snowflake": "^3.5.5",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "discord.js": "^14.24.2",
