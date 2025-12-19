@@ -26,6 +26,7 @@ import { logger } from '../logger.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { config } from '../config.js';
 import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator } from '../utils/v2-components.js';
+import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 
 const configService = new GuildConfigService(apiClient);
 const guildSetupService = new GuildSetupService();
@@ -599,7 +600,8 @@ async function handleLlmSet(
   }
 
   try {
-    const llmConfig = await apiClient.createLLMConfig(guildId, {
+    const communityServerId = await resolveCommunityServerId(guildId);
+    const llmConfig = await apiClient.createLLMConfig(communityServerId, {
       provider,
       api_key: apiKey,
       enabled: true,

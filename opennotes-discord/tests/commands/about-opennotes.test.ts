@@ -281,7 +281,7 @@ describe('about-opennotes command', () => {
           error_id: 'test-error-id',
           command: 'about-opennotes',
           user_id: 'user123',
-          community_server_id: 'guild456',
+          guild_id: 'guild456',
         })
       );
     });

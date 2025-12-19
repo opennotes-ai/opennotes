@@ -3,6 +3,7 @@ import { apiClient } from '../api-client.js';
 import { logger } from '../logger.js';
 import type { MonitoredChannelCreate } from '../lib/api-client.js';
 import { config } from '../config.js';
+import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 
 export class GuildSetupService {
   async autoRegisterChannels(guild: Guild): Promise<void> {
@@ -11,6 +12,8 @@ export class GuildSetupService {
         guildId: guild.id,
         guildName: guild.name,
       });
+
+      const communityServerId = await resolveCommunityServerId(guild.id);
 
       const textChannels = await this.getTextChannels(guild);
 
@@ -26,7 +29,7 @@ export class GuildSetupService {
         count: textChannels.length,
       });
 
-      const results = await this.registerChannels(guild.id, textChannels);
+      const results = await this.registerChannels(communityServerId, textChannels, guild.id);
 
       logger.info('Channel auto-registration completed', {
         guildId: guild.id,
@@ -66,8 +69,9 @@ export class GuildSetupService {
   }
 
   private async registerChannels(
-    guildId: string,
-    channels: TextChannel[]
+    communityServerId: string,
+    channels: TextChannel[],
+    guildId: string
   ): Promise<{ registered: number; alreadyMonitored: number; failed: number }> {
     let registered = 0;
     let alreadyMonitored = 0;
@@ -76,7 +80,7 @@ export class GuildSetupService {
     const registrationPromises = channels.map(async (channel) => {
       try {
         const request: MonitoredChannelCreate = {
-          community_server_id: guildId,
+          community_server_id: communityServerId,
           channel_id: channel.id,
           enabled: true,
           similarity_threshold: config.similaritySearchDefaultThreshold,

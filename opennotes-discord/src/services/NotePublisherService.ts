@@ -22,6 +22,8 @@ import { apiClient } from '../api-client.js';
 import { NoteContextService } from './NoteContextService.js';
 import { NotePublisherConfigService } from './NotePublisherConfigService.js';
 import { DistributedLock } from '../utils/distributed-lock.js';
+import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
+import { isValidUUID } from '../lib/validation.js';
 import type { ScoreUpdateEvent } from '../events/types.js';
 import type { NoteContext } from './NoteContextService.js';
 
@@ -558,7 +560,6 @@ export class NotePublisherService {
     messageContent?: string
   ): Promise<void> {
     try {
-      // Fetch the original message to get its content for embedding storage
       let content = messageContent;
       if (!content && success) {
         try {
@@ -576,17 +577,24 @@ export class NotePublisherService {
         }
       }
 
+      let communityServerId = context.guildId;
+      if (!isValidUUID(context.guildId)) {
+        logger.debug('Resolving Discord snowflake to community server UUID', {
+          guildId: context.guildId,
+        });
+        communityServerId = await resolveCommunityServerId(context.guildId);
+      }
+
       await apiClient.recordNotePublisher({
         noteId: String(event.note_id),
         originalMessageId: context.originalMessageId,
         channelId: context.channelId,
-        guildId: context.guildId,
+        guildId: communityServerId,
         scoreAtPost: event.score,
         confidenceAtPost: event.confidence,
         success,
         errorMessage: errorMessage || null,
-        // Optional embedding fields - server will generate embeddings if content available
-        messageEmbedding: null, // Server generates this from the original message
+        messageEmbedding: null,
         embeddingProvider: null,
         embeddingModel: null,
       });

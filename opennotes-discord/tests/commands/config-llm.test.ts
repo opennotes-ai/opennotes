@@ -13,6 +13,8 @@ const mockApiClient = {
   createLLMConfig: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
+const mockResolveCommunityServerId = jest.fn<(guildId: string) => Promise<string>>();
+
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
@@ -21,11 +23,16 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
   apiClient: mockApiClient,
 }));
 
+jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
+  resolveCommunityServerId: mockResolveCommunityServerId,
+}));
+
 const { execute } = await import('../../src/commands/config.js');
 
 describe('config-llm command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockResolveCommunityServerId.mockImplementation(async (guildId: string) => `uuid-for-${guildId}`);
   });
 
   describe('successful configuration', () => {
@@ -59,7 +66,8 @@ describe('config-llm command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('guild456', {
+      expect(mockResolveCommunityServerId).toHaveBeenCalledWith('guild456');
+      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('uuid-for-guild456', {
         provider: 'openai',
         api_key: 'sk-test1234567890abcdef',
         enabled: true,
@@ -103,7 +111,8 @@ describe('config-llm command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('guild789', {
+      expect(mockResolveCommunityServerId).toHaveBeenCalledWith('guild789');
+      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('uuid-for-guild789', {
         provider: 'anthropic',
         api_key: 'sk-ant-test1234567890abcdef',
         enabled: true,
@@ -264,7 +273,8 @@ describe('config-llm command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('guild456', {
+      expect(mockResolveCommunityServerId).toHaveBeenCalledWith('guild456');
+      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('uuid-for-guild456', {
         provider: 'openai',
         api_key: 'sk-valid-format-key-1234567890',
         enabled: true,
@@ -339,7 +349,8 @@ describe('config-llm command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('guild789', {
+      expect(mockResolveCommunityServerId).toHaveBeenCalledWith('guild789');
+      expect(mockApiClient.createLLMConfig).toHaveBeenCalledWith('uuid-for-guild789', {
         provider: 'anthropic',
         api_key: 'sk-ant-looks-valid-but-revoked',
         enabled: true,

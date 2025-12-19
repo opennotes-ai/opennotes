@@ -21,7 +21,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       error_id: errorId,
       command: 'about-opennotes',
       user_id: userId,
-      community_server_id: guildId,
+      guild_id: guildId,
     });
 
     await interaction.deferReply({ flags: v2MessageFlags({ ephemeral: true }) });
@@ -45,7 +45,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       error_id: errorId,
       command: 'about-opennotes',
       user_id: userId,
-      community_server_id: guildId,
+      guild_id: guildId,
       error: errorDetails.message,
       error_type: errorDetails.type,
       stack: errorDetails.stack,
