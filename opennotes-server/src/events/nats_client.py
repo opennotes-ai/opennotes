@@ -227,6 +227,8 @@ class NATSClientManager:
         consumer_name = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
 
         consumer_config = ConsumerConfig(
+            durable_name=consumer_name,
+            deliver_group=consumer_name,
             max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
             ack_wait=settings.NATS_ACK_WAIT_SECONDS,
         )
@@ -236,8 +238,6 @@ class NATSClientManager:
                 self.js.subscribe(
                     subject,
                     cb=callback,
-                    durable=consumer_name,
-                    queue=consumer_name,
                     config=consumer_config,
                 ),
                 timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
@@ -253,8 +253,6 @@ class NATSClientManager:
                     self.js.subscribe(
                         subject,
                         cb=callback,
-                        durable=consumer_name,
-                        queue=consumer_name,
                         config=consumer_config,
                     ),
                     timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
