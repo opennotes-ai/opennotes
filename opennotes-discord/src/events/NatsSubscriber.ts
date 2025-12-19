@@ -9,19 +9,12 @@ export class NatsSubscriber {
   private readonly codec = StringCodec();
   private readonly maxReconnectAttempts: number;
   private readonly reconnectWait: number;
-  private readonly consumerName: string;
   private consumerIterator?: AsyncIterable<JsMsg>;
   private customSubject?: string;
 
   constructor() {
     this.maxReconnectAttempts = parseInt(process.env.NATS_MAX_RECONNECT_ATTEMPTS || '10', 10);
     this.reconnectWait = parseInt(process.env.NATS_RECONNECT_WAIT || '2', 10) * 1000;
-
-    const baseConsumerName = process.env.NATS_CONSUMER_GROUP || 'discord-bot-score-updates-v3';
-    const isTest = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
-    this.consumerName = isTest
-      ? `${baseConsumerName}-${Date.now()}-${Math.random().toString(36).substring(7)}`
-      : baseConsumerName;
   }
 
   async connect(url?: string): Promise<void> {
