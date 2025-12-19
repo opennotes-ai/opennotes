@@ -5,7 +5,7 @@
 
 [Homepage](https://opennotes.ai) • [Philosophy](docs/PHILOSOPHY.md) • [Architecture](docs/ARCHITECTURE.md)
 
-
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/opennotes-ai/opennotes/ci.yml?label=CI%20Build)
 <a href="https://discord.gg/CsxBasRrte"><img alt="Discord" src="https://img.shields.io/discord/1448846366938759308?label=Discord"></a>
 
 </div>
