@@ -1,10 +1,14 @@
+import { randomUUID } from 'crypto';
 import { connect, NatsConnection, StringCodec, JetStreamClient } from 'nats';
 import { logger } from '../logger.js';
 import { sanitizeConnectionUrl } from '../utils/url-sanitizer.js';
 import {
   NATS_SUBJECTS,
+  EventType,
   type BulkScanBatch,
   type BulkScanCompleted,
+  type BulkScanBatchEvent,
+  type BulkScanCompletedEvent,
 } from '../types/bulk-scan.js';
 
 export class NatsPublisher {
@@ -63,14 +67,27 @@ export class NatsPublisher {
     }
 
     try {
-      const data = this.codec.encode(JSON.stringify(batch));
+      const event: BulkScanBatchEvent = {
+        event_id: randomUUID(),
+        event_type: EventType.BULK_SCAN_MESSAGE_BATCH,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        metadata: {},
+        scan_id: batch.scan_id,
+        community_server_id: batch.community_server_id,
+        messages: batch.messages,
+        batch_number: batch.batch_number,
+        is_final_batch: batch.is_final_batch,
+      };
+
+      const data = this.codec.encode(JSON.stringify(event));
       await this.js.publish(subject, data);
 
       logger.debug('Published bulk scan batch to NATS', {
         subject,
         scan_id: batch.scan_id,
-        batch_index: batch.batch_index,
-        total_batches: batch.total_batches,
+        batch_number: batch.batch_number,
+        is_final_batch: batch.is_final_batch,
         message_count: batch.messages.length,
       });
     } catch (error) {
@@ -78,31 +95,42 @@ export class NatsPublisher {
         error: error instanceof Error ? error.message : String(error),
         subject,
         scan_id: batch.scan_id,
-        batch_index: batch.batch_index,
+        batch_number: batch.batch_number,
       });
       throw error;
     }
   }
 
-  async publishBulkScanCompleted(event: BulkScanCompleted): Promise<void> {
+  async publishBulkScanCompleted(completedData: BulkScanCompleted): Promise<void> {
     if (!this.nc || !this.js) {
       throw new Error('NATS connection not established. Call connect() first.');
     }
 
     try {
+      const event: BulkScanCompletedEvent = {
+        event_id: randomUUID(),
+        event_type: EventType.BULK_SCAN_COMPLETED,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        metadata: {},
+        scan_id: completedData.scan_id,
+        community_server_id: completedData.community_server_id,
+        messages_scanned: completedData.messages_scanned,
+      };
+
       const data = this.codec.encode(JSON.stringify(event));
       await this.js.publish(NATS_SUBJECTS.BULK_SCAN_COMPLETE, data);
 
       logger.debug('Published bulk scan completed to NATS', {
         subject: NATS_SUBJECTS.BULK_SCAN_COMPLETE,
-        scan_id: event.scan_id,
-        community_server_id: event.community_server_id,
-        messages_scanned: event.messages_scanned,
+        scan_id: completedData.scan_id,
+        community_server_id: completedData.community_server_id,
+        messages_scanned: completedData.messages_scanned,
       });
     } catch (error) {
       logger.error('Failed to publish bulk scan completed', {
         error: error instanceof Error ? error.message : String(error),
-        scan_id: event.scan_id,
+        scan_id: completedData.scan_id,
       });
       throw error;
     }

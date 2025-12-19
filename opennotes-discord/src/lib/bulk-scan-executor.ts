@@ -84,23 +84,26 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
 
   let messagesProcessed = 0;
   let channelsProcessed = 0;
-  let batchIndex = 0;
+  let batchNumber = 0;
   let batchesPublished = 0;
   let failedBatches = 0;
   let currentBatch: BulkScanMessage[] = [];
+  let pendingBatch: BulkScanMessage[] | null = null;
 
-  const publishBatch = async (): Promise<void> => {
-    if (currentBatch.length === 0) {
+  const publishPendingBatch = async (isFinalBatch: boolean): Promise<void> => {
+    if (pendingBatch === null || pendingBatch.length === 0) {
       return;
     }
+
+    batchNumber++;
 
     const batch: BulkScanBatch = {
       scan_id: scanId,
       community_server_id: communityServerUuid,
       initiated_by: initiatorId,
-      batch_index: batchIndex,
-      total_batches: -1,
-      messages: currentBatch,
+      batch_number: batchNumber,
+      is_final_batch: isFinalBatch,
+      messages: pendingBatch,
       cutoff_timestamp: new Date(cutoffTimestamp).toISOString(),
     };
 
@@ -109,19 +112,32 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
       batchesPublished++;
       logger.debug('Published batch', {
         scanId,
-        batchIndex,
-        messageCount: currentBatch.length,
+        batchNumber,
+        isFinalBatch,
+        messageCount: pendingBatch.length,
       });
     } catch (error) {
       failedBatches++;
       logger.warn('Failed to publish batch to NATS, continuing scan', {
         error: error instanceof Error ? error.message : String(error),
         scanId,
-        batchIndex,
+        batchNumber,
       });
     }
 
-    batchIndex++;
+    pendingBatch = null;
+  };
+
+  const queueBatch = async (): Promise<void> => {
+    if (currentBatch.length === 0) {
+      return;
+    }
+
+    if (pendingBatch !== null) {
+      await publishPendingBatch(false);
+    }
+
+    pendingBatch = currentBatch;
     currentBatch = [];
   };
 
@@ -203,7 +219,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
           messagesProcessed++;
 
           if (currentBatch.length >= BULK_SCAN_BATCH_SIZE) {
-            await publishBatch();
+            await queueBatch();
           }
 
           lastMessageId = messageId;
@@ -232,10 +248,14 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   }
 
   if (currentBatch.length > 0) {
-    await publishBatch();
+    await queueBatch();
   }
 
-  const totalBatches = batchIndex;
+  if (pendingBatch !== null) {
+    await publishPendingBatch(true);
+  }
+
+  const totalBatches = batchNumber;
 
   logger.info('Bulk scan Discord scan complete, polling for results', {
     error_id: errorId,

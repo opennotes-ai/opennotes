@@ -259,7 +259,7 @@ describe('bulk-scan-executor', () => {
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Failed to publish batch'),
         expect.objectContaining({
-          batchIndex: expect.any(Number),
+          batchNumber: expect.any(Number),
           scanId: 'test-scan-123',
         })
       );
@@ -615,6 +615,116 @@ describe('bulk-scan-executor', () => {
       })).rejects.toThrow('Community server not found');
 
       expect(mockInitiateBulkScan).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('executeBulkScan - batch structure', () => {
+    it('should use batch_number instead of batch_index (1-indexed)', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+
+      expect(batch.batch_number).toBeDefined();
+      expect(batch.batch_number).toBe(1);
+      expect(batch.batch_index).toBeUndefined();
+    });
+
+    it('should use is_final_batch instead of total_batches', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+
+      expect(batch.is_final_batch).toBeDefined();
+      expect(typeof batch.is_final_batch).toBe('boolean');
+      expect(batch.total_batches).toBeUndefined();
+    });
+
+    it('should mark final batch correctly when all messages fit in one batch', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalledTimes(1);
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+      expect(batch.is_final_batch).toBe(true);
+    });
+
+    it('should have batch_number increment for multiple batches', async () => {
+      const ch1Messages = new Map();
+      for (let i = 0; i < 100; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        ch1Messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const ch2Messages = new Map();
+      for (let i = 0; i < 100; i++) {
+        const id = generateRecentSnowflake((i + 200) * 1000);
+        ch2Messages.set(id, createMockMessage(id, `Message ${i + 200}`));
+      }
+
+      const channel1 = createMockChannel('ch-1', ch1Messages);
+      const channel2 = createMockChannel('ch-2', ch2Messages);
+      const guild = createMockGuild(new Map([['ch-1', channel1], ['ch-2', channel2]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalledTimes(2);
+
+      const batch1 = mockPublishBulkScanBatch.mock.calls[0][1];
+      const batch2 = mockPublishBulkScanBatch.mock.calls[1][1];
+
+      expect(batch1.batch_number).toBe(1);
+      expect(batch1.is_final_batch).toBe(false);
+
+      expect(batch2.batch_number).toBe(2);
+      expect(batch2.is_final_batch).toBe(true);
     });
   });
 
