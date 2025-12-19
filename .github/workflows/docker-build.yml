@@ -1,0 +1,325 @@
+name: Docker Build and Security Scan
+
+# Disabled: Not pushing images anywhere at the moment
+# To re-enable, uncomment the triggers below
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main, develop]
+  #   paths:
+  #     - '**/Dockerfile*'
+  #     - '.github/workflows/docker-build.yml'
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - '**/Dockerfile*'
+  # schedule:
+  #   - cron: '0 0 * * 0'
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_ALT: docker.io
+
+jobs:
+  build-server:
+    name: Build Open Notes Server Image
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_ALT }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-server
+            ${{ env.REGISTRY_ALT }}/${{ secrets.DOCKERHUB_USERNAME }}/opennotes-server
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: ./opennotes-server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          target: production
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-server:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-server-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-server-results.sarif'
+          category: 'trivy-server'
+
+      - name: Run Trivy in table format
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-server:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-server:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom-server.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-server
+          path: sbom-server.spdx.json
+          retention-days: 90
+
+      - name: Scan SBOM for vulnerabilities
+        uses: anchore/scan-action@v3
+        with:
+          sbom: sbom-server.spdx.json
+          fail-build: false
+
+  build-discord:
+    name: Build Open Notes Discord Image
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_ALT }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-discord
+            ${{ env.REGISTRY_ALT }}/${{ secrets.DOCKERHUB_USERNAME }}/opennotes-discord
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: ./opennotes-discord/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-discord:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-discord-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-discord-results.sarif'
+          category: 'trivy-discord'
+
+      - name: Run Trivy in table format
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-discord:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-discord:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom-discord.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-discord
+          path: sbom-discord.spdx.json
+          retention-days: 90
+
+      - name: Scan SBOM for vulnerabilities
+        uses: anchore/scan-action@v3
+        with:
+          sbom: sbom-discord.spdx.json
+          fail-build: false
+
+  image-size-report:
+    name: Image Size Report
+    needs: [build-server, build-discord]
+    if: github.event_name == 'pull_request'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get image sizes
+        id: sizes
+        run: |
+          SERVER_SIZE=$(docker image inspect ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-server:${{ github.sha }} --format='{{.Size}}' | numfmt --to=iec)
+          DISCORD_SIZE=$(docker image inspect ${{ env.REGISTRY }}/${{ github.repository }}/opennotes-discord:${{ github.sha }} --format='{{.Size}}' | numfmt --to=iec)
+
+          echo "server_size=${SERVER_SIZE}" >> "$GITHUB_OUTPUT"
+          echo "discord_size=${DISCORD_SIZE}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Docker Image Sizes
+
+              | Image | Size |
+              |-------|------|
+              | opennotes-server | ${{ steps.sizes.outputs.server_size }} |
+              | opennotes-discord | ${{ steps.sizes.outputs.discord_size }} |
+
+              Built from commit: ${{ github.sha }}`
+            })
+
+  security-summary:
+    name: Security Summary
+    needs: [build-server, build-discord]
+    if: always()
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate security report
+        run: |
+          {
+            echo "# Docker Security Scan Summary"
+            echo ""
+            echo "**Scan Date:** $(date)"
+            echo "**Commit:** ${{ github.sha }}"
+            echo ""
+          } > security-report.md
+
+          if [ -f artifacts/sbom-server/sbom-server.spdx.json ]; then
+            {
+              echo "## Open Notes Server"
+              echo "SBOM generated successfully"
+              echo ""
+            } >> security-report.md
+          fi
+
+          if [ -f artifacts/sbom-discord/sbom-discord.spdx.json ]; then
+            {
+              echo "## Open Notes Discord"
+              echo "SBOM generated successfully"
+            } >> security-report.md
+          fi
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.md
+
+      - name: Notify on critical vulnerabilities
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: |
+            Critical vulnerabilities detected in Docker images
+            Commit: ${{ github.sha }}
+            Please review security scan results
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

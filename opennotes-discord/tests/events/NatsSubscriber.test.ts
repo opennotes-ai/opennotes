@@ -17,6 +17,7 @@ const mockStringCodec = jest.fn(() => ({
 const createMockConsumerOpts = () => {
   const builder: any = {};
   builder.durable = jest.fn().mockReturnValue(builder);
+  builder.deliverGroup = jest.fn().mockReturnValue(builder);
   builder.deliverAll = jest.fn().mockReturnValue(builder);
   builder.deliverNew = jest.fn().mockReturnValue(builder);
   builder.ackExplicit = jest.fn().mockReturnValue(builder);
@@ -30,6 +31,7 @@ const mockConsumerOpts = jest.fn(() => createMockConsumerOpts());
 
 let mockNatsConnection: any;
 let mockJetStream: any;
+let mockJetStreamManager: any;
 let mockSubscription: any;
 let mockCodec: any;
 
@@ -93,9 +95,23 @@ describe('NatsSubscriber', () => {
       subscribe: mockJsSubscribe.mockResolvedValue(mockSubscription),
     };
 
+    mockJetStreamManager = {
+      consumers: {
+        delete: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
+        list: jest.fn<(...args: any[]) => any>().mockReturnValue({
+          next: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
+        }),
+        add: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
+          name: 'test-consumer',
+          config: {},
+        }),
+      },
+    };
+
     mockNatsConnection = {
       subscribe: mockSubscribe.mockReturnValue(mockSubscription),
-      jetstream: jest.fn().mockReturnValue(mockJetStream),
+      jetstream: jest.fn<() => any>().mockReturnValue(mockJetStream),
+      jetstreamManager: jest.fn<() => Promise<any>>().mockResolvedValue(mockJetStreamManager),
       close: mockClose,
       isClosed: mockIsClosed,
       status: mockStatus,

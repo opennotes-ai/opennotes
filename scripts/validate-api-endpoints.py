@@ -166,13 +166,13 @@ def main() -> None:
     parser.add_argument(
         "--openapi",
         type=Path,
-        default=Path("opennotes/opennotes-server/openapi.json"),
+        default=Path("opennotes-server/openapi.json"),
         help="Path to OpenAPI specification file",
     )
     parser.add_argument(
         "--api-client",
         type=Path,
-        default=Path("opennotes/opennotes-discord/src/lib/api-client.ts"),
+        default=Path("opennotes-discord/src/lib/api-client.ts"),
         help="Path to Discord bot API client file",
     )
     args = parser.parse_args()
