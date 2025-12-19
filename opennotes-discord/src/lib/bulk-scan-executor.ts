@@ -68,7 +68,10 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     };
   }
 
-  const scanResponse = await apiClient.initiateBulkScan(guildId, days);
+  const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+  const communityServerUuid = communityServer.id;
+
+  const scanResponse = await apiClient.initiateBulkScan(communityServerUuid, days);
   const scanId = scanResponse.scan_id;
 
   logger.info('Initiated bulk scan', {
@@ -93,7 +96,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
 
     const batch: BulkScanBatch = {
       scan_id: scanId,
-      community_server_id: guildId,
+      community_server_id: communityServerUuid,
       initiated_by: initiatorId,
       batch_index: batchIndex,
       total_batches: -1,
@@ -183,7 +186,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
           const scanMessage: BulkScanMessage = {
             message_id: message.id,
             channel_id: channel.id,
-            community_server_id: guildId,
+            community_server_id: communityServerUuid,
             content: message.content,
             author_id: message.author.id,
             author_username: message.author.username,

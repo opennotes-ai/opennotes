@@ -8,13 +8,21 @@ const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
 };
 
-const mockInitiateBulkScan = jest.fn<(guildId: string, days: number) => Promise<{ scan_id: string }>>();
+const mockInitiateBulkScan = jest.fn<(communityServerId: string, days: number) => Promise<{ scan_id: string }>>();
 
 const mockGetBulkScanResults = jest.fn<(scanId: string) => Promise<{
   scan_id: string;
   status: 'completed' | 'failed' | 'pending';
   messages_scanned: number;
   flagged_messages: any[];
+}>>();
+
+const mockGetCommunityServerByPlatformId = jest.fn<(platformId: string, platform?: string) => Promise<{
+  id: string;
+  platform: string;
+  platform_id: string;
+  name: string;
+  is_active: boolean;
 }>>();
 
 const mockPublishBulkScanBatch = jest.fn<(subject: string, batch: any) => Promise<void>>();
@@ -27,6 +35,7 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
   apiClient: {
     initiateBulkScan: mockInitiateBulkScan,
     getBulkScanResults: mockGetBulkScanResults,
+    getCommunityServerByPlatformId: mockGetCommunityServerByPlatformId,
   },
 }));
 
@@ -116,6 +125,13 @@ describe('bulk-scan-executor', () => {
     jest.clearAllMocks();
     jest.useFakeTimers({ advanceTimers: true });
 
+    mockGetCommunityServerByPlatformId.mockResolvedValue({
+      id: 'community-uuid-123',
+      platform: 'discord',
+      platform_id: 'guild-123',
+      name: 'Test Guild',
+      is_active: true,
+    });
     mockInitiateBulkScan.mockResolvedValue({ scan_id: 'test-scan-123' });
     mockGetBulkScanResults.mockResolvedValue({
       scan_id: 'test-scan-123',
@@ -506,6 +522,99 @@ describe('bulk-scan-executor', () => {
         const batch = publishCalls[0][1];
         expect(batch.messages.every((m: any) => m.author_id !== 'bot-123')).toBe(true);
       }
+    });
+  });
+
+  describe('executeBulkScan - community server UUID lookup', () => {
+    it('should lookup community server by Discord guild ID and use UUID for API calls', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockGetCommunityServerByPlatformId).toHaveBeenCalledWith('guild-123');
+
+      expect(mockInitiateBulkScan).toHaveBeenCalledWith('community-uuid-123', 7);
+    });
+
+    it('should use community server UUID in BulkScanBatch', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+      expect(batch.community_server_id).toBe('community-uuid-123');
+    });
+
+    it('should use community server UUID in BulkScanMessage objects', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+
+      for (const message of batch.messages) {
+        expect(message.community_server_id).toBe('community-uuid-123');
+      }
+    });
+
+    it('should fail fast if community server lookup fails', async () => {
+      mockGetCommunityServerByPlatformId.mockRejectedValue(new Error('Community server not found'));
+
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await expect(executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      })).rejects.toThrow('Community server not found');
+
+      expect(mockInitiateBulkScan).not.toHaveBeenCalled();
     });
   });
 
