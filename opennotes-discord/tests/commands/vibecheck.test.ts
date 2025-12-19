@@ -154,6 +154,9 @@ describe('vibecheck command', () => {
         },
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -210,6 +213,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -233,6 +239,9 @@ describe('vibecheck command', () => {
         guild: null,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
@@ -315,6 +324,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -392,6 +404,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -460,6 +475,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -532,6 +550,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -626,6 +647,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -693,6 +717,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -771,6 +798,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -971,6 +1001,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -1150,6 +1183,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -1454,6 +1490,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -1681,6 +1720,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -1739,6 +1781,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -1792,6 +1837,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
@@ -1845,6 +1893,9 @@ describe('vibecheck command', () => {
         guild: mockGuild,
         options: {
           getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
         },
         reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
