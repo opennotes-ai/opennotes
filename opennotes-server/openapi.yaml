@@ -4671,41 +4671,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/webhooks/discord/interactions:
-    post:
-      tags:
-      - webhooks
-      summary: Handle Discord Interaction
-      operationId: handle_discord_interaction_api_v1_webhooks_discord_interactions_post
-      parameters:
-      - name: x-signature-ed25519
-        in: header
-        required: true
-        schema:
-          type: string
-          title: X-Signature-Ed25519
-      - name: x-signature-timestamp
-        in: header
-        required: true
-        schema:
-          type: string
-          title: X-Signature-Timestamp
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Handle Discord Interaction Api V1 Webhooks Discord
-                  Interactions Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/webhooks/register:
     post:
       tags:
@@ -4860,58 +4825,6 @@ paths:
                 additionalProperties: true
                 title: Response Get Community Server Stats Api V1 Webhooks Stats  Community
                   Server Id  Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/webhooks/tasks/by-interaction/{interaction_id}:
-    get:
-      tags:
-      - webhooks
-      summary: Get Task By Interaction
-      operationId: get_task_by_interaction_api_v1_webhooks_tasks_by_interaction__interaction_id__get
-      parameters:
-      - name: interaction_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Interaction Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TaskStatus'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/webhooks/tasks/{task_id}:
-    get:
-      tags:
-      - webhooks
-      summary: Get Task By Id
-      operationId: get_task_by_id_api_v1_webhooks_tasks__task_id__get
-      parameters:
-      - name: task_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Task Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TaskStatus'
         '422':
           description: Validation Error
           content:
@@ -9846,57 +9759,6 @@ components:
       - similarity_threshold
       - total_matches
       title: SimilaritySearchResponse
-    TaskStatus:
-      properties:
-        task_id:
-          type: string
-          title: Task Id
-        interaction_id:
-          type: string
-          title: Interaction Id
-        task_type:
-          type: string
-          title: Task Type
-        status:
-          type: string
-          title: Status
-        result:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          title: Result
-          description: Task result data. Kept as dict - structure varies by task type
-        error:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Error
-        retry_count:
-          type: integer
-          title: Retry Count
-        created_at:
-          type: string
-          title: Created At
-        started_at:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Started At
-        completed_at:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Completed At
-      type: object
-      required:
-      - task_id
-      - interaction_id
-      - task_type
-      - status
-      - retry_count
-      - created_at
-      title: TaskStatus
     TierInfo:
       properties:
         level:
