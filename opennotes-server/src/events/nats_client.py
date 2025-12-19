@@ -176,12 +176,13 @@ class NATSClientManager:
             logger.error(f"Failed to publish to subject '{subject}': {e}")
             raise
 
-    async def _cleanup_conflicting_consumers(self, subject: str) -> None:
-        """Delete any existing consumers that filter on the given subject.
+    async def _cleanup_conflicting_consumers(self, subject: str, consumer_name: str) -> None:
+        """Delete any existing consumers that conflict with the new subscription.
 
         On WorkQueue streams, only one consumer can filter on a given subject.
-        This method cleans up old ephemeral or misconfigured consumers that
-        might be blocking new subscriptions.
+        This method cleans up:
+        1. Any consumer with the target durable name (may have different config)
+        2. Any consumer filtering on the same subject (different names)
         """
         if not self.js:
             return
@@ -190,17 +191,22 @@ class NATSClientManager:
             stream_name = settings.NATS_STREAM_NAME
             jsm = self.js._jsm
 
+            try:
+                await jsm.delete_consumer(stream_name, consumer_name)
+                logger.info(f"Deleted existing consumer '{consumer_name}'")
+            except Exception:
+                pass
+
             consumers = await jsm.consumers_info(stream_name)
             for consumer in consumers:
                 filter_subject = consumer.config.filter_subject
-                if filter_subject == subject:
-                    consumer_name = consumer.name
+                if filter_subject == subject and consumer.name != consumer_name:
                     logger.warning(
-                        f"Deleting conflicting consumer '{consumer_name}' "
+                        f"Deleting conflicting consumer '{consumer.name}' "
                         f"with filter '{filter_subject}' on stream '{stream_name}'"
                     )
-                    await jsm.delete_consumer(stream_name, consumer_name)
-                    logger.info(f"Successfully deleted consumer '{consumer_name}'")
+                    await jsm.delete_consumer(stream_name, consumer.name)
+                    logger.info(f"Successfully deleted consumer '{consumer.name}'")
         except Exception as e:
             logger.warning(f"Error cleaning up consumers for subject '{subject}': {e}")
 
@@ -233,6 +239,8 @@ class NATSClientManager:
             ack_wait=settings.NATS_ACK_WAIT_SECONDS,
         )
 
+        await self._cleanup_conflicting_consumers(subject, consumer_name)
+
         try:
             return await asyncio.wait_for(
                 self.js.subscribe(
@@ -243,12 +251,12 @@ class NATSClientManager:
                 timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
             )
         except BadRequestError as e:
-            if "filtered consumer not unique" in str(e):
+            if "filtered consumer not unique" in str(e) or "consumer name already in use" in str(e):
                 logger.warning(
                     f"Consumer conflict detected for subject '{subject}', "
                     f"cleaning up existing consumers and retrying..."
                 )
-                await self._cleanup_conflicting_consumers(subject)
+                await self._cleanup_conflicting_consumers(subject, consumer_name)
                 return await asyncio.wait_for(
                     self.js.subscribe(
                         subject,
