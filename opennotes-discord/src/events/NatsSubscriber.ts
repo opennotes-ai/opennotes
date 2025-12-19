@@ -80,13 +80,21 @@ export class NatsSubscriber {
       // Generate durable name from subject for consistent consumer across restarts
       // This allows multiple instances to share the same consumer on WorkQueue streams
       const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
+      const streamName = 'OPENNOTES';
 
-      // Try to delete any existing conflicting consumers first
+      // Delete existing consumer by name first (may have different config)
       try {
-        const streamName = 'OPENNOTES';
+        await jsm.consumers.delete(streamName, durableName);
+        logger.info('Deleted existing consumer', { consumerName: durableName });
+      } catch {
+        // Consumer doesn't exist, which is fine
+      }
+
+      // Also delete any other consumers with same filter subject
+      try {
         const consumers = await jsm.consumers.list(streamName).next();
         for (const consumer of consumers) {
-          if (consumer.config.filter_subject === subject && consumer.name !== durableName) {
+          if (consumer.config.filter_subject === subject) {
             logger.warn('Deleting conflicting consumer', {
               consumerName: consumer.name,
               filterSubject: consumer.config.filter_subject,
@@ -100,9 +108,11 @@ export class NatsSubscriber {
         });
       }
 
-      // Use durable consumer to allow multiple instances to share the consumer
+      // Use durable consumer with deliver group for queue subscription
+      // This allows multiple instances to share the consumer
       const opts = consumerOpts()
         .durable(durableName)
+        .deliverGroup(durableName)
         .deliverNew()
         .ackExplicit()
         .ackWait(30_000)
