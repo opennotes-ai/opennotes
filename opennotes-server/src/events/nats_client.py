@@ -180,18 +180,22 @@ class NATSClientManager:
         subject: str,
         callback: MessageCallback,
     ) -> Subscription:
-        """Subscribe to a JetStream subject with an ephemeral consumer.
+        """Subscribe to a JetStream subject with a durable consumer.
 
-        Uses simple ephemeral consumers without queue groups. With WORK_QUEUE
-        retention policy, the stream already guarantees single delivery, so
-        queue groups are unnecessary and can cause timeout issues due to
-        implicit durable consumer creation (nats-py behavior since v2.4.0).
+        Uses durable consumers to allow multiple server instances to share
+        the same consumer and load balance message processing. With WORK_QUEUE
+        retention policy, each message is delivered to exactly one instance.
+
+        The durable name is generated from NATS_CONSUMER_NAME and the subject
+        to ensure all instances bind to the same consumer per event type.
         """
         if not self.nc:
             raise RuntimeError("NATS client not connected")
 
         if not self.js:
             raise RuntimeError("JetStream context not initialized")
+
+        durable_name = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
 
         consumer_config = ConsumerConfig(
             max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
@@ -203,6 +207,7 @@ class NATSClientManager:
                 self.js.subscribe(
                     subject,
                     cb=callback,
+                    durable=durable_name,
                     config=consumer_config,
                 ),
                 timeout=settings.NATS_SUBSCRIBE_TIMEOUT,

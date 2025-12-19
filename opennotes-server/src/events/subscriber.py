@@ -147,7 +147,7 @@ class EventSubscriber:
             callback=callback,
         )
         self.subscriptions.append(subscription)
-        logger.info(f"Subscribed to {subject} with JetStream ephemeral consumer")
+        logger.info(f"Subscribed to {subject} with JetStream durable consumer")
 
     async def unsubscribe_all(self) -> None:
         for subscription in self.subscriptions:
