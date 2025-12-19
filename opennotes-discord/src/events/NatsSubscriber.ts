@@ -75,20 +75,40 @@ export class NatsSubscriber {
 
     try {
       const js = this.nc.jetstream();
+      const jsm = await this.nc.jetstreamManager();
 
-      // Use ephemeral consumer for async iterator pattern
-      // deliverTo() is required by nats.js for async iterator consumers
-      // Use a unique subject that won't conflict with the main stream
-      const deliverSubject = `_OPENNOTES_DELIVER.${Date.now()}.${Math.random().toString(36).substring(7)}`;
+      // Generate durable name from subject for consistent consumer across restarts
+      // This allows multiple instances to share the same consumer on WorkQueue streams
+      const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
 
+      // Try to delete any existing conflicting consumers first
+      try {
+        const streamName = 'OPENNOTES';
+        const consumers = await jsm.consumers.list(streamName).next();
+        for (const consumer of consumers) {
+          if (consumer.config.filter_subject === subject && consumer.name !== durableName) {
+            logger.warn('Deleting conflicting consumer', {
+              consumerName: consumer.name,
+              filterSubject: consumer.config.filter_subject,
+            });
+            await jsm.consumers.delete(streamName, consumer.name);
+          }
+        }
+      } catch (cleanupError) {
+        logger.warn('Error cleaning up existing consumers', {
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+
+      // Use durable consumer to allow multiple instances to share the consumer
       const opts = consumerOpts()
+        .durable(durableName)
         .deliverNew()
         .ackExplicit()
         .ackWait(30_000)
-        .maxDeliver(3)
-        .deliverTo(deliverSubject);
+        .maxDeliver(3);
 
-      // Create the JetStream consumer which will deliver to the delivery subject
+      // Create the JetStream consumer with durable name
       this.consumerIterator = await js.subscribe(subject, opts);
 
       logger.info('Subscribed to score update events with JetStream consumer group', {
