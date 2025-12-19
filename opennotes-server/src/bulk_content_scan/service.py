@@ -57,6 +57,7 @@ class BulkContentScanService:
         community_server_id: UUID,
         initiated_by_user_id: UUID,
         scan_window_days: int,
+        expected_messages: int | None = None,
     ) -> BulkContentScanLog:
         """Create a new scan log entry and return it.
 
@@ -64,16 +65,30 @@ class BulkContentScanService:
             community_server_id: UUID of the community server to scan
             initiated_by_user_id: UUID of the user who initiated the scan
             scan_window_days: Number of days to scan back
+            expected_messages: Number of messages expected to be scanned.
+                If 0, the scan is immediately marked as completed since there
+                are no messages to process (e.g., all filtered out as bots/empty).
 
         Returns:
             Created BulkContentScanLog entry
         """
-        scan_log = BulkContentScanLog(
-            community_server_id=community_server_id,
-            initiated_by_user_id=initiated_by_user_id,
-            scan_window_days=scan_window_days,
-            status=BulkScanStatus.PENDING,
-        )
+        if expected_messages == 0:
+            scan_log = BulkContentScanLog(
+                community_server_id=community_server_id,
+                initiated_by_user_id=initiated_by_user_id,
+                scan_window_days=scan_window_days,
+                status=BulkScanStatus.COMPLETED,
+                completed_at=datetime.now(UTC),
+                messages_scanned=0,
+                messages_flagged=0,
+            )
+        else:
+            scan_log = BulkContentScanLog(
+                community_server_id=community_server_id,
+                initiated_by_user_id=initiated_by_user_id,
+                scan_window_days=scan_window_days,
+                status=BulkScanStatus.PENDING,
+            )
 
         self.session.add(scan_log)
         await self.session.commit()
