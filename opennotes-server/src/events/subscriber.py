@@ -134,7 +134,10 @@ class EventSubscriber:
 
     async def subscribe_all(self) -> None:
         for event_type in EventType:
-            await self.subscribe(event_type)
+            if self.handlers.get(event_type):
+                await self.subscribe(event_type)
+            else:
+                logger.debug(f"Skipping subscription for {event_type.value} (no handlers)")
 
     async def subscribe(self, event_type: EventType) -> None:
         subject = self._get_subject(event_type)
