@@ -520,12 +520,8 @@ export class Bot {
       }
 
       if (this.natsSubscriber) {
-        try {
-          checks.nats = 'connected';
-          checks.nats_consumer_group = this.natsSubscriber['consumerName'] || 'unknown';
-        } catch (error) {
-          checks.nats = 'error';
-          checks.nats_error = error instanceof Error ? error.message : String(error);
+        checks.nats = this.natsSubscriber.isConnected() ? 'connected' : 'disconnected';
+        if (!this.natsSubscriber.isConnected()) {
           allHealthy = false;
         }
       } else {
