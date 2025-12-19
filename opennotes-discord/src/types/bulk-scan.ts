@@ -33,6 +33,12 @@ export interface BulkScanBatch {
   cutoff_timestamp: string;
 }
 
+export interface BulkScanCompleted {
+  scan_id: string;
+  community_server_id: string;
+  messages_scanned: number;
+}
+
 export interface ScanProgress {
   channelsProcessed: number;
   totalChannels: number;

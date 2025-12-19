@@ -1,7 +1,11 @@
 import { connect, NatsConnection, StringCodec, JetStreamClient } from 'nats';
 import { logger } from '../logger.js';
 import { sanitizeConnectionUrl } from '../utils/url-sanitizer.js';
-import type { BulkScanBatch, NATS_SUBJECTS } from '../types/bulk-scan.js';
+import {
+  NATS_SUBJECTS,
+  type BulkScanBatch,
+  type BulkScanCompleted,
+} from '../types/bulk-scan.js';
 
 export class NatsPublisher {
   private nc?: NatsConnection;
@@ -80,6 +84,30 @@ export class NatsPublisher {
     }
   }
 
+  async publishBulkScanCompleted(event: BulkScanCompleted): Promise<void> {
+    if (!this.nc || !this.js) {
+      throw new Error('NATS connection not established. Call connect() first.');
+    }
+
+    try {
+      const data = this.codec.encode(JSON.stringify(event));
+      await this.js.publish(NATS_SUBJECTS.BULK_SCAN_COMPLETE, data);
+
+      logger.debug('Published bulk scan completed to NATS', {
+        subject: NATS_SUBJECTS.BULK_SCAN_COMPLETE,
+        scan_id: event.scan_id,
+        community_server_id: event.community_server_id,
+        messages_scanned: event.messages_scanned,
+      });
+    } catch (error) {
+      logger.error('Failed to publish bulk scan completed', {
+        error: error instanceof Error ? error.message : String(error),
+        scan_id: event.scan_id,
+      });
+      throw error;
+    }
+  }
+
   async close(): Promise<void> {
     if (this.nc) {
       await this.nc.close();
@@ -128,6 +156,13 @@ export const natsPublisher = {
       await publisher.connect();
     }
     return publisher.publishBulkScanBatch(subject, batch);
+  },
+  publishBulkScanCompleted: async (event: BulkScanCompleted): Promise<void> => {
+    const publisher = getNatsPublisher();
+    if (!publisher.isConnected()) {
+      await publisher.connect();
+    }
+    return publisher.publishBulkScanCompleted(event);
   },
   isConnected: (): boolean => {
     return natsPublisherInstance?.isConnected() ?? false;
