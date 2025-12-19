@@ -209,14 +209,11 @@ class NATSClientManager:
         subject: str,
         callback: MessageCallback,
     ) -> Subscription:
-        """Subscribe to a JetStream subject with a durable consumer.
+        """Subscribe to a JetStream subject with a queue group.
 
-        Uses durable consumers to allow multiple server instances to share
-        the same consumer and load balance message processing. With WORK_QUEUE
-        retention policy, each message is delivered to exactly one instance.
-
-        The durable name is generated from NATS_CONSUMER_NAME and the subject
-        to ensure all instances bind to the same consumer per event type.
+        Uses queue groups to allow multiple server instances to load balance
+        message processing. With WORK_QUEUE retention policy and queue groups,
+        each message is delivered to exactly one instance in the queue group.
 
         If there's a conflict with existing consumers (e.g., old ephemeral
         consumers from a previous deployment), they will be cleaned up first.
@@ -227,7 +224,7 @@ class NATSClientManager:
         if not self.js:
             raise RuntimeError("JetStream context not initialized")
 
-        durable_name = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
+        queue_group = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
 
         consumer_config = ConsumerConfig(
             max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
@@ -239,7 +236,7 @@ class NATSClientManager:
                 self.js.subscribe(
                     subject,
                     cb=callback,
-                    durable=durable_name,
+                    queue=queue_group,
                     config=consumer_config,
                 ),
                 timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
@@ -255,7 +252,7 @@ class NATSClientManager:
                     self.js.subscribe(
                         subject,
                         cb=callback,
-                        durable=durable_name,
+                        queue=queue_group,
                         config=consumer_config,
                     ),
                     timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
