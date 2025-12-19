@@ -113,13 +113,6 @@ rate_limit_exceeded_total = Counter(
     registry=registry,
 )
 
-task_queue_size = Gauge(
-    "task_queue_size",
-    "Current size of background task queue",
-    ["instance_id"],
-    registry=registry,
-)
-
 task_processing_duration_seconds = Histogram(
     "task_processing_duration_seconds",
     "Duration of background task processing in seconds",
