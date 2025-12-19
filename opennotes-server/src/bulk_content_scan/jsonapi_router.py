@@ -29,7 +29,7 @@ from src.auth.community_dependencies import (
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.bulk_content_scan.models import BulkContentScanLog
-from src.bulk_content_scan.repository import has_recent_scan
+from src.bulk_content_scan.repository import get_latest_scan_for_community, has_recent_scan
 from src.bulk_content_scan.schemas import FlaggedMessage
 from src.bulk_content_scan.service import (
     BulkContentScanService,
@@ -189,6 +189,38 @@ class RecentScanResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     data: RecentScanResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
+class LatestScanAttributes(BaseModel):
+    """Attributes for the latest scan resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str = Field(..., description="Scan status: pending, in_progress, completed, failed")
+    initiated_at: datetime = Field(..., description="When the scan was initiated")
+    completed_at: datetime | None = Field(None, description="When the scan completed")
+    messages_scanned: int = Field(default=0, description="Total messages scanned")
+    messages_flagged: int = Field(default=0, description="Number of flagged messages")
+
+
+class LatestScanResource(BaseModel):
+    """JSON:API resource object for the latest scan."""
+
+    type: str = "bulk-scans"
+    id: str
+    attributes: LatestScanAttributes
+    relationships: dict[str, Any] | None = None
+
+
+class LatestScanResponse(BaseModel):
+    """JSON:API response for the latest scan with included flagged messages."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: LatestScanResource
+    included: list[FlaggedMessageResource] = Field(default_factory=list)
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
@@ -612,6 +644,97 @@ async def check_recent_scan(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to check recent scan status",
+        )
+
+
+@router.get("/bulk-scans/communities/{community_server_id}/latest", response_class=JSONResponse)
+async def get_latest_scan(
+    community_server_id: UUID,
+    request: HTTPRequest,
+    service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Get the most recent scan for a community server.
+
+    Returns the latest bulk content scan with full details including:
+    - Scan status (pending, in_progress, completed, failed)
+    - Message counts (scanned and flagged)
+    - Timestamps (initiated_at, completed_at)
+    - Flagged messages with match details (if scan is completed)
+
+    Authorization: Requires admin access to the specified community.
+    Service accounts have unrestricted access.
+    """
+    try:
+        try:
+            await verify_scan_admin_access(
+                community_server_id=community_server_id,
+                current_user=current_user,
+                db=session,
+                request=request,
+            )
+        except HTTPException as e:
+            return create_error_response(
+                status_code=e.status_code,
+                title="Forbidden" if e.status_code == 403 else "Not Found",
+                detail=e.detail,
+            )
+
+        scan_log = await get_latest_scan_for_community(session, community_server_id)
+
+        if not scan_log:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"No scans found for community {community_server_id}",
+            )
+
+        flagged_messages: list[FlaggedMessage] = []
+        if scan_log.status == "completed":
+            flagged_messages = await service.get_flagged_results(scan_log.id)
+
+        resource = LatestScanResource(
+            type="bulk-scans",
+            id=str(scan_log.id),
+            attributes=LatestScanAttributes(
+                status=scan_log.status,
+                initiated_at=scan_log.initiated_at,
+                completed_at=scan_log.completed_at,
+                messages_scanned=scan_log.messages_scanned or 0,
+                messages_flagged=scan_log.messages_flagged or 0,
+            ),
+            relationships={
+                "flagged-messages": {
+                    "data": [
+                        {"type": "flagged-messages", "id": msg.message_id}
+                        for msg in flagged_messages
+                    ],
+                },
+            }
+            if flagged_messages
+            else None,
+        )
+
+        included = [flagged_message_to_resource(msg) for msg in flagged_messages]
+
+        response = LatestScanResponse(
+            data=resource,
+            included=included,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to get latest scan (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to retrieve latest scan",
         )
 
 

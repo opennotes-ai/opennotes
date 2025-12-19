@@ -151,3 +151,28 @@ class NoteRequestsResponse(SQLAlchemySchema):
         default_factory=list,
         description="IDs of created note requests",
     )
+
+
+class LatestScanResponse(SQLAlchemySchema):
+    """Response schema for the latest scan for a community server.
+
+    Includes full scan details: status, counts, timestamps, and flagged messages
+    if the scan is completed.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    scan_id: UUID = Field(..., description="Unique scan identifier")
+    status: str = Field(
+        ..., description="Current scan status (pending, in_progress, completed, failed)"
+    )
+    initiated_at: datetime = Field(..., description="When the scan was initiated")
+    completed_at: datetime | None = Field(
+        None, description="When the scan completed (null if in progress or pending)"
+    )
+    messages_scanned: int = Field(default=0, description="Total messages scanned")
+    messages_flagged: int = Field(default=0, description="Number of messages flagged")
+    flagged_messages: list[FlaggedMessage] = Field(
+        default_factory=list,
+        description="List of flagged messages with match info (only populated for completed scans)",
+    )
