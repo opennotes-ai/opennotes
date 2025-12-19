@@ -26,6 +26,7 @@ const mockGetCommunityServerByPlatformId = jest.fn<(platformId: string, platform
 }>>();
 
 const mockPublishBulkScanBatch = jest.fn<(subject: string, batch: any) => Promise<void>>();
+const mockPublishBulkScanCompleted = jest.fn<(completedData: any) => Promise<void>>();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -42,6 +43,7 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
 jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({
   natsPublisher: {
     publishBulkScanBatch: mockPublishBulkScanBatch,
+    publishBulkScanCompleted: mockPublishBulkScanCompleted,
   },
 }));
 
@@ -140,6 +142,7 @@ describe('bulk-scan-executor', () => {
       flagged_messages: [],
     });
     mockPublishBulkScanBatch.mockResolvedValue(undefined);
+    mockPublishBulkScanCompleted.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -891,6 +894,149 @@ describe('bulk-scan-executor', () => {
       expect(truncateContent(simpleEmoji, 5)).toBe(emoji + '...');
       expect(truncateContent(simpleEmoji, 6)).toBe(emoji + 'test');
       expect(truncateContent(simpleEmoji, 4)).toBe('...');
+    });
+  });
+
+  describe('executeBulkScan - publishBulkScanCompleted', () => {
+    it('should call publishBulkScanCompleted after all batches are published', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledTimes(1);
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+        scan_id: 'test-scan-123',
+        community_server_id: 'community-uuid-123',
+        messages_scanned: 50,
+      });
+    });
+
+    it('should call publishBulkScanCompleted before polling for results', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const callOrder: string[] = [];
+
+      mockPublishBulkScanCompleted.mockImplementation(async () => {
+        callOrder.push('publishBulkScanCompleted');
+      });
+
+      mockGetBulkScanResults.mockImplementation(async () => {
+        callOrder.push('getBulkScanResults');
+        return {
+          scan_id: 'test-scan-123',
+          status: 'completed' as const,
+          messages_scanned: 10,
+          flagged_messages: [],
+        };
+      });
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(callOrder.indexOf('publishBulkScanCompleted')).toBeLessThan(
+        callOrder.indexOf('getBulkScanResults')
+      );
+    });
+
+    it('should call publishBulkScanCompleted even when no messages found (0 batches)', async () => {
+      const emptyMessages = new Map();
+      const channel = createMockChannel('ch-1', emptyMessages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledTimes(1);
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+        scan_id: 'test-scan-123',
+        community_server_id: 'community-uuid-123',
+        messages_scanned: 0,
+      });
+    });
+
+    it('should call publishBulkScanCompleted with correct message count across multiple batches', async () => {
+      const ch1Messages = new Map();
+      for (let i = 0; i < 100; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        ch1Messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const ch2Messages = new Map();
+      for (let i = 0; i < 75; i++) {
+        const id = generateRecentSnowflake((i + 200) * 1000);
+        ch2Messages.set(id, createMockMessage(id, `Message ${i + 200}`));
+      }
+
+      const channel1 = createMockChannel('ch-1', ch1Messages);
+      const channel2 = createMockChannel('ch-2', ch2Messages);
+      const guild = createMockGuild(new Map([['ch-1', channel1], ['ch-2', channel2]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+        scan_id: 'test-scan-123',
+        community_server_id: 'community-uuid-123',
+        messages_scanned: 175,
+      });
+    });
+
+    it('should handle publishBulkScanCompleted failure gracefully', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      mockPublishBulkScanCompleted.mockRejectedValue(new Error('NATS connection failed'));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to publish bulk scan completed event'),
+        expect.any(Object)
+      );
+      expect(result.status).toBeDefined();
     });
   });
 });
