@@ -110,9 +110,12 @@ export class NatsSubscriber {
 
       // Use durable consumer with deliver group for queue subscription
       // This allows multiple instances to share the consumer
+      // deliverTo is required for push consumers with deliver_group
+      const deliverSubject = `_DELIVER.${durableName}`;
       const opts = consumerOpts()
         .durable(durableName)
         .deliverGroup(durableName)
+        .deliverTo(deliverSubject)
         .deliverNew()
         .ackExplicit()
         .ackWait(30_000)
