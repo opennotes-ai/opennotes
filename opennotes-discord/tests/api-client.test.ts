@@ -1439,4 +1439,200 @@ describe('ApiClient Wrapper', () => {
       });
     });
   });
+
+  describe('getLatestScan', () => {
+    const TEST_COMMUNITY_SERVER_UUID = '11111111-1111-1111-1111-111111111111';
+    const TEST_SCAN_ID = '22222222-2222-2222-2222-222222222222';
+
+    it('should fetch the latest scan for a community server', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'bulk-scans',
+          id: TEST_SCAN_ID,
+          attributes: {
+            status: 'completed',
+            initiated_at: '2024-01-15T10:00:00Z',
+            completed_at: '2024-01-15T10:05:00Z',
+            messages_scanned: 100,
+            messages_flagged: 5,
+            scan_window_days: 7,
+          },
+        },
+        included: [
+          {
+            type: 'flagged-messages',
+            id: 'msg-1',
+            attributes: {
+              channel_id: 'ch-1',
+              content: 'Flagged content',
+              author_id: 'author-1',
+              timestamp: '2024-01-15T09:00:00Z',
+              match_score: 0.95,
+              matched_claim: 'Test claim',
+              matched_source: 'snopes',
+              scan_type: 'bulk',
+            },
+          },
+        ],
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
+
+      expect(result.scan_id).toBe(TEST_SCAN_ID);
+      expect(result.status).toBe('completed');
+      expect(result.messages_scanned).toBe(100);
+      expect(result.flagged_messages).toHaveLength(1);
+      expect(result.flagged_messages[0].message_id).toBe('msg-1');
+      expect(result.flagged_messages[0].match_score).toBe(0.95);
+    });
+
+    it('should call the correct endpoint', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'bulk-scans',
+          id: TEST_SCAN_ID,
+          attributes: {
+            status: 'pending',
+            initiated_at: '2024-01-15T10:00:00Z',
+            completed_at: null,
+            messages_scanned: 0,
+            messages_flagged: 0,
+            scan_window_days: 7,
+          },
+        },
+        included: [],
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `http://localhost:8000/api/v2/bulk-scans/communities/${TEST_COMMUNITY_SERVER_UUID}/latest`,
+        expect.any(Object)
+      );
+    });
+
+    it('should throw ApiError when no scans exist (404)', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+        retryAttempts: 1,
+      });
+
+      const errorResponse = {
+        errors: [
+          {
+            status: '404',
+            title: 'Not Found',
+            detail: 'No scans found for this community',
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(errorResponse), {
+          status: 404,
+          statusText: 'Not Found',
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      await expect(client.getLatestScan(TEST_COMMUNITY_SERVER_UUID)).rejects.toThrow();
+    });
+
+    it('should return pending scan without flagged messages', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'bulk-scans',
+          id: TEST_SCAN_ID,
+          attributes: {
+            status: 'pending',
+            initiated_at: '2024-01-15T10:00:00Z',
+            completed_at: null,
+            messages_scanned: 0,
+            messages_flagged: 0,
+            scan_window_days: 14,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
+
+      expect(result.status).toBe('pending');
+      expect(result.flagged_messages).toEqual([]);
+    });
+
+    it('should return in_progress scan', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'bulk-scans',
+          id: TEST_SCAN_ID,
+          attributes: {
+            status: 'in_progress',
+            initiated_at: '2024-01-15T10:00:00Z',
+            completed_at: null,
+            messages_scanned: 50,
+            messages_flagged: 2,
+            scan_window_days: 7,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
+
+      expect(result.status).toBe('in_progress');
+      expect(result.messages_scanned).toBe(50);
+    });
+  });
 });

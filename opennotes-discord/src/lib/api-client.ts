@@ -2082,4 +2082,72 @@ export class ApiClient {
     }>(`/api/v2/bulk-scans/communities/${communityServerId}/recent`);
     return response.data.attributes.has_recent_scan;
   }
+
+  async getLatestScan(communityServerId: string): Promise<{
+    scan_id: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    messages_scanned: number;
+    flagged_messages: Array<{
+      message_id: string;
+      channel_id: string;
+      content: string;
+      author_id: string;
+      timestamp: string;
+      match_score: number;
+      matched_claim: string;
+      matched_source: string;
+    }>;
+    scan_window_days?: number;
+    initiated_at?: string;
+    completed_at?: string | null;
+  }> {
+    const response = await this.fetchWithRetry<{
+      data: {
+        type: string;
+        id: string;
+        attributes: {
+          status: 'pending' | 'in_progress' | 'completed' | 'failed';
+          messages_scanned: number;
+          messages_flagged: number;
+          scan_window_days: number;
+          initiated_at: string;
+          completed_at: string | null;
+        };
+      };
+      included?: Array<{
+        type: string;
+        id: string;
+        attributes: {
+          channel_id: string;
+          content: string;
+          author_id: string;
+          timestamp: string;
+          match_score: number;
+          matched_claim: string;
+          matched_source: string;
+          scan_type: string;
+        };
+      }>;
+      jsonapi: { version: string };
+    }>(`/api/v2/bulk-scans/communities/${communityServerId}/latest`);
+
+    return {
+      scan_id: response.data.id,
+      status: response.data.attributes.status,
+      messages_scanned: response.data.attributes.messages_scanned,
+      scan_window_days: response.data.attributes.scan_window_days,
+      initiated_at: response.data.attributes.initiated_at,
+      completed_at: response.data.attributes.completed_at,
+      flagged_messages: (response.included || []).map((item) => ({
+        message_id: item.id,
+        channel_id: item.attributes.channel_id,
+        content: item.attributes.content,
+        author_id: item.attributes.author_id,
+        timestamp: item.attributes.timestamp,
+        match_score: item.attributes.match_score,
+        matched_claim: item.attributes.matched_claim,
+        matched_source: item.attributes.matched_source,
+      })),
+    };
+  }
 }

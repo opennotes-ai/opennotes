@@ -12,19 +12,15 @@ import {
 } from 'discord.js';
 import { logger } from '../logger.js';
 import { cache } from '../cache.js';
-import { generateErrorId, extractErrorDetails, formatErrorForUser } from '../lib/errors.js';
+import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
 import { apiClient } from '../api-client.js';
 import {
   VIBE_CHECK_DAYS_OPTIONS,
   type FlaggedMessage,
 } from '../types/bulk-scan.js';
-import {
-  executeBulkScan,
-  formatMatchScore,
-  formatMessageLink,
-  truncateContent,
-} from '../lib/bulk-scan-executor.js';
+import { executeBulkScan } from '../lib/bulk-scan-executor.js';
+import { formatScanStatus } from '../lib/scan-status-formatter.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
@@ -38,17 +34,27 @@ export function getVibecheckCooldownKey(guildId: string): string {
 export const data = new SlashCommandBuilder()
   .setName('vibecheck')
   .setDescription('Scan recent messages for potential misinformation (Admin only)')
-  .addIntegerOption(option =>
-    option
-      .setName('days')
-      .setDescription('Number of days to scan back')
-      .setRequired(true)
-      .addChoices(
-        ...VIBE_CHECK_DAYS_OPTIONS.map(opt => ({
-          name: opt.name,
-          value: opt.value,
-        }))
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('scan')
+      .setDescription('Start a new scan of recent messages')
+      .addIntegerOption(option =>
+        option
+          .setName('days')
+          .setDescription('Number of days to scan back')
+          .setRequired(true)
+          .addChoices(
+            ...VIBE_CHECK_DAYS_OPTIONS.map(opt => ({
+              name: opt.name,
+              value: opt.value,
+            }))
+          )
       )
+  )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('status')
+      .setDescription('View the status of the most recent scan')
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .setDMPermission(false);
@@ -73,6 +79,13 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       content: 'You need the "Manage Server" permission to use this command.',
       flags: MessageFlags.Ephemeral,
     });
+    return;
+  }
+
+  const subcommand = interaction.options.getSubcommand();
+
+  if (subcommand === 'status') {
+    await handleStatusSubcommand(interaction, guildId, errorId);
     return;
   }
 
@@ -218,44 +231,22 @@ async function displayFlaggedResults(
   flaggedMessages: FlaggedMessage[],
   warningMessage?: string
 ): Promise<void> {
-  const resultsContent = flaggedMessages.slice(0, 10).map((msg, index) => {
-    const messageLink = formatMessageLink(guildId, msg.channel_id, msg.message_id);
-    const confidence = formatMatchScore(msg.match_score);
-    const preview = truncateContent(msg.content);
-
-    return `**${index + 1}.** [Message](${messageLink})\n` +
-      `   Confidence: **${confidence}**\n` +
-      `   Matched: "${msg.matched_claim}"\n` +
-      `   Preview: "${preview}"`;
-  }).join('\n\n');
-
-  const moreCount = flaggedMessages.length > 10 ? flaggedMessages.length - 10 : 0;
-  const moreText = moreCount > 0 ? `\n\n_...and ${moreCount} more flagged messages_` : '';
-
-  const createButton = new ButtonBuilder()
-    .setCustomId(`vibecheck_create:${scanId}`)
-    .setLabel('Create Note Requests')
-    .setStyle(ButtonStyle.Primary);
-
-  const dismissButton = new ButtonBuilder()
-    .setCustomId(`vibecheck_dismiss:${scanId}`)
-    .setLabel('Dismiss')
-    .setStyle(ButtonStyle.Secondary);
-
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(createButton, dismissButton);
-
-  const warningText = warningMessage
-    ? `\n\n**Warning:** ${warningMessage}`
-    : '';
+  const result = formatScanStatus({
+    scan: {
+      scan_id: scanId,
+      status: 'completed',
+      messages_scanned: messagesScanned,
+      flagged_messages: flaggedMessages,
+    },
+    guildId,
+    days,
+    warningMessage,
+    includeButtons: true,
+  });
 
   await interaction.editReply({
-    content: `**Scan Results**\n\n` +
-      `**Scan ID:** \`${scanId}\`\n` +
-      `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n` +
-      `**Messages scanned:** ${messagesScanned}\n` +
-      `**Flagged:** ${flaggedMessages.length}\n\n` +
-      `${resultsContent}${moreText}${warningText}`,
-    components: [row],
+    content: result.content,
+    components: result.components,
   });
 
   const reply = await interaction.fetchReply();
@@ -378,4 +369,61 @@ async function showAiGenerationPrompt(
       });
     }
   });
+}
+
+async function handleStatusSubcommand(
+  interaction: ChatInputCommandInteraction,
+  guildId: string,
+  errorId: string
+): Promise<void> {
+  await interaction.deferReply({
+    flags: MessageFlags.Ephemeral,
+  });
+
+  logger.info('Checking vibecheck scan status', {
+    error_id: errorId,
+    command: 'vibecheck status',
+    user_id: interaction.user.id,
+    guild_id: guildId,
+  });
+
+  try {
+    const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+
+    const latestScan = await apiClient.getLatestScan(communityServer.id);
+
+    const result = formatScanStatus({
+      scan: latestScan,
+      guildId,
+      days: latestScan.scan_window_days,
+      includeButtons: false,
+    });
+
+    await interaction.editReply({
+      content: result.content,
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) {
+      await interaction.editReply({
+        content: 'No scans have been run for this server yet. Use `/vibecheck scan` to start one.',
+      });
+      return;
+    }
+
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Vibecheck status check failed', {
+      error_id: errorId,
+      command: 'vibecheck status',
+      user_id: interaction.user.id,
+      guild_id: guildId,
+      error: errorDetails.message,
+      error_type: errorDetails.type,
+      stack: errorDetails.stack,
+    });
+
+    await interaction.editReply({
+      content: formatErrorForUser(errorId, 'Failed to retrieve scan status. Please try again later.'),
+    });
+  }
 }
