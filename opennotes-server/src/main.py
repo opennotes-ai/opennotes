@@ -121,6 +121,55 @@ health_checker = HealthChecker(
 distributed_health = DistributedHealthCoordinator()
 
 
+async def _init_ai_services() -> tuple[
+    AINoteWriter | None, VisionService | None, LLMService | None
+]:
+    """Initialize AI Note Writer and Vision services if enabled.
+
+    Returns:
+        Tuple of (ai_note_writer, vision_service, llm_service) or (None, None, None) if disabled.
+    """
+    if not settings.AI_NOTE_WRITING_ENABLED:
+        logger.info("AI Note Writer and Vision services disabled (AI_NOTE_WRITING_ENABLED=False)")
+        return None, None, None
+
+    llm_client_manager = LLMClientManager(
+        encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
+    )
+    llm_service = LLMService(client_manager=llm_client_manager)
+    vision_service = VisionService(llm_service=llm_service)
+    logger.info("Vision service initialized")
+
+    ai_note_writer = AINoteWriter(llm_service=llm_service, vision_service=vision_service)
+    await ai_note_writer.start()
+    logger.info("AI Note Writer service started")
+
+    await _register_vision_handler(vision_service)
+
+    return ai_note_writer, vision_service, llm_service
+
+
+async def _register_vision_handler(vision_service: VisionService) -> None:
+    """Register vision description event handler for async processing."""
+    if not await nats_client.is_connected():
+        logger.warning(
+            "NATS not connected - vision description event handler NOT registered. "
+            "Vision requests will use synchronous processing only."
+        )
+        return
+
+    vision_handler = VisionDescriptionHandler(vision_service=vision_service)
+    vision_handler.register()
+    try:
+        await event_subscriber.subscribe(EventType.VISION_DESCRIPTION_REQUESTED)
+        logger.info("Vision description event handler registered and subscribed")
+    except TimeoutError:
+        logger.warning(
+            "NATS JetStream subscribe timed out - vision description event handler "
+            "NOT subscribed. Vision requests will use synchronous processing only."
+        )
+
+
 async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) -> None:
     """Register bulk scan event handlers if NATS is connected.
 
@@ -148,9 +197,15 @@ async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) ->
             nats_client=nats_client,
         )
         bulk_scan_handler.register()
-        await event_subscriber.subscribe(EventType.BULK_SCAN_MESSAGE_BATCH)
-        await event_subscriber.subscribe(EventType.BULK_SCAN_COMPLETED)
-        logger.info("Bulk scan event handlers registered and subscribed")
+        try:
+            await event_subscriber.subscribe(EventType.BULK_SCAN_MESSAGE_BATCH)
+            await event_subscriber.subscribe(EventType.BULK_SCAN_COMPLETED)
+            logger.info("Bulk scan event handlers registered and subscribed")
+        except TimeoutError:
+            logger.warning(
+                "NATS JetStream subscribe timed out - bulk scan event handlers "
+                "NOT subscribed. Bulk scans will not process message batches."
+            )
     else:
         logger.warning(
             "NATS not connected - bulk scan event handlers NOT registered. "
@@ -199,38 +254,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             raise
 
     # Initialize AI Note Writer and Vision services if enabled
-    ai_note_writer = None
-    vision_service = None
-    llm_service: LLMService | None = None
-    if settings.AI_NOTE_WRITING_ENABLED:
-        llm_client_manager = LLMClientManager(
-            encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
-        )
-        llm_service = LLMService(client_manager=llm_client_manager)
-
-        # Initialize Vision Service (uses same LLM service)
-        vision_service = VisionService(llm_service=llm_service)
-        logger.info("Vision service initialized")
-
-        # Initialize AI Note Writer with vision service for sync fallback
-        ai_note_writer = AINoteWriter(llm_service=llm_service, vision_service=vision_service)
-        await ai_note_writer.start()
-        logger.info("AI Note Writer service started")
-
-        # Register vision description event handler for async processing
-        # Only subscribe if NATS is connected (may have been skipped with NATS_OPTIONAL=true)
-        if await nats_client.is_connected():
-            vision_handler = VisionDescriptionHandler(vision_service=vision_service)
-            vision_handler.register()
-            await event_subscriber.subscribe(EventType.VISION_DESCRIPTION_REQUESTED)
-            logger.info("Vision description event handler registered and subscribed")
-        else:
-            logger.warning(
-                "NATS not connected - vision description event handler NOT registered. "
-                "Vision requests will use synchronous processing only."
-            )
-    else:
-        logger.info("AI Note Writer and Vision services disabled (AI_NOTE_WRITING_ENABLED=False)")
+    ai_note_writer, vision_service, llm_service = await _init_ai_services()
 
     await _register_bulk_scan_handlers(llm_service=llm_service)
 

@@ -67,10 +67,10 @@ class NATSClientManager:
                     timeout=timeout,
                 )
 
-                # Configure JetStream with increased timeout for API operations
+                # Configure JetStream with configurable timeout for API operations
                 # Default 5s timeout is too short during concurrent startup operations
                 # which can cause subscribe/consumer_info timeouts
-                self.js = self.nc.jetstream(timeout=30.0)
+                self.js = self.nc.jetstream(timeout=settings.NATS_SUBSCRIBE_TIMEOUT)
 
                 await self._ensure_stream()
 
@@ -178,34 +178,34 @@ class NATSClientManager:
     async def subscribe(
         self,
         subject: str,
-        queue: str,
         callback: MessageCallback,
-        durable: str | None = None,
     ) -> Subscription:
+        """Subscribe to a JetStream subject with an ephemeral consumer.
+
+        Uses simple ephemeral consumers without queue groups. With WORK_QUEUE
+        retention policy, the stream already guarantees single delivery, so
+        queue groups are unnecessary and can cause timeout issues due to
+        implicit durable consumer creation (nats-py behavior since v2.4.0).
+        """
         if not self.nc:
             raise RuntimeError("NATS client not connected")
 
         if not self.js:
             raise RuntimeError("JetStream context not initialized")
 
-        config_params: dict[str, int | str] = {
-            "max_deliver": settings.NATS_MAX_DELIVER_ATTEMPTS,
-            "ack_wait": settings.NATS_ACK_WAIT_SECONDS,
-        }
-        if durable is not None:
-            config_params["durable_name"] = durable
-
-        consumer_config = ConsumerConfig(**config_params)  # type: ignore[arg-type]
+        consumer_config = ConsumerConfig(
+            max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
+            ack_wait=settings.NATS_ACK_WAIT_SECONDS,
+        )
 
         try:
             return await asyncio.wait_for(
                 self.js.subscribe(
                     subject,
-                    queue=queue,
                     cb=callback,
                     config=consumer_config,
                 ),
-                timeout=10.0,
+                timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
             )
         except Exception as e:
             logger.error(f"Failed to subscribe to subject '{subject}': {e}")

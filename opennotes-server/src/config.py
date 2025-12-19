@@ -192,6 +192,10 @@ class Settings(BaseSettings):
     NATS_URL: str = Field(default="nats://localhost:4222")
     NATS_MAX_RECONNECT_ATTEMPTS: int = Field(default=10)
     NATS_RECONNECT_WAIT: int = Field(default=2)
+    NATS_SUBSCRIBE_TIMEOUT: float = Field(
+        default=60.0,
+        description="Timeout in seconds for JetStream subscribe operations during startup",
+    )
     NATS_USERNAME: str | None = Field(
         default=None,
         description="NATS authentication username. Optional for development, required for production.",

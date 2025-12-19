@@ -138,19 +138,16 @@ class EventSubscriber:
 
     async def subscribe(self, event_type: EventType) -> None:
         subject = self._get_subject(event_type)
-        queue = f"{settings.NATS_CONSUMER_NAME}_{event_type.value}"
 
         async def callback(msg: Msg) -> None:
             await self._message_handler(event_type, msg)
 
         subscription = await self.nats.subscribe(
             subject=subject,
-            queue=queue,
             callback=callback,
-            durable=None,
         )
         self.subscriptions.append(subscription)
-        logger.info(f"Subscribed to {subject} with JetStream ephemeral consumer (queue: {queue})")
+        logger.info(f"Subscribed to {subject} with JetStream ephemeral consumer")
 
     async def unsubscribe_all(self) -> None:
         for subscription in self.subscriptions:
