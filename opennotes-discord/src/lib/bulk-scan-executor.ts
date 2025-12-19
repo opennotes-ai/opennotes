@@ -30,6 +30,7 @@ export interface BulkScanOptions {
   initiatorId: string;
   errorId: string;
   progressCallback?: (progress: ScanProgress) => Promise<void>;
+  excludeChannelIds?: string[];
 }
 
 export interface BulkScanResult {
@@ -44,15 +45,30 @@ export interface BulkScanResult {
 }
 
 export async function executeBulkScan(options: BulkScanOptions): Promise<BulkScanResult> {
-  const { guild, days, initiatorId, errorId, progressCallback } = options;
+  const { guild, days, initiatorId, errorId, progressCallback, excludeChannelIds = [] } = options;
   const guildId = guild.id;
+  const excludeSet = new Set(excludeChannelIds);
 
   const cutoffTimestamp = Date.now() - days * 24 * 60 * 60 * 1000;
   const cutoffSnowflake = DiscordSnowflake.generate({ timestamp: BigInt(cutoffTimestamp) });
 
   const textChannels = guild.channels.cache.filter(
-    (channel): channel is TextChannel =>
-      channel.type === ChannelType.GuildText && channel.viewable === true
+    (channel): channel is TextChannel => {
+      if (channel.type !== ChannelType.GuildText || channel.viewable !== true) {
+        return false;
+      }
+
+      if (excludeSet.has(channel.id)) {
+        logger.debug('Skipping excluded channel', {
+          channel_id: channel.id,
+          channel_name: channel.name,
+          guild_id: guildId,
+        });
+        return false;
+      }
+
+      return true;
+    }
   );
 
   const totalChannels = textChannels.size;

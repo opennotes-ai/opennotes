@@ -25,6 +25,9 @@ import {
   formatMessageLink,
   truncateContent,
 } from '../lib/bulk-scan-executor.js';
+import { BotChannelService } from '../services/BotChannelService.js';
+import { serviceProvider } from '../services/index.js';
+import { ConfigKey } from '../lib/config-schema.js';
 
 export const VIBECHECK_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -107,11 +110,28 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   await cache.set(cooldownKey, Date.now(), VIBECHECK_COOLDOWN_MS / 1000);
 
   try {
+    const botChannelService = new BotChannelService();
+    const guildConfigService = serviceProvider.getGuildConfigService();
+    const botChannelName = await guildConfigService.get(guildId, ConfigKey.BOT_CHANNEL_NAME) as string;
+    const botChannel = botChannelService.findChannel(guild, botChannelName);
+
+    const excludeChannelIds: string[] = [];
+    if (botChannel) {
+      excludeChannelIds.push(botChannel.id);
+      logger.debug('Excluding bot channel from vibecheck scan', {
+        error_id: errorId,
+        guild_id: guildId,
+        bot_channel_id: botChannel.id,
+        bot_channel_name: botChannel.name,
+      });
+    }
+
     const result = await executeBulkScan({
       guild,
       days,
       initiatorId: userId,
       errorId,
+      excludeChannelIds,
       progressCallback: async (progress) => {
         const percent = progress.totalChannels > 0
           ? Math.round((progress.channelsProcessed / progress.totalChannels) * 100)

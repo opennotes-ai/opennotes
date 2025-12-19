@@ -1039,4 +1039,151 @@ describe('bulk-scan-executor', () => {
       expect(result.status).toBeDefined();
     });
   });
+
+  describe('executeBulkScan - bot channel exclusion', () => {
+    it('should skip channels in excludeChannelIds list', async () => {
+      const botChannelMessages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        botChannelMessages.set(id, createMockMessage(id, `Bot channel msg ${i}`));
+      }
+
+      const regularChannelMessages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake((i + 100) * 1000);
+        regularChannelMessages.set(id, createMockMessage(id, `Regular msg ${i}`));
+      }
+
+      const botChannel = createMockChannel('bot-channel-id', botChannelMessages);
+      const regularChannel = createMockChannel('regular-channel-id', regularChannelMessages);
+      const guild = createMockGuild(new Map([
+        ['bot-channel-id', botChannel],
+        ['regular-channel-id', regularChannel],
+      ]));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: ['bot-channel-id'],
+      });
+
+      expect(result.channelsScanned).toBe(1);
+      expect(result.status).toBe('completed');
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+      const channelIds = batch.messages.map((m: any) => m.channel_id);
+      expect(channelIds.every((id: string) => id === 'regular-channel-id')).toBe(true);
+      expect(channelIds.some((id: string) => id === 'bot-channel-id')).toBe(false);
+    });
+
+    it('should log when excluding bot channel', async () => {
+      const botChannelMessages = new Map();
+      for (let i = 0; i < 5; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        botChannelMessages.set(id, createMockMessage(id, `Bot channel msg ${i}`));
+      }
+
+      const botChannel = createMockChannel('bot-channel-id', botChannelMessages);
+      const guild = createMockGuild(new Map([['bot-channel-id', botChannel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: ['bot-channel-id'],
+      });
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping excluded channel'),
+        expect.objectContaining({
+          channel_id: 'bot-channel-id',
+        })
+      );
+    });
+
+    it('should handle empty excludeChannelIds gracefully', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: [],
+      });
+
+      expect(result.channelsScanned).toBe(1);
+      expect(result.status).toBe('completed');
+    });
+
+    it('should handle undefined excludeChannelIds gracefully', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(result.channelsScanned).toBe(1);
+      expect(result.status).toBe('completed');
+    });
+
+    it('should not include excluded channel messages in published batches', async () => {
+      const botChannelMessages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        botChannelMessages.set(id, createMockMessage(id, `Bot channel msg ${i}`));
+      }
+
+      const regularChannelMessages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake((i + 100) * 1000);
+        regularChannelMessages.set(id, createMockMessage(id, `Regular msg ${i}`));
+      }
+
+      const botChannel = createMockChannel('bot-channel-id', botChannelMessages);
+      const regularChannel = createMockChannel('regular-channel-id', regularChannelMessages);
+      const guild = createMockGuild(new Map([
+        ['bot-channel-id', botChannel],
+        ['regular-channel-id', regularChannel],
+      ]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: ['bot-channel-id'],
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+
+      for (const call of mockPublishBulkScanBatch.mock.calls) {
+        const batch = call[1];
+        for (const message of batch.messages) {
+          expect(message.channel_id).not.toBe('bot-channel-id');
+        }
+      }
+    });
+  });
 });
