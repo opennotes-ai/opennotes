@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import { ChannelType, Collection } from 'discord.js';
 
 const mockCreateMonitoredChannel = jest.fn<(...args: any[]) => any>();
+const mockResolveCommunityServerId = jest.fn<(guildId: string) => Promise<string>>();
 
 const mockLogger = {
   info: jest.fn<(...args: unknown[]) => void>(),
@@ -20,26 +21,57 @@ jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
 
+jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
+  resolveCommunityServerId: mockResolveCommunityServerId,
+}));
+
 const { GuildSetupService } = await import('../../src/services/GuildSetupService.js');
 
 describe('GuildSetupService', () => {
   let service: InstanceType<typeof GuildSetupService>;
   let mockGuild: any;
 
+  const TEST_GUILD_ID = '123456789';
+  const TEST_COMMUNITY_SERVER_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
   beforeEach(() => {
     service = new GuildSetupService();
     jest.clearAllMocks();
 
     mockGuild = {
-      id: '123456789',
+      id: TEST_GUILD_ID,
       name: 'Test Guild',
       channels: {
         fetch: jest.fn<(...args: any[]) => Promise<any>>(),
       },
     };
+
+    mockResolveCommunityServerId.mockResolvedValue(TEST_COMMUNITY_SERVER_UUID);
   });
 
   describe('autoRegisterChannels', () => {
+    it('should resolve guild ID to community server UUID before registering channels', async () => {
+      const mockChannels = new Collection();
+      mockChannels.set('channel1', {
+        id: 'channel1',
+        name: 'general',
+        type: ChannelType.GuildText,
+      } as any);
+
+      (mockGuild.channels.fetch as any).mockResolvedValue(mockChannels);
+      mockCreateMonitoredChannel.mockResolvedValue({ id: 'response-id' });
+
+      await service.autoRegisterChannels(mockGuild);
+
+      expect(mockResolveCommunityServerId).toHaveBeenCalledWith(TEST_GUILD_ID);
+      expect(mockResolveCommunityServerId).toHaveBeenCalledTimes(1);
+      expect(mockCreateMonitoredChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          community_server_id: TEST_COMMUNITY_SERVER_UUID,
+        })
+      );
+    });
+
     it('should register all text channels successfully', async () => {
       const mockChannels = new Collection();
       mockChannels.set('channel1', {
@@ -63,7 +95,7 @@ describe('GuildSetupService', () => {
 
       expect(mockCreateMonitoredChannel).toHaveBeenCalledTimes(2);
       expect(mockCreateMonitoredChannel).toHaveBeenCalledWith({
-        community_server_id: '123456789',
+        community_server_id: TEST_COMMUNITY_SERVER_UUID,
         channel_id: 'channel1',
         enabled: true,
         similarity_threshold: 0.6,
@@ -189,13 +221,29 @@ describe('GuildSetupService', () => {
       await service.autoRegisterChannels(mockGuild);
 
       expect(mockCreateMonitoredChannel).toHaveBeenCalledWith({
-        community_server_id: '123456789',
+        community_server_id: TEST_COMMUNITY_SERVER_UUID,
         channel_id: 'channel1',
         enabled: true,
         similarity_threshold: 0.6,
         dataset_tags: ['snopes'],
         updated_by: null,
       });
+    });
+
+    it('should throw if community server UUID resolution fails', async () => {
+      const mockChannels = new Collection();
+      mockChannels.set('channel1', {
+        id: 'channel1',
+        name: 'general',
+        type: ChannelType.GuildText,
+      } as any);
+
+      (mockGuild.channels.fetch as any).mockResolvedValue(mockChannels);
+      mockResolveCommunityServerId.mockRejectedValue(new Error('Community server not found'));
+
+      await expect(service.autoRegisterChannels(mockGuild)).rejects.toThrow('Community server not found');
+
+      expect(mockCreateMonitoredChannel).not.toHaveBeenCalled();
     });
   });
 });

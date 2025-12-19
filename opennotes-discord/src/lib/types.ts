@@ -31,7 +31,7 @@ export interface Rating {
 export interface NoteRequest {
   messageId: string;
   userId: string;
-  community_server_id: string; // Required: Discord guild/server ID
+  community_server_id: string; // Required: Community server UUID (NOT Discord guild ID - use resolveCommunityServerId() to convert)
   reason?: string;
   originalMessageContent?: string;
   discord_channel_id?: string;

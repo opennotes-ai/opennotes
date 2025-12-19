@@ -29,7 +29,14 @@ const mockApiClient = {
   getLastNotePost: jest.fn<() => Promise<any>>(),
   getNote: jest.fn<() => Promise<any>>(),
   recordNotePublisher: jest.fn<() => Promise<void>>(),
+  getCommunityServerByPlatformId: jest.fn<() => Promise<any>>(),
 };
+
+const mockResolveCommunityServerId = jest.fn<(guildId: string) => Promise<string>>();
+
+jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
+  resolveCommunityServerId: mockResolveCommunityServerId,
+}));
 
 jest.unstable_mockModule('../../src/services/NoteContextService.js', () => ({
   NoteContextService: jest.fn(() => mockNoteContextService),
@@ -908,6 +915,102 @@ describe('NotePublisherService', () => {
         expect(messageJson).toContain('Admin Published');
         expect(messageJson).toContain('TestAdmin');
       });
+    });
+  });
+
+  describe('recordNotePublisher UUID resolution (task-851 AC #4)', () => {
+    beforeEach(() => {
+      mockConfigService.getDefaultThreshold.mockReturnValue(TEST_SCORE_THRESHOLD);
+      mockConfigService.getConfig.mockResolvedValue({
+        guildId: 'guild-123',
+        enabled: true,
+        threshold: TEST_SCORE_THRESHOLD,
+      });
+      mockResolveCommunityServerId.mockClear();
+    });
+
+    it('should resolve Discord snowflake to UUID before calling recordNotePublisher', async () => {
+      const discordSnowflake = '1234567890123456789';
+      const resolvedUUID = '550e8400-e29b-41d4-a716-446655440000';
+
+      const event: ScoreUpdateEvent = {
+        note_id: 1,
+        score: TEST_SCORE_ABOVE_THRESHOLD,
+        confidence: 'standard',
+        algorithm: 'MFCoreScorer',
+        rating_count: 10,
+        tier: 2,
+        tier_name: 'Tier 2',
+        timestamp: new Date().toISOString(),
+        original_message_id: 'msg-123',
+        channel_id: 'channel-456',
+        community_server_id: discordSnowflake,
+      };
+
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockResolveCommunityServerId.mockResolvedValueOnce(resolvedUUID);
+
+      mockClient.channels.cache.set('channel-456', mockChannel);
+      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+      );
+      (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+      mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note content' });
+
+      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+      await notePublisherService.handleScoreUpdate(event);
+
+      expect(mockResolveCommunityServerId).toHaveBeenCalledWith(discordSnowflake);
+      expect(mockApiClient.recordNotePublisher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guildId: resolvedUUID,
+        })
+      );
+    });
+
+    it('should use guildId directly when it is already a UUID', async () => {
+      const existingUUID = '550e8400-e29b-41d4-a716-446655440000';
+
+      const event: ScoreUpdateEvent = {
+        note_id: 1,
+        score: TEST_SCORE_ABOVE_THRESHOLD,
+        confidence: 'standard',
+        algorithm: 'MFCoreScorer',
+        rating_count: 10,
+        tier: 2,
+        tier_name: 'Tier 2',
+        timestamp: new Date().toISOString(),
+        original_message_id: 'msg-123',
+        channel_id: 'channel-456',
+        community_server_id: existingUUID,
+      };
+
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+
+      mockClient.channels.cache.set('channel-456', mockChannel);
+      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
+      );
+      (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
+
+      mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Test note content' });
+
+      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+
+      await notePublisherService.handleScoreUpdate(event);
+
+      expect(mockResolveCommunityServerId).not.toHaveBeenCalled();
+      expect(mockApiClient.recordNotePublisher).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guildId: existingUUID,
+        })
+      );
     });
   });
 });

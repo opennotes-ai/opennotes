@@ -5,6 +5,7 @@ import { apiClient } from '../api-client.js';
 import { RedisQueue } from '../utils/redis-queue.js';
 import type { MonitoredChannelResponse, SimilaritySearchResponse } from '../lib/api-client.js';
 import { CONTENT_LIMITS } from '../lib/constants.js';
+import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 import type Redis from 'ioredis';
 
 export interface MessageContent {
@@ -295,6 +296,8 @@ export class MessageMonitorService {
     try {
       const topMatch = similarityMatches.matches[0];
 
+      const communityServerUuid = await resolveCommunityServerId(messageContent.guildId);
+
       const noteRequestContext = [
         `**Fact-Check Match Found** (Confidence: ${(topMatch.similarity_score * 100).toFixed(1)}%)`,
         '',
@@ -317,7 +320,7 @@ export class MessageMonitorService {
       await apiClient.requestNote({
         messageId: messageContent.messageId,
         userId: 'system-factcheck',
-        community_server_id: messageContent.guildId, // Required: Discord guild/server ID
+        community_server_id: communityServerUuid,
         originalMessageContent: noteRequestContext,
         discord_channel_id: messageContent.channelId,
         discord_author_id: messageContent.authorId,
@@ -519,6 +522,8 @@ export class MessageMonitorService {
         return;
       }
 
+      const communityServerUuid = await resolveCommunityServerId(messageContent.guildId);
+
       const noteRequestContext = [
         `**Similar Previously Seen Message** (Similarity: ${(topMatch.similarity_score * 100).toFixed(1)}%)`,
         '',
@@ -537,7 +542,7 @@ export class MessageMonitorService {
       await apiClient.requestNote({
         messageId: messageContent.messageId,
         userId: 'system-previously-seen',
-        community_server_id: messageContent.guildId,
+        community_server_id: communityServerUuid,
         originalMessageContent: noteRequestContext,
         discord_channel_id: messageContent.channelId,
         discord_author_id: messageContent.authorId,

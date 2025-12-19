@@ -21,6 +21,7 @@ const mockNatsPublisher = {
 
 const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),
+  getCommunityServerByPlatformId: jest.fn<(platformId: string) => Promise<{ id: string; platform: string; platform_id: string; name: string; is_active: boolean }>>(),
   initiateBulkScan: jest.fn<(guildId: string, days: number) => Promise<BulkScanInitiateResponse>>(),
   getBulkScanResults: jest.fn<(scanId: string) => Promise<BulkScanResultsResponse>>(),
   createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<any>>(),
@@ -68,6 +69,14 @@ const { data, execute, VIBECHECK_COOLDOWN_MS, getVibecheckCooldownKey } = await 
 describe('vibecheck command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+      id: 'community-server-uuid-123',
+      platform: 'discord',
+      platform_id: 'guild789',
+      name: 'Test Server',
+      is_active: true,
+    });
 
     mockApiClient.initiateBulkScan.mockResolvedValue({
       scan_id: 'test-scan-123',
@@ -791,7 +800,7 @@ describe('vibecheck command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockApiClient.initiateBulkScan).toHaveBeenCalledWith('guild789', 7);
+      expect(mockApiClient.initiateBulkScan).toHaveBeenCalledWith('community-server-uuid-123', 7);
     });
 
     it('should poll for scan results until completed', async () => {
