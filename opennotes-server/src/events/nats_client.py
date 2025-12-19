@@ -224,7 +224,7 @@ class NATSClientManager:
         if not self.js:
             raise RuntimeError("JetStream context not initialized")
 
-        queue_group = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
+        consumer_name = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
 
         consumer_config = ConsumerConfig(
             max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
@@ -236,7 +236,8 @@ class NATSClientManager:
                 self.js.subscribe(
                     subject,
                     cb=callback,
-                    queue=queue_group,
+                    durable=consumer_name,
+                    queue=consumer_name,
                     config=consumer_config,
                 ),
                 timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
@@ -252,7 +253,8 @@ class NATSClientManager:
                     self.js.subscribe(
                         subject,
                         cb=callback,
-                        queue=queue_group,
+                        durable=consumer_name,
+                        queue=consumer_name,
                         config=consumer_config,
                     ),
                     timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
