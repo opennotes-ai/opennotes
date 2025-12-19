@@ -111,12 +111,13 @@ export class NatsSubscriber {
       // Use durable consumer with deliver group for queue subscription
       // This allows multiple instances to share the consumer
       // deliverTo is required for push consumers with deliver_group
+      // WorkQueue streams require deliverAll (messages are consumed once then removed)
       const deliverSubject = `_DELIVER.${durableName}`;
       const opts = consumerOpts()
         .durable(durableName)
         .deliverGroup(durableName)
         .deliverTo(deliverSubject)
-        .deliverNew()
+        .deliverAll()
         .ackExplicit()
         .ackWait(30_000)
         .maxDeliver(3);
@@ -126,8 +127,8 @@ export class NatsSubscriber {
 
       logger.info('Subscribed to score update events with JetStream consumer group', {
         subject,
-        consumerName: this.consumerName,
-        deliverPolicy: 'new',
+        consumerName: durableName,
+        deliverPolicy: 'all',
         ackPolicy: 'explicit',
         ackWaitMs: 30000,
         maxDeliver: 3,
