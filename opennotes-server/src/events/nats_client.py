@@ -8,6 +8,7 @@ from nats.aio.msg import Msg
 from nats.errors import Error as NATSError
 from nats.js import JetStreamContext
 from nats.js.api import ConsumerConfig, PubAck, RetentionPolicy, StorageType, StreamConfig
+from nats.js.errors import BadRequestError
 
 from src.circuit_breaker import circuit_breaker_registry
 from src.config import settings
@@ -175,6 +176,34 @@ class NATSClientManager:
             logger.error(f"Failed to publish to subject '{subject}': {e}")
             raise
 
+    async def _cleanup_conflicting_consumers(self, subject: str) -> None:
+        """Delete any existing consumers that filter on the given subject.
+
+        On WorkQueue streams, only one consumer can filter on a given subject.
+        This method cleans up old ephemeral or misconfigured consumers that
+        might be blocking new subscriptions.
+        """
+        if not self.js:
+            return
+
+        try:
+            stream_name = settings.NATS_STREAM_NAME
+            jsm = self.js._jsm
+
+            consumers = await jsm.consumers_info(stream_name)
+            for consumer in consumers:
+                filter_subject = consumer.config.filter_subject
+                if filter_subject == subject:
+                    consumer_name = consumer.name
+                    logger.warning(
+                        f"Deleting conflicting consumer '{consumer_name}' "
+                        f"with filter '{filter_subject}' on stream '{stream_name}'"
+                    )
+                    await jsm.delete_consumer(stream_name, consumer_name)
+                    logger.info(f"Successfully deleted consumer '{consumer_name}'")
+        except Exception as e:
+            logger.warning(f"Error cleaning up consumers for subject '{subject}': {e}")
+
     async def subscribe(
         self,
         subject: str,
@@ -188,6 +217,9 @@ class NATSClientManager:
 
         The durable name is generated from NATS_CONSUMER_NAME and the subject
         to ensure all instances bind to the same consumer per event type.
+
+        If there's a conflict with existing consumers (e.g., old ephemeral
+        consumers from a previous deployment), they will be cleaned up first.
         """
         if not self.nc:
             raise RuntimeError("NATS client not connected")
@@ -212,6 +244,24 @@ class NATSClientManager:
                 ),
                 timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
             )
+        except BadRequestError as e:
+            if "filtered consumer not unique" in str(e):
+                logger.warning(
+                    f"Consumer conflict detected for subject '{subject}', "
+                    f"cleaning up existing consumers and retrying..."
+                )
+                await self._cleanup_conflicting_consumers(subject)
+                return await asyncio.wait_for(
+                    self.js.subscribe(
+                        subject,
+                        cb=callback,
+                        durable=durable_name,
+                        config=consumer_config,
+                    ),
+                    timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
+                )
+            logger.error(f"Failed to subscribe to subject '{subject}': {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to subscribe to subject '{subject}': {e}")
             raise
