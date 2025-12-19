@@ -131,10 +131,17 @@ class TestInitiateScanEndpoint:
     ):
         """POST /bulk-scans returns JSON:API formatted response."""
         community_server_id = str(uuid4())
+        mock_profile_id = uuid4()
 
-        with patch(
-            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
-            new=AsyncMock(return_value=mock_community_member),
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router._get_profile_id_from_user",
+                new=AsyncMock(return_value=mock_profile_id),
+            ),
         ):
             response = client.post(
                 "/api/v2/bulk-scans",
@@ -162,9 +169,17 @@ class TestInitiateScanEndpoint:
         self, client, mock_service, mock_community_member
     ):
         """Response attributes should include status."""
-        with patch(
-            "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
-            new=AsyncMock(return_value=mock_community_member),
+        mock_profile_id = uuid4()
+
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router._get_profile_id_from_user",
+                new=AsyncMock(return_value=mock_profile_id),
+            ),
         ):
             response = client.post(
                 "/api/v2/bulk-scans",
