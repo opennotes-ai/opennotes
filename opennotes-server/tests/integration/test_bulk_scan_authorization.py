@@ -481,6 +481,85 @@ class TestJSONAPIInitiateScanAuthorization(TestBulkScanAuthorizationFixtures):
             assert response.status_code != 403, "Service account should not receive 403 Forbidden"
 
 
+class TestBulkScanCreationSuccess(TestBulkScanAuthorizationFixtures):
+    """
+    Tests for successful bulk scan creation (201 Created).
+
+    Task: task-852.01 (TDD RED phase)
+
+    These tests verify that scans are ACTUALLY created successfully, not just
+    that authorization passes. This catches bugs like FK violations that would
+    slip through the authorization-only tests (which check != 403).
+
+    The existing authorization tests only verify that admins don't get 403,
+    but don't verify that the operation actually succeeds. This allowed a
+    FK violation bug to slip through where:
+    - router.py:204 and jsonapi_router.py:435 pass current_user.id (User.id)
+    - But initiated_by_user_id has FK constraint to user_profiles.id
+
+    These tests will FAIL until the fix is applied, proving we're testing
+    the right thing (TDD RED phase).
+    """
+
+    @pytest.mark.asyncio
+    async def test_jsonapi_admin_can_successfully_create_scan(
+        self,
+        admin_a_headers,
+        community_a,
+        db,
+    ):
+        """
+        JSON:API: Admin successfully creates a scan (201 Created).
+
+        This test verifies the complete success path:
+        1. Request returns 201 Created (not just != 403)
+        2. Response contains valid scan data
+        3. Scan was actually persisted to the database
+
+        This will fail with FK violation until the bug is fixed.
+        """
+        from src.bulk_content_scan.models import BulkContentScanLog
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v2/bulk-scans",
+                headers={
+                    **admin_a_headers,
+                    "Content-Type": "application/vnd.api+json",
+                },
+                json={
+                    "data": {
+                        "type": "bulk-scans",
+                        "attributes": {
+                            "community_server_id": str(community_a.id),
+                            "scan_window_days": 7,
+                            "channel_ids": [],
+                        },
+                    }
+                },
+            )
+
+            assert response.status_code == 201, (
+                f"Expected 201 Created but got {response.status_code}. Response: {response.text}"
+            )
+
+            response_data = response.json()
+            assert "data" in response_data
+            assert response_data["data"]["type"] == "bulk-scans"
+            scan_id = response_data["data"]["id"]
+            assert scan_id is not None
+
+            from sqlalchemy import select
+
+            result = await db.execute(
+                select(BulkContentScanLog).where(BulkContentScanLog.id == scan_id)
+            )
+            scan = result.scalar_one_or_none()
+            assert scan is not None, "Scan was not persisted to database"
+            assert str(scan.community_server_id) == str(community_a.id)
+
+
 class TestJSONAPIGetScanResultsAuthorization(TestBulkScanAuthorizationFixtures):
     """Tests for GET /api/v2/bulk-scans/{id} endpoint authorization (JSON:API)."""
 

@@ -420,11 +420,20 @@ async def initiate_scan(
                 detail=e.detail,
             )
 
+        profile_id = await _get_profile_id_from_user(session, current_user)
+        if not profile_id:
+            return create_error_response(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                "Failed to determine user profile ID",
+            )
+
         logger.info(
             "Initiating bulk content scan (JSON:API)",
             extra={
                 "community_server_id": str(attrs.community_server_id),
                 "user_id": str(current_user.id),
+                "profile_id": str(profile_id),
                 "scan_window_days": attrs.scan_window_days,
                 "channel_count": len(attrs.channel_ids),
             },
@@ -432,7 +441,7 @@ async def initiate_scan(
 
         scan_log = await service.initiate_scan(
             community_server_id=attrs.community_server_id,
-            initiated_by_user_id=current_user.id,
+            initiated_by_user_id=profile_id,
             scan_window_days=attrs.scan_window_days,
         )
 
