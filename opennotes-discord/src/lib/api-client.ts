@@ -64,6 +64,37 @@ export type NotePublisherConfigResponse = components['schemas']['NotePublisherCo
 export type DuplicateCheckResponse = components['schemas']['DuplicateCheckResponse'];
 export type LastPostResponse = components['schemas']['LastPostResponse'];
 
+// Bulk scan types from generated OpenAPI schema
+export type LatestScanResponse = components['schemas']['LatestScanResponse'];
+export type LatestScanResource = components['schemas']['LatestScanResource'];
+export type LatestScanAttributes = components['schemas']['LatestScanAttributes'];
+export type FlaggedMessageResource = components['schemas']['FlaggedMessageResource'];
+export type FlaggedMessageAttributes = components['schemas']['FlaggedMessageAttributes'];
+
+// Flattened response type for getLatestScan method (transformed from JSON:API response)
+export interface FlaggedMessage {
+  message_id: string;
+  channel_id: string;
+  content: string;
+  author_id: string;
+  timestamp: string;
+  match_score: number;
+  matched_claim: string;
+  matched_source: string;
+}
+
+export type ScanStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+// Transformed/flattened result from getLatestScan (combines attributes + included flagged messages)
+export interface LatestScanResult {
+  scan_id: string;
+  status: ScanStatus;
+  messages_scanned: number;
+  flagged_messages: FlaggedMessage[];
+  initiated_at?: string;
+  completed_at?: string | null;
+}
+
 // JSON:API v2 types from generated OpenAPI schema
 export type NoteCreateRequest = components['schemas']['NoteCreateRequest'];
 export type NoteCreateAttributes = components['schemas']['NoteCreateAttributes'];
@@ -2083,62 +2114,18 @@ export class ApiClient {
     return response.data.attributes.has_recent_scan;
   }
 
-  async getLatestScan(communityServerId: string): Promise<{
-    scan_id: string;
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
-    messages_scanned: number;
-    flagged_messages: Array<{
-      message_id: string;
-      channel_id: string;
-      content: string;
-      author_id: string;
-      timestamp: string;
-      match_score: number;
-      matched_claim: string;
-      matched_source: string;
-    }>;
-    scan_window_days?: number;
-    initiated_at?: string;
-    completed_at?: string | null;
-  }> {
-    const response = await this.fetchWithRetry<{
-      data: {
-        type: string;
-        id: string;
-        attributes: {
-          status: 'pending' | 'in_progress' | 'completed' | 'failed';
-          messages_scanned: number;
-          messages_flagged: number;
-          scan_window_days: number;
-          initiated_at: string;
-          completed_at: string | null;
-        };
-      };
-      included?: Array<{
-        type: string;
-        id: string;
-        attributes: {
-          channel_id: string;
-          content: string;
-          author_id: string;
-          timestamp: string;
-          match_score: number;
-          matched_claim: string;
-          matched_source: string;
-          scan_type: string;
-        };
-      }>;
-      jsonapi: { version: string };
-    }>(`/api/v2/bulk-scans/communities/${communityServerId}/latest`);
+  async getLatestScan(communityServerId: string): Promise<LatestScanResult> {
+    const response = await this.fetchWithRetry<LatestScanResponse>(
+      `/api/v2/bulk-scans/communities/${communityServerId}/latest`
+    );
 
     return {
       scan_id: response.data.id,
-      status: response.data.attributes.status,
+      status: response.data.attributes.status as ScanStatus,
       messages_scanned: response.data.attributes.messages_scanned,
-      scan_window_days: response.data.attributes.scan_window_days,
       initiated_at: response.data.attributes.initiated_at,
       completed_at: response.data.attributes.completed_at,
-      flagged_messages: (response.included || []).map((item) => ({
+      flagged_messages: (response.included || []).map((item: FlaggedMessageResource) => ({
         message_id: item.id,
         channel_id: item.attributes.channel_id,
         content: item.attributes.content,

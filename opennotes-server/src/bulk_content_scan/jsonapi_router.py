@@ -647,7 +647,11 @@ async def check_recent_scan(
         )
 
 
-@router.get("/bulk-scans/communities/{community_server_id}/latest", response_class=JSONResponse)
+@router.get(
+    "/bulk-scans/communities/{community_server_id}/latest",
+    response_class=JSONResponse,
+    responses={200: {"model": LatestScanResponse}},
+)
 async def get_latest_scan(
     community_server_id: UUID,
     request: HTTPRequest,

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Open Notes Scoring API",
-    "version": "1.0.0"
+    "version": "0.0.1"
   },
   "paths": {
     "/api/v1/auth/register": {
@@ -4658,6 +4658,333 @@
         }
       }
     },
+    "/api/v2/bulk-scans": {
+      "post": {
+        "tags": [
+          "bulk-scans-jsonapi"
+        ],
+        "summary": "Initiate Scan",
+        "description": "Initiate a new bulk content scan.\n\nJSON:API request body must contain:\n- data.type: \"bulk-scans\"\n- data.attributes.community_server_id: UUID of community to scan\n- data.attributes.scan_window_days: Number of days to scan back (1-30)\n- data.attributes.channel_ids: Optional list of specific channel IDs\n\nAuthorization: Requires admin access to the target community.\nService accounts have unrestricted access.\n\nReturns a bulk-scans resource with scan_id and initial status.",
+        "operationId": "initiate_scan_api_v2_bulk_scans_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkScanCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/bulk-scans/{scan_id}": {
+      "get": {
+        "tags": [
+          "bulk-scans-jsonapi"
+        ],
+        "summary": "Get Scan Results",
+        "description": "Get scan status and flagged results.\n\nAuthorization: Requires admin access to the community that was scanned.\nService accounts have unrestricted access.\n\nReturns the bulk scan resource with flagged messages included as related resources.\nUses JSON:API compound documents with 'included' array.",
+        "operationId": "get_scan_results_api_v2_bulk_scans__scan_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/bulk-scans/communities/{community_server_id}/recent": {
+      "get": {
+        "tags": [
+          "bulk-scans-jsonapi"
+        ],
+        "summary": "Check Recent Scan",
+        "description": "Check if community has a recent scan within the configured window.\n\nAuthorization: Requires admin access to the specified community.\nService accounts have unrestricted access.\n\nReturns a bulk-scan-status singleton resource with has_recent_scan boolean.",
+        "operationId": "check_recent_scan_api_v2_bulk_scans_communities__community_server_id__recent_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/bulk-scans/communities/{community_server_id}/latest": {
+      "get": {
+        "tags": [
+          "bulk-scans-jsonapi"
+        ],
+        "summary": "Get Latest Scan",
+        "description": "Get the most recent scan for a community server.\n\nReturns the latest bulk content scan with full details including:\n- Scan status (pending, in_progress, completed, failed)\n- Message counts (scanned and flagged)\n- Timestamps (initiated_at, completed_at)\n- Flagged messages with match details (if scan is completed)\n\nAuthorization: Requires admin access to the specified community.\nService accounts have unrestricted access.",
+        "operationId": "get_latest_scan_api_v2_bulk_scans_communities__community_server_id__latest_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LatestScanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/bulk-scans/{scan_id}/note-requests": {
+      "post": {
+        "tags": [
+          "bulk-scans-jsonapi"
+        ],
+        "summary": "Create Note Requests",
+        "description": "Create note requests for selected flagged messages.\n\nJSON:API request body must contain:\n- data.type: \"note-requests\"\n- data.attributes.message_ids: List of message IDs from flagged results\n- data.attributes.generate_ai_notes: Whether to generate AI drafts\n\nAuthorization: User must be the scan initiator OR a community admin.\nService accounts have unrestricted access.\n\nReturns a note-request-batches resource with created count and IDs.",
+        "operationId": "create_note_requests_api_v2_bulk_scans__scan_id__note_requests_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteRequestsCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/notes": {
       "post": {
         "tags": [
@@ -9206,6 +9533,72 @@
         ],
         "title": "Body_login_email_api_v1_profile_auth_login_email_post"
       },
+      "BulkScanCreateAttributes": {
+        "properties": {
+          "community_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Community Server Id",
+            "description": "Community server UUID to scan"
+          },
+          "scan_window_days": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Scan Window Days",
+            "description": "Number of days to scan back",
+            "default": 7
+          },
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Channel Ids",
+            "description": "Specific channel IDs to scan (empty = all channels)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "community_server_id"
+        ],
+        "title": "BulkScanCreateAttributes",
+        "description": "Attributes for creating a bulk scan."
+      },
+      "BulkScanCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "bulk-scans",
+            "title": "Type",
+            "description": "Resource type must be 'bulk-scans'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/BulkScanCreateAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "BulkScanCreateData",
+        "description": "JSON:API data object for bulk scan creation."
+      },
+      "BulkScanCreateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkScanCreateData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "BulkScanCreateRequest",
+        "description": "JSON:API request body for creating a bulk scan."
+      },
       "CommunityAdminResponse": {
         "properties": {
           "profile_id": {
@@ -9974,6 +10367,87 @@
         "title": "FactCheckMatch",
         "description": "Single fact-check similarity match result."
       },
+      "FlaggedMessageAttributes": {
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id",
+            "description": "Channel ID where message was found"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Message content"
+          },
+          "author_id": {
+            "type": "string",
+            "title": "Author Id",
+            "description": "Author ID"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "Message timestamp"
+          },
+          "match_score": {
+            "type": "number",
+            "title": "Match Score",
+            "description": "Similarity match score"
+          },
+          "matched_claim": {
+            "type": "string",
+            "title": "Matched Claim",
+            "description": "The claim that was matched"
+          },
+          "matched_source": {
+            "type": "string",
+            "title": "Matched Source",
+            "description": "Source of the matched claim"
+          },
+          "scan_type": {
+            "type": "string",
+            "title": "Scan Type",
+            "description": "Type of scan that flagged this",
+            "default": "similarity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel_id",
+          "content",
+          "author_id",
+          "timestamp",
+          "match_score",
+          "matched_claim",
+          "matched_source"
+        ],
+        "title": "FlaggedMessageAttributes",
+        "description": "Attributes for a flagged message resource."
+      },
+      "FlaggedMessageResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "flagged-messages"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/FlaggedMessageAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "FlaggedMessageResource",
+        "description": "JSON:API resource object for a flagged message."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -10184,6 +10658,154 @@
         ],
         "title": "IdentityCreateRequest",
         "description": "JSON:API request for creating an identity."
+      },
+      "JSONAPILinks-Input": {
+        "properties": {
+          "self_": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "prev": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev"
+          },
+          "next_": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
+          },
+          "describedby": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Describedby"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "JSONAPILinks",
+        "description": "JSON:API links object for pagination and resource links.\n\nUses field aliases for 'self' and 'next' which are Python reserved words.\nAlways use by_alias=True when serializing.\nIncludes JSON:API 1.1 'describedby' link for API documentation."
+      },
+      "JSONAPILinks-Output": {
+        "properties": {
+          "self": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "prev": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
+          },
+          "describedby": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Describedby"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "JSONAPILinks",
+        "description": "JSON:API links object for pagination and resource links.\n\nUses field aliases for 'self' and 'next' which are Python reserved words.\nAlways use by_alias=True when serializing.\nIncludes JSON:API 1.1 'describedby' link for API documentation."
       },
       "LLMConfigCreate": {
         "properties": {
@@ -10769,6 +11391,128 @@
           "channel_id"
         ],
         "title": "LastPostResponse"
+      },
+      "LatestScanAttributes": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Scan status: pending, in_progress, completed, failed"
+          },
+          "initiated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Initiated At",
+            "description": "When the scan was initiated"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "When the scan completed"
+          },
+          "messages_scanned": {
+            "type": "integer",
+            "title": "Messages Scanned",
+            "description": "Total messages scanned",
+            "default": 0
+          },
+          "messages_flagged": {
+            "type": "integer",
+            "title": "Messages Flagged",
+            "description": "Number of flagged messages",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "initiated_at"
+        ],
+        "title": "LatestScanAttributes",
+        "description": "Attributes for the latest scan resource."
+      },
+      "LatestScanResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scans"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/LatestScanAttributes"
+          },
+          "relationships": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "LatestScanResource",
+        "description": "JSON:API resource object for the latest scan."
+      },
+      "LatestScanResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LatestScanResource"
+          },
+          "included": {
+            "items": {
+              "$ref": "#/components/schemas/FlaggedMessageResource"
+            },
+            "type": "array",
+            "title": "Included"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "LatestScanResponse",
+        "description": "JSON:API response for the latest scan with included flagged messages."
       },
       "MonitoredChannelCreate": {
         "properties": {
@@ -12100,6 +12844,65 @@
           "success"
         ],
         "title": "NotePublisherRecordRequest"
+      },
+      "NoteRequestsCreateAttributes": {
+        "properties": {
+          "message_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Message Ids",
+            "description": "List of message IDs to create note requests for"
+          },
+          "generate_ai_notes": {
+            "type": "boolean",
+            "title": "Generate Ai Notes",
+            "description": "Whether to generate AI draft notes",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message_ids"
+        ],
+        "title": "NoteRequestsCreateAttributes",
+        "description": "Attributes for creating note requests from flagged messages."
+      },
+      "NoteRequestsCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "note-requests",
+            "title": "Type",
+            "description": "Resource type must be 'note-requests'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/NoteRequestsCreateAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "NoteRequestsCreateData",
+        "description": "JSON:API data object for note requests creation."
+      },
+      "NoteRequestsCreateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NoteRequestsCreateData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NoteRequestsCreateRequest",
+        "description": "JSON:API request body for creating note requests."
       },
       "NoteResponse": {
         "properties": {

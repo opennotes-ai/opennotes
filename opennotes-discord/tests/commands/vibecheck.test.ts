@@ -1,11 +1,8 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { MessageFlags, PermissionFlagsBits, ButtonStyle } from 'discord.js';
-import {
-  VIBE_CHECK_DAYS_OPTIONS,
-  type BulkScanInitiateResponse,
-  type BulkScanResultsResponse,
-  type FlaggedMessage,
-} from '../../src/types/bulk-scan.js';
+import { VIBE_CHECK_DAYS_OPTIONS, type FlaggedMessage } from '../../src/types/bulk-scan.js';
+import type { BulkScanResult } from '../../src/lib/bulk-scan-executor.js';
+import type { LatestScanResult } from '../../src/lib/api-client.js';
 
 const mockLogger = {
   info: jest.fn<(...args: unknown[]) => void>(),
@@ -14,17 +11,13 @@ const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
 };
 
-const mockNatsPublisher = {
-  publishBulkScanBatch: jest.fn<(...args: unknown[]) => Promise<void>>().mockResolvedValue(undefined),
-  isConnected: jest.fn<() => boolean>().mockReturnValue(true),
-};
-
 const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),
   getCommunityServerByPlatformId: jest.fn<(platformId: string) => Promise<{ id: string; platform: string; platform_id: string; name: string; is_active: boolean }>>(),
-  initiateBulkScan: jest.fn<(guildId: string, days: number) => Promise<BulkScanInitiateResponse>>(),
-  getBulkScanResults: jest.fn<(scanId: string) => Promise<BulkScanResultsResponse>>(),
+  initiateBulkScan: jest.fn<(guildId: string, days: number) => Promise<any>>(),
+  getBulkScanResults: jest.fn<(scanId: string) => Promise<LatestScanResult>>(),
   createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<any>>(),
+  getLatestScan: jest.fn<(communityServerId: string) => Promise<LatestScanResult>>(),
 };
 
 const mockCache = {
@@ -32,6 +25,43 @@ const mockCache = {
   set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
   delete: jest.fn<(key: string) => void>(),
 };
+
+const mockExecuteBulkScan = jest.fn<(options: any) => Promise<BulkScanResult>>().mockResolvedValue({
+  scanId: 'default-scan-123',
+  messagesScanned: 0,
+  channelsScanned: 0,
+  batchesPublished: 0,
+  failedBatches: 0,
+  status: 'completed',
+  flaggedMessages: [],
+});
+
+const mockBotChannelService = {
+  findChannel: jest.fn<(guild: any, channelName: string) => any>(),
+};
+
+const mockGuildConfigService = {
+  get: jest.fn<(guildId: string, key: string) => Promise<string>>(),
+};
+
+const mockServiceProvider = {
+  getGuildConfigService: jest.fn(() => mockGuildConfigService),
+};
+
+jest.unstable_mockModule('../../src/types/bulk-scan.js', () => ({
+  VIBE_CHECK_DAYS_OPTIONS: VIBE_CHECK_DAYS_OPTIONS,
+  BULK_SCAN_BATCH_SIZE: 100,
+  NATS_SUBJECTS: {
+    BULK_SCAN_BATCH: 'OPENNOTES.bulk_scan_message_batch',
+    BULK_SCAN_COMPLETE: 'OPENNOTES.bulk_scan_completed',
+    BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan_results',
+  },
+  EventType: {
+    BULK_SCAN_MESSAGE_BATCH: 'bulk_scan.message_batch',
+    BULK_SCAN_COMPLETED: 'bulk_scan.completed',
+    BULK_SCAN_RESULTS: 'bulk_scan.results',
+  },
+}));
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -45,8 +75,45 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
+const mockNatsPublisher = {
+  publishBulkScanBatch: jest.fn<(subject: string, batch: any) => Promise<void>>().mockResolvedValue(undefined),
+  publishBulkScanCompleted: jest.fn<(data: any) => Promise<void>>().mockResolvedValue(undefined),
+};
+
 jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({
   natsPublisher: mockNatsPublisher,
+}));
+
+jest.unstable_mockModule('../../src/lib/bulk-scan-executor.js', () => ({
+  executeBulkScan: mockExecuteBulkScan,
+  pollForResults: jest.fn(),
+  formatMatchScore: (score: number) => `${Math.round(score * 100)}%`,
+  formatMessageLink: (guildId: string, channelId: string, messageId: string) =>
+    `https://discord.com/channels/${guildId}/${channelId}/${messageId}`,
+  truncateContent: (content: string, maxLength: number = 100) => {
+    if (content.length <= maxLength) return content;
+    return content.slice(0, maxLength - 3) + '...';
+  },
+  POLL_TIMEOUT_MS: 60000,
+  BACKOFF_INITIAL_MS: 1000,
+  BACKOFF_MULTIPLIER: 2,
+  BACKOFF_MAX_MS: 30000,
+}));
+
+const mockFormatScanStatus = jest.fn<(options: any) => { content: string; components?: any[] }>();
+
+jest.unstable_mockModule('../../src/lib/scan-status-formatter.js', () => ({
+  formatScanStatus: mockFormatScanStatus,
+}));
+
+const MockBotChannelServiceConstructor = jest.fn().mockImplementation(() => mockBotChannelService);
+
+jest.unstable_mockModule('../../src/services/BotChannelService.js', () => ({
+  BotChannelService: MockBotChannelServiceConstructor,
+}));
+
+jest.unstable_mockModule('../../src/services/index.js', () => ({
+  serviceProvider: mockServiceProvider,
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
@@ -64,11 +131,30 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../../src/lib/permissions.js', () => ({
+  hasManageGuildPermission: (member: any) => {
+    if (!member) return false;
+    return member.permissions?.has?.(BigInt(0x20)) ?? false;
+  },
+}));
+
+jest.unstable_mockModule('../../src/lib/config-schema.js', () => ({
+  ConfigKey: {
+    BOT_CHANNEL_NAME: 'bot_channel_name',
+    CONTENT_MONITOR_ENABLED: 'content_monitor_enabled',
+    NOTE_PUBLISHER_ENABLED: 'note_publisher_enabled',
+    LLM_PROVIDER: 'llm_provider',
+  },
+}));
+
 const { data, execute, VIBECHECK_COOLDOWN_MS, getVibecheckCooldownKey } = await import('../../src/commands/vibecheck.js');
 
 describe('vibecheck command', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Set up cache mock to return null (no cooldown)
+    mockCache.get.mockReturnValue(null);
 
     mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
       id: 'community-server-uuid-123',
@@ -78,23 +164,35 @@ describe('vibecheck command', () => {
       is_active: true,
     });
 
-    mockApiClient.initiateBulkScan.mockResolvedValue({
-      scan_id: 'test-scan-123',
-      status: 'pending',
-      community_server_id: 'guild789',
-      scan_window_days: 7,
-    });
-
-    mockApiClient.getBulkScanResults.mockResolvedValue({
+    mockApiClient.getLatestScan.mockResolvedValue({
       scan_id: 'test-scan-123',
       status: 'completed',
-      messages_scanned: 0,
+      messages_scanned: 100,
       flagged_messages: [],
     });
 
     mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
       created_count: 0,
       scan_id: 'test-scan-123',
+    });
+
+    mockExecuteBulkScan.mockResolvedValue({
+      scanId: 'test-scan-123',
+      messagesScanned: 100,
+      channelsScanned: 5,
+      batchesPublished: 2,
+      failedBatches: 0,
+      status: 'completed',
+      flaggedMessages: [],
+    });
+
+    MockBotChannelServiceConstructor.mockImplementation(() => mockBotChannelService);
+    mockServiceProvider.getGuildConfigService.mockReturnValue(mockGuildConfigService);
+    mockGuildConfigService.get.mockResolvedValue('opennotes');
+    mockBotChannelService.findChannel.mockReturnValue(undefined);
+
+    mockFormatScanStatus.mockReturnValue({
+      content: '**Scan Complete**\n\n**Scan ID:** `test-scan-123`\n**Messages scanned:** 100\n\nNo potential misinformation was detected.',
     });
   });
 
@@ -108,12 +206,23 @@ describe('vibecheck command', () => {
       expect(data.description.length).toBeGreaterThan(0);
     });
 
-    it('should have days parameter with correct choices', () => {
+    it('should have scan and status subcommands', () => {
       const options = data.options;
       expect(options).toBeDefined();
-      expect(options.length).toBeGreaterThanOrEqual(1);
+      expect(options.length).toBe(2);
 
-      const daysOption = options.find((opt: any) => opt.name === 'days') as any;
+      const subcommandNames = options.map((opt: any) => opt.name);
+      expect(subcommandNames).toContain('scan');
+      expect(subcommandNames).toContain('status');
+    });
+
+    it('should have days parameter on scan subcommand with correct choices', () => {
+      const options = data.options;
+      const scanSubcommand = options.find((opt: any) => opt.name === 'scan') as any;
+
+      expect(scanSubcommand).toBeDefined();
+
+      const daysOption = scanSubcommand.options?.find((opt: any) => opt.name === 'days') as any;
       expect(daysOption).toBeDefined();
       expect(daysOption.required).toBe(true);
 
@@ -174,31 +283,14 @@ describe('vibecheck command', () => {
     });
 
     it('should allow admin users with ManageGuild permission', async () => {
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild789',
@@ -257,285 +349,16 @@ describe('vibecheck command', () => {
     });
   });
 
-  describe('message scanning', () => {
-    it('should iterate through text channels', async () => {
-      const now = Date.now();
-      const mockMessages = new Map([
-        ['1234567890123456789', {
-          id: '1234567890123456789',
-          content: 'Test message 1',
-          author: { id: 'author1', username: 'user1', bot: false },
-          createdTimestamp: now - 1000 * 60 * 60,
-          createdAt: new Date(now - 1000 * 60 * 60),
-          channelId: 'channel123',
-          attachments: new Map(),
-          embeds: [],
-        }],
-        ['1234567890123456790', {
-          id: '1234567890123456790',
-          content: 'Test message 2',
-          author: { id: 'author2', username: 'user2', bot: false },
-          createdTimestamp: now - 1000 * 60 * 60 * 2,
-          createdAt: new Date(now - 1000 * 60 * 60 * 2),
-          channelId: 'channel123',
-          attachments: new Map(),
-          embeds: [],
-        }],
-      ]);
-
-      const messageFetch = jest.fn<(opts: any) => Promise<Map<string, any>>>()
-        .mockResolvedValueOnce(mockMessages)
-        .mockResolvedValue(new Map());
-
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: { fetch: messageFetch },
-      };
-
+  describe('scan subcommand', () => {
+    it('should call executeBulkScan with correct parameters', async () => {
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
-
-      const mockGuild = {
-        id: 'guild789',
-        name: 'Test Guild',
-        channels: { cache: channelsCache },
-      };
-
-      const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
-        member: mockMember,
-        guildId: 'guild789',
-        guild: mockGuild,
-        options: {
-          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
-          getSubcommand: jest.fn().mockReturnValue('scan'),
-          getSubcommandGroup: jest.fn().mockReturnValue(null),
-          getChannel: jest.fn().mockReturnValue(null),
-        },
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      await execute(mockInteraction as any);
-
-      expect(messageFetch).toHaveBeenCalled();
-    });
-
-    it('should skip bot messages', async () => {
-      const now = Date.now();
-      const mockMessages = new Map([
-        ['1234567890123456789', {
-          id: '1234567890123456789',
-          content: 'Bot message',
-          author: { id: 'bot1', username: 'botuser', bot: true },
-          createdTimestamp: now - 1000 * 60 * 60,
-          createdAt: new Date(now - 1000 * 60 * 60),
-          channelId: 'channel123',
-          attachments: new Map(),
-          embeds: [],
-        }],
-        ['1234567890123456790', {
-          id: '1234567890123456790',
-          content: 'Human message',
-          author: { id: 'human1', username: 'humanuser', bot: false },
-          createdTimestamp: now - 1000 * 60 * 60,
-          createdAt: new Date(now - 1000 * 60 * 60),
-          channelId: 'channel123',
-          attachments: new Map(),
-          embeds: [],
-        }],
-      ]);
-
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(mockMessages)
-            .mockResolvedValue(new Map()),
-        },
-      };
-
-      const mockMember = {
-        permissions: {
-          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
-        },
-      };
-
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
-
-      const mockGuild = {
-        id: 'guild789',
-        name: 'Test Guild',
-        channels: { cache: channelsCache },
-      };
-
-      const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
-        member: mockMember,
-        guildId: 'guild789',
-        guild: mockGuild,
-        options: {
-          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
-          getSubcommand: jest.fn().mockReturnValue('scan'),
-          getSubcommandGroup: jest.fn().mockReturnValue(null),
-          getChannel: jest.fn().mockReturnValue(null),
-        },
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      await execute(mockInteraction as any);
-
-      expect(mockInteraction.editReply).toHaveBeenCalled();
-    });
-
-    it('should respect the days parameter cutoff', async () => {
-      const now = Date.now();
-
-      const mockMessages = new Map([
-        ['1234567890123456789', {
-          id: '1234567890123456789',
-          content: 'Recent message',
-          author: { id: 'author1', username: 'user1', bot: false },
-          createdTimestamp: now - 1000 * 60 * 60,
-          createdAt: new Date(now - 1000 * 60 * 60),
-          channelId: 'channel123',
-          attachments: new Map(),
-          embeds: [],
-        }],
-      ]);
-
-      const messageFetch = jest.fn<(opts: any) => Promise<Map<string, any>>>()
-        .mockResolvedValueOnce(mockMessages)
-        .mockResolvedValue(new Map());
-
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: { fetch: messageFetch },
-      };
-
-      const mockMember = {
-        permissions: {
-          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
-        },
-      };
-
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
-
-      const mockGuild = {
-        id: 'guild789',
-        name: 'Test Guild',
-        channels: { cache: channelsCache },
-      };
-
-      const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
-        member: mockMember,
-        guildId: 'guild789',
-        guild: mockGuild,
-        options: {
-          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
-          getSubcommand: jest.fn().mockReturnValue('scan'),
-          getSubcommandGroup: jest.fn().mockReturnValue(null),
-          getChannel: jest.fn().mockReturnValue(null),
-        },
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      await execute(mockInteraction as any);
-
-      expect(messageFetch).toHaveBeenCalled();
-      expect(mockInteraction.editReply).toHaveBeenCalled();
-    });
-  });
-
-  describe('NATS batch publishing', () => {
-    it('should publish messages to NATS in batches', async () => {
-      const now = Date.now();
-      const mockMessages = new Map();
-      for (let i = 0; i < 150; i++) {
-        const msgId = `145102818975626${(4000 + i).toString()}`;
-        mockMessages.set(msgId, {
-          id: msgId,
-          content: `Test message ${i}`,
-          author: { id: 'author1', username: 'user1', bot: false },
-          createdTimestamp: now - 1000 * 60 * 60,
-          createdAt: new Date(now - 1000 * 60 * 60),
-          channelId: 'channel123',
-          attachments: new Map(),
-          embeds: [],
-        });
-      }
-
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(mockMessages)
-            .mockResolvedValue(new Map()),
-        },
-      };
-
-      const mockMember = {
-        permissions: {
-          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
-        },
-      };
-
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild789',
@@ -561,78 +384,24 @@ describe('vibecheck command', () => {
 
       await execute(mockInteraction as any);
 
-      expect(mockNatsPublisher.publishBulkScanBatch).toHaveBeenCalled();
+      expect(mockExecuteBulkScan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guild: mockGuild,
+          days: 7,
+          initiatorId: 'admin123',
+        })
+      );
     });
-  });
 
-  describe('progress updates', () => {
-    it('should update progress during scan', async () => {
-      const now = Date.now();
-      const mockChannel1 = {
-        id: 'channel1',
-        name: 'channel-1',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(new Map([
-              ['1234567890123456789', {
-                id: '1234567890123456789',
-                content: 'Message 1',
-                author: { id: 'author1', username: 'user1', bot: false },
-                createdTimestamp: now - 1000 * 60,
-                createdAt: new Date(now - 1000 * 60),
-                channelId: 'channel1',
-                attachments: new Map(),
-                embeds: [],
-              }],
-            ]))
-            .mockResolvedValue(new Map()),
-        },
-      };
-
-      const mockChannel2 = {
-        id: 'channel2',
-        name: 'channel-2',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(new Map([
-              ['1234567890123456790', {
-                id: '1234567890123456790',
-                content: 'Message 2',
-                author: { id: 'author2', username: 'user2', bot: false },
-                createdTimestamp: now - 1000 * 60,
-                createdAt: new Date(now - 1000 * 60),
-                channelId: 'channel2',
-                attachments: new Map(),
-                embeds: [],
-              }],
-            ]))
-            .mockResolvedValue(new Map()),
-        },
-      };
-
+    it('should show no channels message when no accessible channels found', async () => {
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([
-        ['channel1', mockChannel1],
-        ['channel2', mockChannel2],
-      ]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild789',
@@ -646,7 +415,7 @@ describe('vibecheck command', () => {
         guildId: 'guild789',
         guild: mockGuild,
         options: {
-          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
           getSubcommand: jest.fn().mockReturnValue('scan'),
           getSubcommandGroup: jest.fn().mockReturnValue(null),
           getChannel: jest.fn().mockReturnValue(null),
@@ -656,89 +425,79 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      await execute(mockInteraction as any);
-
-      expect(mockInteraction.editReply).toHaveBeenCalled();
-    });
-  });
-
-  describe('completion message', () => {
-    it('should show completion message with scan summary', async () => {
-      const now = Date.now();
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(new Map([
-              ['1234567890123456789', {
-                id: '1234567890123456789',
-                content: 'Test message',
-                author: { id: 'author1', username: 'user1', bot: false },
-                createdTimestamp: now - 1000 * 60,
-                createdAt: new Date(now - 1000 * 60),
-                channelId: 'channel123',
-                attachments: new Map(),
-                embeds: [],
-              }],
-            ]))
-            .mockResolvedValue(new Map()),
-        },
-      };
-
-      const mockMember = {
-        permissions: {
-          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
-        },
-      };
-
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
-
-      const mockGuild = {
-        id: 'guild789',
-        name: 'Test Guild',
-        channels: { cache: channelsCache },
-      };
-
-      const mockInteraction = {
-        user: { id: 'admin123', username: 'adminuser' },
-        member: mockMember,
-        guildId: 'guild789',
-        guild: mockGuild,
-        options: {
-          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
-          getSubcommand: jest.fn().mockReturnValue('scan'),
-          getSubcommandGroup: jest.fn().mockReturnValue(null),
-          getChannel: jest.fn().mockReturnValue(null),
-        },
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: '',
+        messagesScanned: 0,
+        channelsScanned: 0,
+        batchesPublished: 0,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: [],
+      });
 
       await execute(mockInteraction as any);
 
       const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
-      expect(lastEditCall.content).toMatch(/complete|finished|done|scan/i);
+      expect(lastEditCall.content).toMatch(/no.*channel/i);
+    });
+
+    it('should show completion message with scan summary', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(1),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'test-scan-123',
+        messagesScanned: 50,
+        channelsScanned: 3,
+        batchesPublished: 1,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: [],
+      });
+
+      await execute(mockInteraction as any);
+
+      const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
+      expect(lastEditCall.content).toMatch(/complete|scan/i);
     });
   });
 
-  describe('AC #6: server-side scan initiation and results display', () => {
+  describe('scan results display', () => {
     const createMockInteractionWithCollector = () => {
-      const now = Date.now();
-
+      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
       const mockCollector = {
-        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>(),
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
+          collectHandlers.set(event, handler);
+          return mockCollector;
+        }),
         stop: jest.fn(),
       };
 
@@ -746,44 +505,14 @@ describe('vibecheck command', () => {
         createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
       });
 
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(new Map([
-              ['1234567890123456789', {
-                id: '1234567890123456789',
-                content: 'Test message with misinformation',
-                author: { id: 'author1', username: 'user1', bot: false },
-                createdTimestamp: now - 1000 * 60,
-                createdAt: new Date(now - 1000 * 60),
-                channelId: 'channel123',
-                attachments: new Map(),
-                embeds: [],
-              }],
-            ]))
-            .mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild789',
@@ -808,66 +537,8 @@ describe('vibecheck command', () => {
         fetchReply: mockFetchReply,
       };
 
-      return { mockInteraction, mockCollector };
+      return { mockInteraction, mockCollector, collectHandlers };
     };
-
-    it('should call initiateBulkScan API after NATS batches are published', async () => {
-      const { mockInteraction } = createMockInteractionWithCollector();
-
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 1,
-        flagged_messages: [],
-      });
-
-      await execute(mockInteraction as any);
-
-      expect(mockApiClient.initiateBulkScan).toHaveBeenCalledWith('community-server-uuid-123', 7);
-    });
-
-    it('should poll for scan results until completed', async () => {
-      const { mockInteraction } = createMockInteractionWithCollector();
-
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults
-        .mockResolvedValueOnce({
-          scan_id: 'scan-123',
-          status: 'in_progress',
-          messages_scanned: 0,
-          flagged_messages: [],
-        })
-        .mockResolvedValueOnce({
-          scan_id: 'scan-123',
-          status: 'in_progress',
-          messages_scanned: 1,
-          flagged_messages: [],
-        })
-        .mockResolvedValue({
-          scan_id: 'scan-123',
-          status: 'completed',
-          messages_scanned: 1,
-          flagged_messages: [],
-        });
-
-      await execute(mockInteraction as any);
-
-      expect(mockApiClient.getBulkScanResults).toHaveBeenCalled();
-      expect(mockApiClient.getBulkScanResults.mock.calls.length).toBeGreaterThanOrEqual(1);
-    });
 
     it('should display flagged results with message link, confidence score, and matched claim', async () => {
       const { mockInteraction } = createMockInteractionWithCollector();
@@ -885,18 +556,19 @@ describe('vibecheck command', () => {
         },
       ];
 
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
       });
 
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 1,
-        flagged_messages: flaggedMessages,
+      mockFormatScanStatus.mockReturnValueOnce({
+        content: '**Scan Complete**\n\n**Flagged:** 1\n\n[Message](https://discord.com/channels/guild789/channel123/1234567890123456789)\nConfidence: **95%**\nMatched: "Vaccines cause autism"',
+        components: [],
       });
 
       await execute(mockInteraction as any);
@@ -911,31 +583,25 @@ describe('vibecheck command', () => {
     it('should show no flagged content message when scan completes with no matches', async () => {
       const { mockInteraction } = createMockInteractionWithCollector();
 
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
         status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: [],
+        flaggedMessages: [],
       });
 
       await execute(mockInteraction as any);
 
       const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
-      expect(lastEditCall.content).toMatch(/no.*flagged|clean|no.*misinformation/i);
+      expect(lastEditCall.content).toMatch(/no.*flagged|no.*misinformation/i);
     });
   });
 
-  describe('AC #7: action buttons for note requests', () => {
+  describe('action buttons for note requests', () => {
     const createMockInteractionWithFlaggedResults = () => {
-      const now = Date.now();
-
       const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
       const mockCollector = {
         on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
@@ -949,44 +615,14 @@ describe('vibecheck command', () => {
         createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
       });
 
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(new Map([
-              ['1234567890123456789', {
-                id: '1234567890123456789',
-                content: 'Test message',
-                author: { id: 'author1', username: 'user1', bot: false },
-                createdTimestamp: now - 1000 * 60,
-                createdAt: new Date(now - 1000 * 60),
-                channelId: 'channel123',
-                attachments: new Map(),
-                embeds: [],
-              }],
-            ]))
-            .mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild789',
@@ -1030,18 +666,26 @@ describe('vibecheck command', () => {
         },
       ];
 
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
       });
 
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 1,
-        flagged_messages: flaggedMessages,
+      const mockButtonRow = {
+        components: [
+          { data: { custom_id: 'vibecheck_create:scan-123', label: 'Create Note Requests', style: ButtonStyle.Primary } },
+          { data: { custom_id: 'vibecheck_dismiss:scan-123', label: 'Dismiss', style: ButtonStyle.Secondary } },
+        ],
+      };
+
+      mockFormatScanStatus.mockReturnValueOnce({
+        content: '**Scan Complete**\n\n**Flagged:** 1',
+        components: [mockButtonRow],
       });
 
       await execute(mockInteraction as any);
@@ -1077,18 +721,14 @@ describe('vibecheck command', () => {
         },
       ];
 
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
         status: 'completed',
-        messages_scanned: 1,
-        flagged_messages: flaggedMessages,
+        flaggedMessages: flaggedMessages,
       });
 
       await execute(mockInteraction as any);
@@ -1114,10 +754,8 @@ describe('vibecheck command', () => {
     });
   });
 
-  describe('AC #8: AI generation prompt on Create Note Requests', () => {
+  describe('AI generation prompt on Create Note Requests', () => {
     const createMockInteractionForAIPrompt = () => {
-      const now = Date.now();
-
       const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
       const mockCollector = {
         on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
@@ -1131,44 +769,14 @@ describe('vibecheck command', () => {
         createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
       });
 
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(new Map([
-              ['1234567890123456789', {
-                id: '1234567890123456789',
-                content: 'Test message',
-                author: { id: 'author1', username: 'user1', bot: false },
-                createdTimestamp: now - 1000 * 60,
-                createdAt: new Date(now - 1000 * 60),
-                channelId: 'channel123',
-                attachments: new Map(),
-                embeds: [],
-              }],
-            ]))
-            .mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild789',
@@ -1212,18 +820,14 @@ describe('vibecheck command', () => {
         },
       ];
 
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
         status: 'completed',
-        messages_scanned: 1,
-        flagged_messages: flaggedMessages,
+        flaggedMessages: flaggedMessages,
       });
 
       await execute(mockInteraction as any);
@@ -1274,18 +878,14 @@ describe('vibecheck command', () => {
         },
       ];
 
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
         status: 'completed',
-        messages_scanned: 1,
-        flagged_messages: flaggedMessages,
+        flaggedMessages: flaggedMessages,
       });
 
       mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
@@ -1329,6 +929,8 @@ describe('vibecheck command', () => {
         await aiCollectHandler(aiYesInteraction);
       }
 
+      await new Promise(resolve => setTimeout(resolve, 10));
+
       expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
         'scan-123',
         ['1234567890123456789'],
@@ -1352,18 +954,14 @@ describe('vibecheck command', () => {
         },
       ];
 
-      mockApiClient.initiateBulkScan.mockResolvedValue({
-        scan_id: 'scan-123',
-        status: 'pending',
-        community_server_id: 'guild789',
-        scan_window_days: 7,
-      });
-
-      mockApiClient.getBulkScanResults.mockResolvedValue({
-        scan_id: 'scan-123',
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
         status: 'completed',
-        messages_scanned: 1,
-        flagged_messages: flaggedMessages,
+        flaggedMessages: flaggedMessages,
       });
 
       mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
@@ -1407,6 +1005,8 @@ describe('vibecheck command', () => {
         await aiCollectHandler(aiNoInteraction);
       }
 
+      await new Promise(resolve => setTimeout(resolve, 10));
+
       expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
         'scan-123',
         ['1234567890123456789'],
@@ -1417,7 +1017,6 @@ describe('vibecheck command', () => {
 
   describe('User ID authorization for button collectors', () => {
     const createMockInteractionForUserIdTest = () => {
-      const now = Date.now();
       let capturedFilter: ((interaction: any) => boolean) | undefined;
 
       const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
@@ -1436,44 +1035,14 @@ describe('vibecheck command', () => {
         }),
       });
 
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>()
-            .mockResolvedValueOnce(new Map([
-              ['1234567890123456789', {
-                id: '1234567890123456789',
-                content: 'Test message',
-                author: { id: 'author1', username: 'user1', bot: false },
-                createdTimestamp: now - 1000 * 60,
-                createdAt: new Date(now - 1000 * 60),
-                channelId: 'channel123',
-                attachments: new Map(),
-                embeds: [],
-              }],
-            ]))
-            .mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild789',
@@ -1520,18 +1089,14 @@ describe('vibecheck command', () => {
           },
         ];
 
-        mockApiClient.initiateBulkScan.mockResolvedValue({
-          scan_id: 'scan-123',
-          status: 'pending',
-          community_server_id: 'guild789',
-          scan_window_days: 7,
-        });
-
-        mockApiClient.getBulkScanResults.mockResolvedValue({
-          scan_id: 'scan-123',
+        mockExecuteBulkScan.mockResolvedValueOnce({
+          scanId: 'scan-123',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 2,
+          failedBatches: 0,
           status: 'completed',
-          messages_scanned: 1,
-          flagged_messages: flaggedMessages,
+          flaggedMessages: flaggedMessages,
         });
 
         await execute(mockInteraction as any);
@@ -1568,18 +1133,14 @@ describe('vibecheck command', () => {
           },
         ];
 
-        mockApiClient.initiateBulkScan.mockResolvedValue({
-          scan_id: 'scan-123',
-          status: 'pending',
-          community_server_id: 'guild789',
-          scan_window_days: 7,
-        });
-
-        mockApiClient.getBulkScanResults.mockResolvedValue({
-          scan_id: 'scan-123',
+        mockExecuteBulkScan.mockResolvedValueOnce({
+          scanId: 'scan-123',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 2,
+          failedBatches: 0,
           status: 'completed',
-          messages_scanned: 1,
-          flagged_messages: flaggedMessages,
+          flaggedMessages: flaggedMessages,
         });
 
         await execute(mockInteraction as any);
@@ -1627,18 +1188,14 @@ describe('vibecheck command', () => {
           },
         ];
 
-        mockApiClient.initiateBulkScan.mockResolvedValue({
-          scan_id: 'scan-123',
-          status: 'pending',
-          community_server_id: 'guild789',
-          scan_window_days: 7,
-        });
-
-        mockApiClient.getBulkScanResults.mockResolvedValue({
-          scan_id: 'scan-123',
+        mockExecuteBulkScan.mockResolvedValueOnce({
+          scanId: 'scan-123',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 2,
+          failedBatches: 0,
           status: 'completed',
-          messages_scanned: 1,
-          flagged_messages: flaggedMessages,
+          flaggedMessages: flaggedMessages,
         });
 
         await execute(mockInteraction as any);
@@ -1742,31 +1299,14 @@ describe('vibecheck command', () => {
 
     it('should allow scan if guild cooldown has expired', async () => {
       const now = Date.now();
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild-expired-cooldown',
@@ -1798,31 +1338,14 @@ describe('vibecheck command', () => {
     });
 
     it('should allow scan if no cooldown exists for guild', async () => {
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild-no-cooldown',
@@ -1854,31 +1377,14 @@ describe('vibecheck command', () => {
     });
 
     it('should set cooldown after successful scan initiation', async () => {
-      const mockChannel = {
-        id: 'channel123',
-        name: 'test-channel',
-        type: 0,
-        isTextBased: () => true,
-        viewable: true,
-        messages: {
-          fetch: jest.fn<(opts: any) => Promise<Map<string, any>>>().mockResolvedValue(new Map()),
-        },
-      };
-
       const mockMember = {
         permissions: {
           has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
         },
       };
 
-      const channelsCache = new Map([['channel123', mockChannel]]);
-      (channelsCache as any).filter = (fn: (ch: any) => boolean) => {
-        const result = new Map();
-        for (const [k, v] of channelsCache) {
-          if (fn(v)) result.set(k, v);
-        }
-        return result;
-      };
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
 
       const mockGuild = {
         id: 'guild-set-cooldown',
@@ -1920,6 +1426,138 @@ describe('vibecheck command', () => {
       expect(keyGuildA).toBe('vibecheck:cooldown:guildA');
       expect(keyGuildB).toBe('vibecheck:cooldown:guildB');
       expect(keyGuildA).not.toBe(keyGuildB);
+    });
+  });
+
+  describe('status subcommand', () => {
+    it('should fetch latest scan for the guild', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.getCommunityServerByPlatformId).toHaveBeenCalledWith('guild789');
+      expect(mockApiClient.getLatestScan).toHaveBeenCalledWith('community-server-uuid-123');
+    });
+
+    it('should display completed scan status', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockApiClient.getLatestScan.mockResolvedValueOnce({
+        scan_id: 'test-scan-456',
+        status: 'completed',
+        messages_scanned: 250,
+        flagged_messages: [],
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Complete'),
+        })
+      );
+    });
+
+    it('should show message when no scans exist', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const { ApiError } = await import('../../src/lib/errors.js') as any;
+      mockApiClient.getLatestScan.mockRejectedValueOnce(new ApiError('Not found', '/api/scans', 404));
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/no scans|run.*scan/i),
+        })
+      );
     });
   });
 });

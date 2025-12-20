@@ -30,6 +30,7 @@ const mockApiClient = {
   getLastNotePost: jest.fn<() => Promise<any>>(),
   getNote: jest.fn<() => Promise<any>>(),
   recordNotePublisher: jest.fn<() => Promise<void>>(),
+  getCommunityServerByPlatformId: jest.fn<() => Promise<any>>(),
 };
 
 const mockFetch = jest.fn<typeof fetch>();
@@ -109,6 +110,7 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
     mockApiClient.getLastNotePost.mockRejectedValue(new Error('404'));
     mockApiClient.getNote.mockResolvedValue({ summary: 'Default note content' });
     mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({ id: 'guild-123' });
 
     notePublisherService = new NotePublisherService(
       mockDiscordClient.getClient(),

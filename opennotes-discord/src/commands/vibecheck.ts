@@ -329,7 +329,7 @@ async function showAiGenerationPrompt(
 
     const messageIds = flaggedMessages.map(msg => msg.message_id);
 
-    void (async () => {
+    void (async (): Promise<void> => {
       try {
         const result = await apiClient.createNoteRequestsFromScan(
           scanId,
@@ -395,7 +395,6 @@ async function handleStatusSubcommand(
     const result = formatScanStatus({
       scan: latestScan,
       guildId,
-      days: latestScan.scan_window_days,
       includeButtons: false,
     });
 

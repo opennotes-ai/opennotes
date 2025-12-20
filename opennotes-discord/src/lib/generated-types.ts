@@ -1670,6 +1670,147 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/bulk-scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Initiate Scan
+         * @description Initiate a new bulk content scan.
+         *
+         *     JSON:API request body must contain:
+         *     - data.type: "bulk-scans"
+         *     - data.attributes.community_server_id: UUID of community to scan
+         *     - data.attributes.scan_window_days: Number of days to scan back (1-30)
+         *     - data.attributes.channel_ids: Optional list of specific channel IDs
+         *
+         *     Authorization: Requires admin access to the target community.
+         *     Service accounts have unrestricted access.
+         *
+         *     Returns a bulk-scans resource with scan_id and initial status.
+         */
+        post: operations["initiate_scan_api_v2_bulk_scans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/bulk-scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Scan Results
+         * @description Get scan status and flagged results.
+         *
+         *     Authorization: Requires admin access to the community that was scanned.
+         *     Service accounts have unrestricted access.
+         *
+         *     Returns the bulk scan resource with flagged messages included as related resources.
+         *     Uses JSON:API compound documents with 'included' array.
+         */
+        get: operations["get_scan_results_api_v2_bulk_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/bulk-scans/communities/{community_server_id}/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Recent Scan
+         * @description Check if community has a recent scan within the configured window.
+         *
+         *     Authorization: Requires admin access to the specified community.
+         *     Service accounts have unrestricted access.
+         *
+         *     Returns a bulk-scan-status singleton resource with has_recent_scan boolean.
+         */
+        get: operations["check_recent_scan_api_v2_bulk_scans_communities__community_server_id__recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/bulk-scans/communities/{community_server_id}/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Scan
+         * @description Get the most recent scan for a community server.
+         *
+         *     Returns the latest bulk content scan with full details including:
+         *     - Scan status (pending, in_progress, completed, failed)
+         *     - Message counts (scanned and flagged)
+         *     - Timestamps (initiated_at, completed_at)
+         *     - Flagged messages with match details (if scan is completed)
+         *
+         *     Authorization: Requires admin access to the specified community.
+         *     Service accounts have unrestricted access.
+         */
+        get: operations["get_latest_scan_api_v2_bulk_scans_communities__community_server_id__latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/bulk-scans/{scan_id}/note-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Note Requests
+         * @description Create note requests for selected flagged messages.
+         *
+         *     JSON:API request body must contain:
+         *     - data.type: "note-requests"
+         *     - data.attributes.message_ids: List of message IDs from flagged results
+         *     - data.attributes.generate_ai_notes: Whether to generate AI drafts
+         *
+         *     Authorization: User must be the scan initiator OR a community admin.
+         *     Service accounts have unrestricted access.
+         *
+         *     Returns a note-request-batches resource with created count and IDs.
+         */
+        post: operations["create_note_requests_api_v2_bulk_scans__scan_id__note_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notes": {
         parameters: {
             query?: never;
@@ -3192,6 +3333,49 @@ export interface components {
             client_secret?: string | null;
         };
         /**
+         * BulkScanCreateAttributes
+         * @description Attributes for creating a bulk scan.
+         */
+        BulkScanCreateAttributes: {
+            /**
+             * Community Server Id
+             * Format: uuid
+             * @description Community server UUID to scan
+             */
+            community_server_id: string;
+            /**
+             * Scan Window Days
+             * @description Number of days to scan back
+             * @default 7
+             */
+            scan_window_days: number;
+            /**
+             * Channel Ids
+             * @description Specific channel IDs to scan (empty = all channels)
+             */
+            channel_ids?: string[];
+        };
+        /**
+         * BulkScanCreateData
+         * @description JSON:API data object for bulk scan creation.
+         */
+        BulkScanCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'bulk-scans'
+             * @constant
+             */
+            type: "bulk-scans";
+            attributes: components["schemas"]["BulkScanCreateAttributes"];
+        };
+        /**
+         * BulkScanCreateRequest
+         * @description JSON:API request body for creating a bulk scan.
+         */
+        BulkScanCreateRequest: {
+            data: components["schemas"]["BulkScanCreateData"];
+        };
+        /**
          * CommunityAdminResponse
          * @description Response schema for community admin information.
          */
@@ -3624,6 +3808,68 @@ export interface components {
              */
             similarity_score: number;
         };
+        /**
+         * FlaggedMessageAttributes
+         * @description Attributes for a flagged message resource.
+         */
+        FlaggedMessageAttributes: {
+            /**
+             * Channel Id
+             * @description Channel ID where message was found
+             */
+            channel_id: string;
+            /**
+             * Content
+             * @description Message content
+             */
+            content: string;
+            /**
+             * Author Id
+             * @description Author ID
+             */
+            author_id: string;
+            /**
+             * Timestamp
+             * Format: date-time
+             * @description Message timestamp
+             */
+            timestamp: string;
+            /**
+             * Match Score
+             * @description Similarity match score
+             */
+            match_score: number;
+            /**
+             * Matched Claim
+             * @description The claim that was matched
+             */
+            matched_claim: string;
+            /**
+             * Matched Source
+             * @description Source of the matched claim
+             */
+            matched_source: string;
+            /**
+             * Scan Type
+             * @description Type of scan that flagged this
+             * @default similarity
+             */
+            scan_type: string;
+        };
+        /**
+         * FlaggedMessageResource
+         * @description JSON:API resource object for a flagged message.
+         */
+        FlaggedMessageResource: {
+            /**
+             * Type
+             * @default flagged-messages
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["FlaggedMessageAttributes"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3746,6 +3992,54 @@ export interface components {
          */
         IdentityCreateRequest: {
             data: components["schemas"]["IdentityCreateData"];
+        };
+        /**
+         * JSONAPILinks
+         * @description JSON:API links object for pagination and resource links.
+         *
+         *     Uses field aliases for 'self' and 'next' which are Python reserved words.
+         *     Always use by_alias=True when serializing.
+         *     Includes JSON:API 1.1 'describedby' link for API documentation.
+         */
+        "JSONAPILinks-Input": {
+            /** Self */
+            self_?: string | null;
+            /** First */
+            first?: string | null;
+            /** Last */
+            last?: string | null;
+            /** Prev */
+            prev?: string | null;
+            /** Next */
+            next_?: string | null;
+            /** Describedby */
+            describedby?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * JSONAPILinks
+         * @description JSON:API links object for pagination and resource links.
+         *
+         *     Uses field aliases for 'self' and 'next' which are Python reserved words.
+         *     Always use by_alias=True when serializing.
+         *     Includes JSON:API 1.1 'describedby' link for API documentation.
+         */
+        "JSONAPILinks-Output": {
+            /** Self */
+            self?: string | null;
+            /** First */
+            first?: string | null;
+            /** Last */
+            last?: string | null;
+            /** Prev */
+            prev?: string | null;
+            /** Next */
+            next?: string | null;
+            /** Describedby */
+            describedby?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * LLMConfigCreate
@@ -3966,6 +4260,77 @@ export interface components {
             note_id: string;
             /** Channel Id */
             channel_id: string;
+        };
+        /**
+         * LatestScanAttributes
+         * @description Attributes for the latest scan resource.
+         */
+        LatestScanAttributes: {
+            /**
+             * Status
+             * @description Scan status: pending, in_progress, completed, failed
+             */
+            status: string;
+            /**
+             * Initiated At
+             * Format: date-time
+             * @description When the scan was initiated
+             */
+            initiated_at: string;
+            /**
+             * Completed At
+             * @description When the scan completed
+             */
+            completed_at?: string | null;
+            /**
+             * Messages Scanned
+             * @description Total messages scanned
+             * @default 0
+             */
+            messages_scanned: number;
+            /**
+             * Messages Flagged
+             * @description Number of flagged messages
+             * @default 0
+             */
+            messages_flagged: number;
+        };
+        /**
+         * LatestScanResource
+         * @description JSON:API resource object for the latest scan.
+         */
+        LatestScanResource: {
+            /**
+             * Type
+             * @default bulk-scans
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["LatestScanAttributes"];
+            /** Relationships */
+            relationships?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * LatestScanResponse
+         * @description JSON:API response for the latest scan with included flagged messages.
+         */
+        LatestScanResponse: {
+            data: components["schemas"]["LatestScanResource"];
+            /** Included */
+            included?: components["schemas"]["FlaggedMessageResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * MonitoredChannelCreate
@@ -4631,6 +4996,43 @@ export interface components {
             embeddingProvider?: string | null;
             /** Embeddingmodel */
             embeddingModel?: string | null;
+        };
+        /**
+         * NoteRequestsCreateAttributes
+         * @description Attributes for creating note requests from flagged messages.
+         */
+        NoteRequestsCreateAttributes: {
+            /**
+             * Message Ids
+             * @description List of message IDs to create note requests for
+             */
+            message_ids: string[];
+            /**
+             * Generate Ai Notes
+             * @description Whether to generate AI draft notes
+             * @default false
+             */
+            generate_ai_notes: boolean;
+        };
+        /**
+         * NoteRequestsCreateData
+         * @description JSON:API data object for note requests creation.
+         */
+        NoteRequestsCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'note-requests'
+             * @constant
+             */
+            type: "note-requests";
+            attributes: components["schemas"]["NoteRequestsCreateAttributes"];
+        };
+        /**
+         * NoteRequestsCreateRequest
+         * @description JSON:API request body for creating note requests.
+         */
+        NoteRequestsCreateRequest: {
+            data: components["schemas"]["NoteRequestsCreateData"];
         };
         /** NoteResponse */
         NoteResponse: {
@@ -8682,6 +9084,177 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["HybridSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    initiate_scan_api_v2_bulk_scans_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkScanCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_results_api_v2_bulk_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_recent_scan_api_v2_bulk_scans_communities__community_server_id__recent_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_scan_api_v2_bulk_scans_communities__community_server_id__latest_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LatestScanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_note_requests_api_v2_bulk_scans__scan_id__note_requests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteRequestsCreateRequest"];
             };
         };
         responses: {
