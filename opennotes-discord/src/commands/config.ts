@@ -720,6 +720,11 @@ async function handleOpennotesView(
     ConfigKey.NOTIFY_REQUEST_FULFILLED,
   ];
 
+  const botChannelKeys = [
+    ConfigKey.BOT_CHANNEL_NAME,
+    ConfigKey.OPENNOTES_ROLE_NAME,
+  ];
+
   const formatSetting = (cfg: Record<string, unknown>, key: ConfigKey): string => {
     const schema = CONFIG_SCHEMA[key];
     const value = cfg[key];
@@ -779,6 +784,16 @@ async function handleOpennotesView(
       new TextDisplayBuilder().setContent('### Notifications')
     );
     for (const key of notificationKeys) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+      );
+    }
+
+    container.addSeparatorComponents(createDivider());
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('### Bot Channel')
+    );
+    for (const key of botChannelKeys) {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
       );
