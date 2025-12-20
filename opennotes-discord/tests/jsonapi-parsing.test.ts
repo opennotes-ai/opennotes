@@ -521,6 +521,186 @@ describe('JSON:API Response Parsing', () => {
       });
     });
 
+    describe('Notes Rated By User', () => {
+      it('calls v2 API with JSON:API filter parameters', async () => {
+        const jsonApiResponse = {
+          data: [
+            {
+              type: 'notes',
+              id: 'note-rated-1',
+              attributes: {
+                summary: 'A rated note',
+                classification: 'NOT_MISLEADING',
+                status: 'NEEDS_MORE_RATINGS',
+                helpfulness_score: 0.7,
+                author_participant_id: 'author-1',
+                community_server_id: 'server-456',
+                channel_id: 'channel-1',
+                content: null,
+                request_id: null,
+                ratings_count: 3,
+                force_published: false,
+                force_published_at: null,
+                created_at: '2025-01-15T10:00:00Z',
+                updated_at: null,
+              },
+            },
+          ],
+          jsonapi: { version: '1.1' },
+          meta: {
+            count: 15,
+          },
+        };
+
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify(jsonApiResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/vnd.api+json' },
+          })
+        );
+
+        const result = await client.listNotesRatedByUser(
+          'rater-participant-123',
+          2,
+          10,
+          'server-456',
+          'NEEDS_MORE_RATINGS'
+        );
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const fetchUrl = mockFetch.mock.calls[0]![0] as string;
+
+        expect(fetchUrl).toContain('/api/v2/notes');
+        expect(fetchUrl).toContain('filter%5Brated_by_participant_id%5D=rater-participant-123');
+        expect(fetchUrl).toContain('page%5Bnumber%5D=2');
+        expect(fetchUrl).toContain('page%5Bsize%5D=10');
+        expect(fetchUrl).toContain('filter%5Bcommunity_server_id%5D=server-456');
+        expect(fetchUrl).toContain('filter%5Bstatus%5D=NEEDS_MORE_RATINGS');
+
+        expect(result.notes).toHaveLength(1);
+        expect(result.notes[0]!.id).toBe('note-rated-1');
+        expect(result.notes[0]!.summary).toBe('A rated note');
+        expect(result.total).toBe(15);
+        expect(result.page).toBe(2);
+        expect(result.size).toBe(10);
+      });
+
+      it('calls v2 API without status filter when not provided', async () => {
+        const jsonApiResponse = {
+          data: [],
+          jsonapi: { version: '1.1' },
+          meta: { count: 0 },
+        };
+
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify(jsonApiResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/vnd.api+json' },
+          })
+        );
+
+        await client.listNotesRatedByUser(
+          'rater-123',
+          1,
+          20,
+          'server-789'
+        );
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const fetchUrl = mockFetch.mock.calls[0]![0] as string;
+
+        expect(fetchUrl).toContain('/api/v2/notes');
+        expect(fetchUrl).toContain('filter%5Brated_by_participant_id%5D=rater-123');
+        expect(fetchUrl).toContain('filter%5Bcommunity_server_id%5D=server-789');
+        expect(fetchUrl).not.toContain('filter%5Bstatus%5D');
+      });
+
+      it('transforms JSON:API response to NoteListResponse format', async () => {
+        const jsonApiResponse = {
+          data: [
+            {
+              type: 'notes',
+              id: 'note-1',
+              attributes: {
+                summary: 'First note',
+                classification: 'NOT_MISLEADING',
+                status: 'CURRENTLY_RATED_HELPFUL',
+                helpfulness_score: 0.9,
+                author_participant_id: 'author-1',
+                community_server_id: 'server-1',
+                channel_id: 'ch-1',
+                content: null,
+                request_id: 'req-1',
+                ratings_count: 10,
+                force_published: true,
+                force_published_at: '2025-01-15T12:00:00Z',
+                created_at: '2025-01-14T10:00:00Z',
+                updated_at: '2025-01-15T10:00:00Z',
+              },
+            },
+            {
+              type: 'notes',
+              id: 'note-2',
+              attributes: {
+                summary: 'Second note',
+                classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
+                status: 'NEEDS_MORE_RATINGS',
+                helpfulness_score: 0.5,
+                author_participant_id: 'author-2',
+                community_server_id: 'server-1',
+                channel_id: null,
+                content: null,
+                request_id: null,
+                ratings_count: 2,
+                force_published: false,
+                force_published_at: null,
+                created_at: '2025-01-13T08:00:00Z',
+                updated_at: null,
+              },
+            },
+          ],
+          jsonapi: { version: '1.1' },
+          links: {
+            self: '/api/v2/notes?page[number]=1&page[size]=20',
+          },
+          meta: {
+            count: 50,
+          },
+        };
+
+        mockFetch.mockResolvedValueOnce(
+          new Response(JSON.stringify(jsonApiResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/vnd.api+json' },
+          })
+        );
+
+        const result = await client.listNotesRatedByUser(
+          'rater-abc',
+          1,
+          20,
+          'server-1'
+        );
+
+        expect(result.notes).toHaveLength(2);
+        expect(result.total).toBe(50);
+        expect(result.page).toBe(1);
+        expect(result.size).toBe(20);
+
+        expect(result.notes[0]!.id).toBe('note-1');
+        expect(result.notes[0]!.summary).toBe('First note');
+        expect(result.notes[0]!.classification).toBe('NOT_MISLEADING');
+        expect(result.notes[0]!.status).toBe('CURRENTLY_RATED_HELPFUL');
+        expect(result.notes[0]!.force_published).toBe(true);
+        expect(result.notes[0]!.request_id).toBe('req-1');
+
+        expect(result.notes[1]!.id).toBe('note-2');
+        expect(result.notes[1]!.channel_id).toBeNull();
+        expect(result.notes[1]!.request_id).toBeNull();
+        expect(result.notes[1]!.force_published).toBe(false);
+      });
+    });
+
     describe('Ratings List', () => {
       it('extracts items from ratings data array', async () => {
         const jsonApiResponse = {

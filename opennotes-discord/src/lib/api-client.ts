@@ -1963,21 +1963,23 @@ export class ApiClient {
     context?: UserContext
   ): Promise<NoteListResponse> {
     const params = new URLSearchParams();
-    params.append('rated_by_participant_id', raterParticipantId);
-    params.append('page', page.toString());
-    params.append('size', size.toString());
-    params.append('community_server_id', communityServerId);
+    params.append('page[number]', page.toString());
+    params.append('page[size]', size.toString());
+    params.append('filter[rated_by_participant_id]', raterParticipantId);
+    params.append('filter[community_server_id]', communityServerId);
 
     if (statusFilter) {
-      params.append('status', statusFilter);
+      params.append('filter[status]', statusFilter);
     }
 
-    const response = await this.fetchWithRetry<NoteListResponse>(
-      `/api/v1/notes?${params.toString()}`,
+    const jsonApiResponse = await this.fetchWithRetry<JSONAPIListResponse<NoteAttributes>>(
+      `/api/v2/notes?${params.toString()}`,
       {},
       1,
       context
     );
+
+    const response = this.transformJSONAPINoteListResponse(jsonApiResponse, page, size);
     validateNoteListResponse(response);
     return response;
   }
