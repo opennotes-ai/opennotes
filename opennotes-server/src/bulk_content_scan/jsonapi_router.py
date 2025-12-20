@@ -413,7 +413,7 @@ def flagged_message_to_resource(msg: FlaggedMessage) -> FlaggedMessageResource:
     )
 
 
-@router.post("/bulk-scans", response_class=JSONResponse)
+@router.post("/bulk-scans", response_class=JSONResponse, response_model=BulkScanSingleResponse)
 @limiter.limit("5/hour")
 async def initiate_scan(
     body: BulkScanCreateRequest,
@@ -509,7 +509,9 @@ async def initiate_scan(
         )
 
 
-@router.get("/bulk-scans/{scan_id}", response_class=JSONResponse)
+@router.get(
+    "/bulk-scans/{scan_id}", response_class=JSONResponse, response_model=BulkScanResultsResponse
+)
 async def get_scan_results(
     scan_id: UUID,
     request: HTTPRequest,
@@ -591,7 +593,11 @@ async def get_scan_results(
         )
 
 
-@router.get("/bulk-scans/communities/{community_server_id}/recent", response_class=JSONResponse)
+@router.get(
+    "/bulk-scans/communities/{community_server_id}/recent",
+    response_class=JSONResponse,
+    response_model=RecentScanResponse,
+)
 async def check_recent_scan(
     community_server_id: UUID,
     request: HTTPRequest,
@@ -650,7 +656,7 @@ async def check_recent_scan(
 @router.get(
     "/bulk-scans/communities/{community_server_id}/latest",
     response_class=JSONResponse,
-    responses={200: {"model": LatestScanResponse}},
+    response_model=LatestScanResponse,
 )
 async def get_latest_scan(
     community_server_id: UUID,
@@ -742,7 +748,11 @@ async def get_latest_scan(
         )
 
 
-@router.post("/bulk-scans/{scan_id}/note-requests", response_class=JSONResponse)
+@router.post(
+    "/bulk-scans/{scan_id}/note-requests",
+    response_class=JSONResponse,
+    response_model=NoteRequestsResultResponse,
+)
 async def create_note_requests(
     scan_id: UUID,
     body: NoteRequestsCreateRequest,

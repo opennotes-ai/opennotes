@@ -3156,6 +3156,46 @@ export interface components {
          */
         AdminSource: "opennotes_platform" | "community_role" | "discord_manage_server";
         /**
+         * AdminStatusAttributes
+         * @description Admin status attributes for JSON:API resource.
+         */
+        AdminStatusAttributes: {
+            /** Is Opennotes Admin */
+            is_opennotes_admin: boolean;
+        };
+        /**
+         * AdminStatusResource
+         * @description JSON:API resource object for admin status.
+         */
+        AdminStatusResource: {
+            /**
+             * Type
+             * @default admin-status
+             * @constant
+             */
+            type: "admin-status";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["AdminStatusAttributes"];
+        };
+        /**
+         * AdminStatusSingleResponse
+         * @description JSON:API response for admin status resource.
+         */
+        AdminStatusSingleResponse: {
+            data: components["schemas"]["AdminStatusResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
          * AdminStatusUpdateAttributes
          * @description Attributes for admin status update request.
          */
@@ -3333,6 +3373,40 @@ export interface components {
             client_secret?: string | null;
         };
         /**
+         * BulkScanAttributes
+         * @description Attributes for a bulk scan resource.
+         */
+        BulkScanAttributes: {
+            /**
+             * Status
+             * @description Scan status: pending, in_progress, completed, failed
+             */
+            status: string;
+            /**
+             * Initiated At
+             * Format: date-time
+             * @description When the scan was initiated
+             */
+            initiated_at: string;
+            /**
+             * Completed At
+             * @description When the scan completed
+             */
+            completed_at?: string | null;
+            /**
+             * Messages Scanned
+             * @description Total messages scanned
+             * @default 0
+             */
+            messages_scanned: number;
+            /**
+             * Messages Flagged
+             * @description Number of flagged messages
+             * @default 0
+             */
+            messages_flagged: number;
+        };
+        /**
          * BulkScanCreateAttributes
          * @description Attributes for creating a bulk scan.
          */
@@ -3374,6 +3448,97 @@ export interface components {
          */
         BulkScanCreateRequest: {
             data: components["schemas"]["BulkScanCreateData"];
+        };
+        /**
+         * BulkScanResource
+         * @description JSON:API resource object for a bulk scan.
+         */
+        BulkScanResource: {
+            /**
+             * Type
+             * @default bulk-scans
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["BulkScanAttributes"];
+        };
+        /**
+         * BulkScanResultsAttributes
+         * @description Attributes for bulk scan results.
+         */
+        BulkScanResultsAttributes: {
+            /**
+             * Status
+             * @description Scan status
+             */
+            status: string;
+            /**
+             * Messages Scanned
+             * @description Total messages scanned
+             * @default 0
+             */
+            messages_scanned: number;
+            /**
+             * Messages Flagged
+             * @description Number of flagged messages
+             * @default 0
+             */
+            messages_flagged: number;
+        };
+        /**
+         * BulkScanResultsResource
+         * @description JSON:API resource object for bulk scan results.
+         */
+        BulkScanResultsResource: {
+            /**
+             * Type
+             * @default bulk-scans
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["BulkScanResultsAttributes"];
+            /** Relationships */
+            relationships?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * BulkScanResultsResponse
+         * @description JSON:API response for bulk scan results with included flagged messages.
+         */
+        BulkScanResultsResponse: {
+            data: components["schemas"]["BulkScanResultsResource"];
+            /** Included */
+            included?: components["schemas"]["FlaggedMessageResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * BulkScanSingleResponse
+         * @description JSON:API response for a single bulk scan resource.
+         */
+        BulkScanSingleResponse: {
+            data: components["schemas"]["BulkScanResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * CommunityAdminResponse
@@ -3618,11 +3783,97 @@ export interface components {
             inviter?: components["schemas"]["UserProfileResponse-Output"] | null;
         };
         /**
+         * CommunityMembershipAttributes
+         * @description Community membership attributes for JSON:API resource.
+         */
+        CommunityMembershipAttributes: {
+            /** Community Id */
+            community_id: string;
+            /** Role */
+            role: string;
+            /**
+             * Is External
+             * @default false
+             */
+            is_external: boolean;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Joined At */
+            joined_at?: string | null;
+            /** Reputation In Community */
+            reputation_in_community?: number | null;
+        };
+        /**
+         * CommunityMembershipListResponse
+         * @description JSON:API response for a list of community membership resources.
+         */
+        CommunityMembershipListResponse: {
+            /** Data */
+            data: components["schemas"]["CommunityMembershipResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /**
+         * CommunityMembershipResource
+         * @description JSON:API resource object for a community membership.
+         */
+        CommunityMembershipResource: {
+            /**
+             * Type
+             * @default community-memberships
+             * @constant
+             */
+            type: "community-memberships";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["CommunityMembershipAttributes"];
+        };
+        /**
          * CommunityRole
          * @description Community membership roles.
          * @enum {string}
          */
         CommunityRole: "admin" | "moderator" | "member";
+        /**
+         * CommunityServerAttributes
+         * @description Community server attributes for JSON:API resource.
+         */
+        CommunityServerAttributes: {
+            /** Platform */
+            platform: string;
+            /** Platform Id */
+            platform_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Is Public
+             * @default true
+             */
+            is_public: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /**
          * CommunityServerLookupResponse
          * @description Response model for community server lookup.
@@ -3654,6 +3905,38 @@ export interface components {
              * @description Whether the community server is active
              */
             is_active: boolean;
+        };
+        /**
+         * CommunityServerResource
+         * @description JSON:API resource object for a community server.
+         */
+        CommunityServerResource: {
+            /**
+             * Type
+             * @default community-servers
+             * @constant
+             */
+            type: "community-servers";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["CommunityServerAttributes"];
+        };
+        /**
+         * CommunityServerSingleResponse
+         * @description JSON:API response for a single community server resource.
+         */
+        CommunityServerSingleResponse: {
+            data: components["schemas"]["CommunityServerResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * DataConfidence
@@ -3809,6 +4092,77 @@ export interface components {
             similarity_score: number;
         };
         /**
+         * FactCheckMatchResource
+         * @description JSON:API-compatible fact-check match in search results.
+         */
+        FactCheckMatchResource: {
+            /**
+             * Id
+             * @description Fact-check item UUID
+             */
+            id: string;
+            /**
+             * Dataset Name
+             * @description Source dataset (e.g., 'snopes')
+             */
+            dataset_name: string;
+            /**
+             * Dataset Tags
+             * @description Dataset tags
+             */
+            dataset_tags: string[];
+            /**
+             * Title
+             * @description Fact-check article title
+             */
+            title: string;
+            /**
+             * Content
+             * @description Fact-check content
+             */
+            content: string;
+            /**
+             * Summary
+             * @description Brief summary
+             */
+            summary?: string | null;
+            /**
+             * Rating
+             * @description Fact-check verdict
+             */
+            rating?: string | null;
+            /**
+             * Source Url
+             * @description URL to original article
+             */
+            source_url?: string | null;
+            /**
+             * Published Date
+             * @description Publication date
+             */
+            published_date?: string | null;
+            /**
+             * Author
+             * @description Author name
+             */
+            author?: string | null;
+            /**
+             * Embedding Provider
+             * @description LLM provider used for embedding
+             */
+            embedding_provider?: string | null;
+            /**
+             * Embedding Model
+             * @description Model name used for embedding
+             */
+            embedding_model?: string | null;
+            /**
+             * Similarity Score
+             * @description Cosine similarity score (0.0-1.0)
+             */
+            similarity_score: number;
+        };
+        /**
          * FlaggedMessageAttributes
          * @description Attributes for a flagged message resource.
          */
@@ -3953,11 +4307,157 @@ export interface components {
             attributes: components["schemas"]["HybridSearchCreateAttributes"];
         };
         /**
+         * HybridSearchMatchResource
+         * @description JSON:API-compatible fact-check match in hybrid search results.
+         */
+        HybridSearchMatchResource: {
+            /**
+             * Id
+             * @description Fact-check item UUID
+             */
+            id: string;
+            /**
+             * Dataset Name
+             * @description Source dataset (e.g., 'snopes')
+             */
+            dataset_name: string;
+            /**
+             * Dataset Tags
+             * @description Dataset tags
+             */
+            dataset_tags: string[];
+            /**
+             * Title
+             * @description Fact-check article title
+             */
+            title: string;
+            /**
+             * Content
+             * @description Fact-check content
+             */
+            content: string;
+            /**
+             * Summary
+             * @description Brief summary
+             */
+            summary?: string | null;
+            /**
+             * Rating
+             * @description Fact-check verdict
+             */
+            rating?: string | null;
+            /**
+             * Source Url
+             * @description URL to original article
+             */
+            source_url?: string | null;
+            /**
+             * Published Date
+             * @description Publication date
+             */
+            published_date?: string | null;
+            /**
+             * Author
+             * @description Author name
+             */
+            author?: string | null;
+            /**
+             * Rrf Score
+             * @description Reciprocal Rank Fusion score combining FTS and semantic rankings
+             */
+            rrf_score: number;
+        };
+        /**
          * HybridSearchRequest
          * @description JSON:API request body for performing a hybrid search.
          */
         HybridSearchRequest: {
             data: components["schemas"]["HybridSearchCreateData"];
+        };
+        /**
+         * HybridSearchResultAttributes
+         * @description Attributes for hybrid search result.
+         */
+        HybridSearchResultAttributes: {
+            /**
+             * Matches
+             * @description Matching fact-check items ranked by RRF score
+             */
+            matches: components["schemas"]["HybridSearchMatchResource"][];
+            /**
+             * Query Text
+             * @description Original query text
+             */
+            query_text: string;
+            /**
+             * Total Matches
+             * @description Number of matches found
+             */
+            total_matches: number;
+        };
+        /**
+         * HybridSearchResultResource
+         * @description JSON:API resource object for hybrid search results.
+         */
+        "HybridSearchResultResource-Input": {
+            /**
+             * Type
+             * @default hybrid-search-results
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["HybridSearchResultAttributes"];
+        };
+        /**
+         * HybridSearchResultResource
+         * @description JSON:API resource object for hybrid search results.
+         */
+        "HybridSearchResultResource-Output": {
+            /**
+             * Type
+             * @default hybrid-search-results
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["HybridSearchResultAttributes"];
+        };
+        /**
+         * HybridSearchResultResponse
+         * @description JSON:API response for hybrid search results.
+         */
+        HybridSearchResultResponse: {
+            data: components["schemas"]["HybridSearchResultResource-Output"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * IdentityAttributes
+         * @description Identity attributes for JSON:API resource.
+         */
+        IdentityAttributes: {
+            /** Provider */
+            provider: string;
+            /** Provider User Id */
+            provider_user_id: string;
+            /**
+             * Email Verified
+             * @default false
+             */
+            email_verified: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /**
          * IdentityCreateAttributes
@@ -3992,6 +4492,57 @@ export interface components {
          */
         IdentityCreateRequest: {
             data: components["schemas"]["IdentityCreateData"];
+        };
+        /**
+         * IdentityListResponse
+         * @description JSON:API response for a list of identity resources.
+         */
+        IdentityListResponse: {
+            /** Data */
+            data: components["schemas"]["IdentityResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /**
+         * IdentityResource
+         * @description JSON:API resource object for an identity.
+         */
+        IdentityResource: {
+            /**
+             * Type
+             * @default identities
+             * @constant
+             */
+            type: "identities";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["IdentityAttributes"];
+        };
+        /**
+         * IdentitySingleResponse
+         * @description JSON:API response for a single identity resource.
+         */
+        IdentitySingleResponse: {
+            data: components["schemas"]["IdentityResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * JSONAPILinks
@@ -4040,6 +4591,22 @@ export interface components {
             describedby?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * JSONAPIMeta
+         * @description JSON:API meta object for pagination and collection metadata.
+         */
+        JSONAPIMeta: {
+            /** Count */
+            count?: number | null;
+            /** Page */
+            page?: number | null;
+            /** Pages */
+            pages?: number | null;
+            /** Limit */
+            limit?: number | null;
+            /** Offset */
+            offset?: number | null;
         };
         /**
          * LLMConfigCreate
@@ -4333,6 +4900,32 @@ export interface components {
             links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
+         * MonitoredChannelAttributes
+         * @description Monitored channel attributes for JSON:API resource.
+         */
+        MonitoredChannelAttributes: {
+            /** Community Server Id */
+            community_server_id: string;
+            /** Channel Id */
+            channel_id: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Similarity Threshold */
+            similarity_threshold: number;
+            /** Dataset Tags */
+            dataset_tags: string[];
+            /** Previously Seen Autopublish Threshold */
+            previously_seen_autopublish_threshold?: number | null;
+            /** Previously Seen Autorequest Threshold */
+            previously_seen_autorequest_threshold?: number | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /**
          * MonitoredChannelCreate
          * @description Schema for creating a monitored channel configuration.
          */
@@ -4447,32 +5040,18 @@ export interface components {
             data: components["schemas"]["MonitoredChannelCreateData"];
         };
         /**
-         * MonitoredChannelListResponse
-         * @description Schema for paginated list of monitored channels.
+         * MonitoredChannelResource
+         * @description JSON:API resource object for a monitored channel.
          */
-        MonitoredChannelListResponse: {
+        MonitoredChannelResource: {
             /**
-             * Channels
-             * @description List of monitored channels
+             * Type
+             * @default monitored-channels
              */
-            channels: components["schemas"]["MonitoredChannelResponse"][];
-            /**
-             * Total
-             * @description Total count of channels
-             */
-            total: number;
-            /**
-             * Page
-             * @description Current page number
-             * @default 1
-             */
-            page: number;
-            /**
-             * Size
-             * @description Items per page
-             * @default 20
-             */
-            size: number;
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["MonitoredChannelAttributes"];
         };
         /**
          * MonitoredChannelResponse
@@ -4538,6 +5117,23 @@ export interface components {
              * @description Discord user ID of last admin to update
              */
             updated_by?: string | null;
+        };
+        /**
+         * MonitoredChannelSingleResponse
+         * @description JSON:API response for a single monitored channel resource.
+         */
+        MonitoredChannelSingleResponse: {
+            data: components["schemas"]["MonitoredChannelResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * MonitoredChannelUpdate
@@ -4655,6 +5251,50 @@ export interface components {
             notes_to_upgrade: number;
         };
         /**
+         * NoteAttributes
+         * @description Note attributes for JSON:API resource.
+         */
+        NoteAttributes: {
+            /** Author Participant Id */
+            author_participant_id: string;
+            /** Channel Id */
+            channel_id?: string | null;
+            /** Summary */
+            summary: string;
+            /** Classification */
+            classification: string;
+            /**
+             * Helpfulness Score
+             * @default 0
+             */
+            helpfulness_score: number;
+            /**
+             * Status
+             * @default NEEDS_MORE_RATINGS
+             */
+            status: string;
+            /**
+             * Ai Generated
+             * @default false
+             */
+            ai_generated: boolean;
+            /** Ai Provider */
+            ai_provider?: string | null;
+            /**
+             * Force Published
+             * @default false
+             */
+            force_published: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Request Id */
+            request_id?: string | null;
+            /** Platform Message Id */
+            platform_message_id?: string | null;
+        };
+        /**
          * NoteClassification
          * @enum {string}
          */
@@ -4759,16 +5399,23 @@ export interface components {
             /** Classification */
             classification: string;
         };
-        /** NoteListResponse */
-        NoteListResponse: {
-            /** Notes */
-            notes: components["schemas"]["NoteResponse"][];
-            /** Total */
-            total: number;
-            /** Page */
-            page: number;
-            /** Size */
-            size: number;
+        /**
+         * NotePublisherConfigAttributes
+         * @description Note publisher config attributes for JSON:API resource.
+         */
+        NotePublisherConfigAttributes: {
+            /** Community Server Id */
+            community_server_id: string;
+            /** Channel Id */
+            channel_id?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Threshold */
+            threshold?: number | null;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
         };
         /**
          * NotePublisherConfigCreateAttributes
@@ -4822,6 +5469,25 @@ export interface components {
         NotePublisherConfigCreateRequest: {
             data: components["schemas"]["NotePublisherConfigCreateData"];
         };
+        /**
+         * NotePublisherConfigListResponse
+         * @description JSON:API response for a list of config resources.
+         */
+        NotePublisherConfigListResponse: {
+            /** Data */
+            data: components["schemas"]["NotePublisherConfigResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
         /** NotePublisherConfigRequest */
         NotePublisherConfigRequest: {
             /** Community Server Id */
@@ -4834,6 +5500,20 @@ export interface components {
             threshold?: number | null;
             /** Updated By */
             updated_by?: string | null;
+        };
+        /**
+         * NotePublisherConfigResource
+         * @description JSON:API resource object for a note publisher config.
+         */
+        NotePublisherConfigResource: {
+            /**
+             * Type
+             * @default note-publisher-configs
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["NotePublisherConfigAttributes"];
         };
         /** NotePublisherConfigResponse */
         NotePublisherConfigResponse: {
@@ -4851,6 +5531,23 @@ export interface components {
             updated_at: string;
             /** Updated By */
             updated_by: string | null;
+        };
+        /**
+         * NotePublisherConfigSingleResponse
+         * @description JSON:API response for a single config resource.
+         */
+        NotePublisherConfigSingleResponse: {
+            data: components["schemas"]["NotePublisherConfigResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * NotePublisherConfigUpdateAttributes
@@ -4897,6 +5594,32 @@ export interface components {
          */
         NotePublisherConfigUpdateRequest: {
             data: components["schemas"]["NotePublisherConfigUpdateData"];
+        };
+        /**
+         * NotePublisherPostAttributes
+         * @description Note publisher post attributes for JSON:API resource.
+         */
+        NotePublisherPostAttributes: {
+            /** Note Id */
+            note_id: string;
+            /** Original Message Id */
+            original_message_id: string;
+            /** Auto Post Message Id */
+            auto_post_message_id?: string | null;
+            /** Channel Id */
+            channel_id: string;
+            /** Community Server Id */
+            community_server_id: string;
+            /** Score At Post */
+            score_at_post: number;
+            /** Confidence At Post */
+            confidence_at_post: string;
+            /** Posted At */
+            posted_at?: string | null;
+            /** Success */
+            success: boolean;
+            /** Error Message */
+            error_message?: string | null;
         };
         /**
          * NotePublisherPostCreateAttributes
@@ -4969,6 +5692,56 @@ export interface components {
         NotePublisherPostCreateRequest: {
             data: components["schemas"]["NotePublisherPostCreateData"];
         };
+        /**
+         * NotePublisherPostListResponse
+         * @description JSON:API response for a list of post resources.
+         */
+        NotePublisherPostListResponse: {
+            /** Data */
+            data: components["schemas"]["NotePublisherPostResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /**
+         * NotePublisherPostResource
+         * @description JSON:API resource object for a note publisher post.
+         */
+        NotePublisherPostResource: {
+            /**
+             * Type
+             * @default note-publisher-posts
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["NotePublisherPostAttributes"];
+        };
+        /**
+         * NotePublisherPostSingleResponse
+         * @description JSON:API response for a single post resource.
+         */
+        NotePublisherPostSingleResponse: {
+            data: components["schemas"]["NotePublisherPostResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
         /** NotePublisherRecordRequest */
         NotePublisherRecordRequest: {
             /**
@@ -5034,6 +5807,67 @@ export interface components {
         NoteRequestsCreateRequest: {
             data: components["schemas"]["NoteRequestsCreateData"];
         };
+        /**
+         * NoteRequestsResultAttributes
+         * @description Attributes for note requests creation result.
+         */
+        NoteRequestsResultAttributes: {
+            /**
+             * Created Count
+             * @description Number of note requests created
+             */
+            created_count: number;
+            /**
+             * Request Ids
+             * @description Created request IDs
+             */
+            request_ids?: string[];
+        };
+        /**
+         * NoteRequestsResultResource
+         * @description JSON:API resource for note requests creation result.
+         */
+        NoteRequestsResultResource: {
+            /**
+             * Type
+             * @default note-request-batches
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["NoteRequestsResultAttributes"];
+        };
+        /**
+         * NoteRequestsResultResponse
+         * @description JSON:API response for note requests creation.
+         */
+        NoteRequestsResultResponse: {
+            data: components["schemas"]["NoteRequestsResultResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * NoteResource
+         * @description JSON:API resource object for a note.
+         */
+        NoteResource: {
+            /**
+             * Type
+             * @default notes
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["NoteAttributes"];
+        };
         /** NoteResponse */
         NoteResponse: {
             /** Created At */
@@ -5096,6 +5930,88 @@ export interface components {
              */
             readonly ratings_count: number;
         };
+        /**
+         * NoteScoreAttributes
+         * @description Attributes for note score resource.
+         */
+        NoteScoreAttributes: {
+            /**
+             * Score
+             * @description Normalized score value (0.0-1.0)
+             */
+            score: number;
+            /**
+             * Confidence
+             * @description Confidence level: no_data, provisional, or standard
+             */
+            confidence: string;
+            /**
+             * Algorithm
+             * @description Scoring algorithm used
+             */
+            algorithm: string;
+            /**
+             * Rating Count
+             * @description Number of ratings contributing to the score
+             */
+            rating_count: number;
+            /**
+             * Tier
+             * @description Current scoring tier level (0-5)
+             */
+            tier: number;
+            /**
+             * Tier Name
+             * @description Human-readable tier name
+             */
+            tier_name: string;
+            /**
+             * Calculated At
+             * @description Timestamp when score was calculated
+             */
+            calculated_at?: string | null;
+            /**
+             * Content
+             * @description Message content from archive
+             */
+            content?: string | null;
+        };
+        /**
+         * NoteScoreListResponse
+         * @description JSON:API response for a list of note score resources.
+         */
+        NoteScoreListResponse: {
+            /** Data */
+            data: components["schemas"]["NoteScoreResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            /** Meta */
+            meta?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * NoteScoreResource
+         * @description JSON:API resource object for a note score.
+         */
+        NoteScoreResource: {
+            /**
+             * Type
+             * @default note-scores
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["NoteScoreAttributes"];
+        };
         /** NoteScoreResponse */
         NoteScoreResponse: {
             /**
@@ -5141,6 +6057,90 @@ export interface components {
              * @description Message content that the note was written about (from message archive)
              */
             content?: string | null;
+        };
+        /**
+         * NoteScoreSingleResponse
+         * @description JSON:API response for a single note score resource.
+         */
+        NoteScoreSingleResponse: {
+            data: components["schemas"]["NoteScoreResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * NoteSingleResponse
+         * @description JSON:API response for a single note resource.
+         */
+        NoteSingleResponse: {
+            data: components["schemas"]["NoteResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * NoteStatsAttributes
+         * @description Attributes for note statistics resource.
+         */
+        NoteStatsAttributes: {
+            /** Total Notes */
+            total_notes: number;
+            /** Helpful Notes */
+            helpful_notes: number;
+            /** Not Helpful Notes */
+            not_helpful_notes: number;
+            /** Pending Notes */
+            pending_notes: number;
+            /** Average Helpfulness Score */
+            average_helpfulness_score: number;
+        };
+        /**
+         * NoteStatsResource
+         * @description JSON:API resource object for note statistics.
+         */
+        NoteStatsResource: {
+            /**
+             * Type
+             * @default note-stats
+             */
+            type: string;
+            /**
+             * Id
+             * @default aggregate
+             */
+            id: string;
+            attributes: components["schemas"]["NoteStatsAttributes"];
+        };
+        /**
+         * NoteStatsSingleResponse
+         * @description JSON:API response for note statistics.
+         */
+        NoteStatsSingleResponse: {
+            data: components["schemas"]["NoteStatsResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * NoteStatus
@@ -5215,6 +6215,51 @@ export interface components {
             /** Average Helpfulness Received */
             average_helpfulness_received: number;
             top_classification?: components["schemas"]["NoteClassification"] | null;
+        };
+        /**
+         * ParticipantStatsAttributes
+         * @description Attributes for participant statistics resource.
+         */
+        ParticipantStatsAttributes: {
+            /** Notes Created */
+            notes_created: number;
+            /** Ratings Given */
+            ratings_given: number;
+            /** Average Helpfulness Received */
+            average_helpfulness_received: number;
+            /** Top Classification */
+            top_classification?: string | null;
+        };
+        /**
+         * ParticipantStatsResource
+         * @description JSON:API resource object for participant statistics.
+         */
+        ParticipantStatsResource: {
+            /**
+             * Type
+             * @default participant-stats
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ParticipantStatsAttributes"];
+        };
+        /**
+         * ParticipantStatsSingleResponse
+         * @description JSON:API response for participant statistics.
+         */
+        ParticipantStatsSingleResponse: {
+            data: components["schemas"]["ParticipantStatsResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /** PerformanceMetrics */
         PerformanceMetrics: {
@@ -5314,6 +6359,116 @@ export interface components {
             topMatch?: components["schemas"]["PreviouslySeenMessageMatch"] | null;
         };
         /**
+         * PreviouslySeenCheckResultAttributes
+         * @description Attributes for previously seen check result.
+         */
+        PreviouslySeenCheckResultAttributes: {
+            /** Should Auto Publish */
+            should_auto_publish: boolean;
+            /** Should Auto Request */
+            should_auto_request: boolean;
+            /** Autopublish Threshold */
+            autopublish_threshold: number;
+            /** Autorequest Threshold */
+            autorequest_threshold: number;
+            /** Matches */
+            matches: components["schemas"]["PreviouslySeenMatchResource"][];
+            top_match?: components["schemas"]["PreviouslySeenMatchResource"] | null;
+        };
+        /**
+         * PreviouslySeenCheckResultResource
+         * @description JSON:API resource object for check results.
+         */
+        "PreviouslySeenCheckResultResource-Input": {
+            /**
+             * Type
+             * @default previously-seen-check-result
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["PreviouslySeenCheckResultAttributes"];
+        };
+        /**
+         * PreviouslySeenCheckResultResource
+         * @description JSON:API resource object for check results.
+         */
+        "PreviouslySeenCheckResultResource-Output": {
+            /**
+             * Type
+             * @default previously-seen-check-result
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["PreviouslySeenCheckResultAttributes"];
+        };
+        /**
+         * PreviouslySeenCheckResultResponse
+         * @description JSON:API response for previously seen check results.
+         */
+        PreviouslySeenCheckResultResponse: {
+            data: components["schemas"]["PreviouslySeenCheckResultResource-Output"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * PreviouslySeenMatchResource
+         * @description JSON:API resource for a match in check results.
+         */
+        PreviouslySeenMatchResource: {
+            /** Id */
+            id: string;
+            /** Community Server Id */
+            community_server_id: string;
+            /** Original Message Id */
+            original_message_id: string;
+            /** Published Note Id */
+            published_note_id: string;
+            /** Embedding Provider */
+            embedding_provider?: string | null;
+            /** Embedding Model */
+            embedding_model?: string | null;
+            /** Extra Metadata */
+            extra_metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Similarity Score */
+            similarity_score: number;
+        };
+        /**
+         * PreviouslySeenMessageAttributes
+         * @description Previously seen message attributes for JSON:API resource.
+         */
+        PreviouslySeenMessageAttributes: {
+            /** Community Server Id */
+            community_server_id: string;
+            /** Original Message Id */
+            original_message_id: string;
+            /** Published Note Id */
+            published_note_id: string;
+            /** Embedding Provider */
+            embedding_provider?: string | null;
+            /** Embedding Model */
+            embedding_model?: string | null;
+            /** Extra Metadata */
+            extra_metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /**
          * PreviouslySeenMessageCreateAttributes
          * @description Attributes for creating a previously seen message via JSON:API.
          */
@@ -5377,6 +6532,25 @@ export interface components {
             data: components["schemas"]["PreviouslySeenMessageCreateData"];
         };
         /**
+         * PreviouslySeenMessageListResponse
+         * @description JSON:API response for a list of previously seen message resources.
+         */
+        PreviouslySeenMessageListResponse: {
+            /** Data */
+            data: components["schemas"]["PreviouslySeenMessageResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /**
          * PreviouslySeenMessageMatch
          * @description Previously seen message with similarity score (used in search results).
          */
@@ -5434,6 +6608,110 @@ export interface components {
             similarity_score: number;
         };
         /**
+         * PreviouslySeenMessageResource
+         * @description JSON:API resource object for a previously seen message.
+         */
+        PreviouslySeenMessageResource: {
+            /**
+             * Type
+             * @default previously-seen-messages
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["PreviouslySeenMessageAttributes"];
+        };
+        /**
+         * PreviouslySeenMessageSingleResponse
+         * @description JSON:API response for a single previously seen message resource.
+         */
+        PreviouslySeenMessageSingleResponse: {
+            data: components["schemas"]["PreviouslySeenMessageResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * ProfileAttributes
+         * @description Profile attributes for JSON:API resource.
+         */
+        ProfileAttributes: {
+            /** Display Name */
+            display_name: string;
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /** Bio */
+            bio?: string | null;
+            /**
+             * Reputation
+             * @default 0
+             */
+            reputation: number;
+            /**
+             * Is Opennotes Admin
+             * @default false
+             */
+            is_opennotes_admin: boolean;
+            /**
+             * Is Human
+             * @default true
+             */
+            is_human: boolean;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Is Banned
+             * @default false
+             */
+            is_banned: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /**
+         * ProfileResource
+         * @description JSON:API resource object for a profile.
+         */
+        ProfileResource: {
+            /**
+             * Type
+             * @default profiles
+             * @constant
+             */
+            type: "profiles";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ProfileAttributes"];
+        };
+        /**
+         * ProfileSingleResponse
+         * @description JSON:API response for a single profile resource.
+         */
+        ProfileSingleResponse: {
+            data: components["schemas"]["ProfileResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
          * ProfileUpdateAttributes
          * @description Attributes for profile update request.
          */
@@ -5466,6 +6744,22 @@ export interface components {
          */
         ProfileUpdateRequest: {
             data: components["schemas"]["ProfileUpdateData"];
+        };
+        /**
+         * RatingAttributes
+         * @description Rating attributes for JSON:API resource.
+         */
+        RatingAttributes: {
+            /** Note Id */
+            note_id: string;
+            /** Rater Participant Id */
+            rater_participant_id: string;
+            /** Helpfulness Level */
+            helpfulness_level: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /**
          * RatingCreateAttributes
@@ -5517,6 +6811,38 @@ export interface components {
             /** Helpfulnesslevel */
             helpfulnessLevel: string;
         };
+        /**
+         * RatingListResponse
+         * @description JSON:API response for a list of rating resources.
+         */
+        RatingListResponse: {
+            /** Data */
+            data: components["schemas"]["RatingResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * RatingResource
+         * @description JSON:API resource object for a rating.
+         */
+        RatingResource: {
+            /**
+             * Type
+             * @default ratings
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["RatingAttributes"];
+        };
         /** RatingResponse */
         RatingResponse: {
             /** Created At */
@@ -5538,6 +6864,85 @@ export interface components {
             id: string;
             /** Rater Participant Id */
             rater_participant_id: string;
+        };
+        /**
+         * RatingSingleResponse
+         * @description JSON:API response for a single rating resource.
+         */
+        RatingSingleResponse: {
+            data: components["schemas"]["RatingResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
+         * RatingStatsAttributes
+         * @description Attributes for rating statistics.
+         */
+        RatingStatsAttributes: {
+            /**
+             * Total
+             * @description Total number of ratings
+             */
+            total: number;
+            /**
+             * Helpful
+             * @description Number of HELPFUL ratings
+             */
+            helpful: number;
+            /**
+             * Somewhat Helpful
+             * @description Number of SOMEWHAT_HELPFUL ratings
+             */
+            somewhat_helpful: number;
+            /**
+             * Not Helpful
+             * @description Number of NOT_HELPFUL ratings
+             */
+            not_helpful: number;
+            /**
+             * Average Score
+             * @description Average score (1-3 scale)
+             */
+            average_score: number;
+        };
+        /**
+         * RatingStatsResource
+         * @description JSON:API resource object for rating statistics.
+         */
+        RatingStatsResource: {
+            /**
+             * Type
+             * @default rating-stats
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["RatingStatsAttributes"];
+        };
+        /**
+         * RatingStatsSingleResponse
+         * @description JSON:API response for rating statistics.
+         */
+        RatingStatsSingleResponse: {
+            data: components["schemas"]["RatingStatsResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /** RatingThresholdsResponse */
         RatingThresholdsResponse: {
@@ -5586,6 +6991,48 @@ export interface components {
             data: components["schemas"]["RatingUpdateData"];
         };
         /**
+         * RecentScanAttributes
+         * @description Attributes for recent scan check.
+         */
+        RecentScanAttributes: {
+            /**
+             * Has Recent Scan
+             * @description Whether community has a recent scan
+             */
+            has_recent_scan: boolean;
+        };
+        /**
+         * RecentScanResource
+         * @description JSON:API resource for recent scan status.
+         */
+        RecentScanResource: {
+            /**
+             * Type
+             * @default bulk-scan-status
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["RecentScanAttributes"];
+        };
+        /**
+         * RecentScanResponse
+         * @description JSON:API response for recent scan check.
+         */
+        RecentScanResponse: {
+            data: components["schemas"]["RecentScanResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
          * RefreshTokenRequest
          * @description Request body for refresh token endpoint.
          */
@@ -5627,6 +7074,39 @@ export interface components {
              * @description User's new role
              */
             new_role: string;
+        };
+        /**
+         * RequestAttributes
+         * @description Request attributes for JSON:API resource.
+         */
+        RequestAttributes: {
+            /** Request Id */
+            request_id: string;
+            /** Requested By */
+            requested_by: string;
+            /**
+             * Status
+             * @default PENDING
+             */
+            status: string;
+            /** Note Id */
+            note_id?: string | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Requested At */
+            requested_at?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Content */
+            content?: string | null;
+            /** Platform Message Id */
+            platform_message_id?: string | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** RequestCreate */
         RequestCreate: {
@@ -5790,16 +7270,19 @@ export interface components {
              */
             requested_at: string;
         };
-        /** RequestListResponse */
-        RequestListResponse: {
-            /** Requests */
-            requests: components["schemas"]["RequestResponse"][];
-            /** Total */
-            total: number;
-            /** Page */
-            page: number;
-            /** Size */
-            size: number;
+        /**
+         * RequestResource
+         * @description JSON:API resource object for a request.
+         */
+        RequestResource: {
+            /**
+             * Type
+             * @default requests
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["RequestAttributes"];
         };
         /** RequestResponse */
         RequestResponse: {
@@ -5850,6 +7333,23 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * RequestSingleResponse
+         * @description JSON:API response for a single request resource.
+         */
+        RequestSingleResponse: {
+            data: components["schemas"]["RequestResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * RequestStatus
@@ -5945,17 +7445,23 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
-        /** ScoringStatusResponse */
-        ScoringStatusResponse: {
+        /**
+         * ScoringStatusAttributes
+         * @description Attributes for scoring status resource.
+         */
+        ScoringStatusAttributes: {
             /**
              * Current Note Count
              * @description Current total number of notes in the system
              */
             current_note_count: number;
-            /** @description Currently active scoring tier information */
+            /** @description Currently active scoring tier */
             active_tier: components["schemas"]["TierInfo"];
-            /** @description Confidence level in scoring results based on data volume */
-            data_confidence: components["schemas"]["DataConfidence"];
+            /**
+             * Data Confidence
+             * @description Confidence level in scoring results
+             */
+            data_confidence: string;
             /**
              * Tier Thresholds
              * @description Threshold information for all tiers
@@ -5963,22 +7469,56 @@ export interface components {
             tier_thresholds: {
                 [key: string]: components["schemas"]["TierThreshold"];
             };
-            /** @description Information about the next tier upgrade (null if at max tier) */
+            /** @description Information about the next tier upgrade */
             next_tier_upgrade?: components["schemas"]["NextTierInfo"] | null;
             /** @description Performance metrics for the scoring system */
             performance_metrics: components["schemas"]["PerformanceMetrics"];
             /**
              * Warnings
-             * @description Any warnings about data quality or scoring limitations
+             * @description Any warnings about data quality
              */
             warnings?: string[];
             /**
              * Configuration
-             * @description Current scoring configuration overrides
+             * @description Current scoring configuration
              */
             configuration?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * ScoringStatusResource
+         * @description JSON:API resource object for scoring status.
+         */
+        "ScoringStatusResource-Input": {
+            /**
+             * Type
+             * @default scoring-status
+             */
+            type: string;
+            /**
+             * Id
+             * @default current
+             */
+            id: string;
+            attributes: components["schemas"]["ScoringStatusAttributes"];
+        };
+        /**
+         * ScoringStatusResource
+         * @description JSON:API resource object for scoring status.
+         */
+        "ScoringStatusResource-Output": {
+            /**
+             * Type
+             * @default scoring-status
+             */
+            type: string;
+            /**
+             * Id
+             * @default current
+             */
+            id: string;
+            attributes: components["schemas"]["ScoringStatusAttributes"];
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -6101,6 +7641,87 @@ export interface components {
              * @description Number of matches found
              */
             total_matches: number;
+        };
+        /**
+         * SimilaritySearchResultAttributes
+         * @description Attributes for similarity search result.
+         */
+        SimilaritySearchResultAttributes: {
+            /**
+             * Matches
+             * @description Matching fact-check items
+             */
+            matches: components["schemas"]["FactCheckMatchResource"][];
+            /**
+             * Query Text
+             * @description Original query text
+             */
+            query_text: string;
+            /**
+             * Dataset Tags
+             * @description Dataset tags used for filtering
+             */
+            dataset_tags: string[];
+            /**
+             * Similarity Threshold
+             * @description Cosine similarity threshold applied
+             */
+            similarity_threshold: number;
+            /**
+             * Rrf Score Threshold
+             * @description Scaled RRF score threshold applied
+             */
+            rrf_score_threshold: number;
+            /**
+             * Total Matches
+             * @description Number of matches found
+             */
+            total_matches: number;
+        };
+        /**
+         * SimilaritySearchResultResource
+         * @description JSON:API resource object for similarity search results.
+         */
+        "SimilaritySearchResultResource-Input": {
+            /**
+             * Type
+             * @default similarity-search-results
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["SimilaritySearchResultAttributes"];
+        };
+        /**
+         * SimilaritySearchResultResource
+         * @description JSON:API resource object for similarity search results.
+         */
+        "SimilaritySearchResultResource-Output": {
+            /**
+             * Type
+             * @default similarity-search-results
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["SimilaritySearchResultAttributes"];
+        };
+        /**
+         * SimilaritySearchResultResponse
+         * @description JSON:API response for similarity search results.
+         */
+        SimilaritySearchResultResponse: {
+            data: components["schemas"]["SimilaritySearchResultResource-Output"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /** TierInfo */
         TierInfo: {
@@ -6628,6 +8249,53 @@ export interface components {
             data: components["schemas"]["SimilaritySearchCreateData"];
         };
         /**
+         * MonitoredChannelListResponse
+         * @description Schema for paginated list of monitored channels.
+         */
+        src__fact_checking__monitored_channel_schemas__MonitoredChannelListResponse: {
+            /**
+             * Channels
+             * @description List of monitored channels
+             */
+            channels: components["schemas"]["MonitoredChannelResponse"][];
+            /**
+             * Total
+             * @description Total count of channels
+             */
+            total: number;
+            /**
+             * Page
+             * @description Current page number
+             * @default 1
+             */
+            page: number;
+            /**
+             * Size
+             * @description Items per page
+             * @default 20
+             */
+            size: number;
+        };
+        /**
+         * MonitoredChannelListResponse
+         * @description JSON:API response for a list of monitored channel resources.
+         */
+        src__fact_checking__monitored_channels_jsonapi_router__MonitoredChannelListResponse: {
+            /** Data */
+            data: components["schemas"]["MonitoredChannelResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /**
          * PreviouslySeenCheckRequest
          * @description JSON:API request body for checking previously seen messages.
          */
@@ -6654,6 +8322,118 @@ export interface components {
              * @description Discord channel ID
              */
             channelId: string;
+        };
+        /**
+         * NoteListResponse
+         * @description JSON:API response for a list of note resources.
+         */
+        src__notes__notes_jsonapi_router__NoteListResponse: {
+            /** Data */
+            data: components["schemas"]["NoteResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /**
+         * RequestListResponse
+         * @description JSON:API response for a list of request resources.
+         */
+        src__notes__requests_jsonapi_router__RequestListResponse: {
+            /** Data */
+            data: components["schemas"]["RequestResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /** NoteListResponse */
+        src__notes__schemas__NoteListResponse: {
+            /** Notes */
+            notes: components["schemas"]["NoteResponse"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+        };
+        /** RequestListResponse */
+        src__notes__schemas__RequestListResponse: {
+            /** Requests */
+            requests: components["schemas"]["RequestResponse"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+        };
+        /**
+         * ScoringStatusResponse
+         * @description JSON:API response for scoring status.
+         */
+        src__notes__scoring_jsonapi_router__ScoringStatusResponse: {
+            data: components["schemas"]["ScoringStatusResource-Output"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /** ScoringStatusResponse */
+        src__notes__scoring_schemas__ScoringStatusResponse: {
+            /**
+             * Current Note Count
+             * @description Current total number of notes in the system
+             */
+            current_note_count: number;
+            /** @description Currently active scoring tier information */
+            active_tier: components["schemas"]["TierInfo"];
+            /** @description Confidence level in scoring results based on data volume */
+            data_confidence: components["schemas"]["DataConfidence"];
+            /**
+             * Tier Thresholds
+             * @description Threshold information for all tiers
+             */
+            tier_thresholds: {
+                [key: string]: components["schemas"]["TierThreshold"];
+            };
+            /** @description Information about the next tier upgrade (null if at max tier) */
+            next_tier_upgrade?: components["schemas"]["NextTierInfo"] | null;
+            /** @description Performance metrics for the scoring system */
+            performance_metrics: components["schemas"]["PerformanceMetrics"];
+            /**
+             * Warnings
+             * @description Any warnings about data quality or scoring limitations
+             */
+            warnings?: string[];
+            /**
+             * Configuration
+             * @description Current scoring configuration overrides
+             */
+            configuration?: {
+                [key: string]: unknown;
+            };
         };
     };
     responses: never;
@@ -7419,7 +9199,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["src__notes__notes_jsonapi_router__NoteListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7454,7 +9234,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7487,7 +9267,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7555,7 +9335,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7588,7 +9368,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7623,7 +9403,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RatingSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7656,7 +9436,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RatingListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7693,7 +9473,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RatingSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7726,7 +9506,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RatingStatsSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7755,7 +9535,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProfileSingleResponse"];
                 };
             };
         };
@@ -7779,7 +9559,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProfileSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7811,7 +9591,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["IdentityListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7844,7 +9624,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["IdentitySingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7907,7 +9687,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CommunityMembershipListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7938,7 +9718,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProfileSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7971,7 +9751,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AdminStatusSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8008,7 +9788,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AdminStatusSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8044,7 +9824,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CommunityServerSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8077,7 +9857,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CommunityServerSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8112,7 +9892,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteStatsSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8147,7 +9927,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ParticipantStatsSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8186,7 +9966,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["src__notes__requests_jsonapi_router__RequestListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8221,7 +10001,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RequestSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8254,7 +10034,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RequestSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8291,7 +10071,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RequestSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8322,7 +10102,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["src__notes__scoring_jsonapi_router__ScoringStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8355,7 +10135,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteScoreSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8390,7 +10170,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteScoreListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8432,7 +10212,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteScoreListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8468,7 +10248,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["src__fact_checking__monitored_channels_jsonapi_router__MonitoredChannelListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8503,7 +10283,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8536,7 +10316,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8606,7 +10386,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8642,7 +10422,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NotePublisherConfigListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8677,7 +10457,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8710,7 +10490,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8780,7 +10560,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8817,7 +10597,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NotePublisherPostListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8852,7 +10632,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NotePublisherPostSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8885,7 +10665,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NotePublisherPostSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8920,7 +10700,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PreviouslySeenMessageListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8955,7 +10735,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PreviouslySeenMessageSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8988,7 +10768,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PreviouslySeenMessageSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9023,7 +10803,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PreviouslySeenCheckResultResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9058,7 +10838,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SimilaritySearchResultResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9093,7 +10873,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HybridSearchResultResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9128,7 +10908,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BulkScanSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9161,7 +10941,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BulkScanResultsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9194,7 +10974,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RecentScanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9264,7 +11044,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteRequestsResultResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9307,7 +11087,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteListResponse"];
+                    "application/json": components["schemas"]["src__notes__schemas__NoteListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9515,7 +11295,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RequestListResponse"];
+                    "application/json": components["schemas"]["src__notes__schemas__RequestListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9754,7 +11534,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ScoringStatusResponse"];
+                    "application/json": components["schemas"]["src__notes__scoring_schemas__ScoringStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10819,7 +12599,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MonitoredChannelListResponse"];
+                    "application/json": components["schemas"]["src__fact_checking__monitored_channel_schemas__MonitoredChannelListResponse"];
                 };
             };
             /** @description Validation Error */

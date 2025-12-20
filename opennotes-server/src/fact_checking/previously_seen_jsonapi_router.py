@@ -298,7 +298,11 @@ def create_error_response(
     )
 
 
-@router.get("/previously-seen-messages", response_class=JSONResponse)
+@router.get(
+    "/previously-seen-messages",
+    response_class=JSONResponse,
+    response_model=PreviouslySeenMessageListResponse,
+)
 async def list_previously_seen_messages_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -388,7 +392,11 @@ async def list_previously_seen_messages_jsonapi(
         )
 
 
-@router.get("/previously-seen-messages/{message_uuid}", response_class=JSONResponse)
+@router.get(
+    "/previously-seen-messages/{message_uuid}",
+    response_class=JSONResponse,
+    response_model=PreviouslySeenMessageSingleResponse,
+)
 async def get_previously_seen_message_jsonapi(
     message_uuid: UUID,
     request: HTTPRequest,
@@ -451,7 +459,10 @@ async def get_previously_seen_message_jsonapi(
 
 
 @router.post(
-    "/previously-seen-messages", response_class=JSONResponse, status_code=status.HTTP_201_CREATED
+    "/previously-seen-messages",
+    response_class=JSONResponse,
+    response_model=PreviouslySeenMessageSingleResponse,
+    status_code=status.HTTP_201_CREATED,
 )
 async def create_previously_seen_message_jsonapi(
     request: HTTPRequest,
@@ -545,7 +556,11 @@ async def create_previously_seen_message_jsonapi(
         )
 
 
-@router.post("/previously-seen-messages/check", response_class=JSONResponse)
+@router.post(
+    "/previously-seen-messages/check",
+    response_class=JSONResponse,
+    response_model=PreviouslySeenCheckResultResponse,
+)
 async def check_previously_seen_jsonapi(
     request: HTTPRequest,
     body: PreviouslySeenCheckRequest,

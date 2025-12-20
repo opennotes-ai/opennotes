@@ -254,7 +254,7 @@ def _build_attribute_filters(
     return filters
 
 
-@router.get("/requests", response_class=JSONResponse)
+@router.get("/requests", response_class=JSONResponse, response_model=RequestListResponse)
 async def list_requests_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -354,7 +354,9 @@ async def list_requests_jsonapi(
         )
 
 
-@router.get("/requests/{request_id}", response_class=JSONResponse)
+@router.get(
+    "/requests/{request_id}", response_class=JSONResponse, response_model=RequestSingleResponse
+)
 async def get_request_jsonapi(
     request_id: str,
     request: HTTPRequest,
@@ -434,7 +436,12 @@ async def _create_message_archive(
     return message_archive
 
 
-@router.post("/requests", response_class=JSONResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/requests",
+    response_class=JSONResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model=RequestSingleResponse,
+)
 async def create_request_jsonapi(
     request: HTTPRequest,
     body: RequestCreateRequest,
@@ -527,7 +534,9 @@ async def create_request_jsonapi(
         )
 
 
-@router.patch("/requests/{request_id}", response_class=JSONResponse)
+@router.patch(
+    "/requests/{request_id}", response_class=JSONResponse, response_model=RequestSingleResponse
+)
 async def update_request_jsonapi(
     request_id: str,
     request: HTTPRequest,

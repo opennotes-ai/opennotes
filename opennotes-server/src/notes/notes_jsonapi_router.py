@@ -286,7 +286,7 @@ def _build_attribute_filters(
     return filters
 
 
-@router.get("/notes", response_class=JSONResponse)
+@router.get("/notes", response_class=JSONResponse, response_model=NoteListResponse)
 async def list_notes_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -409,7 +409,7 @@ async def list_notes_jsonapi(
         )
 
 
-@router.get("/notes/{note_id}", response_class=JSONResponse)
+@router.get("/notes/{note_id}", response_class=JSONResponse, response_model=NoteSingleResponse)
 async def get_note_jsonapi(
     note_id: UUID,
     request: HTTPRequest,
@@ -460,7 +460,12 @@ async def get_note_jsonapi(
         )
 
 
-@router.post("/notes", response_class=JSONResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/notes",
+    response_class=JSONResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model=NoteSingleResponse,
+)
 async def create_note_jsonapi(
     request: HTTPRequest,
     body: NoteCreateRequest,
@@ -548,7 +553,7 @@ async def create_note_jsonapi(
         )
 
 
-@router.patch("/notes/{note_id}", response_class=JSONResponse)
+@router.patch("/notes/{note_id}", response_class=JSONResponse, response_model=NoteSingleResponse)
 async def update_note_jsonapi(
     note_id: UUID,
     request: HTTPRequest,
@@ -643,7 +648,9 @@ async def delete_note_jsonapi(
         )
 
 
-@router.post("/notes/{note_id}/force-publish", response_class=JSONResponse)
+@router.post(
+    "/notes/{note_id}/force-publish", response_class=JSONResponse, response_model=NoteSingleResponse
+)
 async def force_publish_note_jsonapi(
     note_id: UUID,
     request: HTTPRequest,

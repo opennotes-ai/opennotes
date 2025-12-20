@@ -194,7 +194,12 @@ def create_error_response(
     )
 
 
-@router.post("/ratings", response_class=JSONResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/ratings",
+    response_class=JSONResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model=RatingSingleResponse,
+)
 async def create_rating_jsonapi(
     request: HTTPRequest,
     body: RatingCreateRequest,
@@ -346,7 +351,9 @@ async def create_rating_jsonapi(
         )
 
 
-@router.get("/notes/{note_id}/ratings", response_class=JSONResponse)
+@router.get(
+    "/notes/{note_id}/ratings", response_class=JSONResponse, response_model=RatingListResponse
+)
 async def list_note_ratings_jsonapi(
     note_id: UUID,
     request: HTTPRequest,
@@ -406,7 +413,9 @@ async def list_note_ratings_jsonapi(
         )
 
 
-@router.put("/ratings/{rating_id}", response_class=JSONResponse)
+@router.put(
+    "/ratings/{rating_id}", response_class=JSONResponse, response_model=RatingSingleResponse
+)
 async def update_rating_jsonapi(
     rating_id: UUID,
     request: HTTPRequest,
@@ -472,7 +481,11 @@ async def update_rating_jsonapi(
         )
 
 
-@router.get("/notes/{note_id}/ratings/stats", response_class=JSONResponse)
+@router.get(
+    "/notes/{note_id}/ratings/stats",
+    response_class=JSONResponse,
+    response_model=RatingStatsSingleResponse,
+)
 async def get_rating_stats_jsonapi(
     note_id: UUID,
     request: HTTPRequest,

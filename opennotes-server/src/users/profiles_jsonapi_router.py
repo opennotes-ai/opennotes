@@ -364,7 +364,7 @@ async def verify_service_account(
     return current_user
 
 
-@router.get("/profiles/me", response_class=JSONResponse)
+@router.get("/profiles/me", response_class=JSONResponse, response_model=ProfileSingleResponse)
 async def get_current_profile_jsonapi(
     request: HTTPRequest,
     profile_id: Annotated[UUID, Depends(get_current_profile_id)],
@@ -407,7 +407,9 @@ async def get_current_profile_jsonapi(
         )
 
 
-@router.get("/profiles/me/identities", response_class=JSONResponse)
+@router.get(
+    "/profiles/me/identities", response_class=JSONResponse, response_model=IdentityListResponse
+)
 async def list_user_identities_jsonapi(
     request: HTTPRequest,
     profile_id: Annotated[UUID, Depends(get_current_profile_id)],
@@ -465,7 +467,12 @@ async def list_user_identities_jsonapi(
         )
 
 
-@router.post("/profiles/me/identities", response_class=JSONResponse, status_code=201)
+@router.post(
+    "/profiles/me/identities",
+    response_class=JSONResponse,
+    response_model=IdentitySingleResponse,
+    status_code=201,
+)
 async def link_identity_jsonapi(
     request: HTTPRequest,
     create_request: IdentityCreateRequest,
@@ -615,7 +622,11 @@ async def unlink_identity_jsonapi(
         )
 
 
-@router.get("/profiles/me/communities", response_class=JSONResponse)
+@router.get(
+    "/profiles/me/communities",
+    response_class=JSONResponse,
+    response_model=CommunityMembershipListResponse,
+)
 async def list_user_communities_jsonapi(
     request: HTTPRequest,
     profile_id: Annotated[UUID, Depends(get_current_profile_id)],
@@ -674,7 +685,9 @@ async def list_user_communities_jsonapi(
         )
 
 
-@router.get("/profiles/{profile_id}", response_class=JSONResponse)
+@router.get(
+    "/profiles/{profile_id}", response_class=JSONResponse, response_model=ProfileSingleResponse
+)
 async def get_public_profile_jsonapi(
     profile_id: UUID,
     request: HTTPRequest,
@@ -718,7 +731,11 @@ async def get_public_profile_jsonapi(
         )
 
 
-@router.get("/profiles/{profile_id}/opennotes-admin", response_class=JSONResponse)
+@router.get(
+    "/profiles/{profile_id}/opennotes-admin",
+    response_class=JSONResponse,
+    response_model=AdminStatusSingleResponse,
+)
 async def get_admin_status_jsonapi(
     request: HTTPRequest,
     profile_id: UUID,
@@ -764,7 +781,11 @@ async def get_admin_status_jsonapi(
         )
 
 
-@router.patch("/profiles/{profile_id}/opennotes-admin", response_class=JSONResponse)
+@router.patch(
+    "/profiles/{profile_id}/opennotes-admin",
+    response_class=JSONResponse,
+    response_model=AdminStatusSingleResponse,
+)
 async def update_admin_status_jsonapi(
     request: HTTPRequest,
     profile_id: UUID,
@@ -825,7 +846,7 @@ async def update_admin_status_jsonapi(
         )
 
 
-@router.patch("/profiles/me", response_class=JSONResponse)
+@router.patch("/profiles/me", response_class=JSONResponse, response_model=ProfileSingleResponse)
 async def update_profile_jsonapi(
     request: HTTPRequest,
     update_request: ProfileUpdateRequest,

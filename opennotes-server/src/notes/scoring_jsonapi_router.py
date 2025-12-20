@@ -223,7 +223,7 @@ def note_score_to_resource(note_id: UUID, score_response: Any) -> NoteScoreResou
     )
 
 
-@router.get("/scoring/status", response_class=JSONResponse)
+@router.get("/scoring/status", response_class=JSONResponse, response_model=ScoringStatusResponse)
 async def get_scoring_status_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -338,7 +338,11 @@ async def get_scoring_status_jsonapi(
         )
 
 
-@router.get("/scoring/notes/{note_id}/score", response_class=JSONResponse)
+@router.get(
+    "/scoring/notes/{note_id}/score",
+    response_class=JSONResponse,
+    response_model=NoteScoreSingleResponse,
+)
 async def get_note_score_jsonapi(
     note_id: UUID,
     request: HTTPRequest,
@@ -420,7 +424,9 @@ async def get_note_score_jsonapi(
         )
 
 
-@router.post("/scoring/notes/batch-scores", response_class=JSONResponse)
+@router.post(
+    "/scoring/notes/batch-scores", response_class=JSONResponse, response_model=NoteScoreListResponse
+)
 @limiter.limit("10/minute;50/hour")
 async def get_batch_scores_jsonapi(
     body: BatchScoreJSONAPIRequest,
@@ -522,7 +528,7 @@ async def get_batch_scores_jsonapi(
         )
 
 
-@router.get("/scoring/notes/top", response_class=JSONResponse)
+@router.get("/scoring/notes/top", response_class=JSONResponse, response_model=NoteScoreListResponse)
 async def get_top_notes_jsonapi(  # noqa: PLR0912
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],

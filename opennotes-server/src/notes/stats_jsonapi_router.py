@@ -124,7 +124,7 @@ def create_error_response(
     )
 
 
-@router.get("/stats/notes", response_class=JSONResponse)
+@router.get("/stats/notes", response_class=JSONResponse, response_model=NoteStatsSingleResponse)
 async def get_notes_stats_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -238,7 +238,11 @@ async def get_notes_stats_jsonapi(
         )
 
 
-@router.get("/stats/participant/{participant_id}", response_class=JSONResponse)
+@router.get(
+    "/stats/participant/{participant_id}",
+    response_class=JSONResponse,
+    response_model=ParticipantStatsSingleResponse,
+)
 async def get_participant_stats_jsonapi(
     participant_id: str,
     request: HTTPRequest,

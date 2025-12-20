@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Open Notes Scoring API",
-    "version": "0.0.1"
+    "version": "1.0.0"
   },
   "paths": {
     "/api/v1/auth/register": {
@@ -1234,7 +1234,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/src__notes__notes_jsonapi_router__NoteListResponse"
+                }
               }
             }
           },
@@ -1295,7 +1297,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
               }
             }
           },
@@ -1358,7 +1362,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
               }
             }
           },
@@ -1429,7 +1435,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
               }
             }
           },
@@ -1548,7 +1556,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
               }
             }
           },
@@ -1611,7 +1621,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RatingSingleResponse"
+                }
               }
             }
           },
@@ -1674,7 +1686,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RatingListResponse"
+                }
               }
             }
           },
@@ -1747,7 +1761,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RatingSingleResponse"
+                }
               }
             }
           },
@@ -1810,7 +1826,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RatingStatsSingleResponse"
+                }
               }
             }
           },
@@ -1841,7 +1859,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSingleResponse"
+                }
               }
             }
           }
@@ -1875,7 +1895,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSingleResponse"
+                }
               }
             }
           },
@@ -1938,7 +1960,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityListResponse"
+                }
               }
             }
           },
@@ -1982,7 +2006,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySingleResponse"
+                }
               }
             }
           },
@@ -2088,7 +2114,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityMembershipListResponse"
+                }
               }
             }
           },
@@ -2131,7 +2159,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSingleResponse"
+                }
               }
             }
           },
@@ -2195,7 +2225,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStatusSingleResponse"
+                }
               }
             }
           },
@@ -2267,7 +2299,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStatusSingleResponse"
+                }
               }
             }
           },
@@ -2344,7 +2378,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityServerSingleResponse"
+                }
               }
             }
           },
@@ -2408,7 +2444,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityServerSingleResponse"
+                }
               }
             }
           },
@@ -2512,7 +2550,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteStatsSingleResponse"
+                }
               }
             }
           },
@@ -2591,7 +2631,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantStatsSingleResponse"
+                }
               }
             }
           },
@@ -2750,7 +2792,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/src__notes__requests_jsonapi_router__RequestListResponse"
+                }
               }
             }
           },
@@ -2811,7 +2855,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSingleResponse"
+                }
               }
             }
           },
@@ -2873,7 +2919,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSingleResponse"
+                }
               }
             }
           },
@@ -2943,7 +2991,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSingleResponse"
+                }
               }
             }
           },
@@ -2996,7 +3046,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/src__notes__scoring_jsonapi_router__ScoringStatusResponse"
+                }
               }
             }
           },
@@ -3059,7 +3111,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteScoreSingleResponse"
+                }
               }
             }
           },
@@ -3122,7 +3176,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteScoreListResponse"
+                }
               }
             }
           },
@@ -3260,7 +3316,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteScoreListResponse"
+                }
               }
             }
           },
@@ -3368,7 +3426,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/src__fact_checking__monitored_channels_jsonapi_router__MonitoredChannelListResponse"
+                }
               }
             }
           },
@@ -3429,7 +3489,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoredChannelSingleResponse"
+                }
               }
             }
           },
@@ -3492,7 +3554,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoredChannelSingleResponse"
+                }
               }
             }
           },
@@ -3563,7 +3627,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoredChannelSingleResponse"
+                }
               }
             }
           },
@@ -3732,7 +3798,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotePublisherConfigListResponse"
+                }
               }
             }
           },
@@ -3793,7 +3861,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotePublisherConfigSingleResponse"
+                }
               }
             }
           },
@@ -3856,7 +3926,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotePublisherConfigSingleResponse"
+                }
               }
             }
           },
@@ -3927,7 +3999,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotePublisherConfigSingleResponse"
+                }
               }
             }
           },
@@ -4112,7 +4186,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotePublisherPostListResponse"
+                }
               }
             }
           },
@@ -4173,7 +4249,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotePublisherPostSingleResponse"
+                }
               }
             }
           },
@@ -4236,7 +4314,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NotePublisherPostSingleResponse"
+                }
               }
             }
           },
@@ -4328,7 +4408,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PreviouslySeenMessageListResponse"
+                }
               }
             }
           },
@@ -4389,7 +4471,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PreviouslySeenMessageSingleResponse"
+                }
               }
             }
           },
@@ -4452,7 +4536,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PreviouslySeenMessageSingleResponse"
+                }
               }
             }
           },
@@ -4515,7 +4601,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PreviouslySeenCheckResultResponse"
+                }
               }
             }
           },
@@ -4578,7 +4666,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SimilaritySearchResultResponse"
+                }
               }
             }
           },
@@ -4641,7 +4731,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HybridSearchResultResponse"
+                }
               }
             }
           },
@@ -4704,7 +4796,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BulkScanSingleResponse"
+                }
               }
             }
           },
@@ -4767,7 +4861,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BulkScanResultsResponse"
+                }
               }
             }
           },
@@ -4830,7 +4926,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RecentScanResponse"
+                }
               }
             }
           },
@@ -4968,7 +5066,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteRequestsResultResponse"
+                }
               }
             }
           },
@@ -5258,7 +5358,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NoteListResponse"
+                  "$ref": "#/components/schemas/src__notes__schemas__NoteListResponse"
                 }
               }
             }
@@ -5742,7 +5842,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RequestListResponse"
+                  "$ref": "#/components/schemas/src__notes__schemas__RequestListResponse"
                 }
               }
             }
@@ -6183,7 +6283,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScoringStatusResponse"
+                  "$ref": "#/components/schemas/src__notes__scoring_schemas__ScoringStatusResponse"
                 }
               }
             }
@@ -8296,7 +8396,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitoredChannelListResponse"
+                  "$ref": "#/components/schemas/src__fact_checking__monitored_channel_schemas__MonitoredChannelListResponse"
                 }
               }
             }
@@ -9145,6 +9245,77 @@
         "title": "AdminSource",
         "description": "Source of admin privileges."
       },
+      "AdminStatusAttributes": {
+        "properties": {
+          "is_opennotes_admin": {
+            "type": "boolean",
+            "title": "Is Opennotes Admin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_opennotes_admin"
+        ],
+        "title": "AdminStatusAttributes",
+        "description": "Admin status attributes for JSON:API resource."
+      },
+      "AdminStatusResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "admin-status",
+            "title": "Type",
+            "default": "admin-status"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/AdminStatusAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "AdminStatusResource",
+        "description": "JSON:API resource object for admin status."
+      },
+      "AdminStatusSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminStatusResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "AdminStatusSingleResponse",
+        "description": "JSON:API response for admin status resource."
+      },
       "AdminStatusUpdateAttributes": {
         "properties": {
           "is_opennotes_admin": {
@@ -9533,6 +9704,53 @@
         ],
         "title": "Body_login_email_api_v1_profile_auth_login_email_post"
       },
+      "BulkScanAttributes": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Scan status: pending, in_progress, completed, failed"
+          },
+          "initiated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Initiated At",
+            "description": "When the scan was initiated"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "When the scan completed"
+          },
+          "messages_scanned": {
+            "type": "integer",
+            "title": "Messages Scanned",
+            "description": "Total messages scanned",
+            "default": 0
+          },
+          "messages_flagged": {
+            "type": "integer",
+            "title": "Messages Flagged",
+            "description": "Number of flagged messages",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "initiated_at"
+        ],
+        "title": "BulkScanAttributes",
+        "description": "Attributes for a bulk scan resource."
+      },
       "BulkScanCreateAttributes": {
         "properties": {
           "community_server_id": {
@@ -9598,6 +9816,164 @@
         ],
         "title": "BulkScanCreateRequest",
         "description": "JSON:API request body for creating a bulk scan."
+      },
+      "BulkScanResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scans"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/BulkScanAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "BulkScanResource",
+        "description": "JSON:API resource object for a bulk scan."
+      },
+      "BulkScanResultsAttributes": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Scan status"
+          },
+          "messages_scanned": {
+            "type": "integer",
+            "title": "Messages Scanned",
+            "description": "Total messages scanned",
+            "default": 0
+          },
+          "messages_flagged": {
+            "type": "integer",
+            "title": "Messages Flagged",
+            "description": "Number of flagged messages",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "BulkScanResultsAttributes",
+        "description": "Attributes for bulk scan results."
+      },
+      "BulkScanResultsResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scans"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/BulkScanResultsAttributes"
+          },
+          "relationships": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "BulkScanResultsResource",
+        "description": "JSON:API resource object for bulk scan results."
+      },
+      "BulkScanResultsResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkScanResultsResource"
+          },
+          "included": {
+            "items": {
+              "$ref": "#/components/schemas/FlaggedMessageResource"
+            },
+            "type": "array",
+            "title": "Included"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "BulkScanResultsResponse",
+        "description": "JSON:API response for bulk scan results with included flagged messages."
+      },
+      "BulkScanSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkScanResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "BulkScanSingleResponse",
+        "description": "JSON:API response for a single bulk scan resource."
       },
       "CommunityAdminResponse": {
         "properties": {
@@ -10027,6 +10403,129 @@
         "title": "CommunityMemberResponse",
         "description": "API response schema for community membership with nested profile."
       },
+      "CommunityMembershipAttributes": {
+        "properties": {
+          "community_id": {
+            "type": "string",
+            "title": "Community Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "is_external": {
+            "type": "boolean",
+            "title": "Is External",
+            "default": false
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "joined_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Joined At"
+          },
+          "reputation_in_community": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reputation In Community"
+          }
+        },
+        "type": "object",
+        "required": [
+          "community_id",
+          "role"
+        ],
+        "title": "CommunityMembershipAttributes",
+        "description": "Community membership attributes for JSON:API resource."
+      },
+      "CommunityMembershipListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/CommunityMembershipResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CommunityMembershipListResponse",
+        "description": "JSON:API response for a list of community membership resources."
+      },
+      "CommunityMembershipResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "community-memberships",
+            "title": "Type",
+            "default": "community-memberships"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/CommunityMembershipAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "CommunityMembershipResource",
+        "description": "JSON:API resource object for a community membership."
+      },
       "CommunityRole": {
         "type": "string",
         "enum": [
@@ -10036,6 +10535,75 @@
         ],
         "title": "CommunityRole",
         "description": "Community membership roles."
+      },
+      "CommunityServerAttributes": {
+        "properties": {
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "platform_id": {
+            "type": "string",
+            "title": "Platform Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "is_public": {
+            "type": "boolean",
+            "title": "Is Public",
+            "default": true
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "platform",
+          "platform_id",
+          "name"
+        ],
+        "title": "CommunityServerAttributes",
+        "description": "Community server attributes for JSON:API resource."
       },
       "CommunityServerLookupResponse": {
         "properties": {
@@ -10076,6 +10644,63 @@
         ],
         "title": "CommunityServerLookupResponse",
         "description": "Response model for community server lookup."
+      },
+      "CommunityServerResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "community-servers",
+            "title": "Type",
+            "default": "community-servers"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/CommunityServerAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "CommunityServerResource",
+        "description": "JSON:API resource object for a community server."
+      },
+      "CommunityServerSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CommunityServerResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CommunityServerSingleResponse",
+        "description": "JSON:API response for a single community server resource."
       },
       "DataConfidence": {
         "type": "string",
@@ -10367,6 +10992,141 @@
         "title": "FactCheckMatch",
         "description": "Single fact-check similarity match result."
       },
+      "FactCheckMatchResource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Fact-check item UUID"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name",
+            "description": "Source dataset (e.g., 'snopes')"
+          },
+          "dataset_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Tags",
+            "description": "Dataset tags"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Fact-check article title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Fact-check content"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary",
+            "description": "Brief summary"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating",
+            "description": "Fact-check verdict"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url",
+            "description": "URL to original article"
+          },
+          "published_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Date",
+            "description": "Publication date"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author",
+            "description": "Author name"
+          },
+          "embedding_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Provider",
+            "description": "LLM provider used for embedding"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model",
+            "description": "Model name used for embedding"
+          },
+          "similarity_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Similarity Score",
+            "description": "Cosine similarity score (0.0-1.0)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "dataset_name",
+          "dataset_tags",
+          "title",
+          "content",
+          "similarity_score"
+        ],
+        "title": "FactCheckMatchResource",
+        "description": "JSON:API-compatible fact-check match in search results."
+      },
       "FlaggedMessageAttributes": {
         "properties": {
           "channel_id": {
@@ -10583,6 +11343,116 @@
         "title": "HybridSearchCreateData",
         "description": "JSON:API data object for hybrid search."
       },
+      "HybridSearchMatchResource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Fact-check item UUID"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name",
+            "description": "Source dataset (e.g., 'snopes')"
+          },
+          "dataset_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Tags",
+            "description": "Dataset tags"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Fact-check article title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Fact-check content"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary",
+            "description": "Brief summary"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating",
+            "description": "Fact-check verdict"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url",
+            "description": "URL to original article"
+          },
+          "published_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Date",
+            "description": "Publication date"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author",
+            "description": "Author name"
+          },
+          "rrf_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Rrf Score",
+            "description": "Reciprocal Rank Fusion score combining FTS and semantic rankings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "dataset_name",
+          "dataset_tags",
+          "title",
+          "content",
+          "rrf_score"
+        ],
+        "title": "HybridSearchMatchResource",
+        "description": "JSON:API-compatible fact-check match in hybrid search results."
+      },
       "HybridSearchRequest": {
         "properties": {
           "data": {
@@ -10595,6 +11465,163 @@
         ],
         "title": "HybridSearchRequest",
         "description": "JSON:API request body for performing a hybrid search."
+      },
+      "HybridSearchResultAttributes": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/HybridSearchMatchResource"
+            },
+            "type": "array",
+            "title": "Matches",
+            "description": "Matching fact-check items ranked by RRF score"
+          },
+          "query_text": {
+            "type": "string",
+            "title": "Query Text",
+            "description": "Original query text"
+          },
+          "total_matches": {
+            "type": "integer",
+            "title": "Total Matches",
+            "description": "Number of matches found"
+          }
+        },
+        "type": "object",
+        "required": [
+          "matches",
+          "query_text",
+          "total_matches"
+        ],
+        "title": "HybridSearchResultAttributes",
+        "description": "Attributes for hybrid search result."
+      },
+      "HybridSearchResultResource-Input": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "hybrid-search-results"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/HybridSearchResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "HybridSearchResultResource",
+        "description": "JSON:API resource object for hybrid search results."
+      },
+      "HybridSearchResultResource-Output": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "hybrid-search-results"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/HybridSearchResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "HybridSearchResultResource",
+        "description": "JSON:API resource object for hybrid search results."
+      },
+      "HybridSearchResultResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HybridSearchResultResource-Output"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "HybridSearchResultResponse",
+        "description": "JSON:API response for hybrid search results."
+      },
+      "IdentityAttributes": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "provider_user_id": {
+            "type": "string",
+            "title": "Provider User Id"
+          },
+          "email_verified": {
+            "type": "boolean",
+            "title": "Email Verified",
+            "default": false
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "provider_user_id"
+        ],
+        "title": "IdentityAttributes",
+        "description": "Identity attributes for JSON:API resource."
       },
       "IdentityCreateAttributes": {
         "properties": {
@@ -10658,6 +11685,110 @@
         ],
         "title": "IdentityCreateRequest",
         "description": "JSON:API request for creating an identity."
+      },
+      "IdentityListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "IdentityListResponse",
+        "description": "JSON:API response for a list of identity resources."
+      },
+      "IdentityResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "identities",
+            "title": "Type",
+            "default": "identities"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/IdentityAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "IdentityResource",
+        "description": "JSON:API resource object for an identity."
+      },
+      "IdentitySingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/IdentityResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "IdentitySingleResponse",
+        "description": "JSON:API response for a single identity resource."
       },
       "JSONAPILinks-Input": {
         "properties": {
@@ -10806,6 +11937,68 @@
         "type": "object",
         "title": "JSONAPILinks",
         "description": "JSON:API links object for pagination and resource links.\n\nUses field aliases for 'self' and 'next' which are Python reserved words.\nAlways use by_alias=True when serializing.\nIncludes JSON:API 1.1 'describedby' link for API documentation."
+      },
+      "JSONAPIMeta": {
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "title": "JSONAPIMeta",
+        "description": "JSON:API meta object for pagination and collection metadata."
       },
       "LLMConfigCreate": {
         "properties": {
@@ -11514,6 +12707,100 @@
         "title": "LatestScanResponse",
         "description": "JSON:API response for the latest scan with included flagged messages."
       },
+      "MonitoredChannelAttributes": {
+        "properties": {
+          "community_server_id": {
+            "type": "string",
+            "title": "Community Server Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "similarity_threshold": {
+            "type": "number",
+            "title": "Similarity Threshold"
+          },
+          "dataset_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Tags"
+          },
+          "previously_seen_autopublish_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previously Seen Autopublish Threshold"
+          },
+          "previously_seen_autorequest_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previously Seen Autorequest Threshold"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "community_server_id",
+          "channel_id",
+          "enabled",
+          "similarity_threshold",
+          "dataset_tags"
+        ],
+        "title": "MonitoredChannelAttributes",
+        "description": "Monitored channel attributes for JSON:API resource."
+      },
       "MonitoredChannelCreate": {
         "properties": {
           "community_server_id": {
@@ -11717,45 +13004,28 @@
         "title": "MonitoredChannelCreateRequest",
         "description": "JSON:API request body for creating a monitored channel."
       },
-      "MonitoredChannelListResponse": {
+      "MonitoredChannelResource": {
         "properties": {
-          "channels": {
-            "items": {
-              "$ref": "#/components/schemas/MonitoredChannelResponse"
-            },
-            "type": "array",
-            "title": "Channels",
-            "description": "List of monitored channels"
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "monitored-channels"
           },
-          "total": {
-            "type": "integer",
-            "title": "Total",
-            "description": "Total count of channels"
+          "id": {
+            "type": "string",
+            "title": "Id"
           },
-          "page": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Page",
-            "description": "Current page number",
-            "default": 1
-          },
-          "size": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Size",
-            "description": "Items per page",
-            "default": 20
+          "attributes": {
+            "$ref": "#/components/schemas/MonitoredChannelAttributes"
           }
         },
-        "additionalProperties": false,
         "type": "object",
         "required": [
-          "channels",
-          "total"
+          "id",
+          "attributes"
         ],
-        "title": "MonitoredChannelListResponse",
-        "description": "Schema for paginated list of monitored channels."
+        "title": "MonitoredChannelResource",
+        "description": "JSON:API resource object for a monitored channel."
       },
       "MonitoredChannelResponse": {
         "properties": {
@@ -11861,6 +13131,39 @@
         ],
         "title": "MonitoredChannelResponse",
         "description": "Schema for monitored channel configuration responses."
+      },
+      "MonitoredChannelSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MonitoredChannelResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "MonitoredChannelSingleResponse",
+        "description": "JSON:API response for a single monitored channel resource."
       },
       "MonitoredChannelUpdate": {
         "properties": {
@@ -12105,6 +13408,118 @@
         ],
         "title": "NextTierInfo"
       },
+      "NoteAttributes": {
+        "properties": {
+          "author_participant_id": {
+            "type": "string",
+            "title": "Author Participant Id"
+          },
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "classification": {
+            "type": "string",
+            "title": "Classification"
+          },
+          "helpfulness_score": {
+            "type": "integer",
+            "title": "Helpfulness Score",
+            "default": 0
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "NEEDS_MORE_RATINGS"
+          },
+          "ai_generated": {
+            "type": "boolean",
+            "title": "Ai Generated",
+            "default": false
+          },
+          "ai_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Provider"
+          },
+          "force_published": {
+            "type": "boolean",
+            "title": "Force Published",
+            "default": false
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "platform_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Message Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "author_participant_id",
+          "summary",
+          "classification"
+        ],
+        "title": "NoteAttributes",
+        "description": "Note attributes for JSON:API resource."
+      },
       "NoteClassification": {
         "type": "string",
         "enum": [
@@ -12300,37 +13715,69 @@
         ],
         "title": "NoteData"
       },
-      "NoteListResponse": {
+      "NotePublisherConfigAttributes": {
         "properties": {
-          "notes": {
-            "items": {
-              "$ref": "#/components/schemas/NoteResponse"
-            },
-            "type": "array",
-            "title": "Notes"
+          "community_server_id": {
+            "type": "string",
+            "title": "Community Server Id"
           },
-          "total": {
-            "type": "integer",
-            "title": "Total"
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
           },
-          "page": {
-            "type": "integer",
-            "title": "Page"
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
           },
-          "size": {
-            "type": "integer",
-            "title": "Size"
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
           }
         },
-        "additionalProperties": false,
         "type": "object",
         "required": [
-          "notes",
-          "total",
-          "page",
-          "size"
+          "community_server_id",
+          "enabled"
         ],
-        "title": "NoteListResponse"
+        "title": "NotePublisherConfigAttributes",
+        "description": "Note publisher config attributes for JSON:API resource."
       },
       "NotePublisherConfigCreateAttributes": {
         "properties": {
@@ -12428,6 +13875,53 @@
         "title": "NotePublisherConfigCreateRequest",
         "description": "JSON:API request body for creating a config."
       },
+      "NotePublisherConfigListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/NotePublisherConfigResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NotePublisherConfigListResponse",
+        "description": "JSON:API response for a list of config resources."
+      },
       "NotePublisherConfigRequest": {
         "properties": {
           "community_server_id": {
@@ -12483,6 +13977,29 @@
           "enabled"
         ],
         "title": "NotePublisherConfigRequest"
+      },
+      "NotePublisherConfigResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "note-publisher-configs"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/NotePublisherConfigAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "NotePublisherConfigResource",
+        "description": "JSON:API resource object for a note publisher config."
       },
       "NotePublisherConfigResponse": {
         "properties": {
@@ -12547,6 +14064,39 @@
           "updated_by"
         ],
         "title": "NotePublisherConfigResponse"
+      },
+      "NotePublisherConfigSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NotePublisherConfigResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NotePublisherConfigSingleResponse",
+        "description": "JSON:API response for a single config resource."
       },
       "NotePublisherConfigUpdateAttributes": {
         "properties": {
@@ -12633,6 +14183,84 @@
         ],
         "title": "NotePublisherConfigUpdateRequest",
         "description": "JSON:API request body for updating a config."
+      },
+      "NotePublisherPostAttributes": {
+        "properties": {
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "original_message_id": {
+            "type": "string",
+            "title": "Original Message Id"
+          },
+          "auto_post_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Post Message Id"
+          },
+          "channel_id": {
+            "type": "string",
+            "title": "Channel Id"
+          },
+          "community_server_id": {
+            "type": "string",
+            "title": "Community Server Id"
+          },
+          "score_at_post": {
+            "type": "number",
+            "title": "Score At Post"
+          },
+          "confidence_at_post": {
+            "type": "string",
+            "title": "Confidence At Post"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_id",
+          "original_message_id",
+          "channel_id",
+          "community_server_id",
+          "score_at_post",
+          "confidence_at_post",
+          "success"
+        ],
+        "title": "NotePublisherPostAttributes",
+        "description": "Note publisher post attributes for JSON:API resource."
       },
       "NotePublisherPostCreateAttributes": {
         "properties": {
@@ -12747,6 +14375,109 @@
         ],
         "title": "NotePublisherPostCreateRequest",
         "description": "JSON:API request body for creating a post record."
+      },
+      "NotePublisherPostListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/NotePublisherPostResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NotePublisherPostListResponse",
+        "description": "JSON:API response for a list of post resources."
+      },
+      "NotePublisherPostResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "note-publisher-posts"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/NotePublisherPostAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "NotePublisherPostResource",
+        "description": "JSON:API resource object for a note publisher post."
+      },
+      "NotePublisherPostSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NotePublisherPostResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NotePublisherPostSingleResponse",
+        "description": "JSON:API response for a single post resource."
       },
       "NotePublisherRecordRequest": {
         "properties": {
@@ -12904,6 +14635,108 @@
         "title": "NoteRequestsCreateRequest",
         "description": "JSON:API request body for creating note requests."
       },
+      "NoteRequestsResultAttributes": {
+        "properties": {
+          "created_count": {
+            "type": "integer",
+            "title": "Created Count",
+            "description": "Number of note requests created"
+          },
+          "request_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Request Ids",
+            "description": "Created request IDs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_count"
+        ],
+        "title": "NoteRequestsResultAttributes",
+        "description": "Attributes for note requests creation result."
+      },
+      "NoteRequestsResultResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "note-request-batches"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/NoteRequestsResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "NoteRequestsResultResource",
+        "description": "JSON:API resource for note requests creation result."
+      },
+      "NoteRequestsResultResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NoteRequestsResultResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NoteRequestsResultResponse",
+        "description": "JSON:API response for note requests creation."
+      },
+      "NoteResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "notes"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/NoteAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "NoteResource",
+        "description": "JSON:API resource object for a note."
+      },
       "NoteResponse": {
         "properties": {
           "created_at": {
@@ -13044,6 +14877,148 @@
         ],
         "title": "NoteResponse"
       },
+      "NoteScoreAttributes": {
+        "properties": {
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Normalized score value (0.0-1.0)"
+          },
+          "confidence": {
+            "type": "string",
+            "title": "Confidence",
+            "description": "Confidence level: no_data, provisional, or standard"
+          },
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm",
+            "description": "Scoring algorithm used"
+          },
+          "rating_count": {
+            "type": "integer",
+            "title": "Rating Count",
+            "description": "Number of ratings contributing to the score"
+          },
+          "tier": {
+            "type": "integer",
+            "title": "Tier",
+            "description": "Current scoring tier level (0-5)"
+          },
+          "tier_name": {
+            "type": "string",
+            "title": "Tier Name",
+            "description": "Human-readable tier name"
+          },
+          "calculated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculated At",
+            "description": "Timestamp when score was calculated"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content",
+            "description": "Message content from archive"
+          }
+        },
+        "type": "object",
+        "required": [
+          "score",
+          "confidence",
+          "algorithm",
+          "rating_count",
+          "tier",
+          "tier_name"
+        ],
+        "title": "NoteScoreAttributes",
+        "description": "Attributes for note score resource."
+      },
+      "NoteScoreListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/NoteScoreResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NoteScoreListResponse",
+        "description": "JSON:API response for a list of note score resources."
+      },
+      "NoteScoreResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "note-scores"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/NoteScoreAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "NoteScoreResource",
+        "description": "JSON:API resource object for a note score."
+      },
       "NoteScoreResponse": {
         "properties": {
           "note_id": {
@@ -13118,6 +15093,162 @@
           "tier_name"
         ],
         "title": "NoteScoreResponse"
+      },
+      "NoteScoreSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NoteScoreResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NoteScoreSingleResponse",
+        "description": "JSON:API response for a single note score resource."
+      },
+      "NoteSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NoteResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NoteSingleResponse",
+        "description": "JSON:API response for a single note resource."
+      },
+      "NoteStatsAttributes": {
+        "properties": {
+          "total_notes": {
+            "type": "integer",
+            "title": "Total Notes"
+          },
+          "helpful_notes": {
+            "type": "integer",
+            "title": "Helpful Notes"
+          },
+          "not_helpful_notes": {
+            "type": "integer",
+            "title": "Not Helpful Notes"
+          },
+          "pending_notes": {
+            "type": "integer",
+            "title": "Pending Notes"
+          },
+          "average_helpfulness_score": {
+            "type": "number",
+            "title": "Average Helpfulness Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_notes",
+          "helpful_notes",
+          "not_helpful_notes",
+          "pending_notes",
+          "average_helpfulness_score"
+        ],
+        "title": "NoteStatsAttributes",
+        "description": "Attributes for note statistics resource."
+      },
+      "NoteStatsResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "note-stats"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": "aggregate"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/NoteStatsAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "title": "NoteStatsResource",
+        "description": "JSON:API resource object for note statistics."
+      },
+      "NoteStatsSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NoteStatsResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NoteStatsSingleResponse",
+        "description": "JSON:API response for note statistics."
       },
       "NoteStatus": {
         "type": "string",
@@ -13297,6 +15428,97 @@
         ],
         "title": "ParticipantStats"
       },
+      "ParticipantStatsAttributes": {
+        "properties": {
+          "notes_created": {
+            "type": "integer",
+            "title": "Notes Created"
+          },
+          "ratings_given": {
+            "type": "integer",
+            "title": "Ratings Given"
+          },
+          "average_helpfulness_received": {
+            "type": "number",
+            "title": "Average Helpfulness Received"
+          },
+          "top_classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Classification"
+          }
+        },
+        "type": "object",
+        "required": [
+          "notes_created",
+          "ratings_given",
+          "average_helpfulness_received"
+        ],
+        "title": "ParticipantStatsAttributes",
+        "description": "Attributes for participant statistics resource."
+      },
+      "ParticipantStatsResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "participant-stats"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ParticipantStatsAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ParticipantStatsResource",
+        "description": "JSON:API resource object for participant statistics."
+      },
+      "ParticipantStatsSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ParticipantStatsResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ParticipantStatsSingleResponse",
+        "description": "JSON:API response for participant statistics."
+      },
       "PerformanceMetrics": {
         "properties": {
           "avg_scoring_time_ms": {
@@ -13446,6 +15668,282 @@
         "title": "PreviouslySeenCheckResponse",
         "description": "Response with previously seen message matches and action recommendations."
       },
+      "PreviouslySeenCheckResultAttributes": {
+        "properties": {
+          "should_auto_publish": {
+            "type": "boolean",
+            "title": "Should Auto Publish"
+          },
+          "should_auto_request": {
+            "type": "boolean",
+            "title": "Should Auto Request"
+          },
+          "autopublish_threshold": {
+            "type": "number",
+            "title": "Autopublish Threshold"
+          },
+          "autorequest_threshold": {
+            "type": "number",
+            "title": "Autorequest Threshold"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/PreviouslySeenMatchResource"
+            },
+            "type": "array",
+            "title": "Matches"
+          },
+          "top_match": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreviouslySeenMatchResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "should_auto_publish",
+          "should_auto_request",
+          "autopublish_threshold",
+          "autorequest_threshold",
+          "matches"
+        ],
+        "title": "PreviouslySeenCheckResultAttributes",
+        "description": "Attributes for previously seen check result."
+      },
+      "PreviouslySeenCheckResultResource-Input": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "previously-seen-check-result"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/PreviouslySeenCheckResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "PreviouslySeenCheckResultResource",
+        "description": "JSON:API resource object for check results."
+      },
+      "PreviouslySeenCheckResultResource-Output": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "previously-seen-check-result"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/PreviouslySeenCheckResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "PreviouslySeenCheckResultResource",
+        "description": "JSON:API resource object for check results."
+      },
+      "PreviouslySeenCheckResultResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PreviouslySeenCheckResultResource-Output"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PreviouslySeenCheckResultResponse",
+        "description": "JSON:API response for previously seen check results."
+      },
+      "PreviouslySeenMatchResource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "community_server_id": {
+            "type": "string",
+            "title": "Community Server Id"
+          },
+          "original_message_id": {
+            "type": "string",
+            "title": "Original Message Id"
+          },
+          "published_note_id": {
+            "type": "string",
+            "title": "Published Note Id"
+          },
+          "embedding_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Provider"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "extra_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Metadata"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "similarity_score": {
+            "type": "number",
+            "title": "Similarity Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "community_server_id",
+          "original_message_id",
+          "published_note_id",
+          "similarity_score"
+        ],
+        "title": "PreviouslySeenMatchResource",
+        "description": "JSON:API resource for a match in check results."
+      },
+      "PreviouslySeenMessageAttributes": {
+        "properties": {
+          "community_server_id": {
+            "type": "string",
+            "title": "Community Server Id"
+          },
+          "original_message_id": {
+            "type": "string",
+            "title": "Original Message Id"
+          },
+          "published_note_id": {
+            "type": "string",
+            "title": "Published Note Id"
+          },
+          "embedding_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Provider"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "extra_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Metadata"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "community_server_id",
+          "original_message_id",
+          "published_note_id"
+        ],
+        "title": "PreviouslySeenMessageAttributes",
+        "description": "Previously seen message attributes for JSON:API resource."
+      },
       "PreviouslySeenMessageCreateAttributes": {
         "properties": {
           "community_server_id": {
@@ -13580,6 +16078,53 @@
         "title": "PreviouslySeenMessageCreateRequest",
         "description": "JSON:API request body for creating a previously seen message."
       },
+      "PreviouslySeenMessageListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PreviouslySeenMessageResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PreviouslySeenMessageListResponse",
+        "description": "JSON:API response for a list of previously seen message resources."
+      },
       "PreviouslySeenMessageMatch": {
         "properties": {
           "id": {
@@ -13679,6 +16224,204 @@
         "title": "PreviouslySeenMessageMatch",
         "description": "Previously seen message with similarity score (used in search results)."
       },
+      "PreviouslySeenMessageResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "previously-seen-messages"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/PreviouslySeenMessageAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "PreviouslySeenMessageResource",
+        "description": "JSON:API resource object for a previously seen message."
+      },
+      "PreviouslySeenMessageSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PreviouslySeenMessageResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PreviouslySeenMessageSingleResponse",
+        "description": "JSON:API response for a single previously seen message resource."
+      },
+      "ProfileAttributes": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "bio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bio"
+          },
+          "reputation": {
+            "type": "integer",
+            "title": "Reputation",
+            "default": 0
+          },
+          "is_opennotes_admin": {
+            "type": "boolean",
+            "title": "Is Opennotes Admin",
+            "default": false
+          },
+          "is_human": {
+            "type": "boolean",
+            "title": "Is Human",
+            "default": true
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "is_banned": {
+            "type": "boolean",
+            "title": "Is Banned",
+            "default": false
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "display_name"
+        ],
+        "title": "ProfileAttributes",
+        "description": "Profile attributes for JSON:API resource."
+      },
+      "ProfileResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "profiles",
+            "title": "Type",
+            "default": "profiles"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ProfileAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ProfileResource",
+        "description": "JSON:API resource object for a profile."
+      },
+      "ProfileSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProfileResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ProfileSingleResponse",
+        "description": "JSON:API response for a single profile resource."
+      },
       "ProfileUpdateAttributes": {
         "properties": {
           "display_name": {
@@ -13755,6 +16498,54 @@
         ],
         "title": "ProfileUpdateRequest",
         "description": "JSON:API request for updating a profile."
+      },
+      "RatingAttributes": {
+        "properties": {
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "rater_participant_id": {
+            "type": "string",
+            "title": "Rater Participant Id"
+          },
+          "helpfulness_level": {
+            "type": "string",
+            "title": "Helpfulness Level"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_id",
+          "rater_participant_id",
+          "helpfulness_level"
+        ],
+        "title": "RatingAttributes",
+        "description": "Rating attributes for JSON:API resource."
       },
       "RatingCreateAttributes": {
         "properties": {
@@ -13845,6 +16636,66 @@
         ],
         "title": "RatingData"
       },
+      "RatingListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RatingResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RatingListResponse",
+        "description": "JSON:API response for a list of rating resources."
+      },
+      "RatingResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "ratings"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/RatingAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "RatingResource",
+        "description": "JSON:API resource object for a rating."
+      },
       "RatingResponse": {
         "properties": {
           "created_at": {
@@ -13892,6 +16743,134 @@
           "rater_participant_id"
         ],
         "title": "RatingResponse"
+      },
+      "RatingSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RatingResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RatingSingleResponse",
+        "description": "JSON:API response for a single rating resource."
+      },
+      "RatingStatsAttributes": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total number of ratings"
+          },
+          "helpful": {
+            "type": "integer",
+            "title": "Helpful",
+            "description": "Number of HELPFUL ratings"
+          },
+          "somewhat_helpful": {
+            "type": "integer",
+            "title": "Somewhat Helpful",
+            "description": "Number of SOMEWHAT_HELPFUL ratings"
+          },
+          "not_helpful": {
+            "type": "integer",
+            "title": "Not Helpful",
+            "description": "Number of NOT_HELPFUL ratings"
+          },
+          "average_score": {
+            "type": "number",
+            "title": "Average Score",
+            "description": "Average score (1-3 scale)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "helpful",
+          "somewhat_helpful",
+          "not_helpful",
+          "average_score"
+        ],
+        "title": "RatingStatsAttributes",
+        "description": "Attributes for rating statistics."
+      },
+      "RatingStatsResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "rating-stats"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/RatingStatsAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "RatingStatsResource",
+        "description": "JSON:API resource object for rating statistics."
+      },
+      "RatingStatsSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RatingStatsResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RatingStatsSingleResponse",
+        "description": "JSON:API response for rating statistics."
       },
       "RatingThresholdsResponse": {
         "properties": {
@@ -13967,6 +16946,77 @@
         "title": "RatingUpdateRequest",
         "description": "JSON:API request body for updating a rating."
       },
+      "RecentScanAttributes": {
+        "properties": {
+          "has_recent_scan": {
+            "type": "boolean",
+            "title": "Has Recent Scan",
+            "description": "Whether community has a recent scan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "has_recent_scan"
+        ],
+        "title": "RecentScanAttributes",
+        "description": "Attributes for recent scan check."
+      },
+      "RecentScanResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scan-status"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/RecentScanAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "RecentScanResource",
+        "description": "JSON:API resource for recent scan status."
+      },
+      "RecentScanResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RecentScanResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RecentScanResponse",
+        "description": "JSON:API response for recent scan check."
+      },
       "RefreshTokenRequest": {
         "properties": {
           "refresh_token": {
@@ -14022,6 +17072,122 @@
         ],
         "title": "RemoveCommunityAdminResponse",
         "description": "Response schema for admin removal."
+      },
+      "RequestAttributes": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "PENDING"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Id"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id"
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "platform_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Message Id"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "requested_by"
+        ],
+        "title": "RequestAttributes",
+        "description": "Request attributes for JSON:API resource."
       },
       "RequestCreate": {
         "properties": {
@@ -14350,37 +17516,28 @@
         "title": "RequestInfo",
         "description": "Simplified request info for embedding in note responses"
       },
-      "RequestListResponse": {
+      "RequestResource": {
         "properties": {
-          "requests": {
-            "items": {
-              "$ref": "#/components/schemas/RequestResponse"
-            },
-            "type": "array",
-            "title": "Requests"
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "requests"
           },
-          "total": {
-            "type": "integer",
-            "title": "Total"
+          "id": {
+            "type": "string",
+            "title": "Id"
           },
-          "page": {
-            "type": "integer",
-            "title": "Page"
-          },
-          "size": {
-            "type": "integer",
-            "title": "Size"
+          "attributes": {
+            "$ref": "#/components/schemas/RequestAttributes"
           }
         },
-        "additionalProperties": false,
         "type": "object",
         "required": [
-          "requests",
-          "total",
-          "page",
-          "size"
+          "id",
+          "attributes"
         ],
-        "title": "RequestListResponse"
+        "title": "RequestResource",
+        "description": "JSON:API resource object for a request."
       },
       "RequestResponse": {
         "properties": {
@@ -14489,6 +17646,39 @@
           "status"
         ],
         "title": "RequestResponse"
+      },
+      "RequestSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RequestResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RequestSingleResponse",
+        "description": "JSON:API response for a single request resource."
       },
       "RequestStatus": {
         "type": "string",
@@ -14695,7 +17885,7 @@
         ],
         "title": "ScoringResponse"
       },
-      "ScoringStatusResponse": {
+      "ScoringStatusAttributes": {
         "properties": {
           "current_note_count": {
             "type": "integer",
@@ -14704,11 +17894,12 @@
           },
           "active_tier": {
             "$ref": "#/components/schemas/TierInfo",
-            "description": "Currently active scoring tier information"
+            "description": "Currently active scoring tier"
           },
           "data_confidence": {
-            "$ref": "#/components/schemas/DataConfidence",
-            "description": "Confidence level in scoring results based on data volume"
+            "type": "string",
+            "title": "Data Confidence",
+            "description": "Confidence level in scoring results"
           },
           "tier_thresholds": {
             "additionalProperties": {
@@ -14727,7 +17918,7 @@
                 "type": "null"
               }
             ],
-            "description": "Information about the next tier upgrade (null if at max tier)"
+            "description": "Information about the next tier upgrade"
           },
           "performance_metrics": {
             "$ref": "#/components/schemas/PerformanceMetrics",
@@ -14739,13 +17930,13 @@
             },
             "type": "array",
             "title": "Warnings",
-            "description": "Any warnings about data quality or scoring limitations"
+            "description": "Any warnings about data quality"
           },
           "configuration": {
             "additionalProperties": true,
             "type": "object",
             "title": "Configuration",
-            "description": "Current scoring configuration overrides"
+            "description": "Current scoring configuration"
           }
         },
         "type": "object",
@@ -14756,7 +17947,54 @@
           "tier_thresholds",
           "performance_metrics"
         ],
-        "title": "ScoringStatusResponse"
+        "title": "ScoringStatusAttributes",
+        "description": "Attributes for scoring status resource."
+      },
+      "ScoringStatusResource-Input": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "scoring-status"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": "current"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ScoringStatusAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "title": "ScoringStatusResource",
+        "description": "JSON:API resource object for scoring status."
+      },
+      "ScoringStatusResource-Output": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "scoring-status"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": "current"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ScoringStatusAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "title": "ScoringStatusResource",
+        "description": "JSON:API resource object for scoring status."
       },
       "ServiceStatus": {
         "properties": {
@@ -14951,6 +18189,136 @@
           "total_matches"
         ],
         "title": "SimilaritySearchResponse"
+      },
+      "SimilaritySearchResultAttributes": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/FactCheckMatchResource"
+            },
+            "type": "array",
+            "title": "Matches",
+            "description": "Matching fact-check items"
+          },
+          "query_text": {
+            "type": "string",
+            "title": "Query Text",
+            "description": "Original query text"
+          },
+          "dataset_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Tags",
+            "description": "Dataset tags used for filtering"
+          },
+          "similarity_threshold": {
+            "type": "number",
+            "title": "Similarity Threshold",
+            "description": "Cosine similarity threshold applied"
+          },
+          "rrf_score_threshold": {
+            "type": "number",
+            "title": "Rrf Score Threshold",
+            "description": "Scaled RRF score threshold applied"
+          },
+          "total_matches": {
+            "type": "integer",
+            "title": "Total Matches",
+            "description": "Number of matches found"
+          }
+        },
+        "type": "object",
+        "required": [
+          "matches",
+          "query_text",
+          "dataset_tags",
+          "similarity_threshold",
+          "rrf_score_threshold",
+          "total_matches"
+        ],
+        "title": "SimilaritySearchResultAttributes",
+        "description": "Attributes for similarity search result."
+      },
+      "SimilaritySearchResultResource-Input": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "similarity-search-results"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimilaritySearchResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "SimilaritySearchResultResource",
+        "description": "JSON:API resource object for similarity search results."
+      },
+      "SimilaritySearchResultResource-Output": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "similarity-search-results"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimilaritySearchResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "SimilaritySearchResultResource",
+        "description": "JSON:API resource object for similarity search results."
+      },
+      "SimilaritySearchResultResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SimilaritySearchResultResource-Output"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimilaritySearchResultResponse",
+        "description": "JSON:API response for similarity search results."
       },
       "TierInfo": {
         "properties": {
@@ -15957,6 +19325,93 @@
         "title": "SimilaritySearchRequest",
         "description": "JSON:API request body for performing a similarity search."
       },
+      "src__fact_checking__monitored_channel_schemas__MonitoredChannelListResponse": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoredChannelResponse"
+            },
+            "type": "array",
+            "title": "Channels",
+            "description": "List of monitored channels"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total count of channels"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page",
+            "description": "Current page number",
+            "default": 1
+          },
+          "size": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Size",
+            "description": "Items per page",
+            "default": 20
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "channels",
+          "total"
+        ],
+        "title": "MonitoredChannelListResponse",
+        "description": "Schema for paginated list of monitored channels."
+      },
+      "src__fact_checking__monitored_channels_jsonapi_router__MonitoredChannelListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoredChannelResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "MonitoredChannelListResponse",
+        "description": "JSON:API response for a list of monitored channel resources."
+      },
       "src__fact_checking__previously_seen_jsonapi_router__PreviouslySeenCheckRequest": {
         "properties": {
           "data": {
@@ -16000,6 +19455,260 @@
         ],
         "title": "PreviouslySeenCheckRequest",
         "description": "Request to check for previously seen messages."
+      },
+      "src__notes__notes_jsonapi_router__NoteListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/NoteResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "NoteListResponse",
+        "description": "JSON:API response for a list of note resources."
+      },
+      "src__notes__requests_jsonapi_router__RequestListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RequestResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RequestListResponse",
+        "description": "JSON:API response for a list of request resources."
+      },
+      "src__notes__schemas__NoteListResponse": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/NoteResponse"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "notes",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "NoteListResponse"
+      },
+      "src__notes__schemas__RequestListResponse": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/RequestResponse"
+            },
+            "type": "array",
+            "title": "Requests"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "requests",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "RequestListResponse"
+      },
+      "src__notes__scoring_jsonapi_router__ScoringStatusResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ScoringStatusResource-Output"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ScoringStatusResponse",
+        "description": "JSON:API response for scoring status."
+      },
+      "src__notes__scoring_schemas__ScoringStatusResponse": {
+        "properties": {
+          "current_note_count": {
+            "type": "integer",
+            "title": "Current Note Count",
+            "description": "Current total number of notes in the system"
+          },
+          "active_tier": {
+            "$ref": "#/components/schemas/TierInfo",
+            "description": "Currently active scoring tier information"
+          },
+          "data_confidence": {
+            "$ref": "#/components/schemas/DataConfidence",
+            "description": "Confidence level in scoring results based on data volume"
+          },
+          "tier_thresholds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TierThreshold"
+            },
+            "type": "object",
+            "title": "Tier Thresholds",
+            "description": "Threshold information for all tiers"
+          },
+          "next_tier_upgrade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextTierInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Information about the next tier upgrade (null if at max tier)"
+          },
+          "performance_metrics": {
+            "$ref": "#/components/schemas/PerformanceMetrics",
+            "description": "Performance metrics for the scoring system"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "Any warnings about data quality or scoring limitations"
+          },
+          "configuration": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Configuration",
+            "description": "Current scoring configuration overrides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_note_count",
+          "active_tier",
+          "data_confidence",
+          "tier_thresholds",
+          "performance_metrics"
+        ],
+        "title": "ScoringStatusResponse"
       }
     },
     "securitySchemes": {
