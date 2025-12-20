@@ -1,4 +1,63 @@
 {
+  "NoteCreateAttributes": {
+    "properties": {
+      "summary": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Summary",
+        "description": "Note summary text"
+      },
+      "classification": {
+        "$ref": "#/components/schemas/NoteClassification",
+        "description": "Note classification"
+      },
+      "community_server_id": {
+        "type": "string",
+        "format": "uuid",
+        "title": "Community Server Id",
+        "description": "Community server ID"
+      },
+      "author_participant_id": {
+        "type": "string",
+        "title": "Author Participant Id",
+        "description": "Author's participant ID"
+      },
+      "channel_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Channel Id",
+        "description": "Discord channel ID"
+      },
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Request Id",
+        "description": "Request ID this note responds to"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "summary",
+      "classification",
+      "community_server_id",
+      "author_participant_id"
+    ],
+    "title": "NoteCreateAttributes",
+    "description": "Attributes for creating a note via JSON:API."
+  },
   "NoteResponse": {
     "properties": {
       "created_at": {
@@ -227,6 +286,65 @@
     ],
     "title": "NoteStatus"
   },
+  "NoteUpdateAttributes": {
+    "properties": {
+      "summary": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Summary",
+        "description": "Updated note summary"
+      },
+      "classification": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NoteClassification"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Updated classification"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "title": "NoteUpdateAttributes",
+    "description": "Attributes for updating a note via JSON:API."
+  },
+  "RatingCreateAttributes": {
+    "properties": {
+      "note_id": {
+        "type": "string",
+        "format": "uuid",
+        "title": "Note Id",
+        "description": "Note ID to rate"
+      },
+      "rater_participant_id": {
+        "type": "string",
+        "title": "Rater Participant Id",
+        "description": "Rater's participant ID"
+      },
+      "helpfulness_level": {
+        "$ref": "#/components/schemas/HelpfulnessLevel",
+        "description": "Rating level"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "note_id",
+      "rater_participant_id",
+      "helpfulness_level"
+    ],
+    "title": "RatingCreateAttributes",
+    "description": "Attributes for creating a rating via JSON:API."
+  },
   "RatingResponse": {
     "properties": {
       "created_at": {
@@ -302,6 +420,21 @@
       "helpfulnessLevel"
     ],
     "title": "RatingData"
+  },
+  "RatingUpdateAttributes": {
+    "properties": {
+      "helpfulness_level": {
+        "$ref": "#/components/schemas/HelpfulnessLevel",
+        "description": "Rating level"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "helpfulness_level"
+    ],
+    "title": "RatingUpdateAttributes",
+    "description": "Attributes for updating a rating via JSON:API."
   },
   "HelpfulnessLevel": {
     "type": "string",
@@ -919,5 +1052,170 @@
       "status"
     ],
     "title": "ServiceStatus"
+  },
+  "NoteCreate": {
+    "properties": {
+      "summary": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Summary",
+        "description": "Note summary text"
+      },
+      "classification": {
+        "$ref": "#/components/schemas/NoteClassification",
+        "description": "Note classification"
+      },
+      "community_server_id": {
+        "type": "string",
+        "format": "uuid",
+        "title": "Community Server Id",
+        "description": "Community server ID"
+      },
+      "author_participant_id": {
+        "type": "string",
+        "title": "Author Participant Id",
+        "description": "Author's participant ID"
+      },
+      "channel_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Channel Id",
+        "description": "Discord channel ID"
+      },
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Request Id",
+        "description": "Request ID this note responds to"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "summary",
+      "classification",
+      "community_server_id",
+      "author_participant_id"
+    ],
+    "title": "NoteCreateAttributes",
+    "description": "Attributes for creating a note via JSON:API."
+  },
+  "RatingCreate": {
+    "properties": {
+      "note_id": {
+        "type": "string",
+        "format": "uuid",
+        "title": "Note Id",
+        "description": "Note ID to rate"
+      },
+      "rater_participant_id": {
+        "type": "string",
+        "title": "Rater Participant Id",
+        "description": "Rater's participant ID"
+      },
+      "helpfulness_level": {
+        "$ref": "#/components/schemas/HelpfulnessLevel",
+        "description": "Rating level"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "note_id",
+      "rater_participant_id",
+      "helpfulness_level"
+    ],
+    "title": "RatingCreateAttributes",
+    "description": "Attributes for creating a rating via JSON:API."
+  },
+  "NoteUpdate": {
+    "properties": {
+      "summary": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Summary",
+        "description": "Updated note summary"
+      },
+      "classification": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NoteClassification"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Updated classification"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "title": "NoteUpdateAttributes",
+    "description": "Attributes for updating a note via JSON:API."
+  },
+  "RatingUpdate": {
+    "properties": {
+      "helpfulness_level": {
+        "$ref": "#/components/schemas/HelpfulnessLevel",
+        "description": "Rating level"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "helpfulness_level"
+    ],
+    "title": "RatingUpdateAttributes",
+    "description": "Attributes for updating a rating via JSON:API."
+  },
+  "NoteListResponse": {
+    "properties": {
+      "notes": {
+        "items": {
+          "$ref": "#/components/schemas/NoteResponse"
+        },
+        "type": "array",
+        "title": "Notes"
+      },
+      "total": {
+        "type": "integer",
+        "title": "Total"
+      },
+      "page": {
+        "type": "integer",
+        "title": "Page"
+      },
+      "size": {
+        "type": "integer",
+        "title": "Size"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "notes",
+      "total",
+      "page",
+      "size"
+    ],
+    "title": "NoteListResponse"
   }
 }
