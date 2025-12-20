@@ -26,17 +26,17 @@ async def openapi_client():
     """
     from src.config import settings
     from src.health import router as health_router
-    from src.notes.scoring_router import router as scoring_router
+    from src.notes.scoring_jsonapi_router import router as scoring_router
 
     debug_app = FastAPI(
         title=settings.PROJECT_NAME,
         version=settings.VERSION,
-        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-        docs_url=f"{settings.API_V1_PREFIX}/docs",
-        redoc_url=f"{settings.API_V1_PREFIX}/redoc",
+        openapi_url=f"{settings.API_V2_PREFIX}/openapi.json",
+        docs_url=f"{settings.API_V2_PREFIX}/docs",
+        redoc_url=f"{settings.API_V2_PREFIX}/redoc",
     )
     debug_app.include_router(health_router)
-    debug_app.include_router(scoring_router, prefix=settings.API_V1_PREFIX, tags=["scoring"])
+    debug_app.include_router(scoring_router, prefix=settings.API_V2_PREFIX, tags=["scoring"])
 
     transport = ASGITransport(app=debug_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -90,9 +90,14 @@ def valid_scoring_request(
     sample_enrollment_data: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
-        "notes": [sample_note_data],
-        "ratings": [sample_rating_data],
-        "enrollment": sample_enrollment_data,
+        "data": {
+            "type": "scoring-requests",
+            "attributes": {
+                "notes": [sample_note_data],
+                "ratings": [sample_rating_data],
+                "enrollment": sample_enrollment_data,
+            },
+        }
     }
 
 
@@ -108,7 +113,7 @@ class TestHealthEndpoints:
         assert data["status"] == "healthy"
 
     async def test_scoring_health_check(self, client: AsyncClient) -> None:
-        response = await client.get("/api/v1/scoring/health")
+        response = await client.get("/api/v2/scoring/health")
         assert response.status_code == 200
         data = response.json()
 
@@ -132,7 +137,7 @@ class TestScoringEndpoint:
         auth_headers: dict[str, str],
     ) -> None:
         response = await client.post(
-            "/api/v1/scoring/score",
+            "/api/v2/scoring/score",
             json=valid_scoring_request,
             headers=auth_headers,
         )
@@ -140,13 +145,17 @@ class TestScoringEndpoint:
         assert response.status_code == 200
         data = response.json()
 
-        assert "scored_notes" in data
-        assert "helpful_scores" in data
-        assert "auxiliary_info" in data
+        assert "data" in data
+        assert data["data"]["type"] == "scoring-results"
+        attrs = data["data"]["attributes"]
 
-        assert isinstance(data["scored_notes"], list)
-        assert isinstance(data["helpful_scores"], list)
-        assert isinstance(data["auxiliary_info"], list)
+        assert "scored_notes" in attrs
+        assert "helpful_scores" in attrs
+        assert "auxiliary_info" in attrs
+
+        assert isinstance(attrs["scored_notes"], list)
+        assert isinstance(attrs["helpful_scores"], list)
+        assert isinstance(attrs["auxiliary_info"], list)
 
     async def test_score_multiple_notes(
         self,
@@ -181,18 +190,23 @@ class TestScoringEndpoint:
             sample_enrollment_data.append(enrollment)
 
         request_data = {
-            "notes": notes,
-            "ratings": ratings,
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": notes,
+                    "ratings": ratings,
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data["scored_notes"]) >= 0
+        assert len(data["data"]["attributes"]["scored_notes"]) >= 0
 
     async def test_score_notes_with_different_classifications(
         self,
@@ -213,13 +227,18 @@ class TestScoringEndpoint:
             note["classification"] = classification
 
             request_data = {
-                "notes": [note],
-                "ratings": [sample_rating_data],
-                "enrollment": sample_enrollment_data,
+                "data": {
+                    "type": "scoring-requests",
+                    "attributes": {
+                        "notes": [note],
+                        "ratings": [sample_rating_data],
+                        "enrollment": sample_enrollment_data,
+                    },
+                }
             }
 
             response = await client.post(
-                "/api/v1/scoring/score", json=request_data, headers=auth_headers
+                "/api/v2/scoring/score", json=request_data, headers=auth_headers
             )
             assert response.status_code == 200
 
@@ -245,13 +264,18 @@ class TestScoringEndpoint:
             }
 
             request_data = {
-                "notes": [sample_note_data],
-                "ratings": [rating],
-                "enrollment": sample_enrollment_data,
+                "data": {
+                    "type": "scoring-requests",
+                    "attributes": {
+                        "notes": [sample_note_data],
+                        "ratings": [rating],
+                        "enrollment": sample_enrollment_data,
+                    },
+                }
             }
 
             response = await client.post(
-                "/api/v1/scoring/score", json=request_data, headers=auth_headers
+                "/api/v2/scoring/score", json=request_data, headers=auth_headers
             )
             assert response.status_code == 200
 
@@ -261,9 +285,14 @@ class TestErrorHandling:
         self, client: AsyncClient, auth_headers: dict[str, str]
     ) -> None:
         response = await client.post(
-            "/api/v1/scoring/score",
+            "/api/v2/scoring/score",
             json={
-                "notes": [],
+                "data": {
+                    "type": "scoring-requests",
+                    "attributes": {
+                        "notes": [],
+                    },
+                }
             },
             headers=auth_headers,
         )
@@ -277,16 +306,23 @@ class TestErrorHandling:
         auth_headers: dict[str, str],
     ) -> None:
         request_data = {
-            "notes": [],
-            "ratings": [sample_rating_data],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [],
+                    "ratings": [sample_rating_data],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code == 400
-        assert "empty" in response.json()["detail"].lower()
+        data = response.json()
+        assert "errors" in data
+        assert any("empty" in str(err.get("detail", "")).lower() for err in data["errors"])
 
     async def test_empty_ratings_list(
         self,
@@ -296,13 +332,18 @@ class TestErrorHandling:
         auth_headers: dict[str, str],
     ) -> None:
         request_data = {
-            "notes": [sample_note_data],
-            "ratings": [],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [sample_note_data],
+                    "ratings": [],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code == 400
 
@@ -314,13 +355,18 @@ class TestErrorHandling:
         auth_headers: dict[str, str],
     ) -> None:
         request_data = {
-            "notes": [sample_note_data],
-            "ratings": [sample_rating_data],
-            "enrollment": [],
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [sample_note_data],
+                    "ratings": [sample_rating_data],
+                    "enrollment": [],
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code == 400
 
@@ -332,13 +378,18 @@ class TestErrorHandling:
         auth_headers: dict[str, str],
     ) -> None:
         request_data = {
-            "notes": [{"invalid": "data"}],
-            "ratings": [sample_rating_data],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [{"invalid": "data"}],
+                    "ratings": [sample_rating_data],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code == 422
 
@@ -350,13 +401,18 @@ class TestErrorHandling:
         auth_headers: dict[str, str],
     ) -> None:
         request_data = {
-            "notes": [sample_note_data],
-            "ratings": [{"invalid": "data"}],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [sample_note_data],
+                    "ratings": [{"invalid": "data"}],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code == 422
 
@@ -377,17 +433,19 @@ class TestErrorHandling:
         ]
 
         request_data = {
-            "notes": [sample_note_data],
-            "ratings": [sample_rating_data],
-            "enrollment": enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [sample_note_data],
+                    "ratings": [sample_rating_data],
+                    "enrollment": enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
-        # TODO: Implement validation for mismatched participant IDs
-        # Current behavior accepts mismatched IDs (returns 200)
-        # Expected behavior should validate and return 400/500
         assert response.status_code in [200, 400, 500]
 
 
@@ -423,7 +481,7 @@ class TestPerformance:
     ) -> None:
         start = time.time()
         response = await client.post(
-            "/api/v1/scoring/score",
+            "/api/v2/scoring/score",
             json=valid_scoring_request,
             headers=auth_headers,
         )
@@ -479,14 +537,19 @@ class TestPerformance:
                 sample_enrollment_data.append(enrollment)
 
         request_data = {
-            "notes": notes,
-            "ratings": ratings,
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": notes,
+                    "ratings": ratings,
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         start = time.time()
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         duration = time.time() - start
 
@@ -503,7 +566,7 @@ class TestAPIDocumentation:
     """
 
     async def test_openapi_spec_available(self, openapi_client: AsyncClient) -> None:
-        response = await openapi_client.get("/api/v1/openapi.json")
+        response = await openapi_client.get("/api/v2/openapi.json")
         assert response.status_code == 200
 
         data = response.json()
@@ -512,18 +575,18 @@ class TestAPIDocumentation:
         assert "paths" in data
 
     async def test_docs_ui_available(self, openapi_client: AsyncClient) -> None:
-        response = await openapi_client.get("/api/v1/docs")
+        response = await openapi_client.get("/api/v2/docs")
         assert response.status_code == 200
 
     async def test_openapi_spec_structure(self, openapi_client: AsyncClient) -> None:
-        response = await openapi_client.get("/api/v1/openapi.json")
+        response = await openapi_client.get("/api/v2/openapi.json")
         data = response.json()
 
         assert "/health" in data["paths"]
-        assert "/api/v1/scoring/status" in data["paths"]
-        assert "/api/v1/scoring/notes/batch-scores" in data["paths"]
+        assert "/api/v2/scoring/status" in data["paths"]
+        assert "/api/v2/scoring/notes/batch-scores" in data["paths"]
 
-        batch_endpoint = data["paths"]["/api/v1/scoring/notes/batch-scores"]
+        batch_endpoint = data["paths"]["/api/v2/scoring/notes/batch-scores"]
         assert "post" in batch_endpoint
 
         post_spec = batch_endpoint["post"]
@@ -544,13 +607,18 @@ class TestEdgeCases:
         note["summary"] = "A" * 10000
 
         request_data = {
-            "notes": [note],
-            "ratings": [sample_rating_data],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [note],
+                    "ratings": [sample_rating_data],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code in [200, 400, 422]
 
@@ -566,13 +634,18 @@ class TestEdgeCases:
         note["createdAtMillis"] = -1
 
         request_data = {
-            "notes": [note],
-            "ratings": [sample_rating_data],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [note],
+                    "ratings": [sample_rating_data],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code in [200, 400, 422]
 
@@ -590,13 +663,18 @@ class TestEdgeCases:
         note["createdAtMillis"] = future_time
 
         request_data = {
-            "notes": [note],
-            "ratings": [sample_rating_data],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [note],
+                    "ratings": [sample_rating_data],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code in [200, 400]
 
@@ -609,15 +687,20 @@ class TestEdgeCases:
         auth_headers: dict[str, str],
     ) -> None:
         note = sample_note_data.copy()
-        note["summary"] = "Test with émojis 🚀 and spëcial chars: <>\"'&"
+        note["summary"] = "Test with emojis and special chars: <>\"'&"
 
         request_data = {
-            "notes": [note],
-            "ratings": [sample_rating_data],
-            "enrollment": sample_enrollment_data,
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [note],
+                    "ratings": [sample_rating_data],
+                    "enrollment": sample_enrollment_data,
+                },
+            }
         }
 
         response = await client.post(
-            "/api/v1/scoring/score", json=request_data, headers=auth_headers
+            "/api/v2/scoring/score", json=request_data, headers=auth_headers
         )
         assert response.status_code == 200

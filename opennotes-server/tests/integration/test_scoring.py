@@ -23,18 +23,18 @@ async def openapi_client():
     """
     from src.config import settings
     from src.health import router as health_router
-    from src.notes.scoring_router import router as scoring_router
+    from src.notes.scoring_jsonapi_router import router as scoring_router
 
     debug_app = FastAPI(
         title=settings.PROJECT_NAME,
         version=settings.VERSION,
-        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-        docs_url=f"{settings.API_V1_PREFIX}/docs",
-        redoc_url=f"{settings.API_V1_PREFIX}/redoc",
+        openapi_url=f"{settings.API_V2_PREFIX}/openapi.json",
+        docs_url=f"{settings.API_V2_PREFIX}/docs",
+        redoc_url=f"{settings.API_V2_PREFIX}/redoc",
     )
     debug_app.include_router(health_router)
     debug_app.include_router(
-        scoring_router, prefix=f"{settings.API_V1_PREFIX}/scoring", tags=["scoring"]
+        scoring_router, prefix=f"{settings.API_V2_PREFIX}/scoring", tags=["scoring"]
     )
 
     transport = ASGITransport(app=debug_app)
@@ -48,11 +48,10 @@ async def test_health_check(client: AsyncClient) -> None:
     data = response.json()
     assert data["status"] == "healthy"
     assert "version" in data
-    # environment field may not always be present in test mode
 
 
 async def test_scoring_health(client: AsyncClient) -> None:
-    response = await client.get("/api/v1/scoring/health")
+    response = await client.get("/api/v2/scoring/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
@@ -63,10 +62,15 @@ async def test_score_notes_missing_fields(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     response = await client.post(
-        "/api/v1/scoring/score",
+        "/api/v2/scoring/score",
         json={
-            "notes": [],
-            "ratings": [],
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [],
+                    "ratings": [],
+                },
+            }
         },
         headers=auth_headers,
     )
@@ -75,78 +79,93 @@ async def test_score_notes_missing_fields(
 
 async def test_score_notes_empty_lists(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     response = await client.post(
-        "/api/v1/scoring/score",
+        "/api/v2/scoring/score",
         json={
-            "notes": [],
-            "ratings": [],
-            "enrollment": [],
+            "data": {
+                "type": "scoring-requests",
+                "attributes": {
+                    "notes": [],
+                    "ratings": [],
+                    "enrollment": [],
+                },
+            }
         },
         headers=auth_headers,
     )
     assert response.status_code == 400
-    assert "empty" in response.json()["detail"].lower()
+    data = response.json()
+    assert "errors" in data
+    assert any("empty" in str(err.get("detail", "")).lower() for err in data["errors"])
 
 
 async def test_score_notes_valid_minimal(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     request_data = {
-        "notes": [
-            {
-                "noteId": 1,
-                "noteAuthorParticipantId": "author1",
-                "createdAtMillis": 1234567890,
-                "tweetId": "100",
-                "summary": "Test note",
-                "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
-            }
-        ],
-        "ratings": [
-            {
-                "raterParticipantId": "rater1",
-                "noteId": 1,
-                "createdAtMillis": 1234567900,
-                "helpfulnessLevel": "HELPFUL",
-            }
-        ],
-        "enrollment": [
-            {
-                "participantId": "author1",
-                "enrollmentState": "EARNED_IN",
-                "successfulRatingNeededToEarnIn": 0,
-                "timestampOfLastStateChange": 1234567890,
+        "data": {
+            "type": "scoring-requests",
+            "attributes": {
+                "notes": [
+                    {
+                        "noteId": 1,
+                        "noteAuthorParticipantId": "author1",
+                        "createdAtMillis": 1234567890,
+                        "tweetId": "100",
+                        "summary": "Test note",
+                        "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
+                    }
+                ],
+                "ratings": [
+                    {
+                        "raterParticipantId": "rater1",
+                        "noteId": 1,
+                        "createdAtMillis": 1234567900,
+                        "helpfulnessLevel": "HELPFUL",
+                    }
+                ],
+                "enrollment": [
+                    {
+                        "participantId": "author1",
+                        "enrollmentState": "EARNED_IN",
+                        "successfulRatingNeededToEarnIn": 0,
+                        "timestampOfLastStateChange": 1234567890,
+                    },
+                    {
+                        "participantId": "rater1",
+                        "enrollmentState": "EARNED_IN",
+                        "successfulRatingNeededToEarnIn": 0,
+                        "timestampOfLastStateChange": 1234567890,
+                    },
+                ],
             },
-            {
-                "participantId": "rater1",
-                "enrollmentState": "EARNED_IN",
-                "successfulRatingNeededToEarnIn": 0,
-                "timestampOfLastStateChange": 1234567890,
-            },
-        ],
+        }
     }
 
-    response = await client.post("/api/v1/scoring/score", json=request_data, headers=auth_headers)
+    response = await client.post("/api/v2/scoring/score", json=request_data, headers=auth_headers)
 
     if response.status_code != 200:
         print(f"Error response: {response.json()}")
 
     assert response.status_code == 200
     data = response.json()
-    assert "scored_notes" in data
-    assert "helpful_scores" in data
-    assert "auxiliary_info" in data
-    assert isinstance(data["scored_notes"], list)
-    assert isinstance(data["helpful_scores"], list)
-    assert isinstance(data["auxiliary_info"], list)
+    assert "data" in data
+    assert data["data"]["type"] == "scoring-results"
+    attrs = data["data"]["attributes"]
+    assert "scored_notes" in attrs
+    assert "helpful_scores" in attrs
+    assert "auxiliary_info" in attrs
+    assert isinstance(attrs["scored_notes"], list)
+    assert isinstance(attrs["helpful_scores"], list)
+    assert isinstance(attrs["auxiliary_info"], list)
 
 
 async def test_openapi_docs_available_in_debug(openapi_client: AsyncClient) -> None:
     """Test OpenAPI docs UI is available when enabled."""
-    response = await openapi_client.get("/api/v1/docs")
+    response = await openapi_client.get("/api/v2/docs")
     assert response.status_code == 200
 
 
 async def test_openapi_spec_available_in_debug(openapi_client: AsyncClient) -> None:
     """Test OpenAPI JSON spec is available when enabled."""
-    response = await openapi_client.get("/api/v1/openapi.json")
+    response = await openapi_client.get("/api/v2/openapi.json")
     assert response.status_code == 200
     data = response.json()
     assert "openapi" in data
