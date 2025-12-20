@@ -22,7 +22,6 @@ from src.database import close_db, get_session_maker, init_db
 from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
-from src.fact_checking.embedding_router import router as embedding_router
 from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import (
     router as embeddings_jsonapi_router,
@@ -30,14 +29,12 @@ from src.fact_checking.embeddings_jsonapi_router import (
 from src.fact_checking.hybrid_searches_jsonapi_router import (
     router as hybrid_searches_jsonapi_router,
 )
-from src.fact_checking.monitored_channel_router import router as monitored_channel_router
 from src.fact_checking.monitored_channels_jsonapi_router import (
     router as monitored_channels_jsonapi_router,
 )
 from src.fact_checking.previously_seen_jsonapi_router import (
     router as previously_seen_jsonapi_router,
 )
-from src.fact_checking.previously_seen_router import router as previously_seen_router
 from src.health import router as health_router
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
@@ -64,15 +61,11 @@ from src.monitoring.health import ComponentHealth, HealthStatus
 from src.notes.note_publisher_jsonapi_router import (
     router as note_publisher_jsonapi_router,
 )
-from src.notes.note_publisher_router import router as note_publisher_router
 from src.notes.notes_jsonapi_router import router as jsonapi_notes_router
 from src.notes.ratings_jsonapi_router import router as ratings_jsonapi_router
 from src.notes.requests_jsonapi_router import router as requests_jsonapi_router
-from src.notes.requests_router import router as requests_router
 from src.notes.scoring_jsonapi_router import router as scoring_jsonapi_router
-from src.notes.scoring_router import router as scoring_router
 from src.notes.stats_jsonapi_router import router as stats_jsonapi_router
-from src.notes.stats_router import router as stats_router
 from src.services.ai_note_writer import AINoteWriter
 from src.services.vision_service import VisionService
 from src.startup_validation import run_startup_checks
@@ -417,19 +410,12 @@ app.include_router(
 )
 
 # API v1 routes
-app.include_router(requests_router, prefix=settings.API_V1_PREFIX, tags=["requests"])
-app.include_router(stats_router, prefix=settings.API_V1_PREFIX, tags=["stats"])
-app.include_router(scoring_router, prefix=settings.API_V1_PREFIX)
-app.include_router(note_publisher_router, prefix=settings.API_V1_PREFIX)
 app.include_router(webhook_router, prefix=settings.API_V1_PREFIX)
 app.include_router(config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_servers_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_admin_router, prefix=settings.API_V1_PREFIX)
 app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
-app.include_router(monitored_channel_router, prefix=settings.API_V1_PREFIX)
-app.include_router(embedding_router, prefix=settings.API_V1_PREFIX)
-app.include_router(previously_seen_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes
 app.include_router(health_router)

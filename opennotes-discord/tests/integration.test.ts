@@ -250,9 +250,15 @@ describe('End-to-End Integration Tests', () => {
       const communityServerId = '550e8400-e29b-41d4-a716-446655440000';
 
       const mockScoringResponse = {
-        scored_notes: [],
-        helpful_scores: [],
-        auxiliary_info: [],
+        data: {
+          type: 'scoring-results',
+          id: 'result-1',
+          attributes: {
+            scored_notes: [],
+            helpful_scores: [],
+            auxiliary_info: [],
+          }
+        }
       };
 
       mockFetch

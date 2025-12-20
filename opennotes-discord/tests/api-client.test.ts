@@ -712,15 +712,21 @@ describe('ApiClient Wrapper', () => {
       enrollment: [],
     };
 
-    const mockResponse = {
-      scored_notes: [],
-      helpful_scores: [],
-      auxiliary_info: [],
+    const mockJsonApiResponse = {
+      data: {
+        type: 'scoring-results',
+        id: 'result-1',
+        attributes: {
+          scored_notes: [],
+          helpful_scores: [],
+          auxiliary_info: [],
+        }
+      }
     };
 
     it('should successfully score notes', async () => {
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(mockResponse), {
+        new Response(JSON.stringify(mockJsonApiResponse), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -728,15 +734,18 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.scoreNotes(mockRequest);
 
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual({
+        scored_notes: [],
+        helpful_scores: [],
+        auxiliary_info: [],
+      });
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/scoring/score',
+        'http://localhost:8000/api/v2/scoring/score',
         expect.objectContaining({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(mockRequest),
         })
       );
     });

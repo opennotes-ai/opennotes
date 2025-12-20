@@ -1,15 +1,17 @@
-import { ApiClient } from '../lib/api-client.js';
+import {
+  ApiClient,
+  NoteScoreResponse,
+  TopNotesResponse,
+  ScoringStatusResponse,
+  ScoreConfidence,
+  BatchScoreResponse,
+} from '../lib/api-client.js';
 import { cache } from '../cache.js';
-import type { components } from '../lib/generated-types.js';
 import { logger } from '../logger.js';
 import { getErrorMessage, getStatusCode, hasStatusCode } from '../utils/error-handlers.js';
 import { isValidUUID } from '../lib/validation.js';
 
-export type NoteScoreResponse = components['schemas']['NoteScoreResponse'];
-export type TopNotesResponse = components['schemas']['TopNotesResponse'];
-export type ScoringStatusResponse = components['schemas']['ScoringStatusResponse'];
-export type ScoreConfidence = components['schemas']['ScoreConfidence'];
-export type BatchScoreResponse = components['schemas']['BatchScoreResponse'];
+export type { NoteScoreResponse, TopNotesResponse, ScoringStatusResponse, ScoreConfidence, BatchScoreResponse };
 
 export interface TopNotesParams {
   limit?: number;

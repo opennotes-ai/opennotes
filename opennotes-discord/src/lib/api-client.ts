@@ -25,51 +25,215 @@ import { logger } from '../logger.js';
 import { getIdentityToken, isRunningOnGCP } from '../utils/gcp-auth.js';
 import { createDiscordClaimsToken } from '../utils/discord-claims.js';
 
-// Server API types from generated OpenAPI schema
-export type NoteResponse = components['schemas']['NoteResponse'];
-export type RatingResponse = components['schemas']['RatingResponse'];
-export type RequestResponse = components['schemas']['RequestResponse'];
-export type RequestCreate = components['schemas']['RequestCreate'];
-export type RequestListResponse = components['schemas']['RequestListResponse'];
+// Types from generated OpenAPI schema (these still exist)
 export type NoteStatus = components['schemas']['NoteStatus'];
+export type NoteClassification = components['schemas']['NoteClassification'];
+export type HelpfulnessLevel = components['schemas']['HelpfulnessLevel'];
+export type RequestStatus = components['schemas']['RequestStatus'];
+export type ScoreConfidence = components['schemas']['ScoreConfidence'];
+export type RatingThresholdsResponse = components['schemas']['RatingThresholdsResponse'];
+export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
+export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
+export type AddCommunityAdminRequest = components['schemas']['AddCommunityAdminRequest'];
+export type CommunityAdminResponse = components['schemas']['CommunityAdminResponse'];
+export type RemoveCommunityAdminResponse = components['schemas']['RemoveCommunityAdminResponse'];
 
-// NoteListResponse: Local type for the transformed JSON:API list response
-// This was previously exported from the server schemas but is now handled via JSON:API
+// Local type definitions for API responses (flattened from JSON:API)
+// These were previously in the server's v1 routers but are now reconstructed from JSON:API responses
+
+export interface NoteResponse {
+  id: string;
+  summary: string;
+  classification: NoteClassification;
+  status: NoteStatus;
+  helpfulness_score: number;
+  author_participant_id: string;
+  community_server_id: string;
+  channel_id: string | null;
+  request_id: string | null;
+  ratings_count: number;
+  force_published: boolean;
+  force_published_by: string | null;
+  force_published_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+  ratings: RatingResponse[];
+  request: RequestInfo | null;
+}
+
+export interface RatingResponse {
+  id: string;
+  note_id: string;
+  rater_participant_id: string;
+  helpfulness_level: HelpfulnessLevel;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface RequestResponse {
+  id: string;
+  request_id: string;
+  requested_by: string;
+  status: RequestStatus;
+  note_id?: string;
+  community_server_id: string;
+  requested_at: string;
+  created_at: string;
+  updated_at?: string;
+  platform_message_id?: string;
+  content?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RequestInfo {
+  request_id: string;
+  content?: string | null;
+  requested_by: string;
+  requested_at: string;
+}
+
+export interface RequestListResponse {
+  requests: RequestResponse[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface NoteListResponse {
   notes: NoteResponse[];
   total: number;
   page: number;
   size: number;
 }
-export type RatingThresholdsResponse = components['schemas']['RatingThresholdsResponse'];
-export type ScoringRequest = components['schemas']['ScoringRequest'];
-export type ScoringResponse = components['schemas']['ScoringResponse'];
-export type NoteScoreResponse = components['schemas']['NoteScoreResponse'];
-export type TopNotesResponse = components['schemas']['TopNotesResponse'];
-export type ScoringStatusResponse = components['schemas']['ScoringStatusResponse'];
-export type ScoreConfidence = components['schemas']['ScoreConfidence'];
-export type BatchScoreRequest = components['schemas']['BatchScoreRequest'];
-export type BatchScoreResponse = components['schemas']['BatchScoreResponse'];
-export type MonitoredChannelResponse = components['schemas']['MonitoredChannelResponse'];
-export type MonitoredChannelCreate = components['schemas']['MonitoredChannelCreate'];
-export type MonitoredChannelUpdate = components['schemas']['MonitoredChannelUpdate'];
-export type MonitoredChannelListResponse = components['schemas']['MonitoredChannelListResponse'];
-export type SimilaritySearchRequest = components['schemas']['src__fact_checking__embeddings_jsonapi_router__SimilaritySearchRequest'];
-export type SimilaritySearchResponse = components['schemas']['SimilaritySearchResponse'];
-export type FactCheckMatch = components['schemas']['FactCheckMatch'];
-export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
-export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
-export type AddCommunityAdminRequest = components['schemas']['AddCommunityAdminRequest'];
-export type CommunityAdminResponse = components['schemas']['CommunityAdminResponse'];
-export type RemoveCommunityAdminResponse = components['schemas']['RemoveCommunityAdminResponse'];
-export type PreviouslySeenCheckRequest = components['schemas']['src__fact_checking__previously_seen_jsonapi_router__PreviouslySeenCheckRequest'];
-export type PreviouslySeenCheckResponse = components['schemas']['PreviouslySeenCheckResponse'];
-export type PreviouslySeenMessageMatch = components['schemas']['PreviouslySeenMessageMatch'];
-export type NotePublisherRecordRequest = components['schemas']['NotePublisherRecordRequest'];
-export type NotePublisherConfigRequest = components['schemas']['NotePublisherConfigRequest'];
-export type NotePublisherConfigResponse = components['schemas']['NotePublisherConfigResponse'];
-export type DuplicateCheckResponse = components['schemas']['DuplicateCheckResponse'];
-export type LastPostResponse = components['schemas']['LastPostResponse'];
+
+export type NoteData = components['schemas']['NoteData'];
+export type RatingData = components['schemas']['RatingData'];
+export type EnrollmentData = components['schemas']['EnrollmentData'];
+
+export interface ScoringRequest {
+  notes: NoteData[];
+  ratings: RatingData[];
+  enrollment: EnrollmentData[];
+  status?: Record<string, unknown>[] | null;
+}
+
+export interface ScoringResponse {
+  scored_notes: Record<string, unknown>[];
+  helpful_scores: Record<string, unknown>[];
+  auxiliary_info: Record<string, unknown>[];
+}
+
+export interface NoteScoreResponse {
+  note_id: string;
+  score: number;
+  confidence: ScoreConfidence;
+  algorithm: string;
+  rating_count: number;
+  tier: number;
+  tier_name: string;
+  calculated_at?: string;
+  content?: string;
+}
+
+export interface TopNotesResponse {
+  notes: NoteScoreResponse[];
+  total_count: number;
+  current_tier: number;
+  filters_applied?: Record<string, unknown>;
+}
+
+export interface ScoringStatusResponse {
+  current_note_count: number;
+  active_tier: {
+    level: number;
+    name: string;
+    scorer_components: string[];
+  };
+  data_confidence: ScoreConfidence;
+  tier_thresholds: Record<string, {
+    min: number;
+    max: number | null;
+    current: boolean;
+  }>;
+  next_tier_upgrade?: {
+    tier: string;
+    notes_needed: number;
+    notes_to_upgrade: number;
+  };
+  performance_metrics: {
+    avg_scoring_time_ms: number;
+    last_scoring_time_ms?: number | null;
+    scorer_success_rate: number;
+    total_scoring_operations: number;
+    failed_scoring_operations: number;
+  };
+  warnings: string[];
+  configuration: Record<string, unknown>;
+}
+
+export interface BatchScoreResponse {
+  scores: Record<string, NoteScoreResponse>;
+  total_requested: number;
+  total_found: number;
+  not_found: string[];
+}
+
+export interface MonitoredChannelCreate {
+  community_server_id: string;
+  channel_id: string;
+  enabled?: boolean;
+  similarity_threshold?: number;
+  dataset_tags?: string[];
+  updated_by?: string | null;
+}
+
+export interface MonitoredChannelUpdate {
+  enabled?: boolean;
+  similarity_threshold?: number;
+  dataset_tags?: string[];
+  previously_seen_autopublish_threshold?: number | null;
+  previously_seen_autorequest_threshold?: number | null;
+  updated_by?: string;
+}
+
+export interface SimilaritySearchResponse {
+  matches: FactCheckMatch[];
+  query_text: string;
+  dataset_tags: string[];
+  similarity_threshold: number;
+  rrf_score_threshold: number;
+  total_matches: number;
+}
+
+export interface FactCheckMatch {
+  id: string;
+  dataset_name: string;
+  dataset_tags: string[];
+  title: string;
+  content: string;
+  summary: string | null;
+  rating: string | null;
+  source_url: string | null;
+  published_date: string | null;
+  author: string | null;
+  embedding_provider: string | null;
+  embedding_model: string | null;
+  similarity_score: number;
+}
+
+export interface NotePublisherRecordRequest {
+  noteId: string;
+  originalMessageId: string;
+  channelId: string;
+  guildId: string;
+  scoreAtPost: number;
+  confidenceAtPost: string;
+  success: boolean;
+  errorMessage?: string | null;
+  messageEmbedding?: unknown;
+  embeddingProvider?: string | null;
+  embeddingModel?: string | null;
+}
 
 // Bulk scan types from generated OpenAPI schema
 export type LatestScanResponse = components['schemas']['LatestScanResponse'];
@@ -337,6 +501,13 @@ export interface SimilaritySearchResultAttributes {
   total_matches: number;
 }
 
+// Type for scoring result attributes in JSON:API v2 response
+export interface ScoringResultAttributes {
+  scored_notes: { [key: string]: unknown }[];
+  helpful_scores: { [key: string]: unknown }[];
+  auxiliary_info: { [key: string]: unknown }[];
+}
+
 // Extended type for note publisher config response that allows null id
 export interface NotePublisherConfigResponseExtended {
   id: string | null;
@@ -404,6 +575,12 @@ export interface PreviouslySeenCheckResponseExtended {
   matches: PreviouslySeenMatchExtended[];
   topMatch?: PreviouslySeenMatchExtended | null;
 }
+
+// Type alias for backward compatibility
+export type PreviouslySeenCheckResponse = PreviouslySeenCheckResponseExtended;
+
+// Type alias for monitored channel response
+export type MonitoredChannelResponse = MonitoredChannelResponseExtended;
 
 export interface ApiClientConfig {
   serverUrl: string;
@@ -886,10 +1063,21 @@ export class ApiClient {
   async scoreNotes(request: ScoringRequest): Promise<ScoringResponse> {
     validateScoringRequest(request);
 
-    const response = await this.fetchWithRetry<ScoringResponse>('/api/v1/scoring/score', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
+    const jsonApiRequest = this.buildJSONAPIRequestBody('scoring-requests', request);
+
+    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<ScoringResultAttributes>>(
+      '/api/v2/scoring/score',
+      {
+        method: 'POST',
+        body: JSON.stringify(jsonApiRequest),
+      }
+    );
+
+    const response: ScoringResponse = {
+      scored_notes: jsonApiResponse.data.attributes.scored_notes,
+      helpful_scores: jsonApiResponse.data.attributes.helpful_scores,
+      auxiliary_info: jsonApiResponse.data.attributes.auxiliary_info,
+    };
 
     validateScoringResponse(response);
     return response;
@@ -1131,10 +1319,37 @@ export class ApiClient {
   }
 
   async generateAiNote(requestId: string, context?: UserContext): Promise<NoteResponse> {
-    const endpoint = `/api/v1/requests/${encodeURIComponent(requestId)}/generate-ai-note`;
-    const response = await this.fetchWithRetry<NoteResponse>(endpoint, {
-      method: 'POST',
-    }, 1, context);
+    const endpoint = `/api/v2/requests/${encodeURIComponent(requestId)}/ai-notes`;
+
+    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<NoteAttributes>>(
+      endpoint,
+      {
+        method: 'POST',
+      },
+      1,
+      context
+    );
+
+    const response: NoteResponse = {
+      id: jsonApiResponse.data.id,
+      summary: jsonApiResponse.data.attributes.summary,
+      classification: jsonApiResponse.data.attributes.classification as components['schemas']['NoteClassification'],
+      status: jsonApiResponse.data.attributes.status,
+      helpfulness_score: jsonApiResponse.data.attributes.helpfulness_score,
+      author_participant_id: jsonApiResponse.data.attributes.author_participant_id,
+      community_server_id: jsonApiResponse.data.attributes.community_server_id,
+      channel_id: jsonApiResponse.data.attributes.channel_id ?? null,
+      request_id: jsonApiResponse.data.attributes.request_id ?? null,
+      ratings_count: jsonApiResponse.data.attributes.ratings_count,
+      force_published: jsonApiResponse.data.attributes.force_published,
+      force_published_by: null,
+      force_published_at: jsonApiResponse.data.attributes.force_published_at ?? null,
+      created_at: jsonApiResponse.data.attributes.created_at,
+      updated_at: jsonApiResponse.data.attributes.updated_at ?? null,
+      ratings: [],
+      request: null,
+    };
+
     validateNoteResponse(response);
     return response;
   }
@@ -1394,7 +1609,7 @@ export class ApiClient {
     return {
       current_note_count: jsonApiResponse.data.attributes.current_note_count,
       active_tier: jsonApiResponse.data.attributes.active_tier,
-      data_confidence: jsonApiResponse.data.attributes.data_confidence as components['schemas']['DataConfidence'],
+      data_confidence: jsonApiResponse.data.attributes.data_confidence as ScoreConfidence,
       tier_thresholds: jsonApiResponse.data.attributes.tier_thresholds,
       next_tier_upgrade: jsonApiResponse.data.attributes.next_tier_upgrade ?? undefined,
       performance_metrics: jsonApiResponse.data.attributes.performance_metrics,

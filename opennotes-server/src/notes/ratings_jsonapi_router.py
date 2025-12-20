@@ -43,7 +43,7 @@ from src.notes import loaders
 from src.notes.models import Note, Rating
 from src.notes.schemas import HelpfulnessLevel
 from src.notes.scoring import ScorerFactory
-from src.notes.scoring_router import calculate_note_score
+from src.notes.scoring_utils import calculate_note_score
 from src.users.models import User
 
 logger = get_logger(__name__)
