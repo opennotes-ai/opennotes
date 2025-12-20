@@ -26,7 +26,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, exists, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,7 +57,14 @@ from src.monitoring import get_logger
 from src.notes import loaders
 from src.notes.message_archive_models import MessageArchive
 from src.notes.models import Note, Rating, Request
-from src.notes.schemas import NoteClassification, NoteStatus
+from src.notes.schemas import (
+    NoteClassification,
+    NoteJSONAPIAttributes,
+    NoteListResponse,
+    NoteResource,
+    NoteSingleResponse,
+    NoteStatus,
+)
 from src.users.models import User
 
 logger = get_logger(__name__)
@@ -110,55 +117,6 @@ class NoteUpdateRequest(BaseModel):
     data: NoteUpdateData
 
 
-class NoteAttributes(BaseModel):
-    """Note attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    author_participant_id: str
-    channel_id: str | None = None
-    summary: str
-    classification: str
-    helpfulness_score: int = 0
-    status: str = "NEEDS_MORE_RATINGS"
-    ai_generated: bool = False
-    ai_provider: str | None = None
-    force_published: bool = False
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    request_id: str | None = None
-    platform_message_id: str | None = None
-
-
-class NoteResource(BaseModel):
-    """JSON:API resource object for a note."""
-
-    type: str = "notes"
-    id: str
-    attributes: NoteAttributes
-
-
-class NoteListResponse(BaseModel):
-    """JSON:API response for a list of note resources."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    data: list[NoteResource]
-    jsonapi: dict[str, str] = {"version": "1.1"}
-    links: JSONAPILinks | None = None
-    meta: JSONAPIMeta | None = None
-
-
-class NoteSingleResponse(BaseModel):
-    """JSON:API response for a single note resource."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    data: NoteResource
-    jsonapi: dict[str, str] = {"version": "1.1"}
-    links: JSONAPILinks | None = None
-
-
 def note_to_resource(note: Note) -> NoteResource:
     """Convert a Note model to a JSON:API resource object."""
     platform_message_id = None
@@ -168,7 +126,7 @@ def note_to_resource(note: Note) -> NoteResource:
     return NoteResource(
         type="notes",
         id=str(note.id),
-        attributes=NoteAttributes(
+        attributes=NoteJSONAPIAttributes(
             author_participant_id=note.author_participant_id,
             channel_id=note.channel_id,
             summary=note.summary,
@@ -178,10 +136,13 @@ def note_to_resource(note: Note) -> NoteResource:
             ai_generated=note.ai_generated,
             ai_provider=note.ai_provider,
             force_published=note.force_published,
+            force_published_at=note.force_published_at,
             created_at=note.created_at,
             updated_at=note.updated_at,
             request_id=note.request_id,
             platform_message_id=platform_message_id,
+            ratings_count=len(note.ratings) if note.ratings else 0,
+            community_server_id=str(note.community_server_id) if note.community_server_id else None,
         ),
     )
 

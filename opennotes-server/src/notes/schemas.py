@@ -9,6 +9,7 @@ from src.common.base_schemas import (
     StrictInputSchema,
     TimestampSchema,
 )
+from src.common.jsonapi import JSONAPILinks, JSONAPIMeta
 
 
 class NoteClassification(str, PyEnum):
@@ -143,13 +144,57 @@ class NoteResponse(NoteInDB):
         return len(self.ratings)
 
 
-class NoteListResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+# JSON:API Response schemas for notes
+class NoteJSONAPIAttributes(BaseModel):
+    """Note attributes for JSON:API resource."""
 
-    notes: list[NoteResponse]
-    total: int
-    page: int
-    size: int
+    model_config = ConfigDict(from_attributes=True)
+
+    author_participant_id: str
+    channel_id: str | None = None
+    summary: str
+    classification: str
+    helpfulness_score: int = 0
+    status: str = "NEEDS_MORE_RATINGS"
+    ai_generated: bool = False
+    ai_provider: str | None = None
+    force_published: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    request_id: str | None = None
+    platform_message_id: str | None = None
+    force_published_at: datetime | None = None
+    ratings_count: int = 0
+    community_server_id: str | None = None
+
+
+class NoteResource(BaseModel):
+    """JSON:API resource object for a note."""
+
+    type: str = "notes"
+    id: str
+    attributes: NoteJSONAPIAttributes
+
+
+class NoteListResponse(BaseModel):
+    """JSON:API response for a list of note resources."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: list[NoteResource]
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+    meta: JSONAPIMeta | None = None
+
+
+class NoteSingleResponse(BaseModel):
+    """JSON:API response for a single note resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: NoteResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
 
 
 # Rating schemas
