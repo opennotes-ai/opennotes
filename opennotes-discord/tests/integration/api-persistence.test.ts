@@ -221,15 +221,11 @@ describe('API Persistence Integration Tests', () => {
       expect(sentBody.data.attributes).toHaveProperty('summary', createRequest.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
 
-      expect(result).toEqual({
-        id: 'note-789',
-        messageId: createRequest.messageId,
-        authorId: createRequest.authorId,
-        content: createRequest.content,
-        createdAt: expect.any(Number),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      expect(result.data.id).toBe('note-789');
+      expect(result.data.type).toBe('notes');
+      expect(result.data.attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(result.data.attributes.summary).toBe(createRequest.content);
+      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
 
       mockFetch.mockClear();
 
@@ -290,10 +286,9 @@ describe('API Persistence Integration Tests', () => {
       }));
 
       const created = await client1.createNote(createRequest, { userId: 'author-001', guildId: 'guild-123' });
-      expect(created.id).toBe('note-cross-client-001');
-      expect(created.messageId).toBe(createRequest.messageId);
-      expect(created.authorId).toBe(createRequest.authorId);
-      expect(created.content).toBe(createRequest.content);
+      expect(created.data.id).toBe('note-cross-client-001');
+      expect(created.data.attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(created.data.attributes.summary).toBe(createRequest.content);
 
       mockFetch.mockClear();
 
@@ -776,15 +771,11 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.createNote(request, { userId: 'user-retry', guildId: 'guild-123' });
 
-      expect(result).toEqual({
-        id: 'note-retry-success',
-        messageId: request.messageId,
-        authorId: request.authorId,
-        content: request.content,
-        createdAt: expect.any(Number),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      expect(result.data.id).toBe('note-retry-success');
+      expect(result.data.type).toBe('notes');
+      expect(result.data.attributes.author_participant_id).toBe(request.authorId);
+      expect(result.data.attributes.summary).toBe(request.content);
+      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
@@ -1001,8 +992,8 @@ describe('API Persistence Integration Tests', () => {
       const result1 = await client1.createNote(note1Request, { userId: 'author-1', guildId: 'guild-123' });
       const result2 = await client2.createNote(note2Request, { userId: 'author-2', guildId: 'guild-123' });
 
-      expect(result1.id).toBe('note-concurrent-001');
-      expect(result2.id).toBe('note-concurrent-002');
+      expect(result1.data.id).toBe('note-concurrent-001');
+      expect(result2.data.id).toBe('note-concurrent-002');
       expect(mockFetch).toHaveBeenCalledTimes(4);
     });
 
@@ -1105,10 +1096,10 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.createNote(request, { userId: 'author-validation', guildId: 'guild-123' });
 
-      expect(result.authorId).toBe(request.authorId);
-      expect(result.content).toBe(request.content);
-      expect(result.id).toBeTruthy();
-      expect(result.createdAt).toBeGreaterThan(0);
+      expect(result.data.attributes.author_participant_id).toBe(request.authorId);
+      expect(result.data.attributes.summary).toBe(request.content);
+      expect(result.data.id).toBeTruthy();
+      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
     });
 
     it('should verify rating data integrity', async () => {

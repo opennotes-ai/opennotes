@@ -122,11 +122,13 @@ export class DiscordFormatter {
     flags: number;
   } {
     const messageIdDisplay = this.formatMessageIdLink(messageId, guildId, channelId);
+    const noteId = result.note.data.id;
+    const attrs = result.note.data.attributes;
 
     const metadataLines = [
       `**Message ID:** ${messageIdDisplay}`,
-      `**Author:** <@${result.note.authorId}>`,
-      `**Note ID:** ${result.note.id}`,
+      `**Author:** <@${attrs.author_participant_id}>`,
+      `**Note ID:** ${noteId}`,
     ];
 
     const container = createContainer(V2_COLORS.HELPFUL)
@@ -135,7 +137,7 @@ export class DiscordFormatter {
       )
       .addSeparatorComponents(createSmallSeparator())
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(result.note.content)
+        new TextDisplayBuilder().setContent(attrs.summary)
       )
       .addSeparatorComponents(createDivider())
       .addTextDisplayComponents(
@@ -327,7 +329,7 @@ export class DiscordFormatter {
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent([
           `**Note ID:** ${noteId}`,
-          `**Rated by:** <@${result.rating.userId}>`,
+          `**Rated by:** <@${result.rating.data.attributes.rater_participant_id}>`,
         ].join('\n'))
       );
 

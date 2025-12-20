@@ -181,18 +181,14 @@ describe('End-to-End Integration Tests', () => {
         channelId: 'channel123',
       });
 
-      expect(note).toEqual({
-        id: '550e8400-e29b-41d4-a716-446655440001',
-        messageId,
-        authorId: 'user456',
-        content: 'This is a test community note',
-        createdAt: expect.any(Number),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      expect(note.data.id).toBe('550e8400-e29b-41d4-a716-446655440001');
+      expect(note.data.type).toBe('notes');
+      expect(note.data.attributes.summary).toBe('This is a test community note');
+      expect(note.data.attributes.author_participant_id).toBe('user456');
+      expect(note.data.attributes.created_at).toBeDefined();
 
       const rating = await apiClient.rateNote({
-        noteId: note.id,
+        noteId: note.data.id,
         userId: 'rater789',
         helpful: true,
       });
@@ -305,42 +301,44 @@ describe('End-to-End Integration Tests', () => {
       });
 
       const rating = await apiClient.rateNote({
-        noteId: note.id,
+        noteId: note.data.id,
         userId: 'rater-001',
         helpful: true,
       });
 
+      const noteCreatedAtMillis = new Date(note.data.attributes.created_at).getTime();
+      const ratingCreatedAtMillis = new Date(rating.data.attributes.created_at).getTime();
       const scoringRequest = {
         notes: [
           {
-            noteId: parseInt(note.id.split('-')[1]) || 456,
-            noteAuthorParticipantId: note.authorId,
-            createdAtMillis: note.createdAt,
+            noteId: parseInt(note.data.id.split('-')[1]) || 456,
+            noteAuthorParticipantId: note.data.attributes.author_participant_id,
+            createdAtMillis: noteCreatedAtMillis,
             tweetId: 234567890123456790,
-            summary: note.content,
+            summary: note.data.attributes.summary,
             classification: 'NOT_MISLEADING',
           },
         ],
         ratings: [
           {
-            raterParticipantId: rating.userId,
-            noteId: parseInt(note.id.split('-')[1]) || 456,
-            createdAtMillis: rating.createdAt,
-            helpfulnessLevel: rating.helpful ? 'HELPFUL' : 'NOT_HELPFUL',
+            raterParticipantId: rating.data.attributes.rater_participant_id,
+            noteId: parseInt(note.data.id.split('-')[1]) || 456,
+            createdAtMillis: ratingCreatedAtMillis,
+            helpfulnessLevel: rating.data.attributes.helpfulness_level,
           },
         ],
         enrollment: [
           {
-            participantId: note.authorId,
+            participantId: note.data.attributes.author_participant_id,
             enrollmentState: 'EARNED_IN',
             successfulRatingNeededToEarnIn: 0,
-            timestampOfLastStateChange: note.createdAt,
+            timestampOfLastStateChange: noteCreatedAtMillis,
           },
           {
-            participantId: rating.userId,
+            participantId: rating.data.attributes.rater_participant_id,
             enrollmentState: 'EARNED_IN',
             successfulRatingNeededToEarnIn: 0,
-            timestampOfLastStateChange: rating.createdAt,
+            timestampOfLastStateChange: ratingCreatedAtMillis,
           },
         ],
       };
@@ -443,9 +441,9 @@ describe('End-to-End Integration Tests', () => {
       expect(notes).toHaveLength(5);
       notes.forEach((note) => {
         expect(note).toBeDefined();
-        expect(note.messageId).toBeDefined();
-        expect(typeof note.messageId).toBe('string');
-        expect(note.id).toBeDefined();
+        expect(note.data).toBeDefined();
+        expect(note.data.id).toBeDefined();
+        expect(typeof note.data.id).toBe('string');
       });
     });
 

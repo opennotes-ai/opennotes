@@ -485,7 +485,7 @@ export class MessageMonitorService {
       const replyContent = [
         `🔁 **Previously Published Note** (${(topMatch.similarity_score * 100).toFixed(1)}% match)`,
         '',
-        note.summary || 'No content available',
+        note.data.attributes.summary || 'No content available',
         '',
         `*This note was automatically republished because it closely matches a previously seen message.*`,
       ].join('\n');

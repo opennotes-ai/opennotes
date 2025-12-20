@@ -1,4 +1,5 @@
-import { Note, Rating, RequestItem, RequestStatus } from '../lib/types.js';
+import { Note, RequestItem, RequestStatus } from '../lib/types.js';
+import type { NoteJSONAPIResponse, RatingJSONAPIResponse } from '../lib/api-client.js';
 
 export interface ServiceResult<T> {
   success: boolean;
@@ -33,7 +34,7 @@ export interface WriteNoteInput {
 }
 
 export interface WriteNoteResult {
-  note: Note;
+  note: NoteJSONAPIResponse;
 }
 
 export interface ViewNotesInput {
@@ -55,7 +56,7 @@ export interface RateNoteInput {
 }
 
 export interface RateNoteResult {
-  rating: Rating;
+  rating: RatingJSONAPIResponse;
 }
 
 export interface RequestNoteInput {

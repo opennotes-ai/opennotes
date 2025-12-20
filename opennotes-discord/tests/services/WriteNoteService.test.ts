@@ -1,8 +1,39 @@
 import { jest } from '@jest/globals';
 import { WriteNoteService } from '../../src/services/WriteNoteService.js';
-import { ApiClient } from '../../src/lib/api-client.js';
+import { ApiClient, type NoteJSONAPIResponse } from '../../src/lib/api-client.js';
 import type { RateLimiterInterface } from '../../src/services/RateLimitFactory.js';
 import { ErrorCode } from '../../src/services/types.js';
+
+function createMockNoteJSONAPIResponse(overrides: {
+  id?: string;
+  summary?: string;
+  authorId?: string;
+} = {}): NoteJSONAPIResponse {
+  return {
+    data: {
+      type: 'notes',
+      id: overrides.id ?? '1',
+      attributes: {
+        summary: overrides.summary ?? 'Test note content',
+        classification: 'NOT_MISLEADING',
+        status: 'NEEDS_MORE_RATINGS',
+        helpfulness_score: 0,
+        author_participant_id: overrides.authorId ?? 'user-123',
+        community_server_id: 'test-community-server-id',
+        channel_id: null,
+        request_id: null,
+        ratings_count: 0,
+        force_published: false,
+        force_published_at: null,
+        ai_generated: false,
+        ai_provider: null,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
 
 // Mock the logger
 jest.mock('../../src/logger.js', () => ({
@@ -151,15 +182,9 @@ describe('WriteNoteService', () => {
         resetAt: Date.now() + 60000,
       });
 
-      mockApiClient.createNote.mockResolvedValue({
-        id: '1',
-        messageId: 'msg-123',
-        authorId: 'user-123',
-        content: '1234567890',
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      mockApiClient.createNote.mockResolvedValue(
+        createMockNoteJSONAPIResponse({ summary: '1234567890' })
+      );
 
       const result = await service.execute({
         messageId: 'msg-123',
@@ -192,15 +217,9 @@ describe('WriteNoteService', () => {
       });
 
       const maxContent = 'a'.repeat(1000);
-      mockApiClient.createNote.mockResolvedValue({
-        id: '1',
-        messageId: 'msg-123',
-        authorId: 'user-123',
-        content: maxContent,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      mockApiClient.createNote.mockResolvedValue(
+        createMockNoteJSONAPIResponse({ summary: maxContent })
+      );
 
       const result = await service.execute({
         messageId: 'msg-123',
@@ -222,15 +241,11 @@ describe('WriteNoteService', () => {
     });
 
     it('should create note with required fields only', async () => {
-      const mockNote = {
+      const mockNote = createMockNoteJSONAPIResponse({
         id: '1',
-        messageId: 'msg-123',
+        summary: 'This is a valid note content',
         authorId: 'user-123',
-        content: 'This is a valid note content',
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      };
+      });
       mockApiClient.createNote.mockResolvedValue(mockNote);
 
       const result = await service.execute({
@@ -262,15 +277,11 @@ describe('WriteNoteService', () => {
     });
 
     it('should create note with all optional fields', async () => {
-      const mockNote = {
+      const mockNote = createMockNoteJSONAPIResponse({
         id: '1',
-        messageId: 'msg-123',
+        summary: 'This is a valid note content',
         authorId: 'user-123',
-        content: 'This is a valid note content',
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      };
+      });
       mockApiClient.createNote.mockResolvedValue(mockNote);
 
       const result = await service.execute({
@@ -313,15 +324,13 @@ describe('WriteNoteService', () => {
         resetAt: Date.now() + 60000,
       });
 
-      mockApiClient.createNote.mockResolvedValue({
-        id: '1',
-        messageId: 'msg-123',
-        authorId: 'user-123',
-        content: 'This is a valid note content',
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      mockApiClient.createNote.mockResolvedValue(
+        createMockNoteJSONAPIResponse({
+          id: '1',
+          summary: 'This is a valid note content',
+          authorId: 'user-123',
+        })
+      );
     });
 
     it('should successfully create note with channelId and guildId', async () => {
@@ -334,7 +343,7 @@ describe('WriteNoteService', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.data?.note.id).toBe('1');
+      expect(result.data?.note.data.id).toBe('1');
     });
 
     it('should successfully create note without channelId', async () => {
@@ -346,7 +355,7 @@ describe('WriteNoteService', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.data?.note.id).toBe('1');
+      expect(result.data?.note.data.id).toBe('1');
     });
 
     it('should successfully create note without guildId', async () => {
@@ -358,11 +367,10 @@ describe('WriteNoteService', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.data?.note.id).toBe('1');
+      expect(result.data?.note.data.id).toBe('1');
     });
 
     it('should create note even if context storage would fail', async () => {
-      // Note creation should succeed regardless of context storage
       const result = await service.execute({
         messageId: 'msg-123',
         authorId: 'user-123',
@@ -372,7 +380,7 @@ describe('WriteNoteService', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.data?.note.id).toBe('1');
+      expect(result.data?.note.data.id).toBe('1');
     });
   });
 
@@ -466,15 +474,9 @@ describe('WriteNoteService', () => {
 
     it('should handle special characters in content', async () => {
       const specialContent = 'This note has special chars: @#$%^&*()_+-={}[]|:;"<>?,./';
-      mockApiClient.createNote.mockResolvedValue({
-        id: '1',
-        messageId: 'msg-123',
-        authorId: 'user-123',
-        content: specialContent,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      mockApiClient.createNote.mockResolvedValue(
+        createMockNoteJSONAPIResponse({ summary: specialContent })
+      );
 
       const result = await service.execute({
         messageId: 'msg-123',
@@ -487,15 +489,9 @@ describe('WriteNoteService', () => {
 
     it('should handle unicode characters in content', async () => {
       const unicodeContent = 'This note has unicode: 你好 🌟 émojis';
-      mockApiClient.createNote.mockResolvedValue({
-        id: '1',
-        messageId: 'msg-123',
-        authorId: 'user-123',
-        content: unicodeContent,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      mockApiClient.createNote.mockResolvedValue(
+        createMockNoteJSONAPIResponse({ summary: unicodeContent })
+      );
 
       const result = await service.execute({
         messageId: 'msg-123',
@@ -508,15 +504,9 @@ describe('WriteNoteService', () => {
 
     it('should handle newlines in content', async () => {
       const multilineContent = 'Line 1\nLine 2\nLine 3 with enough chars';
-      mockApiClient.createNote.mockResolvedValue({
-        id: '1',
-        messageId: 'msg-123',
-        authorId: 'user-123',
-        content: multilineContent,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      mockApiClient.createNote.mockResolvedValue(
+        createMockNoteJSONAPIResponse({ summary: multilineContent })
+      );
 
       const result = await service.execute({
         messageId: 'msg-123',

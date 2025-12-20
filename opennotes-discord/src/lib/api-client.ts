@@ -1,7 +1,6 @@
 import type { components } from './generated-types.js';
 import {
   Note,
-  Rating,
   NoteRequest,
   CreateNoteRequest,
   CreateRatingRequest,
@@ -25,21 +24,24 @@ import { logger } from '../logger.js';
 import { getIdentityToken, isRunningOnGCP } from '../utils/gcp-auth.js';
 import { createDiscordClaimsToken } from '../utils/discord-claims.js';
 
-// Types from generated OpenAPI schema (these still exist)
+// Types from generated OpenAPI schema
 export type NoteStatus = components['schemas']['NoteStatus'];
 export type NoteClassification = components['schemas']['NoteClassification'];
 export type HelpfulnessLevel = components['schemas']['HelpfulnessLevel'];
 export type RequestStatus = components['schemas']['RequestStatus'];
 export type ScoreConfidence = components['schemas']['ScoreConfidence'];
 export type RatingThresholdsResponse = components['schemas']['RatingThresholdsResponse'];
-export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
-export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
+export type NoteData = components['schemas']['NoteData'];
+export type RatingData = components['schemas']['RatingData'];
+export type EnrollmentData = components['schemas']['EnrollmentData'];
 export type AddCommunityAdminRequest = components['schemas']['AddCommunityAdminRequest'];
 export type CommunityAdminResponse = components['schemas']['CommunityAdminResponse'];
 export type RemoveCommunityAdminResponse = components['schemas']['RemoveCommunityAdminResponse'];
+export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
+export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
 
 // Local type definitions for API responses (flattened from JSON:API)
-// These were previously in the server's v1 routers but are now reconstructed from JSON:API responses
+// These are used by services that expect flattened structures
 
 export interface NoteResponse {
   id: string;
@@ -105,10 +107,6 @@ export interface NoteListResponse {
   page: number;
   size: number;
 }
-
-export type NoteData = components['schemas']['NoteData'];
-export type RatingData = components['schemas']['RatingData'];
-export type EnrollmentData = components['schemas']['EnrollmentData'];
 
 export interface ScoringRequest {
   notes: NoteData[];
@@ -324,6 +322,17 @@ export interface NoteAttributes {
   updated_at?: string | null;
 }
 
+// JSONAPI response types for notes - these are the raw structures from the server
+export type NoteJSONAPIResponse = JSONAPISingleResponse<NoteAttributes>;
+export type NoteListJSONAPIResponse = JSONAPIListResponse<NoteAttributes>;
+
+// Extended list response with pagination info preserved from API
+export interface NoteListJSONAPIResponseWithPagination extends NoteListJSONAPIResponse {
+  total: number;
+  page: number;
+  size: number;
+}
+
 // Type for community server attributes in JSON:API response
 export interface CommunityServerAttributes {
   platform: string;
@@ -344,6 +353,10 @@ export interface RatingAttributes {
   created_at?: string | null;
   updated_at?: string | null;
 }
+
+// JSONAPI response types for ratings - these are the raw structures from the server
+export type RatingJSONAPIResponse = JSONAPISingleResponse<RatingAttributes>;
+export type RatingListJSONAPIResponse = JSONAPIListResponse<RatingAttributes>;
 
 // Type for request attributes in JSON:API response
 export interface RequestAttributes {
@@ -1102,33 +1115,11 @@ export class ApiClient {
     }));
   }
 
-  async getNote(noteId: string): Promise<NoteResponse> {
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<NoteAttributes>>(
-      `/api/v2/notes/${noteId}`
-    );
-
-    return {
-      id: jsonApiResponse.data.id,
-      summary: jsonApiResponse.data.attributes.summary,
-      classification: jsonApiResponse.data.attributes.classification as components['schemas']['NoteClassification'],
-      status: jsonApiResponse.data.attributes.status,
-      helpfulness_score: jsonApiResponse.data.attributes.helpfulness_score,
-      author_participant_id: jsonApiResponse.data.attributes.author_participant_id,
-      community_server_id: jsonApiResponse.data.attributes.community_server_id,
-      channel_id: jsonApiResponse.data.attributes.channel_id ?? null,
-      request_id: jsonApiResponse.data.attributes.request_id ?? null,
-      ratings_count: jsonApiResponse.data.attributes.ratings_count,
-      force_published: jsonApiResponse.data.attributes.force_published,
-      force_published_by: null,
-      force_published_at: jsonApiResponse.data.attributes.force_published_at ?? null,
-      created_at: jsonApiResponse.data.attributes.created_at,
-      updated_at: jsonApiResponse.data.attributes.updated_at ?? null,
-      ratings: [],
-      request: null,
-    };
+  async getNote(noteId: string): Promise<NoteJSONAPIResponse> {
+    return this.fetchWithRetry<NoteJSONAPIResponse>(`/api/v2/notes/${noteId}`);
   }
 
-  async createNote(request: CreateNoteRequest, context?: UserContext): Promise<Note> {
+  async createNote(request: CreateNoteRequest, context?: UserContext): Promise<NoteJSONAPIResponse> {
     let community_server_id: string | undefined;
     if (context?.guildId) {
       try {
@@ -1160,7 +1151,7 @@ export class ApiClient {
 
     const jsonApiRequest = this.buildJSONAPIRequestBody('notes', noteAttributes);
 
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<NoteAttributes>>(
+    return this.fetchWithRetry<NoteJSONAPIResponse>(
       '/api/v2/notes',
       {
         method: 'POST',
@@ -1169,19 +1160,9 @@ export class ApiClient {
       1,
       context
     );
-
-    return {
-      id: jsonApiResponse.data.id,
-      messageId: request.messageId,
-      authorId: jsonApiResponse.data.attributes.author_participant_id,
-      content: jsonApiResponse.data.attributes.summary,
-      createdAt: new Date(jsonApiResponse.data.attributes.created_at).getTime(),
-      helpfulCount: 0,
-      notHelpfulCount: 0,
-    };
   }
 
-  async rateNote(request: CreateRatingRequest, context?: UserContext): Promise<Rating> {
+  async rateNote(request: CreateRatingRequest, context?: UserContext): Promise<RatingJSONAPIResponse> {
     const ratingAttributes = {
       note_id: request.noteId,
       rater_participant_id: request.userId,
@@ -1192,7 +1173,7 @@ export class ApiClient {
 
     const jsonApiRequest = this.buildJSONAPIRequestBody('ratings', ratingAttributes);
 
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<RatingAttributes>>(
+    return await this.fetchWithRetry<RatingJSONAPIResponse>(
       '/api/v2/ratings',
       {
         method: 'POST',
@@ -1201,15 +1182,6 @@ export class ApiClient {
       1,
       context
     );
-
-    return {
-      noteId: jsonApiResponse.data.attributes.note_id,
-      userId: jsonApiResponse.data.attributes.rater_participant_id,
-      helpful: jsonApiResponse.data.attributes.helpfulness_level === 'HELPFUL',
-      createdAt: jsonApiResponse.data.attributes.created_at
-        ? new Date(jsonApiResponse.data.attributes.created_at).getTime()
-        : Date.now(),
-    };
   }
 
   async requestNote(request: NoteRequest, context?: UserContext): Promise<void> {
@@ -1387,7 +1359,7 @@ export class ApiClient {
     communityServerId?: string,
     excludeRatedByParticipantId?: string,
     context?: UserContext
-  ): Promise<NoteListResponse> {
+  ): Promise<NoteListJSONAPIResponseWithPagination> {
     const params = new URLSearchParams();
     params.append('page[number]', page.toString());
     params.append('page[size]', size.toString());
@@ -1399,74 +1371,35 @@ export class ApiClient {
       params.append('filter[rated_by_participant_id__not_in]', excludeRatedByParticipantId);
     }
 
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPIListResponse<NoteAttributes>>(
+    const jsonApiResponse = await this.fetchWithRetry<NoteListJSONAPIResponse>(
       `/api/v2/notes?${params.toString()}`,
       {},
       1,
       context
     );
 
-    const response = this.transformJSONAPINoteListResponse(jsonApiResponse, page, size);
-    validateNoteListResponse(response);
-    return response;
-  }
-
-  private transformJSONAPINoteListResponse(
-    jsonApiResponse: JSONAPIListResponse<NoteAttributes>,
-    page: number,
-    size: number
-  ): NoteListResponse {
-    const notes: NoteResponse[] = jsonApiResponse.data.map((resource) => ({
-      id: resource.id,
-      summary: resource.attributes.summary,
-      classification: resource.attributes.classification as components['schemas']['NoteClassification'],
-      status: resource.attributes.status,
-      helpfulness_score: resource.attributes.helpfulness_score,
-      author_participant_id: resource.attributes.author_participant_id,
-      community_server_id: resource.attributes.community_server_id,
-      channel_id: resource.attributes.channel_id ?? null,
-      request_id: resource.attributes.request_id ?? null,
-      ratings_count: resource.attributes.ratings_count,
-      force_published: resource.attributes.force_published,
-      force_published_by: null,
-      force_published_at: resource.attributes.force_published_at ?? null,
-      created_at: resource.attributes.created_at,
-      updated_at: resource.attributes.updated_at ?? null,
-      ratings: [],
-      request: null,
-    }));
-
     return {
-      notes,
-      total: jsonApiResponse.meta?.count ?? notes.length,
+      ...jsonApiResponse,
+      total: jsonApiResponse.meta?.count ?? jsonApiResponse.data.length,
       page,
       size,
     };
   }
 
-  async getRatingsForNote(noteId: string): Promise<RatingResponse[]> {
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPIListResponse<RatingAttributes>>(
+  async getRatingsForNote(noteId: string): Promise<RatingListJSONAPIResponse> {
+    return await this.fetchWithRetry<RatingListJSONAPIResponse>(
       `/api/v2/notes/${noteId}/ratings`
     );
-
-    return jsonApiResponse.data.map((resource) => ({
-      id: resource.id,
-      note_id: resource.attributes.note_id,
-      rater_participant_id: resource.attributes.rater_participant_id,
-      helpfulness_level: resource.attributes.helpfulness_level as components['schemas']['HelpfulnessLevel'],
-      created_at: resource.attributes.created_at ?? new Date().toISOString(),
-      updated_at: resource.attributes.updated_at ?? undefined,
-    }));
   }
 
-  async updateRating(ratingId: string, helpful: boolean, context?: UserContext): Promise<Rating> {
+  async updateRating(ratingId: string, helpful: boolean, context?: UserContext): Promise<RatingJSONAPIResponse> {
     const updateAttributes = {
       helpfulness_level: helpful ? 'HELPFUL' : 'NOT_HELPFUL',
     };
 
     const jsonApiRequest = this.buildJSONAPIUpdateBody('ratings', ratingId, updateAttributes);
 
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<RatingAttributes>>(
+    return await this.fetchWithRetry<RatingJSONAPIResponse>(
       `/api/v2/ratings/${ratingId}`,
       {
         method: 'PUT',
@@ -1475,15 +1408,6 @@ export class ApiClient {
       1,
       context
     );
-
-    return {
-      noteId: jsonApiResponse.data.attributes.note_id,
-      userId: jsonApiResponse.data.attributes.rater_participant_id,
-      helpful: jsonApiResponse.data.attributes.helpfulness_level === 'HELPFUL',
-      createdAt: jsonApiResponse.data.attributes.created_at
-        ? new Date(jsonApiResponse.data.attributes.created_at).getTime()
-        : Date.now(),
-    };
   }
 
   async getGuildConfig(guildId: string): Promise<Record<string, unknown>> {
@@ -1868,8 +1792,8 @@ export class ApiClient {
     return true;
   }
 
-  async forcePublishNote(noteId: string, context?: UserContext): Promise<NoteResponse> {
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<NoteAttributes>>(
+  async forcePublishNote(noteId: string, context?: UserContext): Promise<NoteJSONAPIResponse> {
+    return this.fetchWithRetry<NoteJSONAPIResponse>(
       `/api/v2/notes/${noteId}/force-publish`,
       {
         method: 'POST',
@@ -1877,26 +1801,6 @@ export class ApiClient {
       1,
       context
     );
-
-    return {
-      id: jsonApiResponse.data.id,
-      summary: jsonApiResponse.data.attributes.summary,
-      classification: jsonApiResponse.data.attributes.classification as components['schemas']['NoteClassification'],
-      status: jsonApiResponse.data.attributes.status,
-      helpfulness_score: jsonApiResponse.data.attributes.helpfulness_score,
-      author_participant_id: jsonApiResponse.data.attributes.author_participant_id,
-      community_server_id: jsonApiResponse.data.attributes.community_server_id,
-      channel_id: jsonApiResponse.data.attributes.channel_id ?? null,
-      request_id: jsonApiResponse.data.attributes.request_id ?? null,
-      ratings_count: jsonApiResponse.data.attributes.ratings_count,
-      force_published: jsonApiResponse.data.attributes.force_published,
-      force_published_by: null,
-      force_published_at: jsonApiResponse.data.attributes.force_published_at ?? null,
-      created_at: jsonApiResponse.data.attributes.created_at,
-      updated_at: jsonApiResponse.data.attributes.updated_at ?? null,
-      ratings: [],
-      request: null,
-    };
   }
 
   async addCommunityAdmin(
@@ -2374,6 +2278,37 @@ export class ApiClient {
         matched_claim: item.attributes.matched_claim,
         matched_source: item.attributes.matched_source,
       })),
+    };
+  }
+
+  private transformJSONAPINoteListResponse(
+    jsonApiResponse: JSONAPIListResponse<NoteAttributes>,
+    page: number,
+    size: number
+  ): NoteListResponse {
+    return {
+      notes: jsonApiResponse.data.map((resource) => ({
+        id: resource.id,
+        summary: resource.attributes.summary,
+        classification: resource.attributes.classification as NoteClassification,
+        status: resource.attributes.status,
+        helpfulness_score: resource.attributes.helpfulness_score,
+        author_participant_id: resource.attributes.author_participant_id,
+        community_server_id: resource.attributes.community_server_id,
+        channel_id: resource.attributes.channel_id ?? null,
+        request_id: resource.attributes.request_id ?? null,
+        ratings_count: resource.attributes.ratings_count,
+        force_published: resource.attributes.force_published,
+        force_published_by: null,
+        force_published_at: resource.attributes.force_published_at ?? null,
+        created_at: resource.attributes.created_at,
+        updated_at: resource.attributes.updated_at ?? null,
+        ratings: [],
+        request: null,
+      })),
+      total: jsonApiResponse.meta?.count ?? jsonApiResponse.data.length,
+      page,
+      size,
     };
   }
 }

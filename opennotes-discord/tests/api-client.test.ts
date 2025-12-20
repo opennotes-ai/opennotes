@@ -936,13 +936,23 @@ describe('ApiClient Wrapper', () => {
       });
 
       expect(result).toEqual({
-        id: '789',
-        messageId: '123456789012345678',
-        authorId: 'user-456',
-        content: 'Test note content',
-        createdAt: new Date('2025-10-31T16:00:00Z').getTime(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
+        data: {
+          type: 'notes',
+          id: '789',
+          attributes: {
+            author_participant_id: 'user-456',
+            community_server_id: '123e4567-e89b-12d3-a456-426614174000',
+            summary: 'Test note content',
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            created_at: '2025-10-31T16:00:00Z',
+            updated_at: '2025-10-31T16:00:00Z',
+            ratings_count: 0,
+            force_published: false,
+          },
+        },
+        jsonapi: { version: '1.1' },
       });
 
       expect(mockFetch).toHaveBeenNthCalledWith(
@@ -999,12 +1009,11 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.rateNote(request);
 
-      expect(result).toEqual({
-        noteId: '550e8400-e29b-41d4-a716-446655440000',
-        userId: 'user-456',
-        helpful: true,
-        createdAt: new Date('2025-10-23T12:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('1');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440000');
+      expect(result.data.attributes.rater_participant_id).toBe('user-456');
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/ratings',
@@ -1063,12 +1072,11 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.rateNote(request);
 
-      expect(result).toEqual({
-        noteId: '660e8400-e29b-41d4-a716-446655440001',
-        userId: 'user-789',
-        helpful: false,
-        createdAt: new Date('2025-10-23T13:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('2');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('660e8400-e29b-41d4-a716-446655440001');
+      expect(result.data.attributes.rater_participant_id).toBe('user-789');
+      expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
 
       const fetchCall = mockFetch.mock.calls[0];
       const fetchInit = fetchCall?.[1] as RequestInit | undefined;
@@ -1116,12 +1124,11 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.updateRating(ratingId, helpful);
 
-      expect(result).toEqual({
-        noteId: '123',
-        userId: 'user-456',
-        helpful: true,
-        createdAt: new Date('2025-10-23T12:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('1');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('123');
+      expect(result.data.attributes.rater_participant_id).toBe('user-456');
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/ratings/1',
@@ -1176,12 +1183,11 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.updateRating(ratingId, helpful);
 
-      expect(result).toEqual({
-        noteId: '456',
-        userId: 'user-789',
-        helpful: false,
-        createdAt: new Date('2025-10-23T13:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('2');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('456');
+      expect(result.data.attributes.rater_participant_id).toBe('user-789');
+      expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
     });
   });
 
@@ -1226,24 +1232,14 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.getRatingsForNote(noteId);
 
-      expect(result).toEqual([
-        {
-          id: '1',
-          note_id: '123',
-          rater_participant_id: 'user-456',
-          helpfulness_level: 'HELPFUL',
-          created_at: '2025-10-23T12:00:00Z',
-          updated_at: '2025-10-23T12:00:00Z',
-        },
-        {
-          id: '2',
-          note_id: '123',
-          rater_participant_id: 'user-789',
-          helpfulness_level: 'NOT_HELPFUL',
-          created_at: '2025-10-23T13:00:00Z',
-          updated_at: '2025-10-23T13:00:00Z',
-        },
-      ]);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].id).toBe('1');
+      expect(result.data[0].type).toBe('ratings');
+      expect(result.data[0].attributes.note_id).toBe('123');
+      expect(result.data[0].attributes.rater_participant_id).toBe('user-456');
+      expect(result.data[0].attributes.helpfulness_level).toBe('HELPFUL');
+      expect(result.data[1].id).toBe('2');
+      expect(result.data[1].attributes.helpfulness_level).toBe('NOT_HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes/123/ratings',
@@ -1272,7 +1268,7 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.getRatingsForNote(noteId);
 
-      expect(result).toEqual([]);
+      expect(result.data).toEqual([]);
     });
   });
 

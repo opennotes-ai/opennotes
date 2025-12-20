@@ -95,19 +95,19 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getNote('550e8400-e29b-41d4-a716-446655440000');
 
-        expect(result.id).toBe('550e8400-e29b-41d4-a716-446655440000');
-        expect(result.summary).toBe('This is a test note summary');
-        expect(result.classification).toBe('NOT_MISLEADING');
-        expect(result.status).toBe('NEEDS_MORE_RATINGS');
-        expect(result.helpfulness_score).toBe(0.75);
-        expect(result.author_participant_id).toBe('participant-123');
-        expect(result.community_server_id).toBe('server-456');
-        expect(result.channel_id).toBe('channel-789');
-        expect(result.request_id).toBe('req-001');
-        expect(result.ratings_count).toBe(5);
-        expect(result.force_published).toBe(false);
-        expect(result.created_at).toBe('2025-01-15T10:30:00Z');
-        expect(result.updated_at).toBe('2025-01-15T11:00:00Z');
+        expect(result.data.id).toBe('550e8400-e29b-41d4-a716-446655440000');
+        expect(result.data.attributes.summary).toBe('This is a test note summary');
+        expect(result.data.attributes.classification).toBe('NOT_MISLEADING');
+        expect(result.data.attributes.status).toBe('NEEDS_MORE_RATINGS');
+        expect(result.data.attributes.helpfulness_score).toBe(0.75);
+        expect(result.data.attributes.author_participant_id).toBe('participant-123');
+        expect(result.data.attributes.community_server_id).toBe('server-456');
+        expect(result.data.attributes.channel_id).toBe('channel-789');
+        expect(result.data.attributes.request_id).toBe('req-001');
+        expect(result.data.attributes.ratings_count).toBe(5);
+        expect(result.data.attributes.force_published).toBe(false);
+        expect(result.data.attributes.created_at).toBe('2025-01-15T10:30:00Z');
+        expect(result.data.attributes.updated_at).toBe('2025-01-15T11:00:00Z');
       });
 
       it('handles note with null optional fields', async () => {
@@ -146,10 +146,10 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getNote('note-minimal');
 
-        expect(result.id).toBe('note-minimal');
-        expect(result.channel_id).toBeNull();
-        expect(result.request_id).toBeNull();
-        expect(result.updated_at).toBeNull();
+        expect(result.data.id).toBe('note-minimal');
+        expect(result.data.attributes.channel_id).toBeNull();
+        expect(result.data.attributes.request_id).toBeNull();
+        expect(result.data.attributes.updated_at).toBeNull();
       });
     });
 
@@ -222,9 +222,10 @@ describe('JSON:API Response Parsing', () => {
         });
         const after = Date.now();
 
-        expect(result.helpful).toBe(false);
-        expect(result.createdAt).toBeGreaterThanOrEqual(before);
-        expect(result.createdAt).toBeLessThanOrEqual(after);
+        expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
+        const createdAtMillis = new Date(result.data.attributes.created_at).getTime();
+        expect(createdAtMillis).toBeGreaterThanOrEqual(before);
+        expect(createdAtMillis).toBeLessThanOrEqual(after);
       });
     });
 
@@ -484,16 +485,16 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.listNotesWithStatus('NEEDS_MORE_RATINGS', 1, 20, 'server-1');
 
-        expect(result.notes).toHaveLength(2);
+        expect(result.data).toHaveLength(2);
         expect(result.total).toBe(45);
         expect(result.page).toBe(1);
         expect(result.size).toBe(20);
 
-        expect(result.notes[0]!.id).toBe('note-1');
-        expect(result.notes[0]!.summary).toBe('First note');
-        expect(result.notes[1]!.id).toBe('note-2');
-        expect(result.notes[1]!.summary).toBe('Second note');
-        expect(result.notes[1]!.force_published).toBe(true);
+        expect(result.data[0]!.id).toBe('note-1');
+        expect(result.data[0]!.attributes.summary).toBe('First note');
+        expect(result.data[1]!.id).toBe('note-2');
+        expect(result.data[1]!.attributes.summary).toBe('Second note');
+        expect(result.data[1]!.attributes.force_published).toBe(true);
       });
 
       it('handles pagination meta correctly', async () => {
@@ -514,7 +515,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.listNotesWithStatus('NEEDS_MORE_RATINGS', 5, 10);
 
-        expect(result.notes).toHaveLength(0);
+        expect(result.data).toHaveLength(0);
         expect(result.total).toBe(0);
         expect(result.page).toBe(5);
         expect(result.size).toBe(10);
@@ -751,12 +752,12 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('note-123');
 
-        expect(result).toHaveLength(3);
-        expect(result[0]!.id).toBe('rating-1');
-        expect(result[0]!.helpfulness_level).toBe('HELPFUL');
-        expect(result[1]!.id).toBe('rating-2');
-        expect(result[1]!.helpfulness_level).toBe('NOT_HELPFUL');
-        expect(result[2]!.id).toBe('rating-3');
+        expect(result.data).toHaveLength(3);
+        expect(result.data[0]!.id).toBe('rating-1');
+        expect(result.data[0]!.attributes.helpfulness_level).toBe('HELPFUL');
+        expect(result.data[1]!.id).toBe('rating-2');
+        expect(result.data[1]!.attributes.helpfulness_level).toBe('NOT_HELPFUL');
+        expect(result.data[2]!.id).toBe('rating-3');
       });
     });
 
@@ -990,7 +991,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getNote('uuid-format-550e8400-e29b-41d4-a716-446655440000');
 
-        expect(result.id).toBe('uuid-format-550e8400-e29b-41d4-a716-446655440000');
+        expect(result.data.id).toBe('uuid-format-550e8400-e29b-41d4-a716-446655440000');
       });
     });
 
@@ -1076,8 +1077,8 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getNote('note-with-links');
 
-        expect(result.id).toBe('note-with-links');
-        expect(result.summary).toBe('Note with links');
+        expect(result.data.id).toBe('note-with-links');
+        expect(result.data.attributes.summary).toBe('Note with links');
       });
 
       it('handles pagination links in list responses', async () => {
@@ -1386,7 +1387,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.listNotesWithStatus('NEEDS_MORE_RATINGS');
 
-        expect(result.notes).toEqual([]);
+        expect(result.data).toEqual([]);
         expect(result.total).toBe(0);
       });
 
@@ -1464,7 +1465,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getNote('note-null-channel');
 
-        expect(result.channel_id).toBeNull();
+        expect(result.data.attributes.channel_id).toBeNull();
       });
 
       it('handles null metadata in requests', async () => {
@@ -1555,7 +1556,7 @@ describe('JSON:API Response Parsing', () => {
         const result = await client.listNotesWithStatus('NEEDS_MORE_RATINGS');
 
         expect(result).toBeDefined();
-        expect(result.notes).toEqual([]);
+        expect(result.data).toEqual([]);
       });
 
       it('handles response without meta section for list', async () => {
@@ -1655,7 +1656,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getNote('note-special');
 
-        expect(result.summary).toBe(
+        expect(result.data.attributes.summary).toBe(
           'Note with special chars: <script>alert("xss")</script> & "quotes" \'apostrophe\''
         );
       });
@@ -1694,7 +1695,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getNote('note-unicode');
 
-        expect(result.summary).toBe('Unicode test: Japanese test Emoji test');
+        expect(result.data.attributes.summary).toBe('Unicode test: Japanese test Emoji test');
       });
     });
 

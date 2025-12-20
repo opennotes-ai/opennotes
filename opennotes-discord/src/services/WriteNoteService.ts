@@ -55,16 +55,15 @@ export class WriteNoteService {
       }, userContext);
 
       logger.info('Note created via service', {
-        noteId: note.id,
+        noteId: note.data.id,
         userId: input.authorId,
         messageId: input.messageId,
       });
 
-      // Store note context for auto-posting
       if (input.channelId && input.guildId) {
         try {
           await this.noteContextService.storeNoteContext({
-            noteId: String(note.id),
+            noteId: note.data.id,
             originalMessageId: input.messageId,
             channelId: input.channelId,
             guildId: input.guildId,
@@ -72,10 +71,9 @@ export class WriteNoteService {
           });
         } catch (error: unknown) {
           logger.warn('Failed to store note context, auto-posting may not work for this note', {
-            noteId: note.id,
+            noteId: note.data.id,
             error: getErrorMessage(error),
           });
-          // Don't fail note creation if context storage fails
         }
       }
 

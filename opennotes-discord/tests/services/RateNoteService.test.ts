@@ -1,6 +1,49 @@
 import { jest } from '@jest/globals';
-import type { RatingResponse } from '../../src/lib/types.js';
 import { ErrorCode } from '../../src/services/types.js';
+
+function createMockRatingJSONAPIResponse(overrides: {
+  id?: string;
+  noteId?: string;
+  userId?: string;
+  helpfulnessLevel?: string;
+} = {}): any {
+  return {
+    data: {
+      type: 'ratings',
+      id: overrides.id ?? '1',
+      attributes: {
+        note_id: overrides.noteId ?? '123',
+        rater_participant_id: overrides.userId ?? 'user-123',
+        helpfulness_level: overrides.helpfulnessLevel ?? 'HELPFUL',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
+
+function createMockRatingListJSONAPIResponse(ratings: Array<{
+  id: string;
+  noteId: string;
+  userId: string;
+  helpfulnessLevel: string;
+}> = []): any {
+  return {
+    data: ratings.map(r => ({
+      type: 'ratings',
+      id: r.id,
+      attributes: {
+        note_id: r.noteId,
+        rater_participant_id: r.userId,
+        helpfulness_level: r.helpfulnessLevel,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    })),
+    jsonapi: { version: '1.1' },
+  };
+}
 
 // Mock ApiError class
 class MockApiError extends Error {
@@ -163,13 +206,13 @@ describe('RateNoteService', () => {
     });
 
     it('should create new rating when user has not rated before', async () => {
-      mockApiClient.getRatingsForNote.mockResolvedValue([]);
-      const mockRating = {
+      mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
+      const mockRating = createMockRatingJSONAPIResponse({
+        id: '1',
         noteId: '123',
         userId: 'user-123',
-        helpful: true,
-        createdAt: Date.now(),
-      };
+        helpfulnessLevel: 'HELPFUL',
+      });
       mockApiClient.rateNote.mockResolvedValue(mockRating);
 
       const result = await service.execute({
@@ -199,13 +242,13 @@ describe('RateNoteService', () => {
     });
 
     it('should create rating with helpful=false', async () => {
-      mockApiClient.getRatingsForNote.mockResolvedValue([]);
-      const mockRating = {
+      mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
+      const mockRating = createMockRatingJSONAPIResponse({
+        id: '1',
         noteId: '123',
         userId: 'user-123',
-        helpful: false,
-        createdAt: Date.now(),
-      };
+        helpfulnessLevel: 'NOT_HELPFUL',
+      });
       mockApiClient.rateNote.mockResolvedValue(mockRating);
 
       const result = await service.execute({
@@ -215,7 +258,7 @@ describe('RateNoteService', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.data?.rating.helpful).toBe(false);
+      expect(result.data?.rating.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
     });
   });
 
@@ -229,22 +272,22 @@ describe('RateNoteService', () => {
     });
 
     it('should update existing rating when user has rated before', async () => {
-      const existingRating: RatingResponse = {
-        id: '1',
-        note_id: '123',
-        rater_participant_id: 'user-123',
-        helpfulness_level: 'NOT_HELPFUL',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      mockApiClient.getRatingsForNote.mockResolvedValue([existingRating]);
+      const existingRatingsResponse = createMockRatingListJSONAPIResponse([
+        {
+          id: '1',
+          noteId: '123',
+          userId: 'user-123',
+          helpfulnessLevel: 'NOT_HELPFUL',
+        },
+      ]);
+      mockApiClient.getRatingsForNote.mockResolvedValue(existingRatingsResponse);
 
-      const updatedRating = {
+      const updatedRating = createMockRatingJSONAPIResponse({
+        id: '1',
         noteId: '123',
         userId: 'user-123',
-        helpful: true,
-        createdAt: Date.now(),
-      };
+        helpfulnessLevel: 'HELPFUL',
+      });
       mockApiClient.updateRating.mockResolvedValue(updatedRating);
 
       const result = await service.execute({
@@ -267,40 +310,34 @@ describe('RateNoteService', () => {
     });
 
     it('should find existing rating among multiple ratings', async () => {
-      const otherRatings: RatingResponse[] = [
+      const multipleRatingsResponse = createMockRatingListJSONAPIResponse([
         {
           id: '1',
-          note_id: '123',
-          rater_participant_id: 'user-456',
-          helpfulness_level: 'HELPFUL',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          noteId: '123',
+          userId: 'user-456',
+          helpfulnessLevel: 'HELPFUL',
         },
         {
           id: '2',
-          note_id: '123',
-          rater_participant_id: 'user-123',
-          helpfulness_level: 'NOT_HELPFUL',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          noteId: '123',
+          userId: 'user-123',
+          helpfulnessLevel: 'NOT_HELPFUL',
         },
         {
           id: '3',
-          note_id: '123',
-          rater_participant_id: 'user-789',
-          helpfulness_level: 'HELPFUL',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          noteId: '123',
+          userId: 'user-789',
+          helpfulnessLevel: 'HELPFUL',
         },
-      ];
-      mockApiClient.getRatingsForNote.mockResolvedValue(otherRatings);
+      ]);
+      mockApiClient.getRatingsForNote.mockResolvedValue(multipleRatingsResponse);
 
-      const updatedRating = {
+      const updatedRating = createMockRatingJSONAPIResponse({
+        id: '2',
         noteId: '123',
         userId: 'user-123',
-        helpful: true,
-        createdAt: Date.now(),
-      };
+        helpfulnessLevel: 'HELPFUL',
+      });
       mockApiClient.updateRating.mockResolvedValue(updatedRating);
 
       const result = await service.execute({
@@ -327,7 +364,7 @@ describe('RateNoteService', () => {
         remaining: 5,
         resetAt: Date.now() + 60000,
       });
-      mockApiClient.getRatingsForNote.mockResolvedValue([]);
+      mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
     });
 
     it('should handle 404 not found error', async () => {
@@ -461,13 +498,13 @@ describe('RateNoteService', () => {
     });
 
     it('should handle string noteId correctly', async () => {
-      mockApiClient.getRatingsForNote.mockResolvedValue([]);
-      mockApiClient.rateNote.mockResolvedValue({
+      mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
+      mockApiClient.rateNote.mockResolvedValue(createMockRatingJSONAPIResponse({
+        id: '1',
         noteId: '999',
         userId: 'user-123',
-        helpful: true,
-        createdAt: Date.now(),
-      });
+        helpfulnessLevel: 'HELPFUL',
+      }));
 
       const result = await service.execute({
         noteId: '999',
@@ -480,13 +517,13 @@ describe('RateNoteService', () => {
     });
 
     it('should handle empty ratings array', async () => {
-      mockApiClient.getRatingsForNote.mockResolvedValue([]);
-      mockApiClient.rateNote.mockResolvedValue({
+      mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
+      mockApiClient.rateNote.mockResolvedValue(createMockRatingJSONAPIResponse({
+        id: '1',
         noteId: '123',
         userId: 'user-123',
-        helpful: true,
-        createdAt: Date.now(),
-      });
+        helpfulnessLevel: 'HELPFUL',
+      }));
 
       const result = await service.execute({
         noteId: '123',

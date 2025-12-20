@@ -310,7 +310,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       command: 'note write',
       user_id: userId,
       message_id: messageId,
-      note_id: result.data?.note.id,
+      note_id: result.data?.note.data.id,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -949,21 +949,22 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
     const userContext = extractUserContext(interaction.user, guildId, member);
     const note = await apiClient.forcePublishNote(noteIdStr, userContext);
 
+    const attrs = note.data.attributes;
     logger.info('Note force-published successfully', {
       error_id: errorId,
       command: 'note force-publish',
       user_id: userId,
       community_server_id: guildId,
       note_id: noteIdStr,
-      force_published_at: note.force_published_at,
+      force_published_at: attrs.force_published_at,
     });
 
     await interaction.editReply({
       content: `✅ **Note #${noteIdStr} has been force-published**\n\n` +
                `⚠️ This note was manually published by an admin and will be marked as "Admin Published" when displayed.\n\n` +
-               `**Note Summary:** ${note.summary.substring(0, 200)}${note.summary.length > 200 ? '...' : ''}\n` +
-               `**Status:** ${note.status}\n` +
-               `**Published At:** <t:${Math.floor(new Date(note.force_published_at || note.updated_at || note.created_at).getTime() / 1000)}:F>`,
+               `**Note Summary:** ${attrs.summary.substring(0, 200)}${attrs.summary.length > 200 ? '...' : ''}\n` +
+               `**Status:** ${attrs.status}\n` +
+               `**Published At:** <t:${Math.floor(new Date(attrs.force_published_at || attrs.updated_at || attrs.created_at).getTime() / 1000)}:F>`,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);

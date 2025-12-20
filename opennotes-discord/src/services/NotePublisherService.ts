@@ -385,12 +385,12 @@ export class NotePublisherService {
   private async fetchNoteContent(noteId: number): Promise<{ summary: string; imageUrls?: string[] } | null> {
     try {
       const response = await apiClient.getNote(noteId.toString());
-      if (!response.summary) {
+      if (!response.data.attributes.summary) {
         return null;
       }
       return {
-        summary: response.summary,
-        imageUrls: (response as { image_urls?: string[] }).image_urls,
+        summary: response.data.attributes.summary,
+        imageUrls: (response.data.attributes as { image_urls?: string[] }).image_urls,
       };
     } catch (error) {
       logger.error('Failed to fetch note content', {
