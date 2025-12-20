@@ -544,6 +544,7 @@ export interface paths {
          *     - filter[community_server_id]: Filter by community server UUID
          *     - filter[author_participant_id]: Filter by author
          *     - filter[request_id]: Filter by request ID
+         *     - filter[platform_message_id]: Filter by platform message ID (Discord snowflake)
          *
          *     Filter Parameters (operators):
          *     - filter[status__neq]: Exclude notes with this status
@@ -551,6 +552,7 @@ export interface paths {
          *     - filter[created_at__lte]: Notes created on or before this datetime
          *     - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
          *       (comma-separated list of participant IDs)
+         *     - filter[rated_by_participant_id]: Include only notes rated by this user
          *
          *     Returns JSON:API formatted response with data, jsonapi, links, and meta.
          */
@@ -1805,99 +1807,6 @@ export interface paths {
          *     Returns a note-request-batches resource with created count and IDs.
          */
         post: operations["create_note_requests_api_v2_bulk_scans__scan_id__note_requests_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/notes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Notes
-         * @description List notes with filters and pagination.
-         *
-         *     Users can only see notes from communities they are members of.
-         *     Service accounts can see all notes.
-         */
-        get: operations["list_notes_api_v1_notes_get"];
-        put?: never;
-        /**
-         * Create Note
-         * @description Create a new community note
-         */
-        post: operations["create_note_api_v1_notes_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/notes/{note_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Note
-         * @description Get a specific note by ID.
-         *
-         *     Users can only view notes from communities they are members of.
-         *     Service accounts can view all notes.
-         */
-        get: operations["get_note_api_v1_notes__note_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Note
-         * @description Delete a note.
-         *
-         *     Users can only delete notes they authored or if they are a community admin.
-         *     Service accounts can delete any note.
-         */
-        delete: operations["delete_note_api_v1_notes__note_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Note
-         * @deprecated
-         * @description Update a note.
-         *
-         *     Deprecated: Use JSON:API endpoint PATCH /jsonapi/notes/{note_id} instead.
-         *
-         *     Users can only update notes they authored or if they are a community admin.
-         *     Service accounts can update any note.
-         */
-        patch: operations["update_note_api_v1_notes__note_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/notes/{note_id}/force-publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Force Publish Note
-         * @description Force-publish a note (admin only).
-         *
-         *     This endpoint allows administrators to manually publish notes that haven't met
-         *     automatic publication thresholds. The note is marked with force_published flags
-         *     for transparency, and the action is logged with admin user ID and timestamp.
-         *
-         *     Requires admin authentication (service accounts, Open Notes admins, or community admins).
-         */
-        post: operations["force_publish_note_api_v1_notes__note_id__force_publish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4659,37 +4568,6 @@ export interface components {
          * @enum {string}
          */
         NoteClassification: "NOT_MISLEADING" | "MISINFORMED_OR_POTENTIALLY_MISLEADING";
-        /** NoteCreate */
-        NoteCreate: {
-            /**
-             * Author Participant Id
-             * @description Author's participant ID
-             */
-            author_participant_id: string;
-            /**
-             * Channel Id
-             * @description Discord channel ID where the message is located
-             */
-            channel_id?: string | null;
-            /**
-             * Request Id
-             * @description Request ID this note responds to
-             */
-            request_id?: string | null;
-            /**
-             * Summary
-             * @description Note summary text
-             */
-            summary: string;
-            /** @description Note classification */
-            classification: components["schemas"]["NoteClassification"];
-            /**
-             * Community Server Id
-             * Format: uuid
-             * @description Community server ID (required)
-             */
-            community_server_id: string;
-        };
         /**
          * NoteCreateAttributes
          * @description Attributes for creating a note via JSON:API.
@@ -4758,17 +4636,6 @@ export interface components {
             summary: string;
             /** Classification */
             classification: string;
-        };
-        /** NoteListResponse */
-        NoteListResponse: {
-            /** Notes */
-            notes: components["schemas"]["NoteResponse"][];
-            /** Total */
-            total: number;
-            /** Page */
-            page: number;
-            /** Size */
-            size: number;
         };
         /**
          * NotePublisherConfigCreateAttributes
@@ -5159,12 +5026,6 @@ export interface components {
             pending_notes: number;
             /** Average Helpfulness Score */
             average_helpfulness_score: number;
-        };
-        /** NoteUpdate */
-        NoteUpdate: {
-            /** Summary */
-            summary?: string | null;
-            classification?: components["schemas"]["NoteClassification"] | null;
         };
         /**
          * NoteUpdateAttributes
@@ -7404,6 +7265,8 @@ export interface operations {
                 "filter[created_at__gte]"?: string | null;
                 "filter[created_at__lte]"?: string | null;
                 "filter[rated_by_participant_id__not_in]"?: string | null;
+                "filter[rated_by_participant_id]"?: string | null;
+                "filter[platform_message_id]"?: string | null;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -9265,218 +9128,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_notes_api_v1_notes_get: {
-        parameters: {
-            query?: {
-                page?: number;
-                size?: number;
-                author_id?: string | null;
-                request_id?: string | null;
-                status_filter?: components["schemas"]["NoteStatus"] | null;
-                classification?: components["schemas"]["NoteClassification"] | null;
-                date_from?: string | null;
-                date_to?: string | null;
-                community_server_id?: string | null;
-                rated_by_participant_id?: string | null;
-                exclude_status?: components["schemas"]["NoteStatus"][] | null;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_note_api_v1_notes_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NoteCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_note_api_v1_notes__note_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_note_api_v1_notes__note_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_note_api_v1_notes__note_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NoteUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    force_publish_note_api_v1_notes__note_id__force_publish_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
                 };
             };
             /** @description Validation Error */

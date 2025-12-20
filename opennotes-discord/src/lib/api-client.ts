@@ -27,13 +27,20 @@ import { createDiscordClaimsToken } from '../utils/discord-claims.js';
 
 // Server API types from generated OpenAPI schema
 export type NoteResponse = components['schemas']['NoteResponse'];
-export type NoteCreate = components['schemas']['NoteCreate'];
 export type RatingResponse = components['schemas']['RatingResponse'];
 export type RequestResponse = components['schemas']['RequestResponse'];
 export type RequestCreate = components['schemas']['RequestCreate'];
 export type RequestListResponse = components['schemas']['RequestListResponse'];
-export type NoteListResponse = components['schemas']['NoteListResponse'];
 export type NoteStatus = components['schemas']['NoteStatus'];
+
+// NoteListResponse: Local type for the transformed JSON:API list response
+// This was previously exported from the server schemas but is now handled via JSON:API
+export interface NoteListResponse {
+  notes: NoteResponse[];
+  total: number;
+  page: number;
+  size: number;
+}
 export type RatingThresholdsResponse = components['schemas']['RatingThresholdsResponse'];
 export type ScoringRequest = components['schemas']['ScoringRequest'];
 export type ScoringResponse = components['schemas']['ScoringResponse'];

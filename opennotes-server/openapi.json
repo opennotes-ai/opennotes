@@ -1034,7 +1034,7 @@
           "notes-jsonapi"
         ],
         "summary": "List Notes Jsonapi",
-        "description": "List notes with JSON:API format.\n\nSupports filtering and pagination per JSON:API specification.\n\nQuery Parameters:\n- page[number]: Page number (default: 1)\n- page[size]: Page size (default: 20, max: 100)\n\nFilter Parameters (equality):\n- filter[status]: Filter by note status (exact match)\n- filter[classification]: Filter by classification\n- filter[community_server_id]: Filter by community server UUID\n- filter[author_participant_id]: Filter by author\n- filter[request_id]: Filter by request ID\n\nFilter Parameters (operators):\n- filter[status__neq]: Exclude notes with this status\n- filter[created_at__gte]: Notes created on or after this datetime\n- filter[created_at__lte]: Notes created on or before this datetime\n- filter[rated_by_participant_id__not_in]: Exclude notes rated by these users\n  (comma-separated list of participant IDs)\n\nReturns JSON:API formatted response with data, jsonapi, links, and meta.",
+        "description": "List notes with JSON:API format.\n\nSupports filtering and pagination per JSON:API specification.\n\nQuery Parameters:\n- page[number]: Page number (default: 1)\n- page[size]: Page size (default: 20, max: 100)\n\nFilter Parameters (equality):\n- filter[status]: Filter by note status (exact match)\n- filter[classification]: Filter by classification\n- filter[community_server_id]: Filter by community server UUID\n- filter[author_participant_id]: Filter by author\n- filter[request_id]: Filter by request ID\n- filter[platform_message_id]: Filter by platform message ID (Discord snowflake)\n\nFilter Parameters (operators):\n- filter[status__neq]: Exclude notes with this status\n- filter[created_at__gte]: Notes created on or after this datetime\n- filter[created_at__lte]: Notes created on or before this datetime\n- filter[rated_by_participant_id__not_in]: Exclude notes rated by these users\n  (comma-separated list of participant IDs)\n- filter[rated_by_participant_id]: Include only notes rated by this user\n\nReturns JSON:API formatted response with data, jsonapi, links, and meta.",
         "operationId": "list_notes_jsonapi_api_v2_notes_get",
         "security": [
           {
@@ -1210,6 +1210,38 @@
                 }
               ],
               "title": "Filter[Rated By Participant Id  Not In]"
+            }
+          },
+          {
+            "name": "filter[rated_by_participant_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Rated By Participant Id]"
+            }
+          },
+          {
+            "name": "filter[platform_message_id]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Platform Message Id]"
             }
           },
           {
@@ -4969,557 +5001,6 @@
             "content": {
               "application/json": {
                 "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/notes": {
-      "post": {
-        "tags": [
-          "notes"
-        ],
-        "summary": "Create Note",
-        "description": "Create a new community note",
-        "operationId": "create_note_api_v1_notes_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NoteCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NoteResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "notes"
-        ],
-        "summary": "List Notes",
-        "description": "List notes with filters and pagination.\n\nUsers can only see notes from communities they are members of.\nService accounts can see all notes.",
-        "operationId": "list_notes_api_v1_notes_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1,
-              "title": "Page"
-            }
-          },
-          {
-            "name": "size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 20,
-              "title": "Size"
-            }
-          },
-          {
-            "name": "author_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Author Id"
-            }
-          },
-          {
-            "name": "request_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Request Id"
-            }
-          },
-          {
-            "name": "status_filter",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/NoteStatus"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status Filter"
-            }
-          },
-          {
-            "name": "classification",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/NoteClassification"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Classification"
-            }
-          },
-          {
-            "name": "date_from",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Date From"
-            }
-          },
-          {
-            "name": "date_to",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Date To"
-            }
-          },
-          {
-            "name": "community_server_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Community Server Id"
-            }
-          },
-          {
-            "name": "rated_by_participant_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Rated By Participant Id"
-            }
-          },
-          {
-            "name": "exclude_status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/NoteStatus"
-                  }
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Exclude Status"
-            }
-          },
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NoteListResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/notes/{note_id}": {
-      "get": {
-        "tags": [
-          "notes"
-        ],
-        "summary": "Get Note",
-        "description": "Get a specific note by ID.\n\nUsers can only view notes from communities they are members of.\nService accounts can view all notes.",
-        "operationId": "get_note_api_v1_notes__note_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "note_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Note Id"
-            }
-          },
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NoteResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "notes"
-        ],
-        "summary": "Update Note",
-        "description": "Update a note.\n\nDeprecated: Use JSON:API endpoint PATCH /jsonapi/notes/{note_id} instead.\n\nUsers can only update notes they authored or if they are a community admin.\nService accounts can update any note.",
-        "operationId": "update_note_api_v1_notes__note_id__patch",
-        "deprecated": true,
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "note_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Note Id"
-            }
-          },
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NoteUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NoteResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "notes"
-        ],
-        "summary": "Delete Note",
-        "description": "Delete a note.\n\nUsers can only delete notes they authored or if they are a community admin.\nService accounts can delete any note.",
-        "operationId": "delete_note_api_v1_notes__note_id__delete",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "note_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Note Id"
-            }
-          },
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/notes/{note_id}/force-publish": {
-      "post": {
-        "tags": [
-          "notes"
-        ],
-        "summary": "Force Publish Note",
-        "description": "Force-publish a note (admin only).\n\nThis endpoint allows administrators to manually publish notes that haven't met\nautomatic publication thresholds. The note is marked with force_published flags\nfor transparency, and the action is logged with admin user ID and timestamp.\n\nRequires admin authentication (service accounts, Open Notes admins, or community admins).",
-        "operationId": "force_publish_note_api_v1_notes__note_id__force_publish_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "note_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Note Id"
-            }
-          },
-          {
-            "name": "X-API-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NoteResponse"
-                }
               }
             }
           },
@@ -12113,63 +11594,6 @@
         ],
         "title": "NoteClassification"
       },
-      "NoteCreate": {
-        "properties": {
-          "author_participant_id": {
-            "type": "string",
-            "title": "Author Participant Id",
-            "description": "Author's participant ID"
-          },
-          "channel_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Channel Id",
-            "description": "Discord channel ID where the message is located"
-          },
-          "request_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Request Id",
-            "description": "Request ID this note responds to"
-          },
-          "summary": {
-            "type": "string",
-            "title": "Summary",
-            "description": "Note summary text"
-          },
-          "classification": {
-            "$ref": "#/components/schemas/NoteClassification",
-            "description": "Note classification"
-          },
-          "community_server_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Community Server Id",
-            "description": "Community server ID (required)"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "author_participant_id",
-          "summary",
-          "classification",
-          "community_server_id"
-        ],
-        "title": "NoteCreate"
-      },
       "NoteCreateAttributes": {
         "properties": {
           "summary": {
@@ -12299,38 +11723,6 @@
           "classification"
         ],
         "title": "NoteData"
-      },
-      "NoteListResponse": {
-        "properties": {
-          "notes": {
-            "items": {
-              "$ref": "#/components/schemas/NoteResponse"
-            },
-            "type": "array",
-            "title": "Notes"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "page": {
-            "type": "integer",
-            "title": "Page"
-          },
-          "size": {
-            "type": "integer",
-            "title": "Size"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "notes",
-          "total",
-          "page",
-          "size"
-        ],
-        "title": "NoteListResponse"
       },
       "NotePublisherConfigCreateAttributes": {
         "properties": {
@@ -13160,34 +12552,6 @@
           "average_helpfulness_score"
         ],
         "title": "NoteSummaryStats"
-      },
-      "NoteUpdate": {
-        "properties": {
-          "summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Summary"
-          },
-          "classification": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/NoteClassification"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "NoteUpdate"
       },
       "NoteUpdateAttributes": {
         "properties": {

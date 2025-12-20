@@ -1,61 +1,4 @@
 {
-  "NoteCreate": {
-    "properties": {
-      "author_participant_id": {
-        "type": "string",
-        "title": "Author Participant Id",
-        "description": "Author's participant ID"
-      },
-      "channel_id": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Channel Id",
-        "description": "Discord channel ID where the message is located"
-      },
-      "request_id": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Request Id",
-        "description": "Request ID this note responds to"
-      },
-      "summary": {
-        "type": "string",
-        "title": "Summary",
-        "description": "Note summary text"
-      },
-      "classification": {
-        "$ref": "#/components/schemas/NoteClassification",
-        "description": "Note classification"
-      },
-      "community_server_id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Community Server Id",
-        "description": "Community server ID (required)"
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "required": [
-      "author_participant_id",
-      "summary",
-      "classification",
-      "community_server_id"
-    ],
-    "title": "NoteCreate"
-  },
   "NoteResponse": {
     "properties": {
       "created_at": {
@@ -234,38 +177,6 @@
     ],
     "title": "NoteData"
   },
-  "NoteListResponse": {
-    "properties": {
-      "notes": {
-        "items": {
-          "$ref": "#/components/schemas/NoteResponse"
-        },
-        "type": "array",
-        "title": "Notes"
-      },
-      "total": {
-        "type": "integer",
-        "title": "Total"
-      },
-      "page": {
-        "type": "integer",
-        "title": "Page"
-      },
-      "size": {
-        "type": "integer",
-        "title": "Size"
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "required": [
-      "notes",
-      "total",
-      "page",
-      "size"
-    ],
-    "title": "NoteListResponse"
-  },
   "NoteSummaryStats": {
     "properties": {
       "total_notes": {
@@ -315,82 +226,6 @@
       "CURRENTLY_RATED_NOT_HELPFUL"
     ],
     "title": "NoteStatus"
-  },
-  "NoteUpdate": {
-    "properties": {
-      "summary": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Summary"
-      },
-      "classification": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/NoteClassification"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "helpfulness_score": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Helpfulness Score"
-      },
-      "status": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/NoteStatus"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "title": "NoteUpdate"
-  },
-  "RatingCreate": {
-    "properties": {
-      "note_id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Note Id",
-        "description": "Note ID to rate"
-      },
-      "helpfulness_level": {
-        "$ref": "#/components/schemas/HelpfulnessLevel",
-        "description": "Rating level"
-      },
-      "rater_participant_id": {
-        "type": "string",
-        "title": "Rater Participant Id",
-        "description": "Rater's participant ID"
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "required": [
-      "note_id",
-      "helpfulness_level",
-      "rater_participant_id"
-    ],
-    "title": "RatingCreate"
   },
   "RatingResponse": {
     "properties": {
@@ -467,52 +302,6 @@
       "helpfulnessLevel"
     ],
     "title": "RatingData"
-  },
-  "RatingStats": {
-    "properties": {
-      "total": {
-        "type": "integer",
-        "title": "Total"
-      },
-      "helpful": {
-        "type": "integer",
-        "title": "Helpful"
-      },
-      "somewhat_helpful": {
-        "type": "integer",
-        "title": "Somewhat Helpful"
-      },
-      "not_helpful": {
-        "type": "integer",
-        "title": "Not Helpful"
-      },
-      "average_score": {
-        "type": "number",
-        "title": "Average Score"
-      }
-    },
-    "type": "object",
-    "required": [
-      "total",
-      "helpful",
-      "somewhat_helpful",
-      "not_helpful",
-      "average_score"
-    ],
-    "title": "RatingStats"
-  },
-  "RatingUpdate": {
-    "properties": {
-      "helpfulness_level": {
-        "$ref": "#/components/schemas/HelpfulnessLevel"
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "required": [
-      "helpfulness_level"
-    ],
-    "title": "RatingUpdate"
   },
   "HelpfulnessLevel": {
     "type": "string",
