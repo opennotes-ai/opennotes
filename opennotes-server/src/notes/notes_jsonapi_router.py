@@ -16,6 +16,7 @@ Filter operators supported (via fastapi-filter style syntax):
 - filter[created_at__gte]: Created at >= datetime
 - filter[created_at__lte]: Created at <= datetime
 - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
+- filter[rated_by_participant_id]: Include only notes rated by this user
 """
 
 from datetime import UTC, datetime
@@ -245,6 +246,7 @@ def _build_attribute_filters(
     filter_created_at_gte: datetime | None,
     filter_created_at_lte: datetime | None,
     filter_rated_by_not_in: list[str] | None,
+    filter_rated_by: str | None = None,
 ) -> list:
     """Build a list of filter conditions for note attributes.
 
@@ -254,6 +256,7 @@ def _build_attribute_filters(
     - Greater than or equal: filter[field__gte]=value
     - Less than or equal: filter[field__lte]=value
     - Not in (exclusion): filter[rated_by_participant_id__not_in]=user1,user2
+    - In (inclusion): filter[rated_by_participant_id]=user1 (notes rated by user)
     """
     filters = []
 
@@ -284,6 +287,13 @@ def _build_attribute_filters(
         )
         filters.append(not_(exists(rating_subquery.where(Rating.note_id == Note.id))))
 
+    if filter_rated_by:
+        filters.append(
+            Note.id.in_(
+                select(Rating.note_id).where(Rating.rater_participant_id == filter_rated_by)
+            )
+        )
+
     return filters
 
 
@@ -305,6 +315,7 @@ async def list_notes_jsonapi(
     filter_rated_by_not_in: str | None = Query(
         None, alias="filter[rated_by_participant_id__not_in]"
     ),
+    filter_rated_by: str | None = Query(None, alias="filter[rated_by_participant_id]"),
     filter_platform_message_id: str | None = Query(None, alias="filter[platform_message_id]"),
 ) -> JSONResponse:
     """List notes with JSON:API format.
@@ -329,6 +340,7 @@ async def list_notes_jsonapi(
     - filter[created_at__lte]: Notes created on or before this datetime
     - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
       (comma-separated list of participant IDs)
+    - filter[rated_by_participant_id]: Include only notes rated by this user
 
     Returns JSON:API formatted response with data, jsonapi, links, and meta.
     """
@@ -350,6 +362,7 @@ async def list_notes_jsonapi(
             filter_created_at_gte=filter_created_at_gte,
             filter_created_at_lte=filter_created_at_lte,
             filter_rated_by_not_in=rated_by_list,
+            filter_rated_by=filter_rated_by,
         )
 
         if filter_community_server_id:

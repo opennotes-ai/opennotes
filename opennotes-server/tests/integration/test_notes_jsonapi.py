@@ -420,6 +420,63 @@ class TestJSONAPIAdvancedFilters:
         )
 
     @pytest.mark.asyncio
+    async def test_filter_notes_by_rated_by_participant(
+        self, jsonapi_auth_client, jsonapi_sample_note_data, jsonapi_community_server
+    ):
+        """Test filtering notes to only include those rated by a specific user.
+
+        filter[rated_by_participant_id]=user1 should return only notes
+        that have been rated by user1. This is the inverse of
+        rated_by_participant_id__not_in which EXCLUDES notes.
+
+        Use case: Discord client's listNotesRatedByUser() function needs
+        to find all notes that a specific user has rated.
+        """
+        note_data_1 = self._get_unique_note_data(jsonapi_sample_note_data)
+        note_data_1["summary"] = "Rated note for inclusion test"
+        create_resp_1 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_1)
+        assert create_resp_1.status_code == 201
+        rated_note_id = create_resp_1.json()["id"]
+
+        note_data_2 = self._get_unique_note_data(jsonapi_sample_note_data)
+        note_data_2["summary"] = "Unrated note for inclusion test"
+        create_resp_2 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_2)
+        assert create_resp_2.status_code == 201
+        unrated_note_id = create_resp_2.json()["id"]
+
+        rater_id = "test_rater_for_inclusion"
+        rating_data = {
+            "data": {
+                "type": "ratings",
+                "attributes": {
+                    "note_id": rated_note_id,
+                    "rater_participant_id": rater_id,
+                    "helpfulness_level": "HELPFUL",
+                },
+            }
+        }
+        rating_resp = await jsonapi_auth_client.post("/api/v2/ratings", json=rating_data)
+        assert rating_resp.status_code in [200, 201]
+
+        response = await jsonapi_auth_client.get(
+            f"/api/v2/notes?"
+            f"filter[community_server_id]={jsonapi_community_server['uuid']}"
+            f"&filter[rated_by_participant_id]={rater_id}"
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "data" in data
+        returned_note_ids = [note["id"] for note in data["data"]]
+
+        assert rated_note_id in returned_note_ids, (
+            f"Rated note should be returned. Got IDs: {returned_note_ids}"
+        )
+        assert unrated_note_id not in returned_note_ids, (
+            f"Unrated note should be excluded. Got IDs: {returned_note_ids}"
+        )
+
+    @pytest.mark.asyncio
     async def test_filter_notes_by_status_neq(
         self, jsonapi_auth_client, jsonapi_sample_note_data, jsonapi_community_server
     ):
