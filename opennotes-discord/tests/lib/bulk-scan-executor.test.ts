@@ -26,6 +26,7 @@ const mockGetCommunityServerByPlatformId = jest.fn<(platformId: string, platform
 }>>();
 
 const mockPublishBulkScanBatch = jest.fn<(subject: string, batch: any) => Promise<void>>();
+const mockPublishBulkScanCompleted = jest.fn<(completedData: any) => Promise<void>>();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -42,6 +43,7 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
 jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({
   natsPublisher: {
     publishBulkScanBatch: mockPublishBulkScanBatch,
+    publishBulkScanCompleted: mockPublishBulkScanCompleted,
   },
 }));
 
@@ -140,6 +142,7 @@ describe('bulk-scan-executor', () => {
       flagged_messages: [],
     });
     mockPublishBulkScanBatch.mockResolvedValue(undefined);
+    mockPublishBulkScanCompleted.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -259,7 +262,7 @@ describe('bulk-scan-executor', () => {
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Failed to publish batch'),
         expect.objectContaining({
-          batchIndex: expect.any(Number),
+          batchNumber: expect.any(Number),
           scanId: 'test-scan-123',
         })
       );
@@ -618,6 +621,116 @@ describe('bulk-scan-executor', () => {
     });
   });
 
+  describe('executeBulkScan - batch structure', () => {
+    it('should use batch_number instead of batch_index (1-indexed)', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+
+      expect(batch.batch_number).toBeDefined();
+      expect(batch.batch_number).toBe(1);
+      expect(batch.batch_index).toBeUndefined();
+    });
+
+    it('should use is_final_batch instead of total_batches', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+
+      expect(batch.is_final_batch).toBeDefined();
+      expect(typeof batch.is_final_batch).toBe('boolean');
+      expect(batch.total_batches).toBeUndefined();
+    });
+
+    it('should mark final batch correctly when all messages fit in one batch', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalledTimes(1);
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+      expect(batch.is_final_batch).toBe(true);
+    });
+
+    it('should have batch_number increment for multiple batches', async () => {
+      const ch1Messages = new Map();
+      for (let i = 0; i < 100; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        ch1Messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const ch2Messages = new Map();
+      for (let i = 0; i < 100; i++) {
+        const id = generateRecentSnowflake((i + 200) * 1000);
+        ch2Messages.set(id, createMockMessage(id, `Message ${i + 200}`));
+      }
+
+      const channel1 = createMockChannel('ch-1', ch1Messages);
+      const channel2 = createMockChannel('ch-2', ch2Messages);
+      const guild = createMockGuild(new Map([['ch-1', channel1], ['ch-2', channel2]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalledTimes(2);
+
+      const batch1 = mockPublishBulkScanBatch.mock.calls[0][1];
+      const batch2 = mockPublishBulkScanBatch.mock.calls[1][1];
+
+      expect(batch1.batch_number).toBe(1);
+      expect(batch1.is_final_batch).toBe(false);
+
+      expect(batch2.batch_number).toBe(2);
+      expect(batch2.is_final_batch).toBe(true);
+    });
+  });
+
   describe('exponential backoff configuration', () => {
     it('should export backoff configuration constants', () => {
       expect(BACKOFF_INITIAL_MS).toBe(1000);
@@ -781,6 +894,296 @@ describe('bulk-scan-executor', () => {
       expect(truncateContent(simpleEmoji, 5)).toBe(emoji + '...');
       expect(truncateContent(simpleEmoji, 6)).toBe(emoji + 'test');
       expect(truncateContent(simpleEmoji, 4)).toBe('...');
+    });
+  });
+
+  describe('executeBulkScan - publishBulkScanCompleted', () => {
+    it('should call publishBulkScanCompleted after all batches are published', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledTimes(1);
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+        scan_id: 'test-scan-123',
+        community_server_id: 'community-uuid-123',
+        messages_scanned: 50,
+      });
+    });
+
+    it('should call publishBulkScanCompleted before polling for results', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const callOrder: string[] = [];
+
+      mockPublishBulkScanCompleted.mockImplementation(async () => {
+        callOrder.push('publishBulkScanCompleted');
+      });
+
+      mockGetBulkScanResults.mockImplementation(async () => {
+        callOrder.push('getBulkScanResults');
+        return {
+          scan_id: 'test-scan-123',
+          status: 'completed' as const,
+          messages_scanned: 10,
+          flagged_messages: [],
+        };
+      });
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(callOrder.indexOf('publishBulkScanCompleted')).toBeLessThan(
+        callOrder.indexOf('getBulkScanResults')
+      );
+    });
+
+    it('should call publishBulkScanCompleted even when no messages found (0 batches)', async () => {
+      const emptyMessages = new Map();
+      const channel = createMockChannel('ch-1', emptyMessages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledTimes(1);
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+        scan_id: 'test-scan-123',
+        community_server_id: 'community-uuid-123',
+        messages_scanned: 0,
+      });
+    });
+
+    it('should call publishBulkScanCompleted with correct message count across multiple batches', async () => {
+      const ch1Messages = new Map();
+      for (let i = 0; i < 100; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        ch1Messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const ch2Messages = new Map();
+      for (let i = 0; i < 75; i++) {
+        const id = generateRecentSnowflake((i + 200) * 1000);
+        ch2Messages.set(id, createMockMessage(id, `Message ${i + 200}`));
+      }
+
+      const channel1 = createMockChannel('ch-1', ch1Messages);
+      const channel2 = createMockChannel('ch-2', ch2Messages);
+      const guild = createMockGuild(new Map([['ch-1', channel1], ['ch-2', channel2]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+        scan_id: 'test-scan-123',
+        community_server_id: 'community-uuid-123',
+        messages_scanned: 175,
+      });
+    });
+
+    it('should handle publishBulkScanCompleted failure gracefully', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      mockPublishBulkScanCompleted.mockRejectedValue(new Error('NATS connection failed'));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanCompleted).toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to publish bulk scan completed event'),
+        expect.any(Object)
+      );
+      expect(result.status).toBeDefined();
+    });
+  });
+
+  describe('executeBulkScan - bot channel exclusion', () => {
+    it('should skip channels in excludeChannelIds list', async () => {
+      const botChannelMessages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        botChannelMessages.set(id, createMockMessage(id, `Bot channel msg ${i}`));
+      }
+
+      const regularChannelMessages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake((i + 100) * 1000);
+        regularChannelMessages.set(id, createMockMessage(id, `Regular msg ${i}`));
+      }
+
+      const botChannel = createMockChannel('bot-channel-id', botChannelMessages);
+      const regularChannel = createMockChannel('regular-channel-id', regularChannelMessages);
+      const guild = createMockGuild(new Map([
+        ['bot-channel-id', botChannel],
+        ['regular-channel-id', regularChannel],
+      ]));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: ['bot-channel-id'],
+      });
+
+      expect(result.channelsScanned).toBe(1);
+      expect(result.status).toBe('completed');
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+      const channelIds = batch.messages.map((m: any) => m.channel_id);
+      expect(channelIds.every((id: string) => id === 'regular-channel-id')).toBe(true);
+      expect(channelIds.some((id: string) => id === 'bot-channel-id')).toBe(false);
+    });
+
+    it('should log when excluding bot channel', async () => {
+      const botChannelMessages = new Map();
+      for (let i = 0; i < 5; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        botChannelMessages.set(id, createMockMessage(id, `Bot channel msg ${i}`));
+      }
+
+      const botChannel = createMockChannel('bot-channel-id', botChannelMessages);
+      const guild = createMockGuild(new Map([['bot-channel-id', botChannel]]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: ['bot-channel-id'],
+      });
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping excluded channel'),
+        expect.objectContaining({
+          channel_id: 'bot-channel-id',
+        })
+      );
+    });
+
+    it('should handle empty excludeChannelIds gracefully', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: [],
+      });
+
+      expect(result.channelsScanned).toBe(1);
+      expect(result.status).toBe('completed');
+    });
+
+    it('should handle undefined excludeChannelIds gracefully', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channel = createMockChannel('ch-1', messages);
+      const guild = createMockGuild(new Map([['ch-1', channel]]));
+
+      const result = await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(result.channelsScanned).toBe(1);
+      expect(result.status).toBe('completed');
+    });
+
+    it('should not include excluded channel messages in published batches', async () => {
+      const botChannelMessages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        botChannelMessages.set(id, createMockMessage(id, `Bot channel msg ${i}`));
+      }
+
+      const regularChannelMessages = new Map();
+      for (let i = 0; i < 50; i++) {
+        const id = generateRecentSnowflake((i + 100) * 1000);
+        regularChannelMessages.set(id, createMockMessage(id, `Regular msg ${i}`));
+      }
+
+      const botChannel = createMockChannel('bot-channel-id', botChannelMessages);
+      const regularChannel = createMockChannel('regular-channel-id', regularChannelMessages);
+      const guild = createMockGuild(new Map([
+        ['bot-channel-id', botChannel],
+        ['regular-channel-id', regularChannel],
+      ]));
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        excludeChannelIds: ['bot-channel-id'],
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalled();
+
+      for (const call of mockPublishBulkScanBatch.mock.calls) {
+        const batch = call[1];
+        for (const message of batch.messages) {
+          expect(message.channel_id).not.toBe('bot-channel-id');
+        }
+      }
     });
   });
 });

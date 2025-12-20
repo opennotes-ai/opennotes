@@ -11,6 +11,22 @@ export const VIBE_CHECK_DAYS_OPTIONS: VibeCheckDaysOption[] = [
   { name: '30 days', value: 30 },
 ];
 
+export const EventType = {
+  BULK_SCAN_MESSAGE_BATCH: 'bulk_scan.message_batch',
+  BULK_SCAN_COMPLETED: 'bulk_scan.completed',
+  BULK_SCAN_RESULTS: 'bulk_scan.results',
+} as const;
+
+export type EventTypeValue = (typeof EventType)[keyof typeof EventType];
+
+export interface BaseEvent {
+  event_id: string;
+  event_type: EventTypeValue;
+  version: string;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface BulkScanMessage {
   message_id: string;
   channel_id: string;
@@ -27,10 +43,32 @@ export interface BulkScanBatch {
   scan_id: string;
   community_server_id: string;
   initiated_by: string;
-  batch_index: number;
-  total_batches: number;
+  batch_number: number;
+  is_final_batch: boolean;
   messages: BulkScanMessage[];
   cutoff_timestamp: string;
+}
+
+export interface BulkScanBatchEvent extends BaseEvent {
+  event_type: typeof EventType.BULK_SCAN_MESSAGE_BATCH;
+  scan_id: string;
+  community_server_id: string;
+  messages: BulkScanMessage[];
+  batch_number: number;
+  is_final_batch: boolean;
+}
+
+export interface BulkScanCompleted {
+  scan_id: string;
+  community_server_id: string;
+  messages_scanned: number;
+}
+
+export interface BulkScanCompletedEvent extends BaseEvent {
+  event_type: typeof EventType.BULK_SCAN_COMPLETED;
+  scan_id: string;
+  community_server_id: string;
+  messages_scanned: number;
 }
 
 export interface ScanProgress {
@@ -44,9 +82,9 @@ export interface ScanProgress {
 export const BULK_SCAN_BATCH_SIZE = 100;
 
 export const NATS_SUBJECTS = {
-  BULK_SCAN_BATCH: 'OPENNOTES.bulk_scan.batch',
-  BULK_SCAN_COMPLETE: 'OPENNOTES.bulk_scan.complete',
-  BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan.result',
+  BULK_SCAN_BATCH: 'OPENNOTES.bulk_scan_message_batch',
+  BULK_SCAN_COMPLETE: 'OPENNOTES.bulk_scan_completed',
+  BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan_results',
 } as const;
 
 export interface BulkScanInitiateRequest {

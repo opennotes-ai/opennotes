@@ -14,6 +14,7 @@ import {
   NATS_SUBJECTS,
   type BulkScanMessage,
   type BulkScanBatch,
+  type BulkScanCompleted,
   type ScanProgress,
   type FlaggedMessage,
 } from '../types/bulk-scan.js';
@@ -29,6 +30,7 @@ export interface BulkScanOptions {
   initiatorId: string;
   errorId: string;
   progressCallback?: (progress: ScanProgress) => Promise<void>;
+  excludeChannelIds?: string[];
 }
 
 export interface BulkScanResult {
@@ -43,15 +45,30 @@ export interface BulkScanResult {
 }
 
 export async function executeBulkScan(options: BulkScanOptions): Promise<BulkScanResult> {
-  const { guild, days, initiatorId, errorId, progressCallback } = options;
+  const { guild, days, initiatorId, errorId, progressCallback, excludeChannelIds = [] } = options;
   const guildId = guild.id;
+  const excludeSet = new Set(excludeChannelIds);
 
   const cutoffTimestamp = Date.now() - days * 24 * 60 * 60 * 1000;
   const cutoffSnowflake = DiscordSnowflake.generate({ timestamp: BigInt(cutoffTimestamp) });
 
   const textChannels = guild.channels.cache.filter(
-    (channel): channel is TextChannel =>
-      channel.type === ChannelType.GuildText && channel.viewable === true
+    (channel): channel is TextChannel => {
+      if (channel.type !== ChannelType.GuildText || channel.viewable !== true) {
+        return false;
+      }
+
+      if (excludeSet.has(channel.id)) {
+        logger.debug('Skipping excluded channel', {
+          channel_id: channel.id,
+          channel_name: channel.name,
+          guild_id: guildId,
+        });
+        return false;
+      }
+
+      return true;
+    }
   );
 
   const totalChannels = textChannels.size;
@@ -84,23 +101,26 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
 
   let messagesProcessed = 0;
   let channelsProcessed = 0;
-  let batchIndex = 0;
+  let batchNumber = 0;
   let batchesPublished = 0;
   let failedBatches = 0;
   let currentBatch: BulkScanMessage[] = [];
+  let pendingBatch: BulkScanMessage[] | null = null;
 
-  const publishBatch = async (): Promise<void> => {
-    if (currentBatch.length === 0) {
+  const publishPendingBatch = async (isFinalBatch: boolean): Promise<void> => {
+    if (pendingBatch === null || pendingBatch.length === 0) {
       return;
     }
+
+    batchNumber++;
 
     const batch: BulkScanBatch = {
       scan_id: scanId,
       community_server_id: communityServerUuid,
       initiated_by: initiatorId,
-      batch_index: batchIndex,
-      total_batches: -1,
-      messages: currentBatch,
+      batch_number: batchNumber,
+      is_final_batch: isFinalBatch,
+      messages: pendingBatch,
       cutoff_timestamp: new Date(cutoffTimestamp).toISOString(),
     };
 
@@ -109,19 +129,32 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
       batchesPublished++;
       logger.debug('Published batch', {
         scanId,
-        batchIndex,
-        messageCount: currentBatch.length,
+        batchNumber,
+        isFinalBatch,
+        messageCount: pendingBatch.length,
       });
     } catch (error) {
       failedBatches++;
       logger.warn('Failed to publish batch to NATS, continuing scan', {
         error: error instanceof Error ? error.message : String(error),
         scanId,
-        batchIndex,
+        batchNumber,
       });
     }
 
-    batchIndex++;
+    pendingBatch = null;
+  };
+
+  const queueBatch = async (): Promise<void> => {
+    if (currentBatch.length === 0) {
+      return;
+    }
+
+    if (pendingBatch !== null) {
+      await publishPendingBatch(false);
+    }
+
+    pendingBatch = currentBatch;
     currentBatch = [];
   };
 
@@ -203,7 +236,7 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
           messagesProcessed++;
 
           if (currentBatch.length >= BULK_SCAN_BATCH_SIZE) {
-            await publishBatch();
+            await queueBatch();
           }
 
           lastMessageId = messageId;
@@ -232,10 +265,14 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   }
 
   if (currentBatch.length > 0) {
-    await publishBatch();
+    await queueBatch();
   }
 
-  const totalBatches = batchIndex;
+  if (pendingBatch !== null) {
+    await publishPendingBatch(true);
+  }
+
+  const totalBatches = batchNumber;
 
   logger.info('Bulk scan Discord scan complete, polling for results', {
     error_id: errorId,
@@ -248,6 +285,26 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     failed_batches: failedBatches,
     total_batches: totalBatches,
   });
+
+  const completedData: BulkScanCompleted = {
+    scan_id: scanId,
+    community_server_id: communityServerUuid,
+    messages_scanned: messagesProcessed,
+  };
+
+  try {
+    await natsPublisher.publishBulkScanCompleted(completedData);
+    logger.debug('Published bulk scan completed event', {
+      scan_id: scanId,
+      community_server_id: communityServerUuid,
+      messages_scanned: messagesProcessed,
+    });
+  } catch (error) {
+    logger.warn('Failed to publish bulk scan completed event, continuing to poll', {
+      error: error instanceof Error ? error.message : String(error),
+      scan_id: scanId,
+    });
+  }
 
   if (batchesPublished === 0 && failedBatches > 0) {
     return {

@@ -64,6 +64,37 @@ export type NotePublisherConfigResponse = components['schemas']['NotePublisherCo
 export type DuplicateCheckResponse = components['schemas']['DuplicateCheckResponse'];
 export type LastPostResponse = components['schemas']['LastPostResponse'];
 
+// Bulk scan types from generated OpenAPI schema
+export type LatestScanResponse = components['schemas']['LatestScanResponse'];
+export type LatestScanResource = components['schemas']['LatestScanResource'];
+export type LatestScanAttributes = components['schemas']['LatestScanAttributes'];
+export type FlaggedMessageResource = components['schemas']['FlaggedMessageResource'];
+export type FlaggedMessageAttributes = components['schemas']['FlaggedMessageAttributes'];
+
+// Flattened response type for getLatestScan method (transformed from JSON:API response)
+export interface FlaggedMessage {
+  message_id: string;
+  channel_id: string;
+  content: string;
+  author_id: string;
+  timestamp: string;
+  match_score: number;
+  matched_claim: string;
+  matched_source: string;
+}
+
+export type ScanStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+// Transformed/flattened result from getLatestScan (combines attributes + included flagged messages)
+export interface LatestScanResult {
+  scan_id: string;
+  status: ScanStatus;
+  messages_scanned: number;
+  flagged_messages: FlaggedMessage[];
+  initiated_at?: string;
+  completed_at?: string | null;
+}
+
 // JSON:API v2 types from generated OpenAPI schema
 export type NoteCreateRequest = components['schemas']['NoteCreateRequest'];
 export type NoteCreateAttributes = components['schemas']['NoteCreateAttributes'];
@@ -2081,5 +2112,29 @@ export class ApiClient {
       jsonapi: { version: string };
     }>(`/api/v2/bulk-scans/communities/${communityServerId}/recent`);
     return response.data.attributes.has_recent_scan;
+  }
+
+  async getLatestScan(communityServerId: string): Promise<LatestScanResult> {
+    const response = await this.fetchWithRetry<LatestScanResponse>(
+      `/api/v2/bulk-scans/communities/${communityServerId}/latest`
+    );
+
+    return {
+      scan_id: response.data.id,
+      status: response.data.attributes.status as ScanStatus,
+      messages_scanned: response.data.attributes.messages_scanned,
+      initiated_at: response.data.attributes.initiated_at,
+      completed_at: response.data.attributes.completed_at,
+      flagged_messages: (response.included || []).map((item: FlaggedMessageResource) => ({
+        message_id: item.id,
+        channel_id: item.attributes.channel_id,
+        content: item.attributes.content,
+        author_id: item.attributes.author_id,
+        timestamp: item.attributes.timestamp,
+        match_score: item.attributes.match_score,
+        matched_claim: item.attributes.matched_claim,
+        matched_source: item.attributes.matched_source,
+      })),
+    };
   }
 }

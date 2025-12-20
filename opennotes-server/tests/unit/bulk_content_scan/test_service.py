@@ -775,6 +775,141 @@ class TestCompleteScanRowLocking:
         mock_session.commit.assert_called_once()
 
 
+class TestInitiateScanWithZeroMessages:
+    """Test immediate completion when expected_messages=0 (task-855 AC#6)."""
+
+    @pytest.mark.asyncio
+    async def test_initiate_scan_with_zero_expected_messages_is_immediately_completed(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #6: When expected_messages=0, scan should be immediately marked as completed.
+
+        This handles the case where Discord finds 0 scannable messages (all filtered
+        out as bots/empty). The scan should not be left in "pending" status waiting
+        for batch processing that will never happen.
+        """
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        captured_kwargs = {}
+
+        def capture_scan_log(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            mock_log = MagicMock()
+            mock_log.id = uuid4()
+            return mock_log
+
+        with patch(
+            "src.bulk_content_scan.service.BulkContentScanLog",
+            side_effect=capture_scan_log,
+        ):
+            service = BulkContentScanService(
+                session=mock_session,
+                embedding_service=mock_embedding_service,
+                redis_client=mock_redis,
+            )
+
+            await service.initiate_scan(
+                community_server_id=uuid4(),
+                initiated_by_user_id=uuid4(),
+                scan_window_days=7,
+                expected_messages=0,
+            )
+
+        assert "status" in captured_kwargs, "status should be passed to BulkContentScanLog"
+        assert captured_kwargs["status"] == BulkScanStatus.COMPLETED, (
+            f"status should be COMPLETED when expected_messages=0, got {captured_kwargs['status']}"
+        )
+        assert "completed_at" in captured_kwargs, (
+            "completed_at should be set when expected_messages=0"
+        )
+        assert captured_kwargs["completed_at"] is not None, (
+            "completed_at should not be None when expected_messages=0"
+        )
+        assert captured_kwargs.get("messages_scanned") == 0, (
+            "messages_scanned should be 0 when expected_messages=0"
+        )
+        assert captured_kwargs.get("messages_flagged") == 0, (
+            "messages_flagged should be 0 when expected_messages=0"
+        )
+
+    @pytest.mark.asyncio
+    async def test_initiate_scan_with_nonzero_expected_messages_stays_pending(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """When expected_messages > 0, scan should remain in PENDING status."""
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        captured_kwargs = {}
+
+        def capture_scan_log(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            mock_log = MagicMock()
+            mock_log.id = uuid4()
+            return mock_log
+
+        with patch(
+            "src.bulk_content_scan.service.BulkContentScanLog",
+            side_effect=capture_scan_log,
+        ):
+            service = BulkContentScanService(
+                session=mock_session,
+                embedding_service=mock_embedding_service,
+                redis_client=mock_redis,
+            )
+
+            await service.initiate_scan(
+                community_server_id=uuid4(),
+                initiated_by_user_id=uuid4(),
+                scan_window_days=7,
+                expected_messages=100,
+            )
+
+        assert captured_kwargs["status"] == BulkScanStatus.PENDING, (
+            f"status should be PENDING when expected_messages > 0, got {captured_kwargs['status']}"
+        )
+        assert captured_kwargs.get("completed_at") is None, (
+            "completed_at should be None when expected_messages > 0"
+        )
+
+    @pytest.mark.asyncio
+    async def test_initiate_scan_without_expected_messages_stays_pending(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """When expected_messages is not provided (None), scan should remain PENDING."""
+        from src.bulk_content_scan.schemas import BulkScanStatus
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        captured_kwargs = {}
+
+        def capture_scan_log(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            mock_log = MagicMock()
+            mock_log.id = uuid4()
+            return mock_log
+
+        with patch(
+            "src.bulk_content_scan.service.BulkContentScanLog",
+            side_effect=capture_scan_log,
+        ):
+            service = BulkContentScanService(
+                session=mock_session,
+                embedding_service=mock_embedding_service,
+                redis_client=mock_redis,
+            )
+
+            await service.initiate_scan(
+                community_server_id=uuid4(),
+                initiated_by_user_id=uuid4(),
+                scan_window_days=7,
+            )
+
+        assert captured_kwargs["status"] == BulkScanStatus.PENDING, (
+            f"status should be PENDING when expected_messages not provided, got {captured_kwargs['status']}"
+        )
+
+
 class TestBulkScanStatusEnumUsage:
     """Test that BulkScanStatus enum is used consistently instead of string literals."""
 

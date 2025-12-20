@@ -8,6 +8,30 @@ from src.bulk_content_scan.models import BulkContentScanLog
 from src.config import get_settings
 
 
+async def get_latest_scan_for_community(
+    session: AsyncSession,
+    community_server_id: UUID,
+) -> BulkContentScanLog | None:
+    """Get the most recent scan for a community server.
+
+    Args:
+        session: Database session
+        community_server_id: The community server to get the latest scan for
+
+    Returns:
+        The most recent BulkContentScanLog or None if no scans exist
+    """
+    stmt = (
+        select(BulkContentScanLog)
+        .where(BulkContentScanLog.community_server_id == community_server_id)
+        .order_by(BulkContentScanLog.initiated_at.desc())
+        .limit(1)
+    )
+
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def has_recent_scan(
     session: AsyncSession,
     community_server_id: UUID,

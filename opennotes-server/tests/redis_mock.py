@@ -42,6 +42,11 @@ class StatefulRedisMock:
         self.zremrangebyscore = AsyncMock(side_effect=self._zremrangebyscore)
         self.zrange = AsyncMock(side_effect=self._zrange)
         self.zscore = AsyncMock(side_effect=self._zscore)
+        # Redis list operations
+        self.lpush = AsyncMock(side_effect=self._lpush)
+        self.rpush = AsyncMock(side_effect=self._rpush)
+        self.lrange = AsyncMock(side_effect=self._lrange)
+        self.llen = AsyncMock(side_effect=self._llen)
         # Pipeline support
         self.pipeline = self._pipeline
 
@@ -388,6 +393,60 @@ class StatefulRedisMock:
 
         member_str = str(member) if not isinstance(member, str) else member
         return self.store[key].get(member_str)
+
+    async def _lpush(self, key: str, *values: Any) -> int:
+        """Push values onto the head of a list"""
+        if key not in self.store:
+            self.store[key] = []
+
+        if not isinstance(self.store[key], list):
+            raise TypeError(f"Key {key} is not a list")
+
+        for value in reversed(values):
+            self.store[key].insert(0, value)
+
+        return len(self.store[key])
+
+    async def _rpush(self, key: str, *values: Any) -> int:
+        """Push values onto the tail of a list"""
+        if key not in self.store:
+            self.store[key] = []
+
+        if not isinstance(self.store[key], list):
+            raise TypeError(f"Key {key} is not a list")
+
+        for value in values:
+            self.store[key].append(value)
+
+        return len(self.store[key])
+
+    async def _lrange(self, key: str, start: int, stop: int) -> list:
+        """Get a range of elements from a list"""
+        if key not in self.store:
+            return []
+
+        if not isinstance(self.store[key], list):
+            raise TypeError(f"Key {key} is not a list")
+
+        lst = self.store[key]
+        length = len(lst)
+
+        if start < 0:
+            start = max(0, length + start)
+        if stop < 0:
+            stop = length + stop
+
+        return lst[start : stop + 1]
+
+    async def _llen(self, key: str) -> int:
+        """Get the length of a list"""
+        if key not in self.store:
+            return 0
+
+        if not isinstance(self.store[key], list):
+            raise TypeError(f"Key {key} is not a list")
+
+        return len(self.store[key])
 
     def _pipeline(self, transaction: bool = True):
         """Create a pipeline for batched operations"""
