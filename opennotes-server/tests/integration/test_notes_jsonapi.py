@@ -561,6 +561,67 @@ class TestJSONAPIAdvancedFilters:
                     f"Note created_at {note_created} is before filter date {filter_date}"
                 )
 
+    @pytest.mark.asyncio
+    async def test_filter_notes_by_platform_message_id(
+        self, jsonapi_auth_client, jsonapi_sample_note_data, jsonapi_community_server
+    ):
+        """Test filtering notes by platform_message_id.
+
+        filter[platform_message_id]=<discord_message_id> should return only notes
+        whose associated request's message_archive has that platform_message_id.
+
+        This enables the Discord client to find notes by Discord message snowflake ID.
+        """
+        from src.database import get_session_maker
+        from src.notes.request_service import RequestService
+
+        unique_platform_msg_id = f"discord_msg_{int(datetime.now(tz=UTC).timestamp() * 1000000)}"
+
+        async with get_session_maker()() as session:
+            request = await RequestService.create_from_message(
+                db=session,
+                request_id=f"req_platform_filter_{unique_platform_msg_id}",
+                content="Test content for platform_message_id filter",
+                community_server_id=jsonapi_community_server["uuid"],
+                requested_by="test_user",
+                platform_message_id=unique_platform_msg_id,
+                platform_channel_id="test_channel_123",
+            )
+            await session.commit()
+            await session.refresh(request)
+            request_id = request.request_id
+
+        note_data = self._get_unique_note_data(jsonapi_sample_note_data)
+        note_data["request_id"] = request_id
+        note_data["summary"] = f"Note for platform_message_id filter test {unique_platform_msg_id}"
+        create_resp = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        assert create_resp.status_code == 201
+        note_with_platform_id = create_resp.json()["id"]
+
+        note_data_2 = self._get_unique_note_data(jsonapi_sample_note_data)
+        note_data_2["summary"] = "Note without platform_message_id"
+        create_resp_2 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_2)
+        assert create_resp_2.status_code == 201
+        note_without_platform_id = create_resp_2.json()["id"]
+
+        response = await jsonapi_auth_client.get(
+            f"/api/v2/notes?"
+            f"filter[community_server_id]={jsonapi_community_server['uuid']}"
+            f"&filter[platform_message_id]={unique_platform_msg_id}"
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "data" in data
+        returned_note_ids = [note["id"] for note in data["data"]]
+
+        assert note_with_platform_id in returned_note_ids, (
+            f"Note with matching platform_message_id should be returned. Got IDs: {returned_note_ids}"
+        )
+        assert note_without_platform_id not in returned_note_ids, (
+            f"Note without matching platform_message_id should be excluded. Got IDs: {returned_note_ids}"
+        )
+
 
 class TestNotesWriteOperations:
     """Tests for JSON:API v2 notes write operations (POST, PATCH, DELETE).

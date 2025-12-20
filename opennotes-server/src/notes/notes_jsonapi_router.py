@@ -54,6 +54,7 @@ from src.database import get_db
 from src.events.publisher import event_publisher
 from src.monitoring import get_logger
 from src.notes import loaders
+from src.notes.message_archive_models import MessageArchive
 from src.notes.models import Note, Rating, Request
 from src.notes.schemas import NoteClassification, NoteStatus
 from src.users.models import User
@@ -304,6 +305,7 @@ async def list_notes_jsonapi(
     filter_rated_by_not_in: str | None = Query(
         None, alias="filter[rated_by_participant_id__not_in]"
     ),
+    filter_platform_message_id: str | None = Query(None, alias="filter[platform_message_id]"),
 ) -> JSONResponse:
     """List notes with JSON:API format.
 
@@ -319,6 +321,7 @@ async def list_notes_jsonapi(
     - filter[community_server_id]: Filter by community server UUID
     - filter[author_participant_id]: Filter by author
     - filter[request_id]: Filter by request ID
+    - filter[platform_message_id]: Filter by platform message ID (Discord snowflake)
 
     Filter Parameters (operators):
     - filter[status__neq]: Exclude notes with this status
@@ -370,10 +373,20 @@ async def list_notes_jsonapi(
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
 
+        if filter_platform_message_id:
+            query = query.join(Request, Note.request_id == Request.request_id).join(
+                MessageArchive, Request.message_archive_id == MessageArchive.id
+            )
+            filters.append(MessageArchive.platform_message_id == filter_platform_message_id)
+
         if filters:
             query = query.where(and_(*filters))
 
         total_query = select(func.count(Note.id))
+        if filter_platform_message_id:
+            total_query = total_query.join(Request, Note.request_id == Request.request_id).join(
+                MessageArchive, Request.message_archive_id == MessageArchive.id
+            )
         if filters:
             total_query = total_query.where(and_(*filters))
         total_result = await db.execute(total_query)
