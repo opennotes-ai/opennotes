@@ -163,6 +163,25 @@ class TestJSONAPINotesEndpoint:
         )
         return note_data
 
+    async def _create_note_v2(self, client, note_data):
+        """Create a note using the v2 JSON:API endpoint."""
+        request_body = {
+            "data": {
+                "type": "notes",
+                "attributes": {
+                    "summary": note_data["summary"],
+                    "classification": note_data["classification"].value
+                    if hasattr(note_data["classification"], "value")
+                    else note_data["classification"],
+                    "community_server_id": str(note_data["community_server_id"]),
+                    "author_participant_id": note_data["author_participant_id"],
+                },
+            }
+        }
+        if "request_id" in note_data:
+            request_body["data"]["attributes"]["request_id"] = note_data["request_id"]
+        return await client.post("/api/v2/notes", json=request_body)
+
     @pytest.mark.asyncio
     async def test_list_notes_jsonapi_format(
         self, jsonapi_auth_client, jsonapi_sample_note_data, jsonapi_community_server
@@ -176,8 +195,10 @@ class TestJSONAPINotesEndpoint:
         - 'meta' object with count
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
-        assert create_response.status_code == 201
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
+        assert create_response.status_code == 201, (
+            f"Failed to create note: {create_response.status_code} {create_response.text}"
+        )
 
         response = await jsonapi_auth_client.get(
             f"/api/v2/notes?filter[community_server_id]={jsonapi_community_server['uuid']}"
@@ -209,7 +230,7 @@ class TestJSONAPINotesEndpoint:
         - 'attributes': object containing resource attributes
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
 
         response = await jsonapi_auth_client.get(
@@ -243,9 +264,9 @@ class TestJSONAPINotesEndpoint:
         For single resource, 'data' should be an object, not an array.
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await jsonapi_auth_client.get(f"/api/v2/notes/{note_id}")
         assert response.status_code == 200
@@ -268,7 +289,7 @@ class TestJSONAPINotesEndpoint:
         JSON:API filtering: filter[field]=value
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
 
         filter_query = (
@@ -292,7 +313,7 @@ class TestJSONAPINotesEndpoint:
         for i in range(5):
             note_data = self._get_unique_note_data(jsonapi_sample_note_data)
             note_data["summary"] = f"Pagination test note {i}"
-            response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+            response = await self._create_note_v2(jsonapi_auth_client, note_data)
             assert response.status_code == 201
 
         response = await jsonapi_auth_client.get(
@@ -363,6 +384,25 @@ class TestJSONAPIAdvancedFilters:
         )
         return note_data
 
+    async def _create_note_v2(self, client, note_data):
+        """Create a note using the v2 JSON:API endpoint."""
+        request_body = {
+            "data": {
+                "type": "notes",
+                "attributes": {
+                    "summary": note_data["summary"],
+                    "classification": note_data["classification"].value
+                    if hasattr(note_data["classification"], "value")
+                    else note_data["classification"],
+                    "community_server_id": str(note_data["community_server_id"]),
+                    "author_participant_id": note_data["author_participant_id"],
+                },
+            }
+        }
+        if "request_id" in note_data:
+            request_body["data"]["attributes"]["request_id"] = note_data["request_id"]
+        return await client.post("/api/v2/notes", json=request_body)
+
     @pytest.mark.asyncio
     async def test_filter_notes_exclude_rated_by_participant(
         self, jsonapi_auth_client, jsonapi_sample_note_data, jsonapi_community_server
@@ -377,15 +417,15 @@ class TestJSONAPIAdvancedFilters:
         """
         note_data_1 = self._get_unique_note_data(jsonapi_sample_note_data)
         note_data_1["summary"] = "Rated note for exclusion test"
-        create_resp_1 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_1)
+        create_resp_1 = await self._create_note_v2(jsonapi_auth_client, note_data_1)
         assert create_resp_1.status_code == 201
-        rated_note_id = create_resp_1.json()["id"]
+        rated_note_id = create_resp_1.json()["data"]["id"]
 
         note_data_2 = self._get_unique_note_data(jsonapi_sample_note_data)
         note_data_2["summary"] = "Unrated note for exclusion test"
-        create_resp_2 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_2)
+        create_resp_2 = await self._create_note_v2(jsonapi_auth_client, note_data_2)
         assert create_resp_2.status_code == 201
-        unrated_note_id = create_resp_2.json()["id"]
+        unrated_note_id = create_resp_2.json()["data"]["id"]
 
         rater_id = "test_rater_for_exclusion"
         rating_data = {
@@ -434,15 +474,15 @@ class TestJSONAPIAdvancedFilters:
         """
         note_data_1 = self._get_unique_note_data(jsonapi_sample_note_data)
         note_data_1["summary"] = "Rated note for inclusion test"
-        create_resp_1 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_1)
+        create_resp_1 = await self._create_note_v2(jsonapi_auth_client, note_data_1)
         assert create_resp_1.status_code == 201
-        rated_note_id = create_resp_1.json()["id"]
+        rated_note_id = create_resp_1.json()["data"]["id"]
 
         note_data_2 = self._get_unique_note_data(jsonapi_sample_note_data)
         note_data_2["summary"] = "Unrated note for inclusion test"
-        create_resp_2 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_2)
+        create_resp_2 = await self._create_note_v2(jsonapi_auth_client, note_data_2)
         assert create_resp_2.status_code == 201
-        unrated_note_id = create_resp_2.json()["id"]
+        unrated_note_id = create_resp_2.json()["data"]["id"]
 
         rater_id = "test_rater_for_inclusion"
         rating_data = {
@@ -485,7 +525,7 @@ class TestJSONAPIAdvancedFilters:
         filter[status__neq]=NEEDS_MORE_RATINGS should exclude notes with that status.
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
 
         response = await jsonapi_auth_client.get(
@@ -513,7 +553,7 @@ class TestJSONAPIAdvancedFilters:
         on or after that date.
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
 
         filter_date = "2024-01-01T00:00:00Z"
@@ -549,7 +589,7 @@ class TestJSONAPIAdvancedFilters:
         on or before that date (essentially all notes for this test).
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
 
         filter_date = "2030-12-31T23:59:59Z"
@@ -588,7 +628,7 @@ class TestJSONAPIAdvancedFilters:
         - Were created on or after 2024-01-01
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
 
         filter_date = "2024-01-01T00:00:00Z"
@@ -651,15 +691,15 @@ class TestJSONAPIAdvancedFilters:
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
         note_data["request_id"] = request_id
         note_data["summary"] = f"Note for platform_message_id filter test {unique_platform_msg_id}"
-        create_resp = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_resp = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_resp.status_code == 201
-        note_with_platform_id = create_resp.json()["id"]
+        note_with_platform_id = create_resp.json()["data"]["id"]
 
         note_data_2 = self._get_unique_note_data(jsonapi_sample_note_data)
         note_data_2["summary"] = "Note without platform_message_id"
-        create_resp_2 = await jsonapi_auth_client.post("/api/v1/notes", json=note_data_2)
+        create_resp_2 = await self._create_note_v2(jsonapi_auth_client, note_data_2)
         assert create_resp_2.status_code == 201
-        note_without_platform_id = create_resp_2.json()["id"]
+        note_without_platform_id = create_resp_2.json()["data"]["id"]
 
         response = await jsonapi_auth_client.get(
             f"/api/v2/notes?"
@@ -695,6 +735,23 @@ class TestNotesWriteOperations:
             f"Write operations test note {int(datetime.now(tz=UTC).timestamp() * 1000000)}"
         )
         return note_data
+
+    async def _create_note_v2(self, client, note_data):
+        """Create a note using the v2 JSON:API endpoint."""
+        request_body = {
+            "data": {
+                "type": "notes",
+                "attributes": {
+                    "summary": note_data["summary"],
+                    "classification": note_data["classification"].value
+                    if hasattr(note_data["classification"], "value")
+                    else note_data["classification"],
+                    "community_server_id": str(note_data["community_server_id"]),
+                    "author_participant_id": note_data["author_participant_id"],
+                },
+            }
+        }
+        return await client.post("/api/v2/notes", json=request_body)
 
     @pytest.mark.asyncio
     async def test_create_note_jsonapi(
@@ -770,9 +827,9 @@ class TestNotesWriteOperations:
         - Response body with 'data' object containing updated resource
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         updated_summary = "Updated summary via JSON:API"
         request_body = {
@@ -808,9 +865,9 @@ class TestNotesWriteOperations:
         from uuid import uuid4
 
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         request_body = {
             "data": {
@@ -835,9 +892,9 @@ class TestNotesWriteOperations:
         - No response body
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await jsonapi_auth_client.delete(f"/api/v2/notes/{note_id}")
 
@@ -872,6 +929,23 @@ class TestForcePublishNote:
             f"Force publish test note {int(datetime.now(tz=UTC).timestamp() * 1000000)}"
         )
         return note_data
+
+    async def _create_note_v2(self, client, note_data):
+        """Create a note using the v2 JSON:API endpoint."""
+        request_body = {
+            "data": {
+                "type": "notes",
+                "attributes": {
+                    "summary": note_data["summary"],
+                    "classification": note_data["classification"].value
+                    if hasattr(note_data["classification"], "value")
+                    else note_data["classification"],
+                    "community_server_id": str(note_data["community_server_id"]),
+                    "author_participant_id": note_data["author_participant_id"],
+                },
+            }
+        }
+        return await client.post("/api/v2/notes", json=request_body)
 
     @pytest.fixture
     async def admin_user_and_headers(self, jsonapi_registered_user, jsonapi_community_server):
@@ -934,9 +1008,9 @@ class TestForcePublishNote:
         - status updated to CURRENTLY_RATED_HELPFUL
         """
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await admin_auth_client.post(f"/api/v2/notes/{note_id}/force-publish")
 
@@ -973,9 +1047,9 @@ class TestForcePublishNote:
     ):
         """Test POST /api/v2/notes/{id}/force-publish returns 403 for non-admin users."""
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await jsonapi_auth_client.post(f"/api/v2/notes/{note_id}/force-publish")
 
@@ -992,9 +1066,9 @@ class TestForcePublishNote:
     ):
         """Test that force-publish response Content-Type is application/vnd.api+json."""
         note_data = self._get_unique_note_data(jsonapi_sample_note_data)
-        create_response = await jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await admin_auth_client.post(f"/api/v2/notes/{note_id}/force-publish")
 

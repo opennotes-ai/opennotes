@@ -154,6 +154,24 @@ def scoring_jsonapi_sample_note_data(
     }
 
 
+async def create_note_v2(client, note_data):
+    """Create a note using the v2 JSON:API endpoint."""
+    request_body = {
+        "data": {
+            "type": "notes",
+            "attributes": {
+                "summary": note_data["summary"],
+                "classification": note_data["classification"].value
+                if hasattr(note_data["classification"], "value")
+                else note_data["classification"],
+                "community_server_id": str(note_data["community_server_id"]),
+                "author_participant_id": note_data["author_participant_id"],
+            },
+        }
+    }
+    return await client.post("/api/v2/notes", json=request_body)
+
+
 class TestScoringStatusJSONAPI:
     """Tests for GET /api/v2/scoring/status endpoint."""
 
@@ -226,9 +244,9 @@ class TestNoteScoreJSONAPI:
         - Resource has 'type', 'id', and 'attributes'
         """
         note_data = self._get_unique_note_data(scoring_jsonapi_sample_note_data)
-        create_response = await scoring_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(scoring_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201, f"Failed to create note: {create_response.text}"
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await scoring_jsonapi_auth_client.get(f"/api/v2/scoring/notes/{note_id}/score")
 
@@ -295,18 +313,14 @@ class TestBatchScoresJSONAPI:
         - 'data' array containing score resources
         """
         note_data_1 = self._get_unique_note_data(scoring_jsonapi_sample_note_data)
-        create_response_1 = await scoring_jsonapi_auth_client.post(
-            "/api/v1/notes", json=note_data_1
-        )
+        create_response_1 = await create_note_v2(scoring_jsonapi_auth_client, note_data_1)
         assert create_response_1.status_code == 201
-        note_id_1 = create_response_1.json()["id"]
+        note_id_1 = create_response_1.json()["data"]["id"]
 
         note_data_2 = self._get_unique_note_data(scoring_jsonapi_sample_note_data)
-        create_response_2 = await scoring_jsonapi_auth_client.post(
-            "/api/v1/notes", json=note_data_2
-        )
+        create_response_2 = await create_note_v2(scoring_jsonapi_auth_client, note_data_2)
         assert create_response_2.status_code == 201
-        note_id_2 = create_response_2.json()["id"]
+        note_id_2 = create_response_2.json()["data"]["id"]
 
         request_body = {
             "data": {
@@ -353,9 +367,9 @@ class TestBatchScoresJSONAPI:
     ):
         """Test POST /api/v2/scoring/notes/batch-scores handles partial not found."""
         note_data = self._get_unique_note_data(scoring_jsonapi_sample_note_data)
-        create_response = await scoring_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(scoring_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         fake_note_id = str(uuid4())
 
@@ -413,7 +427,7 @@ class TestTopNotesJSONAPI:
         - Meta information in 'meta'
         """
         note_data = self._get_unique_note_data(scoring_jsonapi_sample_note_data)
-        create_response = await scoring_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(scoring_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
 
         response = await scoring_jsonapi_auth_client.get("/api/v2/scoring/notes/top")
@@ -449,9 +463,7 @@ class TestTopNotesJSONAPI:
         """Test GET /api/v2/scoring/notes/top respects limit parameter."""
         for _ in range(3):
             note_data = self._get_unique_note_data(scoring_jsonapi_sample_note_data)
-            create_response = await scoring_jsonapi_auth_client.post(
-                "/api/v1/notes", json=note_data
-            )
+            create_response = await create_note_v2(scoring_jsonapi_auth_client, note_data)
             assert create_response.status_code == 201
 
         response = await scoring_jsonapi_auth_client.get("/api/v2/scoring/notes/top?limit=2")

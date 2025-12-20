@@ -66,7 +66,6 @@ from src.notes.note_publisher_jsonapi_router import (
 )
 from src.notes.note_publisher_router import router as note_publisher_router
 from src.notes.notes_jsonapi_router import router as jsonapi_notes_router
-from src.notes.notes_router import router as notes_router
 from src.notes.ratings_jsonapi_router import router as ratings_jsonapi_router
 from src.notes.requests_jsonapi_router import router as requests_jsonapi_router
 from src.notes.requests_router import router as requests_router
@@ -418,7 +417,6 @@ app.include_router(
 )
 
 # API v1 routes
-app.include_router(notes_router, prefix=settings.API_V1_PREFIX, tags=["notes"])
 app.include_router(requests_router, prefix=settings.API_V1_PREFIX, tags=["requests"])
 app.include_router(stats_router, prefix=settings.API_V1_PREFIX, tags=["stats"])
 app.include_router(scoring_router, prefix=settings.API_V1_PREFIX)
