@@ -74,6 +74,15 @@ const createJSONAPIResponse = <T>(type: string, id: string, attributes: T) => ({
   },
 });
 
+const createJSONAPIListResponse = <T>(type: string, items: Array<{id: string; attributes: T}>) => ({
+  jsonapi: { version: '1.1' },
+  data: items.map(item => ({
+    type,
+    id: item.id,
+    attributes: item.attributes,
+  })),
+});
+
 const createCommunityServerJSONAPIResponse = (id: string, platformId: string) => createJSONAPIResponse(
   'community-servers',
   id,
@@ -224,26 +233,28 @@ describe('API Persistence Integration Tests', () => {
 
       mockFetch.mockClear();
 
-      const retrievedNote = {
-        id: 'note-789',
-        messageId: createRequest.messageId,
-        authorId: createRequest.authorId,
-        content: createRequest.content,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      };
-
       mockFetch.mockResolvedValueOnce(
         createMockResponse({
-          json: async () => [retrievedNote],
+          json: async () => createJSONAPIListResponse('notes', [{
+            id: 'note-789',
+            attributes: {
+              author_participant_id: createRequest.authorId,
+              summary: createRequest.content,
+              classification: 'NOT_MISLEADING',
+              status: 'NEEDS_MORE_RATINGS',
+              helpfulness_score: 0,
+              ratings_count: 0,
+              created_at: new Date().toISOString(),
+              community_server_id: '550e8400-e29b-41d4-a716-446655440001',
+            },
+          }]),
         })
       );
 
       const retrievedNotes = await client2.getNotes(createRequest.messageId);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        `http://localhost:8000/api/v1/notes/${createRequest.messageId}`,
+        expect.stringContaining('/api/v2/notes'),
         expect.objectContaining({
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
@@ -286,19 +297,21 @@ describe('API Persistence Integration Tests', () => {
 
       mockFetch.mockClear();
 
-      const discordServerResponse = {
-        id: 'note-cross-client-001',
-        messageId: createRequest.messageId,
-        authorId: createRequest.authorId,
-        content: createRequest.content,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      };
-
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => [discordServerResponse],
+        json: async () => createJSONAPIListResponse('notes', [{
+          id: 'note-cross-client-001',
+          attributes: {
+            author_participant_id: createRequest.authorId,
+            summary: createRequest.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: '550e8400-e29b-41d4-a716-446655440002',
+          },
+        }]),
       }));
 
       const retrieved = await client2.getNotes(createRequest.messageId);
@@ -897,25 +910,53 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockClear();
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => [persistedNote],
+        json: async () => createJSONAPIListResponse('notes', [{
+          id: 'note-consistency-001',
+          attributes: {
+            author_participant_id: noteRequest.authorId,
+            summary: noteRequest.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: '550e8400-e29b-41d4-a716-446655440014',
+          },
+        }]),
       }));
 
       const notesFromClient2 = await client2.getNotes(noteRequest.messageId);
 
       expect(notesFromClient2).toHaveLength(1);
-      expect(notesFromClient2[0]).toEqual(persistedNote);
+      expect(notesFromClient2[0].id).toBe('note-consistency-001');
+      expect(notesFromClient2[0].authorId).toBe(noteRequest.authorId);
+      expect(notesFromClient2[0].content).toBe(noteRequest.content);
 
       mockFetch.mockClear();
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => [persistedNote],
+        json: async () => createJSONAPIListResponse('notes', [{
+          id: 'note-consistency-001',
+          attributes: {
+            author_participant_id: noteRequest.authorId,
+            summary: noteRequest.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: '550e8400-e29b-41d4-a716-446655440014',
+          },
+        }]),
       }));
 
       const notesFromClient1Again = await client1.getNotes(
         noteRequest.messageId
       );
 
-      expect(notesFromClient1Again).toEqual(notesFromClient2);
+      expect(notesFromClient1Again[0].id).toBe(notesFromClient2[0].id);
+      expect(notesFromClient1Again[0].authorId).toBe(notesFromClient2[0].authorId);
+      expect(notesFromClient1Again[0].content).toBe(notesFromClient2[0].content);
     });
 
     it('should handle concurrent note creations from different clients', async () => {
@@ -1010,19 +1051,21 @@ describe('API Persistence Integration Tests', () => {
 
       mockFetch.mockClear();
 
-      const discordResponses = notes.map((note, i) => ({
-        id: `note-multi-${i}`,
-        messageId: '123456789012345015',
-        authorId: note.authorId,
-        content: note.content,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      }));
-
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => discordResponses,
+        json: async () => createJSONAPIListResponse('notes', notes.map((note, i) => ({
+          id: `note-multi-${i}`,
+          attributes: {
+            author_participant_id: note.authorId,
+            summary: note.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: communityServerUUIDs[i],
+          },
+        }))),
       }));
 
       const retrievedNotes = await client2.getNotes('msg-multi-note-001');
@@ -1030,7 +1073,7 @@ describe('API Persistence Integration Tests', () => {
       expect(retrievedNotes).toHaveLength(3);
       retrievedNotes.forEach((note, i) => {
         expect(note.id).toBe(`note-multi-${i}`);
-        expect(note.messageId).toBe('123456789012345015');
+        expect(note.messageId).toBe('msg-multi-note-001');
         expect(note.authorId).toBe(notes[i].authorId);
         expect(note.content).toBe(notes[i].content);
         expect(note.createdAt).toBeGreaterThan(0);

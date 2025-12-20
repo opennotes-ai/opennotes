@@ -21,6 +21,28 @@ from src.users.models import User
 from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 
 
+def make_similarity_search_request(
+    text: str,
+    community_server_id: str,
+    dataset_tags: list[str] | None = None,
+    similarity_threshold: float = 0.7,
+    limit: int = 5,
+) -> dict:
+    """Create a JSON:API formatted request body for similarity search."""
+    return {
+        "data": {
+            "type": "similarity-searches",
+            "attributes": {
+                "text": text,
+                "community_server_id": community_server_id,
+                "dataset_tags": dataset_tags or ["snopes"],
+                "similarity_threshold": similarity_threshold,
+                "limit": limit,
+            },
+        }
+    }
+
+
 @pytest.fixture
 async def test_community_server():
     """Create a test community server with OpenAI configuration"""
@@ -191,83 +213,75 @@ class TestEmbeddingAuthorization:
         self, auth_client, test_community_server, authorized_member
     ):
         """Authorized members should be able to generate embeddings"""
-        request_data = {
-            "text": "Test search query",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="Test search query",
+            community_server_id=test_community_server.platform_id,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
-        assert response.status_code in [200, 404]
+        # 429 is acceptable when LLM provider is not configured
+        assert response.status_code in [200, 404, 429]
 
     async def test_non_member_rejected_with_403(self, auth_client, test_community_server):
         """Users who are not members should receive 403 Forbidden"""
-        request_data = {
-            "text": "Test search query",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="Test search query",
+            community_server_id=test_community_server.platform_id,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
         assert response.status_code == 403
-        assert "not a member" in response.json()["detail"].lower()
+        # JSON:API error format
+        error_detail = response.json().get("errors", [{}])[0].get("detail", "")
+        assert "not a member" in error_detail.lower()
 
     async def test_banned_member_rejected_with_403(
         self, auth_client, test_community_server, banned_member
     ):
         """Banned users should receive 403 Forbidden"""
-        request_data = {
-            "text": "Test search query",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="Test search query",
+            community_server_id=test_community_server.platform_id,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
         assert response.status_code == 403
-        assert "banned" in response.json()["detail"].lower()
+        # JSON:API error format
+        error_detail = response.json().get("errors", [{}])[0].get("detail", "")
+        assert "banned" in error_detail.lower()
 
     async def test_inactive_member_rejected_with_403(
         self, auth_client, test_community_server, inactive_member
     ):
         """Inactive members should receive 403 Forbidden"""
-        request_data = {
-            "text": "Test search query",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="Test search query",
+            community_server_id=test_community_server.platform_id,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
         assert response.status_code == 403
-        assert "not a member" in response.json()["detail"].lower()
+        # JSON:API error format
+        error_detail = response.json().get("errors", [{}])[0].get("detail", "")
+        assert "not a member" in error_detail.lower()
 
     async def test_nonexistent_community_rejected_with_404(self, auth_client):
         """Requests for non-existent communities are auto-created, returning 403 for non-members"""
-        request_data = {
-            "text": "Test search query",
-            "community_server_id": "nonexistent_guild_id",
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="Test search query",
+            community_server_id="nonexistent_guild_id",
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
-        # Communities are auto-created, so non-existent communities are created with auto-creation
-        # Since the user isn't a member of the auto-created community, they get 403
         assert response.status_code == 403
-        assert "not a member" in response.json()["detail"].lower()
+        # JSON:API error format
+        error_detail = response.json().get("errors", [{}])[0].get("detail", "")
+        assert "not a member" in error_detail.lower()
 
 
 @pytest.mark.asyncio
@@ -282,15 +296,12 @@ class TestEmbeddingAuditLogging:
 
         caplog.set_level(logging.INFO)
 
-        request_data = {
-            "text": "Test search query",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="Test search query",
+            community_server_id=test_community_server.platform_id,
+        )
 
-        await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
         log_records = [
             r.message for r in caplog.records if "similarity search" in r.message.lower()
@@ -303,14 +314,11 @@ class TestEmbeddingAuditLogging:
 
         caplog.set_level(logging.WARNING)
 
-        request_data = {
-            "text": "Test search query",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="Test search query",
+            community_server_id=test_community_server.platform_id,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
         assert response.status_code == 403

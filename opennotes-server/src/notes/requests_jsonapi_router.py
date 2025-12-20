@@ -12,12 +12,18 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
+from openai import (
+    APIConnectionError,
+    APIError,
+    AuthenticationError,
+    RateLimitError,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,17 +49,69 @@ from src.common.jsonapi import (
     create_pagination_links as create_pagination_links_base,
 )
 from src.database import get_db
+from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.notes import loaders
 from src.notes.message_archive_models import MessageArchive
 from src.notes.message_archive_service import MessageArchiveService
-from src.notes.models import Request
-from src.notes.schemas import RequestStatus
+from src.notes.models import Note, Request
+from src.notes.schemas import (
+    NoteJSONAPIAttributes,
+    NoteResource,
+    NoteSingleResponse,
+    RequestStatus,
+)
 from src.users.models import User
+
+if TYPE_CHECKING:
+    from src.services.ai_note_writer import AINoteWriter
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+def get_ai_note_writer(http_request: HTTPRequest) -> "AINoteWriter":
+    """Dependency to get AINoteWriter service from app state."""
+    from src.services.ai_note_writer import AINoteWriter  # noqa: PLC0415
+
+    ai_note_writer = getattr(http_request.app.state, "ai_note_writer", None)
+    if ai_note_writer is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI note writing service is not available",
+        )
+    return cast(AINoteWriter, ai_note_writer)
+
+
+def note_to_resource(note: Note) -> NoteResource:
+    """Convert a Note model to a JSON:API resource object."""
+    platform_message_id = None
+    if note.request and note.request.message_archive:
+        platform_message_id = note.request.message_archive.platform_message_id
+
+    return NoteResource(
+        type="notes",
+        id=str(note.id),
+        attributes=NoteJSONAPIAttributes(
+            author_participant_id=note.author_participant_id,
+            channel_id=note.channel_id,
+            summary=note.summary,
+            classification=note.classification,
+            helpfulness_score=note.helpfulness_score,
+            status=note.status,
+            ai_generated=note.ai_generated,
+            ai_provider=note.ai_provider,
+            force_published=note.force_published,
+            force_published_at=note.force_published_at,
+            created_at=note.created_at,
+            updated_at=note.updated_at,
+            request_id=note.request_id,
+            platform_message_id=platform_message_id,
+            ratings_count=len(note.ratings) if note.ratings else 0,
+            community_server_id=str(note.community_server_id) if note.community_server_id else None,
+        ),
+    )
 
 
 class RequestCreateAttributes(StrictInputSchema):
@@ -598,4 +656,147 @@ async def update_request_jsonapi(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to update request",
+        )
+
+
+@router.post(
+    "/requests/{request_id}/ai-notes",
+    response_class=JSONResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("5/minute;20/hour")
+async def generate_ai_note_jsonapi(  # noqa: PLR0911
+    request_id: str,
+    request: HTTPRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    ai_note_writer: Annotated["AINoteWriter", Depends(get_ai_note_writer)],
+) -> JSONResponse:
+    """Generate an AI-powered note for a specific request in JSON:API format.
+
+    This endpoint triggers on-demand AI note generation for requests that have
+    associated fact-check data. The AI will analyze the original message and
+    the matched fact-check information to generate a helpful community note.
+
+    Requirements:
+    - Request must exist and have fact-check metadata (dataset_item_id, similarity_score, dataset_name)
+    - AI note writing must be enabled for the community server
+    - Rate limits: 5 per minute, 20 per hour
+
+    Returns JSON:API formatted response with the generated note resource.
+    """
+    try:
+        logger.info(
+            f"Generating AI note for request {request_id} (JSON:API)",
+            extra={
+                "request_id": request_id,
+                "user_id": current_user.id,
+            },
+        )
+
+        note = await ai_note_writer.generate_note_for_request(db, request_id)
+
+        result = await db.execute(select(Note).options(*loaders.full()).where(Note.id == note.id))
+        note_with_relations = result.scalar_one()
+
+        logger.info(
+            f"Successfully generated AI note {note.id} for request {request_id} (JSON:API)",
+            extra={
+                "note_id": note.id,
+                "request_id": request_id,
+                "user_id": current_user.id,
+            },
+        )
+
+        note_resource = note_to_resource(note_with_relations)
+        response = NoteSingleResponse(
+            data=note_resource,
+            links=JSONAPILinks(self_=f"/api/v2/notes/{note.id}"),
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except ValueError as e:
+        logger.warning(
+            f"Validation error generating AI note (JSON:API): {e}",
+            extra={
+                "request_id": request_id,
+                "error": str(e),
+            },
+        )
+        return create_error_response(
+            status.HTTP_400_BAD_REQUEST,
+            "Bad Request",
+            str(e),
+        )
+    except HTTPException:
+        raise
+    except AuthenticationError as e:
+        logger.error(
+            f"OpenAI authentication failed for request {request_id} (JSON:API): {e}",
+            extra={
+                "request_id": request_id,
+                "user_id": current_user.id,
+            },
+        )
+        return create_error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Service Unavailable",
+            "AI note generation service is misconfigured",
+        )
+    except RateLimitError as e:
+        logger.warning(
+            f"OpenAI rate limit exceeded for request {request_id} (JSON:API): {e}",
+            extra={
+                "request_id": request_id,
+                "user_id": current_user.id,
+            },
+        )
+        return create_error_response(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too Many Requests",
+            "AI service rate limit exceeded. Please try again later.",
+        )
+    except APIConnectionError as e:
+        logger.error(
+            f"OpenAI connection failed for request {request_id} (JSON:API): {e}",
+            extra={
+                "request_id": request_id,
+                "user_id": current_user.id,
+            },
+        )
+        return create_error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Service Unavailable",
+            "AI note generation service is temporarily unavailable",
+        )
+    except APIError as e:
+        logger.error(
+            f"OpenAI API error for request {request_id} (JSON:API): {e}",
+            extra={
+                "request_id": request_id,
+                "user_id": current_user.id,
+            },
+        )
+        return create_error_response(
+            status.HTTP_502_BAD_GATEWAY,
+            "Bad Gateway",
+            f"AI service error: {str(e)[:100]}",
+        )
+    except Exception as e:
+        logger.exception(
+            f"Failed to generate AI note for request {request_id} (JSON:API): {e}",
+            extra={
+                "request_id": request_id,
+                "user_id": current_user.id,
+            },
+        )
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to generate AI note",
         )

@@ -90,8 +90,11 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
           enabled: true,
           dataset_tags: ['health'],
           similarity_threshold: 0.7,
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          updated_by: null,
         },
       }));
 
@@ -124,8 +127,11 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
           enabled: true,
           dataset_tags: ['health'],
           similarity_threshold: 0.7,
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          updated_by: null,
         },
       }));
 
@@ -157,8 +163,11 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
           enabled: true,
           dataset_tags: ['health'],
           similarity_threshold: 0.7,
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          updated_by: null,
         },
       };
 

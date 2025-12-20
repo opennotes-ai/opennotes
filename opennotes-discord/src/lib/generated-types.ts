@@ -544,6 +544,7 @@ export interface paths {
          *     - filter[community_server_id]: Filter by community server UUID
          *     - filter[author_participant_id]: Filter by author
          *     - filter[request_id]: Filter by request ID
+         *     - filter[platform_message_id]: Filter by platform message ID (Discord snowflake)
          *
          *     Filter Parameters (operators):
          *     - filter[status__neq]: Exclude notes with this status
@@ -551,6 +552,7 @@ export interface paths {
          *     - filter[created_at__lte]: Notes created on or before this datetime
          *     - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
          *       (comma-separated list of participant IDs)
+         *     - filter[rated_by_participant_id]: Include only notes rated by this user
          *
          *     Returns JSON:API formatted response with data, jsonapi, links, and meta.
          */
@@ -1131,6 +1133,37 @@ export interface paths {
         patch: operations["update_request_jsonapi_api_v2_requests__request_id__patch"];
         trace?: never;
     };
+    "/api/v2/requests/{request_id}/ai-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Ai Note Jsonapi
+         * @description Generate an AI-powered note for a specific request in JSON:API format.
+         *
+         *     This endpoint triggers on-demand AI note generation for requests that have
+         *     associated fact-check data. The AI will analyze the original message and
+         *     the matched fact-check information to generate a helpful community note.
+         *
+         *     Requirements:
+         *     - Request must exist and have fact-check metadata (dataset_item_id, similarity_score, dataset_name)
+         *     - AI note writing must be enabled for the community server
+         *     - Rate limits: 5 per minute, 20 per hour
+         *
+         *     Returns JSON:API formatted response with the generated note resource.
+         */
+        post: operations["generate_ai_note_jsonapi_api_v2_requests__request_id__ai_notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/scoring/status": {
         parameters: {
             query?: never;
@@ -1249,6 +1282,62 @@ export interface paths {
          *     - community_server_id: Filter by community server UUID
          */
         get: operations["get_top_notes_jsonapi_api_v2_scoring_notes_top_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/scoring/score": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Score Notes Jsonapi
+         * @description Score notes using the external scoring adapter in JSON:API format.
+         *
+         *     This endpoint runs the Community Notes scoring algorithm on the provided
+         *     notes, ratings, and enrollment data.
+         *
+         *     JSON:API request body must contain:
+         *     - data.type: "scoring-requests"
+         *     - data.attributes.notes: List of notes to score
+         *     - data.attributes.ratings: List of ratings for the notes
+         *     - data.attributes.enrollment: List of user enrollment data
+         *     - data.attributes.status: Optional note status history
+         *
+         *     Returns JSON:API formatted response with scored_notes, helpful_scores,
+         *     and auxiliary_info.
+         */
+        post: operations["score_notes_jsonapi_api_v2_scoring_score_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/scoring/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scoring Health Jsonapi
+         * @description Health check for the scoring service.
+         *
+         *     Returns a simple health status for the scoring service.
+         *     This endpoint does not require authentication.
+         */
+        get: operations["scoring_health_jsonapi_api_v2_scoring_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1811,504 +1900,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/notes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Notes
-         * @description List notes with filters and pagination.
-         *
-         *     Users can only see notes from communities they are members of.
-         *     Service accounts can see all notes.
-         */
-        get: operations["list_notes_api_v1_notes_get"];
-        put?: never;
-        /**
-         * Create Note
-         * @description Create a new community note
-         */
-        post: operations["create_note_api_v1_notes_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/notes/{note_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Note
-         * @description Get a specific note by ID.
-         *
-         *     Users can only view notes from communities they are members of.
-         *     Service accounts can view all notes.
-         */
-        get: operations["get_note_api_v1_notes__note_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Note
-         * @description Delete a note.
-         *
-         *     Users can only delete notes they authored or if they are a community admin.
-         *     Service accounts can delete any note.
-         */
-        delete: operations["delete_note_api_v1_notes__note_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Note
-         * @deprecated
-         * @description Update a note.
-         *
-         *     Deprecated: Use JSON:API endpoint PATCH /jsonapi/notes/{note_id} instead.
-         *
-         *     Users can only update notes they authored or if they are a community admin.
-         *     Service accounts can update any note.
-         */
-        patch: operations["update_note_api_v1_notes__note_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/notes/{note_id}/force-publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Force Publish Note
-         * @description Force-publish a note (admin only).
-         *
-         *     This endpoint allows administrators to manually publish notes that haven't met
-         *     automatic publication thresholds. The note is marked with force_published flags
-         *     for transparency, and the action is logged with admin user ID and timestamp.
-         *
-         *     Requires admin authentication (service accounts, Open Notes admins, or community admins).
-         */
-        post: operations["force_publish_note_api_v1_notes__note_id__force_publish_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/requests": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Requests
-         * @description List requests with filters and pagination.
-         *
-         *     Users can only see requests from communities they are members of.
-         *     Service accounts can see all requests.
-         */
-        get: operations["list_requests_api_v1_requests_get"];
-        put?: never;
-        /**
-         * Create Request
-         * @description Create a new note request
-         */
-        post: operations["create_request_api_v1_requests_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/requests/{request_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Request
-         * @description Get a specific request.
-         *
-         *     Users can only view requests from communities they are members of.
-         *     Service accounts can view all requests.
-         */
-        get: operations["get_request_api_v1_requests__request_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Request
-         * @description Update a request status.
-         *
-         *     Users can only update requests they created or if they are a community admin.
-         *     Service accounts can update any request.
-         */
-        patch: operations["update_request_api_v1_requests__request_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/requests/{request_id}/generate-ai-note": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Generate Ai Note
-         * @description Generate an AI-powered note for a specific request.
-         *
-         *     This endpoint triggers on-demand AI note generation for requests that have
-         *     associated fact-check data. The AI will analyze the original message and
-         *     the matched fact-check information to generate a helpful community note.
-         *
-         *     Requirements:
-         *     - Request must exist and have fact-check metadata (dataset_item_id, similarity_score, dataset_name)
-         *     - AI note writing must be enabled for the community server
-         *     - Rate limits: 5 per minute, 20 per hour
-         *
-         *     Returns:
-         *         NoteResponse: The generated AI note
-         */
-        post: operations["generate_ai_note_api_v1_requests__request_id__generate_ai_note_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/stats/notes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Notes Stats
-         * @description Get aggregated note statistics.
-         *
-         *     Users can only see stats from communities they are members of.
-         *     Service accounts can see all stats.
-         */
-        get: operations["get_notes_stats_api_v1_stats_notes_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/stats/participant/{participant_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Participant Stats
-         * @description Get statistics for a specific participant.
-         *
-         *     Users can only see stats from communities they are members of.
-         *     Service accounts can see all stats.
-         */
-        get: operations["get_participant_stats_api_v1_stats_participant__participant_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/scoring/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Scoring Status */
-        get: operations["get_scoring_status_api_v1_scoring_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/scoring/notes/{note_id}/score": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Note Score
-         * @description Get individual note score with metadata.
-         *
-         *     Users can only view scores for notes in communities they are members of.
-         *     Service accounts can view all scores.
-         *
-         *     Returns the calculated score for a specific note along with:
-         *     - Algorithm used for scoring
-         *     - Confidence level based on rating count
-         *     - Current scoring tier information
-         *     - Number of ratings
-         *     - Timestamp of calculation
-         *
-         *     Returns:
-         *         - 200: Score calculated successfully
-         *         - 403: User not member of note's community
-         *         - 404: Note not found
-         *         - 500: Server error
-         */
-        get: operations["get_note_score_api_v1_scoring_notes__note_id__score_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/scoring/notes/batch-scores": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Get Batch Note Scores
-         * @description Get scores for multiple notes in a single request.
-         *
-         *     Users can only get scores for notes in communities they are members of.
-         *     Notes from other communities will be treated as "not found" in the response.
-         *     Service accounts can access all notes.
-         *
-         *     Efficiently retrieves scores for multiple notes to prevent N+1 query patterns.
-         *     Returns a map of note IDs to their score responses, along with a list of
-         *     note IDs that were not found.
-         *
-         *     Args:
-         *         request: BatchScoreRequest containing list of note IDs
-         *
-         *     Returns:
-         *         - 200: Scores retrieved successfully (includes partial results)
-         *         - 400: Invalid request (empty list, too many IDs)
-         *         - 500: Server error
-         *
-         *     Performance: This endpoint processes all notes in a single database query
-         *     and calculates scores efficiently, reducing overhead compared to individual
-         *     requests for each note.
-         */
-        post: operations["get_batch_note_scores_api_v1_scoring_notes_batch_scores_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/scoring/notes/top": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Top Notes
-         * @description Get top-scored notes with optional filtering.
-         *
-         *     Users can only see notes from communities they are members of.
-         *     Service accounts can see all notes.
-         *
-         *     Returns the highest-scored notes in the system with:
-         *     - Score and confidence metadata
-         *     - Tier information
-         *     - Rating counts
-         *     - Optional filtering by confidence level and tier
-         *
-         *     Uses batch processing to prevent memory exhaustion with large note counts.
-         *
-         *     Query Parameters:
-         *         - limit: Number of results (1-100, default 10)
-         *         - min_confidence: Filter by confidence level
-         *         - tier: Filter by scoring tier (0-5)
-         *         - batch_size: Number of notes to process per batch (100-5000, default 1000)
-         *         - community_server_id: Filter by community server (UUID)
-         *
-         *     Returns:
-         *         - 200: Top notes retrieved successfully
-         *         - 403: User not member of specified community
-         *         - 500: Server error
-         */
-        get: operations["get_top_notes_api_v1_scoring_notes_top_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/scoring/score": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Score Notes */
-        post: operations["score_notes_api_v1_scoring_score_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/scoring/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Scoring Health */
-        get: operations["scoring_health_api_v1_scoring_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/note-publisher/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Note Publisher Config
-         * @description Get auto-post configuration for a server or channel.
-         *
-         *     Users can only view config for communities they are members of.
-         *     Service accounts can view all configs.
-         *
-         *     If channel_id is provided, returns channel-specific config if it exists,
-         *     otherwise returns server-wide config.
-         */
-        get: operations["get_note_publisher_config_api_v1_note_publisher_config_get"];
-        put?: never;
-        /**
-         * Set Note Publisher Config
-         * @description Create or update auto-post configuration for a server or channel.
-         *
-         *     Channel-specific configs (channel_id set) override server-wide configs (channel_id=None).
-         */
-        post: operations["set_note_publisher_config_api_v1_note_publisher_config_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/note-publisher/record": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Record Note Publisher
-         * @description Record an auto-post attempt (successful or failed) for audit trail.
-         *
-         *     If the post was successful and embedding data is provided, also stores
-         *     the message embedding for duplicate detection.
-         */
-        post: operations["record_note_publisher_api_v1_note_publisher_record_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/note-publisher/check-duplicate/{original_message_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check Duplicate
-         * @description Check if an auto-post already exists for the given original message ID.
-         */
-        get: operations["check_duplicate_api_v1_note_publisher_check_duplicate__original_message_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/note-publisher/last-post/{channel_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Last Post
-         * @description Get the most recent auto-post in a channel (for cooldown checking).
-         *
-         *     Users can only view posts for communities they are members of.
-         *     Service accounts can view all posts.
-         *
-         *     Requires community_server_id query parameter for membership verification.
-         */
-        get: operations["get_last_post_api_v1_note_publisher_last_post__channel_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -2693,179 +2284,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/monitored-channels": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Monitored Channels
-         * @description List monitored channel configurations for a specific community server.
-         *
-         *     Requires the community_server_id parameter and user must be an admin or moderator
-         *     of that community server to view its monitored channels.
-         *
-         *     Returns paginated results filtered by community server and optionally by enabled status.
-         */
-        get: operations["list_monitored_channels_api_v1_monitored_channels_get"];
-        put?: never;
-        /**
-         * Create Monitored Channel
-         * @description Create a new monitored channel configuration.
-         *
-         *     Requires user to be an admin or moderator of the community server.
-         *     Returns 409 if channel is already monitored.
-         *     Returns 403 if user is not authorized to manage this community server.
-         */
-        post: operations["create_monitored_channel_api_v1_monitored_channels_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/monitored-channels/{channel_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Monitored Channel
-         * @description Get configuration for a specific monitored channel.
-         *
-         *     Requires user to be an admin or moderator of the community server that owns the channel.
-         *     Returns 404 if the channel is not monitored.
-         *     Returns 403 if the user is not authorized to access this channel.
-         */
-        get: operations["get_monitored_channel_api_v1_monitored_channels__channel_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Monitored Channel
-         * @description Remove a channel from monitoring.
-         *
-         *     Requires user to be an admin or moderator of the community server that owns the channel.
-         *     Returns 404 if channel is not monitored.
-         *     Returns 403 if user is not authorized to manage this channel.
-         */
-        delete: operations["delete_monitored_channel_api_v1_monitored_channels__channel_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Monitored Channel
-         * @description Update configuration for a monitored channel.
-         *
-         *     Requires user to be an admin or moderator of the community server that owns the channel.
-         *     Only provided fields are updated.
-         *     Returns 404 if channel is not monitored.
-         *     Returns 403 if user is not authorized to manage this channel.
-         */
-        patch: operations["update_monitored_channel_api_v1_monitored_channels__channel_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/embeddings/similarity-search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Similarity Search
-         * @description Search for similar fact-check items using semantic similarity.
-         *
-         *     Generates an embedding for the input text using the community server's
-         *     OpenAI API key, then performs cosine similarity search against the
-         *     fact_check_items table using pgvector.
-         *
-         *     **Authorization:**
-         *     - User must be an active member of the specified community server
-         *     - Banned users are rejected with 403 Forbidden
-         *     - External users without membership are rejected with 403 Forbidden
-         *     - Prevents cost abuse by verifying community membership before API calls
-         *
-         *     **Process:**
-         *     1. Verifies user is authorized member of community server
-         *     2. Validates community server has OpenAI configuration
-         *     3. Generates embedding using text-embedding-3-small (1536 dimensions)
-         *     4. Queries fact_check_items table with pgvector cosine similarity
-         *     5. Filters by dataset_tags (e.g., 'snopes', 'politifact')
-         *     6. Returns top matches above similarity threshold
-         *
-         *     **Performance:**
-         *     - Embedding generation: ~100-200ms (cached for 1 hour)
-         *     - Similarity search: ~10-50ms (with pgvector indexing)
-         *
-         *     **Rate Limiting:**
-         *     - Per-user rate limit: 100 requests/hour
-         *     - Per-community rate limits: Based on configured LLM usage limits
-         *     - OpenAI API rate limits: Automatic detection with retry guidance
-         *
-         *     **Audit Logging:**
-         *     - All requests logged with user_id, profile_id, and community_server_id
-         *     - Community role logged for authorization tracking
-         *     - Cost attribution tracked per community server
-         *
-         *     Args:
-         *         request: FastAPI request object (required by SlowAPI rate limiter)
-         *         search_request: Similarity search request with text and parameters
-         *         current_user: Authenticated user or API key
-         *         db: Database session
-         *         embedding_service: Embedding service instance
-         *         usage_tracker: LLM usage tracker instance
-         *
-         *     Returns:
-         *         List of matching fact-check items with similarity scores
-         *
-         *     Raises:
-         *         400: Invalid request parameters
-         *         403: User not authorized (not a member, banned, or inactive)
-         *         404: Community server or OpenAI configuration not found
-         *         429: Rate limit exceeded (per-user, per-community, or OpenAI API)
-         *         500: Internal server error
-         */
-        post: operations["similarity_search_api_v1_embeddings_similarity_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/previously-seen/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Check Previously Seen
-         * @description Check if a message has been seen before and get action recommendations.
-         *
-         *     This endpoint:
-         *     1. Generates an embedding for the message text
-         *     2. Searches for similar previously seen messages
-         *     3. Resolves thresholds (channel override or global config)
-         *     4. Returns action recommendations (auto-publish/auto-request)
-         *
-         *     Auto-publish (default 0.9): High similarity - automatically reply with existing note
-         *     Auto-request (default 0.75): Moderate similarity - trigger auto-request for new note
-         */
-        post: operations["check_previously_seen_api_v1_previously_seen_check_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/health": {
         parameters: {
             query?: never;
@@ -3156,46 +2574,6 @@ export interface components {
          */
         AdminSource: "opennotes_platform" | "community_role" | "discord_manage_server";
         /**
-         * AdminStatusAttributes
-         * @description Admin status attributes for JSON:API resource.
-         */
-        AdminStatusAttributes: {
-            /** Is Opennotes Admin */
-            is_opennotes_admin: boolean;
-        };
-        /**
-         * AdminStatusResource
-         * @description JSON:API resource object for admin status.
-         */
-        AdminStatusResource: {
-            /**
-             * Type
-             * @default admin-status
-             * @constant
-             */
-            type: "admin-status";
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["AdminStatusAttributes"];
-        };
-        /**
-         * AdminStatusSingleResponse
-         * @description JSON:API response for admin status resource.
-         */
-        AdminStatusSingleResponse: {
-            data: components["schemas"]["AdminStatusResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
          * AdminStatusUpdateAttributes
          * @description Attributes for admin status update request.
          */
@@ -3261,19 +2639,11 @@ export interface components {
          */
         AuthProvider: "discord" | "github" | "email";
         /**
-         * BatchScoreJSONAPIRequest
+         * BatchScoreRequest
          * @description JSON:API request body for batch scores.
          */
-        BatchScoreJSONAPIRequest: {
-            data: components["schemas"]["BatchScoreRequestData"];
-        };
-        /** BatchScoreRequest */
         BatchScoreRequest: {
-            /**
-             * Note Ids
-             * @description List of note IDs to retrieve scores for
-             */
-            note_ids: string[];
+            data: components["schemas"]["BatchScoreRequestData"];
         };
         /**
          * BatchScoreRequestAttributes
@@ -3298,31 +2668,6 @@ export interface components {
              */
             type: "batch-score-requests";
             attributes: components["schemas"]["BatchScoreRequestAttributes"];
-        };
-        /** BatchScoreResponse */
-        BatchScoreResponse: {
-            /**
-             * Scores
-             * @description Map of note IDs to their score responses
-             */
-            scores: {
-                [key: string]: components["schemas"]["NoteScoreResponse"];
-            };
-            /**
-             * Not Found
-             * @description List of note IDs that were not found
-             */
-            not_found?: string[];
-            /**
-             * Total Requested
-             * @description Total number of note IDs requested
-             */
-            total_requested: number;
-            /**
-             * Total Found
-             * @description Total number of scores successfully retrieved
-             */
-            total_found: number;
         };
         /** Body_login_api_v1_auth_login_post */
         Body_login_api_v1_auth_login_post: {
@@ -3373,40 +2718,6 @@ export interface components {
             client_secret?: string | null;
         };
         /**
-         * BulkScanAttributes
-         * @description Attributes for a bulk scan resource.
-         */
-        BulkScanAttributes: {
-            /**
-             * Status
-             * @description Scan status: pending, in_progress, completed, failed
-             */
-            status: string;
-            /**
-             * Initiated At
-             * Format: date-time
-             * @description When the scan was initiated
-             */
-            initiated_at: string;
-            /**
-             * Completed At
-             * @description When the scan completed
-             */
-            completed_at?: string | null;
-            /**
-             * Messages Scanned
-             * @description Total messages scanned
-             * @default 0
-             */
-            messages_scanned: number;
-            /**
-             * Messages Flagged
-             * @description Number of flagged messages
-             * @default 0
-             */
-            messages_flagged: number;
-        };
-        /**
          * BulkScanCreateAttributes
          * @description Attributes for creating a bulk scan.
          */
@@ -3448,97 +2759,6 @@ export interface components {
          */
         BulkScanCreateRequest: {
             data: components["schemas"]["BulkScanCreateData"];
-        };
-        /**
-         * BulkScanResource
-         * @description JSON:API resource object for a bulk scan.
-         */
-        BulkScanResource: {
-            /**
-             * Type
-             * @default bulk-scans
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["BulkScanAttributes"];
-        };
-        /**
-         * BulkScanResultsAttributes
-         * @description Attributes for bulk scan results.
-         */
-        BulkScanResultsAttributes: {
-            /**
-             * Status
-             * @description Scan status
-             */
-            status: string;
-            /**
-             * Messages Scanned
-             * @description Total messages scanned
-             * @default 0
-             */
-            messages_scanned: number;
-            /**
-             * Messages Flagged
-             * @description Number of flagged messages
-             * @default 0
-             */
-            messages_flagged: number;
-        };
-        /**
-         * BulkScanResultsResource
-         * @description JSON:API resource object for bulk scan results.
-         */
-        BulkScanResultsResource: {
-            /**
-             * Type
-             * @default bulk-scans
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["BulkScanResultsAttributes"];
-            /** Relationships */
-            relationships?: {
-                [key: string]: unknown;
-            } | null;
-        };
-        /**
-         * BulkScanResultsResponse
-         * @description JSON:API response for bulk scan results with included flagged messages.
-         */
-        BulkScanResultsResponse: {
-            data: components["schemas"]["BulkScanResultsResource"];
-            /** Included */
-            included?: components["schemas"]["FlaggedMessageResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * BulkScanSingleResponse
-         * @description JSON:API response for a single bulk scan resource.
-         */
-        BulkScanSingleResponse: {
-            data: components["schemas"]["BulkScanResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * CommunityAdminResponse
@@ -3783,97 +3003,11 @@ export interface components {
             inviter?: components["schemas"]["UserProfileResponse-Output"] | null;
         };
         /**
-         * CommunityMembershipAttributes
-         * @description Community membership attributes for JSON:API resource.
-         */
-        CommunityMembershipAttributes: {
-            /** Community Id */
-            community_id: string;
-            /** Role */
-            role: string;
-            /**
-             * Is External
-             * @default false
-             */
-            is_external: boolean;
-            /**
-             * Is Active
-             * @default true
-             */
-            is_active: boolean;
-            /** Joined At */
-            joined_at?: string | null;
-            /** Reputation In Community */
-            reputation_in_community?: number | null;
-        };
-        /**
-         * CommunityMembershipListResponse
-         * @description JSON:API response for a list of community membership resources.
-         */
-        CommunityMembershipListResponse: {
-            /** Data */
-            data: components["schemas"]["CommunityMembershipResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /**
-         * CommunityMembershipResource
-         * @description JSON:API resource object for a community membership.
-         */
-        CommunityMembershipResource: {
-            /**
-             * Type
-             * @default community-memberships
-             * @constant
-             */
-            type: "community-memberships";
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["CommunityMembershipAttributes"];
-        };
-        /**
          * CommunityRole
          * @description Community membership roles.
          * @enum {string}
          */
         CommunityRole: "admin" | "moderator" | "member";
-        /**
-         * CommunityServerAttributes
-         * @description Community server attributes for JSON:API resource.
-         */
-        CommunityServerAttributes: {
-            /** Platform */
-            platform: string;
-            /** Platform Id */
-            platform_id: string;
-            /** Name */
-            name: string;
-            /** Description */
-            description?: string | null;
-            /**
-             * Is Active
-             * @default true
-             */
-            is_active: boolean;
-            /**
-             * Is Public
-             * @default true
-             */
-            is_public: boolean;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
         /**
          * CommunityServerLookupResponse
          * @description Response model for community server lookup.
@@ -3906,43 +3040,6 @@ export interface components {
              */
             is_active: boolean;
         };
-        /**
-         * CommunityServerResource
-         * @description JSON:API resource object for a community server.
-         */
-        CommunityServerResource: {
-            /**
-             * Type
-             * @default community-servers
-             * @constant
-             */
-            type: "community-servers";
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["CommunityServerAttributes"];
-        };
-        /**
-         * CommunityServerSingleResponse
-         * @description JSON:API response for a single community server resource.
-         */
-        CommunityServerSingleResponse: {
-            data: components["schemas"]["CommunityServerResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * DataConfidence
-         * @enum {string}
-         */
-        DataConfidence: "none" | "low" | "medium" | "high" | "very_high";
         /**
          * DiscordOAuthInitResponse
          * @description Response schema for Discord OAuth2 flow initialization.
@@ -4001,13 +3098,6 @@ export interface components {
              */
             avatar_url?: string | null;
         };
-        /** DuplicateCheckResponse */
-        DuplicateCheckResponse: {
-            /** Exists */
-            exists: boolean;
-            /** Note Publisher Post Id */
-            note_publisher_post_id?: string | null;
-        };
         /** EnrollmentData */
         EnrollmentData: {
             /** Participantid */
@@ -4018,149 +3108,6 @@ export interface components {
             successfulRatingNeededToEarnIn: number;
             /** Timestampoflaststatechange */
             timestampOfLastStateChange: number;
-        };
-        /**
-         * FactCheckMatch
-         * @description Single fact-check similarity match result.
-         */
-        FactCheckMatch: {
-            /**
-             * Id
-             * Format: uuid
-             * @description Fact-check item UUID
-             */
-            id: string;
-            /**
-             * Dataset Name
-             * @description Source dataset (e.g., 'snopes')
-             */
-            dataset_name: string;
-            /**
-             * Dataset Tags
-             * @description Dataset tags
-             */
-            dataset_tags: string[];
-            /**
-             * Title
-             * @description Fact-check article title
-             */
-            title: string;
-            /**
-             * Content
-             * @description Fact-check content
-             */
-            content: string;
-            /**
-             * Summary
-             * @description Brief summary
-             */
-            summary?: string | null;
-            /**
-             * Rating
-             * @description Fact-check verdict
-             */
-            rating?: string | null;
-            /**
-             * Source Url
-             * @description URL to original article
-             */
-            source_url?: string | null;
-            /**
-             * Published Date
-             * @description Publication date
-             */
-            published_date?: string | null;
-            /**
-             * Author
-             * @description Author name
-             */
-            author?: string | null;
-            /**
-             * Embedding Provider
-             * @description LLM provider used for embedding (e.g., 'openai')
-             */
-            embedding_provider?: string | null;
-            /**
-             * Embedding Model
-             * @description Model name used for embedding (e.g., 'text-embedding-3-small')
-             */
-            embedding_model?: string | null;
-            /**
-             * Similarity Score
-             * @description Cosine similarity score (0.0-1.0)
-             */
-            similarity_score: number;
-        };
-        /**
-         * FactCheckMatchResource
-         * @description JSON:API-compatible fact-check match in search results.
-         */
-        FactCheckMatchResource: {
-            /**
-             * Id
-             * @description Fact-check item UUID
-             */
-            id: string;
-            /**
-             * Dataset Name
-             * @description Source dataset (e.g., 'snopes')
-             */
-            dataset_name: string;
-            /**
-             * Dataset Tags
-             * @description Dataset tags
-             */
-            dataset_tags: string[];
-            /**
-             * Title
-             * @description Fact-check article title
-             */
-            title: string;
-            /**
-             * Content
-             * @description Fact-check content
-             */
-            content: string;
-            /**
-             * Summary
-             * @description Brief summary
-             */
-            summary?: string | null;
-            /**
-             * Rating
-             * @description Fact-check verdict
-             */
-            rating?: string | null;
-            /**
-             * Source Url
-             * @description URL to original article
-             */
-            source_url?: string | null;
-            /**
-             * Published Date
-             * @description Publication date
-             */
-            published_date?: string | null;
-            /**
-             * Author
-             * @description Author name
-             */
-            author?: string | null;
-            /**
-             * Embedding Provider
-             * @description LLM provider used for embedding
-             */
-            embedding_provider?: string | null;
-            /**
-             * Embedding Model
-             * @description Model name used for embedding
-             */
-            embedding_model?: string | null;
-            /**
-             * Similarity Score
-             * @description Cosine similarity score (0.0-1.0)
-             */
-            similarity_score: number;
         };
         /**
          * FlaggedMessageAttributes
@@ -4307,157 +3254,11 @@ export interface components {
             attributes: components["schemas"]["HybridSearchCreateAttributes"];
         };
         /**
-         * HybridSearchMatchResource
-         * @description JSON:API-compatible fact-check match in hybrid search results.
-         */
-        HybridSearchMatchResource: {
-            /**
-             * Id
-             * @description Fact-check item UUID
-             */
-            id: string;
-            /**
-             * Dataset Name
-             * @description Source dataset (e.g., 'snopes')
-             */
-            dataset_name: string;
-            /**
-             * Dataset Tags
-             * @description Dataset tags
-             */
-            dataset_tags: string[];
-            /**
-             * Title
-             * @description Fact-check article title
-             */
-            title: string;
-            /**
-             * Content
-             * @description Fact-check content
-             */
-            content: string;
-            /**
-             * Summary
-             * @description Brief summary
-             */
-            summary?: string | null;
-            /**
-             * Rating
-             * @description Fact-check verdict
-             */
-            rating?: string | null;
-            /**
-             * Source Url
-             * @description URL to original article
-             */
-            source_url?: string | null;
-            /**
-             * Published Date
-             * @description Publication date
-             */
-            published_date?: string | null;
-            /**
-             * Author
-             * @description Author name
-             */
-            author?: string | null;
-            /**
-             * Rrf Score
-             * @description Reciprocal Rank Fusion score combining FTS and semantic rankings
-             */
-            rrf_score: number;
-        };
-        /**
          * HybridSearchRequest
          * @description JSON:API request body for performing a hybrid search.
          */
         HybridSearchRequest: {
             data: components["schemas"]["HybridSearchCreateData"];
-        };
-        /**
-         * HybridSearchResultAttributes
-         * @description Attributes for hybrid search result.
-         */
-        HybridSearchResultAttributes: {
-            /**
-             * Matches
-             * @description Matching fact-check items ranked by RRF score
-             */
-            matches: components["schemas"]["HybridSearchMatchResource"][];
-            /**
-             * Query Text
-             * @description Original query text
-             */
-            query_text: string;
-            /**
-             * Total Matches
-             * @description Number of matches found
-             */
-            total_matches: number;
-        };
-        /**
-         * HybridSearchResultResource
-         * @description JSON:API resource object for hybrid search results.
-         */
-        "HybridSearchResultResource-Input": {
-            /**
-             * Type
-             * @default hybrid-search-results
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["HybridSearchResultAttributes"];
-        };
-        /**
-         * HybridSearchResultResource
-         * @description JSON:API resource object for hybrid search results.
-         */
-        "HybridSearchResultResource-Output": {
-            /**
-             * Type
-             * @default hybrid-search-results
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["HybridSearchResultAttributes"];
-        };
-        /**
-         * HybridSearchResultResponse
-         * @description JSON:API response for hybrid search results.
-         */
-        HybridSearchResultResponse: {
-            data: components["schemas"]["HybridSearchResultResource-Output"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * IdentityAttributes
-         * @description Identity attributes for JSON:API resource.
-         */
-        IdentityAttributes: {
-            /** Provider */
-            provider: string;
-            /** Provider User Id */
-            provider_user_id: string;
-            /**
-             * Email Verified
-             * @default false
-             */
-            email_verified: boolean;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
         };
         /**
          * IdentityCreateAttributes
@@ -4492,57 +3293,6 @@ export interface components {
          */
         IdentityCreateRequest: {
             data: components["schemas"]["IdentityCreateData"];
-        };
-        /**
-         * IdentityListResponse
-         * @description JSON:API response for a list of identity resources.
-         */
-        IdentityListResponse: {
-            /** Data */
-            data: components["schemas"]["IdentityResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /**
-         * IdentityResource
-         * @description JSON:API resource object for an identity.
-         */
-        IdentityResource: {
-            /**
-             * Type
-             * @default identities
-             * @constant
-             */
-            type: "identities";
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["IdentityAttributes"];
-        };
-        /**
-         * IdentitySingleResponse
-         * @description JSON:API response for a single identity resource.
-         */
-        IdentitySingleResponse: {
-            data: components["schemas"]["IdentityResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
          * JSONAPILinks
@@ -4591,22 +3341,6 @@ export interface components {
             describedby?: string | null;
         } & {
             [key: string]: unknown;
-        };
-        /**
-         * JSONAPIMeta
-         * @description JSON:API meta object for pagination and collection metadata.
-         */
-        JSONAPIMeta: {
-            /** Count */
-            count?: number | null;
-            /** Page */
-            page?: number | null;
-            /** Pages */
-            pages?: number | null;
-            /** Limit */
-            limit?: number | null;
-            /** Offset */
-            offset?: number | null;
         };
         /**
          * LLMConfigCreate
@@ -4819,15 +3553,6 @@ export interface components {
             /** Last Monthly Reset */
             last_monthly_reset: string | null;
         };
-        /** LastPostResponse */
-        LastPostResponse: {
-            /** Posted At */
-            posted_at: string;
-            /** Note Id */
-            note_id: string;
-            /** Channel Id */
-            channel_id: string;
-        };
         /**
          * LatestScanAttributes
          * @description Attributes for the latest scan resource.
@@ -4900,79 +3625,6 @@ export interface components {
             links?: components["schemas"]["JSONAPILinks-Output"] | null;
         };
         /**
-         * MonitoredChannelAttributes
-         * @description Monitored channel attributes for JSON:API resource.
-         */
-        MonitoredChannelAttributes: {
-            /** Community Server Id */
-            community_server_id: string;
-            /** Channel Id */
-            channel_id: string;
-            /** Enabled */
-            enabled: boolean;
-            /** Similarity Threshold */
-            similarity_threshold: number;
-            /** Dataset Tags */
-            dataset_tags: string[];
-            /** Previously Seen Autopublish Threshold */
-            previously_seen_autopublish_threshold?: number | null;
-            /** Previously Seen Autorequest Threshold */
-            previously_seen_autorequest_threshold?: number | null;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-            /** Updated By */
-            updated_by?: string | null;
-        };
-        /**
-         * MonitoredChannelCreate
-         * @description Schema for creating a monitored channel configuration.
-         */
-        MonitoredChannelCreate: {
-            /**
-             * Community Server Id
-             * @description Discord server/guild ID
-             */
-            community_server_id: string;
-            /**
-             * Channel Id
-             * @description Discord channel ID
-             */
-            channel_id: string;
-            /**
-             * Enabled
-             * @description Whether monitoring is active
-             * @default true
-             */
-            enabled: boolean;
-            /**
-             * Similarity Threshold
-             * @description Minimum similarity score (0.0-1.0) for fact-check matches
-             */
-            similarity_threshold?: number;
-            /**
-             * Dataset Tags
-             * @description Dataset tags to check against (e.g., ['snopes', 'politifact'])
-             */
-            dataset_tags?: string[];
-            /**
-             * Previously Seen Autopublish Threshold
-             * @description Per-channel override for auto-publish threshold (NULL = use global config default)
-             */
-            previously_seen_autopublish_threshold?: number | null;
-            /**
-             * Previously Seen Autorequest Threshold
-             * @description Per-channel override for auto-request threshold (NULL = use global config default)
-             */
-            previously_seen_autorequest_threshold?: number | null;
-            /**
-             * Updated By
-             * @description Discord user ID of admin creating config
-             */
-            updated_by?: string | null;
-        };
-        /**
          * MonitoredChannelCreateAttributes
          * @description Attributes for creating a monitored channel via JSON:API.
          */
@@ -5040,138 +3692,6 @@ export interface components {
             data: components["schemas"]["MonitoredChannelCreateData"];
         };
         /**
-         * MonitoredChannelResource
-         * @description JSON:API resource object for a monitored channel.
-         */
-        MonitoredChannelResource: {
-            /**
-             * Type
-             * @default monitored-channels
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["MonitoredChannelAttributes"];
-        };
-        /**
-         * MonitoredChannelResponse
-         * @description Schema for monitored channel configuration responses.
-         */
-        MonitoredChannelResponse: {
-            /**
-             * Community Server Id
-             * @description Discord server/guild ID
-             */
-            community_server_id: string;
-            /**
-             * Channel Id
-             * @description Discord channel ID
-             */
-            channel_id: string;
-            /**
-             * Enabled
-             * @description Whether monitoring is active
-             * @default true
-             */
-            enabled: boolean;
-            /**
-             * Similarity Threshold
-             * @description Minimum similarity score (0.0-1.0) for fact-check matches
-             */
-            similarity_threshold?: number;
-            /**
-             * Dataset Tags
-             * @description Dataset tags to check against (e.g., ['snopes', 'politifact'])
-             */
-            dataset_tags?: string[];
-            /**
-             * Previously Seen Autopublish Threshold
-             * @description Per-channel override for auto-publish threshold (NULL = use global config default)
-             */
-            previously_seen_autopublish_threshold?: number | null;
-            /**
-             * Previously Seen Autorequest Threshold
-             * @description Per-channel override for auto-request threshold (NULL = use global config default)
-             */
-            previously_seen_autorequest_threshold?: number | null;
-            /**
-             * Id
-             * Format: uuid
-             * @description Unique identifier
-             */
-            id: string;
-            /**
-             * Created At
-             * Format: date-time
-             * @description When monitoring was configured
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             * @description Last configuration update
-             */
-            updated_at: string;
-            /**
-             * Updated By
-             * @description Discord user ID of last admin to update
-             */
-            updated_by?: string | null;
-        };
-        /**
-         * MonitoredChannelSingleResponse
-         * @description JSON:API response for a single monitored channel resource.
-         */
-        MonitoredChannelSingleResponse: {
-            data: components["schemas"]["MonitoredChannelResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * MonitoredChannelUpdate
-         * @description Schema for updating a monitored channel configuration.
-         */
-        MonitoredChannelUpdate: {
-            /**
-             * Enabled
-             * @description Whether monitoring is active
-             */
-            enabled?: boolean | null;
-            /**
-             * Similarity Threshold
-             * @description Minimum similarity score (0.0-1.0) for fact-check matches
-             */
-            similarity_threshold?: number | null;
-            /**
-             * Dataset Tags
-             * @description Dataset tags to check against (e.g., ['snopes', 'politifact'])
-             */
-            dataset_tags?: string[] | null;
-            /**
-             * Previously Seen Autopublish Threshold
-             * @description Per-channel override for auto-publish threshold (NULL = use global config default)
-             */
-            previously_seen_autopublish_threshold?: number | null;
-            /**
-             * Previously Seen Autorequest Threshold
-             * @description Per-channel override for auto-request threshold (NULL = use global config default)
-             */
-            previously_seen_autorequest_threshold?: number | null;
-            /**
-             * Updated By
-             * @description Discord user ID of admin updating config
-             */
-            updated_by?: string | null;
-        };
-        /**
          * MonitoredChannelUpdateAttributes
          * @description Attributes for updating a monitored channel via JSON:API.
          */
@@ -5232,104 +3752,11 @@ export interface components {
         MonitoredChannelUpdateRequest: {
             data: components["schemas"]["MonitoredChannelUpdateData"];
         };
-        /** NextTierInfo */
-        NextTierInfo: {
-            /**
-             * Tier
-             * @description Name of the next tier
-             */
-            tier: string;
-            /**
-             * Notes Needed
-             * @description Total notes needed to reach next tier
-             */
-            notes_needed: number;
-            /**
-             * Notes To Upgrade
-             * @description Additional notes needed (negative means already exceeded)
-             */
-            notes_to_upgrade: number;
-        };
-        /**
-         * NoteAttributes
-         * @description Note attributes for JSON:API resource.
-         */
-        NoteAttributes: {
-            /** Author Participant Id */
-            author_participant_id: string;
-            /** Channel Id */
-            channel_id?: string | null;
-            /** Summary */
-            summary: string;
-            /** Classification */
-            classification: string;
-            /**
-             * Helpfulness Score
-             * @default 0
-             */
-            helpfulness_score: number;
-            /**
-             * Status
-             * @default NEEDS_MORE_RATINGS
-             */
-            status: string;
-            /**
-             * Ai Generated
-             * @default false
-             */
-            ai_generated: boolean;
-            /** Ai Provider */
-            ai_provider?: string | null;
-            /**
-             * Force Published
-             * @default false
-             */
-            force_published: boolean;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-            /** Request Id */
-            request_id?: string | null;
-            /** Platform Message Id */
-            platform_message_id?: string | null;
-        };
         /**
          * NoteClassification
          * @enum {string}
          */
         NoteClassification: "NOT_MISLEADING" | "MISINFORMED_OR_POTENTIALLY_MISLEADING";
-        /** NoteCreate */
-        NoteCreate: {
-            /**
-             * Author Participant Id
-             * @description Author's participant ID
-             */
-            author_participant_id: string;
-            /**
-             * Channel Id
-             * @description Discord channel ID where the message is located
-             */
-            channel_id?: string | null;
-            /**
-             * Request Id
-             * @description Request ID this note responds to
-             */
-            request_id?: string | null;
-            /**
-             * Summary
-             * @description Note summary text
-             */
-            summary: string;
-            /** @description Note classification */
-            classification: components["schemas"]["NoteClassification"];
-            /**
-             * Community Server Id
-             * Format: uuid
-             * @description Community server ID (required)
-             */
-            community_server_id: string;
-        };
         /**
          * NoteCreateAttributes
          * @description Attributes for creating a note via JSON:API.
@@ -5400,24 +3827,6 @@ export interface components {
             classification: string;
         };
         /**
-         * NotePublisherConfigAttributes
-         * @description Note publisher config attributes for JSON:API resource.
-         */
-        NotePublisherConfigAttributes: {
-            /** Community Server Id */
-            community_server_id: string;
-            /** Channel Id */
-            channel_id?: string | null;
-            /** Enabled */
-            enabled: boolean;
-            /** Threshold */
-            threshold?: number | null;
-            /** Updated At */
-            updated_at?: string | null;
-            /** Updated By */
-            updated_by?: string | null;
-        };
-        /**
          * NotePublisherConfigCreateAttributes
          * @description Attributes for creating a note publisher config via JSON:API.
          */
@@ -5470,86 +3879,6 @@ export interface components {
             data: components["schemas"]["NotePublisherConfigCreateData"];
         };
         /**
-         * NotePublisherConfigListResponse
-         * @description JSON:API response for a list of config resources.
-         */
-        NotePublisherConfigListResponse: {
-            /** Data */
-            data: components["schemas"]["NotePublisherConfigResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /** NotePublisherConfigRequest */
-        NotePublisherConfigRequest: {
-            /** Community Server Id */
-            community_server_id: string;
-            /** Channel Id */
-            channel_id?: string | null;
-            /** Enabled */
-            enabled: boolean;
-            /** Threshold */
-            threshold?: number | null;
-            /** Updated By */
-            updated_by?: string | null;
-        };
-        /**
-         * NotePublisherConfigResource
-         * @description JSON:API resource object for a note publisher config.
-         */
-        NotePublisherConfigResource: {
-            /**
-             * Type
-             * @default note-publisher-configs
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["NotePublisherConfigAttributes"];
-        };
-        /** NotePublisherConfigResponse */
-        NotePublisherConfigResponse: {
-            /** Id */
-            id: string;
-            /** Community Server Id */
-            community_server_id: string;
-            /** Channel Id */
-            channel_id: string | null;
-            /** Enabled */
-            enabled: boolean;
-            /** Threshold */
-            threshold: number | null;
-            /** Updated At */
-            updated_at: string;
-            /** Updated By */
-            updated_by: string | null;
-        };
-        /**
-         * NotePublisherConfigSingleResponse
-         * @description JSON:API response for a single config resource.
-         */
-        NotePublisherConfigSingleResponse: {
-            data: components["schemas"]["NotePublisherConfigResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
          * NotePublisherConfigUpdateAttributes
          * @description Attributes for updating a note publisher config via JSON:API.
          */
@@ -5594,32 +3923,6 @@ export interface components {
          */
         NotePublisherConfigUpdateRequest: {
             data: components["schemas"]["NotePublisherConfigUpdateData"];
-        };
-        /**
-         * NotePublisherPostAttributes
-         * @description Note publisher post attributes for JSON:API resource.
-         */
-        NotePublisherPostAttributes: {
-            /** Note Id */
-            note_id: string;
-            /** Original Message Id */
-            original_message_id: string;
-            /** Auto Post Message Id */
-            auto_post_message_id?: string | null;
-            /** Channel Id */
-            channel_id: string;
-            /** Community Server Id */
-            community_server_id: string;
-            /** Score At Post */
-            score_at_post: number;
-            /** Confidence At Post */
-            confidence_at_post: string;
-            /** Posted At */
-            posted_at?: string | null;
-            /** Success */
-            success: boolean;
-            /** Error Message */
-            error_message?: string | null;
         };
         /**
          * NotePublisherPostCreateAttributes
@@ -5693,84 +3996,6 @@ export interface components {
             data: components["schemas"]["NotePublisherPostCreateData"];
         };
         /**
-         * NotePublisherPostListResponse
-         * @description JSON:API response for a list of post resources.
-         */
-        NotePublisherPostListResponse: {
-            /** Data */
-            data: components["schemas"]["NotePublisherPostResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /**
-         * NotePublisherPostResource
-         * @description JSON:API resource object for a note publisher post.
-         */
-        NotePublisherPostResource: {
-            /**
-             * Type
-             * @default note-publisher-posts
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["NotePublisherPostAttributes"];
-        };
-        /**
-         * NotePublisherPostSingleResponse
-         * @description JSON:API response for a single post resource.
-         */
-        NotePublisherPostSingleResponse: {
-            data: components["schemas"]["NotePublisherPostResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /** NotePublisherRecordRequest */
-        NotePublisherRecordRequest: {
-            /**
-             * Noteid
-             * @description UUID of the published note
-             */
-            noteId: string;
-            /** Originalmessageid */
-            originalMessageId: string;
-            /** Channelid */
-            channelId: string;
-            /** Guildid */
-            guildId: string;
-            /** Scoreatpost */
-            scoreAtPost: number;
-            /** Confidenceatpost */
-            confidenceAtPost: string;
-            /** Success */
-            success: boolean;
-            /** Errormessage */
-            errorMessage?: string | null;
-            /** Messageembedding */
-            messageEmbedding?: number[] | null;
-            /** Embeddingprovider */
-            embeddingProvider?: string | null;
-            /** Embeddingmodel */
-            embeddingModel?: string | null;
-        };
-        /**
          * NoteRequestsCreateAttributes
          * @description Attributes for creating note requests from flagged messages.
          */
@@ -5808,364 +4033,10 @@ export interface components {
             data: components["schemas"]["NoteRequestsCreateData"];
         };
         /**
-         * NoteRequestsResultAttributes
-         * @description Attributes for note requests creation result.
-         */
-        NoteRequestsResultAttributes: {
-            /**
-             * Created Count
-             * @description Number of note requests created
-             */
-            created_count: number;
-            /**
-             * Request Ids
-             * @description Created request IDs
-             */
-            request_ids?: string[];
-        };
-        /**
-         * NoteRequestsResultResource
-         * @description JSON:API resource for note requests creation result.
-         */
-        NoteRequestsResultResource: {
-            /**
-             * Type
-             * @default note-request-batches
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["NoteRequestsResultAttributes"];
-        };
-        /**
-         * NoteRequestsResultResponse
-         * @description JSON:API response for note requests creation.
-         */
-        NoteRequestsResultResponse: {
-            data: components["schemas"]["NoteRequestsResultResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * NoteResource
-         * @description JSON:API resource object for a note.
-         */
-        NoteResource: {
-            /**
-             * Type
-             * @default notes
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["NoteAttributes"];
-        };
-        /** NoteResponse */
-        NoteResponse: {
-            /** Created At */
-            created_at: string;
-            /** Updated At */
-            updated_at?: string | null;
-            /**
-             * Author Participant Id
-             * @description Author's participant ID
-             */
-            author_participant_id: string;
-            /**
-             * Channel Id
-             * @description Discord channel ID where the message is located
-             */
-            channel_id?: string | null;
-            /**
-             * Request Id
-             * @description Request ID this note responds to
-             */
-            request_id?: string | null;
-            /**
-             * Summary
-             * @description Note summary text
-             */
-            summary: string;
-            /** @description Note classification */
-            classification: components["schemas"]["NoteClassification"];
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Community Server Id
-             * Format: uuid
-             */
-            community_server_id: string;
-            /** Helpfulness Score */
-            helpfulness_score: number;
-            status: components["schemas"]["NoteStatus"];
-            /**
-             * Force Published
-             * @default false
-             */
-            force_published: boolean;
-            /** Force Published By */
-            force_published_by?: string | null;
-            /** Force Published At */
-            force_published_at?: string | null;
-            /**
-             * Ratings
-             * @default []
-             */
-            ratings: components["schemas"]["RatingResponse"][];
-            request?: components["schemas"]["RequestInfo"] | null;
-            /**
-             * Ratings Count
-             * @description Compute ratings count from loaded ratings relationship.
-             */
-            readonly ratings_count: number;
-        };
-        /**
-         * NoteScoreAttributes
-         * @description Attributes for note score resource.
-         */
-        NoteScoreAttributes: {
-            /**
-             * Score
-             * @description Normalized score value (0.0-1.0)
-             */
-            score: number;
-            /**
-             * Confidence
-             * @description Confidence level: no_data, provisional, or standard
-             */
-            confidence: string;
-            /**
-             * Algorithm
-             * @description Scoring algorithm used
-             */
-            algorithm: string;
-            /**
-             * Rating Count
-             * @description Number of ratings contributing to the score
-             */
-            rating_count: number;
-            /**
-             * Tier
-             * @description Current scoring tier level (0-5)
-             */
-            tier: number;
-            /**
-             * Tier Name
-             * @description Human-readable tier name
-             */
-            tier_name: string;
-            /**
-             * Calculated At
-             * @description Timestamp when score was calculated
-             */
-            calculated_at?: string | null;
-            /**
-             * Content
-             * @description Message content from archive
-             */
-            content?: string | null;
-        };
-        /**
-         * NoteScoreListResponse
-         * @description JSON:API response for a list of note score resources.
-         */
-        NoteScoreListResponse: {
-            /** Data */
-            data: components["schemas"]["NoteScoreResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            /** Meta */
-            meta?: {
-                [key: string]: unknown;
-            } | null;
-        };
-        /**
-         * NoteScoreResource
-         * @description JSON:API resource object for a note score.
-         */
-        NoteScoreResource: {
-            /**
-             * Type
-             * @default note-scores
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["NoteScoreAttributes"];
-        };
-        /** NoteScoreResponse */
-        NoteScoreResponse: {
-            /**
-             * Note Id
-             * Format: uuid
-             * @description Unique note identifier
-             */
-            note_id: string;
-            /**
-             * Score
-             * @description Normalized score value (0.0-1.0)
-             */
-            score: number;
-            /** @description Confidence level: no_data (0 ratings), provisional (<5 ratings), or standard (5+ ratings) */
-            confidence: components["schemas"]["ScoreConfidence"];
-            /**
-             * Algorithm
-             * @description Scoring algorithm used (e.g., 'bayesian_average_tier0', 'MFCoreScorer')
-             */
-            algorithm: string;
-            /**
-             * Rating Count
-             * @description Number of ratings contributing to the score
-             */
-            rating_count: number;
-            /**
-             * Tier
-             * @description Current scoring tier level (0-5)
-             */
-            tier: number;
-            /**
-             * Tier Name
-             * @description Human-readable tier name (e.g., 'Minimal', 'Limited')
-             */
-            tier_name: string;
-            /**
-             * Calculated At
-             * @description Timestamp when score was calculated (null if not yet calculated)
-             */
-            calculated_at?: string | null;
-            /**
-             * Content
-             * @description Message content that the note was written about (from message archive)
-             */
-            content?: string | null;
-        };
-        /**
-         * NoteScoreSingleResponse
-         * @description JSON:API response for a single note score resource.
-         */
-        NoteScoreSingleResponse: {
-            data: components["schemas"]["NoteScoreResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * NoteSingleResponse
-         * @description JSON:API response for a single note resource.
-         */
-        NoteSingleResponse: {
-            data: components["schemas"]["NoteResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * NoteStatsAttributes
-         * @description Attributes for note statistics resource.
-         */
-        NoteStatsAttributes: {
-            /** Total Notes */
-            total_notes: number;
-            /** Helpful Notes */
-            helpful_notes: number;
-            /** Not Helpful Notes */
-            not_helpful_notes: number;
-            /** Pending Notes */
-            pending_notes: number;
-            /** Average Helpfulness Score */
-            average_helpfulness_score: number;
-        };
-        /**
-         * NoteStatsResource
-         * @description JSON:API resource object for note statistics.
-         */
-        NoteStatsResource: {
-            /**
-             * Type
-             * @default note-stats
-             */
-            type: string;
-            /**
-             * Id
-             * @default aggregate
-             */
-            id: string;
-            attributes: components["schemas"]["NoteStatsAttributes"];
-        };
-        /**
-         * NoteStatsSingleResponse
-         * @description JSON:API response for note statistics.
-         */
-        NoteStatsSingleResponse: {
-            data: components["schemas"]["NoteStatsResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
          * NoteStatus
          * @enum {string}
          */
         NoteStatus: "NEEDS_MORE_RATINGS" | "CURRENTLY_RATED_HELPFUL" | "CURRENTLY_RATED_NOT_HELPFUL";
-        /** NoteSummaryStats */
-        NoteSummaryStats: {
-            /** Total Notes */
-            total_notes: number;
-            /** Helpful Notes */
-            helpful_notes: number;
-            /** Not Helpful Notes */
-            not_helpful_notes: number;
-            /** Pending Notes */
-            pending_notes: number;
-            /** Average Helpfulness Score */
-            average_helpfulness_score: number;
-        };
-        /** NoteUpdate */
-        NoteUpdate: {
-            /** Summary */
-            summary?: string | null;
-            classification?: components["schemas"]["NoteClassification"] | null;
-        };
         /**
          * NoteUpdateAttributes
          * @description Attributes for updating a note via JSON:API.
@@ -6204,93 +4075,6 @@ export interface components {
         NoteUpdateRequest: {
             data: components["schemas"]["NoteUpdateData"];
         };
-        /** ParticipantStats */
-        ParticipantStats: {
-            /** Participant Id */
-            participant_id: string;
-            /** Notes Created */
-            notes_created: number;
-            /** Ratings Given */
-            ratings_given: number;
-            /** Average Helpfulness Received */
-            average_helpfulness_received: number;
-            top_classification?: components["schemas"]["NoteClassification"] | null;
-        };
-        /**
-         * ParticipantStatsAttributes
-         * @description Attributes for participant statistics resource.
-         */
-        ParticipantStatsAttributes: {
-            /** Notes Created */
-            notes_created: number;
-            /** Ratings Given */
-            ratings_given: number;
-            /** Average Helpfulness Received */
-            average_helpfulness_received: number;
-            /** Top Classification */
-            top_classification?: string | null;
-        };
-        /**
-         * ParticipantStatsResource
-         * @description JSON:API resource object for participant statistics.
-         */
-        ParticipantStatsResource: {
-            /**
-             * Type
-             * @default participant-stats
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["ParticipantStatsAttributes"];
-        };
-        /**
-         * ParticipantStatsSingleResponse
-         * @description JSON:API response for participant statistics.
-         */
-        ParticipantStatsSingleResponse: {
-            data: components["schemas"]["ParticipantStatsResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /** PerformanceMetrics */
-        PerformanceMetrics: {
-            /**
-             * Avg Scoring Time Ms
-             * @description Average scoring time in milliseconds
-             */
-            avg_scoring_time_ms: number;
-            /**
-             * Last Scoring Time Ms
-             * @description Last scoring operation time in milliseconds
-             */
-            last_scoring_time_ms?: number | null;
-            /**
-             * Scorer Success Rate
-             * @description Success rate for scoring operations (0.0-1.0)
-             */
-            scorer_success_rate: number;
-            /**
-             * Total Scoring Operations
-             * @description Total number of scoring operations performed
-             * @default 0
-             */
-            total_scoring_operations: number;
-            /**
-             * Failed Scoring Operations
-             * @description Number of failed scoring operations
-             * @default 0
-             */
-            failed_scoring_operations: number;
-        };
         /**
          * PreviouslySeenCheckAttributes
          * @description Attributes for checking previously seen messages via JSON:API.
@@ -6326,147 +4110,11 @@ export interface components {
             attributes: components["schemas"]["PreviouslySeenCheckAttributes"];
         };
         /**
-         * PreviouslySeenCheckResponse
-         * @description Response with previously seen message matches and action recommendations.
+         * PreviouslySeenCheckRequest
+         * @description JSON:API request body for checking previously seen messages.
          */
-        PreviouslySeenCheckResponse: {
-            /**
-             * Shouldautopublish
-             * @description Whether to auto-publish existing note
-             */
-            shouldAutoPublish: boolean;
-            /**
-             * Shouldautorequest
-             * @description Whether to auto-request new note
-             */
-            shouldAutoRequest: boolean;
-            /**
-             * Autopublishthreshold
-             * @description Threshold used for auto-publish decision
-             */
-            autopublishThreshold: number;
-            /**
-             * Autorequestthreshold
-             * @description Threshold used for auto-request decision
-             */
-            autorequestThreshold: number;
-            /**
-             * Matches
-             * @description Matching previously seen messages (ordered by similarity)
-             */
-            matches: components["schemas"]["PreviouslySeenMessageMatch"][];
-            /** @description Best matching message if any */
-            topMatch?: components["schemas"]["PreviouslySeenMessageMatch"] | null;
-        };
-        /**
-         * PreviouslySeenCheckResultAttributes
-         * @description Attributes for previously seen check result.
-         */
-        PreviouslySeenCheckResultAttributes: {
-            /** Should Auto Publish */
-            should_auto_publish: boolean;
-            /** Should Auto Request */
-            should_auto_request: boolean;
-            /** Autopublish Threshold */
-            autopublish_threshold: number;
-            /** Autorequest Threshold */
-            autorequest_threshold: number;
-            /** Matches */
-            matches: components["schemas"]["PreviouslySeenMatchResource"][];
-            top_match?: components["schemas"]["PreviouslySeenMatchResource"] | null;
-        };
-        /**
-         * PreviouslySeenCheckResultResource
-         * @description JSON:API resource object for check results.
-         */
-        "PreviouslySeenCheckResultResource-Input": {
-            /**
-             * Type
-             * @default previously-seen-check-result
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["PreviouslySeenCheckResultAttributes"];
-        };
-        /**
-         * PreviouslySeenCheckResultResource
-         * @description JSON:API resource object for check results.
-         */
-        "PreviouslySeenCheckResultResource-Output": {
-            /**
-             * Type
-             * @default previously-seen-check-result
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["PreviouslySeenCheckResultAttributes"];
-        };
-        /**
-         * PreviouslySeenCheckResultResponse
-         * @description JSON:API response for previously seen check results.
-         */
-        PreviouslySeenCheckResultResponse: {
-            data: components["schemas"]["PreviouslySeenCheckResultResource-Output"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * PreviouslySeenMatchResource
-         * @description JSON:API resource for a match in check results.
-         */
-        PreviouslySeenMatchResource: {
-            /** Id */
-            id: string;
-            /** Community Server Id */
-            community_server_id: string;
-            /** Original Message Id */
-            original_message_id: string;
-            /** Published Note Id */
-            published_note_id: string;
-            /** Embedding Provider */
-            embedding_provider?: string | null;
-            /** Embedding Model */
-            embedding_model?: string | null;
-            /** Extra Metadata */
-            extra_metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /** Created At */
-            created_at?: string | null;
-            /** Similarity Score */
-            similarity_score: number;
-        };
-        /**
-         * PreviouslySeenMessageAttributes
-         * @description Previously seen message attributes for JSON:API resource.
-         */
-        PreviouslySeenMessageAttributes: {
-            /** Community Server Id */
-            community_server_id: string;
-            /** Original Message Id */
-            original_message_id: string;
-            /** Published Note Id */
-            published_note_id: string;
-            /** Embedding Provider */
-            embedding_provider?: string | null;
-            /** Embedding Model */
-            embedding_model?: string | null;
-            /** Extra Metadata */
-            extra_metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /** Created At */
-            created_at?: string | null;
+        PreviouslySeenCheckRequest: {
+            data: components["schemas"]["PreviouslySeenCheckData"];
         };
         /**
          * PreviouslySeenMessageCreateAttributes
@@ -6532,186 +4180,6 @@ export interface components {
             data: components["schemas"]["PreviouslySeenMessageCreateData"];
         };
         /**
-         * PreviouslySeenMessageListResponse
-         * @description JSON:API response for a list of previously seen message resources.
-         */
-        PreviouslySeenMessageListResponse: {
-            /** Data */
-            data: components["schemas"]["PreviouslySeenMessageResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /**
-         * PreviouslySeenMessageMatch
-         * @description Previously seen message with similarity score (used in search results).
-         */
-        PreviouslySeenMessageMatch: {
-            /**
-             * Id
-             * Format: uuid
-             * @description Unique identifier
-             */
-            id: string;
-            /**
-             * Community Server Id
-             * Format: uuid
-             * @description Community server UUID
-             */
-            community_server_id: string;
-            /**
-             * Original Message Id
-             * @description Platform-specific message ID
-             */
-            original_message_id: string;
-            /**
-             * Published Note Id
-             * Format: uuid
-             * @description Note ID that was published
-             */
-            published_note_id: string;
-            /**
-             * Embedding Provider
-             * @description LLM provider used
-             */
-            embedding_provider?: string | null;
-            /**
-             * Embedding Model
-             * @description Model name used
-             */
-            embedding_model?: string | null;
-            /**
-             * Extra Metadata
-             * @description Additional context metadata
-             */
-            extra_metadata?: {
-                [key: string]: string | number | boolean | null;
-            };
-            /**
-             * Created At
-             * Format: date-time
-             * @description When record was created
-             */
-            created_at: string;
-            /**
-             * Similarity Score
-             * @description Cosine similarity score (0.0-1.0)
-             */
-            similarity_score: number;
-        };
-        /**
-         * PreviouslySeenMessageResource
-         * @description JSON:API resource object for a previously seen message.
-         */
-        PreviouslySeenMessageResource: {
-            /**
-             * Type
-             * @default previously-seen-messages
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["PreviouslySeenMessageAttributes"];
-        };
-        /**
-         * PreviouslySeenMessageSingleResponse
-         * @description JSON:API response for a single previously seen message resource.
-         */
-        PreviouslySeenMessageSingleResponse: {
-            data: components["schemas"]["PreviouslySeenMessageResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * ProfileAttributes
-         * @description Profile attributes for JSON:API resource.
-         */
-        ProfileAttributes: {
-            /** Display Name */
-            display_name: string;
-            /** Avatar Url */
-            avatar_url?: string | null;
-            /** Bio */
-            bio?: string | null;
-            /**
-             * Reputation
-             * @default 0
-             */
-            reputation: number;
-            /**
-             * Is Opennotes Admin
-             * @default false
-             */
-            is_opennotes_admin: boolean;
-            /**
-             * Is Human
-             * @default true
-             */
-            is_human: boolean;
-            /**
-             * Is Active
-             * @default true
-             */
-            is_active: boolean;
-            /**
-             * Is Banned
-             * @default false
-             */
-            is_banned: boolean;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-        };
-        /**
-         * ProfileResource
-         * @description JSON:API resource object for a profile.
-         */
-        ProfileResource: {
-            /**
-             * Type
-             * @default profiles
-             * @constant
-             */
-            type: "profiles";
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["ProfileAttributes"];
-        };
-        /**
-         * ProfileSingleResponse
-         * @description JSON:API response for a single profile resource.
-         */
-        ProfileSingleResponse: {
-            data: components["schemas"]["ProfileResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
          * ProfileUpdateAttributes
          * @description Attributes for profile update request.
          */
@@ -6744,22 +4212,6 @@ export interface components {
          */
         ProfileUpdateRequest: {
             data: components["schemas"]["ProfileUpdateData"];
-        };
-        /**
-         * RatingAttributes
-         * @description Rating attributes for JSON:API resource.
-         */
-        RatingAttributes: {
-            /** Note Id */
-            note_id: string;
-            /** Rater Participant Id */
-            rater_participant_id: string;
-            /** Helpfulness Level */
-            helpfulness_level: string;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
         };
         /**
          * RatingCreateAttributes
@@ -6811,139 +4263,6 @@ export interface components {
             /** Helpfulnesslevel */
             helpfulnessLevel: string;
         };
-        /**
-         * RatingListResponse
-         * @description JSON:API response for a list of rating resources.
-         */
-        RatingListResponse: {
-            /** Data */
-            data: components["schemas"]["RatingResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * RatingResource
-         * @description JSON:API resource object for a rating.
-         */
-        RatingResource: {
-            /**
-             * Type
-             * @default ratings
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["RatingAttributes"];
-        };
-        /** RatingResponse */
-        RatingResponse: {
-            /** Created At */
-            created_at: string;
-            /** Updated At */
-            updated_at?: string | null;
-            /**
-             * Note Id
-             * Format: uuid
-             * @description Note ID to rate
-             */
-            note_id: string;
-            /** @description Rating level */
-            helpfulness_level: components["schemas"]["HelpfulnessLevel"];
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Rater Participant Id */
-            rater_participant_id: string;
-        };
-        /**
-         * RatingSingleResponse
-         * @description JSON:API response for a single rating resource.
-         */
-        RatingSingleResponse: {
-            data: components["schemas"]["RatingResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
-         * RatingStatsAttributes
-         * @description Attributes for rating statistics.
-         */
-        RatingStatsAttributes: {
-            /**
-             * Total
-             * @description Total number of ratings
-             */
-            total: number;
-            /**
-             * Helpful
-             * @description Number of HELPFUL ratings
-             */
-            helpful: number;
-            /**
-             * Somewhat Helpful
-             * @description Number of SOMEWHAT_HELPFUL ratings
-             */
-            somewhat_helpful: number;
-            /**
-             * Not Helpful
-             * @description Number of NOT_HELPFUL ratings
-             */
-            not_helpful: number;
-            /**
-             * Average Score
-             * @description Average score (1-3 scale)
-             */
-            average_score: number;
-        };
-        /**
-         * RatingStatsResource
-         * @description JSON:API resource object for rating statistics.
-         */
-        RatingStatsResource: {
-            /**
-             * Type
-             * @default rating-stats
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["RatingStatsAttributes"];
-        };
-        /**
-         * RatingStatsSingleResponse
-         * @description JSON:API response for rating statistics.
-         */
-        RatingStatsSingleResponse: {
-            data: components["schemas"]["RatingStatsResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
         /** RatingThresholdsResponse */
         RatingThresholdsResponse: {
             /**
@@ -6991,48 +4310,6 @@ export interface components {
             data: components["schemas"]["RatingUpdateData"];
         };
         /**
-         * RecentScanAttributes
-         * @description Attributes for recent scan check.
-         */
-        RecentScanAttributes: {
-            /**
-             * Has Recent Scan
-             * @description Whether community has a recent scan
-             */
-            has_recent_scan: boolean;
-        };
-        /**
-         * RecentScanResource
-         * @description JSON:API resource for recent scan status.
-         */
-        RecentScanResource: {
-            /**
-             * Type
-             * @default bulk-scan-status
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["RecentScanAttributes"];
-        };
-        /**
-         * RecentScanResponse
-         * @description JSON:API response for recent scan check.
-         */
-        RecentScanResponse: {
-            data: components["schemas"]["RecentScanResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
          * RefreshTokenRequest
          * @description Request body for refresh token endpoint.
          */
@@ -7074,111 +4351,6 @@ export interface components {
              * @description User's new role
              */
             new_role: string;
-        };
-        /**
-         * RequestAttributes
-         * @description Request attributes for JSON:API resource.
-         */
-        RequestAttributes: {
-            /** Request Id */
-            request_id: string;
-            /** Requested By */
-            requested_by: string;
-            /**
-             * Status
-             * @default PENDING
-             */
-            status: string;
-            /** Note Id */
-            note_id?: string | null;
-            /** Community Server Id */
-            community_server_id?: string | null;
-            /** Requested At */
-            requested_at?: string | null;
-            /** Created At */
-            created_at?: string | null;
-            /** Updated At */
-            updated_at?: string | null;
-            /** Content */
-            content?: string | null;
-            /** Platform Message Id */
-            platform_message_id?: string | null;
-            /** Metadata */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-        };
-        /** RequestCreate */
-        RequestCreate: {
-            /**
-             * Request Id
-             * @description Unique request identifier
-             */
-            request_id: string;
-            /**
-             * Requested By
-             * @description Requester's participant ID
-             */
-            requested_by: string;
-            /**
-             * Community Server Id
-             * @description Community server ID (Discord guild ID, subreddit, etc.)
-             */
-            community_server_id: string;
-            /**
-             * Original Message Content
-             * @description Original message content
-             */
-            original_message_content?: string | null;
-            /**
-             * Platform Message Id
-             * @description Platform message ID
-             */
-            platform_message_id?: string | null;
-            /**
-             * Platform Channel Id
-             * @description Platform channel ID
-             */
-            platform_channel_id?: string | null;
-            /**
-             * Platform Author Id
-             * @description Platform author ID
-             */
-            platform_author_id?: string | null;
-            /**
-             * Platform Timestamp
-             * @description Platform message timestamp
-             */
-            platform_timestamp?: string | null;
-            /**
-             * Metadata
-             * @description Request metadata (e.g., fact-check match info)
-             */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Attachment Url
-             * @description URL of the first attachment (image, video, or file)
-             */
-            attachment_url?: string | null;
-            /**
-             * Attachment Type
-             * @description Type of attachment
-             */
-            attachment_type?: ("image" | "video" | "file") | null;
-            /**
-             * Attachment Metadata
-             * @description Attachment metadata (width, height, size, filename)
-             */
-            attachment_metadata?: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Embedded Image Url
-             * @description URL of embedded image (from Discord embeds or text links)
-             */
-            embedded_image_url?: string | null;
         };
         /**
          * RequestCreateAttributes
@@ -7254,114 +4426,10 @@ export interface components {
             data: components["schemas"]["RequestCreateData"];
         };
         /**
-         * RequestInfo
-         * @description Simplified request info for embedding in note responses
-         */
-        RequestInfo: {
-            /** Request Id */
-            request_id: string;
-            /** Content */
-            content?: string | null;
-            /** Requested By */
-            requested_by: string;
-            /**
-             * Requested At
-             * Format: date-time
-             */
-            requested_at: string;
-        };
-        /**
-         * RequestResource
-         * @description JSON:API resource object for a request.
-         */
-        RequestResource: {
-            /**
-             * Type
-             * @default requests
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["RequestAttributes"];
-        };
-        /** RequestResponse */
-        RequestResponse: {
-            /** Created At */
-            created_at: string;
-            /** Updated At */
-            updated_at?: string | null;
-            /**
-             * Request Id
-             * @description Unique request identifier
-             */
-            request_id: string;
-            /**
-             * Requested By
-             * @description Requester's participant ID
-             */
-            requested_by: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Community Server Id
-             * Format: uuid
-             * @description Community server ID
-             */
-            community_server_id: string;
-            /** Requested At */
-            requested_at: string;
-            status: components["schemas"]["RequestStatus"];
-            /** Note Id */
-            note_id?: string | null;
-            /**
-             * Content
-             * @description Message content from archive or legacy field
-             */
-            content?: string | null;
-            /**
-             * Platform Message Id
-             * @description Platform message ID from message archive
-             */
-            platform_message_id?: string | null;
-            /**
-             * Metadata
-             * @description Request metadata (e.g., fact-check match info)
-             */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-        };
-        /**
-         * RequestSingleResponse
-         * @description JSON:API response for a single request resource.
-         */
-        RequestSingleResponse: {
-            data: components["schemas"]["RequestResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /**
          * RequestStatus
          * @enum {string}
          */
         RequestStatus: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
-        /** RequestUpdate */
-        RequestUpdate: {
-            status?: components["schemas"]["RequestStatus"] | null;
-            /** Note Id */
-            note_id?: string | null;
-        };
         /**
          * RequestUpdateAttributes
          * @description Attributes for updating a request via JSON:API.
@@ -7405,8 +4473,18 @@ export interface components {
          * @enum {string}
          */
         ScoreConfidence: "no_data" | "provisional" | "standard";
-        /** ScoringRequest */
-        ScoringRequest: {
+        /**
+         * ScoringRunRequest
+         * @description JSON:API request body for scoring run.
+         */
+        ScoringRunRequest: {
+            data: components["schemas"]["ScoringRunRequestData"];
+        };
+        /**
+         * ScoringRunRequestAttributes
+         * @description Attributes for scoring run request via JSON:API.
+         */
+        ScoringRunRequestAttributes: {
             /**
              * Notes
              * @description List of community notes to score
@@ -7430,95 +4508,18 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
         };
-        /** ScoringResponse */
-        ScoringResponse: {
-            /** Scored Notes */
-            scored_notes: {
-                [key: string]: unknown;
-            }[];
-            /** Helpful Scores */
-            helpful_scores: {
-                [key: string]: unknown;
-            }[];
-            /** Auxiliary Info */
-            auxiliary_info: {
-                [key: string]: unknown;
-            }[];
-        };
         /**
-         * ScoringStatusAttributes
-         * @description Attributes for scoring status resource.
+         * ScoringRunRequestData
+         * @description JSON:API data object for scoring run request.
          */
-        ScoringStatusAttributes: {
-            /**
-             * Current Note Count
-             * @description Current total number of notes in the system
-             */
-            current_note_count: number;
-            /** @description Currently active scoring tier */
-            active_tier: components["schemas"]["TierInfo"];
-            /**
-             * Data Confidence
-             * @description Confidence level in scoring results
-             */
-            data_confidence: string;
-            /**
-             * Tier Thresholds
-             * @description Threshold information for all tiers
-             */
-            tier_thresholds: {
-                [key: string]: components["schemas"]["TierThreshold"];
-            };
-            /** @description Information about the next tier upgrade */
-            next_tier_upgrade?: components["schemas"]["NextTierInfo"] | null;
-            /** @description Performance metrics for the scoring system */
-            performance_metrics: components["schemas"]["PerformanceMetrics"];
-            /**
-             * Warnings
-             * @description Any warnings about data quality
-             */
-            warnings?: string[];
-            /**
-             * Configuration
-             * @description Current scoring configuration
-             */
-            configuration?: {
-                [key: string]: unknown;
-            };
-        };
-        /**
-         * ScoringStatusResource
-         * @description JSON:API resource object for scoring status.
-         */
-        "ScoringStatusResource-Input": {
+        ScoringRunRequestData: {
             /**
              * Type
-             * @default scoring-status
+             * @description Resource type must be 'scoring-requests'
+             * @constant
              */
-            type: string;
-            /**
-             * Id
-             * @default current
-             */
-            id: string;
-            attributes: components["schemas"]["ScoringStatusAttributes"];
-        };
-        /**
-         * ScoringStatusResource
-         * @description JSON:API resource object for scoring status.
-         */
-        "ScoringStatusResource-Output": {
-            /**
-             * Type
-             * @default scoring-status
-             */
-            type: string;
-            /**
-             * Id
-             * @default current
-             */
-            id: string;
-            attributes: components["schemas"]["ScoringStatusAttributes"];
+            type: "scoring-requests";
+            attributes: components["schemas"]["ScoringRunRequestAttributes"];
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -7609,155 +4610,12 @@ export interface components {
             type: "similarity-searches";
             attributes: components["schemas"]["SimilaritySearchCreateAttributes"];
         };
-        /** SimilaritySearchResponse */
-        SimilaritySearchResponse: {
-            /**
-             * Matches
-             * @description Matching fact-check items
-             */
-            matches: components["schemas"]["FactCheckMatch"][];
-            /**
-             * Query Text
-             * @description Original query text
-             */
-            query_text: string;
-            /**
-             * Dataset Tags
-             * @description Dataset tags used for filtering
-             */
-            dataset_tags: string[];
-            /**
-             * Similarity Threshold
-             * @description Cosine similarity threshold applied
-             */
-            similarity_threshold: number;
-            /**
-             * Rrf Score Threshold
-             * @description Scaled RRF score threshold applied
-             */
-            rrf_score_threshold: number;
-            /**
-             * Total Matches
-             * @description Number of matches found
-             */
-            total_matches: number;
-        };
         /**
-         * SimilaritySearchResultAttributes
-         * @description Attributes for similarity search result.
+         * SimilaritySearchRequest
+         * @description JSON:API request body for performing a similarity search.
          */
-        SimilaritySearchResultAttributes: {
-            /**
-             * Matches
-             * @description Matching fact-check items
-             */
-            matches: components["schemas"]["FactCheckMatchResource"][];
-            /**
-             * Query Text
-             * @description Original query text
-             */
-            query_text: string;
-            /**
-             * Dataset Tags
-             * @description Dataset tags used for filtering
-             */
-            dataset_tags: string[];
-            /**
-             * Similarity Threshold
-             * @description Cosine similarity threshold applied
-             */
-            similarity_threshold: number;
-            /**
-             * Rrf Score Threshold
-             * @description Scaled RRF score threshold applied
-             */
-            rrf_score_threshold: number;
-            /**
-             * Total Matches
-             * @description Number of matches found
-             */
-            total_matches: number;
-        };
-        /**
-         * SimilaritySearchResultResource
-         * @description JSON:API resource object for similarity search results.
-         */
-        "SimilaritySearchResultResource-Input": {
-            /**
-             * Type
-             * @default similarity-search-results
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["SimilaritySearchResultAttributes"];
-        };
-        /**
-         * SimilaritySearchResultResource
-         * @description JSON:API resource object for similarity search results.
-         */
-        "SimilaritySearchResultResource-Output": {
-            /**
-             * Type
-             * @default similarity-search-results
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["SimilaritySearchResultAttributes"];
-        };
-        /**
-         * SimilaritySearchResultResponse
-         * @description JSON:API response for similarity search results.
-         */
-        SimilaritySearchResultResponse: {
-            data: components["schemas"]["SimilaritySearchResultResource-Output"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /** TierInfo */
-        TierInfo: {
-            /**
-             * Level
-             * @description Numeric tier level (0-5)
-             */
-            level: number;
-            /**
-             * Name
-             * @description Human-readable tier name
-             */
-            name: string;
-            /**
-             * Scorer Components
-             * @description List of scorer components active in this tier
-             */
-            scorer_components: string[];
-        };
-        /** TierThreshold */
-        TierThreshold: {
-            /**
-             * Min
-             * @description Minimum note count for this tier
-             */
-            min: number;
-            /**
-             * Max
-             * @description Maximum note count for this tier (null for unlimited)
-             */
-            max: number | null;
-            /**
-             * Current
-             * @description Whether this is the currently active tier
-             */
-            current: boolean;
+        SimilaritySearchRequest: {
+            data: components["schemas"]["SimilaritySearchCreateData"];
         };
         /** Token */
         Token: {
@@ -7772,31 +4630,6 @@ export interface components {
             refresh_token?: string | null;
             /** Expires In */
             expires_in: number;
-        };
-        /** TopNotesResponse */
-        TopNotesResponse: {
-            /**
-             * Notes
-             * @description List of top-scored notes with metadata
-             */
-            notes: components["schemas"]["NoteScoreResponse"][];
-            /**
-             * Total Count
-             * @description Total number of notes matching filters (before pagination)
-             */
-            total_count: number;
-            /**
-             * Filters Applied
-             * @description Filters that were applied to the query
-             */
-            filters_applied?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Current Tier
-             * @description Current scoring tier level for the system
-             */
-            current_tier: number;
         };
         /** UserCreate */
         UserCreate: {
@@ -8202,238 +5035,6 @@ export interface components {
             channel_id?: string | null;
             /** Active */
             active?: boolean | null;
-        };
-        /**
-         * SimilaritySearchRequest
-         * @description Request schema for similarity search against fact-check items.
-         */
-        src__fact_checking__embedding_schemas__SimilaritySearchRequest: {
-            /**
-             * Text
-             * @description Message text to search for similar fact-checks
-             */
-            text: string;
-            /**
-             * Community Server Id
-             * @description Community server (guild) ID
-             */
-            community_server_id: string;
-            /**
-             * Dataset Tags
-             * @description Dataset tags to filter by (e.g., ['snopes', 'politifact'])
-             */
-            dataset_tags?: string[];
-            /**
-             * Similarity Threshold
-             * @description Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering
-             */
-            similarity_threshold?: number;
-            /**
-             * Rrf Score Threshold
-             * @description Minimum scaled RRF score (0.0-1.0) for post-fusion filtering
-             * @default 0.1
-             */
-            rrf_score_threshold: number;
-            /**
-             * Limit
-             * @description Maximum number of results to return
-             * @default 5
-             */
-            limit: number;
-        };
-        /**
-         * SimilaritySearchRequest
-         * @description JSON:API request body for performing a similarity search.
-         */
-        src__fact_checking__embeddings_jsonapi_router__SimilaritySearchRequest: {
-            data: components["schemas"]["SimilaritySearchCreateData"];
-        };
-        /**
-         * MonitoredChannelListResponse
-         * @description Schema for paginated list of monitored channels.
-         */
-        src__fact_checking__monitored_channel_schemas__MonitoredChannelListResponse: {
-            /**
-             * Channels
-             * @description List of monitored channels
-             */
-            channels: components["schemas"]["MonitoredChannelResponse"][];
-            /**
-             * Total
-             * @description Total count of channels
-             */
-            total: number;
-            /**
-             * Page
-             * @description Current page number
-             * @default 1
-             */
-            page: number;
-            /**
-             * Size
-             * @description Items per page
-             * @default 20
-             */
-            size: number;
-        };
-        /**
-         * MonitoredChannelListResponse
-         * @description JSON:API response for a list of monitored channel resources.
-         */
-        src__fact_checking__monitored_channels_jsonapi_router__MonitoredChannelListResponse: {
-            /** Data */
-            data: components["schemas"]["MonitoredChannelResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /**
-         * PreviouslySeenCheckRequest
-         * @description JSON:API request body for checking previously seen messages.
-         */
-        src__fact_checking__previously_seen_jsonapi_router__PreviouslySeenCheckRequest: {
-            data: components["schemas"]["PreviouslySeenCheckData"];
-        };
-        /**
-         * PreviouslySeenCheckRequest
-         * @description Request to check for previously seen messages.
-         */
-        src__fact_checking__previously_seen_router__PreviouslySeenCheckRequest: {
-            /**
-             * Messagetext
-             * @description Message text to check
-             */
-            messageText: string;
-            /**
-             * Guildid
-             * @description Discord guild ID
-             */
-            guildId: string;
-            /**
-             * Channelid
-             * @description Discord channel ID
-             */
-            channelId: string;
-        };
-        /**
-         * NoteListResponse
-         * @description JSON:API response for a list of note resources.
-         */
-        src__notes__notes_jsonapi_router__NoteListResponse: {
-            /** Data */
-            data: components["schemas"]["NoteResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /**
-         * RequestListResponse
-         * @description JSON:API response for a list of request resources.
-         */
-        src__notes__requests_jsonapi_router__RequestListResponse: {
-            /** Data */
-            data: components["schemas"]["RequestResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-            meta?: components["schemas"]["JSONAPIMeta"] | null;
-        };
-        /** NoteListResponse */
-        src__notes__schemas__NoteListResponse: {
-            /** Notes */
-            notes: components["schemas"]["NoteResponse"][];
-            /** Total */
-            total: number;
-            /** Page */
-            page: number;
-            /** Size */
-            size: number;
-        };
-        /** RequestListResponse */
-        src__notes__schemas__RequestListResponse: {
-            /** Requests */
-            requests: components["schemas"]["RequestResponse"][];
-            /** Total */
-            total: number;
-            /** Page */
-            page: number;
-            /** Size */
-            size: number;
-        };
-        /**
-         * ScoringStatusResponse
-         * @description JSON:API response for scoring status.
-         */
-        src__notes__scoring_jsonapi_router__ScoringStatusResponse: {
-            data: components["schemas"]["ScoringStatusResource-Output"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
-        };
-        /** ScoringStatusResponse */
-        src__notes__scoring_schemas__ScoringStatusResponse: {
-            /**
-             * Current Note Count
-             * @description Current total number of notes in the system
-             */
-            current_note_count: number;
-            /** @description Currently active scoring tier information */
-            active_tier: components["schemas"]["TierInfo"];
-            /** @description Confidence level in scoring results based on data volume */
-            data_confidence: components["schemas"]["DataConfidence"];
-            /**
-             * Tier Thresholds
-             * @description Threshold information for all tiers
-             */
-            tier_thresholds: {
-                [key: string]: components["schemas"]["TierThreshold"];
-            };
-            /** @description Information about the next tier upgrade (null if at max tier) */
-            next_tier_upgrade?: components["schemas"]["NextTierInfo"] | null;
-            /** @description Performance metrics for the scoring system */
-            performance_metrics: components["schemas"]["PerformanceMetrics"];
-            /**
-             * Warnings
-             * @description Any warnings about data quality or scoring limitations
-             */
-            warnings?: string[];
-            /**
-             * Configuration
-             * @description Current scoring configuration overrides
-             */
-            configuration?: {
-                [key: string]: unknown;
-            };
         };
     };
     responses: never;
@@ -9184,6 +5785,8 @@ export interface operations {
                 "filter[created_at__gte]"?: string | null;
                 "filter[created_at__lte]"?: string | null;
                 "filter[rated_by_participant_id__not_in]"?: string | null;
+                "filter[rated_by_participant_id]"?: string | null;
+                "filter[platform_message_id]"?: string | null;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -9199,7 +5802,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__notes__notes_jsonapi_router__NoteListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9234,7 +5837,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9267,7 +5870,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9335,7 +5938,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9368,7 +5971,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9403,7 +6006,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatingSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9436,7 +6039,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatingListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9473,7 +6076,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatingSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9506,7 +6109,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatingStatsSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9535,7 +6138,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProfileSingleResponse"];
+                    "application/json": unknown;
                 };
             };
         };
@@ -9559,7 +6162,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProfileSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9591,7 +6194,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdentityListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9624,7 +6227,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IdentitySingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9687,7 +6290,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CommunityMembershipListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9718,7 +6321,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProfileSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9751,7 +6354,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminStatusSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9788,7 +6391,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminStatusSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9824,7 +6427,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CommunityServerSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9857,7 +6460,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CommunityServerSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9892,7 +6495,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteStatsSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9927,7 +6530,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ParticipantStatsSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -9966,7 +6569,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__notes__requests_jsonapi_router__RequestListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10001,7 +6604,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RequestSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10034,7 +6637,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RequestSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10071,7 +6674,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RequestSingleResponse"];
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_ai_note_jsonapi_api_v2_requests__request_id__ai_notes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10102,7 +6738,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__notes__scoring_jsonapi_router__ScoringStatusResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10135,7 +6771,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteScoreSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10160,7 +6796,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BatchScoreJSONAPIRequest"];
+                "application/json": components["schemas"]["BatchScoreRequest"];
             };
         };
         responses: {
@@ -10170,7 +6806,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteScoreListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10212,7 +6848,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteScoreListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10222,6 +6858,63 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    score_notes_jsonapi_api_v2_scoring_score_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScoringRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scoring_health_jsonapi_api_v2_scoring_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
         };
@@ -10248,7 +6941,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__fact_checking__monitored_channels_jsonapi_router__MonitoredChannelListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10283,7 +6976,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10316,7 +7009,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10386,7 +7079,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10422,7 +7115,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotePublisherConfigListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10457,7 +7150,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10490,7 +7183,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10560,7 +7253,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10597,7 +7290,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotePublisherPostListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10632,7 +7325,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotePublisherPostSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10665,7 +7358,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotePublisherPostSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10700,7 +7393,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PreviouslySeenMessageListResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10735,7 +7428,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PreviouslySeenMessageSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10768,7 +7461,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PreviouslySeenMessageSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10793,7 +7486,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["src__fact_checking__previously_seen_jsonapi_router__PreviouslySeenCheckRequest"];
+                "application/json": components["schemas"]["PreviouslySeenCheckRequest"];
             };
         };
         responses: {
@@ -10803,7 +7496,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PreviouslySeenCheckResultResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10828,7 +7521,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["src__fact_checking__embeddings_jsonapi_router__SimilaritySearchRequest"];
+                "application/json": components["schemas"]["SimilaritySearchRequest"];
             };
         };
         responses: {
@@ -10838,7 +7531,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SimilaritySearchResultResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10873,7 +7566,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HybridSearchResultResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10908,7 +7601,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BulkScanSingleResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10941,7 +7634,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BulkScanResultsResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10974,7 +7667,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RecentScanResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -11044,839 +7737,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoteRequestsResultResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_notes_api_v1_notes_get: {
-        parameters: {
-            query?: {
-                page?: number;
-                size?: number;
-                author_id?: string | null;
-                request_id?: string | null;
-                status_filter?: components["schemas"]["NoteStatus"] | null;
-                classification?: components["schemas"]["NoteClassification"] | null;
-                date_from?: string | null;
-                date_to?: string | null;
-                community_server_id?: string | null;
-                rated_by_participant_id?: string | null;
-                exclude_status?: components["schemas"]["NoteStatus"][] | null;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["src__notes__schemas__NoteListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_note_api_v1_notes_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NoteCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_note_api_v1_notes__note_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_note_api_v1_notes__note_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_note_api_v1_notes__note_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NoteUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    force_publish_note_api_v1_notes__note_id__force_publish_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_requests_api_v1_requests_get: {
-        parameters: {
-            query?: {
-                page?: number;
-                size?: number;
-                status_filter?: components["schemas"]["RequestStatus"] | null;
-                requested_by?: string | null;
-                date_from?: string | null;
-                date_to?: string | null;
-                community_server_id?: string | null;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["src__notes__schemas__RequestListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_request_api_v1_requests_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RequestCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RequestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_request_api_v1_requests__request_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                request_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RequestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_request_api_v1_requests__request_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                request_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RequestUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RequestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    generate_ai_note_api_v1_requests__request_id__generate_ai_note_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                request_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_notes_stats_api_v1_stats_notes_get: {
-        parameters: {
-            query?: {
-                date_from?: string | null;
-                date_to?: string | null;
-                community_server_id?: string | null;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteSummaryStats"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_participant_stats_api_v1_stats_participant__participant_id__get: {
-        parameters: {
-            query?: {
-                community_server_id?: string | null;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                participant_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ParticipantStats"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_scoring_status_api_v1_scoring_status_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["src__notes__scoring_schemas__ScoringStatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_note_score_api_v1_scoring_notes__note_id__score_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                note_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NoteScoreResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_batch_note_scores_api_v1_scoring_notes_batch_scores_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BatchScoreRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BatchScoreResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_top_notes_api_v1_scoring_notes_top_get: {
-        parameters: {
-            query?: {
-                /** @description Maximum number of notes to return */
-                limit?: number;
-                /** @description Minimum confidence level filter (no_data, provisional, standard) */
-                min_confidence?: components["schemas"]["ScoreConfidence"] | null;
-                /** @description Filter by scoring tier (0-5) */
-                tier?: number | null;
-                /** @description Batch size for processing notes */
-                batch_size?: number;
-                /** @description Filter by community server */
-                community_server_id?: string | null;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TopNotesResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    score_notes_api_v1_scoring_score_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScoringRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScoringResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    scoring_health_api_v1_scoring_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-        };
-    };
-    get_note_publisher_config_api_v1_note_publisher_config_get: {
-        parameters: {
-            query: {
-                community_server_id: string;
-                channel_id?: string | null;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotePublisherConfigResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_note_publisher_config_api_v1_note_publisher_config_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NotePublisherConfigRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NotePublisherConfigResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    record_note_publisher_api_v1_note_publisher_record_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NotePublisherRecordRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_duplicate_api_v1_note_publisher_check_duplicate__original_message_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                original_message_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DuplicateCheckResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_last_post_api_v1_note_publisher_last_post__channel_id__get: {
-        parameters: {
-            query: {
-                /** @description Discord guild ID for membership verification */
-                community_server_id: string;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                channel_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LastPostResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -12560,252 +8421,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LLMUsageStatsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_monitored_channels_api_v1_monitored_channels_get: {
-        parameters: {
-            query?: {
-                /** @description Filter by community server ID (platform ID, e.g., Discord guild ID). Required - user must be admin of this server. */
-                community_server_id?: string | null;
-                /** @description Only return enabled channels */
-                enabled_only?: boolean;
-                /** @description Page number */
-                page?: number;
-                /** @description Items per page */
-                size?: number;
-            };
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["src__fact_checking__monitored_channel_schemas__MonitoredChannelListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_monitored_channel_api_v1_monitored_channels_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MonitoredChannelCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MonitoredChannelResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_monitored_channel_api_v1_monitored_channels__channel_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                channel_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MonitoredChannelResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_monitored_channel_api_v1_monitored_channels__channel_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                channel_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_monitored_channel_api_v1_monitored_channels__channel_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path: {
-                channel_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MonitoredChannelUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MonitoredChannelResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    similarity_search_api_v1_embeddings_similarity_search_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["src__fact_checking__embedding_schemas__SimilaritySearchRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SimilaritySearchResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    check_previously_seen_api_v1_previously_seen_check_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "X-API-Key"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["src__fact_checking__previously_seen_router__PreviouslySeenCheckRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviouslySeenCheckResponse"];
                 };
             };
             /** @description Validation Error */

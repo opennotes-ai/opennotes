@@ -166,6 +166,23 @@ class TestRatingsJSONAPI:
         )
         return note_data
 
+    async def _create_note_v2(self, client, note_data):
+        """Create a note using the v2 JSON:API endpoint."""
+        request_body = {
+            "data": {
+                "type": "notes",
+                "attributes": {
+                    "summary": note_data["summary"],
+                    "classification": note_data["classification"].value
+                    if hasattr(note_data["classification"], "value")
+                    else note_data["classification"],
+                    "community_server_id": str(note_data["community_server_id"]),
+                    "author_participant_id": note_data["author_participant_id"],
+                },
+            }
+        }
+        return await client.post("/api/v2/notes", json=request_body)
+
     @pytest.mark.asyncio
     async def test_create_rating_jsonapi(
         self, ratings_jsonapi_auth_client, ratings_jsonapi_sample_note_data
@@ -178,9 +195,9 @@ class TestRatingsJSONAPI:
         - Response body with 'data' object containing created resource
         """
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         request_body = {
             "data": {
@@ -218,9 +235,9 @@ class TestRatingsJSONAPI:
         If a rating already exists for the same note + rater, it should be updated.
         """
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         rater_id = "test_rater_upsert_jsonapi"
 
@@ -262,9 +279,9 @@ class TestRatingsJSONAPI:
     ):
         """Test POST /api/v2/ratings rejects invalid resource type."""
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         request_body = {
             "data": {
@@ -318,9 +335,9 @@ class TestRatingsJSONAPI:
         - Each resource has 'type', 'id', and 'attributes'
         """
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         rating_body = {
             "data": {
@@ -368,9 +385,9 @@ class TestRatingsJSONAPI:
     ):
         """Test GET /api/v2/notes/{id}/ratings returns empty array for unrated note."""
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await ratings_jsonapi_auth_client.get(f"/api/v2/notes/{note_id}/ratings")
 
@@ -409,9 +426,9 @@ class TestRatingsJSONAPI:
         - Response body with 'data' object containing updated resource
         """
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         rater_id = ratings_jsonapi_registered_user["discord_id"]
 
@@ -493,9 +510,9 @@ class TestRatingsJSONAPI:
     ):
         """Test PUT /api/v2/ratings/{rating_id} rejects invalid resource type."""
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         rater_id = ratings_jsonapi_registered_user["discord_id"]
 
@@ -543,9 +560,9 @@ class TestRatingsJSONAPI:
         - Resource has 'type', 'id', and 'attributes'
         """
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         for i, level in enumerate(["HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL"]):
             rating_body = {
@@ -596,9 +613,9 @@ class TestRatingsJSONAPI:
     ):
         """Test GET /api/v2/notes/{note_id}/ratings/stats returns zero stats for unrated note."""
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
-        create_response = await ratings_jsonapi_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await self._create_note_v2(ratings_jsonapi_auth_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await ratings_jsonapi_auth_client.get(f"/api/v2/notes/{note_id}/ratings/stats")
 

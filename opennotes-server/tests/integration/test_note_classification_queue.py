@@ -110,6 +110,24 @@ async def classification_auth_client(classification_auth_headers):
         yield client
 
 
+async def create_note_v2(client, note_data):
+    """Create a note using the v2 JSON:API endpoint."""
+    request_body = {
+        "data": {
+            "type": "notes",
+            "attributes": {
+                "summary": note_data["summary"],
+                "classification": note_data["classification"].value
+                if hasattr(note_data["classification"], "value")
+                else note_data["classification"],
+                "community_server_id": str(note_data["community_server_id"]),
+                "author_participant_id": note_data["author_participant_id"],
+            },
+        }
+    }
+    return await client.post("/api/v2/notes", json=request_body)
+
+
 class TestNoteClassificationInQueue:
     """Test that notes with all classifications appear in the note queue"""
 
@@ -127,23 +145,23 @@ class TestNoteClassificationInQueue:
         }
 
         # Create the note
-        create_response = await classification_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(classification_auth_client, note_data)
         assert create_response.status_code == 201
-        created_note = create_response.json()
+        created_note = create_response.json()["data"]
 
         # Verify the note was created with correct status
-        assert created_note["classification"] == NoteClassification.NOT_MISLEADING
-        assert created_note["status"] == NoteStatus.NEEDS_MORE_RATINGS
+        assert created_note["attributes"]["classification"] == NoteClassification.NOT_MISLEADING
+        assert created_note["attributes"]["status"] == NoteStatus.NEEDS_MORE_RATINGS
 
-        # List notes with NEEDS_MORE_RATINGS status
+        # List notes with NEEDS_MORE_RATINGS status using v2 JSON:API filter syntax
         list_response = await classification_auth_client.get(
-            "/api/v1/notes?status_filter=NEEDS_MORE_RATINGS"
+            "/api/v2/notes?filter[status]=NEEDS_MORE_RATINGS"
         )
         assert list_response.status_code == 200
         notes_data = list_response.json()
 
         # Verify our NOT_MISLEADING note appears in the queue
-        note_ids = [note["id"] for note in notes_data["notes"]]
+        note_ids = [note["id"] for note in notes_data["data"]]
         assert created_note["id"] in note_ids, (
             "NOT_MISLEADING note should appear in NEEDS_MORE_RATINGS queue"
         )
@@ -162,26 +180,26 @@ class TestNoteClassificationInQueue:
         }
 
         # Create the note
-        create_response = await classification_auth_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(classification_auth_client, note_data)
         assert create_response.status_code == 201
-        created_note = create_response.json()
+        created_note = create_response.json()["data"]
 
         # Verify the note was created with correct status
         assert (
-            created_note["classification"]
+            created_note["attributes"]["classification"]
             == NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING
         )
-        assert created_note["status"] == NoteStatus.NEEDS_MORE_RATINGS
+        assert created_note["attributes"]["status"] == NoteStatus.NEEDS_MORE_RATINGS
 
-        # List notes with NEEDS_MORE_RATINGS status
+        # List notes with NEEDS_MORE_RATINGS status using v2 JSON:API filter syntax
         list_response = await classification_auth_client.get(
-            "/api/v1/notes?status_filter=NEEDS_MORE_RATINGS"
+            "/api/v2/notes?filter[status]=NEEDS_MORE_RATINGS"
         )
         assert list_response.status_code == 200
         notes_data = list_response.json()
 
         # Verify our MISINFORMED note appears in the queue
-        note_ids = [note["id"] for note in notes_data["notes"]]
+        note_ids = [note["id"] for note in notes_data["data"]]
         assert created_note["id"] in note_ids, (
             "MISINFORMED note should appear in NEEDS_MORE_RATINGS queue"
         )
@@ -208,23 +226,23 @@ class TestNoteClassificationInQueue:
         }
 
         # Create both notes
-        response1 = await classification_auth_client.post("/api/v1/notes", json=not_misleading_note)
-        response2 = await classification_auth_client.post("/api/v1/notes", json=misinformed_note)
+        response1 = await create_note_v2(classification_auth_client, not_misleading_note)
+        response2 = await create_note_v2(classification_auth_client, misinformed_note)
 
         assert response1.status_code == 201
         assert response2.status_code == 201
 
-        note1 = response1.json()
-        note2 = response2.json()
+        note1 = response1.json()["data"]
+        note2 = response2.json()["data"]
 
-        # List all notes with NEEDS_MORE_RATINGS status
+        # List all notes with NEEDS_MORE_RATINGS status using v2 JSON:API filter syntax
         list_response = await classification_auth_client.get(
-            "/api/v1/notes?status_filter=NEEDS_MORE_RATINGS&size=100"
+            "/api/v2/notes?filter[status]=NEEDS_MORE_RATINGS&page[size]=100"
         )
         assert list_response.status_code == 200
         notes_data = list_response.json()
 
-        note_ids = [note["id"] for note in notes_data["notes"]]
+        note_ids = [note["id"] for note in notes_data["data"]]
 
         # Both notes should appear in the queue regardless of classification
         assert note1["id"] in note_ids, "NOT_MISLEADING note should be in queue"
@@ -251,37 +269,37 @@ class TestNoteClassificationInQueue:
         }
 
         # Create both notes
-        response1 = await classification_auth_client.post("/api/v1/notes", json=not_misleading_note)
-        response2 = await classification_auth_client.post("/api/v1/notes", json=misinformed_note)
+        response1 = await create_note_v2(classification_auth_client, not_misleading_note)
+        response2 = await create_note_v2(classification_auth_client, misinformed_note)
 
         assert response1.status_code == 201
         assert response2.status_code == 201
 
-        note1 = response1.json()
-        note2 = response2.json()
+        note1 = response1.json()["data"]
+        note2 = response2.json()["data"]
 
-        # Filter by classification=NOT_MISLEADING and status=NEEDS_MORE_RATINGS
+        # Filter by classification=NOT_MISLEADING and status=NEEDS_MORE_RATINGS using v2 JSON:API
         list_response = await classification_auth_client.get(
-            "/api/v1/notes?status_filter=NEEDS_MORE_RATINGS&classification=NOT_MISLEADING&size=100"
+            "/api/v2/notes?filter[status]=NEEDS_MORE_RATINGS&filter[classification]=NOT_MISLEADING&page[size]=100"
         )
         assert list_response.status_code == 200
         notes_data = list_response.json()
 
-        note_ids = [note["id"] for note in notes_data["notes"]]
+        note_ids = [note["id"] for note in notes_data["data"]]
 
         # Only NOT_MISLEADING note should appear
         assert note1["id"] in note_ids, "NOT_MISLEADING note should match filter"
         assert note2["id"] not in note_ids, "MISINFORMED note should not match filter"
 
-        # Filter by classification=MISINFORMED_OR_POTENTIALLY_MISLEADING
+        # Filter by classification=MISINFORMED_OR_POTENTIALLY_MISLEADING using v2 JSON:API
         list_response2 = await classification_auth_client.get(
-            "/api/v1/notes?status_filter=NEEDS_MORE_RATINGS"
-            "&classification=MISINFORMED_OR_POTENTIALLY_MISLEADING&size=100"
+            "/api/v2/notes?filter[status]=NEEDS_MORE_RATINGS"
+            "&filter[classification]=MISINFORMED_OR_POTENTIALLY_MISLEADING&page[size]=100"
         )
         assert list_response2.status_code == 200
         notes_data2 = list_response2.json()
 
-        note_ids2 = [note["id"] for note in notes_data2["notes"]]
+        note_ids2 = [note["id"] for note in notes_data2["data"]]
 
         # Only MISINFORMED note should appear
         assert note1["id"] not in note_ids2, "NOT_MISLEADING note should not match filter"

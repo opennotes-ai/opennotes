@@ -1,12 +1,15 @@
-// Re-export server API types from generated types for convenience
+// Re-export types from generated types (these are still defined there)
 import type { components } from './generated-types.js';
 export type { components } from './generated-types.js';
 export type RequestStatus = components['schemas']['RequestStatus'];
 export type NoteStatus = components['schemas']['NoteStatus'];
-export type RequestResponse = components['schemas']['RequestResponse'];
-export type NoteResponse = components['schemas']['NoteResponse'];
-export type RatingResponse = components['schemas']['RatingResponse'];
+export type HelpfulnessLevel = components['schemas']['HelpfulnessLevel'];
 export type RatingThresholds = components['schemas']['RatingThresholdsResponse'];
+
+// Flattened API types (defined locally in api-client.ts, not in generated-types.ts)
+// Import these separately to avoid circular dependency issues
+import type { NoteResponse, RatingResponse, RequestResponse } from './api-client.js';
+export type { NoteResponse, RatingResponse, RequestResponse };
 
 // Discord bot-specific types (different from server API types)
 // These types represent Discord bot's internal data model

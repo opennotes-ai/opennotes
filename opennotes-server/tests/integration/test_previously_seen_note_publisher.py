@@ -1,4 +1,9 @@
-"""Integration tests for note publisher embedding storage (task-523)."""
+"""Integration tests for note publisher embedding storage (task-523).
+
+Updated for JSON:API v2 endpoints:
+- POST /api/v2/note-publisher-posts - Create post record
+- POST /api/v2/previously-seen-messages - Create previously seen record with embedding
+"""
 
 from datetime import UTC, datetime
 
@@ -15,6 +20,60 @@ from src.users.models import User
 from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 
 pytestmark = pytest.mark.asyncio
+
+
+def _create_note_publisher_post_request(
+    note_id: str,
+    original_message_id: str,
+    channel_id: str,
+    community_server_id: str,
+    score_at_post: float,
+    confidence_at_post: str,
+    success: bool,
+    error_message: str | None = None,
+    auto_post_message_id: str | None = None,
+) -> dict:
+    """Create a JSON:API request body for note publisher post creation."""
+    return {
+        "data": {
+            "type": "note-publisher-posts",
+            "attributes": {
+                "note_id": note_id,
+                "original_message_id": original_message_id,
+                "channel_id": channel_id,
+                "community_server_id": community_server_id,
+                "score_at_post": score_at_post,
+                "confidence_at_post": confidence_at_post,
+                "success": success,
+                "error_message": error_message,
+                "auto_post_message_id": auto_post_message_id,
+            },
+        }
+    }
+
+
+def _create_previously_seen_message_request(
+    community_server_id: str,
+    original_message_id: str,
+    published_note_id: str,
+    embedding: list[float] | None = None,
+    embedding_provider: str | None = None,
+    embedding_model: str | None = None,
+) -> dict:
+    """Create a JSON:API request body for previously seen message creation."""
+    return {
+        "data": {
+            "type": "previously-seen-messages",
+            "attributes": {
+                "community_server_id": community_server_id,
+                "original_message_id": original_message_id,
+                "published_note_id": published_note_id,
+                "embedding": embedding,
+                "embedding_provider": embedding_provider,
+                "embedding_model": embedding_model,
+            },
+        }
+    }
 
 
 @pytest.fixture
@@ -185,37 +244,58 @@ async def test_setup():
 
 
 class TestNotePublisherEmbeddingStorage:
-    """Test embedding storage when notes are published."""
+    """Test embedding storage when notes are published.
 
-    async def test_record_endpoint_stores_embedding_on_success(self, test_setup):
-        """Test /note-publisher/record stores embedding when post succeeds."""
+    In v2 API, note publisher posts and previously seen message records are separate:
+    - /api/v2/note-publisher-posts - Records a post attempt
+    - /api/v2/previously-seen-messages - Stores embedding for similarity matching
+
+    The caller is responsible for creating both records when a post succeeds.
+    """
+
+    async def test_post_record_and_embedding_storage_on_success(self, test_setup):
+        """Test successful post creates both post record and embedding storage."""
         embedding = [0.1] * 1536
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            post_body = _create_note_publisher_post_request(
+                note_id=str(test_setup["note"].id),
+                original_message_id="msg_publisher_001",
+                channel_id="test_channel_123",
+                community_server_id=test_setup["community"].platform_id,
+                score_at_post=0.8,
+                confidence_at_post="0.9",
+                success=True,
+            )
             response = await client.post(
-                "/api/v1/note-publisher/record",
+                "/api/v2/note-publisher-posts",
                 headers=test_setup["headers"],
-                json={
-                    "noteId": str(test_setup["note"].id),
-                    "originalMessageId": "msg_publisher_001",
-                    "channelId": "test_channel_123",
-                    "guildId": test_setup["community"].platform_id,
-                    "scoreAtPost": 0.8,
-                    "confidenceAtPost": "0.9",
-                    "success": True,
-                    "messageEmbedding": embedding,
-                    "embeddingProvider": "openai",
-                    "embeddingModel": "text-embedding-3-small",
-                },
+                json=post_body,
             )
 
             assert response.status_code == 201
             data = response.json()
-            assert "id" in data
-            assert "recorded_at" in data
+            assert "data" in data
+            assert data["data"]["type"] == "note-publisher-posts"
+            assert "id" in data["data"]
 
-        # Verify embedding was stored
+            embedding_body = _create_previously_seen_message_request(
+                community_server_id=str(test_setup["community"].id),
+                original_message_id="msg_publisher_001",
+                published_note_id=str(test_setup["note"].id),
+                embedding=embedding,
+                embedding_provider="openai",
+                embedding_model="text-embedding-3-small",
+            )
+            embed_response = await client.post(
+                "/api/v2/previously-seen-messages",
+                headers=test_setup["headers"],
+                json=embedding_body,
+            )
+
+            assert embed_response.status_code == 201
+
         async with get_session_maker()() as session:
             result = await session.execute(
                 select(PreviouslySeenMessage).where(
@@ -231,33 +311,29 @@ class TestNotePublisherEmbeddingStorage:
             assert record.embedding_provider == "openai"
             assert record.embedding_model == "text-embedding-3-small"
 
-    async def test_record_endpoint_does_not_store_embedding_on_failure(self, test_setup):
-        """Test /note-publisher/record does NOT store embedding when post fails."""
-        embedding = [0.1] * 1536
+    async def test_failed_post_does_not_store_embedding(self, test_setup):
+        """Test failed post does NOT create embedding storage record."""
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            post_body = _create_note_publisher_post_request(
+                note_id=str(test_setup["note"].id),
+                original_message_id="msg_publisher_failed",
+                channel_id="test_channel_123",
+                community_server_id=test_setup["community"].platform_id,
+                score_at_post=0.8,
+                confidence_at_post="0.9",
+                success=False,
+                error_message="Rate limited",
+            )
             response = await client.post(
-                "/api/v1/note-publisher/record",
+                "/api/v2/note-publisher-posts",
                 headers=test_setup["headers"],
-                json={
-                    "noteId": str(test_setup["note"].id),
-                    "originalMessageId": "msg_publisher_failed",
-                    "channelId": "test_channel_123",
-                    "guildId": test_setup["community"].platform_id,
-                    "scoreAtPost": 0.8,
-                    "confidenceAtPost": "0.9",
-                    "success": False,  # Failed post
-                    "failureReason": "Rate limited",
-                    "messageEmbedding": embedding,
-                    "embeddingProvider": "openai",
-                    "embeddingModel": "text-embedding-3-small",
-                },
+                json=post_body,
             )
 
             assert response.status_code == 201
 
-        # Verify NO embedding was stored for failed post
         async with get_session_maker()() as session:
             result = await session.execute(
                 select(PreviouslySeenMessage).where(
@@ -266,32 +342,30 @@ class TestNotePublisherEmbeddingStorage:
             )
             record = result.scalar_one_or_none()
 
-            assert record is None  # Should not store embedding for failed posts
+            assert record is None
 
-    async def test_record_endpoint_handles_missing_embedding_gracefully(self, test_setup):
-        """Test /note-publisher/record handles missing embedding gracefully."""
+    async def test_post_without_embedding_succeeds(self, test_setup):
+        """Test creating post record without embedding storage succeeds."""
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            post_body = _create_note_publisher_post_request(
+                note_id=str(test_setup["note"].id),
+                original_message_id="msg_no_embedding",
+                channel_id="test_channel_123",
+                community_server_id=test_setup["community"].platform_id,
+                score_at_post=0.8,
+                confidence_at_post="0.9",
+                success=True,
+            )
             response = await client.post(
-                "/api/v1/note-publisher/record",
+                "/api/v2/note-publisher-posts",
                 headers=test_setup["headers"],
-                json={
-                    "noteId": str(test_setup["note"].id),
-                    "originalMessageId": "msg_no_embedding",
-                    "channelId": "test_channel_123",
-                    "guildId": test_setup["community"].platform_id,
-                    "scoreAtPost": 0.8,
-                    "confidenceAtPost": "0.9",
-                    "success": True,
-                    # No embedding fields provided
-                },
+                json=post_body,
             )
 
-            # Should still succeed (embedding is optional)
             assert response.status_code == 201
 
-        # Verify no embedding was stored (graceful handling)
         async with get_session_maker()() as session:
             result = await session.execute(
                 select(PreviouslySeenMessage).where(
@@ -300,34 +374,30 @@ class TestNotePublisherEmbeddingStorage:
             )
             record = result.scalar_one_or_none()
 
-            assert record is None  # No embedding, so no record stored
+            assert record is None
 
-    async def test_record_endpoint_stores_embedding_with_metadata(self, test_setup):
-        """Test /note-publisher/record can include extra metadata."""
+    async def test_embedding_stores_provider_and_model(self, test_setup):
+        """Test embedding storage includes provider and model metadata."""
         embedding = [0.1] * 1536
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            embedding_body = _create_previously_seen_message_request(
+                community_server_id=str(test_setup["community"].id),
+                original_message_id="msg_with_metadata",
+                published_note_id=str(test_setup["note"].id),
+                embedding=embedding,
+                embedding_provider="openai",
+                embedding_model="text-embedding-3-small",
+            )
             response = await client.post(
-                "/api/v1/note-publisher/record",
+                "/api/v2/previously-seen-messages",
                 headers=test_setup["headers"],
-                json={
-                    "noteId": str(test_setup["note"].id),
-                    "originalMessageId": "msg_with_metadata",
-                    "channelId": "test_channel_123",
-                    "guildId": test_setup["community"].platform_id,
-                    "scoreAtPost": 0.8,
-                    "confidenceAtPost": "0.9",
-                    "success": True,
-                    "messageEmbedding": embedding,
-                    "embeddingProvider": "openai",
-                    "embeddingModel": "text-embedding-3-small",
-                },
+                json=embedding_body,
             )
 
             assert response.status_code == 201
 
-        # Verify metadata is stored
         async with get_session_maker()() as session:
             result = await session.execute(
                 select(PreviouslySeenMessage).where(
@@ -340,32 +410,28 @@ class TestNotePublisherEmbeddingStorage:
             assert record.embedding_provider == "openai"
             assert record.embedding_model == "text-embedding-3-small"
 
-    async def test_record_endpoint_stores_community_server_reference(self, test_setup):
-        """Test /note-publisher/record stores correct community_server_id."""
+    async def test_embedding_stores_community_server_reference(self, test_setup):
+        """Test embedding storage stores correct community_server_id."""
         embedding = [0.1] * 1536
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            embedding_body = _create_previously_seen_message_request(
+                community_server_id=str(test_setup["community"].id),
+                original_message_id="msg_server_ref",
+                published_note_id=str(test_setup["note"].id),
+                embedding=embedding,
+                embedding_provider="openai",
+                embedding_model="text-embedding-3-small",
+            )
             response = await client.post(
-                "/api/v1/note-publisher/record",
+                "/api/v2/previously-seen-messages",
                 headers=test_setup["headers"],
-                json={
-                    "noteId": str(test_setup["note"].id),
-                    "originalMessageId": "msg_server_ref",
-                    "channelId": "test_channel_123",
-                    "guildId": test_setup["community"].platform_id,
-                    "scoreAtPost": 0.8,
-                    "confidenceAtPost": "0.9",
-                    "success": True,
-                    "messageEmbedding": embedding,
-                    "embeddingProvider": "openai",
-                    "embeddingModel": "text-embedding-3-small",
-                },
+                json=embedding_body,
             )
 
             assert response.status_code == 201
 
-        # Verify community_server_id is correct
         async with get_session_maker()() as session:
             result = await session.execute(
                 select(PreviouslySeenMessage).where(
@@ -377,32 +443,28 @@ class TestNotePublisherEmbeddingStorage:
             assert record is not None
             assert record.community_server_id == test_setup["community"].id
 
-    async def test_record_endpoint_stores_published_note_reference(self, test_setup):
-        """Test /note-publisher/record stores correct published_note_id."""
+    async def test_embedding_stores_published_note_reference(self, test_setup):
+        """Test embedding storage stores correct published_note_id."""
         embedding = [0.1] * 1536
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            embedding_body = _create_previously_seen_message_request(
+                community_server_id=str(test_setup["community"].id),
+                original_message_id="msg_note_ref",
+                published_note_id=str(test_setup["note"].id),
+                embedding=embedding,
+                embedding_provider="openai",
+                embedding_model="text-embedding-3-small",
+            )
             response = await client.post(
-                "/api/v1/note-publisher/record",
+                "/api/v2/previously-seen-messages",
                 headers=test_setup["headers"],
-                json={
-                    "noteId": str(test_setup["note"].id),
-                    "originalMessageId": "msg_note_ref",
-                    "channelId": "test_channel_123",
-                    "guildId": test_setup["community"].platform_id,
-                    "scoreAtPost": 0.8,
-                    "confidenceAtPost": "0.9",
-                    "success": True,
-                    "messageEmbedding": embedding,
-                    "embeddingProvider": "openai",
-                    "embeddingModel": "text-embedding-3-small",
-                },
+                json=embedding_body,
             )
 
             assert response.status_code == 201
 
-        # Verify published_note_id is correct
         async with get_session_maker()() as session:
             result = await session.execute(
                 select(PreviouslySeenMessage).where(

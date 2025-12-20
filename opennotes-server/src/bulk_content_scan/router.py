@@ -28,8 +28,8 @@ from src.bulk_content_scan.service import (
 )
 from src.cache.redis_client import redis_client
 from src.database import get_db
-from src.fact_checking.embedding_router import get_embedding_service
 from src.fact_checking.embedding_service import EmbeddingService
+from src.fact_checking.embeddings_jsonapi_router import get_embedding_service
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.users.models import User

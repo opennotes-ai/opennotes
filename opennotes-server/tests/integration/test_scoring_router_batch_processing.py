@@ -137,14 +137,14 @@ async def test_get_top_notes_uses_batch_processing(
     await db_session.commit()
 
     response = await async_client.get(
-        "/api/v1/scoring/notes/top",
+        "/api/v2/scoring/notes/top",
         headers=async_auth_headers,
         params={"limit": 10, "batch_size": 1000},
     )
 
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert len(data["notes"]) == 10, "Should return exactly 10 notes when 100 exist"
+    assert len(data["data"]) == 10, "Should return exactly 10 notes when 100 exist"
 
 
 @pytest.mark.asyncio
@@ -179,9 +179,8 @@ async def test_get_top_notes_returns_correct_top_scored_notes(
 
     await db_session.commit()
 
-    # Request top 10 notes
     response = await async_client.get(
-        "/api/v1/scoring/notes/top",
+        "/api/v2/scoring/notes/top",
         headers=async_auth_headers,
         params={"limit": 10, "batch_size": 100},
     )
@@ -189,11 +188,9 @@ async def test_get_top_notes_returns_correct_top_scored_notes(
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 
-    # Verify we got the top 10 notes
-    assert len(data["notes"]) == 10
+    assert len(data["data"]) == 10
 
-    # Verify notes are sorted by score in descending order
-    scores = [note["score"] for note in data["notes"]]
+    scores = [note["attributes"]["score"] for note in data["data"]]
     assert scores == sorted(scores, reverse=True), "Notes should be sorted by score"
 
 
@@ -232,9 +229,8 @@ async def test_get_top_notes_filtering_works_with_batch_processing(
 
     await db_session.commit()
 
-    # Request top notes with confidence filter
     response = await async_client.get(
-        "/api/v1/scoring/notes/top",
+        "/api/v2/scoring/notes/top",
         headers=async_auth_headers,
         params={"limit": 10, "min_confidence": "standard", "batch_size": 100},
     )
@@ -242,9 +238,8 @@ async def test_get_top_notes_filtering_works_with_batch_processing(
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 
-    # Verify filtering was applied
-    assert "min_confidence" in data["filters_applied"]
-    assert data["filters_applied"]["min_confidence"] == "standard"
+    assert "min_confidence" in data["meta"]["filters_applied"]
+    assert data["meta"]["filters_applied"]["min_confidence"] == "standard"
 
 
 @pytest.mark.asyncio
@@ -321,15 +316,13 @@ async def test_get_top_notes_memory_efficient_with_large_dataset(
 
     try:
         response = await async_client.get(
-            "/api/v1/scoring/notes/top",
+            "/api/v2/scoring/notes/top",
             headers=async_auth_headers,
             params={"limit": limit, "batch_size": batch_size},
         )
 
         assert response.status_code == status.HTTP_200_OK
 
-        # Verify memory usage was bounded
-        # Peak memory should not exceed batch_size + (limit * 5) as per implementation
         expected_max = batch_size + (limit * 5)
         assert max_in_memory[0] <= expected_max, (
             f"Peak memory {max_in_memory[0]} should not exceed {expected_max}"
@@ -369,17 +362,16 @@ async def test_get_top_notes_pagination_works_correctly(
 
     await db_session.commit()
 
-    # Test different limits
     for limit in [5, 10, 25, 50]:
         response = await async_client.get(
-            "/api/v1/scoring/notes/top",
+            "/api/v2/scoring/notes/top",
             headers=async_auth_headers,
             params={"limit": limit, "batch_size": 100},
         )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert len(data["notes"]) == limit, f"Should return exactly {limit} notes for limit={limit}"
+        assert len(data["data"]) == limit, f"Should return exactly {limit} notes for limit={limit}"
 
 
 @pytest.mark.asyncio
@@ -388,10 +380,10 @@ async def test_get_top_notes_handles_empty_database(
 ):
     """Test that endpoint handles empty database gracefully."""
     response = await async_client.get(
-        "/api/v1/scoring/notes/top", headers=async_auth_headers, params={"limit": 10}
+        "/api/v2/scoring/notes/top", headers=async_auth_headers, params={"limit": 10}
     )
 
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert data["notes"] == []
-    assert data["total_count"] == 0
+    assert data["data"] == []
+    assert data["meta"]["total_count"] == 0

@@ -1,4 +1,8 @@
-"""Integration tests for previously-seen message detection API (task-523)."""
+"""Integration tests for previously-seen message detection API (task-523).
+
+Updated for JSON:API v2 endpoints:
+- POST /api/v2/previously-seen-messages/check
+"""
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
@@ -18,6 +22,22 @@ from src.users.models import User
 from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 
 pytestmark = pytest.mark.asyncio
+
+
+def _create_previously_seen_check_request(
+    message_text: str, guild_id: str, channel_id: str
+) -> dict:
+    """Create a JSON:API request body for previously seen check."""
+    return {
+        "data": {
+            "type": "previously-seen-check",
+            "attributes": {
+                "message_text": message_text,
+                "guild_id": guild_id,
+                "channel_id": channel_id,
+            },
+        }
+    }
 
 
 @pytest.fixture
@@ -266,19 +286,20 @@ def mock_embedding_generation():
 
 
 class TestPreviouslySeenCheckEndpoint:
-    """Test /api/v1/previously-seen/check endpoint."""
+    """Test /api/v2/previously-seen-messages/check endpoint."""
 
     async def test_check_endpoint_requires_authentication(self):
         """Test endpoint requires authentication."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="test message",
+                guild_id="123",
+                channel_id="456",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
-                json={
-                    "messageText": "test message",
-                    "guildId": "123",
-                    "channelId": "456",
-                },
+                "/api/v2/previously-seen-messages/check",
+                json=request_body,
             )
 
             assert response.status_code == 401
@@ -287,39 +308,44 @@ class TestPreviouslySeenCheckEndpoint:
         """Test endpoint returns 404 for non-existent guild."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="test message",
+                guild_id="nonexistent_guild_999",
+                channel_id="123",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
+                "/api/v2/previously-seen-messages/check",
                 headers=test_user_with_auth["headers"],
-                json={
-                    "messageText": "test message",
-                    "guildId": "nonexistent_guild_999",
-                    "channelId": "123",
-                },
+                json=request_body,
             )
 
             assert response.status_code == 404
-            assert "not found" in response.json()["detail"].lower()
+            data = response.json()
+            assert "errors" in data
+            assert any("not found" in str(e.get("detail", "")).lower() for e in data["errors"])
 
     async def test_check_endpoint_returns_no_action_when_no_matches(self, test_user_with_auth):
         """Test endpoint returns no action flags when no similar messages found."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="completely unique message xyz789",
+                guild_id=test_user_with_auth["community"].platform_id,
+                channel_id="123",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
+                "/api/v2/previously-seen-messages/check",
                 headers=test_user_with_auth["headers"],
-                json={
-                    "messageText": "completely unique message xyz789",
-                    "guildId": test_user_with_auth["community"].platform_id,
-                    "channelId": "123",
-                },
+                json=request_body,
             )
 
             assert response.status_code == 200
             data = response.json()
-            assert data["shouldAutoPublish"] is False
-            assert data["shouldAutoRequest"] is False
-            assert len(data["matches"]) == 0
-            assert data["topMatch"] is None
+            attrs = data["data"]["attributes"]
+            assert attrs["should_auto_publish"] is False
+            assert attrs["should_auto_request"] is False
+            assert len(attrs["matches"]) == 0
+            assert attrs["top_match"] is None
 
     async def test_check_endpoint_returns_default_thresholds(
         self, test_user_with_auth, previously_seen_record
@@ -327,20 +353,22 @@ class TestPreviouslySeenCheckEndpoint:
         """Test endpoint returns correct default thresholds."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="test message",
+                guild_id=test_user_with_auth["community"].platform_id,
+                channel_id="123",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
+                "/api/v2/previously-seen-messages/check",
                 headers=test_user_with_auth["headers"],
-                json={
-                    "messageText": "test message",
-                    "guildId": test_user_with_auth["community"].platform_id,
-                    "channelId": "123",
-                },
+                json=request_body,
             )
 
             assert response.status_code == 200
             data = response.json()
-            assert data["autopublishThreshold"] == 0.9
-            assert data["autorequestThreshold"] == 0.75
+            attrs = data["data"]["attributes"]
+            assert attrs["autopublish_threshold"] == 0.9
+            assert attrs["autorequest_threshold"] == 0.75
 
 
 class TestPreviouslySeenThresholdConfiguration:
@@ -352,13 +380,12 @@ class TestPreviouslySeenThresholdConfiguration:
         """Test per-channel autopublish threshold override is respected."""
         channel_id = None
         async with get_session_maker()() as session:
-            # Create monitored channel with custom autopublish threshold
             monitored_channel = MonitoredChannel(
                 community_server_id=test_user_with_auth["community"].platform_id,
                 channel_id="test_channel_override_123",
-                similarity_threshold=0.75,  # fact-check threshold
-                previously_seen_autopublish_threshold=0.95,  # Custom: higher than default
-                previously_seen_autorequest_threshold=None,  # Use default
+                similarity_threshold=0.75,
+                previously_seen_autopublish_threshold=0.95,
+                previously_seen_autorequest_threshold=None,
             )
             session.add(monitored_channel)
             await session.commit()
@@ -367,22 +394,23 @@ class TestPreviouslySeenThresholdConfiguration:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="test message",
+                guild_id=test_user_with_auth["community"].platform_id,
+                channel_id="test_channel_override_123",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
+                "/api/v2/previously-seen-messages/check",
                 headers=test_user_with_auth["headers"],
-                json={
-                    "messageText": "test message",
-                    "guildId": test_user_with_auth["community"].platform_id,
-                    "channelId": "test_channel_override_123",
-                },
+                json=request_body,
             )
 
             assert response.status_code == 200
             data = response.json()
-            assert data["autopublishThreshold"] == 0.95  # Override
-            assert data["autorequestThreshold"] == 0.75  # Default
+            attrs = data["data"]["attributes"]
+            assert attrs["autopublish_threshold"] == 0.95
+            assert attrs["autorequest_threshold"] == 0.75
 
-        # Cleanup
         if channel_id:
             async with get_session_maker()() as session:
                 result = await session.execute(
@@ -399,13 +427,12 @@ class TestPreviouslySeenThresholdConfiguration:
         """Test per-channel autorequest threshold override is respected."""
         channel_id = None
         async with get_session_maker()() as session:
-            # Create monitored channel with custom autorequest threshold
             monitored_channel = MonitoredChannel(
                 community_server_id=test_user_with_auth["community"].platform_id,
                 channel_id="test_channel_autoreq_456",
                 similarity_threshold=0.75,
-                previously_seen_autopublish_threshold=None,  # Use default
-                previously_seen_autorequest_threshold=0.8,  # Custom: higher than default
+                previously_seen_autopublish_threshold=None,
+                previously_seen_autorequest_threshold=0.8,
             )
             session.add(monitored_channel)
             await session.commit()
@@ -414,22 +441,23 @@ class TestPreviouslySeenThresholdConfiguration:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="test message",
+                guild_id=test_user_with_auth["community"].platform_id,
+                channel_id="test_channel_autoreq_456",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
+                "/api/v2/previously-seen-messages/check",
                 headers=test_user_with_auth["headers"],
-                json={
-                    "messageText": "test message",
-                    "guildId": test_user_with_auth["community"].platform_id,
-                    "channelId": "test_channel_autoreq_456",
-                },
+                json=request_body,
             )
 
             assert response.status_code == 200
             data = response.json()
-            assert data["autopublishThreshold"] == 0.9  # Default
-            assert data["autorequestThreshold"] == 0.8  # Override
+            attrs = data["data"]["attributes"]
+            assert attrs["autopublish_threshold"] == 0.9
+            assert attrs["autorequest_threshold"] == 0.8
 
-        # Cleanup
         if channel_id:
             async with get_session_maker()() as session:
                 result = await session.execute(
@@ -446,7 +474,6 @@ class TestPreviouslySeenThresholdConfiguration:
         """Test both thresholds can be overridden independently."""
         channel_id = None
         async with get_session_maker()() as session:
-            # Create monitored channel with both custom thresholds
             monitored_channel = MonitoredChannel(
                 community_server_id=test_user_with_auth["community"].platform_id,
                 channel_id="test_channel_both_789",
@@ -461,22 +488,23 @@ class TestPreviouslySeenThresholdConfiguration:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="test message",
+                guild_id=test_user_with_auth["community"].platform_id,
+                channel_id="test_channel_both_789",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
+                "/api/v2/previously-seen-messages/check",
                 headers=test_user_with_auth["headers"],
-                json={
-                    "messageText": "test message",
-                    "guildId": test_user_with_auth["community"].platform_id,
-                    "channelId": "test_channel_both_789",
-                },
+                json=request_body,
             )
 
             assert response.status_code == 200
             data = response.json()
-            assert data["autopublishThreshold"] == 0.88  # Override
-            assert data["autorequestThreshold"] == 0.72  # Override
+            attrs = data["data"]["attributes"]
+            assert attrs["autopublish_threshold"] == 0.88
+            assert attrs["autorequest_threshold"] == 0.72
 
-        # Cleanup
         if channel_id:
             async with get_session_maker()() as session:
                 result = await session.execute(
@@ -539,24 +567,24 @@ class TestCommunityServerScoping:
             other_note_id = other_note.id
             record_id = record.id
 
-        # Query from test guild - should NOT find message from other guild
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            request_body = _create_previously_seen_check_request(
+                message_text="similar message",
+                guild_id=test_user_with_auth["community"].platform_id,
+                channel_id="123",
+            )
             response = await client.post(
-                "/api/v1/previously-seen/check",
+                "/api/v2/previously-seen-messages/check",
                 headers=test_user_with_auth["headers"],
-                json={
-                    "messageText": "similar message",
-                    "guildId": test_user_with_auth["community"].platform_id,
-                    "channelId": "123",
-                },
+                json=request_body,
             )
 
             assert response.status_code == 200
             data = response.json()
-            # Should find no matches (guild isolation)
-            assert data["shouldAutoPublish"] is False
-            assert data["shouldAutoRequest"] is False
+            attrs = data["data"]["attributes"]
+            assert attrs["should_auto_publish"] is False
+            assert attrs["should_auto_request"] is False
 
         # Cleanup
         if record_id:

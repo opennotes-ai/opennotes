@@ -164,7 +164,7 @@ describe('DiscordFormatter', () => {
     const createMockScoringStatus = (overrides: Partial<ScoringStatusResponse> = {}): ScoringStatusResponse => ({
       active_tier: { level: 1, name: 'Bootstrap', scorer_components: [] },
       current_note_count: 100,
-      data_confidence: 'medium',
+      data_confidence: 'provisional',
       tier_thresholds: {},
       next_tier_upgrade: { tier: 'Growing', notes_needed: 500, notes_to_upgrade: 400 },
       performance_metrics: {
@@ -173,6 +173,8 @@ describe('DiscordFormatter', () => {
         total_scoring_operations: 1000,
         failed_scoring_operations: 10,
       },
+      warnings: [],
+      configuration: {},
       ...overrides,
     });
 
@@ -201,13 +203,13 @@ describe('DiscordFormatter', () => {
     it('should include note count and confidence', () => {
       const result = DiscordFormatter.formatScoringStatusV2(createMockScoringStatus({
         current_note_count: 250,
-        data_confidence: 'high',
+        data_confidence: 'standard',
       }));
 
       const textContent = getTextContent(result.textDisplay);
 
       expect(textContent).toContain('250');
-      expect(textContent).toContain('high');
+      expect(textContent).toContain('standard');
     });
 
     it('should show progress to next tier when available', () => {

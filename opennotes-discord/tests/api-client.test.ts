@@ -712,15 +712,21 @@ describe('ApiClient Wrapper', () => {
       enrollment: [],
     };
 
-    const mockResponse = {
-      scored_notes: [],
-      helpful_scores: [],
-      auxiliary_info: [],
+    const mockJsonApiResponse = {
+      data: {
+        type: 'scoring-results',
+        id: 'result-1',
+        attributes: {
+          scored_notes: [],
+          helpful_scores: [],
+          auxiliary_info: [],
+        }
+      }
     };
 
     it('should successfully score notes', async () => {
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(mockResponse), {
+        new Response(JSON.stringify(mockJsonApiResponse), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -728,15 +734,18 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.scoreNotes(mockRequest);
 
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual({
+        scored_notes: [],
+        helpful_scores: [],
+        auxiliary_info: [],
+      });
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/scoring/score',
+        'http://localhost:8000/api/v2/scoring/score',
         expect.objectContaining({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(mockRequest),
         })
       );
     });
@@ -756,37 +765,104 @@ describe('ApiClient Wrapper', () => {
   });
 
   describe('getNotes', () => {
-    it('should return notes for a message', async () => {
-      const mockNotes = [
-        { id: 'note-1', content: 'Test note 1', messageId: '123456789012345678' },
-        { id: 'note-2', content: 'Test note 2', messageId: '123456789012345678' },
-      ];
+    it('should return notes for a message using v2 endpoint with platform_message_id filter', async () => {
+      const mockJsonApiResponse = {
+        data: [
+          {
+            type: 'notes',
+            id: 'note-uuid-1',
+            attributes: {
+              summary: 'Test note 1',
+              classification: 'NOT_MISLEADING',
+              status: 'published',
+              helpfulness_score: 0.8,
+              author_participant_id: 'participant-1',
+              community_server_id: 'community-uuid',
+              channel_id: null,
+              request_id: 'request-1',
+              ratings_count: 5,
+              force_published: false,
+              force_published_at: null,
+              created_at: '2024-01-15T10:00:00Z',
+              updated_at: null,
+            },
+          },
+          {
+            type: 'notes',
+            id: 'note-uuid-2',
+            attributes: {
+              summary: 'Test note 2',
+              classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
+              status: 'published',
+              helpfulness_score: 0.6,
+              author_participant_id: 'participant-2',
+              community_server_id: 'community-uuid',
+              channel_id: 'channel-1',
+              request_id: 'request-2',
+              ratings_count: 3,
+              force_published: false,
+              force_published_at: null,
+              created_at: '2024-01-15T11:00:00Z',
+              updated_at: '2024-01-15T12:00:00Z',
+            },
+          },
+        ],
+        jsonapi: { version: '1.1' },
+        links: {},
+        meta: { count: 2 },
+      };
 
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(mockNotes), {
+        new Response(JSON.stringify(mockJsonApiResponse), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/vnd.api+json' }
         })
       );
 
       const result = await apiClient.getNotes('123456789012345678');
 
-      expect(result).toEqual(mockNotes);
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/notes/123456789012345678',
+        'http://localhost:8000/api/v2/notes?filter%5Bplatform_message_id%5D=123456789012345678',
         expect.objectContaining({
           headers: {
             'Content-Type': 'application/json',
           },
         })
       );
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        id: 'note-uuid-1',
+        messageId: '123456789012345678',
+        authorId: 'participant-1',
+        content: 'Test note 1',
+        createdAt: new Date('2024-01-15T10:00:00Z').getTime(),
+        helpfulCount: 5,
+        notHelpfulCount: 0,
+      });
+      expect(result[1]).toEqual({
+        id: 'note-uuid-2',
+        messageId: '123456789012345678',
+        authorId: 'participant-2',
+        content: 'Test note 2',
+        createdAt: new Date('2024-01-15T11:00:00Z').getTime(),
+        helpfulCount: 3,
+        notHelpfulCount: 0,
+      });
     });
 
-    it('should handle empty notes', async () => {
+    it('should handle empty notes from v2 endpoint', async () => {
+      const mockEmptyResponse = {
+        data: [],
+        jsonapi: { version: '1.1' },
+        links: {},
+        meta: { count: 0 },
+      };
+
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
+        new Response(JSON.stringify(mockEmptyResponse), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/vnd.api+json' }
         })
       );
 

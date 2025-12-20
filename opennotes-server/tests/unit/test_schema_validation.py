@@ -26,7 +26,6 @@ from src.llm_config.schemas import LLMConfigCreate
 from src.notes.schemas import (
     NoteCreate,
     NoteInDB,
-    NoteListResponse,
     NoteUpdate,
     RatingCreate,
     RatingUpdate,
@@ -294,18 +293,6 @@ class TestStrictTypeCoercion:
 @pytest.mark.unit
 class TestResponseSchemas:
     """Test that API Response schemas reject extra fields to catch typos and misuse."""
-
-    def test_note_list_response_rejects_extra_fields(self):
-        """NoteListResponse should reject unknown fields."""
-        with pytest.raises(ValidationError) as exc_info:
-            NoteListResponse(
-                notes=[],
-                total=0,
-                page=1,
-                size=20,
-                extra_field="should_fail",
-            )
-        assert "extra_forbidden" in str(exc_info.value)
 
     def test_request_list_response_rejects_extra_fields(self):
         """RequestListResponse should reject unknown fields."""

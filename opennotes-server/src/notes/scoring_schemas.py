@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema
 
 
 class ScorerTier(str, Enum):
@@ -121,38 +121,6 @@ class NoteScoreResponse(SQLAlchemySchema):
     content: str | None = Field(
         None, description="Message content that the note was written about (from message archive)"
     )
-
-
-class TopNotesResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    notes: list[NoteScoreResponse] = Field(
-        ..., description="List of top-scored notes with metadata"
-    )
-    total_count: int = Field(
-        ..., description="Total number of notes matching filters (before pagination)"
-    )
-    filters_applied: dict[str, Any] = Field(
-        default_factory=dict, description="Filters that were applied to the query"
-    )
-    current_tier: int = Field(..., description="Current scoring tier level for the system")
-
-
-class BatchScoreRequest(StrictInputSchema):
-    note_ids: list[UUID] = Field(
-        ..., description="List of note IDs to retrieve scores for", min_length=1, max_length=100
-    )
-
-
-class BatchScoreResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    scores: dict[UUID, NoteScoreResponse] = Field(
-        ..., description="Map of note IDs to their score responses"
-    )
-    not_found: list[UUID] = Field(
-        default_factory=list, description="List of note IDs that were not found"
-    )
-    total_requested: int = Field(..., description="Total number of note IDs requested")
-    total_found: int = Field(..., description="Total number of scores successfully retrieved")
 
 
 class NoteData(BaseModel):

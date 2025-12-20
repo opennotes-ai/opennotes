@@ -157,6 +157,24 @@ def requests_jsonapi_sample_request_data(
     }
 
 
+def make_jsonapi_create_request(request_data: dict) -> dict:
+    """Convert flat request data dict to JSON:API request body."""
+    return {
+        "data": {
+            "type": "requests",
+            "attributes": {
+                "request_id": request_data["request_id"],
+                "requested_by": request_data["requested_by"],
+                "community_server_id": request_data["community_server_id"],
+                "original_message_content": request_data["original_message_content"],
+                "platform_message_id": request_data.get("platform_message_id"),
+                "platform_channel_id": request_data.get("platform_channel_id"),
+                "platform_author_id": request_data.get("platform_author_id"),
+            },
+        }
+    }
+
+
 class TestJSONAPIRequestsEndpoint:
     """Tests for the JSON:API v2 requests endpoint."""
 
@@ -184,8 +202,9 @@ class TestJSONAPIRequestsEndpoint:
         - 'meta' object with count
         """
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
 
@@ -222,8 +241,9 @@ class TestJSONAPIRequestsEndpoint:
         - 'attributes': object containing resource attributes
         """
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
 
@@ -260,11 +280,12 @@ class TestJSONAPIRequestsEndpoint:
         For single resource, 'data' should be an object, not an array.
         """
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
-        request_id = create_response.json()["request_id"]
+        request_id = create_response.json()["data"]["attributes"]["request_id"]
 
         response = await requests_jsonapi_auth_client.get(f"/api/v2/requests/{request_id}")
         assert response.status_code == 200
@@ -292,8 +313,9 @@ class TestJSONAPIRequestsEndpoint:
         JSON:API filtering: filter[field]=value
         """
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
 
@@ -323,8 +345,9 @@ class TestJSONAPIRequestsEndpoint:
             request_data["request_id"] = (
                 f"jsonapi_pagination_{i}_{int(datetime.now(tz=UTC).timestamp() * 1000000)}"
             )
+            jsonapi_body = make_jsonapi_create_request(request_data)
             response = await requests_jsonapi_auth_client.post(
-                "/api/v1/requests", json=request_data
+                "/api/v2/requests", json=jsonapi_body
             )
             assert response.status_code == 201
 
@@ -475,12 +498,13 @@ class TestRequestsWriteOperations:
         - Response body with 'data' object containing updated resource
         """
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
         created_request = create_response.json()
-        request_id = created_request["request_id"]
+        request_id = created_request["data"]["attributes"]["request_id"]
 
         updated_status = "IN_PROGRESS"
         request_body = {
@@ -516,11 +540,12 @@ class TestRequestsWriteOperations:
     ):
         """Test PATCH /api/v2/requests/{request_id} rejects mismatched IDs."""
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
-        request_id = create_response.json()["request_id"]
+        request_id = create_response.json()["data"]["attributes"]["request_id"]
 
         request_body = {
             "data": {
@@ -566,8 +591,9 @@ class TestRequestsAdvancedFilters:
     ):
         """Test filtering requests by requested_by field."""
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
 
@@ -609,8 +635,9 @@ class TestRequestsAdvancedFilters:
         on or after that date.
         """
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
 
@@ -648,8 +675,9 @@ class TestRequestsAdvancedFilters:
         on or before that date.
         """
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
 
@@ -674,8 +702,9 @@ class TestRequestsAdvancedFilters:
     ):
         """Test combining multiple filter operators with AND logic."""
         request_data = self._get_unique_request_data(requests_jsonapi_sample_request_data)
+        jsonapi_body = make_jsonapi_create_request(request_data)
         create_response = await requests_jsonapi_auth_client.post(
-            "/api/v1/requests", json=request_data
+            "/api/v2/requests", json=jsonapi_body
         )
         assert create_response.status_code == 201
 

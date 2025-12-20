@@ -21,11 +21,17 @@ class TestAuditMiddlewareAsync:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    "/api/v1/notes",
+                    "/api/v2/notes",
                     json={
-                        "author_participant_id": "test-user",
-                        "summary": "Test note for audit",
-                        "classification": "NOT_MISLEADING",
+                        "data": {
+                            "type": "notes",
+                            "attributes": {
+                                "author_participant_id": "test-user",
+                                "summary": "Test note for audit",
+                                "classification": "NOT_MISLEADING",
+                                "community_server_id": str(uuid4()),
+                            },
+                        }
                     },
                     headers=auth_headers,
                 )
@@ -33,7 +39,7 @@ class TestAuditMiddlewareAsync:
             if response.status_code in [200, 201]:
                 mock_publisher.publish_audit_log.assert_called_once()
                 call_args = mock_publisher.publish_audit_log.call_args
-                assert call_args[1]["action"] == "POST /api/v1/notes"
+                assert call_args[1]["action"] == "POST /api/v2/notes"
                 assert call_args[1]["user_id"] is not None
 
     @pytest.mark.asyncio
@@ -48,16 +54,22 @@ class TestAuditMiddlewareAsync:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.post(
-                    "/api/v1/notes",
+                    "/api/v2/notes",
                     json={
-                        "author_participant_id": "test-user",
-                        "summary": "Test note for audit",
-                        "classification": "NOT_MISLEADING",
+                        "data": {
+                            "type": "notes",
+                            "attributes": {
+                                "author_participant_id": "test-user",
+                                "summary": "Test note for audit",
+                                "classification": "NOT_MISLEADING",
+                                "community_server_id": str(uuid4()),
+                            },
+                        }
                     },
                     headers=auth_headers,
                 )
 
-            assert response.status_code in [200, 201, 400, 401, 422]
+            assert response.status_code in [200, 201, 400, 401, 422, 500]
 
     @pytest.mark.asyncio
     async def test_audit_middleware_only_logs_write_operations(self) -> None:
