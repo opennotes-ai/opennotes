@@ -889,7 +889,22 @@ export class ApiClient {
   }
 
   async getNotes(messageId: string): Promise<Note[]> {
-    return this.fetchWithRetry<Note[]>(`/api/v1/notes/${messageId}`);
+    const params = new URLSearchParams();
+    params.append('filter[platform_message_id]', messageId);
+
+    const jsonApiResponse = await this.fetchWithRetry<JSONAPIListResponse<NoteAttributes>>(
+      `/api/v2/notes?${params.toString()}`
+    );
+
+    return jsonApiResponse.data.map((resource) => ({
+      id: resource.id,
+      messageId: messageId,
+      authorId: resource.attributes.author_participant_id,
+      content: resource.attributes.summary,
+      createdAt: new Date(resource.attributes.created_at).getTime(),
+      helpfulCount: resource.attributes.ratings_count,
+      notHelpfulCount: 0,
+    }));
   }
 
   async getNote(noteId: string): Promise<NoteResponse> {

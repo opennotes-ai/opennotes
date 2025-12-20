@@ -205,19 +205,36 @@ describe('End-to-End Integration Tests', () => {
       });
 
       mockFetch.mockClear();
-      const discordNoteResponse = {
-        id: 'note-123',
-        messageId,
-        authorId: 'user456',
-        content: 'This is a test community note',
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
+      const jsonApiNotesResponse = {
+        data: [
+          {
+            type: 'notes',
+            id: 'note-123',
+            attributes: {
+              summary: 'This is a test community note',
+              classification: 'NOT_MISLEADING',
+              status: 'published',
+              helpfulness_score: 0.5,
+              author_participant_id: 'user456',
+              community_server_id: 'community-uuid',
+              channel_id: null,
+              request_id: 'request-1',
+              ratings_count: 0,
+              force_published: false,
+              force_published_at: null,
+              created_at: new Date().toISOString(),
+              updated_at: null,
+            },
+          },
+        ],
+        jsonapi: { version: '1.1' },
+        links: {},
+        meta: { count: 1 },
       };
 
       mockFetch.mockResolvedValueOnce(
         createMockResponse({
-          json: async () => [discordNoteResponse],
+          json: async () => jsonApiNotesResponse,
         })
       );
 
