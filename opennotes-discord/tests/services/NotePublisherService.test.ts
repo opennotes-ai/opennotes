@@ -89,6 +89,49 @@ function createMockNoteJSONAPIResponse(overrides: {
   };
 }
 
+function createMockDuplicateCheckResponse(exists: boolean, notePublisherPostId?: string): any {
+  if (!exists) {
+    return { data: [], jsonapi: { version: '1.1' } };
+  }
+  return {
+    data: [{
+      type: 'note-publisher-posts',
+      id: notePublisherPostId ?? '1',
+      attributes: {
+        note_id: '1',
+        original_message_id: 'msg-123',
+        channel_id: 'channel-456',
+        community_server_id: 'guild-123',
+        posted_at: new Date().toISOString(),
+        success: true,
+      },
+    }],
+    jsonapi: { version: '1.1' },
+  };
+}
+
+function createMockLastNotePostResponse(postedAt: string, noteId: string, channelId: string): any {
+  return {
+    data: [{
+      type: 'note-publisher-posts',
+      id: '1',
+      attributes: {
+        note_id: noteId,
+        original_message_id: 'msg-123',
+        channel_id: channelId,
+        community_server_id: 'guild-123',
+        posted_at: postedAt,
+        success: true,
+      },
+    }],
+    jsonapi: { version: '1.1' },
+  };
+}
+
+function createEmptyListResponse(): any {
+  return { data: [], jsonapi: { version: '1.1' } };
+}
+
 describe('NotePublisherService', () => {
   let notePublisherService: InstanceType<typeof NotePublisherService>;
   let mockClient: Client;
@@ -185,8 +228,8 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
       mockClient.channels.cache.set('channel-456', mockChannel);
       (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -221,7 +264,7 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: true, note_publisher_post_id: 5 });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(true, '5'));
 
       await notePublisherService.handleScoreUpdate(event);
 
@@ -245,10 +288,10 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
 
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-      mockApiClient.getLastNotePost.mockResolvedValueOnce({ posted_at: twoMinutesAgo.toISOString(), note_id: 1, channel_id: 'channel-456' });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createMockLastNotePostResponse(twoMinutesAgo.toISOString(), '1', 'channel-456'));
 
       await notePublisherService.handleScoreUpdate(event);
 
@@ -270,10 +313,10 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
 
       const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
-      mockApiClient.getLastNotePost.mockResolvedValueOnce({ posted_at: sixMinutesAgo.toISOString(), note_id: 1, channel_id: 'channel-456' });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createMockLastNotePostResponse(sixMinutesAgo.toISOString(), '1', 'channel-456'));
 
       mockClient.channels.cache.set('channel-456', mockChannel);
       (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -308,8 +351,8 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
       mockConfigService.getConfig = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
         guildId: 'guild-123',
@@ -337,8 +380,8 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
       mockConfigService.getConfig = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
         guildId: 'guild-123',
@@ -369,8 +412,8 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
       mockClient.channels.cache.set('channel-456', mockChannel);
       (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -399,8 +442,8 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
       mockClient.channels.cache.set('channel-456', mockChannel);
       (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -443,8 +486,8 @@ describe('NotePublisherService', () => {
         threshold: TEST_SCORE_THRESHOLD,
       });
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
       mockClient.channels.cache.set('channel-456', mockChannel);
       (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -509,13 +552,10 @@ describe('NotePublisherService', () => {
         threshold: TEST_SCORE_THRESHOLD,
       });
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
 
-      mockApiClient.getLastNotePost.mockResolvedValueOnce({
-        posted_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-        note_id: 1,
-        channel_id: 'channel-456'
-      });
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createMockLastNotePostResponse(tenMinutesAgo.toISOString(), '1', 'channel-456'));
 
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
@@ -572,7 +612,7 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
 
       mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('500'));
 
@@ -604,7 +644,7 @@ describe('NotePublisherService', () => {
       );
       mockChannel.permissionsFor = permissionsForSpy;
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValue({ exists: true });
+      mockApiClient.checkNoteDuplicate.mockResolvedValue(createMockDuplicateCheckResponse(true));
 
       await notePublisherService.handleScoreUpdate(event);
       await notePublisherService.handleScoreUpdate(event);
@@ -639,8 +679,8 @@ describe('NotePublisherService', () => {
           community_server_id: 'guild-123',
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -682,8 +722,8 @@ describe('NotePublisherService', () => {
           community_server_id: 'guild-123',
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -721,8 +761,8 @@ describe('NotePublisherService', () => {
           community_server_id: 'guild-123',
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -761,8 +801,8 @@ describe('NotePublisherService', () => {
           community_server_id: 'guild-123',
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -800,8 +840,8 @@ describe('NotePublisherService', () => {
           community_server_id: 'guild-123',
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -841,8 +881,8 @@ describe('NotePublisherService', () => {
           community_server_id: 'guild-123',
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -880,8 +920,8 @@ describe('NotePublisherService', () => {
           community_server_id: 'guild-123',
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -926,8 +966,8 @@ describe('NotePublisherService', () => {
           },
         };
 
-        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-        mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+        mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+        mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
         mockClient.channels.cache.set('channel-456', mockChannel);
         (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
@@ -980,8 +1020,8 @@ describe('NotePublisherService', () => {
         community_server_id: discordSnowflake,
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
       mockResolveCommunityServerId.mockResolvedValueOnce(resolvedUUID);
 
       mockClient.channels.cache.set('channel-456', mockChannel);
@@ -1022,8 +1062,8 @@ describe('NotePublisherService', () => {
         community_server_id: existingUUID,
       };
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
       mockClient.channels.cache.set('channel-456', mockChannel);
       (mockChannel.permissionsFor as jest.Mock).mockReturnValue(

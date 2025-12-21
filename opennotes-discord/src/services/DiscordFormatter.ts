@@ -8,7 +8,13 @@ import {
 } from 'discord.js';
 import { ServiceResult, WriteNoteResult, ViewNotesResult, RateNoteResult, StatusResult, ListRequestsResult, ErrorCode } from './types.js';
 import type { RequestStatus } from '../lib/types.js';
-import type { NoteScoreResponse, TopNotesResponse, ScoringStatusResponse, ScoreConfidence } from './ScoringService.js';
+import type {
+  NoteScoreJSONAPIResponse,
+  TopNotesJSONAPIResponse,
+  ScoringStatusJSONAPIResponse,
+  ScoreConfidence,
+  NoteScoreAttributes,
+} from './ScoringService.js';
 import { DISCORD_LIMITS } from '../lib/constants.js';
 import { cache } from '../cache.js';
 import { generateShortId } from '../lib/validation.js';
@@ -79,10 +85,11 @@ export class DiscordFormatter {
     };
   }
 
-  static formatScoringStatusV2(status: ScoringStatusResponse): {
+  static formatScoringStatusV2(response: ScoringStatusJSONAPIResponse): {
     textDisplay: TextDisplayBuilder;
     separator: ReturnType<typeof createDivider>;
   } {
+    const status = response.data.attributes;
     const tierInfo = status.active_tier;
     const nextTier = tierInfo.level < 5 ? tierInfo.level + 1 : null;
     const nextTierInfo = status.next_tier_upgrade;
@@ -153,7 +160,7 @@ export class DiscordFormatter {
 
   static formatViewNotesSuccessV2(
     result: ViewNotesResult,
-    scoresMap?: Map<string, NoteScoreResponse>
+    scoresMap?: Map<string, NoteScoreAttributes>
   ): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
@@ -161,7 +168,7 @@ export class DiscordFormatter {
   } {
     const container = createContainer(V2_COLORS.INFO);
 
-    if (result.notes.length === 0) {
+    if (result.notes.data.length === 0) {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent('## Community Notes\n\nNo notes found for this message.')
       );
@@ -177,18 +184,18 @@ export class DiscordFormatter {
       new TextDisplayBuilder().setContent('## Community Notes')
     );
 
-    for (const note of result.notes.slice(0, DISCORD_LIMITS.MAX_EMBEDS_PER_MESSAGE)) {
+    for (const note of result.notes.data.slice(0, DISCORD_LIMITS.MAX_EMBEDS_PER_MESSAGE)) {
       container.addSeparatorComponents(createSmallSeparator());
 
       const noteLines = [
         `**Note #${note.id}**`,
-        note.content,
+        note.attributes.summary,
         '',
-        `**Author:** <@${note.authorId}>`,
-        `**Ratings:** \u{1F44D} ${note.helpfulCount} | \u{1F44E} ${note.notHelpfulCount}`,
+        `**Author:** <@${note.attributes.author_participant_id}>`,
+        `**Ratings:** \u{1F44D} ${note.attributes.ratings_count}`,
       ];
 
-      const scoreData = scoresMap?.get(String(note.id));
+      const scoreData = scoresMap?.get(note.id);
       if (scoreData) {
         const scoreColor = scoreData.score >= 0.7 ? '\u{1F7E2}' : scoreData.score >= 0.4 ? '\u{1F7E1}' : '\u{1F534}';
         const formattedScore = this.formatScore(scoreData.score);
@@ -199,8 +206,8 @@ export class DiscordFormatter {
         new TextDisplayBuilder().setContent(noteLines.join('\n'))
       );
 
-      if (note.content && isImageUrlV2(note.content)) {
-        const gallery = createMediaGallery([note.content]);
+      if (note.attributes.summary && isImageUrlV2(note.attributes.summary)) {
+        const gallery = createMediaGallery([note.attributes.summary]);
         if (gallery) {
           container.addMediaGalleryComponents(gallery);
         }
@@ -268,15 +275,17 @@ export class DiscordFormatter {
     };
   }
 
-  static formatNoteScoreV2(scoreData: NoteScoreResponse): {
+  static formatNoteScoreV2(response: NoteScoreJSONAPIResponse): {
     container: ContainerBuilder;
     components: ReturnType<ContainerBuilder['toJSON']>[];
     flags: number;
   } {
+    const scoreData = response.data.attributes;
+    const noteId = response.data.id;
     const scoreColor = this.getScoreColor(scoreData.score);
     const formattedScore = this.formatScore(scoreData.score);
-    const confidenceLabel = this.getConfidenceLabel(scoreData.confidence);
-    const confidenceEmoji = this.getConfidenceEmoji(scoreData.confidence);
+    const confidenceLabel = this.getConfidenceLabel(scoreData.confidence as ScoreConfidence);
+    const confidenceEmoji = this.getConfidenceEmoji(scoreData.confidence as ScoreConfidence);
 
     const container = createContainer(scoreColor)
       .addTextDisplayComponents(
@@ -289,7 +298,7 @@ export class DiscordFormatter {
       .addSeparatorComponents(createDivider())
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent([
-          `**Note ID:** ${scoreData.note_id}`,
+          `**Note ID:** ${noteId}`,
           `**Score:** ${formattedScore} (0.0-1.0)`,
           `**Confidence:** ${confidenceEmoji} ${confidenceLabel}`,
           `**Rating Count:** ${scoreData.rating_count}`,
@@ -398,7 +407,7 @@ export class DiscordFormatter {
   }
 
   static formatTopNotesForQueueV2(
-    response: TopNotesResponse,
+    response: TopNotesJSONAPIResponse,
     page: number = 1,
     pageSize: number = 10,
     options?: { includeForcePublishButtons?: boolean }
@@ -408,15 +417,16 @@ export class DiscordFormatter {
     flags: number;
     forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[];
   } {
-    const totalPages = Math.ceil(response.total_count / pageSize);
+    const totalCount = response.meta?.total_count ?? response.data.length;
+    const totalPages = Math.ceil(totalCount / pageSize);
     const forcePublishButtonRows: ActionRowBuilder<ButtonBuilder>[] = [];
 
     const container = createContainer(V2_COLORS.INFO);
 
-    if (response.notes.length === 0) {
+    if (response.data.length === 0) {
       container.addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          `## ${V2_ICONS.STANDARD} Top Scored Notes\n\nNo notes found matching the criteria.\n\n*Page ${page} of ${totalPages} | Total: ${response.total_count} notes*`
+          `## ${V2_ICONS.STANDARD} Top Scored Notes\n\nNo notes found matching the criteria.\n\n*Page ${page} of ${totalPages} | Total: ${totalCount} notes*`
         )
       );
       return {
@@ -430,17 +440,17 @@ export class DiscordFormatter {
     const headerLines = [`## ${V2_ICONS.STANDARD} Top Scored Notes`];
 
     const filterDescription: string[] = [];
-    if (response.filters_applied) {
-      if (String(response.filters_applied.min_confidence)) {
-        filterDescription.push(`Min Confidence: ${String(response.filters_applied.min_confidence)}`);
+    if (response.meta?.filters_applied) {
+      if (String(response.meta.filters_applied.min_confidence)) {
+        filterDescription.push(`Min Confidence: ${String(response.meta.filters_applied.min_confidence)}`);
       }
-      if (response.filters_applied.tier !== undefined) {
-        filterDescription.push(`Tier: ${String(response.filters_applied.tier)}`);
+      if (response.meta.filters_applied.tier !== undefined) {
+        filterDescription.push(`Tier: ${String(response.meta.filters_applied.tier)}`);
       }
     }
 
     headerLines.push(
-      `Showing notes ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, response.total_count)} of ${response.total_count}`
+      `Showing notes ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalCount)} of ${totalCount}`
     );
 
     if (filterDescription.length > 0) {
@@ -451,18 +461,19 @@ export class DiscordFormatter {
       new TextDisplayBuilder().setContent(headerLines.join('\n'))
     );
 
-    for (const [index, note] of response.notes.entries()) {
+    for (const [index, resource] of response.data.entries()) {
       const rank = (page - 1) * pageSize + index + 1;
+      const note = resource.attributes;
       const scoreColor = note.score >= 0.7 ? V2_ICONS.SCORE_HIGH : note.score >= 0.4 ? V2_ICONS.SCORE_MID : V2_ICONS.SCORE_LOW;
-      const confidenceEmoji = this.getConfidenceEmoji(note.confidence);
+      const confidenceEmoji = this.getConfidenceEmoji(note.confidence as ScoreConfidence);
       const formattedScore = this.formatScore(note.score);
 
       container.addSeparatorComponents(createSmallSeparator());
 
       const noteLines = [
-        `**${rank}. ${scoreColor} Note ${note.note_id}**`,
+        `**${rank}. ${scoreColor} Note ${resource.id}**`,
         `**Score:** ${formattedScore} (0.0-1.0)`,
-        `**Confidence:** ${confidenceEmoji} ${this.getConfidenceLabel(note.confidence)}`,
+        `**Confidence:** ${confidenceEmoji} ${this.getConfidenceLabel(note.confidence as ScoreConfidence)}`,
         `**Ratings:** ${note.rating_count}`,
         `**Tier:** ${note.tier} | **Algorithm:** ${note.algorithm}`,
       ];
@@ -473,8 +484,8 @@ export class DiscordFormatter {
 
       if (options?.includeForcePublishButtons) {
         const forcePublishButton = new ButtonBuilder()
-          .setCustomId(`force_publish:${note.note_id}`)
-          .setLabel(`Force Publish Note ${note.note_id}`)
+          .setCustomId(`force_publish:${resource.id}`)
+          .setLabel(`Force Publish Note ${resource.id}`)
           .setStyle(ButtonStyle.Danger);
         forcePublishButtonRows.push(
           new ActionRowBuilder<ButtonBuilder>().addComponents(forcePublishButton)
@@ -484,7 +495,7 @@ export class DiscordFormatter {
 
     container.addSeparatorComponents(createDivider());
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`*Page ${page} of ${totalPages} | Total: ${response.total_count} notes*`)
+      new TextDisplayBuilder().setContent(`*Page ${page} of ${totalPages} | Total: ${totalCount} notes*`)
     );
 
     return {
@@ -706,7 +717,7 @@ export class DiscordFormatter {
     return score.toFixed(3);
   }
 
-  private static getScoreExplanation(scoreData: NoteScoreResponse): string {
+  private static getScoreExplanation(scoreData: NoteScoreAttributes): string {
     const isTier0 = scoreData.tier === 0;
     const explanations = [
       '**How scores work:**',

@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
-import { createMockLogger, createSuccessResult, createErrorResult } from '../utils/service-mocks.js';
+import { createMockLogger, createSuccessResult, createErrorResult, createMockNoteScoreJSONAPIResponse } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD, TEST_NOTE_UUID } from '../test-constants.js';
 
@@ -91,14 +91,16 @@ describe('note-score command', () => {
 
   describe('successful execution', () => {
     it('should display note score', async () => {
+      const mockScoreResponse = createMockNoteScoreJSONAPIResponse({
+        noteId: TEST_NOTE_UUID,
+        score: TEST_SCORE_ABOVE_THRESHOLD,
+        confidence: 'standard',
+        tier: 4,
+        ratingCount: 15,
+      });
+
       mockScoringService.getNoteScore.mockResolvedValue(
-        createSuccessResult({
-          noteId: TEST_NOTE_UUID,
-          score: TEST_SCORE_ABOVE_THRESHOLD,
-          confidence: 'standard',
-          tier: 4,
-          totalRatings: 15,
-        })
+        createSuccessResult(mockScoreResponse)
       );
 
       const mockInteraction = {

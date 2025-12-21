@@ -5,6 +5,7 @@ import {
   createMockViewNotesService,
   createSuccessResult,
   createErrorResult,
+  createMockNoteListJSONAPIResponse,
 } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
@@ -99,29 +100,13 @@ describe('note-view command', () => {
 
   describe('successful execution', () => {
     it('should display notes for a message', async () => {
-      const mockNotes = [
-        {
-          id: '1',
-          messageId: '12345678901234567',
-          authorId: 'author1',
-          content: 'This is a community note',
-          createdAt: Date.now(),
-          helpfulCount: 5,
-          notHelpfulCount: 1,
-        },
-        {
-          id: '2',
-          messageId: '12345678901234567',
-          authorId: 'author2',
-          content: 'Another community note',
-          createdAt: Date.now(),
-          helpfulCount: 3,
-          notHelpfulCount: 0,
-        },
-      ];
+      const mockNotesResponse = createMockNoteListJSONAPIResponse([
+        { id: '1', summary: 'This is a community note', authorParticipantId: 'author1' },
+        { id: '2', summary: 'Another community note', authorParticipantId: 'author2' },
+      ]);
 
       mockViewNotesService.execute.mockResolvedValue(
-        createSuccessResult({ notes: mockNotes })
+        createSuccessResult({ notes: mockNotesResponse })
       );
 
       mockScoringService.getBatchNoteScores.mockResolvedValue(
@@ -158,8 +143,9 @@ describe('note-view command', () => {
     });
 
     it('should handle empty notes list', async () => {
+      const emptyNotesResponse = createMockNoteListJSONAPIResponse([]);
       mockViewNotesService.execute.mockResolvedValue(
-        createSuccessResult({ notes: [] })
+        createSuccessResult({ notes: emptyNotesResponse })
       );
 
       const mockInteraction = {
@@ -245,8 +231,9 @@ describe('note-view command', () => {
 
   describe('logging', () => {
     it('should log command execution', async () => {
+      const emptyNotesResponse = createMockNoteListJSONAPIResponse([]);
       mockViewNotesService.execute.mockResolvedValue(
-        createSuccessResult({ notes: [] })
+        createSuccessResult({ notes: emptyNotesResponse })
       );
 
       const mockInteraction = {

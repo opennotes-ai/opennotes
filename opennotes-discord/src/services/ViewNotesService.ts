@@ -37,7 +37,7 @@ export class ViewNotesService {
 
       logger.info('Notes viewed via service', {
         messageId: input.messageId,
-        count: notes.length,
+        count: notes.data.length,
         userId,
       });
 

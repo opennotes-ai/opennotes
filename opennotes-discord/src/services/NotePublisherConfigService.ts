@@ -140,7 +140,26 @@ export class NotePublisherConfigService {
   ): Promise<ServerNotePublisherConfigRow | null> {
     try {
       const response = await apiClient.getNotePublisherConfig(guildId, channelId);
-      return response;
+
+      const config = channelId
+        ? response.data.find((c) => c.attributes.channel_id === channelId)
+          ?? response.data.find((c) => c.attributes.channel_id === null)
+        : response.data.find((c) => c.attributes.channel_id === null)
+          ?? response.data[0];
+
+      if (!config) {
+        return null;
+      }
+
+      return {
+        id: config.id,
+        community_server_id: config.attributes.community_server_id,
+        channel_id: config.attributes.channel_id ?? null,
+        enabled: config.attributes.enabled,
+        threshold: config.attributes.threshold ?? null,
+        updated_at: config.attributes.updated_at ?? null,
+        updated_by: config.attributes.updated_by ?? null,
+      };
     } catch (error) {
       if (error instanceof ApiError && error.statusCode === 404) {
         return null;

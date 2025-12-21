@@ -238,10 +238,12 @@ describe('End-to-End Integration Tests', () => {
       );
 
       const notes = await apiClient.getNotes(messageId);
-      expect(notes).toContainEqual(expect.objectContaining({
-        messageId,
-        authorId: 'user456',
-        content: 'This is a test community note',
+      expect(notes.data).toContainEqual(expect.objectContaining({
+        type: 'notes',
+        attributes: expect.objectContaining({
+          author_participant_id: 'user456',
+          summary: 'This is a test community note',
+        }),
       }));
     });
 
@@ -348,9 +350,9 @@ describe('End-to-End Integration Tests', () => {
 
       const scoringResult = await apiClient.scoreNotes(scoringRequest);
 
-      expect(scoringResult).toHaveProperty('scored_notes');
-      expect(scoringResult).toHaveProperty('helpful_scores');
-      expect(scoringResult).toHaveProperty('auxiliary_info');
+      expect(scoringResult.data.attributes).toHaveProperty('scored_notes');
+      expect(scoringResult.data.attributes).toHaveProperty('helpful_scores');
+      expect(scoringResult.data.attributes).toHaveProperty('auxiliary_info');
     });
   });
 

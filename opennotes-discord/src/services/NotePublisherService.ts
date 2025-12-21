@@ -266,13 +266,8 @@ export class NotePublisherService {
   private async isDuplicate(originalMessageId: string, guildId: string): Promise<boolean> {
     try {
       const response = await apiClient.checkNoteDuplicate(originalMessageId, guildId);
-      return response.exists === true;
+      return response.data.length > 0;
     } catch (error) {
-      // 404 means no duplicate exists yet - this is expected for first-time posts
-      if (error instanceof Error && error.message.includes('404')) {
-        return false;
-      }
-
       logger.error('Error checking for duplicate note-publisher', {
         originalMessageId,
         error: error instanceof Error ? error.message : String(error),
@@ -284,16 +279,18 @@ export class NotePublisherService {
   private async isOnCooldown(channelId: string, guildId: string): Promise<boolean> {
     try {
       const response = await apiClient.getLastNotePost(channelId, guildId);
-      const lastPostTime = new Date(response.posted_at).getTime();
+      if (response.data.length === 0) {
+        return false;
+      }
+      const postedAt = response.data[0].attributes.posted_at;
+      if (!postedAt) {
+        return false;
+      }
+      const lastPostTime = new Date(postedAt).getTime();
       const now = Date.now();
 
       return now - lastPostTime < this.cooldownMs;
     } catch (error) {
-      // 404 means no previous post in this channel - no cooldown applies
-      if (error instanceof Error && error.message.includes('404')) {
-        return false;
-      }
-
       logger.error('Error checking cooldown', {
         channelId,
         error: error instanceof Error ? error.message : String(error),

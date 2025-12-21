@@ -529,7 +529,7 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
       return;
     }
 
-    if (result.data!.notes.length === 0) {
+    if (result.data!.data.length === 0) {
       await interaction.editReply({
         content: 'No notes found matching the specified criteria.',
       });
@@ -552,8 +552,8 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
       error_id: errorId,
       command: 'list top-notes',
       user_id: userId,
-      note_count: result.data!.notes.length,
-      total_count: result.data!.total_count,
+      note_count: result.data!.data.length,
+      total_count: result.data!.meta?.total_count ?? result.data!.data.length,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -634,9 +634,12 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const request = await apiClient.getRequest(requestId);
+    const requestResponse = await apiClient.getRequest(requestId);
 
-    const messageId = extractPlatformMessageId(request.platform_message_id, request.request_id);
+    const messageId = extractPlatformMessageId(
+      requestResponse.data.attributes.platform_message_id ?? undefined,
+      requestResponse.data.attributes.request_id
+    );
     if (!messageId) {
       await interaction.editReply({
         content: 'This request does not have a platform message ID and cannot be used to create a note.',

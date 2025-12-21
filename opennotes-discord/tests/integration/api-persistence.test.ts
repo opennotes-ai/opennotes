@@ -311,11 +311,11 @@ describe('API Persistence Integration Tests', () => {
 
       const retrieved = await client2.getNotes(createRequest.messageId);
 
-      expect(retrieved).toHaveLength(1);
-      expect(retrieved[0].id).toBe('note-cross-client-001');
-      expect(retrieved[0].messageId).toBe(createRequest.messageId);
-      expect(retrieved[0].authorId).toBe(createRequest.authorId);
-      expect(retrieved[0].content).toBe(createRequest.content);
+      expect(retrieved.data).toHaveLength(1);
+      expect(retrieved.data[0].id).toBe('note-cross-client-001');
+      expect(retrieved.data[0].attributes.platform_message_id).toBe(createRequest.messageId);
+      expect(retrieved.data[0].attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(retrieved.data[0].attributes.summary).toBe(createRequest.content);
     });
 
     it('should verify HTTP call structure for note creation', async () => {
@@ -918,10 +918,10 @@ describe('API Persistence Integration Tests', () => {
 
       const notesFromClient2 = await client2.getNotes(noteRequest.messageId);
 
-      expect(notesFromClient2).toHaveLength(1);
-      expect(notesFromClient2[0].id).toBe('note-consistency-001');
-      expect(notesFromClient2[0].authorId).toBe(noteRequest.authorId);
-      expect(notesFromClient2[0].content).toBe(noteRequest.content);
+      expect(notesFromClient2.data).toHaveLength(1);
+      expect(notesFromClient2.data[0].id).toBe('note-consistency-001');
+      expect(notesFromClient2.data[0].attributes.author_participant_id).toBe(noteRequest.authorId);
+      expect(notesFromClient2.data[0].attributes.summary).toBe(noteRequest.content);
 
       mockFetch.mockClear();
       mockFetch.mockResolvedValueOnce(createMockResponse({
@@ -945,9 +945,9 @@ describe('API Persistence Integration Tests', () => {
         noteRequest.messageId
       );
 
-      expect(notesFromClient1Again[0].id).toBe(notesFromClient2[0].id);
-      expect(notesFromClient1Again[0].authorId).toBe(notesFromClient2[0].authorId);
-      expect(notesFromClient1Again[0].content).toBe(notesFromClient2[0].content);
+      expect(notesFromClient1Again.data[0].id).toBe(notesFromClient2.data[0].id);
+      expect(notesFromClient1Again.data[0].attributes.author_participant_id).toBe(notesFromClient2.data[0].attributes.author_participant_id);
+      expect(notesFromClient1Again.data[0].attributes.summary).toBe(notesFromClient2.data[0].attributes.summary);
     });
 
     it('should handle concurrent note creations from different clients', async () => {
@@ -1061,13 +1061,12 @@ describe('API Persistence Integration Tests', () => {
 
       const retrievedNotes = await client2.getNotes('msg-multi-note-001');
 
-      expect(retrievedNotes).toHaveLength(3);
-      retrievedNotes.forEach((note, i) => {
+      expect(retrievedNotes.data).toHaveLength(3);
+      retrievedNotes.data.forEach((note: { id: string; attributes: { author_participant_id: string; summary: string; created_at: string } }, i: number) => {
         expect(note.id).toBe(`note-multi-${i}`);
-        expect(note.messageId).toBe('msg-multi-note-001');
-        expect(note.authorId).toBe(notes[i].authorId);
-        expect(note.content).toBe(notes[i].content);
-        expect(note.createdAt).toBeGreaterThan(0);
+        expect(note.attributes.author_participant_id).toBe(notes[i].authorId);
+        expect(note.attributes.summary).toBe(notes[i].content);
+        expect(new Date(note.attributes.created_at).getTime()).toBeGreaterThan(0);
       });
     });
   });

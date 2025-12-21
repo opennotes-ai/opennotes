@@ -89,6 +89,14 @@ function createMockNoteJSONAPIResponse(overrides: {
   };
 }
 
+// Helper to create mock JSONAPI list response for checkNoteDuplicate (empty = no duplicate)
+function createMockNotePublisherPostsListResponse(posts: any[] = []): any {
+  return {
+    data: posts,
+    jsonapi: { version: '1.1' },
+  };
+}
+
 const natsAvailable = await checkNatsAvailability();
 const SKIP_NATS_TESTS =
   process.env.CI === 'true' || process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
@@ -137,8 +145,8 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
       threshold: TEST_SCORE_THRESHOLD,
     });
 
-    mockApiClient.checkNoteDuplicate.mockResolvedValue({ exists: false });
-    mockApiClient.getLastNotePost.mockRejectedValue(new Error('404'));
+    mockApiClient.checkNoteDuplicate.mockResolvedValue(createMockNotePublisherPostsListResponse());
+    mockApiClient.getLastNotePost.mockResolvedValue(createMockNotePublisherPostsListResponse());
     mockApiClient.getNote.mockResolvedValue(createMockNoteJSONAPIResponse({ summary: 'Default note content' }));
     mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
     mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
@@ -191,8 +199,8 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
         community_server_id: 'guild-123',
       });
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockNotePublisherPostsListResponse());
+      mockApiClient.getLastNotePost.mockResolvedValueOnce(createMockNotePublisherPostsListResponse());
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({
         id: '42',
         summary: 'This is an excellent community note providing valuable context',
@@ -378,7 +386,11 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
         confidence: 'standard',
       });
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: true, auto_post_id: 5 });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockNotePublisherPostsListResponse([{
+        type: 'note-publisher-posts',
+        id: '5',
+        attributes: { original_message_id: 'msg-123', channel_id: 'channel-456' },
+      }]));
 
       await natsSubscriber.subscribeToScoreUpdates(
         notePublisherService.handleScoreUpdate.bind(notePublisherService)

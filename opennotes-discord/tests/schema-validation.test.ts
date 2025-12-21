@@ -7,7 +7,6 @@ import {
   validateRequestResponse,
   validateRequestListResponse,
   validateScoringRequest,
-  validateScoringResponse,
   validateRatingThresholdsResponse,
   validateHealthCheckResponse,
   validateNoteListResponse,
@@ -291,23 +290,7 @@ describe('Schema Validation', () => {
     });
   });
 
-  describe('ScoringResponse validation', () => {
-    it('should validate a correct ScoringResponse object', () => {
-      const validResponse = {
-        scored_notes: [
-          {
-            noteId: 12345,
-            helpfulnessScore: 0.75,
-            status: 'CURRENTLY_RATED_HELPFUL',
-          },
-        ],
-        helpful_scores: [],
-        auxiliary_info: [],
-      };
-
-      expect(validateScoringResponse(validResponse)).toBe(true);
-    });
-  });
+  // ScoringResponse validation removed - scoring now uses JSONAPI passthrough
 
   describe('RatingThresholdsResponse validation', () => {
     it('should validate a correct RatingThresholdsResponse object', () => {

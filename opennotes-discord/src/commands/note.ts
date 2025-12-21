@@ -635,20 +635,20 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
       return;
     }
 
-    if (result.data!.notes.length === 0) {
+    if (result.data!.notes.data.length === 0) {
       await interaction.editReply({
         content: 'No community notes found for this message.',
       });
       return;
     }
 
-    const noteIds = result.data!.notes.map(note => String(note.id));
+    const noteIds = result.data!.notes.data.map(note => note.id);
     const batchScoresResult = await scoringService.getBatchNoteScores(noteIds);
 
     const scoresMap = new Map();
     if (batchScoresResult.success && batchScoresResult.data) {
-      for (const [noteIdStr, score] of Object.entries(batchScoresResult.data.scores)) {
-        scoresMap.set(noteIdStr, score);
+      for (const resource of batchScoresResult.data.data) {
+        scoresMap.set(resource.id, resource.attributes);
       }
     }
 
@@ -660,7 +660,7 @@ async function handleViewSubcommand(interaction: ChatInputCommandInteraction): P
       command: 'note view',
       user_id: userId,
       message_id: messageId,
-      note_count: result.data!.notes.length,
+      note_count: result.data!.notes.data.length,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -762,8 +762,8 @@ async function handleScoreSubcommand(interaction: ChatInputCommandInteraction): 
       command: 'note score',
       user_id: userId,
       note_id: noteId,
-      score: result.data!.score,
-      confidence: result.data!.confidence,
+      score: result.data!.data.attributes.score,
+      confidence: result.data!.data.attributes.confidence,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);

@@ -1,6 +1,17 @@
 import { jest } from '@jest/globals';
-import type { NoteScoreResponse, TopNotesResponse } from '../../src/services/ScoringService.js';
+import type {
+  NoteScoreJSONAPIResponse,
+  TopNotesJSONAPIResponse,
+  BatchScoreJSONAPIResponse,
+  ScoringStatusJSONAPIResponse,
+} from '../../src/services/ScoringService.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
+import {
+  createMockNoteScoreJSONAPIResponse,
+  createMockTopNotesJSONAPIResponse,
+  createMockScoringStatusJSONAPIResponse,
+  createMockBatchScoreJSONAPIResponse,
+} from '../utils/service-mocks.js';
 
 const TEST_UUID_1 = '550e8400-e29b-41d4-a716-446655440001';
 const TEST_UUID_2 = '550e8400-e29b-41d4-a716-446655440002';
@@ -14,10 +25,10 @@ const mockCache = {
 };
 
 const mockApiClient = {
-  getNoteScore: jest.fn<(noteId: number) => Promise<NoteScoreResponse>>(),
-  getBatchNoteScores: jest.fn<(noteIds: number[]) => Promise<any>>(),
-  getTopNotes: jest.fn<(limit: number, minConfidence?: string, tier?: number) => Promise<TopNotesResponse>>(),
-  getScoringStatus: jest.fn<() => Promise<any>>(),
+  getNoteScore: jest.fn<(noteId: string) => Promise<NoteScoreJSONAPIResponse>>(),
+  getBatchNoteScores: jest.fn<(noteIds: string[]) => Promise<BatchScoreJSONAPIResponse>>(),
+  getTopNotes: jest.fn<(limit?: number, minConfidence?: string, tier?: number) => Promise<TopNotesJSONAPIResponse>>(),
+  getScoringStatus: jest.fn<() => Promise<ScoringStatusJSONAPIResponse>>(),
 };
 
 jest.unstable_mockModule('../../src/cache.js', () => ({
@@ -39,16 +50,15 @@ describe('ScoringService', () => {
   });
 
   describe('getNoteScore', () => {
-    const mockScoreResponse: NoteScoreResponse = {
-      note_id: TEST_UUID_1,
+    const mockScoreResponse = createMockNoteScoreJSONAPIResponse({
+      noteId: TEST_UUID_1,
       score: 0.75,
       confidence: 'standard',
       algorithm: 'MFCoreScorer',
-      rating_count: 10,
+      ratingCount: 10,
       tier: 2,
-      tier_name: 'Tier 2 (1k-5k notes)',
-      calculated_at: '2025-10-28T00:00:00Z',
-    };
+      tierName: 'Tier 2 (1k-5k notes)',
+    });
 
     it('should return cached score if available', async () => {
       mockCache.get.mockReturnValue(mockScoreResponse);
@@ -116,36 +126,15 @@ describe('ScoringService', () => {
   });
 
   describe('getTopNotes', () => {
-    const mockTopNotesResponse: TopNotesResponse = {
+    const mockTopNotesResponse = createMockTopNotesJSONAPIResponse({
       notes: [
-        {
-          note_id: TEST_UUID_1,
-          score: TEST_SCORE_ABOVE_THRESHOLD,
-          confidence: 'standard',
-          algorithm: 'MFCoreScorer',
-          rating_count: 15,
-          tier: 2,
-          tier_name: 'Tier 2 (1k-5k notes)',
-          calculated_at: '2025-10-28T00:00:00Z',
-        },
-        {
-          note_id: TEST_UUID_2,
-          score: 0.78,
-          confidence: 'standard',
-          algorithm: 'MFCoreScorer',
-          rating_count: 12,
-          tier: 2,
-          tier_name: 'Tier 2 (1k-5k notes)',
-          calculated_at: '2025-10-28T00:00:00Z',
-        },
+        { noteId: TEST_UUID_1, score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 2, ratingCount: 15 },
+        { noteId: TEST_UUID_2, score: 0.78, confidence: 'standard', tier: 2, ratingCount: 12 },
       ],
-      total_count: 50,
-      current_tier: 2,
-      filters_applied: {
-        min_confidence: 'standard',
-        tier: 2,
-      },
-    };
+      totalCount: 50,
+      currentTier: 2,
+      filtersApplied: { min_confidence: 'standard', tier: 2 },
+    });
 
     it('should fetch top notes with default params', async () => {
       mockApiClient.getTopNotes.mockResolvedValue(mockTopNotesResponse);
@@ -182,16 +171,12 @@ describe('ScoringService', () => {
   });
 
   describe('getScoringStatus', () => {
-    const mockStatusResponse = {
-      current_note_count: 2500,
-      active_tier: {
-        tier_number: 2,
-        tier_name: 'Tier 2 (1k-5k notes)',
-        lower_bound: 1000,
-        upper_bound: 5000,
-      },
-      data_confidence: 'medium',
-    };
+    const mockStatusResponse = createMockScoringStatusJSONAPIResponse({
+      noteCount: 2500,
+      tierLevel: 2,
+      tierName: 'Tier 2 (1k-5k notes)',
+      dataConfidence: 'medium',
+    });
 
     it('should return cached status if available', async () => {
       mockCache.get.mockReturnValue(mockStatusResponse);
@@ -218,33 +203,14 @@ describe('ScoringService', () => {
   });
 
   describe('getBatchNoteScores', () => {
-    const mockBatchResponse = {
-      scores: {
-        [TEST_UUID_1]: {
-          note_id: TEST_UUID_1,
-          score: 0.75,
-          confidence: 'standard',
-          algorithm: 'MFCoreScorer',
-          rating_count: 10,
-          tier: 2,
-          tier_name: 'Tier 2 (1k-5k notes)',
-          calculated_at: '2025-10-28T00:00:00Z',
-        },
-        [TEST_UUID_2]: {
-          note_id: TEST_UUID_2,
-          score: 0.82,
-          confidence: 'standard',
-          algorithm: 'MFCoreScorer',
-          rating_count: 8,
-          tier: 2,
-          tier_name: 'Tier 2 (1k-5k notes)',
-          calculated_at: '2025-10-28T00:00:00Z',
-        },
-      },
-      not_found: [] as string[],
-      total_requested: 2,
-      total_found: 2,
-    };
+    const mockBatchResponse = createMockBatchScoreJSONAPIResponse({
+      scores: [
+        { noteId: TEST_UUID_1, score: 0.75, confidence: 'standard', tier: 2, ratingCount: 10 },
+        { noteId: TEST_UUID_2, score: 0.82, confidence: 'standard', tier: 2, ratingCount: 8 },
+      ],
+      notFound: [],
+      totalRequested: 2,
+    });
 
     it('should fetch batch scores from API when not cached', async () => {
       mockCache.get.mockReturnValue(null);
@@ -253,51 +219,52 @@ describe('ScoringService', () => {
       const result = await scoringService.getBatchNoteScores([TEST_UUID_1, TEST_UUID_2]);
 
       expect(result.success).toBe(true);
-      expect(result.data?.scores).toEqual(mockBatchResponse.scores);
-      expect(result.data?.total_found).toBe(2);
+      expect(result.data?.data.length).toBe(2);
+      expect(result.data?.meta?.total_found).toBe(2);
       expect(mockApiClient.getBatchNoteScores).toHaveBeenCalledWith([TEST_UUID_1, TEST_UUID_2]);
       expect(mockCache.set).toHaveBeenCalledTimes(2);
     });
 
     it('should use cached scores and only fetch uncached ones', async () => {
-      const cachedScore = mockBatchResponse.scores[TEST_UUID_1];
+      const cachedScore = createMockNoteScoreJSONAPIResponse({
+        noteId: TEST_UUID_1,
+        score: 0.75,
+        confidence: 'standard',
+        tier: 2,
+        ratingCount: 10,
+      });
       mockCache.get.mockImplementation((key: string) => {
         if (key === `score:${TEST_UUID_1}`) return cachedScore;
         return null;
       });
-      const partialResponse = {
-        scores: { [TEST_UUID_2]: mockBatchResponse.scores[TEST_UUID_2] },
-        not_found: [],
-        total_requested: 1,
-        total_found: 1,
-      };
+      const partialResponse = createMockBatchScoreJSONAPIResponse({
+        scores: [{ noteId: TEST_UUID_2, score: 0.82, confidence: 'standard', tier: 2, ratingCount: 8 }],
+        notFound: [],
+        totalRequested: 1,
+      });
       mockApiClient.getBatchNoteScores.mockResolvedValue(partialResponse);
 
       const result = await scoringService.getBatchNoteScores([TEST_UUID_1, TEST_UUID_2]);
 
       expect(result.success).toBe(true);
-      expect(result.data?.scores[TEST_UUID_1]).toEqual(cachedScore);
-      expect(result.data?.scores[TEST_UUID_2]).toEqual(mockBatchResponse.scores[TEST_UUID_2]);
-      expect(result.data?.total_found).toBe(2);
+      expect(result.data?.data.length).toBe(2);
       expect(mockApiClient.getBatchNoteScores).toHaveBeenCalledWith([TEST_UUID_2]);
     });
 
     it('should handle not found notes', async () => {
       mockCache.get.mockReturnValue(null);
-      const responseWithNotFound = {
-        scores: { [TEST_UUID_1]: mockBatchResponse.scores[TEST_UUID_1] },
-        not_found: [TEST_UUID_2],
-        total_requested: 2,
-        total_found: 1,
-      };
+      const responseWithNotFound = createMockBatchScoreJSONAPIResponse({
+        scores: [{ noteId: TEST_UUID_1, score: 0.75, confidence: 'standard', tier: 2, ratingCount: 10 }],
+        notFound: [TEST_UUID_2],
+        totalRequested: 2,
+      });
       mockApiClient.getBatchNoteScores.mockResolvedValue(responseWithNotFound);
 
       const result = await scoringService.getBatchNoteScores([TEST_UUID_1, TEST_UUID_2]);
 
       expect(result.success).toBe(true);
-      expect(result.data?.scores[TEST_UUID_1]).toEqual(mockBatchResponse.scores[TEST_UUID_1]);
-      expect(result.data?.not_found).toEqual([TEST_UUID_2]);
-      expect(result.data?.total_found).toBe(1);
+      expect(result.data?.data.length).toBe(1);
+      expect(result.data?.meta?.not_found).toEqual([TEST_UUID_2]);
     });
 
     it('should handle invalid note ID format', async () => {
@@ -320,16 +287,30 @@ describe('ScoringService', () => {
     });
 
     it('should handle all notes from cache', async () => {
+      const cachedScore1 = createMockNoteScoreJSONAPIResponse({
+        noteId: TEST_UUID_1,
+        score: 0.75,
+        confidence: 'standard',
+        tier: 2,
+        ratingCount: 10,
+      });
+      const cachedScore2 = createMockNoteScoreJSONAPIResponse({
+        noteId: TEST_UUID_2,
+        score: 0.82,
+        confidence: 'standard',
+        tier: 2,
+        ratingCount: 8,
+      });
       mockCache.get.mockImplementation((key: string) => {
-        if (key === `score:${TEST_UUID_1}`) return mockBatchResponse.scores[TEST_UUID_1];
-        if (key === `score:${TEST_UUID_2}`) return mockBatchResponse.scores[TEST_UUID_2];
+        if (key === `score:${TEST_UUID_1}`) return cachedScore1;
+        if (key === `score:${TEST_UUID_2}`) return cachedScore2;
         return null;
       });
 
       const result = await scoringService.getBatchNoteScores([TEST_UUID_1, TEST_UUID_2]);
 
       expect(result.success).toBe(true);
-      expect(result.data?.total_found).toBe(2);
+      expect(result.data?.data.length).toBe(2);
       expect(mockApiClient.getBatchNoteScores).not.toHaveBeenCalled();
     });
   });

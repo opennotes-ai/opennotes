@@ -1,4 +1,4 @@
-import { ApiClient } from '../lib/api-client.js';
+import { ApiClient, type RequestAttributes, type JSONAPIResource } from '../lib/api-client.js';
 import { logger } from '../logger.js';
 import {
   ServiceResult,
@@ -9,6 +9,7 @@ import {
 } from './types.js';
 import type { RateLimiterInterface } from './RateLimitFactory.js';
 import { getErrorMessage, getErrorStack, hasMessage } from '../utils/error-handlers.js';
+import type { RequestItem, RequestStatus } from '../lib/types.js';
 
 export class ListRequestsService {
   constructor(
@@ -39,6 +40,25 @@ export class ListRequestsService {
         communityServerId: input.communityServerId,
       });
 
+      const requests: RequestItem[] = response.data.map(
+        (resource: JSONAPIResource<RequestAttributes>) => ({
+          id: resource.id,
+          request_id: resource.attributes.request_id,
+          requested_by: resource.attributes.requested_by,
+          requested_at: resource.attributes.requested_at ?? new Date().toISOString(),
+          status: resource.attributes.status as RequestStatus,
+          note_id: resource.attributes.note_id ?? undefined,
+          created_at: resource.attributes.created_at ?? new Date().toISOString(),
+          updated_at: resource.attributes.updated_at ?? undefined,
+          platform_message_id: resource.attributes.platform_message_id ?? undefined,
+          content: resource.attributes.content ?? undefined,
+          community_server_id: resource.attributes.community_server_id ?? undefined,
+          metadata: resource.attributes.metadata ?? undefined,
+        })
+      );
+
+      const total = response.meta?.count ?? requests.length;
+
       logger.info('Requests listed via service', {
         userId: input.userId,
         page: input.page,
@@ -46,16 +66,16 @@ export class ListRequestsService {
         status: input.status,
         myRequestsOnly: input.myRequestsOnly,
         communityServerId: input.communityServerId,
-        total: response.total,
+        total,
       });
 
       return {
         success: true,
         data: {
-          requests: response.requests,
-          total: response.total,
-          page: response.page,
-          size: response.size,
+          requests,
+          total,
+          page: input.page ?? 1,
+          size: input.size ?? 20,
         },
       };
     } catch (error: unknown) {
