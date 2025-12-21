@@ -1563,12 +1563,12 @@ describe('ApiClient Wrapper', () => {
 
       const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
 
-      expect(result.scan_id).toBe(TEST_SCAN_ID);
-      expect(result.status).toBe('completed');
-      expect(result.messages_scanned).toBe(100);
-      expect(result.flagged_messages).toHaveLength(1);
-      expect(result.flagged_messages[0].message_id).toBe('msg-1');
-      expect(result.flagged_messages[0].match_score).toBe(0.95);
+      expect(result.data.id).toBe(TEST_SCAN_ID);
+      expect(result.data.attributes.status).toBe('completed');
+      expect(result.data.attributes.messages_scanned).toBe(100);
+      expect(result.included).toHaveLength(1);
+      expect(result.included![0].id).toBe('msg-1');
+      expect(result.included![0].attributes.match_score).toBe(0.95);
     });
 
     it('should call the correct endpoint', async () => {
@@ -1668,8 +1668,8 @@ describe('ApiClient Wrapper', () => {
 
       const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
 
-      expect(result.status).toBe('pending');
-      expect(result.flagged_messages).toEqual([]);
+      expect(result.data.attributes.status).toBe('pending');
+      expect(result.included).toBeUndefined();
     });
 
     it('should return in_progress scan', async () => {
@@ -1703,8 +1703,8 @@ describe('ApiClient Wrapper', () => {
 
       const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
 
-      expect(result.status).toBe('in_progress');
-      expect(result.messages_scanned).toBe(50);
+      expect(result.data.attributes.status).toBe('in_progress');
+      expect(result.data.attributes.messages_scanned).toBe(50);
     });
   });
 });

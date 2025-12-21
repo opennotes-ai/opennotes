@@ -193,12 +193,15 @@ describe('End-to-End Integration Tests', () => {
         helpful: true,
       });
 
-      expect(rating).toEqual({
-        noteId: '550e8400-e29b-41d4-a716-446655440001',
-        userId: 'rater789',
-        helpful: true,
-        createdAt: expect.any(Number),
-      });
+      // Rating now returns JSONAPI format
+      expect(rating).toHaveProperty('data');
+      expect(rating).toHaveProperty('jsonapi');
+      expect(rating.data.type).toBe('ratings');
+      expect(rating.data.id).toBeDefined();
+      expect(rating.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440001');
+      expect(rating.data.attributes.rater_participant_id).toBe('rater789');
+      expect(rating.data.attributes.helpfulness_level).toBe('HELPFUL');
+      expect(rating.data.attributes.created_at).toBeDefined();
 
       mockFetch.mockClear();
       const jsonApiNotesResponse = {
@@ -306,8 +309,8 @@ describe('End-to-End Integration Tests', () => {
         helpful: true,
       });
 
-      const noteCreatedAtMillis = new Date(note.data.attributes.created_at).getTime();
-      const ratingCreatedAtMillis = new Date(rating.data.attributes.created_at).getTime();
+      const noteCreatedAtMillis = new Date(note.data.attributes.created_at!).getTime();
+      const ratingCreatedAtMillis = new Date(rating.data.attributes.created_at!).getTime();
       const scoringRequest = {
         notes: [
           {

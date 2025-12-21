@@ -8,6 +8,10 @@ export type {
   NoteJSONAPIResponse,
   NoteListJSONAPIResponse,
   NoteListJSONAPIResponseWithPagination,
+  CommunityServerJSONAPIResponse,
+  CommunityServerAttributes,
+  FlaggedMessageResource,
+  BulkScanResultsResponse,
 } from './lib/api-client.js';
 
 export const apiClient = new ApiClient({

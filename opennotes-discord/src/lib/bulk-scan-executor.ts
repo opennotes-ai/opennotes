@@ -7,7 +7,11 @@ import {
 } from 'discord.js';
 import { DiscordSnowflake } from '@sapphire/snowflake';
 import { logger } from '../logger.js';
-import { apiClient } from '../api-client.js';
+import {
+  apiClient,
+  type BulkScanResultsResponse,
+  type FlaggedMessageResource,
+} from '../api-client.js';
 import { natsPublisher } from '../events/NatsPublisher.js';
 import {
   BULK_SCAN_BATCH_SIZE,
@@ -16,7 +20,6 @@ import {
   type BulkScanBatch,
   type BulkScanCompleted,
   type ScanProgress,
-  type FlaggedMessage,
 } from '../types/bulk-scan.js';
 
 export const POLL_TIMEOUT_MS = 60000;
@@ -40,7 +43,7 @@ export interface BulkScanResult {
   batchesPublished: number;
   failedBatches: number;
   status: 'completed' | 'partial' | 'failed' | 'timeout';
-  flaggedMessages: FlaggedMessage[];
+  flaggedMessages: FlaggedMessageResource[];
   warningMessage?: string;
 }
 
@@ -86,10 +89,10 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   }
 
   const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-  const communityServerUuid = communityServer.id;
+  const communityServerUuid = communityServer.data.id;
 
   const scanResponse = await apiClient.initiateBulkScan(communityServerUuid, days);
-  const scanId = scanResponse.scan_id;
+  const scanId = scanResponse.data.id;
 
   logger.info('Initiated bulk scan', {
     error_id: errorId,
@@ -321,14 +324,14 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
 
   const results = await pollForResults(scanId, errorId);
 
-  if (!results || results.status === 'failed') {
+  if (!results || results.data.attributes.status === 'failed') {
     return {
       scanId,
       messagesScanned: messagesProcessed,
       channelsScanned: channelsProcessed,
       batchesPublished,
       failedBatches,
-      status: results?.status === 'failed' ? 'failed' : 'timeout',
+      status: results?.data.attributes.status === 'failed' ? 'failed' : 'timeout',
       flaggedMessages: [],
     };
   }
@@ -336,24 +339,24 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
   if (failedBatches > 0) {
     return {
       scanId,
-      messagesScanned: results.messages_scanned,
+      messagesScanned: results.data.attributes.messages_scanned,
       channelsScanned: channelsProcessed,
       batchesPublished,
       failedBatches,
       status: 'partial',
-      flaggedMessages: results.flagged_messages,
+      flaggedMessages: results.included || [],
       warningMessage: 'Scan encountered some issues so results may be incomplete.',
     };
   }
 
   return {
     scanId,
-    messagesScanned: results.messages_scanned,
+    messagesScanned: results.data.attributes.messages_scanned,
     channelsScanned: channelsProcessed,
     batchesPublished,
     failedBatches: 0,
     status: 'completed',
-    flaggedMessages: results.flagged_messages,
+    flaggedMessages: results.included || [],
   };
 }
 
@@ -365,7 +368,7 @@ function calculateBackoffDelay(attempt: number): number {
 export async function pollForResults(
   scanId: string,
   errorId: string
-): Promise<Awaited<ReturnType<typeof apiClient.getBulkScanResults>> | null> {
+): Promise<BulkScanResultsResponse | null> {
   const startTime = Date.now();
   let attempt = 0;
 
@@ -373,7 +376,7 @@ export async function pollForResults(
     try {
       const results = await apiClient.getBulkScanResults(scanId);
 
-      if (results.status === 'completed' || results.status === 'failed') {
+      if (results.data.attributes.status === 'completed' || results.data.attributes.status === 'failed') {
         return results;
       }
 

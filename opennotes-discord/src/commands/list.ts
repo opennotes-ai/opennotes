@@ -249,7 +249,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
     if (guildId) {
       try {
         const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-        communityServerUuid = communityServer.id;
+        communityServerUuid = communityServer.data.id;
       } catch (error) {
         logger.error('Failed to fetch community server UUID', {
           error_id: errorId,
@@ -390,7 +390,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
     if (guildId) {
       try {
         const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-        communityServerUuid = communityServer.id;
+        communityServerUuid = communityServer.data.id;
       } catch (error) {
         logger.error('Failed to fetch community server UUID', {
           error_id: errorId,
@@ -733,7 +733,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
     let communityServerUuid: string | undefined;
     try {
       const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-      communityServerUuid = communityServer.id;
+      communityServerUuid = communityServer.data.id;
     } catch (error) {
       logger.error('Failed to fetch community server UUID', {
         error_id: errorId,

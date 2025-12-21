@@ -141,7 +141,20 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
     mockApiClient.getLastNotePost.mockRejectedValue(new Error('404'));
     mockApiClient.getNote.mockResolvedValue(createMockNoteJSONAPIResponse({ summary: 'Default note content' }));
     mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
-    mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({ id: 'guild-123' });
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+      data: {
+        type: 'community-servers',
+        id: 'guild-123',
+        attributes: {
+          platform: 'discord',
+          platform_id: 'guild-123',
+          name: 'Test Guild',
+          is_active: true,
+          is_public: true,
+        },
+      },
+      jsonapi: { version: '1.1' },
+    });
 
     notePublisherService = new NotePublisherService(
       mockDiscordClient.getClient(),

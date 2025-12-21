@@ -233,36 +233,16 @@ export interface NotePublisherRecordRequest {
   embeddingModel?: string | null;
 }
 
-// Bulk scan types from generated OpenAPI schema
+// Bulk scan types from generated OpenAPI schema (JSONAPI structures)
 export type LatestScanResponse = components['schemas']['LatestScanResponse'];
 export type LatestScanResource = components['schemas']['LatestScanResource'];
 export type LatestScanAttributes = components['schemas']['LatestScanAttributes'];
 export type FlaggedMessageResource = components['schemas']['FlaggedMessageResource'];
 export type FlaggedMessageAttributes = components['schemas']['FlaggedMessageAttributes'];
-
-// Flattened response type for getLatestScan method (transformed from JSON:API response)
-export interface FlaggedMessage {
-  message_id: string;
-  channel_id: string;
-  content: string;
-  author_id: string;
-  timestamp: string;
-  match_score: number;
-  matched_claim: string;
-  matched_source: string;
-}
-
-export type ScanStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
-
-// Transformed/flattened result from getLatestScan (combines attributes + included flagged messages)
-export interface LatestScanResult {
-  scan_id: string;
-  status: ScanStatus;
-  messages_scanned: number;
-  flagged_messages: FlaggedMessage[];
-  initiated_at?: string;
-  completed_at?: string | null;
-}
+export type BulkScanSingleResponse = components['schemas']['BulkScanSingleResponse'];
+export type BulkScanResultsResponse = components['schemas']['BulkScanResultsResponse'];
+export type RecentScanResponse = components['schemas']['RecentScanResponse'];
+export type NoteRequestsResultResponse = components['schemas']['NoteRequestsResultResponse'];
 
 // JSON:API v2 types from generated OpenAPI schema
 export type NoteCreateRequest = components['schemas']['NoteCreateRequest'];
@@ -344,6 +324,9 @@ export interface CommunityServerAttributes {
   created_at?: string | null;
   updated_at?: string | null;
 }
+
+// JSONAPI response type for community servers - raw structure from the server
+export type CommunityServerJSONAPIResponse = JSONAPISingleResponse<CommunityServerAttributes>;
 
 // Type for rating attributes in JSON:API response
 export interface RatingAttributes {
@@ -1124,7 +1107,7 @@ export class ApiClient {
     if (context?.guildId) {
       try {
         const communityServer = await this.getCommunityServerByPlatformId(context.guildId);
-        community_server_id = communityServer.id;
+        community_server_id = communityServer.data.id;
       } catch (error) {
         logger.error('Failed to lookup community server', {
           guildId: context.guildId,
@@ -1329,21 +1312,13 @@ export class ApiClient {
   async getCommunityServerByPlatformId(
     platformId: string,
     platform: string = 'discord'
-  ): Promise<{ id: string; platform: string; platform_id: string; name: string; is_active: boolean }> {
+  ): Promise<CommunityServerJSONAPIResponse> {
     const params = new URLSearchParams();
     params.append('platform', platform);
     params.append('platform_id', platformId);
 
     const endpoint = `/api/v2/community-servers/lookup?${params.toString()}`;
-    const jsonApiResponse = await this.fetchWithRetry<JSONAPISingleResponse<CommunityServerAttributes>>(endpoint);
-
-    return {
-      id: jsonApiResponse.data.id,
-      platform: jsonApiResponse.data.attributes.platform,
-      platform_id: jsonApiResponse.data.attributes.platform_id,
-      name: jsonApiResponse.data.attributes.name,
-      is_active: jsonApiResponse.data.attributes.is_active,
-    };
+    return this.fetchWithRetry<CommunityServerJSONAPIResponse>(endpoint);
   }
 
   async getRatingThresholds(): Promise<RatingThresholdsResponse> {
@@ -2113,24 +2088,8 @@ export class ApiClient {
   async initiateBulkScan(
     communityServerId: string,
     scanWindowDays: number
-  ): Promise<{
-    scan_id: string;
-    status: string;
-  }> {
-    const response = await this.fetchWithRetry<{
-      data: {
-        type: string;
-        id: string;
-        attributes: {
-          status: string;
-          initiated_at: string;
-          completed_at: string | null;
-          messages_scanned: number;
-          messages_flagged: number;
-        };
-      };
-      jsonapi: { version: string };
-    }>('/api/v2/bulk-scans', {
+  ): Promise<BulkScanSingleResponse> {
+    return this.fetchWithRetry<BulkScanSingleResponse>('/api/v2/bulk-scans', {
       method: 'POST',
       body: JSON.stringify({
         data: {
@@ -2142,90 +2101,18 @@ export class ApiClient {
         },
       }),
     });
-    return {
-      scan_id: response.data.id,
-      status: response.data.attributes.status,
-    };
   }
 
-  async getBulkScanResults(scanId: string): Promise<{
-    scan_id: string;
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
-    messages_scanned: number;
-    flagged_messages: Array<{
-      message_id: string;
-      channel_id: string;
-      content: string;
-      author_id: string;
-      timestamp: string;
-      match_score: number;
-      matched_claim: string;
-      matched_source: string;
-    }>;
-  }> {
-    const response = await this.fetchWithRetry<{
-      data: {
-        type: string;
-        id: string;
-        attributes: {
-          status: 'pending' | 'in_progress' | 'completed' | 'failed';
-          messages_scanned: number;
-          messages_flagged: number;
-        };
-      };
-      included: Array<{
-        type: string;
-        id: string;
-        attributes: {
-          channel_id: string;
-          content: string;
-          author_id: string;
-          timestamp: string;
-          match_score: number;
-          matched_claim: string;
-          matched_source: string;
-          scan_type: string;
-        };
-      }>;
-      jsonapi: { version: string };
-    }>(`/api/v2/bulk-scans/${scanId}`);
-
-    return {
-      scan_id: response.data.id,
-      status: response.data.attributes.status,
-      messages_scanned: response.data.attributes.messages_scanned,
-      flagged_messages: (response.included || []).map((item) => ({
-        message_id: item.id,
-        channel_id: item.attributes.channel_id,
-        content: item.attributes.content,
-        author_id: item.attributes.author_id,
-        timestamp: item.attributes.timestamp,
-        match_score: item.attributes.match_score,
-        matched_claim: item.attributes.matched_claim,
-        matched_source: item.attributes.matched_source,
-      })),
-    };
+  async getBulkScanResults(scanId: string): Promise<BulkScanResultsResponse> {
+    return this.fetchWithRetry<BulkScanResultsResponse>(`/api/v2/bulk-scans/${scanId}`);
   }
 
   async createNoteRequestsFromScan(
     scanId: string,
     messageIds: string[],
     generateAiNotes: boolean
-  ): Promise<{
-    created_count: number;
-    request_ids: string[];
-  }> {
-    const response = await this.fetchWithRetry<{
-      data: {
-        type: string;
-        id: string;
-        attributes: {
-          created_count: number;
-          request_ids: string[];
-        };
-      };
-      jsonapi: { version: string };
-    }>(`/api/v2/bulk-scans/${scanId}/note-requests`, {
+  ): Promise<NoteRequestsResultResponse> {
+    return this.fetchWithRetry<NoteRequestsResultResponse>(`/api/v2/bulk-scans/${scanId}/note-requests`, {
       method: 'POST',
       body: JSON.stringify({
         data: {
@@ -2237,48 +2124,16 @@ export class ApiClient {
         },
       }),
     });
-    return {
-      created_count: response.data.attributes.created_count,
-      request_ids: response.data.attributes.request_ids,
-    };
   }
 
-  async checkRecentScan(communityServerId: string): Promise<boolean> {
-    const response = await this.fetchWithRetry<{
-      data: {
-        type: string;
-        id: string;
-        attributes: {
-          has_recent_scan: boolean;
-        };
-      };
-      jsonapi: { version: string };
-    }>(`/api/v2/bulk-scans/communities/${communityServerId}/recent`);
-    return response.data.attributes.has_recent_scan;
+  async checkRecentScan(communityServerId: string): Promise<RecentScanResponse> {
+    return this.fetchWithRetry<RecentScanResponse>(`/api/v2/bulk-scans/communities/${communityServerId}/recent`);
   }
 
-  async getLatestScan(communityServerId: string): Promise<LatestScanResult> {
-    const response = await this.fetchWithRetry<LatestScanResponse>(
+  async getLatestScan(communityServerId: string): Promise<LatestScanResponse> {
+    return this.fetchWithRetry<LatestScanResponse>(
       `/api/v2/bulk-scans/communities/${communityServerId}/latest`
     );
-
-    return {
-      scan_id: response.data.id,
-      status: response.data.attributes.status as ScanStatus,
-      messages_scanned: response.data.attributes.messages_scanned,
-      initiated_at: response.data.attributes.initiated_at,
-      completed_at: response.data.attributes.completed_at,
-      flagged_messages: (response.included || []).map((item: FlaggedMessageResource) => ({
-        message_id: item.id,
-        channel_id: item.attributes.channel_id,
-        content: item.attributes.content,
-        author_id: item.attributes.author_id,
-        timestamp: item.attributes.timestamp,
-        match_score: item.attributes.match_score,
-        matched_claim: item.attributes.matched_claim,
-        matched_source: item.attributes.matched_source,
-      })),
-    };
   }
 
   private transformJSONAPINoteListResponse(

@@ -1,14 +1,9 @@
 import { jest } from '@jest/globals';
+import type { CommunityServerJSONAPIResponse } from '../../src/lib/api-client.js';
 
 const mockApiClient = {
   getCommunityServerByPlatformId: jest.fn<
-    (platformId: string, platform?: string) => Promise<{
-      id: string;
-      platform: string;
-      platform_id: string;
-      name: string;
-      is_active: boolean;
-    }>
+    (platformId: string, platform?: string) => Promise<CommunityServerJSONAPIResponse>
   >(),
 };
 
@@ -17,6 +12,28 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
 }));
 
 const { resolveCommunityServerId } = await import('../../src/lib/community-server-resolver.js');
+
+function createMockCommunityServerResponse(
+  id: string,
+  platformId: string,
+  name: string,
+  isActive: boolean = true
+): CommunityServerJSONAPIResponse {
+  return {
+    data: {
+      type: 'community-servers',
+      id,
+      attributes: {
+        platform: 'discord',
+        platform_id: platformId,
+        name,
+        is_active: isActive,
+        is_public: true,
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
 
 describe('resolveCommunityServerId', () => {
   beforeEach(() => {
@@ -27,13 +44,9 @@ describe('resolveCommunityServerId', () => {
     const guildId = '1234567890123456789';
     const expectedUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 
-    mockApiClient.getCommunityServerByPlatformId.mockResolvedValueOnce({
-      id: expectedUuid,
-      platform: 'discord',
-      platform_id: guildId,
-      name: 'Test Server',
-      is_active: true,
-    });
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValueOnce(
+      createMockCommunityServerResponse(expectedUuid, guildId, 'Test Server')
+    );
 
     await resolveCommunityServerId(guildId);
 
@@ -44,13 +57,9 @@ describe('resolveCommunityServerId', () => {
     const guildId = '1234567890123456789';
     const expectedUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 
-    mockApiClient.getCommunityServerByPlatformId.mockResolvedValueOnce({
-      id: expectedUuid,
-      platform: 'discord',
-      platform_id: guildId,
-      name: 'Test Server',
-      is_active: true,
-    });
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValueOnce(
+      createMockCommunityServerResponse(expectedUuid, guildId, 'Test Server')
+    );
 
     const result = await resolveCommunityServerId(guildId);
 
@@ -70,13 +79,9 @@ describe('resolveCommunityServerId', () => {
     const guildId = '9876543210987654321';
     const expectedUuid = 'a1b2c3d4-e5f6-4789-abcd-ef1234567890';
 
-    mockApiClient.getCommunityServerByPlatformId.mockResolvedValueOnce({
-      id: expectedUuid,
-      platform: 'discord',
-      platform_id: guildId,
-      name: 'Another Server',
-      is_active: true,
-    });
+    mockApiClient.getCommunityServerByPlatformId.mockResolvedValueOnce(
+      createMockCommunityServerResponse(expectedUuid, guildId, 'Another Server')
+    );
 
     const result = await resolveCommunityServerId(guildId);
 

@@ -390,10 +390,10 @@ describe('API Persistence Integration Tests', () => {
         })
       );
 
-      expect(result.noteId).toBe(ratingRequest.noteId);
-      expect(result.userId).toBe(ratingRequest.userId);
-      expect(result.helpful).toBe(true);
-      expect(typeof result.createdAt).toBe('number');
+      expect(result.data.attributes.note_id).toBe(ratingRequest.noteId);
+      expect(result.data.attributes.rater_participant_id).toBe(ratingRequest.userId);
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
+      expect(result.data.attributes.created_at).toBeDefined();
     });
 
     it('should persist negative ratings correctly', async () => {
@@ -414,7 +414,7 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.rateNote(ratingRequest);
 
-      expect(result.helpful).toBe(false);
+      expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/ratings',
         expect.objectContaining({
@@ -1120,10 +1120,10 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.rateNote(request);
 
-      expect(result.noteId).toBe(request.noteId);
-      expect(result.userId).toBe(request.userId);
-      expect(result.helpful).toBe(request.helpful);
-      expect(typeof result.createdAt).toBe('number');
+      expect(result.data.attributes.note_id).toBe(request.noteId);
+      expect(result.data.attributes.rater_participant_id).toBe(request.userId);
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
+      expect(result.data.attributes.created_at).toBeDefined();
     });
 
     it('should ensure request data is not corrupted during transmission', async () => {

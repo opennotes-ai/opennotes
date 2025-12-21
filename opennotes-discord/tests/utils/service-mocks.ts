@@ -7,14 +7,14 @@ import {
   RateNoteResult,
   ErrorCode,
 } from '../../src/services/types.js';
-import type { Note, Rating } from '../../src/lib/types.js';
+import type { Note } from '../../src/lib/types.js';
+import type { RatingJSONAPIResponse } from '../../src/lib/api-client.js';
 import {
   createMockLogger,
   createMockCache,
   createMockInteraction,
   createMockFetchResponse,
   createMockNote as createSharedMockNote,
-  createMockRating as createSharedMockRating,
 } from '@opennotes/test-utils';
 
 export function createMockApiClient() {
@@ -22,7 +22,7 @@ export function createMockApiClient() {
     healthCheck: jest.fn<() => Promise<{ status: string; version: string }>>(),
     createNote: jest.fn<(req: any) => Promise<Note>>(),
     getNotes: jest.fn<(messageId: string) => Promise<Note[]>>(),
-    rateNote: jest.fn<(req: any) => Promise<Rating>>(),
+    rateNote: jest.fn<(req: any) => Promise<RatingJSONAPIResponse>>(),
     scoreNotes: jest.fn<(req: any) => Promise<any>>(),
     createNoteRequest: jest.fn<(req: any) => Promise<any>>(),
   };
@@ -111,8 +111,26 @@ export function createMockNote(overrides?: Partial<Note>): Note {
   return createSharedMockNote(overrides) as Note;
 }
 
-export function createMockRating(overrides?: Partial<Rating>): Rating {
-  return createSharedMockRating(overrides) as Rating;
+export function createMockRatingJSONAPIResponse(overrides: {
+  id?: string;
+  noteId?: string;
+  userId?: string;
+  helpfulnessLevel?: 'HELPFUL' | 'NOT_HELPFUL';
+} = {}): RatingJSONAPIResponse {
+  return {
+    data: {
+      type: 'ratings',
+      id: overrides.id ?? 'rating-1',
+      attributes: {
+        note_id: overrides.noteId ?? 'note-123',
+        rater_participant_id: overrides.userId ?? 'user-123',
+        helpfulness_level: overrides.helpfulnessLevel ?? 'HELPFUL',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
 }
 
 export function createMockStatusResult(overrides?: Partial<StatusResult>): StatusResult {

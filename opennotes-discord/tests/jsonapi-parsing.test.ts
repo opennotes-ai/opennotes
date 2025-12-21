@@ -184,13 +184,13 @@ describe('JSON:API Response Parsing', () => {
           helpful: true,
         });
 
-        expect(result.noteId).toBe(noteId);
-        expect(result.userId).toBe('user-789');
-        expect(result.helpful).toBe(true);
-        expect(result.createdAt).toBe(new Date('2025-01-15T12:00:00Z').getTime());
+        expect(result.data.attributes.note_id).toBe(noteId);
+        expect(result.data.attributes.rater_participant_id).toBe('user-789');
+        expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
+        expect(result.data.attributes.created_at).toBe('2025-01-15T12:00:00Z');
       });
 
-      it('handles rating without created_at (uses current time)', async () => {
+      it('handles rating without created_at (returns null as-is)', async () => {
         const noteId = '660e8400-e29b-41d4-a716-446655440001';
         const jsonApiResponse = {
           data: {
@@ -214,18 +214,14 @@ describe('JSON:API Response Parsing', () => {
           })
         );
 
-        const before = Date.now();
         const result = await client.rateNote({
           noteId,
           userId: 'user-1',
           helpful: false,
         });
-        const after = Date.now();
 
         expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
-        const createdAtMillis = new Date(result.data.attributes.created_at).getTime();
-        expect(createdAtMillis).toBeGreaterThanOrEqual(before);
-        expect(createdAtMillis).toBeLessThanOrEqual(after);
+        expect(result.data.attributes.created_at).toBeNull();
       });
     });
 
@@ -381,7 +377,7 @@ describe('JSON:API Response Parsing', () => {
     });
 
     describe('Community Servers', () => {
-      it('extracts data from community server lookup response', async () => {
+      it('returns raw JSONAPI response from community server lookup', async () => {
         const jsonApiResponse = {
           data: {
             type: 'community-servers',
@@ -409,11 +405,15 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getCommunityServerByPlatformId('guild-123456789');
 
-        expect(result.id).toBe('cs-uuid-123');
-        expect(result.platform).toBe('discord');
-        expect(result.platform_id).toBe('guild-123456789');
-        expect(result.name).toBe('Test Community');
-        expect(result.is_active).toBe(true);
+        expect(result.data.type).toBe('community-servers');
+        expect(result.data.id).toBe('cs-uuid-123');
+        expect(result.data.attributes.platform).toBe('discord');
+        expect(result.data.attributes.platform_id).toBe('guild-123456789');
+        expect(result.data.attributes.name).toBe('Test Community');
+        expect(result.data.attributes.is_active).toBe(true);
+        expect(result.data.attributes.is_public).toBe(false);
+        expect(result.data.attributes.description).toBe('A test community server');
+        expect(result.jsonapi.version).toBe('1.1');
       });
     });
   });
@@ -1011,7 +1011,8 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('any-note');
 
-        expect(result).toEqual([]);
+        expect(result.data).toEqual([]);
+        expect(result.jsonapi.version).toBe('1.1');
       });
 
       it('accepts responses with jsonapi version 1.0', async () => {
@@ -1029,7 +1030,8 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('any-note');
 
-        expect(result).toEqual([]);
+        expect(result.data).toEqual([]);
+        expect(result.jsonapi.version).toBe('1.0');
       });
     });
 
@@ -1191,7 +1193,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('n1');
 
-        expect(result).toHaveLength(2);
+        expect(result.data).toHaveLength(2);
       });
     });
   });
@@ -1406,7 +1408,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('note-no-ratings');
 
-        expect(result).toEqual([]);
+        expect(result.data).toEqual([]);
       });
 
       it('handles empty requests list', async () => {
@@ -1533,8 +1535,8 @@ describe('JSON:API Response Parsing', () => {
           helpful: true,
         });
 
-        expect(result.noteId).toBe(noteId);
-        expect(result.helpful).toBe(true);
+        expect(result.data.attributes.note_id).toBe(noteId);
+        expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
       });
     });
 
@@ -1586,7 +1588,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('n1');
 
-        expect(result).toHaveLength(1);
+        expect(result.data).toHaveLength(1);
       });
 
       it('handles score response without calculated_at', async () => {
@@ -1715,7 +1717,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('any');
 
-        expect(result).toEqual([]);
+        expect(result.data).toEqual([]);
       });
 
       it('handles application/json content type', async () => {
@@ -1733,7 +1735,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('any');
 
-        expect(result).toEqual([]);
+        expect(result.data).toEqual([]);
       });
 
       it('handles content type with charset', async () => {
@@ -1751,7 +1753,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('any');
 
-        expect(result).toEqual([]);
+        expect(result.data).toEqual([]);
       });
     });
 
@@ -1783,9 +1785,9 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.getRatingsForNote('note-large');
 
-        expect(result).toHaveLength(100);
-        expect(result[0]!.id).toBe('rating-0');
-        expect(result[99]!.id).toBe('rating-99');
+        expect(result.data).toHaveLength(100);
+        expect(result.data[0]!.id).toBe('rating-0');
+        expect(result.data[99]!.id).toBe('rating-99');
       });
     });
   });

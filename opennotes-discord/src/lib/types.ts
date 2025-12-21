@@ -24,13 +24,6 @@ export interface Note {
   notHelpfulCount: number;
 }
 
-export interface Rating {
-  noteId: string;
-  userId: string;
-  helpful: boolean;
-  createdAt: number;
-}
-
 export interface NoteRequest {
   messageId: string;
   userId: string;

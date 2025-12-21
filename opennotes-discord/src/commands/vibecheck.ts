@@ -14,11 +14,8 @@ import { logger } from '../logger.js';
 import { cache } from '../cache.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
-import { apiClient } from '../api-client.js';
-import {
-  VIBE_CHECK_DAYS_OPTIONS,
-  type FlaggedMessage,
-} from '../types/bulk-scan.js';
+import { apiClient, type FlaggedMessageResource } from '../api-client.js';
+import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
 import { formatScanStatus } from '../lib/scan-status-formatter.js';
 import { BotChannelService } from '../services/BotChannelService.js';
@@ -228,15 +225,23 @@ async function displayFlaggedResults(
   guildId: string,
   days: number,
   messagesScanned: number,
-  flaggedMessages: FlaggedMessage[],
+  flaggedMessages: FlaggedMessageResource[],
   warningMessage?: string
 ): Promise<void> {
   const result = formatScanStatus({
     scan: {
-      scan_id: scanId,
-      status: 'completed',
-      messages_scanned: messagesScanned,
-      flagged_messages: flaggedMessages,
+      data: {
+        type: 'bulk-scans',
+        id: scanId,
+        attributes: {
+          status: 'completed',
+          initiated_at: new Date().toISOString(),
+          messages_scanned: messagesScanned,
+          messages_flagged: flaggedMessages.length,
+        },
+      },
+      included: flaggedMessages,
+      jsonapi: { version: '1.1' },
     },
     guildId,
     days,
@@ -295,7 +300,7 @@ async function displayFlaggedResults(
 async function showAiGenerationPrompt(
   buttonInteraction: ButtonInteraction,
   scanId: string,
-  flaggedMessages: FlaggedMessage[],
+  flaggedMessages: FlaggedMessageResource[],
   originalUserId: string
 ): Promise<void> {
   const yesAiButton = new ButtonBuilder()
@@ -327,7 +332,7 @@ async function showAiGenerationPrompt(
     const [, aiAction] = aiButtonInteraction.customId.split('_ai_');
     const generateAiNotes = aiAction.startsWith('yes');
 
-    const messageIds = flaggedMessages.map(msg => msg.message_id);
+    const messageIds = flaggedMessages.map(msg => msg.id);
 
     void (async (): Promise<void> => {
       try {
@@ -336,9 +341,10 @@ async function showAiGenerationPrompt(
           messageIds,
           generateAiNotes
         );
+        const createdCount = result.data.attributes.created_count;
 
         await aiButtonInteraction.update({
-          content: `Created ${result.created_count} note request${result.created_count !== 1 ? 's' : ''}` +
+          content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}` +
             (generateAiNotes ? ' with AI-generated drafts.' : '.') +
             `\n\nUse \`/list requests\` to view and manage them.`,
           components: [],
@@ -390,7 +396,7 @@ async function handleStatusSubcommand(
   try {
     const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
 
-    const latestScan = await apiClient.getLatestScan(communityServer.id);
+    const latestScan = await apiClient.getLatestScan(communityServer.data.id);
 
     const result = formatScanStatus({
       scan: latestScan,

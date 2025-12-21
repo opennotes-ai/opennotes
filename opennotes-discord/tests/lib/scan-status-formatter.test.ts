@@ -1,5 +1,50 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import type { FlaggedMessage, BulkScanResultsResponse } from '../../src/types/bulk-scan.js';
+import type { LatestScanResponse, FlaggedMessageResource } from '../../src/lib/api-client.js';
+
+function createFlaggedMessageResource(
+  id: string,
+  channelId: string,
+  content: string,
+  matchScore: number,
+  matchedClaim: string
+): FlaggedMessageResource {
+  return {
+    type: 'flagged-messages',
+    id,
+    attributes: {
+      channel_id: channelId,
+      content,
+      author_id: 'author-1',
+      timestamp: new Date().toISOString(),
+      match_score: matchScore,
+      matched_claim: matchedClaim,
+      matched_source: 'snopes',
+      scan_type: 'bulk',
+    },
+  };
+}
+
+function createLatestScanResponse(
+  scanId: string,
+  status: string,
+  messagesScanned: number,
+  flaggedMessages: FlaggedMessageResource[] = []
+): LatestScanResponse {
+  return {
+    data: {
+      type: 'bulk-scans',
+      id: scanId,
+      attributes: {
+        status,
+        initiated_at: new Date().toISOString(),
+        messages_scanned: messagesScanned,
+        messages_flagged: flaggedMessages.length,
+      },
+    },
+    included: flaggedMessages,
+    jsonapi: { version: '1.1' },
+  };
+}
 
 describe('formatScanStatus', () => {
   let formatScanStatus: typeof import('../../src/lib/scan-status-formatter.js').formatScanStatus;
@@ -11,12 +56,7 @@ describe('formatScanStatus', () => {
 
   describe('pending status', () => {
     it('should format pending scan status', () => {
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'pending',
-        messages_scanned: 0,
-        flagged_messages: [],
-      };
+      const scan = createLatestScanResponse('scan-123', 'pending', 0);
 
       const result = formatScanStatus({
         scan,
@@ -31,12 +71,7 @@ describe('formatScanStatus', () => {
 
   describe('in_progress status', () => {
     it('should format in_progress scan status', () => {
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'in_progress',
-        messages_scanned: 50,
-        flagged_messages: [],
-      };
+      const scan = createLatestScanResponse('scan-123', 'in_progress', 50);
 
       const result = formatScanStatus({
         scan,
@@ -51,12 +86,7 @@ describe('formatScanStatus', () => {
 
   describe('completed status with no flagged messages', () => {
     it('should show no flagged content message', () => {
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: [],
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100);
 
       const result = formatScanStatus({
         scan,
@@ -72,35 +102,12 @@ describe('formatScanStatus', () => {
 
   describe('completed status with flagged messages', () => {
     it('should include flagged message details', () => {
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: 'msg-1',
-          channel_id: 'ch-1',
-          content: 'This vaccine causes autism',
-          author_id: 'author-1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.95,
-          matched_claim: 'Vaccines cause autism',
-          matched_source: 'snopes',
-        },
-        {
-          message_id: 'msg-2',
-          channel_id: 'ch-2',
-          content: '5G towers spread COVID',
-          author_id: 'author-2',
-          timestamp: new Date().toISOString(),
-          match_score: 0.85,
-          matched_claim: '5G causes COVID-19',
-          matched_source: 'politifact',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism'),
+        createFlaggedMessageResource('msg-2', 'ch-2', '5G towers spread COVID', 0.85, '5G causes COVID-19'),
       ];
 
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: flaggedMessages,
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
 
       const result = formatScanStatus({
         scan,
@@ -115,23 +122,11 @@ describe('formatScanStatus', () => {
     });
 
     it('should limit displayed results to 10', () => {
-      const flaggedMessages: FlaggedMessage[] = Array.from({ length: 15 }, (_, i) => ({
-        message_id: `msg-${i}`,
-        channel_id: 'ch-1',
-        content: `Message ${i}`,
-        author_id: 'author-1',
-        timestamp: new Date().toISOString(),
-        match_score: 0.9,
-        matched_claim: `Claim ${i}`,
-        matched_source: 'snopes',
-      }));
+      const flaggedMessages: FlaggedMessageResource[] = Array.from({ length: 15 }, (_, i) =>
+        createFlaggedMessageResource(`msg-${i}`, 'ch-1', `Message ${i}`, 0.9, `Claim ${i}`)
+      );
 
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: flaggedMessages,
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
 
       const result = formatScanStatus({
         scan,
@@ -145,12 +140,7 @@ describe('formatScanStatus', () => {
 
   describe('failed status', () => {
     it('should format failed scan status', () => {
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'failed',
-        messages_scanned: 0,
-        flagged_messages: [],
-      };
+      const scan = createLatestScanResponse('scan-123', 'failed', 0);
 
       const result = formatScanStatus({
         scan,
@@ -165,12 +155,7 @@ describe('formatScanStatus', () => {
 
   describe('warning message', () => {
     it('should include warning message when provided', () => {
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: [],
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100);
 
       const result = formatScanStatus({
         scan,
@@ -186,12 +171,7 @@ describe('formatScanStatus', () => {
 
   describe('days parameter', () => {
     it('should show singular day when days is 1', () => {
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: [],
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100);
 
       const result = formatScanStatus({
         scan,
@@ -204,12 +184,7 @@ describe('formatScanStatus', () => {
     });
 
     it('should show plural days when days is greater than 1', () => {
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: [],
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100);
 
       const result = formatScanStatus({
         scan,
@@ -223,25 +198,11 @@ describe('formatScanStatus', () => {
 
   describe('includeButtons option', () => {
     it('should not include buttons when includeButtons is false', () => {
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: 'msg-1',
-          channel_id: 'ch-1',
-          content: 'Flagged content',
-          author_id: 'author-1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.9,
-          matched_claim: 'Claim',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Flagged content', 0.9, 'Claim'),
       ];
 
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: flaggedMessages,
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
 
       const result = formatScanStatus({
         scan,
@@ -254,25 +215,11 @@ describe('formatScanStatus', () => {
     });
 
     it('should include buttons when includeButtons is true and there are flagged messages', () => {
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: 'msg-1',
-          channel_id: 'ch-1',
-          content: 'Flagged content',
-          author_id: 'author-1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.9,
-          matched_claim: 'Claim',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Flagged content', 0.9, 'Claim'),
       ];
 
-      const scan: BulkScanResultsResponse = {
-        scan_id: 'scan-123',
-        status: 'completed',
-        messages_scanned: 100,
-        flagged_messages: flaggedMessages,
-      };
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
 
       const result = formatScanStatus({
         scan,

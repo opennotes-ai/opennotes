@@ -886,10 +886,18 @@ describe('DiscordFormatter', () => {
     const createMockRateNoteResult = (helpful: boolean): { result: import('../../src/services/types.js').RateNoteResult; noteId: string; helpful: boolean } => ({
       result: {
         rating: {
-          noteId: 'note_456',
-          userId: 'user_789',
-          helpful,
-          createdAt: Date.now(),
+          data: {
+            type: 'ratings',
+            id: 'rating-123',
+            attributes: {
+              note_id: 'note_456',
+              rater_participant_id: 'user_789',
+              helpfulness_level: helpful ? 'HELPFUL' : 'NOT_HELPFUL',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          },
+          jsonapi: { version: '1.1' },
         },
       },
       noteId: 'note_456',

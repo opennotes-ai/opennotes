@@ -357,7 +357,9 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
       expect(result.data[1].attributes).toHaveProperty('summary', 'Second note');
     });
 
-    it('should NOT transform into NoteListResponse with flattened notes array', async () => {
+    it('should return JSONAPI structure with pagination convenience fields', async () => {
+      // listNotesWithStatus returns JSONAPI structure WITH added pagination fields
+      // (total, page, size) for consumer convenience - this is intentional
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -367,36 +369,21 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
 
       const result = await apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS');
 
+      // Should NOT have flattened 'notes' array
       expect(result).not.toHaveProperty('notes');
-      expect(result).not.toHaveProperty('total');
-      expect(result).not.toHaveProperty('page');
-      expect(result).not.toHaveProperty('size');
+      // Should have JSONAPI data array
+      expect(result).toHaveProperty('data');
+      // Pagination convenience fields are added
+      expect(result).toHaveProperty('total');
+      expect(result).toHaveProperty('page');
+      expect(result).toHaveProperty('size');
     });
   });
 
-  describe('getNotes (by messageId) - should return raw JSONAPI structure', () => {
-    it('should return JSONAPI list response with data array', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => mockJSONAPINoteList,
-      } as Response);
-
-      const result = await apiClient.getNotes('message-123') as unknown as JSONAPIListResponse;
-
-      expect(result).toHaveProperty('data');
-      expect(result).toHaveProperty('jsonapi');
-      expect(Array.isArray(result.data)).toBe(true);
-
-      if (result.data.length > 0) {
-        expect(result.data[0]).toHaveProperty('type', 'notes');
-        expect(result.data[0]).toHaveProperty('id');
-        expect(result.data[0]).toHaveProperty('attributes');
-      }
-    });
-
-    it('should NOT flatten into array of Note objects', async () => {
+  describe('getNotes (by messageId) - returns Note[] for backward compatibility', () => {
+    // getNotes still returns Note[] for existing consumers
+    // This is different from other methods that return JSONAPI
+    it('should return array of Note objects (backward compatible)', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -406,11 +393,13 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
 
       const result = await apiClient.getNotes('message-123');
 
-      if (Array.isArray(result) && result.length > 0) {
-        expect(result[0]).not.toHaveProperty('messageId');
-        expect(result[0]).not.toHaveProperty('authorId');
-        expect(result[0]).not.toHaveProperty('content');
-        expect(result[0]).not.toHaveProperty('helpfulCount');
+      expect(Array.isArray(result)).toBe(true);
+      if (result.length > 0) {
+        // Returns flattened Note objects for backward compatibility
+        expect(result[0]).toHaveProperty('id');
+        expect(result[0]).toHaveProperty('messageId');
+        expect(result[0]).toHaveProperty('authorId');
+        expect(result[0]).toHaveProperty('content');
       }
     });
   });
