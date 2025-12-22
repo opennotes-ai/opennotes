@@ -20,8 +20,16 @@ const mockScoringService = {
 };
 
 const mockDiscordFormatter = {
-  formatViewNotesSuccessV2: jest.fn().mockReturnValue({ embeds: [] }),
-  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatViewNotesSuccessV2: jest.fn().mockReturnValue({
+    container: { toJSON: () => ({ type: 17, components: [] }) },
+    components: [{ type: 17, components: [] }],
+    flags: 1 << 15,
+  }),
+  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({
+    container: { toJSON: () => ({ type: 17, components: [] }) },
+    components: [{ type: 17, components: [] }],
+    flags: (1 << 15) | (1 << 6),
+  }),
 };
 
 const mockApiClient = {
@@ -94,8 +102,16 @@ describe('note-view command', () => {
     jest.clearAllMocks();
     mockServiceProvider.getViewNotesService.mockReturnValue(mockViewNotesService);
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
-    mockDiscordFormatter.formatViewNotesSuccessV2.mockReturnValue({ embeds: [] });
-    mockDiscordFormatter.formatErrorV2.mockReturnValue({ content: 'Error occurred' });
+    mockDiscordFormatter.formatViewNotesSuccessV2.mockReturnValue({
+      container: { toJSON: () => ({ type: 17, components: [] }) },
+      components: [{ type: 17, components: [] }],
+      flags: 1 << 15,
+    });
+    mockDiscordFormatter.formatErrorV2.mockReturnValue({
+      container: { toJSON: () => ({ type: 17, components: [] }) },
+      components: [{ type: 17, components: [] }],
+      flags: (1 << 15) | (1 << 6),
+    });
   });
 
   describe('successful execution', () => {
@@ -111,10 +127,11 @@ describe('note-view command', () => {
 
       mockScoringService.getBatchNoteScores.mockResolvedValue(
         createSuccessResult({
-          scores: {
-            '1': { score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 4 },
-            '2': { score: 0.72, confidence: 'standard', tier: 3 },
-          },
+          data: [
+            { type: 'note_score', id: '1', attributes: { score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 4, tier_name: 'Tier 4', algorithm: 'MFCoreScorer', rating_count: 10 } },
+            { type: 'note_score', id: '2', attributes: { score: 0.72, confidence: 'standard', tier: 3, tier_name: 'Tier 3', algorithm: 'MFCoreScorer', rating_count: 8 } },
+          ],
+          jsonapi: { version: '1.1' },
         })
       );
 

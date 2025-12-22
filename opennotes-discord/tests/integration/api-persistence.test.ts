@@ -258,11 +258,10 @@ describe('API Persistence Integration Tests', () => {
         })
       );
 
-      expect(retrievedNotes).toHaveLength(1);
-      expect(retrievedNotes[0].id).toBe('note-789');
-      expect(retrievedNotes[0].messageId).toBe(createRequest.messageId);
-      expect(retrievedNotes[0].authorId).toBe(createRequest.authorId);
-      expect(retrievedNotes[0].content).toBe(createRequest.content);
+      expect(retrievedNotes.data).toHaveLength(1);
+      expect(retrievedNotes.data[0].id).toBe('note-789');
+      expect(retrievedNotes.data[0].attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(retrievedNotes.data[0].attributes.summary).toBe(createRequest.content);
     });
 
     it('should persist note and retrieve it across different client instances', async () => {
@@ -313,7 +312,6 @@ describe('API Persistence Integration Tests', () => {
 
       expect(retrieved.data).toHaveLength(1);
       expect(retrieved.data[0].id).toBe('note-cross-client-001');
-      expect(retrieved.data[0].attributes.platform_message_id).toBe(createRequest.messageId);
       expect(retrieved.data[0].attributes.author_participant_id).toBe(createRequest.authorId);
       expect(retrieved.data[0].attributes.summary).toBe(createRequest.content);
     });

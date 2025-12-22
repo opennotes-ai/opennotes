@@ -380,10 +380,8 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
     });
   });
 
-  describe('getNotes (by messageId) - returns Note[] for backward compatibility', () => {
-    // getNotes still returns Note[] for existing consumers
-    // This is different from other methods that return JSONAPI
-    it('should return array of Note objects (backward compatible)', async () => {
+  describe('getNotes (by messageId) - should return raw JSONAPI structure', () => {
+    it('should return JSONAPI list response with data array of resources', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -391,16 +389,35 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
         json: async () => mockJSONAPINoteList,
       } as Response);
 
-      const result = await apiClient.getNotes('message-123');
+      const result = await apiClient.getNotes('message-123') as unknown as JSONAPIListResponse;
 
-      expect(Array.isArray(result)).toBe(true);
-      if (result.length > 0) {
-        // Returns flattened Note objects for backward compatibility
-        expect(result[0]).toHaveProperty('id');
-        expect(result[0]).toHaveProperty('messageId');
-        expect(result[0]).toHaveProperty('authorId');
-        expect(result[0]).toHaveProperty('content');
+      expect(result).toHaveProperty('data');
+      expect(result).toHaveProperty('jsonapi');
+      expect(Array.isArray(result.data)).toBe(true);
+
+      if (result.data.length > 0) {
+        // Returns JSONAPI structure with type, id, attributes
+        expect(result.data[0]).toHaveProperty('type', 'notes');
+        expect(result.data[0]).toHaveProperty('id');
+        expect(result.data[0]).toHaveProperty('attributes');
+        expect(result.data[0].attributes).toHaveProperty('summary');
       }
+    });
+
+    it('should NOT flatten the response into a Note[] array', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
+        json: async () => mockJSONAPINoteList,
+      } as Response);
+
+      const result = await apiClient.getNotes('message-123') as unknown as JSONAPIListResponse;
+
+      // Should NOT have flattened properties at top level
+      expect(result.data[0]).not.toHaveProperty('messageId');
+      expect(result.data[0]).not.toHaveProperty('authorId');
+      expect(result.data[0]).not.toHaveProperty('content');
     });
   });
 });

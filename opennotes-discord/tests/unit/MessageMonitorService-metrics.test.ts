@@ -139,12 +139,15 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
+            type: 'monitored-channels',
             id: 'channel-123',
-            community_server_id: 'guild-123',
-            channel_id: 'channel-123',
-            enabled: true,
-            dataset_tags: ['health'],
-            similarity_threshold: 0.7,
+            attributes: {
+              community_server_id: 'guild-123',
+              channel_id: 'channel-123',
+              enabled: true,
+              dataset_tags: ['health'],
+              similarity_threshold: 0.7,
+            },
           },
         });
       }
@@ -166,12 +169,15 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
+            type: 'monitored-channels',
             id: 'channel-123',
-            community_server_id: 'guild-123',
-            channel_id: 'channel-123',
-            enabled: true,
-            dataset_tags: ['health'],
-            similarity_threshold: 0.7,
+            attributes: {
+              community_server_id: 'guild-123',
+              channel_id: 'channel-123',
+              enabled: true,
+              dataset_tags: ['health'],
+              similarity_threshold: 0.7,
+            },
           },
         });
       }
@@ -195,12 +201,15 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
+            type: 'monitored-channels',
             id: 'channel-123',
-            community_server_id: 'guild-123',
-            channel_id: 'channel-123',
-            enabled: true,
-            dataset_tags: ['health'],
-            similarity_threshold: 0.7,
+            attributes: {
+              community_server_id: 'guild-123',
+              channel_id: 'channel-123',
+              enabled: true,
+              dataset_tags: ['health'],
+              similarity_threshold: 0.7,
+            },
           },
         });
       }
@@ -221,12 +230,15 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
+            type: 'monitored-channels',
             id: 'channel-123',
-            community_server_id: 'guild-123',
-            channel_id: 'channel-123',
-            enabled: true,
-            dataset_tags: ['health'],
-            similarity_threshold: 0.7,
+            attributes: {
+              community_server_id: 'guild-123',
+              channel_id: 'channel-123',
+              enabled: true,
+              dataset_tags: ['health'],
+              similarity_threshold: 0.7,
+            },
           },
         });
       }
@@ -257,12 +269,15 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
 
       (service as any).monitoredChannelService = {
         getChannelConfig: jest.fn<() => Promise<any>>().mockResolvedValue({
+          type: 'monitored-channels',
           id: 'channel-123',
-          community_server_id: 'guild-123',
-          channel_id: 'channel-123',
-          enabled: true,
-          dataset_tags: ['health'],
-          similarity_threshold: 0.7,
+          attributes: {
+            community_server_id: 'guild-123',
+            channel_id: 'channel-123',
+            enabled: true,
+            dataset_tags: ['health'],
+            similarity_threshold: 0.7,
+          },
         }),
       };
 
