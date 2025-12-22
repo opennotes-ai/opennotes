@@ -662,6 +662,7 @@ async def update_request_jsonapi(
 @router.post(
     "/requests/{request_id}/ai-notes",
     response_class=JSONResponse,
+    response_model=NoteSingleResponse,
     status_code=status.HTTP_201_CREATED,
 )
 @limiter.limit("5/minute;20/hour")

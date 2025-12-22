@@ -3087,7 +3087,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/NoteSingleResponse"
+                }
               }
             }
           },
@@ -3475,7 +3477,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ScoringResultResponse"
+                }
               }
             }
           },
@@ -14087,6 +14091,102 @@
           "standard"
         ],
         "title": "ScoreConfidence"
+      },
+      "ScoringResultAttributes": {
+        "properties": {
+          "scored_notes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Scored Notes",
+            "description": "Scored notes output from the algorithm"
+          },
+          "helpful_scores": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Helpful Scores",
+            "description": "Helpful scores for raters"
+          },
+          "auxiliary_info": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Auxiliary Info",
+            "description": "Auxiliary information from scoring"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scored_notes",
+          "helpful_scores",
+          "auxiliary_info"
+        ],
+        "title": "ScoringResultAttributes",
+        "description": "Attributes for scoring result resource."
+      },
+      "ScoringResultResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "scoring-results"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Unique identifier for this scoring run"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ScoringResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ScoringResultResource",
+        "description": "JSON:API resource object for scoring result."
+      },
+      "ScoringResultResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ScoringResultResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ScoringResultResponse",
+        "description": "JSON:API response for scoring result."
       },
       "ScoringRunRequest": {
         "properties": {

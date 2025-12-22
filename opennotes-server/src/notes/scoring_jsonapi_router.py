@@ -782,7 +782,7 @@ async def get_top_notes_jsonapi(  # noqa: PLR0912
         )
 
 
-@router.post("/scoring/score", response_class=JSONResponse)
+@router.post("/scoring/score", response_class=JSONResponse, response_model=ScoringResultResponse)
 async def score_notes_jsonapi(
     body: ScoringRunRequest,
     request: HTTPRequest,

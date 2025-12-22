@@ -6138,6 +6138,67 @@ export interface components {
          */
         ScoreConfidence: "no_data" | "provisional" | "standard";
         /**
+         * ScoringResultAttributes
+         * @description Attributes for scoring result resource.
+         */
+        ScoringResultAttributes: {
+            /**
+             * Scored Notes
+             * @description Scored notes output from the algorithm
+             */
+            scored_notes: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Helpful Scores
+             * @description Helpful scores for raters
+             */
+            helpful_scores: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Auxiliary Info
+             * @description Auxiliary information from scoring
+             */
+            auxiliary_info: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * ScoringResultResource
+         * @description JSON:API resource object for scoring result.
+         */
+        ScoringResultResource: {
+            /**
+             * Type
+             * @default scoring-results
+             */
+            type: string;
+            /**
+             * Id
+             * @description Unique identifier for this scoring run
+             */
+            id: string;
+            attributes: components["schemas"]["ScoringResultAttributes"];
+        };
+        /**
+         * ScoringResultResponse
+         * @description JSON:API response for scoring result.
+         */
+        ScoringResultResponse: {
+            data: components["schemas"]["ScoringResultResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+        };
+        /**
          * ScoringRunRequest
          * @description JSON:API request body for scoring run.
          */
@@ -8580,7 +8641,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8756,7 +8817,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ScoringResultResponse"];
                 };
             };
             /** @description Validation Error */
