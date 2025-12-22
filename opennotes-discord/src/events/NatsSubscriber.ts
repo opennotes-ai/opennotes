@@ -3,6 +3,8 @@ import { logger } from '../logger.js';
 import { sanitizeConnectionUrl } from '../utils/url-sanitizer.js';
 import { safeJSONParse } from '../utils/safe-json.js';
 import type { ScoreUpdateEvent } from './types.js';
+import type { BulkScanProgressEvent } from '../types/bulk-scan.js';
+import { NATS_SUBJECTS } from '../types/bulk-scan.js';
 
 export class NatsSubscriber {
   private nc?: NatsConnection;
@@ -193,6 +195,94 @@ export class NatsSubscriber {
       await loopStartPromise;
     } catch (error) {
       logger.error('Failed to subscribe to score updates', {
+        error: error instanceof Error ? error.message : String(error),
+        subject,
+      });
+      throw error;
+    }
+  }
+
+  async subscribeToProgressUpdates(
+    handler: (event: BulkScanProgressEvent) => Promise<void>
+  ): Promise<void> {
+    if (!this.nc) {
+      throw new Error('NATS connection not established. Call connect() first.');
+    }
+
+    const subject = NATS_SUBJECTS.BULK_SCAN_PROGRESS;
+
+    try {
+      const js = this.nc.jetstream();
+      const jsm = await this.nc.jetstreamManager();
+
+      const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
+      const streamName = 'OPENNOTES';
+
+      try {
+        await jsm.consumers.delete(streamName, durableName);
+        logger.info('Deleted existing progress consumer', { consumerName: durableName });
+      } catch {
+        // Consumer doesn't exist, which is fine
+      }
+
+      const deliverSubject = `_DELIVER.${durableName}`;
+      const opts = consumerOpts()
+        .durable(durableName)
+        .deliverGroup(durableName)
+        .deliverTo(deliverSubject)
+        .deliverAll()
+        .ackExplicit()
+        .ackWait(30_000)
+        .maxDeliver(3);
+
+      const progressIterator = await js.subscribe(subject, opts);
+
+      logger.info('Subscribed to bulk scan progress events', {
+        subject,
+        consumerName: durableName,
+      });
+
+      void (async (): Promise<void> => {
+        logger.info('Starting message consumer loop for progress updates');
+
+        for await (const msg of progressIterator) {
+          try {
+            const data = this.codec.decode(msg.data);
+            const event = safeJSONParse<BulkScanProgressEvent>(data, {
+              validate: (parsed) => {
+                const isValid =
+                  typeof parsed === 'object' &&
+                  parsed !== null &&
+                  'scan_id' in parsed &&
+                  'community_server_id' in parsed &&
+                  'message_scores' in parsed;
+
+                if (!isValid) {
+                  logger.warn('Invalid progress event structure', { parsed });
+                }
+
+                return isValid;
+              },
+            });
+
+            logger.debug('Received bulk scan progress event', {
+              scanId: event.scan_id,
+              batchNumber: event.batch_number,
+              scoresCount: event.message_scores?.length || 0,
+            });
+
+            await handler(event);
+            msg.ack();
+          } catch (error) {
+            logger.error('Error processing progress event', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            msg.nak();
+          }
+        }
+      })();
+    } catch (error) {
+      logger.error('Failed to subscribe to progress updates', {
         error: error instanceof Error ? error.message : String(error),
         subject,
       });
