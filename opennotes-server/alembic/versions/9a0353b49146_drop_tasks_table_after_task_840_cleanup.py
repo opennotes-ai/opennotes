@@ -22,13 +22,14 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Use IF EXISTS for indexes since production may have different index state
+    # Use IF EXISTS since production database state may differ from local
+    # (tasks table and indexes may not exist in production)
     op.execute("DROP INDEX IF EXISTS ix_tasks_created_at")
     op.execute("DROP INDEX IF EXISTS ix_tasks_id")
     op.execute("DROP INDEX IF EXISTS ix_tasks_interaction_id")
     op.execute("DROP INDEX IF EXISTS ix_tasks_status")
     op.execute("DROP INDEX IF EXISTS ix_tasks_task_id")
-    op.drop_table("tasks")
+    op.execute("DROP TABLE IF EXISTS tasks")
     # ### end Alembic commands ###
 
 
