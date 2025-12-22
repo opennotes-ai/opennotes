@@ -143,6 +143,128 @@ class BulkContentScanService:
 
         return flagged
 
+    async def process_messages_with_scores(
+        self,
+        scan_id: UUID,
+        messages: BulkScanMessage | Sequence[BulkScanMessage],
+        community_server_platform_id: str,
+        scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
+    ) -> tuple[list[FlaggedMessage], list[dict]]:
+        """Process messages and return both flagged results and all scores.
+
+        This method is used when vibecheck_debug_mode is enabled to provide
+        similarity scores for ALL messages, not just flagged ones.
+
+        Args:
+            scan_id: UUID of the scan
+            messages: Single BulkScanMessage OR sequence of messages
+            community_server_platform_id: CommunityServer.platform_id
+            scan_types: Sequence of ScanType to run (default: all)
+
+        Returns:
+            Tuple of (flagged_messages, all_scores)
+            all_scores contains score info for every message processed
+        """
+        if isinstance(messages, BulkScanMessage):
+            messages = [messages]
+
+        flagged: list[FlaggedMessage] = []
+        all_scores: list[dict] = []
+
+        for msg in messages:
+            if not msg.content or len(msg.content.strip()) < 10:
+                all_scores.append(
+                    {
+                        "message_id": msg.message_id,
+                        "channel_id": msg.channel_id,
+                        "similarity_score": 0.0,
+                        "is_flagged": False,
+                        "matched_claim": None,
+                    }
+                )
+                continue
+
+            for scan_type in scan_types:
+                result, score_info = await self._run_scanner_with_score(
+                    scan_id, msg, community_server_platform_id, scan_type
+                )
+                all_scores.append(score_info)
+                if result:
+                    flagged.append(result)
+                break
+
+        return flagged, all_scores
+
+    async def _run_scanner_with_score(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        community_server_platform_id: str,
+        scan_type: ScanType,
+    ) -> tuple[FlaggedMessage | None, dict]:
+        """Run scanner and return both the flagged result and score info."""
+        match scan_type:
+            case ScanType.SIMILARITY:
+                return await self._similarity_scan_with_score(
+                    scan_id, message, community_server_platform_id
+                )
+            case _:
+                logger.warning(f"Unknown scan type: {scan_type}")
+                return None, {
+                    "message_id": message.message_id,
+                    "channel_id": message.channel_id,
+                    "similarity_score": 0.0,
+                    "is_flagged": False,
+                    "matched_claim": None,
+                }
+
+    async def _similarity_scan_with_score(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        community_server_platform_id: str,
+    ) -> tuple[FlaggedMessage | None, dict]:
+        """Run similarity search and return both flagged result and score info."""
+        threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
+        score_info = {
+            "message_id": message.message_id,
+            "channel_id": message.channel_id,
+            "similarity_score": 0.0,
+            "is_flagged": False,
+            "matched_claim": None,
+        }
+
+        try:
+            search_response = await self.embedding_service.similarity_search(
+                db=self.session,
+                query_text=message.content,
+                community_server_id=community_server_platform_id,
+                dataset_tags=[],
+                similarity_threshold=0.0,
+                rrf_score_threshold=0.0,
+                limit=1,
+            )
+
+            if search_response.matches:
+                best_match = search_response.matches[0]
+                score_info["similarity_score"] = best_match.similarity_score
+                score_info["matched_claim"] = best_match.content or best_match.title or ""
+
+                if best_match.similarity_score >= threshold:
+                    score_info["is_flagged"] = True
+                    flagged_msg = self._build_flagged_message(
+                        message, best_match, ScanType.SIMILARITY
+                    )
+                    return flagged_msg, score_info
+
+        except Exception as e:
+            logger.warning(
+                "Error in similarity scan with score",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None, score_info
+
     async def _run_scanner(
         self,
         scan_id: UUID,

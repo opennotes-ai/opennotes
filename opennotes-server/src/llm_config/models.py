@@ -51,6 +51,7 @@ class CommunityServer(Base):
         settings: JSON blob for community-specific settings
         is_active: Whether the community server is currently active
         is_public: Whether the community server is publicly visible (affects profile privacy)
+        vibecheck_debug_mode: Enable verbose progress reporting during vibecheck operations
         created_at: Timestamp when the community server was created
         updated_at: Timestamp of last update
         llm_configs: Related LLM configurations for this community server
@@ -71,6 +72,9 @@ class CommunityServer(Base):
     )
     is_public: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False, index=True
+    )
+    vibecheck_debug_mode: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=func.now(), index=True
