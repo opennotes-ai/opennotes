@@ -192,11 +192,6 @@ export function validateScoringRequest(data: unknown): boolean {
   return validate('ScoringRequest', data, true);
 }
 
-export function validateScoringResponse(data: unknown): boolean {
-  if (!ENABLE_VALIDATION) {return true;}
-  return validate('ScoringResponse', data, false);
-}
-
 export function validateRatingThresholdsResponse(data: unknown): boolean {
   if (!ENABLE_VALIDATION) {return true;}
   return validate('RatingThresholdsResponse', data, false);

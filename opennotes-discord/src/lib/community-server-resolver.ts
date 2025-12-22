@@ -12,5 +12,5 @@ import { apiClient } from '../api-client.js';
  */
 export async function resolveCommunityServerId(guildId: string): Promise<string> {
   const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-  return communityServer.id;
+  return communityServer.data.id;
 }

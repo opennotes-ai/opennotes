@@ -229,7 +229,11 @@ def create_error_response(
     )
 
 
-@router.get("/monitored-channels", response_class=JSONResponse)
+@router.get(
+    "/monitored-channels",
+    response_class=JSONResponse,
+    response_model=MonitoredChannelListResponse,
+)
 async def list_monitored_channels_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -301,7 +305,11 @@ async def list_monitored_channels_jsonapi(
         )
 
 
-@router.get("/monitored-channels/{channel_uuid}", response_class=JSONResponse)
+@router.get(
+    "/monitored-channels/{channel_uuid}",
+    response_class=JSONResponse,
+    response_model=MonitoredChannelSingleResponse,
+)
 async def get_monitored_channel_jsonapi(
     channel_uuid: UUID,
     request: HTTPRequest,
@@ -350,7 +358,10 @@ async def get_monitored_channel_jsonapi(
 
 
 @router.post(
-    "/monitored-channels", response_class=JSONResponse, status_code=status.HTTP_201_CREATED
+    "/monitored-channels",
+    response_class=JSONResponse,
+    response_model=MonitoredChannelSingleResponse,
+    status_code=status.HTTP_201_CREATED,
 )
 async def create_monitored_channel_jsonapi(
     request: HTTPRequest,
@@ -423,7 +434,11 @@ async def create_monitored_channel_jsonapi(
         )
 
 
-@router.patch("/monitored-channels/{channel_uuid}", response_class=JSONResponse)
+@router.patch(
+    "/monitored-channels/{channel_uuid}",
+    response_class=JSONResponse,
+    response_model=MonitoredChannelSingleResponse,
+)
 async def update_monitored_channel_jsonapi(
     channel_uuid: UUID,
     request: HTTPRequest,

@@ -9,7 +9,7 @@ import {
   ButtonInteraction,
   GuildMember,
 } from 'discord.js';
-import { apiClient } from '../api-client.js';
+import { apiClient, type JSONAPIResource, type NoteAttributes } from '../api-client.js';
 import { ConfigCache } from '../lib/config-cache.js';
 import { logger } from '../logger.js';
 import { getBotChannelOrRedirect } from '../lib/bot-channel-helper.js';
@@ -22,7 +22,7 @@ import {
 } from '../lib/error-handler.js';
 import { serviceProvider } from '../services/index.js';
 import { DiscordFormatter } from '../services/DiscordFormatter.js';
-import type { NoteWithRatings, RequestStatus } from '../lib/types.js';
+import type { RequestStatus } from '../lib/types.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
 import { parseCustomId, generateShortId } from '../lib/validation.js';
 import { hasManageGuildPermission } from '../lib/permissions.js';
@@ -65,11 +65,11 @@ function createSummaryV2(
 }
 
 function createNoteItemV2(
-  note: NoteWithRatings,
+  note: JSONAPIResource<NoteAttributes>,
   thresholds: { min_ratings_needed: number; min_raters_per_note: number },
   userMember?: GuildMember | null
 ): QueueItemV2 {
-  const urgency = calculateUrgency(note.ratings_count, thresholds.min_ratings_needed);
+  const urgency = calculateUrgency(note.attributes.ratings_count, thresholds.min_ratings_needed);
 
   const helpfulButton = new ButtonBuilder()
     .setCustomId(`rate:${note.id}:helpful`)
@@ -94,9 +94,9 @@ function createNoteItemV2(
 
   const ratingButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons);
 
-  const truncatedSummary = note.summary.length > 200
-    ? note.summary.substring(0, 197) + '...'
-    : note.summary;
+  const truncatedSummary = note.attributes.summary.length > 200
+    ? note.attributes.summary.substring(0, 197) + '...'
+    : note.attributes.summary;
 
   return {
     id: note.id,
@@ -249,7 +249,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
     if (guildId) {
       try {
         const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-        communityServerUuid = communityServer.id;
+        communityServerUuid = communityServer.data.id;
       } catch (error) {
         logger.error('Failed to fetch community server UUID', {
           error_id: errorId,
@@ -277,7 +277,7 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
 
     const member = interaction.guild?.members.cache.get(userId) || null;
 
-    const itemsV2: QueueItemV2[] = notesResponse.notes.map((note) =>
+    const itemsV2: QueueItemV2[] = notesResponse.data.map((note) =>
       createNoteItemV2(note, thresholds, member)
     );
 
@@ -390,7 +390,7 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
     if (guildId) {
       try {
         const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-        communityServerUuid = communityServer.id;
+        communityServerUuid = communityServer.data.id;
       } catch (error) {
         logger.error('Failed to fetch community server UUID', {
           error_id: errorId,
@@ -529,7 +529,7 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
       return;
     }
 
-    if (result.data!.notes.length === 0) {
+    if (result.data!.data.length === 0) {
       await interaction.editReply({
         content: 'No notes found matching the specified criteria.',
       });
@@ -552,8 +552,8 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
       error_id: errorId,
       command: 'list top-notes',
       user_id: userId,
-      note_count: result.data!.notes.length,
-      total_count: result.data!.total_count,
+      note_count: result.data!.data.length,
+      total_count: result.data!.meta?.total_count ?? result.data!.data.length,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -634,9 +634,12 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const request = await apiClient.getRequest(requestId);
+    const requestResponse = await apiClient.getRequest(requestId);
 
-    const messageId = extractPlatformMessageId(request.platform_message_id, request.request_id);
+    const messageId = extractPlatformMessageId(
+      requestResponse.data.attributes.platform_message_id ?? undefined,
+      requestResponse.data.attributes.request_id
+    );
     if (!messageId) {
       await interaction.editReply({
         content: 'This request does not have a platform message ID and cannot be used to create a note.',
@@ -681,7 +684,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
       error_id: errorId,
       request_id: requestId,
       user_id: interaction.user.id,
-      note_id: result.data?.note.id,
+      note_id: result.data?.note.data.id,
     });
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -733,7 +736,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
     let communityServerUuid: string | undefined;
     try {
       const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-      communityServerUuid = communityServer.id;
+      communityServerUuid = communityServer.data.id;
     } catch (error) {
       logger.error('Failed to fetch community server UUID', {
         error_id: errorId,
@@ -800,7 +803,7 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
 
       const member = interaction.guild?.members.cache.get(userId) || null;
 
-      const itemsV2: QueueItemV2[] = notesResponse.notes.map((note) =>
+      const itemsV2: QueueItemV2[] = notesResponse.data.map((note) =>
         createNoteItemV2(note, thresholds, member)
       );
 

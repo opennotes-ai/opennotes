@@ -181,51 +181,69 @@ describe('End-to-End Integration Tests', () => {
         channelId: 'channel123',
       });
 
-      expect(note).toEqual({
-        id: '550e8400-e29b-41d4-a716-446655440001',
-        messageId,
-        authorId: 'user456',
-        content: 'This is a test community note',
-        createdAt: expect.any(Number),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      expect(note.data.id).toBe('550e8400-e29b-41d4-a716-446655440001');
+      expect(note.data.type).toBe('notes');
+      expect(note.data.attributes.summary).toBe('This is a test community note');
+      expect(note.data.attributes.author_participant_id).toBe('user456');
+      expect(note.data.attributes.created_at).toBeDefined();
 
       const rating = await apiClient.rateNote({
-        noteId: note.id,
+        noteId: note.data.id,
         userId: 'rater789',
         helpful: true,
       });
 
-      expect(rating).toEqual({
-        noteId: '550e8400-e29b-41d4-a716-446655440001',
-        userId: 'rater789',
-        helpful: true,
-        createdAt: expect.any(Number),
-      });
+      // Rating now returns JSONAPI format
+      expect(rating).toHaveProperty('data');
+      expect(rating).toHaveProperty('jsonapi');
+      expect(rating.data.type).toBe('ratings');
+      expect(rating.data.id).toBeDefined();
+      expect(rating.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440001');
+      expect(rating.data.attributes.rater_participant_id).toBe('rater789');
+      expect(rating.data.attributes.helpfulness_level).toBe('HELPFUL');
+      expect(rating.data.attributes.created_at).toBeDefined();
 
       mockFetch.mockClear();
-      const discordNoteResponse = {
-        id: 'note-123',
-        messageId,
-        authorId: 'user456',
-        content: 'This is a test community note',
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
+      const jsonApiNotesResponse = {
+        data: [
+          {
+            type: 'notes',
+            id: 'note-123',
+            attributes: {
+              summary: 'This is a test community note',
+              classification: 'NOT_MISLEADING',
+              status: 'published',
+              helpfulness_score: 0.5,
+              author_participant_id: 'user456',
+              community_server_id: 'community-uuid',
+              channel_id: null,
+              request_id: 'request-1',
+              ratings_count: 0,
+              force_published: false,
+              force_published_at: null,
+              created_at: new Date().toISOString(),
+              updated_at: null,
+            },
+          },
+        ],
+        jsonapi: { version: '1.1' },
+        links: {},
+        meta: { count: 1 },
       };
 
       mockFetch.mockResolvedValueOnce(
         createMockResponse({
-          json: async () => [discordNoteResponse],
+          json: async () => jsonApiNotesResponse,
         })
       );
 
       const notes = await apiClient.getNotes(messageId);
-      expect(notes).toContainEqual(expect.objectContaining({
-        messageId,
-        authorId: 'user456',
-        content: 'This is a test community note',
+      expect(notes.data).toContainEqual(expect.objectContaining({
+        type: 'notes',
+        attributes: expect.objectContaining({
+          author_participant_id: 'user456',
+          summary: 'This is a test community note',
+        }),
       }));
     });
 
@@ -233,9 +251,15 @@ describe('End-to-End Integration Tests', () => {
       const communityServerId = '550e8400-e29b-41d4-a716-446655440000';
 
       const mockScoringResponse = {
-        scored_notes: [],
-        helpful_scores: [],
-        auxiliary_info: [],
+        data: {
+          type: 'scoring-results',
+          id: 'result-1',
+          attributes: {
+            scored_notes: [],
+            helpful_scores: [],
+            auxiliary_info: [],
+          }
+        }
       };
 
       mockFetch
@@ -282,51 +306,53 @@ describe('End-to-End Integration Tests', () => {
       });
 
       const rating = await apiClient.rateNote({
-        noteId: note.id,
+        noteId: note.data.id,
         userId: 'rater-001',
         helpful: true,
       });
 
+      const noteCreatedAtMillis = new Date(note.data.attributes.created_at!).getTime();
+      const ratingCreatedAtMillis = new Date(rating.data.attributes.created_at!).getTime();
       const scoringRequest = {
         notes: [
           {
-            noteId: parseInt(note.id.split('-')[1]) || 456,
-            noteAuthorParticipantId: note.authorId,
-            createdAtMillis: note.createdAt,
+            noteId: parseInt(note.data.id.split('-')[1]) || 456,
+            noteAuthorParticipantId: note.data.attributes.author_participant_id,
+            createdAtMillis: noteCreatedAtMillis,
             tweetId: 234567890123456790,
-            summary: note.content,
+            summary: note.data.attributes.summary,
             classification: 'NOT_MISLEADING',
           },
         ],
         ratings: [
           {
-            raterParticipantId: rating.userId,
-            noteId: parseInt(note.id.split('-')[1]) || 456,
-            createdAtMillis: rating.createdAt,
-            helpfulnessLevel: rating.helpful ? 'HELPFUL' : 'NOT_HELPFUL',
+            raterParticipantId: rating.data.attributes.rater_participant_id,
+            noteId: parseInt(note.data.id.split('-')[1]) || 456,
+            createdAtMillis: ratingCreatedAtMillis,
+            helpfulnessLevel: rating.data.attributes.helpfulness_level,
           },
         ],
         enrollment: [
           {
-            participantId: note.authorId,
+            participantId: note.data.attributes.author_participant_id,
             enrollmentState: 'EARNED_IN',
             successfulRatingNeededToEarnIn: 0,
-            timestampOfLastStateChange: note.createdAt,
+            timestampOfLastStateChange: noteCreatedAtMillis,
           },
           {
-            participantId: rating.userId,
+            participantId: rating.data.attributes.rater_participant_id,
             enrollmentState: 'EARNED_IN',
             successfulRatingNeededToEarnIn: 0,
-            timestampOfLastStateChange: rating.createdAt,
+            timestampOfLastStateChange: ratingCreatedAtMillis,
           },
         ],
       };
 
       const scoringResult = await apiClient.scoreNotes(scoringRequest);
 
-      expect(scoringResult).toHaveProperty('scored_notes');
-      expect(scoringResult).toHaveProperty('helpful_scores');
-      expect(scoringResult).toHaveProperty('auxiliary_info');
+      expect(scoringResult.data.attributes).toHaveProperty('scored_notes');
+      expect(scoringResult.data.attributes).toHaveProperty('helpful_scores');
+      expect(scoringResult.data.attributes).toHaveProperty('auxiliary_info');
     });
   });
 
@@ -420,9 +446,9 @@ describe('End-to-End Integration Tests', () => {
       expect(notes).toHaveLength(5);
       notes.forEach((note) => {
         expect(note).toBeDefined();
-        expect(note.messageId).toBeDefined();
-        expect(typeof note.messageId).toBe('string');
-        expect(note.id).toBeDefined();
+        expect(note.data).toBeDefined();
+        expect(note.data.id).toBeDefined();
+        expect(typeof note.data.id).toBe('string');
       });
     });
 

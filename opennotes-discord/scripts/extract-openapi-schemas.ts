@@ -9,19 +9,17 @@ const OPENAPI_SOURCE = path.resolve(__dirname, '../../opennotes-server/openapi.j
 const OUTPUT_FILE = path.resolve(__dirname, '../src/lib/openapi-schemas.json');
 
 const USED_SCHEMAS = [
-  'NoteCreate',
+  'NoteCreateAttributes',
   'NoteResponse',
   'NoteData',
-  'NoteListResponse',
   'NoteSummaryStats',
   'NoteClassification',
   'NoteStatus',
-  'NoteUpdate',
-  'RatingCreate',
+  'NoteUpdateAttributes',
+  'RatingCreateAttributes',
   'RatingResponse',
   'RatingData',
-  'RatingStats',
-  'RatingUpdate',
+  'RatingUpdateAttributes',
   'HelpfulnessLevel',
   'RequestCreate',
   'RequestResponse',
@@ -36,6 +34,43 @@ const USED_SCHEMAS = [
   'HealthCheckResponse',
   'ServiceStatus',
 ];
+
+const SCHEMA_ALIASES: Record<string, string> = {
+  'NoteCreate': 'NoteCreateAttributes',
+  'RatingCreate': 'RatingCreateAttributes',
+  'NoteUpdate': 'NoteUpdateAttributes',
+  'RatingUpdate': 'RatingUpdateAttributes',
+};
+
+const CUSTOM_SCHEMAS: Record<string, unknown> = {
+  NoteListResponse: {
+    properties: {
+      notes: {
+        items: {
+          $ref: '#/components/schemas/NoteResponse',
+        },
+        type: 'array',
+        title: 'Notes',
+      },
+      total: {
+        type: 'integer',
+        title: 'Total',
+      },
+      page: {
+        type: 'integer',
+        title: 'Page',
+      },
+      size: {
+        type: 'integer',
+        title: 'Size',
+      },
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: ['notes', 'total', 'page', 'size'],
+    title: 'NoteListResponse',
+  },
+};
 
 interface OpenAPISchema {
   components: {
@@ -62,6 +97,18 @@ async function extractSchemas() {
     } else {
       missingSchemas.push(schemaName);
     }
+  }
+
+  for (const [aliasName, targetName] of Object.entries(SCHEMA_ALIASES)) {
+    if (targetName in extractedSchemas) {
+      extractedSchemas[aliasName] = extractedSchemas[targetName];
+      console.log(`📎 Added alias: ${aliasName} -> ${targetName}`);
+    }
+  }
+
+  for (const [customName, customSchema] of Object.entries(CUSTOM_SCHEMAS)) {
+    extractedSchemas[customName] = customSchema;
+    console.log(`📝 Added custom schema: ${customName}`);
   }
 
   if (missingSchemas.length > 0) {

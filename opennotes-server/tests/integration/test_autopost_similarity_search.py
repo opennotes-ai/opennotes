@@ -23,6 +23,76 @@ from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 pytestmark = pytest.mark.asyncio
 
 
+def make_note_publisher_post_request(
+    note_id: str,
+    original_message_id: str,
+    channel_id: str,
+    community_server_id: str,
+    score_at_post: float,
+    confidence_at_post: str,
+    success: bool,
+    error_message: str | None = None,
+) -> dict:
+    """Create a JSON:API formatted request body for creating a note publisher post."""
+    return {
+        "data": {
+            "type": "note-publisher-posts",
+            "attributes": {
+                "note_id": note_id,
+                "original_message_id": original_message_id,
+                "channel_id": channel_id,
+                "community_server_id": community_server_id,
+                "score_at_post": score_at_post,
+                "confidence_at_post": confidence_at_post,
+                "success": success,
+                "error_message": error_message,
+            },
+        }
+    }
+
+
+def make_note_publisher_config_request(
+    community_server_id: str,
+    channel_id: str | None,
+    enabled: bool,
+    threshold: float,
+) -> dict:
+    """Create a JSON:API formatted request body for creating/updating note publisher config."""
+    return {
+        "data": {
+            "type": "note-publisher-configs",
+            "attributes": {
+                "community_server_id": community_server_id,
+                "channel_id": channel_id,
+                "enabled": enabled,
+                "threshold": threshold,
+            },
+        }
+    }
+
+
+def make_similarity_search_request(
+    text: str,
+    community_server_id: str,
+    dataset_tags: list[str] | None = None,
+    similarity_threshold: float = 0.7,
+    limit: int = 5,
+) -> dict:
+    """Create a JSON:API formatted request body for similarity search."""
+    return {
+        "data": {
+            "type": "similarity-searches",
+            "attributes": {
+                "text": text,
+                "community_server_id": community_server_id,
+                "dataset_tags": dataset_tags or ["snopes"],
+                "similarity_threshold": similarity_threshold,
+                "limit": limit,
+            },
+        }
+    }
+
+
 @pytest.fixture
 async def test_community_server():
     """Create a test community server."""
@@ -329,7 +399,7 @@ class TestSimilaritySearchMatching:
             "limit": 5,
         }
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
         # STRICT: Require success status (AC#1)
         assert response.status_code == 200, (
@@ -366,7 +436,7 @@ class TestSimilaritySearchMatching:
             "limit": 5,
         }
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
 
         assert response.status_code in [200, 404, 500]
 
@@ -383,12 +453,12 @@ class TestSimilaritySearchMatching:
             "limit": 5,
         }
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
         assert response.status_code in [200, 404, 500]
 
         # Test mixed case
         request_data["text"] = "HiTlEr InVeNtEd ThE iNfLaTaBlE sEx DoLl"
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
         assert response.status_code in [200, 404, 500]
 
     async def test_punctuation_variations(
@@ -412,9 +482,7 @@ class TestSimilaritySearchMatching:
                 "limit": 5,
             }
 
-            response = await auth_client.post(
-                "/api/v1/embeddings/similarity-search", json=request_data
-            )
+            response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
             assert response.status_code in [200, 404, 500]
 
     async def test_similar_text_patterns(
@@ -437,9 +505,7 @@ class TestSimilaritySearchMatching:
                 "limit": 5,
             }
 
-            response = await auth_client.post(
-                "/api/v1/embeddings/similarity-search", json=request_data
-            )
+            response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
             assert response.status_code in [200, 404, 500]
 
 
@@ -449,66 +515,87 @@ class TestNotePublisherPostConfiguration:
 
     async def test_create_server_wide_config(self, auth_client, test_community_server):
         """Test creating server-wide note publisher configuration."""
-        request_data = {
-            "community_server_id": test_community_server.platform_id,
-            "channel_id": None,
-            "enabled": True,
-            "threshold": 0.8,
-        }
+        request_data = make_note_publisher_config_request(
+            community_server_id=test_community_server.platform_id,
+            channel_id=None,
+            enabled=True,
+            threshold=0.8,
+        )
 
-        response = await auth_client.post("/api/v1/note-publisher/config", json=request_data)
-        assert response.status_code == 200
+        response = await auth_client.post("/api/v2/note-publisher-configs", json=request_data)
+        assert response.status_code == 201
 
         data = response.json()
-        assert data["community_server_id"] == test_community_server.platform_id
-        assert data["enabled"] is True
-        assert data["threshold"] == 0.8
+        # JSON:API response format
+        assert (
+            data["data"]["attributes"]["community_server_id"] == test_community_server.platform_id
+        )
+        assert data["data"]["attributes"]["enabled"] is True
+        assert data["data"]["attributes"]["threshold"] == 0.8
 
     async def test_create_channel_specific_config(self, auth_client, test_community_server):
         """Test creating channel-specific note publisher configuration."""
-        request_data = {
-            "community_server_id": test_community_server.platform_id,
-            "channel_id": "test_channel_123",
-            "enabled": True,
-            "threshold": 0.75,
-        }
+        request_data = make_note_publisher_config_request(
+            community_server_id=test_community_server.platform_id,
+            channel_id="test_channel_123",
+            enabled=True,
+            threshold=0.75,
+        )
 
-        response = await auth_client.post("/api/v1/note-publisher/config", json=request_data)
-        assert response.status_code == 200
+        response = await auth_client.post("/api/v2/note-publisher-configs", json=request_data)
+        assert response.status_code == 201
 
         data = response.json()
-        assert data["channel_id"] == "test_channel_123"
+        # JSON:API response format
+        assert data["data"]["attributes"]["channel_id"] == "test_channel_123"
 
     async def test_update_existing_config(
         self, auth_client, test_community_server, autopost_config
     ):
-        """Test updating existing note publisher configuration."""
-        request_data = {
-            "community_server_id": test_community_server.platform_id,
-            "channel_id": None,
-            "enabled": False,  # Disable note publishing
-            "threshold": 0.9,  # Increase threshold
+        """Test updating existing note publisher configuration via PATCH."""
+        # First get the config ID
+        get_response = await auth_client.get(
+            f"/api/v2/note-publisher-configs?filter[community_server_id]={test_community_server.platform_id}"
+        )
+        assert get_response.status_code == 200
+        configs = get_response.json()["data"]
+        assert len(configs) > 0
+        config_id = configs[0]["id"]
+
+        # Use PATCH to update
+        update_request = {
+            "data": {
+                "type": "note-publisher-configs",
+                "id": config_id,
+                "attributes": {
+                    "enabled": False,
+                    "threshold": 0.9,
+                },
+            }
         }
 
-        response = await auth_client.post("/api/v1/note-publisher/config", json=request_data)
+        response = await auth_client.patch(
+            f"/api/v2/note-publisher-configs/{config_id}", json=update_request
+        )
         assert response.status_code == 200
 
         data = response.json()
-        assert data["enabled"] is False
-        assert data["threshold"] == 0.9
+        assert data["data"]["attributes"]["enabled"] is False
+        assert data["data"]["attributes"]["threshold"] == 0.9
 
     async def test_get_config(self, auth_client, test_community_server, autopost_config):
         """Test retrieving note publisher configuration."""
-        params = {
-            "community_server_id": test_community_server.platform_id,
-        }
-
-        response = await auth_client.get("/api/v1/note-publisher/config", params=params)
+        response = await auth_client.get(
+            f"/api/v2/note-publisher-configs?filter[community_server_id]={test_community_server.platform_id}"
+        )
         assert response.status_code == 200
 
         data = response.json()
-        assert data["community_server_id"] == test_community_server.platform_id
-        assert data["enabled"] is True
+        # JSON:API returns list in data
+        configs = data["data"]
+        assert len(configs) > 0
+        assert configs[0]["attributes"]["community_server_id"] == test_community_server.platform_id
+        assert configs[0]["attributes"]["enabled"] is True
 
 
 @pytest.mark.asyncio
@@ -519,23 +606,25 @@ class TestNotePublisherPostRecording:
         self, auth_client, test_community_server, snopes_test_data, test_notes
     ):
         """Test recording a successful note publisher attempt."""
-        request_data = {
-            "noteId": test_notes["12345"],
-            "originalMessageId": "discord_msg_123",
-            "channelId": "test_channel_123",
-            "guildId": test_community_server.platform_id,
-            "scoreAtPost": 0.85,
-            "confidenceAtPost": "high",
-            "success": True,
-            "errorMessage": None,
-        }
+        request_data = make_note_publisher_post_request(
+            note_id=test_notes["12345"],
+            original_message_id="discord_msg_123",
+            channel_id="test_channel_123",
+            community_server_id=test_community_server.platform_id,
+            score_at_post=0.85,
+            confidence_at_post="high",
+            success=True,
+            error_message=None,
+        )
 
-        response = await auth_client.post("/api/v1/note-publisher/record", json=request_data)
+        response = await auth_client.post("/api/v2/note-publisher-posts", json=request_data)
         assert response.status_code == 201
 
         data = response.json()
-        assert "id" in data
-        assert "recorded_at" in data
+        # JSON:API response format
+        assert "data" in data
+        assert "id" in data["data"]
+        assert "posted_at" in data["data"]["attributes"]
 
         # Verify it was saved in database
         async with get_session_maker()() as session:
@@ -557,18 +646,18 @@ class TestNotePublisherPostRecording:
         self, auth_client, test_community_server, snopes_test_data, test_notes
     ):
         """Test recording a failed note publisher attempt."""
-        request_data = {
-            "noteId": test_notes["12346"],
-            "originalMessageId": "discord_msg_456",
-            "channelId": "test_channel_123",
-            "guildId": test_community_server.platform_id,
-            "scoreAtPost": 0.78,
-            "confidenceAtPost": "medium",
-            "success": False,
-            "errorMessage": "Discord API rate limit exceeded",
-        }
+        request_data = make_note_publisher_post_request(
+            note_id=test_notes["12346"],
+            original_message_id="discord_msg_456",
+            channel_id="test_channel_123",
+            community_server_id=test_community_server.platform_id,
+            score_at_post=0.78,
+            confidence_at_post="medium",
+            success=False,
+            error_message="Discord API rate limit exceeded",
+        )
 
-        response = await auth_client.post("/api/v1/note-publisher/record", json=request_data)
+        response = await auth_client.post("/api/v2/note-publisher-posts", json=request_data)
         assert response.status_code == 201
 
         # Verify error was recorded
@@ -587,29 +676,36 @@ class TestNotePublisherPostRecording:
             await session.delete(auto_post)
             await session.commit()
 
-    async def test_check_duplicate_autopost(self, auth_client, test_notes):
+    async def test_check_duplicate_autopost(self, auth_client, test_notes, test_community_server):
         """Test checking for duplicate note publisher attempts."""
-        # First, record a note publisher post
-        request_data = {
-            "noteId": test_notes["12347"],
-            "originalMessageId": "discord_msg_789",
-            "channelId": "test_channel_123",
-            "guildId": "test_guild_123",
-            "scoreAtPost": 0.82,
-            "confidenceAtPost": "high",
-            "success": True,
-            "errorMessage": None,
-        }
+        # First, record a note publisher post using JSON:API format
+        request_data = make_note_publisher_post_request(
+            note_id=test_notes["12347"],
+            original_message_id="discord_msg_789",
+            channel_id="test_channel_123",
+            community_server_id=test_community_server.platform_id,
+            score_at_post=0.82,
+            confidence_at_post="high",
+            success=True,
+            error_message=None,
+        )
 
-        await auth_client.post("/api/v1/note-publisher/record", json=request_data)
+        await auth_client.post("/api/v2/note-publisher-posts", json=request_data)
 
-        # Now check for duplicate
-        response = await auth_client.get("/api/v1/note-publisher/check-duplicate/discord_msg_789")
+        # Check for duplicate via list endpoint with filter
+        response = await auth_client.get(
+            f"/api/v2/note-publisher-posts?filter[community_server_id]={test_community_server.platform_id}"
+        )
         assert response.status_code == 200
 
         data = response.json()
-        assert data["exists"] is True
-        assert data["note_publisher_post_id"] is not None
+        # JSON:API returns list in data, find matching post
+        posts = data["data"]
+        matching_posts = [
+            p for p in posts if p["attributes"]["original_message_id"] == "discord_msg_789"
+        ]
+        assert len(matching_posts) > 0, "Should find the created post"
+        assert matching_posts[0]["id"] is not None
 
         # Cleanup
         async with get_session_maker()() as session:
@@ -623,32 +719,35 @@ class TestNotePublisherPostRecording:
                 await session.delete(auto_post)
                 await session.commit()
 
-    async def test_get_last_post_in_channel(self, auth_client, test_notes):
+    async def test_get_last_post_in_channel(self, auth_client, test_notes, test_community_server):
         """Test retrieving the most recent note publisher post in a channel."""
-        # Record a note publisher post
-        request_data = {
-            "noteId": test_notes["12348"],
-            "originalMessageId": "discord_msg_999",
-            "channelId": "test_channel_456",
-            "guildId": "test_guild_123",
-            "scoreAtPost": 0.88,
-            "confidenceAtPost": "high",
-            "success": True,
-            "errorMessage": None,
-        }
+        # Record a note publisher post using JSON:API format
+        request_data = make_note_publisher_post_request(
+            note_id=test_notes["12348"],
+            original_message_id="discord_msg_999",
+            channel_id="test_channel_456",
+            community_server_id=test_community_server.platform_id,
+            score_at_post=0.88,
+            confidence_at_post="high",
+            success=True,
+            error_message=None,
+        )
 
-        await auth_client.post("/api/v1/note-publisher/record", json=request_data)
+        await auth_client.post("/api/v2/note-publisher-posts", json=request_data)
 
-        # Get last post in channel
+        # Get last post in channel via list with filter
         response = await auth_client.get(
-            "/api/v1/note-publisher/last-post/test_channel_456",
-            params={"community_server_id": "test_guild_123"},
+            f"/api/v2/note-publisher-posts?filter[community_server_id]={test_community_server.platform_id}&filter[channel_id]=test_channel_456"
         )
         assert response.status_code == 200
 
         data = response.json()
-        assert data["channel_id"] == "test_channel_456"
-        assert data["note_id"] == test_notes["12348"]
+        # JSON:API returns list in data
+        posts = data["data"]
+        assert len(posts) > 0, "Should have at least one post"
+        latest_post = posts[0]
+        assert latest_post["attributes"]["channel_id"] == "test_channel_456"
+        assert latest_post["attributes"]["note_id"] == test_notes["12348"]
 
         # Cleanup
         async with get_session_maker()() as session:
@@ -669,15 +768,15 @@ class TestEdgeCases:
 
     async def test_empty_text_search(self, auth_client, test_community_server):
         """Test searching with empty text."""
-        request_data = {
-            "text": "",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="",
+            community_server_id=test_community_server.platform_id,
+            dataset_tags=["snopes"],
+            similarity_threshold=0.7,
+            limit=5,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
         # Should return validation error
         assert response.status_code in [400, 422]
 
@@ -685,54 +784,55 @@ class TestEdgeCases:
         """Test searching with very long text (edge case)."""
         long_text = "hitler invented the inflatable sex doll " * 100  # Very long text
 
-        request_data = {
-            "text": long_text,
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["snopes"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text=long_text,
+            community_server_id=test_community_server.platform_id,
+            dataset_tags=["snopes"],
+            similarity_threshold=0.7,
+            limit=5,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
         # Should handle gracefully (either work or return appropriate error)
-        assert response.status_code in [200, 400, 404, 500]
+        # 429 is acceptable when LLM provider is not configured
+        assert response.status_code in [200, 400, 404, 429, 500]
 
     async def test_invalid_threshold_values(self, auth_client, test_community_server):
         """Test invalid similarity threshold values."""
         invalid_thresholds = [-0.1, 1.5, 2.0, -1.0]
 
         for threshold in invalid_thresholds:
-            request_data = {
-                "text": "test query",
-                "community_server_id": test_community_server.platform_id,
-                "dataset_tags": ["snopes"],
-                "similarity_threshold": threshold,
-                "limit": 5,
-            }
-
-            response = await auth_client.post(
-                "/api/v1/embeddings/similarity-search", json=request_data
+            request_data = make_similarity_search_request(
+                text="test query",
+                community_server_id=test_community_server.platform_id,
+                dataset_tags=["snopes"],
+                similarity_threshold=threshold,
+                limit=5,
             )
+
+            response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
             # Should return validation error
             assert response.status_code in [400, 422]
 
     async def test_nonexistent_dataset_tags(self, auth_client, test_community_server):
         """Test searching with non-existent dataset tags."""
-        request_data = {
-            "text": "hitler invented the inflatable sex doll",
-            "community_server_id": test_community_server.platform_id,
-            "dataset_tags": ["nonexistent_dataset"],
-            "similarity_threshold": 0.7,
-            "limit": 5,
-        }
+        request_data = make_similarity_search_request(
+            text="hitler invented the inflatable sex doll",
+            community_server_id=test_community_server.platform_id,
+            dataset_tags=["nonexistent_dataset"],
+            similarity_threshold=0.7,
+            limit=5,
+        )
 
-        response = await auth_client.post("/api/v1/embeddings/similarity-search", json=request_data)
+        response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
         # Should return no matches (200 with empty results)
-        assert response.status_code in [200, 404, 500]
+        # 429 is acceptable when LLM provider is not configured
+        assert response.status_code in [200, 404, 429, 500]
 
         if response.status_code == 200:
             data = response.json()
-            assert data["total_matches"] == 0
+            # JSON:API response format
+            assert data["meta"]["total_matches"] == 0
 
 
 @pytest.mark.asyncio
@@ -743,46 +843,53 @@ class TestCodeCoverage:
         self, auth_client, test_community_server, test_notes
     ):
         """Ensure all note publisher router endpoints are covered."""
-        # Test /config POST
-        config_response = await auth_client.post(
-            "/api/v1/note-publisher/config",
-            json={
-                "community_server_id": test_community_server.platform_id,
-                "channel_id": None,
-                "enabled": True,
-                "threshold": 0.8,
-            },
+        # Test /config POST with JSON:API format
+        config_request = make_note_publisher_config_request(
+            community_server_id=test_community_server.platform_id,
+            channel_id=None,
+            enabled=True,
+            threshold=0.8,
         )
-        assert config_response.status_code == 200
+        config_response = await auth_client.post(
+            "/api/v2/note-publisher-configs",
+            json=config_request,
+        )
+        assert config_response.status_code == 201
 
-        # Test /config GET
+        # Test /config GET with filter
         get_response = await auth_client.get(
-            "/api/v1/note-publisher/config",
-            params={"community_server_id": test_community_server.platform_id},
+            f"/api/v2/note-publisher-configs?filter[community_server_id]={test_community_server.platform_id}"
         )
         assert get_response.status_code == 200
 
-        # Test /record POST
+        # Test /record POST with JSON:API format
+        record_request = make_note_publisher_post_request(
+            note_id=test_notes["99999"],
+            original_message_id="coverage_test_msg",
+            channel_id="coverage_channel",
+            community_server_id=test_community_server.platform_id,
+            score_at_post=0.9,
+            confidence_at_post="high",
+            success=True,
+            error_message=None,
+        )
         record_response = await auth_client.post(
-            "/api/v1/note-publisher/record",
-            json={
-                "noteId": test_notes["99999"],
-                "originalMessageId": "coverage_test_msg",
-                "channelId": "coverage_channel",
-                "guildId": test_community_server.platform_id,
-                "scoreAtPost": 0.9,
-                "confidenceAtPost": "high",
-                "success": True,
-                "errorMessage": None,
-            },
+            "/api/v2/note-publisher-posts",
+            json=record_request,
         )
         assert record_response.status_code == 201
 
-        # Test /check-duplicate GET
+        # Test list endpoint with filter to find post
         dup_response = await auth_client.get(
-            "/api/v1/note-publisher/check-duplicate/coverage_test_msg"
+            f"/api/v2/note-publisher-posts?filter[community_server_id]={test_community_server.platform_id}"
         )
         assert dup_response.status_code == 200
+        # Verify the post is in the list
+        posts = dup_response.json()["data"]
+        matching_posts = [
+            p for p in posts if p["attributes"]["original_message_id"] == "coverage_test_msg"
+        ]
+        assert len(matching_posts) > 0
 
         # Cleanup
         async with get_session_maker()() as session:

@@ -1,4 +1,4 @@
-import { ApiClient, UserContext } from '../lib/api-client.js';
+import { ApiClient, UserContext, RatingJSONAPIResponse } from '../lib/api-client.js';
 import { logger } from '../logger.js';
 import {
   ServiceResult,
@@ -40,10 +40,12 @@ export class RateNoteService {
       };
 
       // First, check if the user already has a rating for this note
-      const existingRatings = await this.apiClient.getRatingsForNote(input.noteId);
-      const existingRating = existingRatings.find(r => r.rater_participant_id === input.userId);
+      const existingRatingsResponse = await this.apiClient.getRatingsForNote(input.noteId);
+      const existingRating = existingRatingsResponse.data.find(
+        r => r.attributes.rater_participant_id === input.userId
+      );
 
-      let rating;
+      let rating: RatingJSONAPIResponse;
       if (existingRating) {
         // Update existing rating
         rating = await this.apiClient.updateRating(existingRating.id, input.helpful, userContext);

@@ -224,7 +224,11 @@ def create_error_response(
     )
 
 
-@router.post("/similarity-searches", response_class=JSONResponse)
+@router.post(
+    "/similarity-searches",
+    response_class=JSONResponse,
+    response_model=SimilaritySearchResultResponse,
+)
 @limiter.limit("100/hour")
 async def similarity_search_jsonapi(
     request: HTTPRequest,

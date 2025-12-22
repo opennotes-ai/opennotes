@@ -82,11 +82,18 @@ describe('note-queue-profiled command', () => {
     jest.clearAllMocks();
     jest.clearAllTimers();
     mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-      id: 'guild456',
-      platform: 'discord',
-      platform_id: 'guild456',
-      name: 'Test Guild',
-      is_active: true,
+      data: {
+        type: 'community-servers',
+        id: 'guild456',
+        attributes: {
+          platform: 'discord',
+          platform_id: 'guild456',
+          name: 'Test Guild',
+          is_active: true,
+          is_public: true,
+        },
+      },
+      jsonapi: { version: '1.1' },
     });
   });
 

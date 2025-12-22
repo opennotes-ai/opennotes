@@ -109,7 +109,11 @@ def create_error_response(
     )
 
 
-@router.get("/community-servers/lookup", response_class=JSONResponse)
+@router.get(
+    "/community-servers/lookup",
+    response_class=JSONResponse,
+    response_model=CommunityServerSingleResponse,
+)
 async def lookup_community_server_jsonapi(
     request: HTTPRequest,
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
@@ -179,7 +183,11 @@ async def lookup_community_server_jsonapi(
         )
 
 
-@router.get("/community-servers/{server_id}", response_class=JSONResponse)
+@router.get(
+    "/community-servers/{server_id}",
+    response_class=JSONResponse,
+    response_model=CommunityServerSingleResponse,
+)
 async def get_community_server_jsonapi(
     server_id: UUID,
     request: HTTPRequest,

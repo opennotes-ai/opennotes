@@ -712,15 +712,21 @@ describe('ApiClient Wrapper', () => {
       enrollment: [],
     };
 
-    const mockResponse = {
-      scored_notes: [],
-      helpful_scores: [],
-      auxiliary_info: [],
+    const mockJsonApiResponse = {
+      data: {
+        type: 'scoring-results',
+        id: 'result-1',
+        attributes: {
+          scored_notes: [],
+          helpful_scores: [],
+          auxiliary_info: [],
+        }
+      }
     };
 
     it('should successfully score notes', async () => {
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(mockResponse), {
+        new Response(JSON.stringify(mockJsonApiResponse), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -728,15 +734,14 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.scoreNotes(mockRequest);
 
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual(mockJsonApiResponse);
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/scoring/score',
+        'http://localhost:8000/api/v2/scoring/score',
         expect.objectContaining({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(mockRequest),
         })
       );
     });
@@ -756,43 +761,108 @@ describe('ApiClient Wrapper', () => {
   });
 
   describe('getNotes', () => {
-    it('should return notes for a message', async () => {
-      const mockNotes = [
-        { id: 'note-1', content: 'Test note 1', messageId: '123456789012345678' },
-        { id: 'note-2', content: 'Test note 2', messageId: '123456789012345678' },
-      ];
+    it('should return raw JSONAPI response for notes using v2 endpoint with platform_message_id filter', async () => {
+      const mockJsonApiResponse = {
+        data: [
+          {
+            type: 'notes',
+            id: 'note-uuid-1',
+            attributes: {
+              summary: 'Test note 1',
+              classification: 'NOT_MISLEADING',
+              status: 'published',
+              helpfulness_score: 0.8,
+              author_participant_id: 'participant-1',
+              community_server_id: 'community-uuid',
+              channel_id: null,
+              request_id: 'request-1',
+              ratings_count: 5,
+              force_published: false,
+              force_published_at: null,
+              created_at: '2024-01-15T10:00:00Z',
+              updated_at: null,
+            },
+          },
+          {
+            type: 'notes',
+            id: 'note-uuid-2',
+            attributes: {
+              summary: 'Test note 2',
+              classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
+              status: 'published',
+              helpfulness_score: 0.6,
+              author_participant_id: 'participant-2',
+              community_server_id: 'community-uuid',
+              channel_id: 'channel-1',
+              request_id: 'request-2',
+              ratings_count: 3,
+              force_published: false,
+              force_published_at: null,
+              created_at: '2024-01-15T11:00:00Z',
+              updated_at: '2024-01-15T12:00:00Z',
+            },
+          },
+        ],
+        jsonapi: { version: '1.1' },
+        links: {},
+        meta: { count: 2 },
+      };
 
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(mockNotes), {
+        new Response(JSON.stringify(mockJsonApiResponse), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/vnd.api+json' }
         })
       );
 
       const result = await apiClient.getNotes('123456789012345678');
 
-      expect(result).toEqual(mockNotes);
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8000/api/v1/notes/123456789012345678',
+        'http://localhost:8000/api/v2/notes?filter%5Bplatform_message_id%5D=123456789012345678',
         expect.objectContaining({
           headers: {
             'Content-Type': 'application/json',
           },
         })
       );
+
+      expect(result.jsonapi.version).toBe('1.1');
+      expect(result.meta?.count).toBe(2);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].type).toBe('notes');
+      expect(result.data[0].id).toBe('note-uuid-1');
+      expect(result.data[0].attributes.summary).toBe('Test note 1');
+      expect(result.data[0].attributes.classification).toBe('NOT_MISLEADING');
+      expect(result.data[0].attributes.author_participant_id).toBe('participant-1');
+      expect(result.data[0].attributes.ratings_count).toBe(5);
+      expect(result.data[1].type).toBe('notes');
+      expect(result.data[1].id).toBe('note-uuid-2');
+      expect(result.data[1].attributes.summary).toBe('Test note 2');
+      expect(result.data[1].attributes.classification).toBe('MISINFORMED_OR_POTENTIALLY_MISLEADING');
+      expect(result.data[1].attributes.author_participant_id).toBe('participant-2');
+      expect(result.data[1].attributes.ratings_count).toBe(3);
     });
 
-    it('should handle empty notes', async () => {
+    it('should return empty data array in JSONAPI response when no notes exist', async () => {
+      const mockEmptyResponse = {
+        data: [],
+        jsonapi: { version: '1.1' },
+        links: {},
+        meta: { count: 0 },
+      };
+
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
+        new Response(JSON.stringify(mockEmptyResponse), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/vnd.api+json' }
         })
       );
 
       const result = await apiClient.getNotes('123456789012345678');
 
-      expect(result).toEqual([]);
+      expect(result.data).toEqual([]);
+      expect(result.jsonapi.version).toBe('1.1');
+      expect(result.meta?.count).toBe(0);
     });
   });
 
@@ -860,13 +930,23 @@ describe('ApiClient Wrapper', () => {
       });
 
       expect(result).toEqual({
-        id: '789',
-        messageId: '123456789012345678',
-        authorId: 'user-456',
-        content: 'Test note content',
-        createdAt: new Date('2025-10-31T16:00:00Z').getTime(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
+        data: {
+          type: 'notes',
+          id: '789',
+          attributes: {
+            author_participant_id: 'user-456',
+            community_server_id: '123e4567-e89b-12d3-a456-426614174000',
+            summary: 'Test note content',
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            created_at: '2025-10-31T16:00:00Z',
+            updated_at: '2025-10-31T16:00:00Z',
+            ratings_count: 0,
+            force_published: false,
+          },
+        },
+        jsonapi: { version: '1.1' },
       });
 
       expect(mockFetch).toHaveBeenNthCalledWith(
@@ -923,12 +1003,11 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.rateNote(request);
 
-      expect(result).toEqual({
-        noteId: '550e8400-e29b-41d4-a716-446655440000',
-        userId: 'user-456',
-        helpful: true,
-        createdAt: new Date('2025-10-23T12:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('1');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440000');
+      expect(result.data.attributes.rater_participant_id).toBe('user-456');
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/ratings',
@@ -987,12 +1066,11 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.rateNote(request);
 
-      expect(result).toEqual({
-        noteId: '660e8400-e29b-41d4-a716-446655440001',
-        userId: 'user-789',
-        helpful: false,
-        createdAt: new Date('2025-10-23T13:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('2');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('660e8400-e29b-41d4-a716-446655440001');
+      expect(result.data.attributes.rater_participant_id).toBe('user-789');
+      expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
 
       const fetchCall = mockFetch.mock.calls[0];
       const fetchInit = fetchCall?.[1] as RequestInit | undefined;
@@ -1040,12 +1118,11 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.updateRating(ratingId, helpful);
 
-      expect(result).toEqual({
-        noteId: '123',
-        userId: 'user-456',
-        helpful: true,
-        createdAt: new Date('2025-10-23T12:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('1');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('123');
+      expect(result.data.attributes.rater_participant_id).toBe('user-456');
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/ratings/1',
@@ -1100,12 +1177,66 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.updateRating(ratingId, helpful);
 
-      expect(result).toEqual({
-        noteId: '456',
-        userId: 'user-789',
-        helpful: false,
-        createdAt: new Date('2025-10-23T13:00:00Z').getTime(),
-      });
+      expect(result.data.id).toBe('2');
+      expect(result.data.type).toBe('ratings');
+      expect(result.data.attributes.note_id).toBe('456');
+      expect(result.data.attributes.rater_participant_id).toBe('user-789');
+      expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
+    });
+  });
+
+  describe('generateAiNote', () => {
+    it('should return raw JSONAPI response for AI-generated note', async () => {
+      const requestId = 'discord-123456789-1234567890';
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'notes',
+          id: 'note-uuid-1',
+          attributes: {
+            summary: 'AI-generated summary',
+            classification: 'NOT_MISLEADING',
+            status: 'draft',
+            helpfulness_score: 0,
+            author_participant_id: 'ai-participant',
+            community_server_id: 'community-uuid',
+            channel_id: null,
+            request_id: requestId,
+            ratings_count: 0,
+            force_published: false,
+            force_published_at: null,
+            created_at: '2024-01-15T10:00:00Z',
+            updated_at: null,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 201,
+          headers: { 'Content-Type': 'application/vnd.api+json' }
+        })
+      );
+
+      const result = await apiClient.generateAiNote(requestId);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `http://localhost:8000/api/v2/requests/${encodeURIComponent(requestId)}/ai-notes`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+      );
+
+      expect(result.jsonapi.version).toBe('1.1');
+      expect(result.data.type).toBe('notes');
+      expect(result.data.id).toBe('note-uuid-1');
+      expect(result.data.attributes.summary).toBe('AI-generated summary');
+      expect(result.data.attributes.classification).toBe('NOT_MISLEADING');
+      expect(result.data.attributes.request_id).toBe(requestId);
     });
   });
 
@@ -1150,24 +1281,14 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.getRatingsForNote(noteId);
 
-      expect(result).toEqual([
-        {
-          id: '1',
-          note_id: '123',
-          rater_participant_id: 'user-456',
-          helpfulness_level: 'HELPFUL',
-          created_at: '2025-10-23T12:00:00Z',
-          updated_at: '2025-10-23T12:00:00Z',
-        },
-        {
-          id: '2',
-          note_id: '123',
-          rater_participant_id: 'user-789',
-          helpfulness_level: 'NOT_HELPFUL',
-          created_at: '2025-10-23T13:00:00Z',
-          updated_at: '2025-10-23T13:00:00Z',
-        },
-      ]);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].id).toBe('1');
+      expect(result.data[0].type).toBe('ratings');
+      expect(result.data[0].attributes.note_id).toBe('123');
+      expect(result.data[0].attributes.rater_participant_id).toBe('user-456');
+      expect(result.data[0].attributes.helpfulness_level).toBe('HELPFUL');
+      expect(result.data[1].id).toBe('2');
+      expect(result.data[1].attributes.helpfulness_level).toBe('NOT_HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes/123/ratings',
@@ -1196,7 +1317,102 @@ describe('ApiClient Wrapper', () => {
 
       const result = await apiClient.getRatingsForNote(noteId);
 
-      expect(result).toEqual([]);
+      expect(result.data).toEqual([]);
+    });
+  });
+
+  describe('listNotesRatedByUser', () => {
+    it('should return raw JSONAPI response with pagination for notes rated by user', async () => {
+      const mockJsonApiResponse = {
+        data: [
+          {
+            type: 'notes',
+            id: 'note-uuid-1',
+            attributes: {
+              summary: 'First rated note',
+              classification: 'NOT_MISLEADING',
+              status: 'published',
+              helpfulness_score: 0.8,
+              author_participant_id: 'author-1',
+              community_server_id: 'community-uuid',
+              channel_id: null,
+              request_id: 'request-1',
+              ratings_count: 10,
+              force_published: false,
+              force_published_at: null,
+              created_at: '2024-01-15T10:00:00Z',
+              updated_at: null,
+            },
+          },
+        ],
+        jsonapi: { version: '1.1' },
+        meta: { count: 1 },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' }
+        })
+      );
+
+      const result = await apiClient.listNotesRatedByUser(
+        'rater-participant-1',
+        1,
+        20,
+        'community-uuid'
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v2/notes?'),
+        expect.objectContaining({
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+      );
+
+      const url = mockFetch.mock.calls[0][0] as string;
+      expect(url).toContain('filter%5Brated_by_participant_id%5D=rater-participant-1');
+      expect(url).toContain('filter%5Bcommunity_server_id%5D=community-uuid');
+      expect(url).toContain('page%5Bnumber%5D=1');
+      expect(url).toContain('page%5Bsize%5D=20');
+
+      expect(result.jsonapi.version).toBe('1.1');
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].type).toBe('notes');
+      expect(result.data[0].id).toBe('note-uuid-1');
+      expect(result.data[0].attributes.summary).toBe('First rated note');
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.size).toBe(20);
+    });
+
+    it('should return empty data array with pagination when no notes rated', async () => {
+      const mockEmptyResponse = {
+        data: [],
+        jsonapi: { version: '1.1' },
+        meta: { count: 0 },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockEmptyResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' }
+        })
+      );
+
+      const result = await apiClient.listNotesRatedByUser(
+        'rater-participant-1',
+        1,
+        20,
+        'community-uuid'
+      );
+
+      expect(result.data).toEqual([]);
+      expect(result.total).toBe(0);
+      expect(result.page).toBe(1);
+      expect(result.size).toBe(20);
     });
   });
 
@@ -1440,6 +1656,165 @@ describe('ApiClient Wrapper', () => {
     });
   });
 
+  describe('checkPreviouslySeen', () => {
+    it('should return raw JSONAPI response structure', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-123',
+          attributes: {
+            should_auto_publish: true,
+            should_auto_request: false,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [
+              {
+                id: 'match-1',
+                community_server_id: 'community-uuid-1',
+                original_message_id: 'msg-123',
+                published_note_id: 'note-456',
+                embedding_provider: 'openai',
+                embedding_model: 'text-embedding-3-small',
+                extra_metadata: { key: 'value' },
+                created_at: '2024-01-15T10:00:00Z',
+                similarity_score: 0.95,
+              },
+            ],
+            top_match: {
+              id: 'match-1',
+              community_server_id: 'community-uuid-1',
+              original_message_id: 'msg-123',
+              published_note_id: 'note-456',
+              embedding_provider: 'openai',
+              embedding_model: 'text-embedding-3-small',
+              extra_metadata: { key: 'value' },
+              created_at: '2024-01-15T10:00:00Z',
+              similarity_score: 0.95,
+            },
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      const result = await client.checkPreviouslySeen('test message', 'guild-123', 'channel-456');
+
+      expect(result.data.type).toBe('previously-seen-check-results');
+      expect(result.data.id).toBe('check-123');
+      expect(result.data.attributes.should_auto_publish).toBe(true);
+      expect(result.data.attributes.should_auto_request).toBe(false);
+      expect(result.data.attributes.autopublish_threshold).toBe(0.9);
+      expect(result.data.attributes.autorequest_threshold).toBe(0.75);
+      expect(result.data.attributes.matches).toHaveLength(1);
+      expect(result.data.attributes.matches[0].similarity_score).toBe(0.95);
+      expect(result.data.attributes.top_match?.published_note_id).toBe('note-456');
+      expect(result.jsonapi.version).toBe('1.1');
+    });
+
+    it('should send correct JSONAPI request body', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-123',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: false,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [],
+            top_match: null,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      await client.checkPreviouslySeen('test message', 'guild-123', 'channel-456');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:8000/api/v2/previously-seen-messages/check',
+        expect.objectContaining({
+          method: 'POST',
+        })
+      );
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const fetchInit = fetchCall?.[1] as RequestInit | undefined;
+      expect(fetchInit).toBeDefined();
+      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+
+      expect(sentBody).toEqual({
+        data: {
+          type: 'previously-seen-check',
+          attributes: {
+            message_text: 'test message',
+            guild_id: 'guild-123',
+            channel_id: 'channel-456',
+          },
+        },
+      });
+    });
+
+    it('should return empty matches when no similar messages found', async () => {
+      const client = new ApiClient({
+        serverUrl: 'http://localhost:8000',
+        environment: 'development',
+      });
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-456',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: false,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [],
+            top_match: null,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+        })
+      );
+
+      const result = await client.checkPreviouslySeen('new message', 'guild-123', 'channel-456');
+
+      expect(result.data.attributes.should_auto_publish).toBe(false);
+      expect(result.data.attributes.should_auto_request).toBe(false);
+      expect(result.data.attributes.matches).toEqual([]);
+      expect(result.data.attributes.top_match).toBeNull();
+    });
+  });
+
   describe('getLatestScan', () => {
     const TEST_COMMUNITY_SERVER_UUID = '11111111-1111-1111-1111-111111111111';
     const TEST_SCAN_ID = '22222222-2222-2222-2222-222222222222';
@@ -1491,12 +1866,12 @@ describe('ApiClient Wrapper', () => {
 
       const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
 
-      expect(result.scan_id).toBe(TEST_SCAN_ID);
-      expect(result.status).toBe('completed');
-      expect(result.messages_scanned).toBe(100);
-      expect(result.flagged_messages).toHaveLength(1);
-      expect(result.flagged_messages[0].message_id).toBe('msg-1');
-      expect(result.flagged_messages[0].match_score).toBe(0.95);
+      expect(result.data.id).toBe(TEST_SCAN_ID);
+      expect(result.data.attributes.status).toBe('completed');
+      expect(result.data.attributes.messages_scanned).toBe(100);
+      expect(result.included).toHaveLength(1);
+      expect(result.included![0].id).toBe('msg-1');
+      expect(result.included![0].attributes.match_score).toBe(0.95);
     });
 
     it('should call the correct endpoint', async () => {
@@ -1596,8 +1971,8 @@ describe('ApiClient Wrapper', () => {
 
       const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
 
-      expect(result.status).toBe('pending');
-      expect(result.flagged_messages).toEqual([]);
+      expect(result.data.attributes.status).toBe('pending');
+      expect(result.included).toBeUndefined();
     });
 
     it('should return in_progress scan', async () => {
@@ -1631,8 +2006,8 @@ describe('ApiClient Wrapper', () => {
 
       const result = await client.getLatestScan(TEST_COMMUNITY_SERVER_UUID);
 
-      expect(result.status).toBe('in_progress');
-      expect(result.messages_scanned).toBe(50);
+      expect(result.data.attributes.status).toBe('in_progress');
+      expect(result.data.attributes.messages_scanned).toBe(50);
     });
   });
 });

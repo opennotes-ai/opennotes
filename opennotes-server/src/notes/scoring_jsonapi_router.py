@@ -10,6 +10,7 @@ It provides:
 Reference: https://jsonapi.org/format/
 """
 
+import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -35,6 +36,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.config import settings
 from src.database import get_db
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
@@ -45,22 +47,35 @@ from src.notes.scoring import (
     get_tier_config,
     get_tier_for_note_count,
 )
-from src.notes.scoring_router import (
+from src.notes.scoring_schemas import (
+    DataConfidence,
+    EnrollmentData,
+    NextTierInfo,
+    NoteData,
+    PerformanceMetrics,
+    RatingData,
+    ScoreConfidence,
+    TierInfo,
+    TierThreshold,
+)
+from src.notes.scoring_utils import (
     TIER_ORDER,
     calculate_note_score,
     get_next_tier,
     get_tier_data_confidence,
     get_tier_level,
 )
-from src.notes.scoring_schemas import (
-    DataConfidence,
-    NextTierInfo,
-    PerformanceMetrics,
-    ScoreConfidence,
-    TierInfo,
-    TierThreshold,
-)
 from src.users.models import User
+
+if settings.TESTING:
+    from src.scoring_adapter_mock import ScoringAdapter
+else:
+    try:
+        from src.scoring_adapter import ScoringAdapter  # type: ignore[assignment]
+    except ImportError:
+        from src.scoring_adapter_mock import ScoringAdapter
+
+scoring_adapter = ScoringAdapter()
 
 logger = get_logger(__name__)
 
@@ -88,7 +103,7 @@ class BatchScoreRequestData(BaseModel):
     attributes: BatchScoreRequestAttributes
 
 
-class BatchScoreJSONAPIRequest(BaseModel):
+class BatchScoreRequest(BaseModel):
     """JSON:API request body for batch scores."""
 
     data: BatchScoreRequestData
@@ -182,6 +197,64 @@ class ScoringStatusResponse(BaseModel):
     links: JSONAPILinks | None = None
 
 
+class ScoringRunRequestAttributes(StrictInputSchema):
+    """Attributes for scoring run request via JSON:API."""
+
+    notes: list[NoteData] = Field(..., description="List of community notes to score")
+    ratings: list[RatingData] = Field(..., description="List of ratings for the notes")
+    enrollment: list[EnrollmentData] = Field(..., description="List of user enrollment data")
+    status: list[dict[str, Any]] | None = Field(
+        default=None, description="Optional note status history"
+    )
+
+
+class ScoringRunRequestData(BaseModel):
+    """JSON:API data object for scoring run request."""
+
+    type: Literal["scoring-requests"] = Field(
+        ..., description="Resource type must be 'scoring-requests'"
+    )
+    attributes: ScoringRunRequestAttributes
+
+
+class ScoringRunRequest(BaseModel):
+    """JSON:API request body for scoring run."""
+
+    data: ScoringRunRequestData
+
+
+class ScoringResultAttributes(BaseModel):
+    """Attributes for scoring result resource."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    scored_notes: list[dict[str, Any]] = Field(
+        ..., description="Scored notes output from the algorithm"
+    )
+    helpful_scores: list[dict[str, Any]] = Field(..., description="Helpful scores for raters")
+    auxiliary_info: list[dict[str, Any]] = Field(
+        ..., description="Auxiliary information from scoring"
+    )
+
+
+class ScoringResultResource(BaseModel):
+    """JSON:API resource object for scoring result."""
+
+    type: str = "scoring-results"
+    id: str = Field(..., description="Unique identifier for this scoring run")
+    attributes: ScoringResultAttributes
+
+
+class ScoringResultResponse(BaseModel):
+    """JSON:API response for scoring result."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: ScoringResultResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
 def create_error_response(
     status_code: int,
     title: str,
@@ -223,7 +296,7 @@ def note_score_to_resource(note_id: UUID, score_response: Any) -> NoteScoreResou
     )
 
 
-@router.get("/scoring/status", response_class=JSONResponse)
+@router.get("/scoring/status", response_class=JSONResponse, response_model=ScoringStatusResponse)
 async def get_scoring_status_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -338,7 +411,11 @@ async def get_scoring_status_jsonapi(
         )
 
 
-@router.get("/scoring/notes/{note_id}/score", response_class=JSONResponse)
+@router.get(
+    "/scoring/notes/{note_id}/score",
+    response_class=JSONResponse,
+    response_model=NoteScoreSingleResponse,
+)
 async def get_note_score_jsonapi(
     note_id: UUID,
     request: HTTPRequest,
@@ -420,10 +497,12 @@ async def get_note_score_jsonapi(
         )
 
 
-@router.post("/scoring/notes/batch-scores", response_class=JSONResponse)
+@router.post(
+    "/scoring/notes/batch-scores", response_class=JSONResponse, response_model=NoteScoreListResponse
+)
 @limiter.limit("10/minute;50/hour")
 async def get_batch_scores_jsonapi(
-    body: BatchScoreJSONAPIRequest,
+    body: BatchScoreRequest,
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
@@ -522,7 +601,7 @@ async def get_batch_scores_jsonapi(
         )
 
 
-@router.get("/scoring/notes/top", response_class=JSONResponse)
+@router.get("/scoring/notes/top", response_class=JSONResponse, response_model=NoteScoreListResponse)
 async def get_top_notes_jsonapi(  # noqa: PLR0912
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -701,3 +780,83 @@ async def get_top_notes_jsonapi(  # noqa: PLR0912
             "Internal Server Error",
             "Failed to retrieve top notes",
         )
+
+
+@router.post("/scoring/score", response_class=JSONResponse, response_model=ScoringResultResponse)
+async def score_notes_jsonapi(
+    body: ScoringRunRequest,
+    request: HTTPRequest,
+    _current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> JSONResponse:
+    """Score notes using the external scoring adapter in JSON:API format.
+
+    This endpoint runs the Community Notes scoring algorithm on the provided
+    notes, ratings, and enrollment data.
+
+    JSON:API request body must contain:
+    - data.type: "scoring-requests"
+    - data.attributes.notes: List of notes to score
+    - data.attributes.ratings: List of ratings for the notes
+    - data.attributes.enrollment: List of user enrollment data
+    - data.attributes.status: Optional note status history
+
+    Returns JSON:API formatted response with scored_notes, helpful_scores,
+    and auxiliary_info.
+    """
+    try:
+        attrs = body.data.attributes
+        notes = [note.model_dump() for note in attrs.notes]
+        ratings = [rating.model_dump() for rating in attrs.ratings]
+        enrollment = [enroll.model_dump() for enroll in attrs.enrollment]
+
+        scored_notes, helpful_scores, aux_info = await scoring_adapter.score_notes(
+            notes=notes,
+            ratings=ratings,
+            enrollment=enrollment,
+            status=attrs.status,
+        )
+
+        scoring_run_id = str(uuid.uuid4())
+
+        response = ScoringResultResponse(
+            data=ScoringResultResource(
+                type="scoring-results",
+                id=scoring_run_id,
+                attributes=ScoringResultAttributes(
+                    scored_notes=scored_notes,
+                    helpful_scores=helpful_scores,
+                    auxiliary_info=aux_info,
+                ),
+            ),
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except ValueError as e:
+        logger.warning(f"Invalid scoring request: {e}")
+        return create_error_response(
+            status.HTTP_400_BAD_REQUEST,
+            "Bad Request",
+            f"Invalid input data: {e!s}",
+        )
+    except Exception as e:
+        logger.exception(f"Scoring failed (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            f"Scoring failed: {e!s}",
+        )
+
+
+@router.get("/scoring/health")
+async def scoring_health_jsonapi() -> dict[str, str]:
+    """Health check for the scoring service.
+
+    Returns a simple health status for the scoring service.
+    This endpoint does not require authentication.
+    """
+    return {"status": "healthy", "service": "scoring"}

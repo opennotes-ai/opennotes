@@ -9,6 +9,29 @@ import {
 } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_NOTE_UUID } from '../test-constants.js';
+import type { RatingJSONAPIResponse } from '../../src/lib/api-client.js';
+
+function createMockRatingJSONAPIResponse(overrides: {
+  id?: string;
+  noteId?: string;
+  userId?: string;
+  helpfulnessLevel?: 'HELPFUL' | 'NOT_HELPFUL';
+} = {}): RatingJSONAPIResponse {
+  return {
+    data: {
+      type: 'ratings',
+      id: overrides.id ?? 'rating-1',
+      attributes: {
+        note_id: overrides.noteId ?? TEST_NOTE_UUID,
+        rater_participant_id: overrides.userId ?? 'user-123',
+        helpfulness_level: overrides.helpfulnessLevel ?? 'HELPFUL',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
 
 const mockLogger = createMockLogger();
 const mockRateNoteService = createMockRateNoteService();
@@ -101,12 +124,11 @@ describe('note-rate command', () => {
     it('should rate note as helpful', async () => {
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
-          rating: {
+          rating: createMockRatingJSONAPIResponse({
             noteId: TEST_NOTE_UUID,
             userId: 'user456',
-            helpful: true,
-            createdAt: Date.now(),
-          },
+            helpfulnessLevel: 'HELPFUL',
+          }),
         })
       );
 
@@ -151,12 +173,11 @@ describe('note-rate command', () => {
     it('should rate note as not helpful', async () => {
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
-          rating: {
+          rating: createMockRatingJSONAPIResponse({
             noteId: TEST_NOTE_UUID,
             userId: 'user456',
-            helpful: false,
-            createdAt: Date.now(),
-          },
+            helpfulnessLevel: 'NOT_HELPFUL',
+          }),
         })
       );
 
@@ -201,12 +222,11 @@ describe('note-rate command', () => {
       mockGuildConfigService.get.mockResolvedValue(true);
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
-          rating: {
+          rating: createMockRatingJSONAPIResponse({
             noteId: TEST_NOTE_UUID,
             userId: 'user456',
-            helpful: true,
-            createdAt: Date.now(),
-          },
+            helpfulnessLevel: 'HELPFUL',
+          }),
         })
       );
 
@@ -242,12 +262,11 @@ describe('note-rate command', () => {
       mockGuildConfigService.get.mockResolvedValue(false);
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
-          rating: {
+          rating: createMockRatingJSONAPIResponse({
             noteId: TEST_NOTE_UUID,
             userId: 'user456',
-            helpful: true,
-            createdAt: Date.now(),
-          },
+            helpfulnessLevel: 'HELPFUL',
+          }),
         })
       );
 
@@ -280,12 +299,11 @@ describe('note-rate command', () => {
     it('should work without guildId', async () => {
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
-          rating: {
+          rating: createMockRatingJSONAPIResponse({
             noteId: TEST_NOTE_UUID,
             userId: 'user456',
-            helpful: true,
-            createdAt: Date.now(),
-          },
+            helpfulnessLevel: 'HELPFUL',
+          }),
         })
       );
 
@@ -458,12 +476,11 @@ describe('note-rate command', () => {
     it('should log command execution', async () => {
       mockRateNoteService.execute.mockResolvedValue(
         createSuccessResult({
-          rating: {
+          rating: createMockRatingJSONAPIResponse({
             noteId: TEST_NOTE_UUID,
             userId: 'user456',
-            helpful: true,
-            createdAt: Date.now(),
-          },
+            helpfulnessLevel: 'HELPFUL',
+          }),
         })
       );
 

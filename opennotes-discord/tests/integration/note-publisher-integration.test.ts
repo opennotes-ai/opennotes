@@ -57,6 +57,37 @@ const { MockNatsServer, checkNatsAvailability } = await import('../utils/mock-na
 const { createMockDiscordClient } = await import('../utils/mock-discord.js');
 const { createBaseScoreEvent } = await import('../utils/note-publisher-fixtures.js');
 
+// Helper to create mock JSONAPI note response
+function createMockNoteJSONAPIResponse(overrides: {
+  id?: string;
+  summary?: string;
+} = {}): any {
+  return {
+    data: {
+      type: 'notes',
+      id: overrides.id ?? '1',
+      attributes: {
+        summary: overrides.summary ?? 'Test note content',
+        classification: 'NOT_MISLEADING',
+        status: 'NEEDS_MORE_RATINGS',
+        helpfulness_score: 0,
+        author_participant_id: 'user-123',
+        community_server_id: 'guild-123',
+        channel_id: 'channel-456',
+        request_id: null,
+        ratings_count: 0,
+        force_published: false,
+        force_published_at: null,
+        ai_generated: false,
+        ai_provider: null,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
+
 const natsAvailable = await checkNatsAvailability();
 const SKIP_NATS_TESTS =
   process.env.CI === 'true' || process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
@@ -105,9 +136,9 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
       threshold: TEST_SCORE_THRESHOLD,
     });
 
-    mockApiClient.checkNoteDuplicate.mockResolvedValue({ exists: false });
-    mockApiClient.getLastNotePost.mockRejectedValue(new Error('404'));
-    mockApiClient.getNote.mockResolvedValue({ summary: 'Default note content' });
+    mockApiClient.checkNoteDuplicate.mockResolvedValue({ data: [], jsonapi: { version: '1.1' } });
+    mockApiClient.getLastNotePost.mockResolvedValue({ data: [], jsonapi: { version: '1.1' } });
+    mockApiClient.getNote.mockResolvedValue(createMockNoteJSONAPIResponse({ summary: 'Default note content' }));
     mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
     notePublisherService = new NotePublisherService(
@@ -137,9 +168,9 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
         confidence: 'standard',
       });
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
-      mockApiClient.getNote.mockResolvedValueOnce({ summary: 'This is a helpful community note' });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'This is a helpful community note' }));
       mockApiClient.recordNotePublisher.mockResolvedValueOnce(undefined);
 
       const channel = mockDiscordClient.getChannel('channel-456')!;
@@ -191,9 +222,9 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
         original_message_id: 'msg-original-123',
       });
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
-      mockApiClient.getNote.mockResolvedValueOnce({ summary: 'Note content' });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Note content' }));
       mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
       const channel = mockDiscordClient.getChannel('channel-456')!;
@@ -265,7 +296,10 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
         original_message_id: 'msg-duplicate',
       });
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: true, auto_post_id: 5 });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({
+        data: [{ type: 'note-publisher-posts', id: '5', attributes: { original_message_id: 'msg-duplicate' } }],
+        jsonapi: { version: '1.1' },
+      });
 
       await natsSubscriber.subscribeToScoreUpdates(
         notePublisherService.handleScoreUpdate.bind(notePublisherService)
@@ -284,8 +318,11 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
       const event = createBaseScoreEvent();
 
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockResolvedValueOnce({ posted_at: twoMinutesAgo.toISOString() });
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce({
+        data: [{ type: 'note-publisher-posts', id: '1', attributes: { posted_at: twoMinutesAgo.toISOString() } }],
+        jsonapi: { version: '1.1' },
+      });
 
       await natsSubscriber.subscribeToScoreUpdates(
         notePublisherService.handleScoreUpdate.bind(notePublisherService)
@@ -303,8 +340,8 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
     it('should skip posting if missing SEND_MESSAGES permission', async () => {
       const event = createBaseScoreEvent();
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
 
       mockDiscordClient.simulatePermissionChange('channel-456', 'SEND_MESSAGES');
 
@@ -322,8 +359,8 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
     it('should skip posting if missing CREATE_PUBLIC_THREADS permission', async () => {
       const event = createBaseScoreEvent();
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
 
       mockDiscordClient.simulatePermissionChange('channel-456', 'CREATE_PUBLIC_THREADS');
 
@@ -343,8 +380,8 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
     it('should respect server-level auto-post disable setting', async () => {
       const event = createBaseScoreEvent();
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
 
       mockConfigService.getConfig.mockResolvedValueOnce({
         guildId: 'guild-123',
@@ -366,8 +403,8 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
     it('should respect channel-level auto-post disable setting', async () => {
       const event = createBaseScoreEvent();
 
-      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ exists: false });
-      mockApiClient.getLastNotePost.mockRejectedValueOnce(new Error('404'));
+      mockApiClient.checkNoteDuplicate.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
+      mockApiClient.getLastNotePost.mockResolvedValueOnce({ data: [], jsonapi: { version: '1.1' } });
 
       mockConfigService.getConfig.mockResolvedValueOnce({
         guildId: 'guild-123',

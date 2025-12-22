@@ -132,11 +132,18 @@ function createMockTextChannel(overrides?: any): any {
 
 function setupDefaultMocks(communityUuid: string = 'community-uuid-123'): void {
   mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-    id: communityUuid,
-    platform: 'discord',
-    platform_id: 'guild-456',
-    name: 'Test Guild',
-    is_active: true,
+    data: {
+      type: 'community-servers',
+      id: communityUuid,
+      attributes: {
+        platform: 'discord',
+        platform_id: 'guild-456',
+        name: 'Test Guild',
+        is_active: true,
+        is_public: true,
+      },
+    },
+    jsonapi: { version: '1.1' },
   });
 
   mockConfigCache.getRatingThresholds.mockResolvedValue({

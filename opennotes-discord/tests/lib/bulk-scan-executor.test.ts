@@ -8,22 +8,28 @@ const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
 };
 
-const mockInitiateBulkScan = jest.fn<(communityServerId: string, days: number) => Promise<{ scan_id: string }>>();
+const mockInitiateBulkScan = jest.fn<(communityServerId: string, days: number) => Promise<{
+  data: { type: string; id: string; attributes: any };
+  jsonapi: { version: string };
+}>>();
 
 const mockGetBulkScanResults = jest.fn<(scanId: string) => Promise<{
-  scan_id: string;
-  status: 'completed' | 'failed' | 'pending';
-  messages_scanned: number;
-  flagged_messages: any[];
+  data: {
+    type: string;
+    id: string;
+    attributes: {
+      status: 'completed' | 'failed' | 'pending' | 'in_progress';
+      messages_scanned: number;
+      messages_flagged: number;
+    };
+  };
+  included?: any[];
+  jsonapi: { version: string };
 }>>();
 
-const mockGetCommunityServerByPlatformId = jest.fn<(platformId: string, platform?: string) => Promise<{
-  id: string;
-  platform: string;
-  platform_id: string;
-  name: string;
-  is_active: boolean;
-}>>();
+import type { CommunityServerJSONAPIResponse } from '../../src/lib/api-client.js';
+
+const mockGetCommunityServerByPlatformId = jest.fn<(platformId: string, platform?: string) => Promise<CommunityServerJSONAPIResponse>>();
 
 const mockPublishBulkScanBatch = jest.fn<(subject: string, batch: any) => Promise<void>>();
 const mockPublishBulkScanCompleted = jest.fn<(completedData: any) => Promise<void>>();
@@ -63,6 +69,27 @@ function generateRecentSnowflake(offsetMs: number = 0): string {
   const DISCORD_EPOCH = BigInt(1420070400000);
   const snowflake = ((timestamp - DISCORD_EPOCH) << BigInt(22)) | BigInt(Math.floor(Math.random() * 4194304));
   return snowflake.toString();
+}
+
+function createBulkScanResultsResponse(
+  scanId: string,
+  status: 'pending' | 'in_progress' | 'completed' | 'failed',
+  messagesScanned: number,
+  flaggedMessages: any[] = []
+) {
+  return {
+    data: {
+      type: 'bulk-scans',
+      id: scanId,
+      attributes: {
+        status,
+        messages_scanned: messagesScanned,
+        messages_flagged: flaggedMessages.length,
+      },
+    },
+    included: flaggedMessages,
+    jsonapi: { version: '1.1' },
+  };
 }
 
 function createMockMessage(id: string, content: string, authorId: string = 'user-123') {
@@ -128,18 +155,39 @@ describe('bulk-scan-executor', () => {
     jest.useFakeTimers({ advanceTimers: true });
 
     mockGetCommunityServerByPlatformId.mockResolvedValue({
-      id: 'community-uuid-123',
-      platform: 'discord',
-      platform_id: 'guild-123',
-      name: 'Test Guild',
-      is_active: true,
+      data: {
+        type: 'community-servers',
+        id: 'community-uuid-123',
+        attributes: {
+          platform: 'discord',
+          platform_id: 'guild-123',
+          name: 'Test Guild',
+          is_active: true,
+          is_public: true,
+        },
+      },
+      jsonapi: { version: '1.1' },
     });
-    mockInitiateBulkScan.mockResolvedValue({ scan_id: 'test-scan-123' });
+    mockInitiateBulkScan.mockResolvedValue({
+      data: {
+        type: 'bulk-scans',
+        id: 'test-scan-123',
+        attributes: {},
+      },
+      jsonapi: { version: '1.1' },
+    });
     mockGetBulkScanResults.mockResolvedValue({
-      scan_id: 'test-scan-123',
-      status: 'completed',
-      messages_scanned: 100,
-      flagged_messages: [],
+      data: {
+        type: 'bulk-scans',
+        id: 'test-scan-123',
+        attributes: {
+          status: 'completed',
+          messages_scanned: 100,
+          messages_flagged: 0,
+        },
+      },
+      included: [],
+      jsonapi: { version: '1.1' },
     });
     mockPublishBulkScanBatch.mockResolvedValue(undefined);
     mockPublishBulkScanCompleted.mockResolvedValue(undefined);
@@ -746,19 +794,9 @@ describe('bulk-scan-executor', () => {
         .mockImplementation(async () => {
           pollCount++;
           if (pollCount < 5) {
-            return {
-              scan_id: 'test-scan-backoff',
-              status: 'pending' as const,
-              messages_scanned: 0,
-              flagged_messages: [],
-            };
+            return createBulkScanResultsResponse('test-scan-backoff', 'pending', 0);
           }
-          return {
-            scan_id: 'test-scan-backoff',
-            status: 'completed' as const,
-            messages_scanned: 100,
-            flagged_messages: [],
-          };
+          return createBulkScanResultsResponse('test-scan-backoff', 'completed', 100);
         });
 
       const originalSetTimeout = global.setTimeout;
@@ -787,19 +825,9 @@ describe('bulk-scan-executor', () => {
         .mockImplementation(async () => {
           pollCount++;
           if (pollCount < 10) {
-            return {
-              scan_id: 'test-scan-max',
-              status: 'pending' as const,
-              messages_scanned: 0,
-              flagged_messages: [],
-            };
+            return createBulkScanResultsResponse('test-scan-max', 'pending', 0);
           }
-          return {
-            scan_id: 'test-scan-max',
-            status: 'completed' as const,
-            messages_scanned: 100,
-            flagged_messages: [],
-          };
+          return createBulkScanResultsResponse('test-scan-max', 'completed', 100);
         });
 
       const pollDelays: number[] = [];
@@ -941,12 +969,7 @@ describe('bulk-scan-executor', () => {
 
       mockGetBulkScanResults.mockImplementation(async () => {
         callOrder.push('getBulkScanResults');
-        return {
-          scan_id: 'test-scan-123',
-          status: 'completed' as const,
-          messages_scanned: 10,
-          flagged_messages: [],
-        };
+        return createBulkScanResultsResponse('test-scan-123', 'completed', 10);
       });
 
       await executeBulkScan({

@@ -4,6 +4,36 @@ import { ApiClient } from '../../src/lib/api-client.js';
 import type { RateLimiterInterface } from '../../src/services/RateLimitFactory.js';
 import { ErrorCode } from '../../src/services/types.js';
 
+// Helper to create JSONAPI note list response
+function createNotesJSONAPIResponse(notes: Array<{
+  id: string;
+  summary?: string;
+  authorParticipantId?: string;
+}> = []) {
+  return {
+    data: notes.map(note => ({
+      type: 'notes' as const,
+      id: note.id,
+      attributes: {
+        summary: note.summary ?? 'Note content',
+        classification: 'NOT_MISLEADING',
+        status: 'NEEDS_MORE_RATINGS' as const,
+        helpfulness_score: 0,
+        author_participant_id: note.authorParticipantId ?? 'author-123',
+        community_server_id: 'server-123',
+        channel_id: null,
+        request_id: null,
+        ratings_count: 0,
+        force_published: false,
+        force_published_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+      },
+    })),
+    jsonapi: { version: '1.1' as const },
+  };
+}
+
 // Mock the logger
 jest.mock('../../src/logger.js', () => ({
   logger: {
@@ -64,7 +94,7 @@ describe('ViewNotesService', () => {
         resetAt: Date.now() + 60000,
       });
 
-      mockApiClient.getNotes.mockResolvedValue([]);
+      mockApiClient.getNotes.mockResolvedValue(createNotesJSONAPIResponse());
 
       const result = await service.execute(
         {
@@ -87,26 +117,10 @@ describe('ViewNotesService', () => {
     });
 
     it('should retrieve notes successfully', async () => {
-      const mockNotes = [
-        {
-          id: '1',
-          messageId: 'msg-123',
-          authorId: 'user-456',
-          content: 'First note content',
-          createdAt: Date.now(),
-          helpfulCount: 0,
-          notHelpfulCount: 0,
-        },
-        {
-          id: '2',
-          messageId: 'msg-123',
-          authorId: 'user-789',
-          content: 'Second note content',
-          createdAt: Date.now(),
-          helpfulCount: 0,
-          notHelpfulCount: 0,
-        },
-      ];
+      const mockNotes = createNotesJSONAPIResponse([
+        { id: '1', summary: 'First note content', authorParticipantId: 'user-456' },
+        { id: '2', summary: 'Second note content', authorParticipantId: 'user-789' },
+      ]);
 
       mockApiClient.getNotes.mockResolvedValue(mockNotes);
 
@@ -118,12 +132,12 @@ describe('ViewNotesService', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.data?.notes).toEqual(mockNotes);
+      expect(result.data?.notes.data.length).toBe(2);
       expect(mockApiClient.getNotes).toHaveBeenCalledWith('msg-123');
     });
 
     it('should handle empty notes array', async () => {
-      mockApiClient.getNotes.mockResolvedValue([]);
+      mockApiClient.getNotes.mockResolvedValue(createNotesJSONAPIResponse());
 
       const result = await service.execute(
         {
@@ -133,22 +147,13 @@ describe('ViewNotesService', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.data?.notes).toEqual([]);
-      expect(result.data?.notes.length).toBe(0);
+      expect(result.data?.notes.data.length).toBe(0);
     });
 
     it('should retrieve notes without userId', async () => {
-      const mockNotes = [
-        {
-          id: '1',
-          messageId: 'msg-123',
-          authorId: 'user-456',
-          content: 'Note content',
-          createdAt: Date.now(),
-          helpfulCount: 0,
-          notHelpfulCount: 0,
-        },
-      ];
+      const mockNotes = createNotesJSONAPIResponse([
+        { id: '1', summary: 'Note content', authorParticipantId: 'user-456' },
+      ]);
 
       mockApiClient.getNotes.mockResolvedValue(mockNotes);
 
@@ -157,21 +162,13 @@ describe('ViewNotesService', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.data?.notes).toEqual(mockNotes);
+      expect(result.data?.notes.data.length).toBe(1);
     });
 
     it('should handle single note', async () => {
-      const mockNotes = [
-        {
-          id: '1',
-          messageId: 'msg-123',
-          authorId: 'user-456',
-          content: 'Single note content',
-          createdAt: Date.now(),
-          helpfulCount: 0,
-          notHelpfulCount: 0,
-        },
-      ];
+      const mockNotes = createNotesJSONAPIResponse([
+        { id: '1', summary: 'Single note content', authorParticipantId: 'user-456' },
+      ]);
 
       mockApiClient.getNotes.mockResolvedValue(mockNotes);
 
@@ -183,19 +180,17 @@ describe('ViewNotesService', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.data?.notes.length).toBe(1);
+      expect(result.data?.notes.data.length).toBe(1);
     });
 
     it('should handle multiple notes', async () => {
-      const mockNotes = Array.from({ length: 10 }, (_, i) => ({
-        id: String(i + 1),
-        messageId: 'msg-123',
-        authorId: `user-${i}`,
-        content: `Note content ${i}`,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      }));
+      const mockNotes = createNotesJSONAPIResponse(
+        Array.from({ length: 10 }, (_, i) => ({
+          id: String(i + 1),
+          summary: `Note content ${i}`,
+          authorParticipantId: `user-${i}`,
+        }))
+      );
 
       mockApiClient.getNotes.mockResolvedValue(mockNotes);
 
@@ -207,7 +202,7 @@ describe('ViewNotesService', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.data?.notes.length).toBe(10);
+      expect(result.data?.notes.data.length).toBe(10);
     });
   });
 
@@ -322,7 +317,7 @@ describe('ViewNotesService', () => {
     });
 
     it('should handle special characters in messageId', async () => {
-      mockApiClient.getNotes.mockResolvedValue([]);
+      mockApiClient.getNotes.mockResolvedValue(createNotesJSONAPIResponse());
 
       const result = await service.execute(
         {
@@ -337,7 +332,7 @@ describe('ViewNotesService', () => {
 
     it('should handle very long messageId', async () => {
       const longMessageId = 'msg-' + 'a'.repeat(100);
-      mockApiClient.getNotes.mockResolvedValue([]);
+      mockApiClient.getNotes.mockResolvedValue(createNotesJSONAPIResponse());
 
       const result = await service.execute(
         {
@@ -351,7 +346,7 @@ describe('ViewNotesService', () => {
     });
 
     it('should handle numeric messageId as string', async () => {
-      mockApiClient.getNotes.mockResolvedValue([]);
+      mockApiClient.getNotes.mockResolvedValue(createNotesJSONAPIResponse());
 
       const result = await service.execute(
         {
@@ -365,26 +360,10 @@ describe('ViewNotesService', () => {
     });
 
     it('should handle notes with different helpful counts', async () => {
-      const mockNotes = [
-        {
-          id: '1',
-          messageId: 'msg-123',
-          authorId: 'user-456',
-          content: 'Active note',
-          createdAt: Date.now(),
-          helpfulCount: 5,
-          notHelpfulCount: 1,
-        },
-        {
-          id: '2',
-          messageId: 'msg-123',
-          authorId: 'user-789',
-          content: 'Another note',
-          createdAt: Date.now(),
-          helpfulCount: 2,
-          notHelpfulCount: 3,
-        },
-      ];
+      const mockNotes = createNotesJSONAPIResponse([
+        { id: '1', summary: 'Active note', authorParticipantId: 'user-456' },
+        { id: '2', summary: 'Another note', authorParticipantId: 'user-789' },
+      ]);
 
       mockApiClient.getNotes.mockResolvedValue(mockNotes);
 
@@ -396,21 +375,13 @@ describe('ViewNotesService', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.data?.notes.length).toBe(2);
+      expect(result.data?.notes.data.length).toBe(2);
     });
 
     it('should handle concurrent requests for same message', async () => {
-      const mockNotes = [
-        {
-          id: '1',
-          messageId: 'msg-123',
-          authorId: 'user-456',
-          content: 'Note content',
-          createdAt: Date.now(),
-          helpfulCount: 0,
-          notHelpfulCount: 0,
-        },
-      ];
+      const mockNotes = createNotesJSONAPIResponse([
+        { id: '1', summary: 'Note content', authorParticipantId: 'user-456' },
+      ]);
 
       mockApiClient.getNotes.mockResolvedValue(mockNotes);
 

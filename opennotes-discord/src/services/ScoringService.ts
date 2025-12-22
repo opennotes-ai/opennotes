@@ -1,15 +1,25 @@
-import { ApiClient } from '../lib/api-client.js';
+import {
+  ApiClient,
+  NoteScoreJSONAPIResponse,
+  TopNotesJSONAPIResponse,
+  ScoringStatusJSONAPIResponse,
+  BatchScoreJSONAPIResponse,
+  ScoreConfidence,
+  NoteScoreAttributes,
+} from '../lib/api-client.js';
 import { cache } from '../cache.js';
-import type { components } from '../lib/generated-types.js';
 import { logger } from '../logger.js';
 import { getErrorMessage, getStatusCode, hasStatusCode } from '../utils/error-handlers.js';
 import { isValidUUID } from '../lib/validation.js';
 
-export type NoteScoreResponse = components['schemas']['NoteScoreResponse'];
-export type TopNotesResponse = components['schemas']['TopNotesResponse'];
-export type ScoringStatusResponse = components['schemas']['ScoringStatusResponse'];
-export type ScoreConfidence = components['schemas']['ScoreConfidence'];
-export type BatchScoreResponse = components['schemas']['BatchScoreResponse'];
+export type {
+  NoteScoreJSONAPIResponse,
+  TopNotesJSONAPIResponse,
+  ScoringStatusJSONAPIResponse,
+  BatchScoreJSONAPIResponse,
+  ScoreConfidence,
+  NoteScoreAttributes,
+};
 
 export interface TopNotesParams {
   limit?: number;
@@ -35,7 +45,7 @@ export class ScoringService {
     this.apiClient = apiClient;
   }
 
-  async getNoteScore(noteId: string): Promise<ScoringServiceResult<NoteScoreResponse>> {
+  async getNoteScore(noteId: string): Promise<ScoringServiceResult<NoteScoreJSONAPIResponse>> {
     const noteIdNum = this.validateNoteId(noteId);
     if (typeof noteIdNum === 'object') {
       return noteIdNum;
@@ -44,7 +54,7 @@ export class ScoringService {
     const cacheKey = `score:${noteId}`;
 
     try {
-      const cached = await cache.get<NoteScoreResponse>(cacheKey);
+      const cached = await cache.get<NoteScoreJSONAPIResponse>(cacheKey);
       if (cached) {
         logger.debug('Cache hit for note score', { noteId });
         return { success: true, data: cached };
@@ -110,7 +120,7 @@ export class ScoringService {
     }
   }
 
-  async getBatchNoteScores(noteIds: string[]): Promise<ScoringServiceResult<BatchScoreResponse>> {
+  async getBatchNoteScores(noteIds: string[]): Promise<ScoringServiceResult<BatchScoreJSONAPIResponse>> {
     const validatedIds = this.validateBatchNoteIds(noteIds);
     if (!validatedIds.success) {
       return validatedIds;
@@ -119,54 +129,96 @@ export class ScoringService {
     try {
       logger.debug('Fetching batch note scores from API', { count: noteIds.length });
 
-      // Check cache for any existing scores
-      const cachedScores: Record<string, NoteScoreResponse> = {};
+      const cachedScores: Map<string, NoteScoreJSONAPIResponse> = new Map();
       const uncachedNoteIds: string[] = [];
 
       for (const noteId of noteIds) {
         const cacheKey = `score:${noteId}`;
-        const cached = await cache.get<NoteScoreResponse>(cacheKey);
+        const cached = await cache.get<NoteScoreJSONAPIResponse>(cacheKey);
         if (cached) {
-          cachedScores[noteId] = cached;
+          cachedScores.set(noteId, cached);
           logger.debug('Cache hit for note score in batch', { noteId });
         } else {
           uncachedNoteIds.push(noteId);
         }
       }
 
-      // Fetch uncached scores from API if any
-      let apiScores: Record<string, NoteScoreResponse> = {};
-      let notFound: string[] = [];
+      let apiResponse: BatchScoreJSONAPIResponse | null = null;
 
       if (uncachedNoteIds.length > 0) {
-        const response = await this.apiClient.getBatchNoteScores(uncachedNoteIds);
-        apiScores = response.scores;
-        notFound = response.not_found ?? [];
+        apiResponse = await this.apiClient.getBatchNoteScores(uncachedNoteIds);
 
-        // Cache the newly fetched scores
-        for (const [noteId, score] of Object.entries(apiScores)) {
-          const cacheKey = `score:${noteId}`;
-          void cache.set(cacheKey, score, this.CACHE_TTL);
+        for (const resource of apiResponse.data) {
+          const cacheKey = `score:${resource.id}`;
+          const singleResponse: NoteScoreJSONAPIResponse = {
+            data: resource,
+            jsonapi: apiResponse.jsonapi,
+          };
+          void cache.set(cacheKey, singleResponse, this.CACHE_TTL);
         }
       }
 
-      // Merge cached and API scores
-      const allScores = { ...cachedScores, ...apiScores };
+      if (cachedScores.size > 0 && apiResponse) {
+        const mergedData = [
+          ...Array.from(cachedScores.values()).map(r => r.data),
+          ...apiResponse.data,
+        ];
+        const mergedResponse: BatchScoreJSONAPIResponse = {
+          data: mergedData,
+          jsonapi: apiResponse.jsonapi,
+          meta: {
+            total_requested: noteIds.length,
+            total_found: mergedData.length,
+            not_found: apiResponse.meta?.not_found ?? [],
+          },
+        };
 
-      logger.debug('Batch note scores retrieved successfully', {
-        totalRequested: noteIds.length,
-        fromCache: Object.keys(cachedScores).length,
-        fromAPI: Object.keys(apiScores).length,
-        notFound: notFound.length,
-      });
+        logger.debug('Batch note scores retrieved successfully', {
+          totalRequested: noteIds.length,
+          fromCache: cachedScores.size,
+          fromAPI: apiResponse.data.length,
+          notFound: apiResponse.meta?.not_found?.length ?? 0,
+        });
+
+        return { success: true, data: mergedResponse };
+      } else if (cachedScores.size > 0) {
+        const cachedData = Array.from(cachedScores.values()).map(r => r.data);
+        const mergedResponse: BatchScoreJSONAPIResponse = {
+          data: cachedData,
+          jsonapi: { version: '1.0' },
+          meta: {
+            total_requested: noteIds.length,
+            total_found: cachedData.length,
+            not_found: [],
+          },
+        };
+
+        logger.debug('Batch note scores retrieved from cache', {
+          totalRequested: noteIds.length,
+          fromCache: cachedScores.size,
+        });
+
+        return { success: true, data: mergedResponse };
+      } else if (apiResponse) {
+        logger.debug('Batch note scores retrieved successfully', {
+          totalRequested: noteIds.length,
+          fromAPI: apiResponse.data.length,
+          notFound: apiResponse.meta?.not_found?.length ?? 0,
+        });
+
+        return { success: true, data: apiResponse };
+      }
 
       return {
         success: true,
         data: {
-          scores: allScores,
-          not_found: notFound,
-          total_requested: noteIds.length,
-          total_found: Object.keys(allScores).length,
+          data: [],
+          jsonapi: { version: '1.0' },
+          meta: {
+            total_requested: noteIds.length,
+            total_found: 0,
+            not_found: noteIds,
+          },
         },
       };
     } catch (error: unknown) {
@@ -198,7 +250,7 @@ export class ScoringService {
     }
   }
 
-  async getTopNotes(params: TopNotesParams = {}): Promise<ScoringServiceResult<TopNotesResponse>> {
+  async getTopNotes(params: TopNotesParams = {}): Promise<ScoringServiceResult<TopNotesJSONAPIResponse>> {
     try {
       const { limit = 10, minConfidence, tier } = params;
 
@@ -207,8 +259,8 @@ export class ScoringService {
       const response = await this.apiClient.getTopNotes(limit, minConfidence, tier);
 
       logger.debug('Top notes retrieved successfully', {
-        count: response.notes.length,
-        totalCount: response.total_count,
+        count: response.data.length,
+        totalCount: response.meta?.total_count,
       });
 
       return { success: true, data: response };
@@ -241,11 +293,11 @@ export class ScoringService {
     }
   }
 
-  async getScoringStatus(): Promise<ScoringServiceResult<ScoringStatusResponse>> {
+  async getScoringStatus(): Promise<ScoringServiceResult<ScoringStatusJSONAPIResponse>> {
     const cacheKey = 'scoring:status';
 
     try {
-      const cached = await cache.get<ScoringStatusResponse>(cacheKey);
+      const cached = await cache.get<ScoringStatusJSONAPIResponse>(cacheKey);
       if (cached) {
         logger.debug('Cache hit for scoring status');
         return { success: true, data: cached };
@@ -301,7 +353,7 @@ export class ScoringService {
     return noteId;
   }
 
-  private validateBatchNoteIds(noteIds: string[]): ScoringServiceResult<BatchScoreResponse> | { success: true } {
+  private validateBatchNoteIds(noteIds: string[]): ScoringServiceResult<BatchScoreJSONAPIResponse> | { success: true } {
     for (const noteId of noteIds) {
       if (!isValidUUID(noteId)) {
         return {

@@ -74,6 +74,15 @@ const createJSONAPIResponse = <T>(type: string, id: string, attributes: T) => ({
   },
 });
 
+const createJSONAPIListResponse = <T>(type: string, items: Array<{id: string; attributes: T}>) => ({
+  jsonapi: { version: '1.1' },
+  data: items.map(item => ({
+    type,
+    id: item.id,
+    attributes: item.attributes,
+  })),
+});
+
 const createCommunityServerJSONAPIResponse = (id: string, platformId: string) => createJSONAPIResponse(
   'community-servers',
   id,
@@ -212,38 +221,36 @@ describe('API Persistence Integration Tests', () => {
       expect(sentBody.data.attributes).toHaveProperty('summary', createRequest.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
 
-      expect(result).toEqual({
-        id: 'note-789',
-        messageId: createRequest.messageId,
-        authorId: createRequest.authorId,
-        content: createRequest.content,
-        createdAt: expect.any(Number),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      expect(result.data.id).toBe('note-789');
+      expect(result.data.type).toBe('notes');
+      expect(result.data.attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(result.data.attributes.summary).toBe(createRequest.content);
+      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
 
       mockFetch.mockClear();
 
-      const retrievedNote = {
-        id: 'note-789',
-        messageId: createRequest.messageId,
-        authorId: createRequest.authorId,
-        content: createRequest.content,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      };
-
       mockFetch.mockResolvedValueOnce(
         createMockResponse({
-          json: async () => [retrievedNote],
+          json: async () => createJSONAPIListResponse('notes', [{
+            id: 'note-789',
+            attributes: {
+              author_participant_id: createRequest.authorId,
+              summary: createRequest.content,
+              classification: 'NOT_MISLEADING',
+              status: 'NEEDS_MORE_RATINGS',
+              helpfulness_score: 0,
+              ratings_count: 0,
+              created_at: new Date().toISOString(),
+              community_server_id: '550e8400-e29b-41d4-a716-446655440001',
+            },
+          }]),
         })
       );
 
       const retrievedNotes = await client2.getNotes(createRequest.messageId);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        `http://localhost:8000/api/v1/notes/${createRequest.messageId}`,
+        expect.stringContaining('/api/v2/notes'),
         expect.objectContaining({
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
@@ -251,11 +258,10 @@ describe('API Persistence Integration Tests', () => {
         })
       );
 
-      expect(retrievedNotes).toHaveLength(1);
-      expect(retrievedNotes[0].id).toBe('note-789');
-      expect(retrievedNotes[0].messageId).toBe(createRequest.messageId);
-      expect(retrievedNotes[0].authorId).toBe(createRequest.authorId);
-      expect(retrievedNotes[0].content).toBe(createRequest.content);
+      expect(retrievedNotes.data).toHaveLength(1);
+      expect(retrievedNotes.data[0].id).toBe('note-789');
+      expect(retrievedNotes.data[0].attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(retrievedNotes.data[0].attributes.summary).toBe(createRequest.content);
     });
 
     it('should persist note and retrieve it across different client instances', async () => {
@@ -279,35 +285,35 @@ describe('API Persistence Integration Tests', () => {
       }));
 
       const created = await client1.createNote(createRequest, { userId: 'author-001', guildId: 'guild-123' });
-      expect(created.id).toBe('note-cross-client-001');
-      expect(created.messageId).toBe(createRequest.messageId);
-      expect(created.authorId).toBe(createRequest.authorId);
-      expect(created.content).toBe(createRequest.content);
+      expect(created.data.id).toBe('note-cross-client-001');
+      expect(created.data.attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(created.data.attributes.summary).toBe(createRequest.content);
 
       mockFetch.mockClear();
 
-      const discordServerResponse = {
-        id: 'note-cross-client-001',
-        messageId: createRequest.messageId,
-        authorId: createRequest.authorId,
-        content: createRequest.content,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      };
-
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => [discordServerResponse],
+        json: async () => createJSONAPIListResponse('notes', [{
+          id: 'note-cross-client-001',
+          attributes: {
+            author_participant_id: createRequest.authorId,
+            summary: createRequest.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: '550e8400-e29b-41d4-a716-446655440002',
+          },
+        }]),
       }));
 
       const retrieved = await client2.getNotes(createRequest.messageId);
 
-      expect(retrieved).toHaveLength(1);
-      expect(retrieved[0].id).toBe('note-cross-client-001');
-      expect(retrieved[0].messageId).toBe(createRequest.messageId);
-      expect(retrieved[0].authorId).toBe(createRequest.authorId);
-      expect(retrieved[0].content).toBe(createRequest.content);
+      expect(retrieved.data).toHaveLength(1);
+      expect(retrieved.data[0].id).toBe('note-cross-client-001');
+      expect(retrieved.data[0].attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(retrieved.data[0].attributes.summary).toBe(createRequest.content);
     });
 
     it('should verify HTTP call structure for note creation', async () => {
@@ -382,10 +388,10 @@ describe('API Persistence Integration Tests', () => {
         })
       );
 
-      expect(result.noteId).toBe(ratingRequest.noteId);
-      expect(result.userId).toBe(ratingRequest.userId);
-      expect(result.helpful).toBe(true);
-      expect(typeof result.createdAt).toBe('number');
+      expect(result.data.attributes.note_id).toBe(ratingRequest.noteId);
+      expect(result.data.attributes.rater_participant_id).toBe(ratingRequest.userId);
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
+      expect(result.data.attributes.created_at).toBeDefined();
     });
 
     it('should persist negative ratings correctly', async () => {
@@ -406,7 +412,7 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.rateNote(ratingRequest);
 
-      expect(result.helpful).toBe(false);
+      expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/ratings',
         expect.objectContaining({
@@ -763,15 +769,11 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.createNote(request, { userId: 'user-retry', guildId: 'guild-123' });
 
-      expect(result).toEqual({
-        id: 'note-retry-success',
-        messageId: request.messageId,
-        authorId: request.authorId,
-        content: request.content,
-        createdAt: expect.any(Number),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      });
+      expect(result.data.id).toBe('note-retry-success');
+      expect(result.data.type).toBe('notes');
+      expect(result.data.attributes.author_participant_id).toBe(request.authorId);
+      expect(result.data.attributes.summary).toBe(request.content);
+      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
@@ -897,25 +899,53 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockClear();
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => [persistedNote],
+        json: async () => createJSONAPIListResponse('notes', [{
+          id: 'note-consistency-001',
+          attributes: {
+            author_participant_id: noteRequest.authorId,
+            summary: noteRequest.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: '550e8400-e29b-41d4-a716-446655440014',
+          },
+        }]),
       }));
 
       const notesFromClient2 = await client2.getNotes(noteRequest.messageId);
 
-      expect(notesFromClient2).toHaveLength(1);
-      expect(notesFromClient2[0]).toEqual(persistedNote);
+      expect(notesFromClient2.data).toHaveLength(1);
+      expect(notesFromClient2.data[0].id).toBe('note-consistency-001');
+      expect(notesFromClient2.data[0].attributes.author_participant_id).toBe(noteRequest.authorId);
+      expect(notesFromClient2.data[0].attributes.summary).toBe(noteRequest.content);
 
       mockFetch.mockClear();
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => [persistedNote],
+        json: async () => createJSONAPIListResponse('notes', [{
+          id: 'note-consistency-001',
+          attributes: {
+            author_participant_id: noteRequest.authorId,
+            summary: noteRequest.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: '550e8400-e29b-41d4-a716-446655440014',
+          },
+        }]),
       }));
 
       const notesFromClient1Again = await client1.getNotes(
         noteRequest.messageId
       );
 
-      expect(notesFromClient1Again).toEqual(notesFromClient2);
+      expect(notesFromClient1Again.data[0].id).toBe(notesFromClient2.data[0].id);
+      expect(notesFromClient1Again.data[0].attributes.author_participant_id).toBe(notesFromClient2.data[0].attributes.author_participant_id);
+      expect(notesFromClient1Again.data[0].attributes.summary).toBe(notesFromClient2.data[0].attributes.summary);
     });
 
     it('should handle concurrent note creations from different clients', async () => {
@@ -960,8 +990,8 @@ describe('API Persistence Integration Tests', () => {
       const result1 = await client1.createNote(note1Request, { userId: 'author-1', guildId: 'guild-123' });
       const result2 = await client2.createNote(note2Request, { userId: 'author-2', guildId: 'guild-123' });
 
-      expect(result1.id).toBe('note-concurrent-001');
-      expect(result2.id).toBe('note-concurrent-002');
+      expect(result1.data.id).toBe('note-concurrent-001');
+      expect(result2.data.id).toBe('note-concurrent-002');
       expect(mockFetch).toHaveBeenCalledTimes(4);
     });
 
@@ -1010,30 +1040,31 @@ describe('API Persistence Integration Tests', () => {
 
       mockFetch.mockClear();
 
-      const discordResponses = notes.map((note, i) => ({
-        id: `note-multi-${i}`,
-        messageId: '123456789012345015',
-        authorId: note.authorId,
-        content: note.content,
-        createdAt: Date.now(),
-        helpfulCount: 0,
-        notHelpfulCount: 0,
-      }));
-
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
-        json: async () => discordResponses,
+        json: async () => createJSONAPIListResponse('notes', notes.map((note, i) => ({
+          id: `note-multi-${i}`,
+          attributes: {
+            author_participant_id: note.authorId,
+            summary: note.content,
+            classification: 'NOT_MISLEADING',
+            status: 'NEEDS_MORE_RATINGS',
+            helpfulness_score: 0,
+            ratings_count: 0,
+            created_at: new Date().toISOString(),
+            community_server_id: communityServerUUIDs[i],
+          },
+        }))),
       }));
 
       const retrievedNotes = await client2.getNotes('msg-multi-note-001');
 
-      expect(retrievedNotes).toHaveLength(3);
-      retrievedNotes.forEach((note, i) => {
+      expect(retrievedNotes.data).toHaveLength(3);
+      retrievedNotes.data.forEach((note: { id: string; attributes: { author_participant_id: string; summary: string; created_at: string } }, i: number) => {
         expect(note.id).toBe(`note-multi-${i}`);
-        expect(note.messageId).toBe('123456789012345015');
-        expect(note.authorId).toBe(notes[i].authorId);
-        expect(note.content).toBe(notes[i].content);
-        expect(note.createdAt).toBeGreaterThan(0);
+        expect(note.attributes.author_participant_id).toBe(notes[i].authorId);
+        expect(note.attributes.summary).toBe(notes[i].content);
+        expect(new Date(note.attributes.created_at).getTime()).toBeGreaterThan(0);
       });
     });
   });
@@ -1062,10 +1093,10 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.createNote(request, { userId: 'author-validation', guildId: 'guild-123' });
 
-      expect(result.authorId).toBe(request.authorId);
-      expect(result.content).toBe(request.content);
-      expect(result.id).toBeTruthy();
-      expect(result.createdAt).toBeGreaterThan(0);
+      expect(result.data.attributes.author_participant_id).toBe(request.authorId);
+      expect(result.data.attributes.summary).toBe(request.content);
+      expect(result.data.id).toBeTruthy();
+      expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
     });
 
     it('should verify rating data integrity', async () => {
@@ -1086,10 +1117,10 @@ describe('API Persistence Integration Tests', () => {
 
       const result = await client1.rateNote(request);
 
-      expect(result.noteId).toBe(request.noteId);
-      expect(result.userId).toBe(request.userId);
-      expect(result.helpful).toBe(request.helpful);
-      expect(typeof result.createdAt).toBe('number');
+      expect(result.data.attributes.note_id).toBe(request.noteId);
+      expect(result.data.attributes.rater_participant_id).toBe(request.userId);
+      expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
+      expect(result.data.attributes.created_at).toBeDefined();
     });
 
     it('should ensure request data is not corrupted during transmission', async () => {

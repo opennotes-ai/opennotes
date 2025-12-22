@@ -865,54 +865,60 @@ class TestRequestsWithMessageArchive:
 
 
 class TestRequestsViaAPI:
-    """Tests for request creation via v1 API with message archive."""
+    """Tests for request creation via v2 JSON:API with message archive."""
 
     @pytest.mark.asyncio
     async def test_create_request_via_api(self, auth_client, test_community_server):
-        """Test request creation via v1 endpoint creates message archive."""
-        request_data = {
-            "request_id": "api_req_1",
-            "requested_by": "api_requester",
-            "original_message_content": "API created content",
-            "community_server_id": test_community_server["platform_id"],
-        }
+        """Test request creation via v2 endpoint creates message archive."""
+        request_body = _create_request_jsonapi_body(
+            {
+                "request_id": "api_req_1",
+                "requested_by": "api_requester",
+                "original_message_content": "API created content",
+                "community_server_id": test_community_server["platform_id"],
+            }
+        )
 
-        response = await auth_client.post("/api/v1/requests", json=request_data)
+        response = await auth_client.post("/api/v2/requests", json=request_body)
         assert response.status_code == 201
 
-        get_response = await auth_client.get("/api/v1/requests/api_req_1")
+        get_response = await auth_client.get("/api/v2/requests/api_req_1")
         assert get_response.status_code == 200
 
         data = get_response.json()
-        assert data["request_id"] == "api_req_1"
-        assert data["content"] == "API created content"
+        assert data["data"]["attributes"]["request_id"] == "api_req_1"
+        assert data["data"]["attributes"]["content"] == "API created content"
 
     @pytest.mark.asyncio
     async def test_list_requests_returns_content(self, auth_client, test_community_server):
         """Test that requests list includes content from message archive."""
-        request_data = {
-            "request_id": "list_content_req_1",
-            "requested_by": "list_requester",
-            "original_message_content": "Content for list test",
-            "community_server_id": test_community_server["platform_id"],
-        }
-        await auth_client.post("/api/v1/requests", json=request_data)
+        request_body = _create_request_jsonapi_body(
+            {
+                "request_id": "list_content_req_1",
+                "requested_by": "list_requester",
+                "original_message_content": "Content for list test",
+                "community_server_id": test_community_server["platform_id"],
+            }
+        )
+        await auth_client.post("/api/v2/requests", json=request_body)
 
-        response = await auth_client.get("/api/v1/requests")
+        response = await auth_client.get(
+            f"/api/v2/requests?filter[community_server_id]={test_community_server['uuid']}"
+        )
         assert response.status_code == 200
 
         data = response.json()
         matching_request = next(
-            (r for r in data["requests"] if r["request_id"] == "list_content_req_1"), None
+            (r for r in data["data"] if r["attributes"]["request_id"] == "list_content_req_1"), None
         )
         assert matching_request is not None
-        assert matching_request["content"] == "Content for list test"
+        assert matching_request["attributes"]["content"] == "Content for list test"
 
 
 class TestMessageArchiveRelationship:
     """Tests for message archive relationship via database.
 
-    These tests verify internal DB relationships using v1 to create data
+    These tests verify internal DB relationships using v2 JSON:API to create data
     and then checking DB state directly.
     """
 
@@ -924,14 +930,16 @@ class TestMessageArchiveRelationship:
         from src.database import async_session_maker
         from src.notes.models import Request
 
-        request_data = {
-            "request_id": "req_archive_link_1",
-            "requested_by": "archive_link_requester",
-            "original_message_content": "Content with archive link",
-            "community_server_id": test_community_server["platform_id"],
-        }
+        request_body = _create_request_jsonapi_body(
+            {
+                "request_id": "req_archive_link_1",
+                "requested_by": "archive_link_requester",
+                "original_message_content": "Content with archive link",
+                "community_server_id": test_community_server["platform_id"],
+            }
+        )
 
-        response = await auth_client.post("/api/v1/requests", json=request_data)
+        response = await auth_client.post("/api/v2/requests", json=request_body)
         assert response.status_code == 201
 
         async with async_session_maker() as db:
@@ -953,17 +961,19 @@ class TestMessageArchiveRelationship:
         from src.database import async_session_maker
         from src.notes.models import Request
 
-        request_data = {
-            "request_id": "req_discord_meta_1",
-            "requested_by": "discord_meta_requester",
-            "original_message_content": "Discord metadata test",
-            "platform_message_id": "msg_meta_123",
-            "platform_channel_id": "channel_meta_456",
-            "platform_author_id": "author_meta_789",
-            "community_server_id": test_community_server["platform_id"],
-        }
+        request_body = _create_request_jsonapi_body(
+            {
+                "request_id": "req_discord_meta_1",
+                "requested_by": "discord_meta_requester",
+                "original_message_content": "Discord metadata test",
+                "platform_message_id": "msg_meta_123",
+                "platform_channel_id": "channel_meta_456",
+                "platform_author_id": "author_meta_789",
+                "community_server_id": test_community_server["platform_id"],
+            }
+        )
 
-        response = await auth_client.post("/api/v1/requests", json=request_data)
+        response = await auth_client.post("/api/v2/requests", json=request_body)
         assert response.status_code == 201
 
         async with async_session_maker() as db:
@@ -985,14 +995,16 @@ class TestMessageArchiveRelationship:
         from src.database import async_session_maker
         from src.notes.models import Request
 
-        request_data = {
-            "request_id": "req_content_property_1",
-            "requested_by": "content_property_requester",
-            "original_message_content": "Content via property test",
-            "community_server_id": test_community_server["platform_id"],
-        }
+        request_body = _create_request_jsonapi_body(
+            {
+                "request_id": "req_content_property_1",
+                "requested_by": "content_property_requester",
+                "original_message_content": "Content via property test",
+                "community_server_id": test_community_server["platform_id"],
+            }
+        )
 
-        response = await auth_client.post("/api/v1/requests", json=request_data)
+        response = await auth_client.post("/api/v2/requests", json=request_body)
         assert response.status_code == 201
 
         async with async_session_maker() as db:
@@ -1127,13 +1139,15 @@ class TestDataIntegrity:
             db.add(community_server_2)
             await db.commit()
 
-        request_data = {
-            "request_id": "req_mismatch_555",
-            "requested_by": "test_requester_555",
-            "original_message_content": "Test content",
-            "community_server_id": str(community_server_id_1),
-        }
-        request_response = await auth_client.post("/api/v1/requests", json=request_data)
+        request_body = _create_request_jsonapi_body(
+            {
+                "request_id": "req_mismatch_555",
+                "requested_by": "test_requester_555",
+                "original_message_content": "Test content",
+                "community_server_id": str(community_server_id_1),
+            }
+        )
+        request_response = await auth_client.post("/api/v2/requests", json=request_body)
         assert request_response.status_code == 201
 
         note_data = sample_note_data.copy()

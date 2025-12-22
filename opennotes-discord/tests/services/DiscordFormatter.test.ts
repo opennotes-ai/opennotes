@@ -1,6 +1,6 @@
 import { DiscordFormatter } from '../../src/services/DiscordFormatter.js';
 import { ErrorCode, ServiceResult, ListRequestsResult, StatusResult } from '../../src/services/types.js';
-import type { NoteScoreResponse, TopNotesResponse, ScoreConfidence, ScoringStatusResponse } from '../../src/services/ScoringService.js';
+import type { TopNotesJSONAPIResponse, ScoringStatusJSONAPIResponse, ScoreConfidence, NoteScoreAttributes, NoteScoreJSONAPIResponse } from '../../src/services/ScoringService.js';
 import { Colors, ButtonStyle, MessageFlags, type APIButtonComponentWithCustomId } from 'discord.js';
 import type { RequestItem } from '../../src/lib/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
@@ -161,19 +161,28 @@ describe('DiscordFormatter', () => {
   });
 
   describe('formatScoringStatusV2', () => {
-    const createMockScoringStatus = (overrides: Partial<ScoringStatusResponse> = {}): ScoringStatusResponse => ({
-      active_tier: { level: 1, name: 'Bootstrap', scorer_components: [] },
-      current_note_count: 100,
-      data_confidence: 'medium',
-      tier_thresholds: {},
-      next_tier_upgrade: { tier: 'Growing', notes_needed: 500, notes_to_upgrade: 400 },
-      performance_metrics: {
-        avg_scoring_time_ms: 10,
-        scorer_success_rate: 0.99,
-        total_scoring_operations: 1000,
-        failed_scoring_operations: 10,
+    const createMockScoringStatus = (overrides: Partial<ScoringStatusJSONAPIResponse['data']['attributes']> = {}): ScoringStatusJSONAPIResponse => ({
+      data: {
+        type: 'scoring_status',
+        id: 'status',
+        attributes: {
+          active_tier: { level: 1, name: 'Bootstrap', scorer_components: [] },
+          current_note_count: 100,
+          data_confidence: 'provisional',
+          tier_thresholds: {},
+          next_tier_upgrade: { tier: 'Growing', notes_needed: 500, notes_to_upgrade: 400 },
+          performance_metrics: {
+            avg_scoring_time_ms: 10,
+            scorer_success_rate: 0.99,
+            total_scoring_operations: 1000,
+            failed_scoring_operations: 10,
+          },
+          warnings: [],
+          configuration: {},
+          ...overrides,
+        },
       },
-      ...overrides,
+      jsonapi: { version: '1.1' },
     });
 
     const getTextContent = (textDisplay: ReturnType<typeof DiscordFormatter.formatScoringStatusV2>['textDisplay']): string => {
@@ -201,13 +210,13 @@ describe('DiscordFormatter', () => {
     it('should include note count and confidence', () => {
       const result = DiscordFormatter.formatScoringStatusV2(createMockScoringStatus({
         current_note_count: 250,
-        data_confidence: 'high',
+        data_confidence: 'standard',
       }));
 
       const textContent = getTextContent(result.textDisplay);
 
       expect(textContent).toContain('250');
-      expect(textContent).toContain('high');
+      expect(textContent).toContain('standard');
     });
 
     it('should show progress to next tier when available', () => {
@@ -241,13 +250,28 @@ describe('DiscordFormatter', () => {
     const createMockWriteNoteResult = (): { result: import('../../src/services/types.js').WriteNoteResult; messageId: string; guildId: string; channelId: string } => ({
       result: {
         note: {
-          id: '123',
-          messageId: 'msg_123',
-          content: 'This is a test note content',
-          authorId: 'user_456',
-          helpfulCount: 0,
-          notHelpfulCount: 0,
-          createdAt: Date.now(),
+          data: {
+            type: 'notes',
+            id: '123',
+            attributes: {
+              summary: 'This is a test note content',
+              classification: 'NOT_MISLEADING',
+              status: 'NEEDS_MORE_RATINGS',
+              helpfulness_score: 0,
+              author_participant_id: 'user_456',
+              community_server_id: 'guild_789',
+              channel_id: 'channel_012',
+              request_id: null,
+              ratings_count: 0,
+              force_published: false,
+              force_published_at: null,
+              ai_generated: false,
+              ai_provider: null,
+              created_at: new Date().toISOString(),
+              updated_at: null,
+            },
+          },
+          jsonapi: { version: '1.1' },
         },
       },
       messageId: 'msg_123',
@@ -322,15 +346,28 @@ describe('DiscordFormatter', () => {
 
   describe('formatViewNotesSuccessV2', () => {
     const createMockViewNotesResult = (noteCount: number = 2): import('../../src/services/types.js').ViewNotesResult => ({
-      notes: Array.from({ length: noteCount }, (_, i) => ({
-        id: String(100 + i),
-        messageId: `msg_${100 + i}`,
-        content: `Note content ${i + 1}`,
-        authorId: `author_${i}`,
-        helpfulCount: i + 1,
-        notHelpfulCount: i,
-        createdAt: Date.now(),
-      })),
+      notes: {
+        data: Array.from({ length: noteCount }, (_, i) => ({
+          type: 'notes' as const,
+          id: String(100 + i),
+          attributes: {
+            summary: `Note content ${i + 1}`,
+            classification: 'NOT_MISLEADING' as const,
+            status: 'NEEDS_MORE_RATINGS' as const,
+            helpfulness_score: 0,
+            author_participant_id: `author_${i}`,
+            community_server_id: 'server_123',
+            channel_id: null,
+            request_id: null,
+            ratings_count: i + 1,
+            force_published: false,
+            force_published_at: null,
+            created_at: new Date().toISOString(),
+            updated_at: null,
+          },
+        })),
+        jsonapi: { version: '1.1' as const },
+      },
     });
 
     it('should return container with v2 message flags', () => {
@@ -382,9 +419,8 @@ describe('DiscordFormatter', () => {
 
     it('should include score data when provided', () => {
       const result = createMockViewNotesResult(1);
-      const scoresMap = new Map<string, NoteScoreResponse>();
+      const scoresMap = new Map<string, NoteScoreAttributes>();
       scoresMap.set('100', {
-        note_id: '100',
         score: 0.85,
         confidence: 'standard',
         algorithm: 'MFCoreScorer',
@@ -405,7 +441,7 @@ describe('DiscordFormatter', () => {
 
     it('should include media gallery for image URLs', () => {
       const result = createMockViewNotesResult(1);
-      result.notes[0].content = 'https://example.com/image.png';
+      result.notes.data[0].attributes.summary = 'https://example.com/image.png';
       const formatted = DiscordFormatter.formatViewNotesSuccessV2(result);
 
       const container = formatted.container.toJSON();
@@ -523,56 +559,60 @@ describe('DiscordFormatter', () => {
   });
 
   describe('formatNoteScoreV2', () => {
-    const mockScoreResponse: NoteScoreResponse = {
-      note_id: '123',
-      score: 0.75,
-      confidence: 'standard',
-      algorithm: 'MFCoreScorer',
-      rating_count: 10,
-      tier: 2,
-      tier_name: 'Tier 2 (1k-5k notes)',
-      calculated_at: '2025-10-28T12:00:00Z',
-    };
+    const createMockScoreResponse = (overrides: Partial<NoteScoreAttributes> = {}): NoteScoreJSONAPIResponse => ({
+      data: {
+        type: 'note_score',
+        id: '123',
+        attributes: {
+          score: 0.75,
+          confidence: 'standard',
+          algorithm: 'MFCoreScorer',
+          rating_count: 10,
+          tier: 2,
+          tier_name: 'Tier 2 (1k-5k notes)',
+          calculated_at: '2025-10-28T12:00:00Z',
+          ...overrides,
+        },
+      },
+      jsonapi: { version: '1.1' },
+    });
 
     it('should return container with v2 message flags', () => {
-      const formatted = DiscordFormatter.formatNoteScoreV2(mockScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse());
 
       expect(formatted.flags & MessageFlags.IsComponentsV2).toBeTruthy();
     });
 
     it('should return components array with container', () => {
-      const formatted = DiscordFormatter.formatNoteScoreV2(mockScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse());
 
       expect(formatted.components).toHaveLength(1);
       expect(formatted.components[0]).toHaveProperty('type', 17);
     });
 
     it('should use green color for high scores', () => {
-      const highScoreResponse = { ...mockScoreResponse, score: 0.85 };
-      const formatted = DiscordFormatter.formatNoteScoreV2(highScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse({ score: 0.85 }));
 
       const container = formatted.container.toJSON();
       expect(container.accent_color).toBe(Colors.Green);
     });
 
     it('should use yellow color for medium scores', () => {
-      const mediumScoreResponse = { ...mockScoreResponse, score: 0.55 };
-      const formatted = DiscordFormatter.formatNoteScoreV2(mediumScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse({ score: 0.55 }));
 
       const container = formatted.container.toJSON();
       expect(container.accent_color).toBe(Colors.Yellow);
     });
 
     it('should use red color for low scores', () => {
-      const lowScoreResponse = { ...mockScoreResponse, score: 0.25 };
-      const formatted = DiscordFormatter.formatNoteScoreV2(lowScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse({ score: 0.25 }));
 
       const container = formatted.container.toJSON();
       expect(container.accent_color).toBe(Colors.Red);
     });
 
     it('should include score, confidence, and algorithm in content', () => {
-      const formatted = DiscordFormatter.formatNoteScoreV2(mockScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse());
 
       const container = formatted.container.toJSON();
       const textComponents = container.components.filter(c => c.type === 10);
@@ -584,7 +624,7 @@ describe('DiscordFormatter', () => {
     });
 
     it('should include tier information', () => {
-      const formatted = DiscordFormatter.formatNoteScoreV2(mockScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse());
 
       const container = formatted.container.toJSON();
       const textComponents = container.components.filter(c => c.type === 10);
@@ -594,7 +634,7 @@ describe('DiscordFormatter', () => {
     });
 
     it('should include rating count', () => {
-      const formatted = DiscordFormatter.formatNoteScoreV2(mockScoreResponse);
+      const formatted = DiscordFormatter.formatNoteScoreV2(createMockScoreResponse());
 
       const container = formatted.container.toJSON();
       const textComponents = container.components.filter(c => c.type === 10);
@@ -605,31 +645,40 @@ describe('DiscordFormatter', () => {
   });
 
   describe('formatTopNotesForQueueV2', () => {
-    const mockTopNotesResponse: TopNotesResponse = {
-      notes: [
+    const mockTopNotesResponse: TopNotesJSONAPIResponse = {
+      data: [
         {
-          note_id: '123',
-          score: TEST_SCORE_ABOVE_THRESHOLD,
-          confidence: 'standard',
-          algorithm: 'MFCoreScorer',
-          rating_count: 15,
-          tier: 2,
-          tier_name: 'Tier 2',
-          calculated_at: '2025-10-28T12:00:00Z',
+          type: 'note_score',
+          id: '123',
+          attributes: {
+            score: TEST_SCORE_ABOVE_THRESHOLD,
+            confidence: 'standard',
+            algorithm: 'MFCoreScorer',
+            rating_count: 15,
+            tier: 2,
+            tier_name: 'Tier 2',
+            calculated_at: '2025-10-28T12:00:00Z',
+          },
         },
         {
-          note_id: '456',
-          score: 0.72,
-          confidence: 'standard',
-          algorithm: 'MFCoreScorer',
-          rating_count: 12,
-          tier: 2,
-          tier_name: 'Tier 2',
-          calculated_at: '2025-10-28T12:00:00Z',
+          type: 'note_score',
+          id: '456',
+          attributes: {
+            score: 0.72,
+            confidence: 'standard',
+            algorithm: 'MFCoreScorer',
+            rating_count: 12,
+            tier: 2,
+            tier_name: 'Tier 2',
+            calculated_at: '2025-10-28T12:00:00Z',
+          },
         },
       ],
-      total_count: 50,
-      current_tier: 2,
+      meta: {
+        total_count: 50,
+        current_tier: 2,
+      },
+      jsonapi: { version: '1.1' },
     };
 
     it('should return container with v2 message flags', () => {
@@ -678,10 +727,13 @@ describe('DiscordFormatter', () => {
     });
 
     it('should handle empty notes list', () => {
-      const emptyResponse: TopNotesResponse = {
-        notes: [],
-        total_count: 0,
-        current_tier: 0,
+      const emptyResponse: TopNotesJSONAPIResponse = {
+        data: [],
+        meta: {
+          total_count: 0,
+          current_tier: 0,
+        },
+        jsonapi: { version: '1.1' },
       };
       const formatted = DiscordFormatter.formatTopNotesForQueueV2(emptyResponse, 1, 10);
 
@@ -693,11 +745,14 @@ describe('DiscordFormatter', () => {
     });
 
     it('should include filters in content when provided', () => {
-      const responseWithFilters: TopNotesResponse = {
+      const responseWithFilters: TopNotesJSONAPIResponse = {
         ...mockTopNotesResponse,
-        filters_applied: {
-          min_confidence: 'standard',
-          tier: 2,
+        meta: {
+          ...mockTopNotesResponse.meta,
+          filters_applied: {
+            min_confidence: 'standard',
+            tier: 2,
+          },
         },
       };
       const formatted = DiscordFormatter.formatTopNotesForQueueV2(responseWithFilters, 1, 10);
@@ -869,10 +924,18 @@ describe('DiscordFormatter', () => {
     const createMockRateNoteResult = (helpful: boolean): { result: import('../../src/services/types.js').RateNoteResult; noteId: string; helpful: boolean } => ({
       result: {
         rating: {
-          noteId: 'note_456',
-          userId: 'user_789',
-          helpful,
-          createdAt: Date.now(),
+          data: {
+            type: 'ratings',
+            id: 'rating-123',
+            attributes: {
+              note_id: 'note_456',
+              rater_participant_id: 'user_789',
+              helpfulness_level: helpful ? 'HELPFUL' : 'NOT_HELPFUL',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          },
+          jsonapi: { version: '1.1' },
         },
       },
       noteId: 'note_456',

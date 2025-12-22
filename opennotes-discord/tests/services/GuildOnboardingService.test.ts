@@ -11,7 +11,7 @@ const mockLogger = {
 
 const mockApiClient = {
   getCommunityServerByPlatformId: jest.fn<(platformId: string, platform?: string) => Promise<any>>(),
-  checkRecentScan: jest.fn<(communityServerId: string) => Promise<boolean>>(),
+  checkRecentScan: jest.fn<(communityServerId: string) => Promise<any>>(),
 };
 
 const mockSendVibeCheckPrompt = jest.fn<(options: any) => Promise<void>>().mockResolvedValue(undefined);
@@ -172,13 +172,27 @@ describe('GuildOnboardingService', () => {
 
     it('should send vibe check prompt when admin is provided and no recent scan exists', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-        id: 'community-server-123',
-        platform: 'discord',
-        platform_id: 'guild-123',
-        name: 'Test Guild',
-        is_active: true,
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+          },
+        },
+        jsonapi: { version: '1.1' },
       });
-      mockApiClient.checkRecentScan.mockResolvedValue(false);
+      mockApiClient.checkRecentScan.mockResolvedValue({
+        data: {
+          type: 'bulk-scan-status',
+          id: 'status-123',
+          attributes: { has_recent_scan: false },
+        },
+        jsonapi: { version: '1.1' },
+      });
 
       await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
@@ -206,13 +220,27 @@ describe('GuildOnboardingService', () => {
 
     it('should not send vibe check prompt when community has recent scan', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-        id: 'community-server-123',
-        platform: 'discord',
-        platform_id: 'guild-123',
-        name: 'Test Guild',
-        is_active: true,
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+          },
+        },
+        jsonapi: { version: '1.1' },
       });
-      mockApiClient.checkRecentScan.mockResolvedValue(true);
+      mockApiClient.checkRecentScan.mockResolvedValue({
+        data: {
+          type: 'bulk-scan-status',
+          id: 'status-123',
+          attributes: { has_recent_scan: true },
+        },
+        jsonapi: { version: '1.1' },
+      });
 
       await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 
@@ -233,11 +261,18 @@ describe('GuildOnboardingService', () => {
 
     it('should send vibe check prompt even if recent scan check fails', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-        id: 'community-server-123',
-        platform: 'discord',
-        platform_id: 'guild-123',
-        name: 'Test Guild',
-        is_active: true,
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+          },
+        },
+        jsonapi: { version: '1.1' },
       });
       mockApiClient.checkRecentScan.mockRejectedValue(new Error('API error'));
 
@@ -259,13 +294,27 @@ describe('GuildOnboardingService', () => {
 
     it('should handle vibe check prompt errors gracefully', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-        id: 'community-server-123',
-        platform: 'discord',
-        platform_id: 'guild-123',
-        name: 'Test Guild',
-        is_active: true,
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+          },
+        },
+        jsonapi: { version: '1.1' },
       });
-      mockApiClient.checkRecentScan.mockResolvedValue(false);
+      mockApiClient.checkRecentScan.mockResolvedValue({
+        data: {
+          type: 'bulk-scan-status',
+          id: 'status-123',
+          attributes: { has_recent_scan: false },
+        },
+        jsonapi: { version: '1.1' },
+      });
       mockSendVibeCheckPrompt.mockRejectedValue(new Error('Discord API error'));
 
       await expect(
@@ -284,13 +333,27 @@ describe('GuildOnboardingService', () => {
 
     it('should log successful vibe check prompt send', async () => {
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-        id: 'community-server-123',
-        platform: 'discord',
-        platform_id: 'guild-123',
-        name: 'Test Guild',
-        is_active: true,
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+          },
+        },
+        jsonapi: { version: '1.1' },
       });
-      mockApiClient.checkRecentScan.mockResolvedValue(false);
+      mockApiClient.checkRecentScan.mockResolvedValue({
+        data: {
+          type: 'bulk-scan-status',
+          id: 'status-123',
+          attributes: { has_recent_scan: false },
+        },
+        jsonapi: { version: '1.1' },
+      });
 
       await service.postWelcomeToChannel(mockChannel, { admin: mockAdmin });
 

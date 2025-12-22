@@ -1,8 +1,13 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { MessageFlags, PermissionFlagsBits, ButtonStyle } from 'discord.js';
-import { VIBE_CHECK_DAYS_OPTIONS, type FlaggedMessage } from '../../src/types/bulk-scan.js';
+import { VIBE_CHECK_DAYS_OPTIONS } from '../../src/types/bulk-scan.js';
 import type { BulkScanResult } from '../../src/lib/bulk-scan-executor.js';
-import type { LatestScanResult } from '../../src/lib/api-client.js';
+import type {
+  LatestScanResponse,
+  FlaggedMessageResource,
+  CommunityServerJSONAPIResponse,
+  NoteRequestsResultResponse,
+} from '../../src/lib/api-client.js';
 
 const mockLogger = {
   info: jest.fn<(...args: unknown[]) => void>(),
@@ -11,13 +16,61 @@ const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
 };
 
+function createFlaggedMessageResource(id: string, channelId: string, content: string, matchScore: number, matchedClaim: string): FlaggedMessageResource {
+  return {
+    type: 'flagged-messages',
+    id,
+    attributes: {
+      channel_id: channelId,
+      content,
+      author_id: 'author1',
+      timestamp: new Date().toISOString(),
+      match_score: matchScore,
+      matched_claim: matchedClaim,
+      matched_source: 'snopes',
+      scan_type: 'bulk',
+    },
+  };
+}
+
+function createLatestScanResponse(scanId: string, status: string, messagesScanned: number, flaggedMessages: FlaggedMessageResource[] = []): LatestScanResponse {
+  return {
+    data: {
+      type: 'bulk-scans',
+      id: scanId,
+      attributes: {
+        status,
+        initiated_at: new Date().toISOString(),
+        messages_scanned: messagesScanned,
+        messages_flagged: flaggedMessages.length,
+      },
+    },
+    included: flaggedMessages,
+    jsonapi: { version: '1.1' },
+  };
+}
+
+function createNoteRequestsResultResponse(createdCount: number, requestIds: string[] = []): NoteRequestsResultResponse {
+  return {
+    data: {
+      type: 'note-request-batches',
+      id: 'batch-123',
+      attributes: {
+        created_count: createdCount,
+        request_ids: requestIds,
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
+
 const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),
-  getCommunityServerByPlatformId: jest.fn<(platformId: string) => Promise<{ id: string; platform: string; platform_id: string; name: string; is_active: boolean }>>(),
+  getCommunityServerByPlatformId: jest.fn<(platformId: string) => Promise<CommunityServerJSONAPIResponse>>(),
   initiateBulkScan: jest.fn<(guildId: string, days: number) => Promise<any>>(),
-  getBulkScanResults: jest.fn<(scanId: string) => Promise<LatestScanResult>>(),
-  createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<any>>(),
-  getLatestScan: jest.fn<(communityServerId: string) => Promise<LatestScanResult>>(),
+  getBulkScanResults: jest.fn<(scanId: string) => Promise<any>>(),
+  createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<NoteRequestsResultResponse>>(),
+  getLatestScan: jest.fn<(communityServerId: string) => Promise<LatestScanResponse>>(),
 };
 
 const mockCache = {
@@ -157,24 +210,27 @@ describe('vibecheck command', () => {
     mockCache.get.mockReturnValue(null);
 
     mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
-      id: 'community-server-uuid-123',
-      platform: 'discord',
-      platform_id: 'guild789',
-      name: 'Test Server',
-      is_active: true,
+      data: {
+        type: 'community-servers',
+        id: 'community-server-uuid-123',
+        attributes: {
+          platform: 'discord',
+          platform_id: 'guild789',
+          name: 'Test Server',
+          is_active: true,
+          is_public: true,
+        },
+      },
+      jsonapi: { version: '1.1' },
     });
 
-    mockApiClient.getLatestScan.mockResolvedValue({
-      scan_id: 'test-scan-123',
-      status: 'completed',
-      messages_scanned: 100,
-      flagged_messages: [],
-    });
+    mockApiClient.getLatestScan.mockResolvedValue(
+      createLatestScanResponse('test-scan-123', 'completed', 100)
+    );
 
-    mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
-      created_count: 0,
-      scan_id: 'test-scan-123',
-    });
+    mockApiClient.createNoteRequestsFromScan.mockResolvedValue(
+      createNoteRequestsResultResponse(0)
+    );
 
     mockExecuteBulkScan.mockResolvedValue({
       scanId: 'test-scan-123',
@@ -543,17 +599,8 @@ describe('vibecheck command', () => {
     it('should display flagged results with message link, confidence score, and matched claim', async () => {
       const { mockInteraction } = createMockInteractionWithCollector();
 
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: '1234567890123456789',
-          channel_id: 'channel123',
-          content: 'This vaccine causes autism',
-          author_id: 'author1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.95,
-          matched_claim: 'Vaccines cause autism',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('1234567890123456789', 'channel123', 'This vaccine causes autism', 0.95, 'Vaccines cause autism'),
       ];
 
       mockExecuteBulkScan.mockResolvedValueOnce({
@@ -653,17 +700,8 @@ describe('vibecheck command', () => {
     it('should show Create Note Requests and Dismiss buttons when flagged results exist', async () => {
       const { mockInteraction } = createMockInteractionWithFlaggedResults();
 
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: '1234567890123456789',
-          channel_id: 'channel123',
-          content: 'Misinformation content',
-          author_id: 'author1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.85,
-          matched_claim: 'False claim',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
       ];
 
       mockExecuteBulkScan.mockResolvedValueOnce({
@@ -708,17 +746,8 @@ describe('vibecheck command', () => {
     it('should dismiss results when Dismiss button is clicked', async () => {
       const { mockInteraction, collectHandlers } = createMockInteractionWithFlaggedResults();
 
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: '1234567890123456789',
-          channel_id: 'channel123',
-          content: 'Misinformation content',
-          author_id: 'author1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.85,
-          matched_claim: 'False claim',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
       ];
 
       mockExecuteBulkScan.mockResolvedValueOnce({
@@ -807,17 +836,8 @@ describe('vibecheck command', () => {
     it('should show AI generation prompt when Create Note Requests is clicked', async () => {
       const { mockInteraction, collectHandlers } = createMockInteractionForAIPrompt();
 
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: '1234567890123456789',
-          channel_id: 'channel123',
-          content: 'Misinformation content',
-          author_id: 'author1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.85,
-          matched_claim: 'False claim',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
       ];
 
       mockExecuteBulkScan.mockResolvedValueOnce({
@@ -865,17 +885,8 @@ describe('vibecheck command', () => {
     it('should call API with generate_ai_notes=true when AI Yes button clicked', async () => {
       const { mockInteraction, collectHandlers } = createMockInteractionForAIPrompt();
 
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: '1234567890123456789',
-          channel_id: 'channel123',
-          content: 'Misinformation content',
-          author_id: 'author1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.85,
-          matched_claim: 'False claim',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
       ];
 
       mockExecuteBulkScan.mockResolvedValueOnce({
@@ -888,10 +899,9 @@ describe('vibecheck command', () => {
         flaggedMessages: flaggedMessages,
       });
 
-      mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
-        created_count: 1,
-        scan_id: 'scan-123',
-      });
+      mockApiClient.createNoteRequestsFromScan.mockResolvedValue(
+        createNoteRequestsResultResponse(1)
+      );
 
       await execute(mockInteraction as any);
 
@@ -941,17 +951,8 @@ describe('vibecheck command', () => {
     it('should call API with generate_ai_notes=false when AI No button clicked', async () => {
       const { mockInteraction, collectHandlers } = createMockInteractionForAIPrompt();
 
-      const flaggedMessages: FlaggedMessage[] = [
-        {
-          message_id: '1234567890123456789',
-          channel_id: 'channel123',
-          content: 'Misinformation content',
-          author_id: 'author1',
-          timestamp: new Date().toISOString(),
-          match_score: 0.85,
-          matched_claim: 'False claim',
-          matched_source: 'snopes',
-        },
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
       ];
 
       mockExecuteBulkScan.mockResolvedValueOnce({
@@ -964,10 +965,9 @@ describe('vibecheck command', () => {
         flaggedMessages: flaggedMessages,
       });
 
-      mockApiClient.createNoteRequestsFromScan.mockResolvedValue({
-        created_count: 1,
-        scan_id: 'scan-123',
-      });
+      mockApiClient.createNoteRequestsFromScan.mockResolvedValue(
+        createNoteRequestsResultResponse(1)
+      );
 
       await execute(mockInteraction as any);
 
@@ -1076,17 +1076,8 @@ describe('vibecheck command', () => {
       it('should filter button interactions by original user ID', async () => {
         const { mockInteraction, getCapturedFilter, originalUserId } = createMockInteractionForUserIdTest();
 
-        const flaggedMessages: FlaggedMessage[] = [
-          {
-            message_id: '1234567890123456789',
-            channel_id: 'channel123',
-            content: 'Misinformation content',
-            author_id: 'author1',
-            timestamp: new Date().toISOString(),
-            match_score: 0.85,
-            matched_claim: 'False claim',
-            matched_source: 'snopes',
-          },
+        const flaggedMessages: FlaggedMessageResource[] = [
+          createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
         ];
 
         mockExecuteBulkScan.mockResolvedValueOnce({
@@ -1120,17 +1111,8 @@ describe('vibecheck command', () => {
       it('should allow original user to dismiss results', async () => {
         const { mockInteraction, collectHandlers, getCapturedFilter, originalUserId } = createMockInteractionForUserIdTest();
 
-        const flaggedMessages: FlaggedMessage[] = [
-          {
-            message_id: '1234567890123456789',
-            channel_id: 'channel123',
-            content: 'Misinformation content',
-            author_id: 'author1',
-            timestamp: new Date().toISOString(),
-            match_score: 0.85,
-            matched_claim: 'False claim',
-            matched_source: 'snopes',
-          },
+        const flaggedMessages: FlaggedMessageResource[] = [
+          createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
         ];
 
         mockExecuteBulkScan.mockResolvedValueOnce({
@@ -1175,17 +1157,8 @@ describe('vibecheck command', () => {
       it('should filter AI button interactions by original user ID', async () => {
         const { mockInteraction, collectHandlers, originalUserId } = createMockInteractionForUserIdTest();
 
-        const flaggedMessages: FlaggedMessage[] = [
-          {
-            message_id: '1234567890123456789',
-            channel_id: 'channel123',
-            content: 'Misinformation content',
-            author_id: 'author1',
-            timestamp: new Date().toISOString(),
-            match_score: 0.85,
-            matched_claim: 'False claim',
-            matched_source: 'snopes',
-          },
+        const flaggedMessages: FlaggedMessageResource[] = [
+          createFlaggedMessageResource('1234567890123456789', 'channel123', 'Misinformation content', 0.85, 'False claim'),
         ];
 
         mockExecuteBulkScan.mockResolvedValueOnce({
@@ -1500,12 +1473,9 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockApiClient.getLatestScan.mockResolvedValueOnce({
-        scan_id: 'test-scan-456',
-        status: 'completed',
-        messages_scanned: 250,
-        flagged_messages: [],
-      });
+      mockApiClient.getLatestScan.mockResolvedValueOnce(
+        createLatestScanResponse('test-scan-456', 'completed', 250)
+      );
 
       await execute(mockInteraction as any);
 

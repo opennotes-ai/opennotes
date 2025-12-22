@@ -168,20 +168,34 @@ describe('MessageMonitorService - UUID Resolution', () => {
     mockResolveCommunityServerId.mockResolvedValue(resolvedUuid);
     mockApiClient.requestNote.mockResolvedValue(undefined);
     mockApiClient.similaritySearch.mockResolvedValue({
-      matches: [],
-      query_text: '',
-      dataset_tags: [],
-      similarity_threshold: 0.7,
-      rrf_score_threshold: 0,
-      total_matches: 0,
+      jsonapi: { version: '1.1' },
+      data: {
+        type: 'similarity-search-results',
+        id: 'search-default',
+        attributes: {
+          matches: [],
+          query_text: '',
+          dataset_tags: [],
+          similarity_threshold: 0.7,
+          rrf_score_threshold: 0,
+          total_matches: 0,
+        },
+      },
     });
     mockApiClient.checkPreviouslySeen.mockResolvedValue({
-      shouldAutoPublish: false,
-      shouldAutoRequest: false,
-      autopublishThreshold: 0.9,
-      autorequestThreshold: 0.75,
-      matches: [],
-      topMatch: null,
+      data: {
+        type: 'previously-seen-check-results',
+        id: 'check-123',
+        attributes: {
+          should_auto_publish: false,
+          should_auto_request: false,
+          autopublish_threshold: 0.9,
+          autorequest_threshold: 0.75,
+          matches: [],
+          top_match: null,
+        },
+      },
+      jsonapi: { version: '1.1' },
     });
     service = new MessageMonitorService(mockClient, mockRedis);
   });
@@ -192,16 +206,23 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
   describe('createNoteRequestForMatch - UUID resolution', () => {
     it('should resolve guild ID to UUID before calling requestNote', async () => {
-      const similarityMatches = {
-        matches: [testSimilarityMatch],
-        query_text: 'test',
-        dataset_tags: ['snopes'],
-        similarity_threshold: 0.7,
-        rrf_score_threshold: 0,
-        total_matches: 1,
+      const similarityResponse = {
+        jsonapi: { version: '1.1' },
+        data: {
+          type: 'similarity-search-results',
+          id: 'search-123',
+          attributes: {
+            matches: [testSimilarityMatch],
+            query_text: 'test',
+            dataset_tags: ['snopes'],
+            similarity_threshold: 0.7,
+            rrf_score_threshold: 0,
+            total_matches: 1,
+          },
+        },
       };
 
-      await (service as any).createNoteRequestForMatch(testMessageContent, similarityMatches);
+      await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
 
       expect(mockResolveCommunityServerId).toHaveBeenCalledWith(testGuildId);
       expect(mockResolveCommunityServerId).toHaveBeenCalledTimes(1);
@@ -215,16 +236,23 @@ describe('MessageMonitorService - UUID Resolution', () => {
     });
 
     it('should NOT use guildId directly in requestNote', async () => {
-      const similarityMatches = {
-        matches: [testSimilarityMatch],
-        query_text: 'test',
-        dataset_tags: ['snopes'],
-        similarity_threshold: 0.7,
-        rrf_score_threshold: 0,
-        total_matches: 1,
+      const similarityResponse = {
+        jsonapi: { version: '1.1' },
+        data: {
+          type: 'similarity-search-results',
+          id: 'search-124',
+          attributes: {
+            matches: [testSimilarityMatch],
+            query_text: 'test',
+            dataset_tags: ['snopes'],
+            similarity_threshold: 0.7,
+            rrf_score_threshold: 0,
+            total_matches: 1,
+          },
+        },
       };
 
-      await (service as any).createNoteRequestForMatch(testMessageContent, similarityMatches);
+      await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
 
       expect(mockApiClient.requestNote).not.toHaveBeenCalledWith(
         expect.objectContaining({
@@ -236,16 +264,23 @@ describe('MessageMonitorService - UUID Resolution', () => {
     it('should handle UUID resolution errors gracefully', async () => {
       mockResolveCommunityServerId.mockRejectedValue(new Error('Community server not found'));
 
-      const similarityMatches = {
-        matches: [testSimilarityMatch],
-        query_text: 'test',
-        dataset_tags: ['snopes'],
-        similarity_threshold: 0.7,
-        rrf_score_threshold: 0,
-        total_matches: 1,
+      const similarityResponse = {
+        jsonapi: { version: '1.1' },
+        data: {
+          type: 'similarity-search-results',
+          id: 'search-125',
+          attributes: {
+            matches: [testSimilarityMatch],
+            query_text: 'test',
+            dataset_tags: ['snopes'],
+            similarity_threshold: 0.7,
+            rrf_score_threshold: 0,
+            total_matches: 1,
+          },
+        },
       };
 
-      await (service as any).createNoteRequestForMatch(testMessageContent, similarityMatches);
+      await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
 
       expect(mockResolveCommunityServerId).toHaveBeenCalledWith(testGuildId);
       expect(mockApiClient.requestNote).not.toHaveBeenCalled();
@@ -261,28 +296,35 @@ describe('MessageMonitorService - UUID Resolution', () => {
   describe('createAutoRequestForSimilarContent - UUID resolution', () => {
     it('should resolve guild ID to UUID before calling requestNote', async () => {
       const previouslySeenResult = {
-        shouldAutoPublish: false,
-        shouldAutoRequest: true,
-        autopublishThreshold: 0.9,
-        autorequestThreshold: 0.75,
-        matches: [
-          {
-            id: 'prev-1',
-            community_server_id: 'some-uuid',
-            original_message_id: 'orig-msg-1',
-            published_note_id: 'note-1',
-            created_at: new Date().toISOString(),
-            similarity_score: 0.8,
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-123',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: true,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [
+              {
+                id: 'prev-1',
+                community_server_id: 'some-uuid',
+                original_message_id: 'orig-msg-1',
+                published_note_id: 'note-1',
+                created_at: new Date().toISOString(),
+                similarity_score: 0.8,
+              },
+            ],
+            top_match: {
+              id: 'prev-1',
+              community_server_id: 'some-uuid',
+              original_message_id: 'orig-msg-1',
+              published_note_id: 'note-1',
+              created_at: new Date().toISOString(),
+              similarity_score: 0.8,
+            },
           },
-        ],
-        topMatch: {
-          id: 'prev-1',
-          community_server_id: 'some-uuid',
-          original_message_id: 'orig-msg-1',
-          published_note_id: 'note-1',
-          created_at: new Date().toISOString(),
-          similarity_score: 0.8,
         },
+        jsonapi: { version: '1.1' },
       };
 
       await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
@@ -300,28 +342,35 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
     it('should NOT use guildId directly in requestNote', async () => {
       const previouslySeenResult = {
-        shouldAutoPublish: false,
-        shouldAutoRequest: true,
-        autopublishThreshold: 0.9,
-        autorequestThreshold: 0.75,
-        matches: [
-          {
-            id: 'prev-1',
-            community_server_id: 'some-uuid',
-            original_message_id: 'orig-msg-1',
-            published_note_id: 'note-1',
-            created_at: new Date().toISOString(),
-            similarity_score: 0.8,
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-123',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: true,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [
+              {
+                id: 'prev-1',
+                community_server_id: 'some-uuid',
+                original_message_id: 'orig-msg-1',
+                published_note_id: 'note-1',
+                created_at: new Date().toISOString(),
+                similarity_score: 0.8,
+              },
+            ],
+            top_match: {
+              id: 'prev-1',
+              community_server_id: 'some-uuid',
+              original_message_id: 'orig-msg-1',
+              published_note_id: 'note-1',
+              created_at: new Date().toISOString(),
+              similarity_score: 0.8,
+            },
           },
-        ],
-        topMatch: {
-          id: 'prev-1',
-          community_server_id: 'some-uuid',
-          original_message_id: 'orig-msg-1',
-          published_note_id: 'note-1',
-          created_at: new Date().toISOString(),
-          similarity_score: 0.8,
         },
+        jsonapi: { version: '1.1' },
       };
 
       await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
@@ -337,28 +386,35 @@ describe('MessageMonitorService - UUID Resolution', () => {
       mockResolveCommunityServerId.mockRejectedValue(new Error('Community server not found'));
 
       const previouslySeenResult = {
-        shouldAutoPublish: false,
-        shouldAutoRequest: true,
-        autopublishThreshold: 0.9,
-        autorequestThreshold: 0.75,
-        matches: [
-          {
-            id: 'prev-1',
-            community_server_id: 'some-uuid',
-            original_message_id: 'orig-msg-1',
-            published_note_id: 'note-1',
-            created_at: new Date().toISOString(),
-            similarity_score: 0.8,
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-123',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: true,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [
+              {
+                id: 'prev-1',
+                community_server_id: 'some-uuid',
+                original_message_id: 'orig-msg-1',
+                published_note_id: 'note-1',
+                created_at: new Date().toISOString(),
+                similarity_score: 0.8,
+              },
+            ],
+            top_match: {
+              id: 'prev-1',
+              community_server_id: 'some-uuid',
+              original_message_id: 'orig-msg-1',
+              published_note_id: 'note-1',
+              created_at: new Date().toISOString(),
+              similarity_score: 0.8,
+            },
           },
-        ],
-        topMatch: {
-          id: 'prev-1',
-          community_server_id: 'some-uuid',
-          original_message_id: 'orig-msg-1',
-          published_note_id: 'note-1',
-          created_at: new Date().toISOString(),
-          similarity_score: 0.8,
         },
+        jsonapi: { version: '1.1' },
       };
 
       await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
@@ -376,41 +432,55 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
   describe('Both code paths use the same resolution pattern', () => {
     it('should use the same resolveCommunityServerId function in both paths', async () => {
-      const similarityMatches = {
-        matches: [testSimilarityMatch],
-        query_text: 'test',
-        dataset_tags: ['snopes'],
-        similarity_threshold: 0.7,
-        rrf_score_threshold: 0,
-        total_matches: 1,
-      };
-
-      const previouslySeenResult = {
-        shouldAutoPublish: false,
-        shouldAutoRequest: true,
-        autopublishThreshold: 0.9,
-        autorequestThreshold: 0.75,
-        matches: [
-          {
-            id: 'prev-1',
-            community_server_id: 'some-uuid',
-            original_message_id: 'orig-msg-1',
-            published_note_id: 'note-1',
-            created_at: new Date().toISOString(),
-            similarity_score: 0.8,
+      const similarityResponse = {
+        jsonapi: { version: '1.1' },
+        data: {
+          type: 'similarity-search-results',
+          id: 'search-126',
+          attributes: {
+            matches: [testSimilarityMatch],
+            query_text: 'test',
+            dataset_tags: ['snopes'],
+            similarity_threshold: 0.7,
+            rrf_score_threshold: 0,
+            total_matches: 1,
           },
-        ],
-        topMatch: {
-          id: 'prev-1',
-          community_server_id: 'some-uuid',
-          original_message_id: 'orig-msg-1',
-          published_note_id: 'note-1',
-          created_at: new Date().toISOString(),
-          similarity_score: 0.8,
         },
       };
 
-      await (service as any).createNoteRequestForMatch(testMessageContent, similarityMatches);
+      const previouslySeenResult = {
+        data: {
+          type: 'previously-seen-check-results',
+          id: 'check-123',
+          attributes: {
+            should_auto_publish: false,
+            should_auto_request: true,
+            autopublish_threshold: 0.9,
+            autorequest_threshold: 0.75,
+            matches: [
+              {
+                id: 'prev-1',
+                community_server_id: 'some-uuid',
+                original_message_id: 'orig-msg-1',
+                published_note_id: 'note-1',
+                created_at: new Date().toISOString(),
+                similarity_score: 0.8,
+              },
+            ],
+            top_match: {
+              id: 'prev-1',
+              community_server_id: 'some-uuid',
+              original_message_id: 'orig-msg-1',
+              published_note_id: 'note-1',
+              created_at: new Date().toISOString(),
+              similarity_score: 0.8,
+            },
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
       await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
 
       expect(mockResolveCommunityServerId).toHaveBeenCalledTimes(2);

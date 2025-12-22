@@ -38,7 +38,22 @@ async def test_create_request_with_large_tweet_id(db_session, registered_user, a
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/api/v1/requests", json=request_payload, headers=auth_headers)
+        jsonapi_payload = {
+            "data": {
+                "type": "requests",
+                "attributes": {
+                    "request_id": request_payload["request_id"],
+                    "original_message_content": request_payload["original_message_content"],
+                    "requested_by": request_payload["requested_by"],
+                    "platform_message_id": request_payload["platform_message_id"],
+                    "platform_channel_id": request_payload["platform_channel_id"],
+                    "platform_author_id": request_payload["platform_author_id"],
+                    "platform_timestamp": request_payload["platform_timestamp"],
+                    "community_server_id": request_payload["community_server_id"],
+                },
+            }
+        }
+        response = await client.post("/api/v2/requests", json=jsonapi_payload, headers=auth_headers)
 
     print(f"Status: {response.status_code}")
     print(f"Response: {response.text}")
@@ -50,16 +65,16 @@ async def test_create_request_with_large_tweet_id(db_session, registered_user, a
 
     response_data = response.json()
 
-    # Verify platform_message_id is returned as a string
-    assert isinstance(response_data["platform_message_id"], str), (
-        f"platform_message_id should be string, got {type(response_data['platform_message_id'])}"
-    )
-    assert response_data["platform_message_id"] == "1436038555091865653"
+    attrs = response_data["data"]["attributes"]
 
-    # Verify note_id is None or string
-    if response_data.get("note_id") is not None:
-        assert isinstance(response_data["note_id"], str), (
-            f"note_id should be string, got {type(response_data['note_id'])}"
+    assert isinstance(attrs["platform_message_id"], str), (
+        f"platform_message_id should be string, got {type(attrs['platform_message_id'])}"
+    )
+    assert attrs["platform_message_id"] == "1436038555091865653"
+
+    if attrs.get("note_id") is not None:
+        assert isinstance(attrs["note_id"], str), (
+            f"note_id should be string, got {type(attrs['note_id'])}"
         )
 
-    print("✅ Test passed!")
+    print("Test passed!")

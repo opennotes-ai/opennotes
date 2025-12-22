@@ -3,7 +3,10 @@ import {
   ButtonBuilder,
   ButtonStyle,
 } from 'discord.js';
-import type { BulkScanResultsResponse, FlaggedMessage } from '../types/bulk-scan.js';
+import type {
+  LatestScanResponse,
+  FlaggedMessageResource,
+} from './api-client.js';
 import {
   formatMatchScore,
   formatMessageLink,
@@ -11,7 +14,7 @@ import {
 } from './bulk-scan-executor.js';
 
 export interface FormatScanStatusOptions {
-  scan: BulkScanResultsResponse;
+  scan: LatestScanResponse;
   guildId: string;
   days?: number;
   warningMessage?: string;
@@ -25,7 +28,10 @@ export interface FormatScanStatusResult {
 
 export function formatScanStatus(options: FormatScanStatusOptions): FormatScanStatusResult {
   const { scan, guildId, days, warningMessage, includeButtons = false } = options;
-  const { scan_id: scanId, status, messages_scanned: messagesScanned, flagged_messages: flaggedMessages } = scan;
+  const scanId = scan.data.id;
+  const status = scan.data.attributes.status;
+  const messagesScanned = scan.data.attributes.messages_scanned;
+  const flaggedMessages = scan.included || [];
 
   const daysText = days !== undefined
     ? `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n`
@@ -106,15 +112,15 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
   return { content };
 }
 
-function formatFlaggedMessagesList(flaggedMessages: FlaggedMessage[], guildId: string): string {
+function formatFlaggedMessagesList(flaggedMessages: FlaggedMessageResource[], guildId: string): string {
   return flaggedMessages.slice(0, 10).map((msg, index) => {
-    const messageLink = formatMessageLink(guildId, msg.channel_id, msg.message_id);
-    const confidence = formatMatchScore(msg.match_score);
-    const preview = truncateContent(msg.content);
+    const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
+    const confidence = formatMatchScore(msg.attributes.match_score);
+    const preview = truncateContent(msg.attributes.content);
 
     return `**${index + 1}.** [Message](${messageLink})\n` +
       `   Confidence: **${confidence}**\n` +
-      `   Matched: "${msg.matched_claim}"\n` +
+      `   Matched: "${msg.attributes.matched_claim}"\n` +
       `   Preview: "${preview}"`;
   }).join('\n\n');
 }

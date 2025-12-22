@@ -21,6 +21,25 @@ from src.notes.models import Note, Request
 pytestmark = pytest.mark.integration
 
 
+async def create_note_v2_request(client, note_data):
+    """Create a note using the v2 JSON:API endpoint."""
+    attributes = {
+        "summary": note_data["summary"],
+        "classification": note_data["classification"],
+        "community_server_id": str(note_data["community_server_id"]),
+        "author_participant_id": note_data["author_participant_id"],
+    }
+    if "request_id" in note_data:
+        attributes["request_id"] = note_data["request_id"]
+    request_body = {
+        "data": {
+            "type": "notes",
+            "attributes": attributes,
+        }
+    }
+    return await client.post("/api/v2/notes", json=request_body)
+
+
 async def create_note_with_request() -> tuple[Note, Request, CommunityServer]:
     """Create a test note with an associated request."""
     async with get_session_maker()() as session:
@@ -99,7 +118,7 @@ class TestRequestStatusOnPublish:
         async with AsyncClient(
             transport=transport, base_url="http://test", headers=headers
         ) as client:
-            response = await client.post(f"/api/v1/notes/{note.id}/force-publish")
+            response = await client.post(f"/api/v2/notes/{note.id}/force-publish")
             assert response.status_code == 200
 
         async with get_session_maker()() as session:
@@ -170,7 +189,7 @@ class TestRequestStatusOnPublish:
         async with AsyncClient(
             transport=transport, base_url="http://test", headers=headers
         ) as client:
-            response = await client.post(f"/api/v1/notes/{note_id}/force-publish")
+            response = await client.post(f"/api/v2/notes/{note_id}/force-publish")
             assert response.status_code == 200
 
         async with get_session_maker()() as session:
@@ -333,7 +352,7 @@ class TestRequestStatusOnPublish:
         async with AsyncClient(
             transport=transport, base_url="http://test", headers=headers
         ) as client:
-            response = await client.post(f"/api/v1/notes/{note.id}/force-publish")
+            response = await client.post(f"/api/v2/notes/{note.id}/force-publish")
             assert response.status_code == 200
 
         async with get_session_maker()() as session:
@@ -410,7 +429,7 @@ class TestRequestStatusOnNoteCreation:
         async with AsyncClient(
             transport=transport, base_url="http://test", headers=headers
         ) as client:
-            response = await client.post("/api/v1/notes", json=note_data)
+            response = await create_note_v2_request(client, note_data)
             assert response.status_code == 201
 
         async with get_session_maker()() as session:
@@ -464,7 +483,7 @@ class TestRequestStatusOnNoteCreation:
         async with AsyncClient(
             transport=transport, base_url="http://test", headers=headers
         ) as client:
-            response = await client.post("/api/v1/notes", json=note_data)
+            response = await create_note_v2_request(client, note_data)
             assert response.status_code == 201
             response_data = response.json()
-            assert response_data["id"] is not None
+            assert response_data["data"]["id"] is not None

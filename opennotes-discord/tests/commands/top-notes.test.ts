@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { MessageFlags, ChannelType, TextChannel } from 'discord.js';
-import { createMockLogger, createSuccessResult, createErrorResult } from '../utils/service-mocks.js';
+import { createMockLogger, createSuccessResult, createErrorResult, createMockTopNotesJSONAPIResponse } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
 
@@ -220,14 +220,16 @@ describe('top-notes command', () => {
 
   describe('successful execution', () => {
     it('should display top notes with default limit as ephemeral message', async () => {
+      const mockTopNotesResponse = createMockTopNotesJSONAPIResponse({
+        notes: [
+          { noteId: 'note1', score: 0.95, confidence: 'standard', tier: 5, ratingCount: 10 },
+          { noteId: 'note2', score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 4, ratingCount: 8 },
+        ],
+        totalCount: 2,
+      });
+
       mockScoringService.getTopNotes.mockResolvedValue(
-        createSuccessResult({
-          notes: [
-            { note_id: 'note1', score: 0.95, confidence: 'standard', tier: 5, rating_count: 10, algorithm: 'matrix_factorization' },
-            { note_id: 'note2', score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 4, rating_count: 8, algorithm: 'matrix_factorization' },
-          ],
-          total_count: 2,
-        })
+        createSuccessResult(mockTopNotesResponse)
       );
 
       const mockChannel = createMockTextChannel();
@@ -274,11 +276,13 @@ describe('top-notes command', () => {
     });
 
     it('should respect custom limit parameter', async () => {
+      const mockEmptyResponse = createMockTopNotesJSONAPIResponse({
+        notes: [],
+        totalCount: 0,
+      });
+
       mockScoringService.getTopNotes.mockResolvedValue(
-        createSuccessResult({
-          notes: [],
-          total_count: 0,
-        })
+        createSuccessResult(mockEmptyResponse)
       );
 
       const mockChannel = createMockTextChannel();
@@ -319,11 +323,13 @@ describe('top-notes command', () => {
     });
 
     it('should filter by confidence level', async () => {
+      const mockResponse = createMockTopNotesJSONAPIResponse({
+        notes: [{ noteId: 'note1', score: 0.95, confidence: 'standard', tier: 5, ratingCount: 10 }],
+        totalCount: 1,
+      });
+
       mockScoringService.getTopNotes.mockResolvedValue(
-        createSuccessResult({
-          notes: [{ note_id: 'note1', score: 0.95, confidence: 'standard', tier: 5, rating_count: 10, algorithm: 'matrix_factorization' }],
-          total_count: 1,
-        })
+        createSuccessResult(mockResponse)
       );
 
       const mockChannel = createMockTextChannel();
@@ -360,11 +366,13 @@ describe('top-notes command', () => {
     });
 
     it('should filter by tier', async () => {
+      const mockResponse = createMockTopNotesJSONAPIResponse({
+        notes: [{ noteId: 'note1', score: 0.95, confidence: 'standard', tier: 5, ratingCount: 10 }],
+        totalCount: 1,
+      });
+
       mockScoringService.getTopNotes.mockResolvedValue(
-        createSuccessResult({
-          notes: [{ note_id: 'note1', score: 0.95, confidence: 'standard', tier: 5, rating_count: 10, algorithm: 'matrix_factorization' }],
-          total_count: 1,
-        })
+        createSuccessResult(mockResponse)
       );
 
       const mockChannel = createMockTextChannel();
@@ -404,11 +412,13 @@ describe('top-notes command', () => {
     });
 
     it('should handle empty results', async () => {
+      const mockEmptyResponse = createMockTopNotesJSONAPIResponse({
+        notes: [],
+        totalCount: 0,
+      });
+
       mockScoringService.getTopNotes.mockResolvedValue(
-        createSuccessResult({
-          notes: [],
-          total_count: 0,
-        })
+        createSuccessResult(mockEmptyResponse)
       );
 
       const mockChannel = createMockTextChannel();
@@ -562,17 +572,27 @@ describe('top-notes command', () => {
 
   describe('logging', () => {
     it('should log successful execution', async () => {
+      const mockResponse = createMockTopNotesJSONAPIResponse({
+        notes: [{ noteId: 'note1', score: 0.95, confidence: 'standard', tier: 5, ratingCount: 10 }],
+        totalCount: 10,
+      });
+
       mockScoringService.getTopNotes.mockResolvedValue(
-        createSuccessResult({
-          notes: [{ note_id: 'note1', score: 0.95, confidence: 'standard', tier: 5, rating_count: 10, algorithm: 'matrix_factorization' }],
-          total_count: 10,
-        })
+        createSuccessResult(mockResponse)
       );
 
       const mockChannel = createMockTextChannel();
       const mockInteraction = {
         user: { id: 'user123', username: 'testuser' },
         guildId: 'guild456',
+        guild: {
+          id: 'guild456',
+          members: {
+            cache: {
+              get: jest.fn().mockReturnValue(null),
+            },
+          },
+        },
         channel: mockChannel,
         options: {
           getSubcommand: jest.fn<() => string>().mockReturnValue('top-notes'),

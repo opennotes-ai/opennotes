@@ -1,9 +1,13 @@
 import type { Message, Client } from 'discord.js';
 import { logger } from '../logger.js';
-import { MonitoredChannelService } from './MonitoredChannelService.js';
+import { MonitoredChannelService, CachedMonitoredChannel } from './MonitoredChannelService.js';
 import { apiClient } from '../api-client.js';
 import { RedisQueue } from '../utils/redis-queue.js';
-import type { MonitoredChannelResponse, SimilaritySearchResponse } from '../lib/api-client.js';
+import type {
+  JSONAPISingleResponse,
+  SimilaritySearchResultAttributes,
+  PreviouslySeenCheckJSONAPIResponse,
+} from '../lib/api-client.js';
 import { CONTENT_LIMITS } from '../lib/constants.js';
 import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 import type Redis from 'ioredis';
@@ -15,11 +19,11 @@ export interface MessageContent {
   authorId: string;
   content: string;
   timestamp: number;
-  channelConfig: MonitoredChannelResponse;
+  channelConfig: CachedMonitoredChannel;
 }
 
 export interface MessageWithMatches extends MessageContent {
-  similarityMatches: SimilaritySearchResponse;
+  similarityMatches: JSONAPISingleResponse<SimilaritySearchResultAttributes>;
 }
 
 /**
@@ -98,7 +102,7 @@ export class MessageMonitorService {
         message.guildId
       );
 
-      if (!channelConfig || !channelConfig.enabled) {
+      if (!channelConfig || !channelConfig.attributes.enabled) {
         return;
       }
 
@@ -291,10 +295,11 @@ export class MessageMonitorService {
 
   private async createNoteRequestForMatch(
     messageContent: MessageContent,
-    similarityMatches: SimilaritySearchResponse
+    similarityResponse: JSONAPISingleResponse<SimilaritySearchResultAttributes>
   ): Promise<void> {
     try {
-      const topMatch = similarityMatches.matches[0];
+      const matches = similarityResponse.data.attributes.matches;
+      const topMatch = matches[0];
 
       const communityServerUuid = await resolveCommunityServerId(messageContent.guildId);
 
@@ -369,15 +374,18 @@ export class MessageMonitorService {
           messageContent.channelId
         );
 
+        const attrs = previouslySeenResult.data.attributes;
+        const topMatch = attrs.top_match;
+
         // Handle auto-publish (high similarity >= 0.9)
-        if (previouslySeenResult.shouldAutoPublish && previouslySeenResult.topMatch) {
+        if (attrs.should_auto_publish && topMatch) {
           logger.info('Auto-publishing previously seen note', {
             messageId: messageContent.messageId,
             channelId: messageContent.channelId,
             guildId: messageContent.guildId,
-            similarity: previouslySeenResult.topMatch.similarity_score,
-            publishedNoteId: previouslySeenResult.topMatch.published_note_id,
-            threshold: previouslySeenResult.autopublishThreshold,
+            similarity: topMatch.similarity_score,
+            publishedNoteId: topMatch.published_note_id,
+            threshold: attrs.autopublish_threshold,
           });
 
           await this.autoPublishPreviousNote(messageContent, previouslySeenResult);
@@ -385,13 +393,13 @@ export class MessageMonitorService {
         }
 
         // Handle auto-request (moderate similarity 0.75-0.89)
-        if (previouslySeenResult.shouldAutoRequest && previouslySeenResult.topMatch) {
+        if (attrs.should_auto_request && topMatch) {
           logger.info('Auto-requesting note due to similarity with previously seen message', {
             messageId: messageContent.messageId,
             channelId: messageContent.channelId,
             guildId: messageContent.guildId,
-            similarity: previouslySeenResult.topMatch.similarity_score,
-            threshold: previouslySeenResult.autorequestThreshold,
+            similarity: topMatch.similarity_score,
+            threshold: attrs.autorequest_threshold,
           });
 
           await this.createAutoRequestForSimilarContent(messageContent, previouslySeenResult);
@@ -400,9 +408,9 @@ export class MessageMonitorService {
 
         logger.debug('No previously seen matches above thresholds', {
           messageId: messageContent.messageId,
-          autopublishThreshold: previouslySeenResult.autopublishThreshold,
-          autorequestThreshold: previouslySeenResult.autorequestThreshold,
-          matchCount: previouslySeenResult.matches.length,
+          autopublishThreshold: attrs.autopublish_threshold,
+          autorequestThreshold: attrs.autorequest_threshold,
+          matchCount: attrs.matches.length,
         });
       } catch (error) {
         // Log error but continue with normal flow if previously-seen check fails
@@ -416,25 +424,26 @@ export class MessageMonitorService {
       }
 
       // Normal fact-check similarity search
-      const similarityMatches = await apiClient.similaritySearch(
+      const similarityResponse = await apiClient.similaritySearch(
         messageContent.content,
         messageContent.guildId,
-        messageContent.channelConfig.dataset_tags,
-        messageContent.channelConfig.similarity_threshold,
+        messageContent.channelConfig.attributes.dataset_tags,
+        messageContent.channelConfig.attributes.similarity_threshold,
         5
       );
 
-      if (similarityMatches.matches.length > 0) {
+      const matches = similarityResponse.data.attributes.matches;
+      if (matches.length > 0) {
         logger.info('Found similarity matches for message', {
           messageId: messageContent.messageId,
           channelId: messageContent.channelId,
           guildId: messageContent.guildId,
-          matchCount: similarityMatches.matches.length,
-          topScore: similarityMatches.matches[0].similarity_score,
-          topMatch: similarityMatches.matches[0].title,
+          matchCount: matches.length,
+          topScore: matches[0].similarity_score,
+          topMatch: matches[0].title,
         });
 
-        await this.createNoteRequestForMatch(messageContent, similarityMatches);
+        await this.createNoteRequestForMatch(messageContent, similarityResponse);
       } else {
         logger.debug('No similarity matches found for message', {
           messageId: messageContent.messageId,
@@ -454,14 +463,14 @@ export class MessageMonitorService {
 
   private async autoPublishPreviousNote(
     messageContent: MessageContent,
-    previouslySeenResult: import('../lib/api-client.js').PreviouslySeenCheckResponse
+    previouslySeenResult: PreviouslySeenCheckJSONAPIResponse
   ): Promise<void> {
     try {
-      if (!previouslySeenResult.topMatch) {
+      const topMatch = previouslySeenResult.data.attributes.top_match;
+      if (!topMatch) {
         return;
       }
 
-      const topMatch = previouslySeenResult.topMatch;
       const publishedNoteId = topMatch.published_note_id;
 
       if (!publishedNoteId) {
@@ -485,7 +494,7 @@ export class MessageMonitorService {
       const replyContent = [
         `🔁 **Previously Published Note** (${(topMatch.similarity_score * 100).toFixed(1)}% match)`,
         '',
-        note.summary || 'No content available',
+        note.data.attributes.summary || 'No content available',
         '',
         `*This note was automatically republished because it closely matches a previously seen message.*`,
       ].join('\n');
@@ -514,10 +523,11 @@ export class MessageMonitorService {
 
   private async createAutoRequestForSimilarContent(
     messageContent: MessageContent,
-    previouslySeenResult: import('../lib/api-client.js').PreviouslySeenCheckResponse
+    previouslySeenResult: PreviouslySeenCheckJSONAPIResponse
   ): Promise<void> {
     try {
-      const topMatch = previouslySeenResult.topMatch;
+      const attrs = previouslySeenResult.data.attributes;
+      const topMatch = attrs.top_match;
       if (!topMatch) {
         return;
       }
@@ -536,7 +546,7 @@ export class MessageMonitorService {
         `**Match Metadata:**`,
         `- Previously Seen ID: ${topMatch.id}`,
         `- Similarity Score: ${topMatch.similarity_score.toFixed(4)}`,
-        `- Auto-Request Threshold: ${previouslySeenResult.autorequestThreshold}`,
+        `- Auto-Request Threshold: ${attrs.autorequest_threshold}`,
       ].join('\n');
 
       await apiClient.requestNote({

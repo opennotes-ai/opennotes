@@ -5,6 +5,7 @@ import {
   createMockViewNotesService,
   createSuccessResult,
   createErrorResult,
+  createMockNoteListJSONAPIResponse,
 } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
@@ -19,8 +20,16 @@ const mockScoringService = {
 };
 
 const mockDiscordFormatter = {
-  formatViewNotesSuccessV2: jest.fn().mockReturnValue({ embeds: [] }),
-  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({ content: 'Error occurred' }),
+  formatViewNotesSuccessV2: jest.fn().mockReturnValue({
+    container: { toJSON: () => ({ type: 17, components: [] }) },
+    components: [{ type: 17, components: [] }],
+    flags: 1 << 15,
+  }),
+  formatErrorV2: jest.fn<(...args: any[]) => any>().mockReturnValue({
+    container: { toJSON: () => ({ type: 17, components: [] }) },
+    components: [{ type: 17, components: [] }],
+    flags: (1 << 15) | (1 << 6),
+  }),
 };
 
 const mockApiClient = {
@@ -93,43 +102,36 @@ describe('note-view command', () => {
     jest.clearAllMocks();
     mockServiceProvider.getViewNotesService.mockReturnValue(mockViewNotesService);
     mockServiceProvider.getScoringService.mockReturnValue(mockScoringService);
-    mockDiscordFormatter.formatViewNotesSuccessV2.mockReturnValue({ embeds: [] });
-    mockDiscordFormatter.formatErrorV2.mockReturnValue({ content: 'Error occurred' });
+    mockDiscordFormatter.formatViewNotesSuccessV2.mockReturnValue({
+      container: { toJSON: () => ({ type: 17, components: [] }) },
+      components: [{ type: 17, components: [] }],
+      flags: 1 << 15,
+    });
+    mockDiscordFormatter.formatErrorV2.mockReturnValue({
+      container: { toJSON: () => ({ type: 17, components: [] }) },
+      components: [{ type: 17, components: [] }],
+      flags: (1 << 15) | (1 << 6),
+    });
   });
 
   describe('successful execution', () => {
     it('should display notes for a message', async () => {
-      const mockNotes = [
-        {
-          id: '1',
-          messageId: '12345678901234567',
-          authorId: 'author1',
-          content: 'This is a community note',
-          createdAt: Date.now(),
-          helpfulCount: 5,
-          notHelpfulCount: 1,
-        },
-        {
-          id: '2',
-          messageId: '12345678901234567',
-          authorId: 'author2',
-          content: 'Another community note',
-          createdAt: Date.now(),
-          helpfulCount: 3,
-          notHelpfulCount: 0,
-        },
-      ];
+      const mockNotesResponse = createMockNoteListJSONAPIResponse([
+        { id: '1', summary: 'This is a community note', authorParticipantId: 'author1' },
+        { id: '2', summary: 'Another community note', authorParticipantId: 'author2' },
+      ]);
 
       mockViewNotesService.execute.mockResolvedValue(
-        createSuccessResult({ notes: mockNotes })
+        createSuccessResult({ notes: mockNotesResponse })
       );
 
       mockScoringService.getBatchNoteScores.mockResolvedValue(
         createSuccessResult({
-          scores: {
-            '1': { score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 4 },
-            '2': { score: 0.72, confidence: 'standard', tier: 3 },
-          },
+          data: [
+            { type: 'note_score', id: '1', attributes: { score: TEST_SCORE_ABOVE_THRESHOLD, confidence: 'standard', tier: 4, tier_name: 'Tier 4', algorithm: 'MFCoreScorer', rating_count: 10 } },
+            { type: 'note_score', id: '2', attributes: { score: 0.72, confidence: 'standard', tier: 3, tier_name: 'Tier 3', algorithm: 'MFCoreScorer', rating_count: 8 } },
+          ],
+          jsonapi: { version: '1.1' },
         })
       );
 
@@ -158,8 +160,9 @@ describe('note-view command', () => {
     });
 
     it('should handle empty notes list', async () => {
+      const emptyNotesResponse = createMockNoteListJSONAPIResponse([]);
       mockViewNotesService.execute.mockResolvedValue(
-        createSuccessResult({ notes: [] })
+        createSuccessResult({ notes: emptyNotesResponse })
       );
 
       const mockInteraction = {
@@ -245,8 +248,9 @@ describe('note-view command', () => {
 
   describe('logging', () => {
     it('should log command execution', async () => {
+      const emptyNotesResponse = createMockNoteListJSONAPIResponse([]);
       mockViewNotesService.execute.mockResolvedValue(
-        createSuccessResult({ notes: [] })
+        createSuccessResult({ notes: emptyNotesResponse })
       );
 
       const mockInteraction = {

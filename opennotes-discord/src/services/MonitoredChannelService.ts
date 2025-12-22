@@ -1,24 +1,26 @@
 import { apiClient } from '../api-client.js';
 import { cache } from '../cache.js';
 import { logger } from '../logger.js';
-import type { MonitoredChannelResponse } from '../lib/api-client.js';
+import type { MonitoredChannelJSONAPIAttributes, JSONAPIResource } from '../lib/api-client.js';
 import { safeJSONParse } from '../utils/safe-json.js';
 
 const CACHE_KEY_PREFIX = 'monitored_channels';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+export type CachedMonitoredChannel = JSONAPIResource<MonitoredChannelJSONAPIAttributes>;
 
 export class MonitoredChannelService {
   private lastFetchTime: Map<string, number> = new Map();
 
   async isChannelMonitored(channelId: string, guildId: string): Promise<boolean> {
     const config = await this.getChannelConfig(channelId, guildId);
-    return config !== null && config.enabled;
+    return config !== null && config.attributes.enabled;
   }
 
   async getChannelConfig(
     channelId: string,
     guildId: string
-  ): Promise<MonitoredChannelResponse | null> {
+  ): Promise<CachedMonitoredChannel | null> {
     const cacheKey = this.getCacheKey(guildId);
 
     let channels = await this.getCachedChannels(cacheKey, guildId);
@@ -32,10 +34,10 @@ export class MonitoredChannelService {
       return null;
     }
 
-    return channels.find(ch => ch.channel_id === channelId) || null;
+    return channels.find(ch => ch.attributes.channel_id === channelId) || null;
   }
 
-  async getAllMonitoredChannels(guildId: string): Promise<MonitoredChannelResponse[]> {
+  async getAllMonitoredChannels(guildId: string): Promise<CachedMonitoredChannel[]> {
     const cacheKey = this.getCacheKey(guildId);
 
     let channels = await this.getCachedChannels(cacheKey, guildId);
@@ -65,11 +67,11 @@ export class MonitoredChannelService {
       const response = await apiClient.listMonitoredChannels(guildId, true);
 
       const cacheKey = this.getCacheKey(guildId);
-      await cache.set(cacheKey, JSON.stringify(response.channels), CACHE_TTL_MS);
+      await cache.set(cacheKey, JSON.stringify(response.data), CACHE_TTL_MS);
 
       logger.info('Monitored channels cache refreshed', {
         guildId,
-        count: response.channels.length,
+        count: response.data.length,
         ttl_ms: CACHE_TTL_MS,
       });
     } catch (error) {
@@ -92,7 +94,7 @@ export class MonitoredChannelService {
   private async getCachedChannels(
     cacheKey: string,
     guildId: string
-  ): Promise<MonitoredChannelResponse[] | null> {
+  ): Promise<CachedMonitoredChannel[] | null> {
     const cached = await cache.get<string>(cacheKey);
 
     if (!cached) {
@@ -101,7 +103,7 @@ export class MonitoredChannelService {
     }
 
     try {
-      const channels = safeJSONParse<MonitoredChannelResponse[]>(cached, {
+      const channels = safeJSONParse<CachedMonitoredChannel[]>(cached, {
         validate: (data) => {
           if (!Array.isArray(data)) {
             logger.warn('Cached data is not an array', { guildId });
@@ -111,8 +113,12 @@ export class MonitoredChannelService {
             const hasRequiredFields =
               typeof item === 'object' &&
               item !== null &&
-              'channel_id' in item &&
-              'enabled' in item;
+              'id' in item &&
+              'type' in item &&
+              'attributes' in item &&
+              typeof (item as CachedMonitoredChannel).attributes === 'object' &&
+              'channel_id' in (item as CachedMonitoredChannel).attributes &&
+              'enabled' in (item as CachedMonitoredChannel).attributes;
 
             if (!hasRequiredFields) {
               logger.warn('Cached item missing required fields', { guildId, item });

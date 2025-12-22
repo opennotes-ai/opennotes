@@ -16,6 +16,7 @@ Filter operators supported (via fastapi-filter style syntax):
 - filter[created_at__gte]: Created at >= datetime
 - filter[created_at__lte]: Created at <= datetime
 - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
+- filter[rated_by_participant_id]: Include only notes rated by this user
 """
 
 from datetime import UTC, datetime
@@ -25,7 +26,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, exists, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,8 +55,16 @@ from src.database import get_db
 from src.events.publisher import event_publisher
 from src.monitoring import get_logger
 from src.notes import loaders
+from src.notes.message_archive_models import MessageArchive
 from src.notes.models import Note, Rating, Request
-from src.notes.schemas import NoteClassification, NoteStatus
+from src.notes.schemas import (
+    NoteClassification,
+    NoteJSONAPIAttributes,
+    NoteListResponse,
+    NoteResource,
+    NoteSingleResponse,
+    NoteStatus,
+)
 from src.users.models import User
 
 logger = get_logger(__name__)
@@ -108,55 +117,6 @@ class NoteUpdateRequest(BaseModel):
     data: NoteUpdateData
 
 
-class NoteAttributes(BaseModel):
-    """Note attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    author_participant_id: str
-    channel_id: str | None = None
-    summary: str
-    classification: str
-    helpfulness_score: int = 0
-    status: str = "NEEDS_MORE_RATINGS"
-    ai_generated: bool = False
-    ai_provider: str | None = None
-    force_published: bool = False
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    request_id: str | None = None
-    platform_message_id: str | None = None
-
-
-class NoteResource(BaseModel):
-    """JSON:API resource object for a note."""
-
-    type: str = "notes"
-    id: str
-    attributes: NoteAttributes
-
-
-class NoteListResponse(BaseModel):
-    """JSON:API response for a list of note resources."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    data: list[NoteResource]
-    jsonapi: dict[str, str] = {"version": "1.1"}
-    links: JSONAPILinks | None = None
-    meta: JSONAPIMeta | None = None
-
-
-class NoteSingleResponse(BaseModel):
-    """JSON:API response for a single note resource."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    data: NoteResource
-    jsonapi: dict[str, str] = {"version": "1.1"}
-    links: JSONAPILinks | None = None
-
-
 def note_to_resource(note: Note) -> NoteResource:
     """Convert a Note model to a JSON:API resource object."""
     platform_message_id = None
@@ -166,7 +126,7 @@ def note_to_resource(note: Note) -> NoteResource:
     return NoteResource(
         type="notes",
         id=str(note.id),
-        attributes=NoteAttributes(
+        attributes=NoteJSONAPIAttributes(
             author_participant_id=note.author_participant_id,
             channel_id=note.channel_id,
             summary=note.summary,
@@ -176,10 +136,13 @@ def note_to_resource(note: Note) -> NoteResource:
             ai_generated=note.ai_generated,
             ai_provider=note.ai_provider,
             force_published=note.force_published,
+            force_published_at=note.force_published_at,
             created_at=note.created_at,
             updated_at=note.updated_at,
             request_id=note.request_id,
             platform_message_id=platform_message_id,
+            ratings_count=len(note.ratings) if note.ratings else 0,
+            community_server_id=str(note.community_server_id) if note.community_server_id else None,
         ),
     )
 
@@ -244,6 +207,7 @@ def _build_attribute_filters(
     filter_created_at_gte: datetime | None,
     filter_created_at_lte: datetime | None,
     filter_rated_by_not_in: list[str] | None,
+    filter_rated_by: str | None = None,
 ) -> list:
     """Build a list of filter conditions for note attributes.
 
@@ -253,6 +217,7 @@ def _build_attribute_filters(
     - Greater than or equal: filter[field__gte]=value
     - Less than or equal: filter[field__lte]=value
     - Not in (exclusion): filter[rated_by_participant_id__not_in]=user1,user2
+    - In (inclusion): filter[rated_by_participant_id]=user1 (notes rated by user)
     """
     filters = []
 
@@ -283,10 +248,17 @@ def _build_attribute_filters(
         )
         filters.append(not_(exists(rating_subquery.where(Rating.note_id == Note.id))))
 
+    if filter_rated_by:
+        filters.append(
+            Note.id.in_(
+                select(Rating.note_id).where(Rating.rater_participant_id == filter_rated_by)
+            )
+        )
+
     return filters
 
 
-@router.get("/notes", response_class=JSONResponse)
+@router.get("/notes", response_class=JSONResponse, response_model=NoteListResponse)
 async def list_notes_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -304,6 +276,8 @@ async def list_notes_jsonapi(
     filter_rated_by_not_in: str | None = Query(
         None, alias="filter[rated_by_participant_id__not_in]"
     ),
+    filter_rated_by: str | None = Query(None, alias="filter[rated_by_participant_id]"),
+    filter_platform_message_id: str | None = Query(None, alias="filter[platform_message_id]"),
 ) -> JSONResponse:
     """List notes with JSON:API format.
 
@@ -319,6 +293,7 @@ async def list_notes_jsonapi(
     - filter[community_server_id]: Filter by community server UUID
     - filter[author_participant_id]: Filter by author
     - filter[request_id]: Filter by request ID
+    - filter[platform_message_id]: Filter by platform message ID (Discord snowflake)
 
     Filter Parameters (operators):
     - filter[status__neq]: Exclude notes with this status
@@ -326,6 +301,7 @@ async def list_notes_jsonapi(
     - filter[created_at__lte]: Notes created on or before this datetime
     - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
       (comma-separated list of participant IDs)
+    - filter[rated_by_participant_id]: Include only notes rated by this user
 
     Returns JSON:API formatted response with data, jsonapi, links, and meta.
     """
@@ -347,6 +323,7 @@ async def list_notes_jsonapi(
             filter_created_at_gte=filter_created_at_gte,
             filter_created_at_lte=filter_created_at_lte,
             filter_rated_by_not_in=rated_by_list,
+            filter_rated_by=filter_rated_by,
         )
 
         if filter_community_server_id:
@@ -370,10 +347,20 @@ async def list_notes_jsonapi(
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
 
+        if filter_platform_message_id:
+            query = query.join(Request, Note.request_id == Request.request_id).join(
+                MessageArchive, Request.message_archive_id == MessageArchive.id
+            )
+            filters.append(MessageArchive.platform_message_id == filter_platform_message_id)
+
         if filters:
             query = query.where(and_(*filters))
 
         total_query = select(func.count(Note.id))
+        if filter_platform_message_id:
+            total_query = total_query.join(Request, Note.request_id == Request.request_id).join(
+                MessageArchive, Request.message_archive_id == MessageArchive.id
+            )
         if filters:
             total_query = total_query.where(and_(*filters))
         total_result = await db.execute(total_query)
@@ -409,7 +396,7 @@ async def list_notes_jsonapi(
         )
 
 
-@router.get("/notes/{note_id}", response_class=JSONResponse)
+@router.get("/notes/{note_id}", response_class=JSONResponse, response_model=NoteSingleResponse)
 async def get_note_jsonapi(
     note_id: UUID,
     request: HTTPRequest,
@@ -460,7 +447,12 @@ async def get_note_jsonapi(
         )
 
 
-@router.post("/notes", response_class=JSONResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/notes",
+    response_class=JSONResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model=NoteSingleResponse,
+)
 async def create_note_jsonapi(
     request: HTTPRequest,
     body: NoteCreateRequest,
@@ -548,7 +540,7 @@ async def create_note_jsonapi(
         )
 
 
-@router.patch("/notes/{note_id}", response_class=JSONResponse)
+@router.patch("/notes/{note_id}", response_class=JSONResponse, response_model=NoteSingleResponse)
 async def update_note_jsonapi(
     note_id: UUID,
     request: HTTPRequest,
@@ -643,7 +635,9 @@ async def delete_note_jsonapi(
         )
 
 
-@router.post("/notes/{note_id}/force-publish", response_class=JSONResponse)
+@router.post(
+    "/notes/{note_id}/force-publish", response_class=JSONResponse, response_model=NoteSingleResponse
+)
 async def force_publish_note_jsonapi(
     note_id: UUID,
     request: HTTPRequest,

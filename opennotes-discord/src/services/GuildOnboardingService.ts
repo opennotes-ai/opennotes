@@ -47,7 +47,7 @@ export class GuildOnboardingService {
       let communityServerId: string;
       try {
         const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-        communityServerId = communityServer.id;
+        communityServerId = communityServer.data.id;
       } catch (lookupError) {
         logger.debug('Community server not found, skipping vibe check prompt', {
           guildId,
@@ -58,7 +58,8 @@ export class GuildOnboardingService {
 
       let hasRecentScan = false;
       try {
-        hasRecentScan = await apiClient.checkRecentScan(communityServerId);
+        const recentScanResponse = await apiClient.checkRecentScan(communityServerId);
+        hasRecentScan = recentScanResponse.data.attributes.has_recent_scan;
       } catch (checkError) {
         logger.debug('Failed to check recent scan, will show prompt anyway', {
           guildId,

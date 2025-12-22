@@ -212,7 +212,11 @@ def create_error_response(
     )
 
 
-@router.post("/hybrid-searches", response_class=JSONResponse)
+@router.post(
+    "/hybrid-searches",
+    response_class=JSONResponse,
+    response_model=HybridSearchResultResponse,
+)
 @limiter.limit("100/hour")
 async def hybrid_search_jsonapi(
     request: HTTPRequest,

@@ -186,6 +186,27 @@ def force_publish_sample_note_data(
     }
 
 
+async def create_note_v2(client, note_data):
+    """Create a note using the v2 JSON:API endpoint."""
+    attributes = {
+        "summary": note_data["summary"],
+        "classification": note_data["classification"].value
+        if hasattr(note_data["classification"], "value")
+        else note_data["classification"],
+        "community_server_id": str(note_data["community_server_id"]),
+        "author_participant_id": note_data["author_participant_id"],
+    }
+    if "request_id" in note_data:
+        attributes["request_id"] = note_data["request_id"]
+    request_body = {
+        "data": {
+            "type": "notes",
+            "attributes": attributes,
+        }
+    }
+    return await client.post("/api/v2/notes", json=request_body)
+
+
 class TestForcePublishQueryOptimization:
     """Tests for N+1 query optimization in force-publish endpoint.
 
@@ -226,9 +247,9 @@ class TestForcePublishQueryOptimization:
         - db.refresh() to get updated state after commit (no extra SELECT for note)
         """
         note_data = self._get_unique_note_data(force_publish_sample_note_data)
-        create_response = await force_publish_admin_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(force_publish_admin_client, note_data)
         assert create_response.status_code == 201, f"Failed to create note: {create_response.text}"
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await force_publish_admin_client.post(f"/api/v2/notes/{note_id}/force-publish")
 
@@ -256,9 +277,9 @@ class TestForcePublishQueryOptimization:
         This ensures the fix doesn't break functionality while improving performance.
         """
         note_data = self._get_unique_note_data(force_publish_sample_note_data)
-        create_response = await force_publish_admin_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(force_publish_admin_client, note_data)
         assert create_response.status_code == 201
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await force_publish_admin_client.post(f"/api/v2/notes/{note_id}/force-publish")
 
@@ -305,9 +326,9 @@ class TestForcePublishQueryOptimization:
         note_data = self._get_unique_note_data(force_publish_sample_note_data)
         note_data["request_id"] = request_id
 
-        create_response = await force_publish_admin_client.post("/api/v1/notes", json=note_data)
+        create_response = await create_note_v2(force_publish_admin_client, note_data)
         assert create_response.status_code == 201, f"Failed to create note: {create_response.text}"
-        note_id = create_response.json()["id"]
+        note_id = create_response.json()["data"]["id"]
 
         response = await force_publish_admin_client.post(f"/api/v2/notes/{note_id}/force-publish")
 

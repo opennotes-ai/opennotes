@@ -108,6 +108,40 @@ const { execute } = await import('../../src/commands/note.js');
 
 const TEST_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
+// Helper to create mock JSONAPI note response for force-publish
+function createMockNoteJSONAPIResponse(overrides: {
+  id?: string;
+  summary?: string;
+  status?: string;
+  forcePublished?: boolean;
+  forcePublishedAt?: string;
+} = {}): any {
+  return {
+    data: {
+      type: 'notes',
+      id: overrides.id ?? TEST_UUID,
+      attributes: {
+        summary: overrides.summary ?? 'This is a test note',
+        classification: 'NOT_MISLEADING',
+        status: overrides.status ?? 'PUBLISHED',
+        helpfulness_score: 0,
+        author_participant_id: 'user-123',
+        community_server_id: 'test-guild-id',
+        channel_id: 'test-channel-id',
+        request_id: null,
+        ratings_count: 0,
+        force_published: overrides.forcePublished ?? true,
+        force_published_at: overrides.forcePublishedAt ?? new Date().toISOString(),
+        ai_generated: false,
+        ai_provider: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
+
 describe('note-force-publish command', () => {
   let mockInteraction: any;
 
@@ -136,16 +170,13 @@ describe('note-force-publish command', () => {
 
   describe('successful execution', () => {
     it('should force-publish a note successfully', async () => {
-      const mockNote = {
+      const mockNote = createMockNoteJSONAPIResponse({
         id: TEST_UUID,
-        note_id: TEST_UUID,
         summary: 'This is a test note',
         status: 'PUBLISHED',
-        force_published: true,
-        force_published_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+        forcePublished: true,
+        forcePublishedAt: new Date().toISOString(),
+      });
 
       mockApiClient.forcePublishNote.mockResolvedValue(mockNote);
 

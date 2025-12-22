@@ -306,7 +306,11 @@ def create_error_response(
     )
 
 
-@router.get("/note-publisher-configs", response_class=JSONResponse)
+@router.get(
+    "/note-publisher-configs",
+    response_class=JSONResponse,
+    response_model=NotePublisherConfigListResponse,
+)
 async def list_note_publisher_configs_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -379,7 +383,11 @@ async def list_note_publisher_configs_jsonapi(
         )
 
 
-@router.get("/note-publisher-configs/{config_uuid}", response_class=JSONResponse)
+@router.get(
+    "/note-publisher-configs/{config_uuid}",
+    response_class=JSONResponse,
+    response_model=NotePublisherConfigSingleResponse,
+)
 async def get_note_publisher_config_jsonapi(
     config_uuid: UUID,
     request: HTTPRequest,
@@ -429,7 +437,10 @@ async def get_note_publisher_config_jsonapi(
 
 
 @router.post(
-    "/note-publisher-configs", response_class=JSONResponse, status_code=status.HTTP_201_CREATED
+    "/note-publisher-configs",
+    response_class=JSONResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model=NotePublisherConfigSingleResponse,
 )
 async def create_note_publisher_config_jsonapi(
     request: HTTPRequest,
@@ -503,7 +514,11 @@ async def create_note_publisher_config_jsonapi(
         )
 
 
-@router.patch("/note-publisher-configs/{config_uuid}", response_class=JSONResponse)
+@router.patch(
+    "/note-publisher-configs/{config_uuid}",
+    response_class=JSONResponse,
+    response_model=NotePublisherConfigSingleResponse,
+)
 async def update_note_publisher_config_jsonapi(
     config_uuid: UUID,
     request: HTTPRequest,
@@ -628,7 +643,11 @@ async def delete_note_publisher_config_jsonapi(
         )
 
 
-@router.get("/note-publisher-posts", response_class=JSONResponse)
+@router.get(
+    "/note-publisher-posts",
+    response_class=JSONResponse,
+    response_model=NotePublisherPostListResponse,
+)
 async def list_note_publisher_posts_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -708,7 +727,11 @@ async def list_note_publisher_posts_jsonapi(
         )
 
 
-@router.get("/note-publisher-posts/{post_uuid}", response_class=JSONResponse)
+@router.get(
+    "/note-publisher-posts/{post_uuid}",
+    response_class=JSONResponse,
+    response_model=NotePublisherPostSingleResponse,
+)
 async def get_note_publisher_post_jsonapi(
     post_uuid: UUID,
     request: HTTPRequest,
@@ -758,7 +781,10 @@ async def get_note_publisher_post_jsonapi(
 
 
 @router.post(
-    "/note-publisher-posts", response_class=JSONResponse, status_code=status.HTTP_201_CREATED
+    "/note-publisher-posts",
+    response_class=JSONResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model=NotePublisherPostSingleResponse,
 )
 async def create_note_publisher_post_jsonapi(
     request: HTTPRequest,
