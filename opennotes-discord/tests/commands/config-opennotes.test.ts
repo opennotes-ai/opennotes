@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
-import { ConfigKey } from '../../src/lib/config-schema.js';
+import { ConfigKey, CONFIG_SCHEMA } from '../../src/lib/config-schema.js';
 
 const mockLogger = {
   info: jest.fn<(...args: unknown[]) => void>(),
@@ -473,6 +473,75 @@ describe('config-opennotes command', () => {
       const editReplyCall = mockButtonInteraction.editReply.mock.calls[0][0];
       expect(editReplyCall.components).toBeDefined();
       expect(editReplyCall.components[0].type).toBe(17);
+    });
+  });
+
+  describe('config schema drift prevention', () => {
+    it('should display all CONFIG_SCHEMA keys in the view output', async () => {
+      const allConfigKeys = Object.keys(CONFIG_SCHEMA) as ConfigKey[];
+      const mockConfig: Record<string, any> = {};
+      for (const key of allConfigKeys) {
+        mockConfig[key] = CONFIG_SCHEMA[key].default;
+      }
+
+      mockGuildConfigService.getAll.mockResolvedValue(mockConfig);
+
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: any) => any>(),
+      };
+
+      const mockMessage = {
+        createMessageComponentCollector: jest.fn<() => any>().mockReturnValue(mockCollector),
+      };
+
+      const mockInteraction = {
+        user: { id: 'user123' },
+        guildId: 'guild456',
+        options: {
+          getSubcommandGroup: jest.fn<() => string>().mockReturnValue('opennotes'),
+          getSubcommand: jest.fn<() => string>().mockReturnValue('view'),
+        },
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue(mockMessage),
+      };
+
+      await execute(mockInteraction as any);
+
+      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
+      expect(editReplyCall.components).toBeDefined();
+
+      const containerJson = JSON.stringify(editReplyCall.components);
+
+      for (const key of allConfigKeys) {
+        const schema = CONFIG_SCHEMA[key];
+        expect(containerJson).toContain(schema.description);
+      }
+    });
+
+    it('should ensure set command choices match CONFIG_SCHEMA keys', async () => {
+      const { data } = await import('../../src/commands/config.js');
+      const commandJson = data.toJSON() as any;
+
+      const opennotesGroup = commandJson.options?.find(
+        (opt: any) => opt.name === 'opennotes'
+      );
+      expect(opennotesGroup).toBeDefined();
+
+      const setSubcommand = opennotesGroup?.options?.find(
+        (opt: any) => opt.name === 'set'
+      );
+      expect(setSubcommand).toBeDefined();
+
+      const keyOption = setSubcommand?.options?.find(
+        (opt: any) => opt.name === 'key'
+      );
+      expect(keyOption).toBeDefined();
+      expect(keyOption?.choices).toBeDefined();
+
+      const choiceValues = keyOption?.choices?.map((c: any) => c.value) || [];
+      const schemaKeys = Object.keys(CONFIG_SCHEMA);
+
+      expect(choiceValues.sort()).toEqual(schemaKeys.sort());
     });
   });
 });

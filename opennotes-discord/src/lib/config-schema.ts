@@ -43,31 +43,31 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     key: ConfigKey.REQUEST_NOTE_EPHEMERAL,
     type: 'boolean',
     default: true,
-    description: 'Make /request-note responses private (visible only to requester)',
+    description: 'Make /note request responses private (visible only to requester)',
   },
   [ConfigKey.WRITE_NOTE_EPHEMERAL]: {
     key: ConfigKey.WRITE_NOTE_EPHEMERAL,
     type: 'boolean',
     default: false,
-    description: 'Make /write-note responses private (visible only to author)',
+    description: 'Make /note write responses private (visible only to author)',
   },
   [ConfigKey.RATE_NOTE_EPHEMERAL]: {
     key: ConfigKey.RATE_NOTE_EPHEMERAL,
     type: 'boolean',
     default: false,
-    description: 'Make /rate-note responses private (visible only to rater)',
+    description: 'Make /note rate responses private (visible only to rater)',
   },
   [ConfigKey.LIST_REQUESTS_EPHEMERAL]: {
     key: ConfigKey.LIST_REQUESTS_EPHEMERAL,
     type: 'boolean',
     default: true,
-    description: 'Make /list-requests responses private (visible only to requester)',
+    description: 'Make /list requests responses private (visible only to requester)',
   },
   [ConfigKey.STATUS_EPHEMERAL]: {
     key: ConfigKey.STATUS_EPHEMERAL,
     type: 'boolean',
     default: true,
-    description: 'Make /status responses private (visible only to requester)',
+    description: 'Make /status-bot responses private (visible only to requester)',
   },
 
   // Feature Toggles
