@@ -15,6 +15,9 @@ importers:
       '@opennotes/shared-types':
         specifier: workspace:*
         version: link:packages/shared-types
+      '@sapphire/snowflake':
+        specifier: ^3.5.5
+        version: 3.5.5
       ajv:
         specifier: ^8.17.1
         version: 8.17.1
@@ -52,9 +55,6 @@ importers:
       '@opennotes/test-utils':
         specifier: workspace:*
         version: link:packages/test-utils
-      '@sapphire/snowflake':
-        specifier: ^3.5.5
-        version: 3.5.5
       '@types/express':
         specifier: ^4.17.25
         version: 4.17.25
