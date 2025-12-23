@@ -178,7 +178,7 @@ class FactCheckMatchResource(BaseModel):
 class SimilaritySearchResultAttributes(BaseModel):
     """Attributes for similarity search result."""
 
-    model_config = ConfigDict(from_attributes=True, json_schema_mode="serialization")
+    model_config = ConfigDict(from_attributes=True)
 
     matches: list[FactCheckMatchResource] = Field(..., description="Matching fact-check items")
     query_text: str = Field(..., description="Original query text")
@@ -190,8 +190,6 @@ class SimilaritySearchResultAttributes(BaseModel):
 
 class SimilaritySearchResultResource(BaseModel):
     """JSON:API resource object for similarity search results."""
-
-    model_config = ConfigDict(json_schema_mode="serialization")
 
     type: str = "similarity-search-results"
     id: str

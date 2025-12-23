@@ -167,7 +167,7 @@ class HybridSearchMatchResource(BaseModel):
 class HybridSearchResultAttributes(BaseModel):
     """Attributes for hybrid search result."""
 
-    model_config = ConfigDict(from_attributes=True, json_schema_mode="serialization")
+    model_config = ConfigDict(from_attributes=True)
 
     matches: list[HybridSearchMatchResource] = Field(
         ..., description="Matching fact-check items ranked by RRF score"
@@ -178,8 +178,6 @@ class HybridSearchResultAttributes(BaseModel):
 
 class HybridSearchResultResource(BaseModel):
     """JSON:API resource object for hybrid search results."""
-
-    model_config = ConfigDict(json_schema_mode="serialization")
 
     type: str = "hybrid-search-results"
     id: str

@@ -159,7 +159,7 @@ class NoteScoreSingleResponse(BaseModel):
 class ScoringStatusAttributes(BaseModel):
     """Attributes for scoring status resource."""
 
-    model_config = ConfigDict(from_attributes=True, json_schema_mode="serialization")
+    model_config = ConfigDict(from_attributes=True)
 
     current_note_count: int = Field(..., description="Current total number of notes in the system")
     active_tier: TierInfo = Field(..., description="Currently active scoring tier")
@@ -181,8 +181,6 @@ class ScoringStatusAttributes(BaseModel):
 
 class ScoringStatusResource(BaseModel):
     """JSON:API resource object for scoring status."""
-
-    model_config = ConfigDict(json_schema_mode="serialization")
 
     type: str = "scoring-status"
     id: str = "current"

@@ -201,8 +201,6 @@ class PreviouslySeenMatchResource(BaseModel):
 class PreviouslySeenCheckResultAttributes(BaseModel):
     """Attributes for previously seen check result."""
 
-    model_config = ConfigDict(json_schema_mode="serialization")
-
     should_auto_publish: bool
     should_auto_request: bool
     autopublish_threshold: float
@@ -213,8 +211,6 @@ class PreviouslySeenCheckResultAttributes(BaseModel):
 
 class PreviouslySeenCheckResultResource(BaseModel):
     """JSON:API resource object for check results."""
-
-    model_config = ConfigDict(json_schema_mode="serialization")
 
     type: str = "previously-seen-check-result"
     id: str

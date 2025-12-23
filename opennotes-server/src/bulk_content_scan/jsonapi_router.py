@@ -134,8 +134,6 @@ class FlaggedMessageAttributes(BaseModel):
 class FlaggedMessageResource(BaseModel):
     """JSON:API resource object for a flagged message."""
 
-    model_config = ConfigDict(json_schema_mode="serialization")
-
     type: str = "flagged-messages"
     id: str
     attributes: FlaggedMessageAttributes
@@ -153,8 +151,6 @@ class ScanErrorInfoSchema(BaseModel):
 class ScanErrorSummarySchema(BaseModel):
     """Summary of errors encountered during scan."""
 
-    model_config = ConfigDict(json_schema_mode="serialization")
-
     total_errors: int = Field(default=0, ge=0, description="Total number of errors")
     error_types: dict[str, int] = Field(
         default_factory=dict,
@@ -169,7 +165,7 @@ class ScanErrorSummarySchema(BaseModel):
 class BulkScanResultsAttributes(BaseModel):
     """Attributes for bulk scan results."""
 
-    model_config = ConfigDict(from_attributes=True, json_schema_mode="serialization")
+    model_config = ConfigDict(from_attributes=True)
 
     status: str = Field(..., description="Scan status")
     messages_scanned: int = Field(default=0, description="Total messages scanned")
@@ -182,8 +178,6 @@ class BulkScanResultsAttributes(BaseModel):
 
 class BulkScanResultsResource(BaseModel):
     """JSON:API resource object for bulk scan results."""
-
-    model_config = ConfigDict(json_schema_mode="serialization")
 
     type: str = "bulk-scans"
     id: str
@@ -229,7 +223,7 @@ class RecentScanResponse(BaseModel):
 class LatestScanAttributes(BaseModel):
     """Attributes for the latest scan resource."""
 
-    model_config = ConfigDict(from_attributes=True, json_schema_mode="serialization")
+    model_config = ConfigDict(from_attributes=True)
 
     status: str = Field(..., description="Scan status: pending, in_progress, completed, failed")
     initiated_at: datetime = Field(..., description="When the scan was initiated")
@@ -244,8 +238,6 @@ class LatestScanAttributes(BaseModel):
 
 class LatestScanResource(BaseModel):
     """JSON:API resource object for the latest scan."""
-
-    model_config = ConfigDict(json_schema_mode="serialization")
 
     type: str = "bulk-scans"
     id: str

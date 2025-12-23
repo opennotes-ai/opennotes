@@ -150,7 +150,6 @@ class UserProfileResponse(UserProfileInDB):
         validate_assignment=True,
         use_enum_values=True,
         extra="forbid",
-        json_schema_mode="serialization",
     )
 
     identities: list["UserIdentityResponse"] = Field(
@@ -258,7 +257,6 @@ class UserIdentityResponse(TimestampSchema):
     model_config = ConfigDict(
         from_attributes=True,
         extra="ignore",  # Ignore extra fields like credentials, email_verification_token
-        json_schema_mode="serialization",
     )
 
     id: UUID = Field(..., description="Unique identity identifier")
@@ -381,7 +379,6 @@ class CommunityMemberResponse(CommunityMemberInDB):
         validate_assignment=True,
         use_enum_values=True,
         extra="forbid",
-        json_schema_mode="serialization",
     )
 
     profile: Optional["UserProfileResponse"] = Field(None, description="Associated user profile")
