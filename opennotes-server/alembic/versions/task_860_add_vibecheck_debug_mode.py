@@ -4,7 +4,7 @@ Add vibecheck_debug_mode column to community_servers table.
 This enables verbose progress reporting during vibecheck operations.
 
 Revision ID: 860a1b2c3d4e
-Revises: 41e171275262
+Revises: 9a0353b49146
 Create Date: 2025-12-22 14:30:00.000000
 
 """
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "860a1b2c3d4e"
-down_revision: str | Sequence[str] | None = "41e171275262"
+down_revision: str | Sequence[str] | None = "9a0353b49146"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

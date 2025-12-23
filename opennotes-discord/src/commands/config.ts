@@ -725,6 +725,10 @@ async function handleOpennotesView(
     ConfigKey.OPENNOTES_ROLE_NAME,
   ];
 
+  const debugKeys = [
+    ConfigKey.VIBECHECK_DEBUG_MODE,
+  ];
+
   const formatSetting = (cfg: Record<string, unknown>, key: ConfigKey): string => {
     const schema = CONFIG_SCHEMA[key];
     const value = cfg[key];
@@ -797,6 +801,16 @@ async function handleOpennotesView(
         new TextDisplayBuilder().setContent('### Bot Channel')
       );
       for (const key of botChannelKeys) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        );
+      }
+
+      container.addSeparatorComponents(createDivider());
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('### Debug')
+      );
+      for (const key of debugKeys) {
         container.addTextDisplayComponents(
           new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
         );
