@@ -1263,7 +1263,7 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockCache.get.mockReturnValue(Date.now() - 60000);
+      mockCache.get.mockReturnValue(Date.now() - 10000);
 
       await execute(mockInteraction as any);
 
