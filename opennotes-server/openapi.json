@@ -7540,7 +7540,7 @@
         "title": "BulkScanResource",
         "description": "JSON:API resource object for a bulk scan."
       },
-      "BulkScanResultsAttributes": {
+      "BulkScanResultsAttributes-Input": {
         "properties": {
           "status": {
             "type": "string",
@@ -7558,6 +7558,17 @@
             "title": "Messages Flagged",
             "description": "Number of flagged messages",
             "default": 0
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScanErrorSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Summary of errors encountered during scan"
           }
         },
         "type": "object",
@@ -7567,7 +7578,45 @@
         "title": "BulkScanResultsAttributes",
         "description": "Attributes for bulk scan results."
       },
-      "BulkScanResultsResource": {
+      "BulkScanResultsAttributes-Output": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Scan status"
+          },
+          "messages_scanned": {
+            "type": "integer",
+            "title": "Messages Scanned",
+            "description": "Total messages scanned",
+            "default": 0
+          },
+          "messages_flagged": {
+            "type": "integer",
+            "title": "Messages Flagged",
+            "description": "Number of flagged messages",
+            "default": 0
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScanErrorSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Summary of errors encountered during scan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "BulkScanResultsAttributes",
+        "description": "Attributes for bulk scan results."
+      },
+      "BulkScanResultsResource-Input": {
         "properties": {
           "type": {
             "type": "string",
@@ -7579,7 +7628,42 @@
             "title": "Id"
           },
           "attributes": {
-            "$ref": "#/components/schemas/BulkScanResultsAttributes"
+            "$ref": "#/components/schemas/BulkScanResultsAttributes-Input"
+          },
+          "relationships": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "BulkScanResultsResource",
+        "description": "JSON:API resource object for bulk scan results."
+      },
+      "BulkScanResultsResource-Output": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scans"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/BulkScanResultsAttributes-Output"
           },
           "relationships": {
             "anyOf": [
@@ -7605,11 +7689,11 @@
       "BulkScanResultsResponse": {
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/BulkScanResultsResource"
+            "$ref": "#/components/schemas/BulkScanResultsResource-Output"
           },
           "included": {
             "items": {
-              "$ref": "#/components/schemas/FlaggedMessageResource"
+              "$ref": "#/components/schemas/FlaggedMessageResource-Output"
             },
             "type": "array",
             "title": "Included"
@@ -8679,26 +8763,27 @@
             "title": "Timestamp",
             "description": "Message timestamp"
           },
-          "match_score": {
-            "type": "number",
-            "title": "Match Score",
-            "description": "Similarity match score"
-          },
-          "matched_claim": {
-            "type": "string",
-            "title": "Matched Claim",
-            "description": "The claim that was matched"
-          },
-          "matched_source": {
-            "type": "string",
-            "title": "Matched Source",
-            "description": "Source of the matched claim"
-          },
-          "scan_type": {
-            "type": "string",
-            "title": "Scan Type",
-            "description": "Type of scan that flagged this",
-            "default": "similarity"
+          "matches": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SimilarityMatch"
+                },
+                {
+                  "$ref": "#/components/schemas/OpenAIModerationMatch"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "scan_type",
+                "mapping": {
+                  "openai_moderation": "#/components/schemas/OpenAIModerationMatch",
+                  "similarity": "#/components/schemas/SimilarityMatch"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Matches",
+            "description": "List of match results from different scan types"
           }
         },
         "type": "object",
@@ -8706,15 +8791,35 @@
           "channel_id",
           "content",
           "author_id",
-          "timestamp",
-          "match_score",
-          "matched_claim",
-          "matched_source"
+          "timestamp"
         ],
         "title": "FlaggedMessageAttributes",
         "description": "Attributes for a flagged message resource."
       },
-      "FlaggedMessageResource": {
+      "FlaggedMessageResource-Input": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "flagged-messages"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/FlaggedMessageAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "FlaggedMessageResource",
+        "description": "JSON:API resource object for a flagged message."
+      },
+      "FlaggedMessageResource-Output": {
         "properties": {
           "type": {
             "type": "string",
@@ -10091,7 +10196,7 @@
         ],
         "title": "LLMUsageStatsResponse"
       },
-      "LatestScanAttributes": {
+      "LatestScanAttributes-Input": {
         "properties": {
           "status": {
             "type": "string",
@@ -10128,6 +10233,17 @@
             "title": "Messages Flagged",
             "description": "Number of flagged messages",
             "default": 0
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScanErrorSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Summary of errors encountered during scan"
           }
         },
         "type": "object",
@@ -10138,7 +10254,65 @@
         "title": "LatestScanAttributes",
         "description": "Attributes for the latest scan resource."
       },
-      "LatestScanResource": {
+      "LatestScanAttributes-Output": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Scan status: pending, in_progress, completed, failed"
+          },
+          "initiated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Initiated At",
+            "description": "When the scan was initiated"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "When the scan completed"
+          },
+          "messages_scanned": {
+            "type": "integer",
+            "title": "Messages Scanned",
+            "description": "Total messages scanned",
+            "default": 0
+          },
+          "messages_flagged": {
+            "type": "integer",
+            "title": "Messages Flagged",
+            "description": "Number of flagged messages",
+            "default": 0
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScanErrorSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Summary of errors encountered during scan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "initiated_at"
+        ],
+        "title": "LatestScanAttributes",
+        "description": "Attributes for the latest scan resource."
+      },
+      "LatestScanResource-Input": {
         "properties": {
           "type": {
             "type": "string",
@@ -10150,7 +10324,42 @@
             "title": "Id"
           },
           "attributes": {
-            "$ref": "#/components/schemas/LatestScanAttributes"
+            "$ref": "#/components/schemas/LatestScanAttributes-Input"
+          },
+          "relationships": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "LatestScanResource",
+        "description": "JSON:API resource object for the latest scan."
+      },
+      "LatestScanResource-Output": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scans"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/LatestScanAttributes-Output"
           },
           "relationships": {
             "anyOf": [
@@ -10176,11 +10385,11 @@
       "LatestScanResponse": {
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/LatestScanResource"
+            "$ref": "#/components/schemas/LatestScanResource-Output"
           },
           "included": {
             "items": {
-              "$ref": "#/components/schemas/FlaggedMessageResource"
+              "$ref": "#/components/schemas/FlaggedMessageResource-Output"
             },
             "type": "array",
             "title": "Included"
@@ -12189,6 +12398,56 @@
         "title": "NoteUpdateRequest",
         "description": "JSON:API request body for updating a note."
       },
+      "OpenAIModerationMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "openai_moderation",
+            "title": "Scan Type",
+            "default": "openai_moderation"
+          },
+          "max_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Max Score",
+            "description": "Max moderation score"
+          },
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Categories",
+            "description": "Moderation categories"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Scores",
+            "description": "Category scores"
+          },
+          "flagged_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flagged Categories",
+            "description": "Flagged category names"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "max_score",
+          "categories",
+          "scores"
+        ],
+        "title": "OpenAIModerationMatch",
+        "description": "Match result from OpenAI moderation scan."
+      },
       "ParticipantStatsAttributes": {
         "properties": {
           "notes_created": {
@@ -14083,6 +14342,81 @@
         "title": "RequestUpdateRequest",
         "description": "JSON:API request body for updating a request."
       },
+      "ScanErrorInfoSchema": {
+        "properties": {
+          "error_type": {
+            "type": "string",
+            "title": "Error Type",
+            "description": "Type of error (e.g., 'TypeError')"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id",
+            "description": "Message ID that caused error"
+          },
+          "batch_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Number",
+            "description": "Batch number where error occurred"
+          },
+          "error_message": {
+            "type": "string",
+            "title": "Error Message",
+            "description": "Error message details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_type",
+          "error_message"
+        ],
+        "title": "ScanErrorInfoSchema",
+        "description": "Error information for a failed message scan."
+      },
+      "ScanErrorSummarySchema": {
+        "properties": {
+          "total_errors": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Errors",
+            "description": "Total number of errors",
+            "default": 0
+          },
+          "error_types": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Error Types",
+            "description": "Count of errors by type"
+          },
+          "sample_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ScanErrorInfoSchema"
+            },
+            "type": "array",
+            "title": "Sample Errors",
+            "description": "Sample of error messages (up to 5)"
+          }
+        },
+        "type": "object",
+        "title": "ScanErrorSummarySchema",
+        "description": "Summary of errors encountered during scan."
+      },
       "ScoreConfidence": {
         "type": "string",
         "enum": [
@@ -14485,6 +14819,42 @@
           "value"
         ],
         "title": "SetConfigRequest"
+      },
+      "SimilarityMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "similarity",
+            "title": "Scan Type",
+            "default": "similarity"
+          },
+          "score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "description": "Similarity score"
+          },
+          "matched_claim": {
+            "type": "string",
+            "title": "Matched Claim",
+            "description": "Fact-check claim that matched"
+          },
+          "matched_source": {
+            "type": "string",
+            "title": "Matched Source",
+            "description": "URL to the fact-check source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "score",
+          "matched_claim",
+          "matched_source"
+        ],
+        "title": "SimilarityMatch",
+        "description": "Match result from similarity scan."
       },
       "SimilaritySearchCreateAttributes": {
         "properties": {

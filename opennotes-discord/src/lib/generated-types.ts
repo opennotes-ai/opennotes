@@ -2852,7 +2852,7 @@ export interface components {
          * BulkScanResultsAttributes
          * @description Attributes for bulk scan results.
          */
-        BulkScanResultsAttributes: {
+        "BulkScanResultsAttributes-Input": {
             /**
              * Status
              * @description Scan status
@@ -2870,12 +2870,39 @@ export interface components {
              * @default 0
              */
             messages_flagged: number;
+            /** @description Summary of errors encountered during scan */
+            error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
+        };
+        /**
+         * BulkScanResultsAttributes
+         * @description Attributes for bulk scan results.
+         */
+        "BulkScanResultsAttributes-Output": {
+            /**
+             * Status
+             * @description Scan status
+             */
+            status: string;
+            /**
+             * Messages Scanned
+             * @description Total messages scanned
+             * @default 0
+             */
+            messages_scanned: number;
+            /**
+             * Messages Flagged
+             * @description Number of flagged messages
+             * @default 0
+             */
+            messages_flagged: number;
+            /** @description Summary of errors encountered during scan */
+            error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
         };
         /**
          * BulkScanResultsResource
          * @description JSON:API resource object for bulk scan results.
          */
-        BulkScanResultsResource: {
+        "BulkScanResultsResource-Input": {
             /**
              * Type
              * @default bulk-scans
@@ -2883,7 +2910,25 @@ export interface components {
             type: string;
             /** Id */
             id: string;
-            attributes: components["schemas"]["BulkScanResultsAttributes"];
+            attributes: components["schemas"]["BulkScanResultsAttributes-Input"];
+            /** Relationships */
+            relationships?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * BulkScanResultsResource
+         * @description JSON:API resource object for bulk scan results.
+         */
+        "BulkScanResultsResource-Output": {
+            /**
+             * Type
+             * @default bulk-scans
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["BulkScanResultsAttributes-Output"];
             /** Relationships */
             relationships?: {
                 [key: string]: unknown;
@@ -2894,9 +2939,9 @@ export interface components {
          * @description JSON:API response for bulk scan results with included flagged messages.
          */
         BulkScanResultsResponse: {
-            data: components["schemas"]["BulkScanResultsResource"];
+            data: components["schemas"]["BulkScanResultsResource-Output"];
             /** Included */
-            included?: components["schemas"]["FlaggedMessageResource"][];
+            included?: components["schemas"]["FlaggedMessageResource-Output"][];
             /**
              * Jsonapi
              * @default {
@@ -3490,32 +3535,30 @@ export interface components {
              */
             timestamp: string;
             /**
-             * Match Score
-             * @description Similarity match score
+             * Matches
+             * @description List of match results from different scan types
              */
-            match_score: number;
-            /**
-             * Matched Claim
-             * @description The claim that was matched
-             */
-            matched_claim: string;
-            /**
-             * Matched Source
-             * @description Source of the matched claim
-             */
-            matched_source: string;
-            /**
-             * Scan Type
-             * @description Type of scan that flagged this
-             * @default similarity
-             */
-            scan_type: string;
+            matches?: (components["schemas"]["SimilarityMatch"] | components["schemas"]["OpenAIModerationMatch"])[];
         };
         /**
          * FlaggedMessageResource
          * @description JSON:API resource object for a flagged message.
          */
-        FlaggedMessageResource: {
+        "FlaggedMessageResource-Input": {
+            /**
+             * Type
+             * @default flagged-messages
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["FlaggedMessageAttributes"];
+        };
+        /**
+         * FlaggedMessageResource
+         * @description JSON:API resource object for a flagged message.
+         */
+        "FlaggedMessageResource-Output": {
             /**
              * Type
              * @default flagged-messages
@@ -4124,7 +4167,7 @@ export interface components {
          * LatestScanAttributes
          * @description Attributes for the latest scan resource.
          */
-        LatestScanAttributes: {
+        "LatestScanAttributes-Input": {
             /**
              * Status
              * @description Scan status: pending, in_progress, completed, failed
@@ -4153,12 +4196,50 @@ export interface components {
              * @default 0
              */
             messages_flagged: number;
+            /** @description Summary of errors encountered during scan */
+            error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
+        };
+        /**
+         * LatestScanAttributes
+         * @description Attributes for the latest scan resource.
+         */
+        "LatestScanAttributes-Output": {
+            /**
+             * Status
+             * @description Scan status: pending, in_progress, completed, failed
+             */
+            status: string;
+            /**
+             * Initiated At
+             * Format: date-time
+             * @description When the scan was initiated
+             */
+            initiated_at: string;
+            /**
+             * Completed At
+             * @description When the scan completed
+             */
+            completed_at?: string | null;
+            /**
+             * Messages Scanned
+             * @description Total messages scanned
+             * @default 0
+             */
+            messages_scanned: number;
+            /**
+             * Messages Flagged
+             * @description Number of flagged messages
+             * @default 0
+             */
+            messages_flagged: number;
+            /** @description Summary of errors encountered during scan */
+            error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
         };
         /**
          * LatestScanResource
          * @description JSON:API resource object for the latest scan.
          */
-        LatestScanResource: {
+        "LatestScanResource-Input": {
             /**
              * Type
              * @default bulk-scans
@@ -4166,7 +4247,25 @@ export interface components {
             type: string;
             /** Id */
             id: string;
-            attributes: components["schemas"]["LatestScanAttributes"];
+            attributes: components["schemas"]["LatestScanAttributes-Input"];
+            /** Relationships */
+            relationships?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * LatestScanResource
+         * @description JSON:API resource object for the latest scan.
+         */
+        "LatestScanResource-Output": {
+            /**
+             * Type
+             * @default bulk-scans
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["LatestScanAttributes-Output"];
             /** Relationships */
             relationships?: {
                 [key: string]: unknown;
@@ -4177,9 +4276,9 @@ export interface components {
          * @description JSON:API response for the latest scan with included flagged messages.
          */
         LatestScanResponse: {
-            data: components["schemas"]["LatestScanResource"];
+            data: components["schemas"]["LatestScanResource-Output"];
             /** Included */
-            included?: components["schemas"]["FlaggedMessageResource"][];
+            included?: components["schemas"]["FlaggedMessageResource-Output"][];
             /**
              * Jsonapi
              * @default {
@@ -5180,6 +5279,41 @@ export interface components {
             data: components["schemas"]["NoteUpdateData"];
         };
         /**
+         * OpenAIModerationMatch
+         * @description Match result from OpenAI moderation scan.
+         */
+        OpenAIModerationMatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scan_type: "openai_moderation";
+            /**
+             * Max Score
+             * @description Max moderation score
+             */
+            max_score: number;
+            /**
+             * Categories
+             * @description Moderation categories
+             */
+            categories: {
+                [key: string]: boolean;
+            };
+            /**
+             * Scores
+             * @description Category scores
+             */
+            scores: {
+                [key: string]: number;
+            };
+            /**
+             * Flagged Categories
+             * @description Flagged category names
+             */
+            flagged_categories?: string[];
+        };
+        /**
          * ParticipantStatsAttributes
          * @description Attributes for participant statistics resource.
          */
@@ -6133,6 +6267,56 @@ export interface components {
             data: components["schemas"]["RequestUpdateData"];
         };
         /**
+         * ScanErrorInfoSchema
+         * @description Error information for a failed message scan.
+         */
+        ScanErrorInfoSchema: {
+            /**
+             * Error Type
+             * @description Type of error (e.g., 'TypeError')
+             */
+            error_type: string;
+            /**
+             * Message Id
+             * @description Message ID that caused error
+             */
+            message_id?: string | null;
+            /**
+             * Batch Number
+             * @description Batch number where error occurred
+             */
+            batch_number?: number | null;
+            /**
+             * Error Message
+             * @description Error message details
+             */
+            error_message: string;
+        };
+        /**
+         * ScanErrorSummarySchema
+         * @description Summary of errors encountered during scan.
+         */
+        ScanErrorSummarySchema: {
+            /**
+             * Total Errors
+             * @description Total number of errors
+             * @default 0
+             */
+            total_errors: number;
+            /**
+             * Error Types
+             * @description Count of errors by type
+             */
+            error_types?: {
+                [key: string]: number;
+            };
+            /**
+             * Sample Errors
+             * @description Sample of error messages (up to 5)
+             */
+            sample_errors?: components["schemas"]["ScanErrorInfoSchema"][];
+        };
+        /**
          * ScoreConfidence
          * @enum {string}
          */
@@ -6375,6 +6559,32 @@ export interface components {
              * @description Configuration value (stringified)
              */
             value: string;
+        };
+        /**
+         * SimilarityMatch
+         * @description Match result from similarity scan.
+         */
+        SimilarityMatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scan_type: "similarity";
+            /**
+             * Score
+             * @description Similarity score
+             */
+            score: number;
+            /**
+             * Matched Claim
+             * @description Fact-check claim that matched
+             */
+            matched_claim: string;
+            /**
+             * Matched Source
+             * @description URL to the fact-check source
+             */
+            matched_source: string;
         };
         /**
          * SimilaritySearchCreateAttributes

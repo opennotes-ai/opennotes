@@ -142,15 +142,30 @@ export interface BulkScanInitiateResponse {
   scan_window_days: number;
 }
 
+export interface SimilarityMatch {
+  scan_type: 'similarity';
+  score: number;
+  matched_claim: string;
+  matched_source: string;
+}
+
+export interface OpenAIModerationMatch {
+  scan_type: 'openai_moderation';
+  max_score: number;
+  categories: Record<string, boolean>;
+  scores: Record<string, number>;
+  flagged_categories: string[];
+}
+
+export type MatchResult = SimilarityMatch | OpenAIModerationMatch;
+
 export interface FlaggedMessage {
   message_id: string;
   channel_id: string;
   content: string;
   author_id: string;
   timestamp: string;
-  match_score: number;
-  matched_claim: string;
-  matched_source: string;
+  matches: MatchResult[];
 }
 
 export interface ScanErrorInfo {
