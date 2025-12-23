@@ -477,7 +477,7 @@ describe('config-opennotes command', () => {
   });
 
   describe('config schema drift prevention', () => {
-    it('should display all CONFIG_SCHEMA keys in the view output', async () => {
+    it('should display all CONFIG_SCHEMA keys across paginated view', async () => {
       const allConfigKeys = Object.keys(CONFIG_SCHEMA) as ConfigKey[];
       const mockConfig: Record<string, any> = {};
       for (const key of allConfigKeys) {
@@ -486,8 +486,14 @@ describe('config-opennotes command', () => {
 
       mockGuildConfigService.getAll.mockResolvedValue(mockConfig);
 
+      let collectHandler: any = null;
       const mockCollector = {
-        on: jest.fn<(event: string, handler: any) => any>(),
+        on: jest.fn<(event: string, handler: any) => any>().mockImplementation((event, handler) => {
+          if (event === 'collect') {
+            collectHandler = handler;
+          }
+          return mockCollector;
+        }),
       };
 
       const mockMessage = {
@@ -507,14 +513,30 @@ describe('config-opennotes command', () => {
 
       await execute(mockInteraction as any);
 
-      const editReplyCall = mockInteraction.editReply.mock.calls[0][0];
-      expect(editReplyCall.components).toBeDefined();
+      const page1Call = mockInteraction.editReply.mock.calls[0][0];
+      expect(page1Call.components).toBeDefined();
+      const page1Json = JSON.stringify(page1Call.components);
 
-      const containerJson = JSON.stringify(editReplyCall.components);
+      const mockButtonInteraction = {
+        user: { id: 'user123' },
+        customId: 'config:page:next',
+        deferUpdate: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+      };
+
+      expect(collectHandler).not.toBeNull();
+      await collectHandler(mockButtonInteraction);
+      await new Promise(resolve => setImmediate(resolve));
+
+      const page2Call = mockButtonInteraction.editReply.mock.calls[0][0];
+      expect(page2Call.components).toBeDefined();
+      const page2Json = JSON.stringify(page2Call.components);
+
+      const combinedJson = page1Json + page2Json;
 
       for (const key of allConfigKeys) {
         const schema = CONFIG_SCHEMA[key];
-        expect(containerJson).toContain(schema.description);
+        expect(combinedJson).toContain(schema.description);
       }
     });
 

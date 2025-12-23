@@ -733,70 +733,74 @@ async function handleOpennotesView(
     return `${schema.description}: ${valueDisplay}`;
   };
 
-  const buildConfigContainer = (cfg: Record<string, unknown>, statusMessage?: string): ContainerBuilder => {
+  const TOTAL_PAGES = 2;
+  let currentPage = 0;
+
+  const buildConfigContainer = (cfg: Record<string, unknown>, page: number, statusMessage?: string): ContainerBuilder => {
     const container = new ContainerBuilder()
       .setAccentColor(V2_COLORS.PRIMARY)
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('## Server Configuration')
+        new TextDisplayBuilder().setContent(`## Server Configuration (Page ${page + 1}/${TOTAL_PAGES})`)
       )
       .addSeparatorComponents(createDivider());
 
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('### Command Visibility')
-    );
-    for (const key of visibilityKeys) {
-      const toggleButton = new ButtonBuilder()
-        .setCustomId(`config:toggle:${key}`)
-        .setLabel(cfg[key] ? 'Disable' : 'Enable')
-        .setStyle(ButtonStyle.Secondary);
-
-      container.addSectionComponents(
-        new SectionBuilder()
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(formatSetting(cfg, key))
-          )
-          .setButtonAccessory(toggleButton)
-      );
-    }
-
-    container.addSeparatorComponents(createDivider());
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('### Feature Toggles')
-    );
-    for (const key of featureKeys) {
+    if (page === 0) {
       container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        new TextDisplayBuilder().setContent('### Command Visibility')
       );
-    }
+      for (const key of visibilityKeys) {
+        const toggleButton = new ButtonBuilder()
+          .setCustomId(`config:toggle:${key}`)
+          .setLabel(cfg[key] ? 'Disable' : 'Enable')
+          .setStyle(ButtonStyle.Secondary);
 
-    container.addSeparatorComponents(createDivider());
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('### Rate Limits')
-    );
-    for (const key of rateLimitKeys) {
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
-      );
-    }
+        container.addSectionComponents(
+          new SectionBuilder()
+            .addTextDisplayComponents(
+              new TextDisplayBuilder().setContent(formatSetting(cfg, key))
+            )
+            .setButtonAccessory(toggleButton)
+        );
+      }
 
-    container.addSeparatorComponents(createDivider());
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('### Notifications')
-    );
-    for (const key of notificationKeys) {
+      container.addSeparatorComponents(createDivider());
       container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        new TextDisplayBuilder().setContent('### Feature Toggles')
       );
-    }
+      for (const key of featureKeys) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        );
+      }
+    } else if (page === 1) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('### Rate Limits')
+      );
+      for (const key of rateLimitKeys) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        );
+      }
 
-    container.addSeparatorComponents(createDivider());
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('### Bot Channel')
-    );
-    for (const key of botChannelKeys) {
+      container.addSeparatorComponents(createDivider());
       container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        new TextDisplayBuilder().setContent('### Notifications')
       );
+      for (const key of notificationKeys) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        );
+      }
+
+      container.addSeparatorComponents(createDivider());
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent('### Bot Channel')
+      );
+      for (const key of botChannelKeys) {
+        container.addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`- ${formatSetting(cfg, key)}`)
+        );
+      }
     }
 
     container.addSeparatorComponents(createDivider());
@@ -812,8 +816,18 @@ async function handleOpennotesView(
     container.addActionRowComponents(
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
+          .setCustomId('config:page:prev')
+          .setLabel('◀ Previous')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(page === 0),
+        new ButtonBuilder()
+          .setCustomId('config:page:next')
+          .setLabel('Next ▶')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(page === TOTAL_PAGES - 1),
+        new ButtonBuilder()
           .setCustomId('config:reset:all')
-          .setLabel('Reset All Settings')
+          .setLabel('Reset All')
           .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
           .setCustomId('config:refresh')
@@ -854,7 +868,7 @@ async function handleOpennotesView(
     return container;
   };
 
-  const configContainer = buildConfigContainer(currentConfig);
+  const configContainer = buildConfigContainer(currentConfig, currentPage);
 
   const message = await interaction.editReply({
     components: [configContainer.toJSON()],
@@ -911,9 +925,21 @@ async function handleOpennotesView(
         const [action, type, key] = parseResult.parts;
 
         if (action === 'config') {
-          if (type === 'refresh') {
+          if (type === 'page') {
+            if (key === 'prev' && currentPage > 0) {
+              currentPage--;
+            } else if (key === 'next' && currentPage < TOTAL_PAGES - 1) {
+              currentPage++;
+            }
             const freshConfig = await configService.getAll(guildId);
-            const refreshedContainer = buildConfigContainer(freshConfig);
+            const pageContainer = buildConfigContainer(freshConfig, currentPage);
+            await buttonInteraction.editReply({
+              components: [pageContainer.toJSON()],
+              flags: v2MessageFlags({ ephemeral: true }),
+            });
+          } else if (type === 'refresh') {
+            const freshConfig = await configService.getAll(guildId);
+            const refreshedContainer = buildConfigContainer(freshConfig, currentPage);
             await buttonInteraction.editReply({
               components: [refreshedContainer.toJSON()],
               flags: v2MessageFlags({ ephemeral: true }),
@@ -925,7 +951,7 @@ async function handleOpennotesView(
 
             const updatedConfig = await configService.getAll(guildId);
             const statusMsg = `Toggled **${CONFIG_SCHEMA[key as ConfigKey].description}** to **\`${newValue}\`**`;
-            const updatedContainer = buildConfigContainer(updatedConfig, statusMsg);
+            const updatedContainer = buildConfigContainer(updatedConfig, currentPage, statusMsg);
             await buttonInteraction.editReply({
               components: [updatedContainer.toJSON()],
               flags: v2MessageFlags({ ephemeral: true }),
@@ -941,8 +967,9 @@ async function handleOpennotesView(
           } else if (type === 'reset' && key === 'confirm') {
             await configService.reset(guildId, undefined, buttonInteraction.user.id);
 
+            currentPage = 0;
             const resetConfig = await configService.getAll(guildId);
-            const resetContainer = buildConfigContainer(resetConfig, 'All settings have been reset to defaults.');
+            const resetContainer = buildConfigContainer(resetConfig, currentPage, 'All settings have been reset to defaults.');
             await buttonInteraction.editReply({
               components: [resetContainer.toJSON()],
               flags: v2MessageFlags({ ephemeral: true }),
@@ -951,7 +978,7 @@ async function handleOpennotesView(
             logger.info('All config reset via button', { guildId, userId: buttonInteraction.user.id });
           } else if (type === 'reset' && key === 'cancel') {
             const cancelConfig = await configService.getAll(guildId);
-            const cancelContainer = buildConfigContainer(cancelConfig, 'Reset cancelled.');
+            const cancelContainer = buildConfigContainer(cancelConfig, currentPage, 'Reset cancelled.');
             await buttonInteraction.editReply({
               components: [cancelContainer.toJSON()],
               flags: v2MessageFlags({ ephemeral: true }),
