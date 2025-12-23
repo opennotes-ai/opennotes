@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
-from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
+from src.bulk_content_scan.schemas import (
+    BulkScanMessage,
+    BulkScanStatus,
+    FlaggedMessage,
+    OpenAIModerationMatch,
+    SimilarityMatch,
+)
 from src.config import settings
 from src.fact_checking.embedding_service import EmbeddingService
 from src.monitoring import get_logger
@@ -296,9 +302,7 @@ class BulkContentScanService:
                     # Build flagged_msg FIRST - only set is_flagged if building succeeds
                     # This prevents is_flagged=True in progress events when flagged_msg is None
                     try:
-                        flagged_msg = self._build_flagged_message(
-                            message, best_match, ScanType.SIMILARITY
-                        )
+                        flagged_msg = self._build_flagged_message(message, best_match)
                         score_info["is_flagged"] = True
                         return flagged_msg, score_info
                     except Exception as build_error:
@@ -358,7 +362,7 @@ class BulkContentScanService:
 
             if search_response.matches:
                 best_match = search_response.matches[0]
-                return self._build_flagged_message(message, best_match, ScanType.SIMILARITY)
+                return self._build_flagged_message(message, best_match)
 
         except Exception as e:
             logger.warning(
@@ -463,8 +467,6 @@ class BulkContentScanService:
         moderation_result: Any,
     ) -> FlaggedMessage:
         """Build FlaggedMessage from a moderation result."""
-        from src.bulk_content_scan.schemas import OpenAIModerationMatch
-
         moderation_match = OpenAIModerationMatch(
             max_score=moderation_result.max_score,
             categories=moderation_result.categories,
@@ -484,11 +486,8 @@ class BulkContentScanService:
         self,
         message: BulkScanMessage,
         match: Any,
-        scan_type: ScanType,
     ) -> FlaggedMessage:
         """Build FlaggedMessage from a similarity match result."""
-        from src.bulk_content_scan.schemas import SimilarityMatch
-
         similarity_match = SimilarityMatch(
             score=match.similarity_score,
             matched_claim=match.content or match.title or "",
