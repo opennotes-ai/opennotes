@@ -47,6 +47,14 @@ class StatefulRedisMock:
         self.rpush = AsyncMock(side_effect=self._rpush)
         self.lrange = AsyncMock(side_effect=self._lrange)
         self.llen = AsyncMock(side_effect=self._llen)
+        # Redis hash operations
+        self.hset = AsyncMock(side_effect=self._hset)
+        self.hget = AsyncMock(side_effect=self._hget)
+        self.hgetall = AsyncMock(side_effect=self._hgetall)
+        self.hincrby = AsyncMock(side_effect=self._hincrby)
+        # Redis counter operations
+        self.incrby = AsyncMock(side_effect=self._incrby)
+        self.incr = AsyncMock(side_effect=self._incr)
         # Pipeline support
         self.pipeline = self._pipeline
 
@@ -447,6 +455,62 @@ class StatefulRedisMock:
             raise TypeError(f"Key {key} is not a list")
 
         return len(self.store[key])
+
+    async def _hset(self, key: str, field: str, value: Any) -> int:
+        """Set a field in a hash"""
+        if key not in self.store:
+            self.store[key] = {}
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        is_new = field not in self.store[key]
+        self.store[key][field] = str(value)
+        return 1 if is_new else 0
+
+    async def _hget(self, key: str, field: str) -> str | None:
+        """Get a field from a hash"""
+        if key not in self.store:
+            return None
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        return self.store[key].get(field)
+
+    async def _hgetall(self, key: str) -> dict[str, str]:
+        """Get all fields and values from a hash"""
+        if key not in self.store:
+            return {}
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        return self.store[key].copy()
+
+    async def _hincrby(self, key: str, field: str, amount: int = 1) -> int:
+        """Increment a hash field by the given amount"""
+        if key not in self.store:
+            self.store[key] = {}
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        current = int(self.store[key].get(field, 0))
+        new_value = current + amount
+        self.store[key][field] = str(new_value)
+        return new_value
+
+    async def _incrby(self, key: str, amount: int = 1) -> int:
+        """Increment a key by the given amount"""
+        current = int(self.store.get(key, 0))
+        new_value = current + amount
+        self.store[key] = str(new_value)
+        return new_value
+
+    async def _incr(self, key: str) -> int:
+        """Increment a key by 1"""
+        return await self._incrby(key, 1)
 
     def _pipeline(self, transaction: bool = True):
         """Create a pipeline for batched operations"""

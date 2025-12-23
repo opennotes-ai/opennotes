@@ -13,16 +13,28 @@ Tests verify:
 
 import json
 from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from redis.asyncio import Redis
 
 from src.bulk_content_scan.service import (
     BulkContentScanService,
     _get_redis_error_counts_key,
     _get_redis_errors_key,
 )
+
+
+@pytest.fixture
+def redis_client():
+    """Provide a Redis client for integration tests.
+
+    Uses the mocked Redis from mock_external_services fixture.
+    """
+    from src.cache.redis_client import redis_client as _redis_client
+
+    return _redis_client.client
 
 
 class TestBulkScanErrorTracking:
@@ -34,15 +46,15 @@ class TestBulkScanErrorTracking:
         return uuid4()
 
     @pytest.fixture
-    async def mock_embedding_service(self, mocker):
+    async def mock_embedding_service(self):
         """Create a mock embedding service."""
         from src.fact_checking.embedding_service import EmbeddingService
 
-        return mocker.MagicMock(spec=EmbeddingService)
+        return MagicMock(spec=EmbeddingService)
 
     @pytest.fixture
     async def bulk_scan_service(
-        self, db, redis_client: Redis, mock_embedding_service
+        self, db, redis_client: Any, mock_embedding_service
     ) -> BulkContentScanService:
         """Create a BulkContentScanService with test dependencies."""
         return BulkContentScanService(
@@ -56,7 +68,7 @@ class TestBulkScanErrorTracking:
         self,
         bulk_scan_service: BulkContentScanService,
         scan_id,
-        redis_client: Redis,
+        redis_client: Any,
     ):
         """Test that record_error stores error info in Redis."""
         await bulk_scan_service.record_error(
@@ -87,7 +99,7 @@ class TestBulkScanErrorTracking:
         self,
         bulk_scan_service: BulkContentScanService,
         scan_id,
-        redis_client: Redis,
+        redis_client: Any,
     ):
         """Test that multiple errors accumulate correctly in Redis."""
         await bulk_scan_service.record_error(
@@ -137,7 +149,7 @@ class TestBulkScanErrorTracking:
         self,
         bulk_scan_service: BulkContentScanService,
         scan_id,
-        redis_client: Redis,
+        redis_client: Any,
     ):
         """Test that increment_processed_count tracks successful messages."""
         await bulk_scan_service.increment_processed_count(scan_id, 5)
@@ -274,7 +286,7 @@ class TestBulkScanErrorSummaryInResponse:
         return {"Authorization": f"Bearer {access_token}"}
 
     @pytest.fixture
-    async def failed_scan_with_errors(self, db, community_server, admin_user, redis_client: Redis):
+    async def failed_scan_with_errors(self, db, community_server, admin_user, redis_client: Any):
         """Create a failed scan with errors in Redis."""
         from src.bulk_content_scan.models import BulkContentScanLog
 
@@ -344,7 +356,7 @@ class TestBulkScanErrorSummaryInResponse:
 
     @pytest.fixture
     async def completed_scan_with_partial_errors(
-        self, db, community_server, admin_user, redis_client: Redis
+        self, db, community_server, admin_user, redis_client: Any
     ):
         """Create a completed scan with some errors in Redis."""
         from src.bulk_content_scan.models import BulkContentScanLog
