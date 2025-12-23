@@ -328,5 +328,92 @@ describe('VibecheckProgressService', () => {
       const embed = sendCall.embeds[0];
       expect(embed.data.footer?.text).toContain('abcd1234'); // first 8 chars
     });
+
+    it('should show channel names in description (AC #4)', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      // Add channels to the guild's cache
+      mockGuild.channels.cache.set('ch-123', { id: 'ch-123', name: 'general' });
+      mockGuild.channels.cache.set('ch-456', { id: 'ch-456', name: 'random' });
+
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        channel_ids: ['ch-123', 'ch-456'],
+        messages_processed: 250,
+      });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.description).toContain('#general');
+      expect(embed.data.description).toContain('#random');
+      expect(embed.data.description).toContain('250 messages');
+    });
+
+    it('should handle missing channels gracefully', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      // Only add one channel, leave the other missing
+      mockGuild.channels.cache.set('ch-123', { id: 'ch-123', name: 'general' });
+
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        channel_ids: ['ch-123', 'ch-missing'],
+        messages_processed: 100,
+      });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      // Should still show the channel that exists
+      expect(embed.data.description).toContain('#general');
+      expect(embed.data.description).toContain('100 messages');
+    });
+
+    it('should truncate when more than 3 channels', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      mockGuild.channels.cache.set('ch-1', { id: 'ch-1', name: 'general' });
+      mockGuild.channels.cache.set('ch-2', { id: 'ch-2', name: 'random' });
+      mockGuild.channels.cache.set('ch-3', { id: 'ch-3', name: 'announcements' });
+      mockGuild.channels.cache.set('ch-4', { id: 'ch-4', name: 'off-topic' });
+
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        channel_ids: ['ch-1', 'ch-2', 'ch-3', 'ch-4'],
+        messages_processed: 500,
+      });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      // Should show first 3 channels and ellipsis
+      expect(embed.data.description).toContain('#general');
+      expect(embed.data.description).toContain('#random');
+      expect(embed.data.description).toContain('#announcements');
+      expect(embed.data.description).toContain('...');
+      expect(embed.data.description).not.toContain('#off-topic');
+    });
   });
 });
