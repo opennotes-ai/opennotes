@@ -154,7 +154,6 @@ async def handle_message_batch_with_progress(
     nats_client: Any,
     platform_id: str,
     debug_mode: bool,
-    messages_scanned: int | None = None,
     publisher: EventPublisher | None = None,
 ) -> None:
     """Handle message batch with optional progress event emission.
@@ -168,7 +167,8 @@ async def handle_message_batch_with_progress(
 
     After processing, checks if all_batches_transmitted flag is set and
     all messages are processed - if so, triggers scan completion (dual-completion
-    trigger pattern to fix race condition).
+    trigger pattern to fix race condition). The messages_scanned count is
+    retrieved from Redis where it was stored by the transmitted handler.
 
     Args:
         event: Message batch event
@@ -176,7 +176,6 @@ async def handle_message_batch_with_progress(
         nats_client: NATS client for publishing progress events
         platform_id: Platform ID for the community server
         debug_mode: Whether vibecheck_debug_mode is enabled
-        messages_scanned: Total messages expected (for completion check)
         publisher: Event publisher for results (for completion trigger)
     """
     logger.info(
@@ -297,23 +296,23 @@ async def handle_message_batch_with_progress(
         },
     )
 
-    if messages_scanned is not None and publisher is not None:
-        transmitted = await service.get_all_batches_transmitted(event.scan_id)
-        if transmitted:
+    if publisher is not None:
+        transmitted, transmitted_messages = await service.get_all_batches_transmitted(event.scan_id)
+        if transmitted and transmitted_messages is not None:
             processed_count = await service.get_processed_count(event.scan_id)
-            if processed_count >= messages_scanned:
+            if processed_count >= transmitted_messages:
                 logger.info(
                     "Batch handler triggering completion (transmitted flag set)",
                     extra={
                         "scan_id": str(event.scan_id),
                         "processed_count": processed_count,
-                        "messages_scanned": messages_scanned,
+                        "messages_scanned": transmitted_messages,
                     },
                 )
                 await finalize_scan(
                     scan_id=event.scan_id,
                     community_server_id=event.community_server_id,
-                    messages_scanned=messages_scanned,
+                    messages_scanned=transmitted_messages,
                     service=service,
                     publisher=publisher,
                 )
@@ -434,7 +433,7 @@ async def handle_all_batches_transmitted(
         },
     )
 
-    await service.set_all_batches_transmitted(event.scan_id)
+    await service.set_all_batches_transmitted(event.scan_id, event.messages_scanned)
 
     processed_count = await service.get_processed_count(event.scan_id)
     if processed_count >= event.messages_scanned:
@@ -590,6 +589,7 @@ class BulkScanEventHandler:
                 nats_client=self.nats_client,
                 platform_id=platform_id,
                 debug_mode=debug_mode,
+                publisher=self.publisher,
             )
 
     async def _handle_all_batches_transmitted(

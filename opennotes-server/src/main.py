@@ -191,7 +191,7 @@ async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) ->
         bulk_scan_handler.register()
         try:
             await event_subscriber.subscribe(EventType.BULK_SCAN_MESSAGE_BATCH)
-            await event_subscriber.subscribe(EventType.BULK_SCAN_COMPLETED)
+            await event_subscriber.subscribe(EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED)
             logger.info("Bulk scan event handlers registered and subscribed")
         except TimeoutError:
             logger.warning(
