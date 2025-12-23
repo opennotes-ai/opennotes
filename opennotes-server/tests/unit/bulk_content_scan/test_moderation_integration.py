@@ -7,76 +7,79 @@ from uuid import uuid4
 import pytest
 
 from src.bulk_content_scan.scan_types import ScanType
-from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
+from src.bulk_content_scan.schemas import (
+    BulkScanMessage,
+    FlaggedMessage,
+    OpenAIModerationMatch,
+    SimilarityMatch,
+)
 
 
 class TestFlaggedMessageModerationFields:
-    """Tests for moderation-specific fields in FlaggedMessage schema."""
+    """Tests for moderation-specific fields in FlaggedMessage schema via matches."""
 
-    def test_flagged_message_accepts_moderation_categories(self):
-        """FlaggedMessage should accept optional moderation_categories field."""
-        msg = FlaggedMessage(
-            message_id="123",
-            channel_id="456",
-            content="test content",
-            author_id="789",
-            timestamp=datetime.now(UTC),
-            match_score=0.95,
-            matched_claim="",
-            matched_source="",
-            scan_type=ScanType.OPENAI_MODERATION,
-            moderation_categories={"violence": True, "sexual": False},
+    def test_flagged_message_accepts_moderation_match(self):
+        """FlaggedMessage should accept OpenAIModerationMatch in matches."""
+        moderation_match = OpenAIModerationMatch(
+            max_score=0.95,
+            categories={"violence": True, "sexual": False},
+            scores={"violence": 0.95, "sexual": 0.02},
+            flagged_categories=["violence"],
         )
-        assert msg.moderation_categories == {"violence": True, "sexual": False}
-
-    def test_flagged_message_accepts_moderation_scores(self):
-        """FlaggedMessage should accept optional moderation_scores field."""
         msg = FlaggedMessage(
             message_id="123",
             channel_id="456",
             content="test content",
             author_id="789",
             timestamp=datetime.now(UTC),
-            match_score=0.95,
-            matched_claim="",
-            matched_source="",
-            scan_type=ScanType.OPENAI_MODERATION,
-            moderation_scores={"violence": 0.95, "sexual": 0.02},
+            matches=[moderation_match],
         )
-        assert msg.moderation_scores == {"violence": 0.95, "sexual": 0.02}
+        assert len(msg.matches) == 1
+        assert msg.matches[0].scan_type == "openai_moderation"
+        assert msg.matches[0].categories == {"violence": True, "sexual": False}
 
-    def test_flagged_message_accepts_flagged_categories_list(self):
-        """FlaggedMessage should accept optional flagged_categories field."""
-        msg = FlaggedMessage(
-            message_id="123",
-            channel_id="456",
-            content="test content",
-            author_id="789",
-            timestamp=datetime.now(UTC),
-            match_score=0.95,
-            matched_claim="",
-            matched_source="",
-            scan_type=ScanType.OPENAI_MODERATION,
-            flagged_categories=["violence", "harassment"],
-        )
-        assert msg.flagged_categories == ["violence", "harassment"]
-
-    def test_flagged_message_moderation_fields_optional(self):
-        """Moderation fields should be optional for backwards compatibility."""
-        msg = FlaggedMessage(
-            message_id="123",
-            channel_id="456",
-            content="test content",
-            author_id="789",
-            timestamp=datetime.now(UTC),
-            match_score=0.8,
+    def test_flagged_message_accepts_similarity_match(self):
+        """FlaggedMessage should accept SimilarityMatch in matches."""
+        similarity_match = SimilarityMatch(
+            score=0.95,
             matched_claim="some claim",
             matched_source="http://example.com",
-            scan_type=ScanType.SIMILARITY,
         )
-        assert msg.moderation_categories is None
-        assert msg.moderation_scores is None
-        assert msg.flagged_categories is None
+        msg = FlaggedMessage(
+            message_id="123",
+            channel_id="456",
+            content="test content",
+            author_id="789",
+            timestamp=datetime.now(UTC),
+            matches=[similarity_match],
+        )
+        assert len(msg.matches) == 1
+        assert msg.matches[0].scan_type == "similarity"
+        assert msg.matches[0].score == 0.95
+
+    def test_openai_moderation_match_has_all_fields(self):
+        """OpenAIModerationMatch should have all moderation fields."""
+        match = OpenAIModerationMatch(
+            max_score=0.95,
+            categories={"violence": True, "harassment": True},
+            scores={"violence": 0.95, "harassment": 0.80},
+            flagged_categories=["violence", "harassment"],
+        )
+        assert match.max_score == 0.95
+        assert match.categories == {"violence": True, "harassment": True}
+        assert match.scores == {"violence": 0.95, "harassment": 0.80}
+        assert match.flagged_categories == ["violence", "harassment"]
+
+    def test_flagged_message_matches_default_empty(self):
+        """FlaggedMessage matches should default to empty list."""
+        msg = FlaggedMessage(
+            message_id="123",
+            channel_id="456",
+            content="test content",
+            author_id="789",
+            timestamp=datetime.now(UTC),
+        )
+        assert msg.matches == []
 
 
 class TestScannerDispatch:
@@ -160,7 +163,8 @@ class TestScannerDispatch:
         )
 
         assert result is not None
-        assert result.scan_type == ScanType.OPENAI_MODERATION
+        assert len(result.matches) == 1
+        assert result.matches[0].scan_type == "openai_moderation"
         mock_moderation_service.moderate_text.assert_called_once()
 
     @pytest.mark.asyncio
@@ -183,10 +187,12 @@ class TestScannerDispatch:
         )
 
         assert result is not None
-        assert result.match_score == 0.95
-        assert result.moderation_categories == {"violence": True, "sexual": False}
-        assert result.moderation_scores == {"violence": 0.95, "sexual": 0.02}
-        assert result.flagged_categories == ["violence"]
+        assert len(result.matches) == 1
+        moderation_match = result.matches[0]
+        assert moderation_match.max_score == 0.95
+        assert moderation_match.categories == {"violence": True, "sexual": False}
+        assert moderation_match.scores == {"violence": 0.95, "sexual": 0.02}
+        assert moderation_match.flagged_categories == ["violence"]
 
     @pytest.mark.asyncio
     async def test_moderation_scan_with_images(

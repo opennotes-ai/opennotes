@@ -463,19 +463,21 @@ class BulkContentScanService:
         moderation_result: Any,
     ) -> FlaggedMessage:
         """Build FlaggedMessage from a moderation result."""
+        from src.bulk_content_scan.schemas import OpenAIModerationMatch
+
+        moderation_match = OpenAIModerationMatch(
+            max_score=moderation_result.max_score,
+            categories=moderation_result.categories,
+            scores=moderation_result.scores,
+            flagged_categories=moderation_result.flagged_categories,
+        )
         return FlaggedMessage(
             message_id=message.message_id,
             channel_id=message.channel_id,
             content=message.content,
             author_id=message.author_id,
             timestamp=message.timestamp,
-            match_score=moderation_result.max_score,
-            matched_claim=", ".join(moderation_result.flagged_categories),
-            matched_source="",
-            scan_type=ScanType.OPENAI_MODERATION,
-            moderation_categories=moderation_result.categories,
-            moderation_scores=moderation_result.scores,
-            flagged_categories=moderation_result.flagged_categories,
+            matches=[moderation_match],
         )
 
     def _build_flagged_message(
@@ -484,17 +486,21 @@ class BulkContentScanService:
         match: Any,
         scan_type: ScanType,
     ) -> FlaggedMessage:
-        """Build FlaggedMessage from a match result."""
+        """Build FlaggedMessage from a similarity match result."""
+        from src.bulk_content_scan.schemas import SimilarityMatch
+
+        similarity_match = SimilarityMatch(
+            score=match.similarity_score,
+            matched_claim=match.content or match.title or "",
+            matched_source=match.source_url or "",
+        )
         return FlaggedMessage(
             message_id=message.message_id,
             channel_id=message.channel_id,
             content=message.content,
             author_id=message.author_id,
             timestamp=message.timestamp,
-            match_score=match.similarity_score,
-            matched_claim=match.content or match.title or "",
-            matched_source=match.source_url or "",
-            scan_type=scan_type,
+            matches=[similarity_match],
         )
 
     async def append_flagged_result(
@@ -795,6 +801,21 @@ async def create_note_requests_from_flagged_messages(
 
         request_id = f"bulkscan_{scan_id.hex[:8]}_{uuid_module.uuid4().hex[:8]}"
 
+        # Extract match info from matches list
+        match_score = 0.0
+        matched_claim = ""
+        matched_source = ""
+        if flagged_msg.matches:
+            first_match = flagged_msg.matches[0]
+            if first_match.scan_type == "similarity":
+                match_score = first_match.score
+                matched_claim = first_match.matched_claim
+                matched_source = first_match.matched_source
+            elif first_match.scan_type == "openai_moderation":
+                match_score = first_match.max_score
+                matched_claim = ", ".join(first_match.flagged_categories)
+                matched_source = ""
+
         try:
             request = await RequestService.create_from_message(
                 db=session,
@@ -806,16 +827,16 @@ async def create_note_requests_from_flagged_messages(
                 platform_channel_id=flagged_msg.channel_id,
                 platform_author_id=flagged_msg.author_id,
                 platform_timestamp=flagged_msg.timestamp,
-                similarity_score=flagged_msg.match_score,
+                similarity_score=match_score,
                 dataset_name="bulk_scan",
                 status="PENDING",
                 priority="normal",
                 reason=f"Flagged by bulk scan {scan_id}",
                 request_metadata={
                     "scan_id": str(scan_id),
-                    "matched_claim": flagged_msg.matched_claim,
-                    "matched_source": flagged_msg.matched_source,
-                    "match_score": flagged_msg.match_score,
+                    "matched_claim": matched_claim,
+                    "matched_source": matched_source,
+                    "match_score": match_score,
                     "generate_ai_notes": generate_ai_notes,
                 },
             )
@@ -828,7 +849,7 @@ async def create_note_requests_from_flagged_messages(
                     "request_id": request.request_id,
                     "message_id": msg_id,
                     "scan_id": str(scan_id),
-                    "match_score": flagged_msg.match_score,
+                    "match_score": match_score,
                 },
             )
 

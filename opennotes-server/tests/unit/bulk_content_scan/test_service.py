@@ -375,7 +375,8 @@ class TestProcessMessages:
         )
 
         assert len(result) == 1
-        assert result[0].scan_type == ScanType.SIMILARITY
+        assert len(result[0].matches) >= 1
+        assert result[0].matches[0].scan_type == "similarity"
 
     @pytest.mark.asyncio
     async def test_process_messages_with_empty_scan_types(
@@ -420,7 +421,7 @@ class TestAppendFlaggedResult:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """append_flagged_result should use lpush to store in Redis."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         service = BulkContentScanService(
@@ -430,15 +431,18 @@ class TestAppendFlaggedResult:
         )
 
         scan_id = uuid4()
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Claim text",
-            matched_source="https://example.com",
+            matches=[similarity_match],
         )
 
         await service.append_flagged_result(scan_id=scan_id, flagged_message=flagged_message)
@@ -455,10 +459,20 @@ class TestGetFlaggedResultsFromList:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """get_flagged_results should retrieve from lpush list format."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         scan_id = uuid4()
+        similarity_match_1 = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+        )
+        similarity_match_2 = SimilarityMatch(
+            score=0.75,
+            matched_claim="Claim 2",
+            matched_source="https://example2.com",
+        )
         stored_messages = [
             FlaggedMessage(
                 message_id="msg_1",
@@ -466,9 +480,7 @@ class TestGetFlaggedResultsFromList:
                 content="Test",
                 author_id="user_1",
                 timestamp=datetime.now(UTC),
-                match_score=0.85,
-                matched_claim="Claim",
-                matched_source="https://example.com",
+                matches=[similarity_match_1],
             )
             .model_dump_json()
             .encode(),
@@ -478,9 +490,7 @@ class TestGetFlaggedResultsFromList:
                 content="Test 2",
                 author_id="user_2",
                 timestamp=datetime.now(UTC),
-                match_score=0.75,
-                matched_claim="Claim 2",
-                matched_source="https://example2.com",
+                matches=[similarity_match_2],
             )
             .model_dump_json()
             .encode(),
@@ -627,7 +637,7 @@ class TestStoreFlaggedResults:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """Flagged results should be stored in Redis list for later retrieval."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         service = BulkContentScanService(
@@ -637,6 +647,11 @@ class TestStoreFlaggedResults:
         )
 
         scan_id = uuid4()
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+        )
         flagged_messages = [
             FlaggedMessage(
                 message_id="msg_1",
@@ -644,9 +659,7 @@ class TestStoreFlaggedResults:
                 content="Test",
                 author_id="user_1",
                 timestamp=datetime.now(UTC),
-                match_score=0.85,
-                matched_claim="Claim",
-                matched_source="https://example.com",
+                matches=[similarity_match],
             )
         ]
 
@@ -1056,7 +1069,7 @@ class TestRedisKeyEnvironmentPrefix:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """AC #1: Redis keys include environment prefix (e.g., prod:bulk_scan:, staging:bulk_scan:)."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         service = BulkContentScanService(
@@ -1066,15 +1079,18 @@ class TestRedisKeyEnvironmentPrefix:
         )
 
         scan_id = uuid4()
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Claim text",
-            matched_source="https://example.com",
+            matches=[similarity_match],
         )
 
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
@@ -1094,7 +1110,7 @@ class TestRedisKeyEnvironmentPrefix:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """AC #2: Prefix is configurable via environment variable."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         service = BulkContentScanService(
@@ -1104,15 +1120,18 @@ class TestRedisKeyEnvironmentPrefix:
         )
 
         scan_id = uuid4()
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Claim text",
-            matched_source="https://example.com",
+            matches=[similarity_match],
         )
 
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
@@ -1155,7 +1174,7 @@ class TestRedisKeyEnvironmentPrefix:
         self, mock_session, mock_embedding_service, mock_redis
     ):
         """store_flagged_results should use environment-prefixed key."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         service = BulkContentScanService(
@@ -1165,6 +1184,11 @@ class TestRedisKeyEnvironmentPrefix:
         )
 
         scan_id = uuid4()
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+        )
         flagged_messages = [
             FlaggedMessage(
                 message_id="msg_1",
@@ -1172,9 +1196,7 @@ class TestRedisKeyEnvironmentPrefix:
                 content="Test",
                 author_id="user_1",
                 timestamp=datetime.now(UTC),
-                match_score=0.85,
-                matched_claim="Claim",
-                matched_source="https://example.com",
+                matches=[similarity_match],
             )
         ]
 
@@ -1202,7 +1224,7 @@ class TestRedisErrorPropagation:
         """
         from redis.exceptions import ConnectionError as RedisConnectionError
 
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         mock_redis.lpush = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
@@ -1214,15 +1236,18 @@ class TestRedisErrorPropagation:
         )
 
         scan_id = uuid4()
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Claim text",
-            matched_source="https://example.com",
+            matches=[similarity_match],
         )
 
         with pytest.raises(RedisConnectionError):
@@ -1255,7 +1280,7 @@ class TestRedisErrorPropagation:
         """AC #4: Redis connection errors should propagate for caller handling."""
         from redis.exceptions import ConnectionError as RedisConnectionError
 
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         mock_redis.lpush = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
@@ -1266,6 +1291,11 @@ class TestRedisErrorPropagation:
             redis_client=mock_redis,
         )
 
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+        )
         flagged_messages = [
             FlaggedMessage(
                 message_id="msg_1",
@@ -1273,9 +1303,7 @@ class TestRedisErrorPropagation:
                 content="Test",
                 author_id="user_1",
                 timestamp=datetime.now(UTC),
-                match_score=0.85,
-                matched_claim="Claim",
-                matched_source="https://example.com",
+                matches=[similarity_match],
             )
         ]
 
@@ -1289,7 +1317,7 @@ class TestRedisErrorPropagation:
         """AC #4: Redis timeout errors should propagate for caller handling."""
         from redis.exceptions import TimeoutError as RedisTimeoutError
 
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
         from src.bulk_content_scan.service import BulkContentScanService
 
         mock_redis.lpush = AsyncMock(side_effect=RedisTimeoutError("Operation timed out"))
@@ -1300,15 +1328,18 @@ class TestRedisErrorPropagation:
             redis_client=mock_redis,
         )
 
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim text",
+            matched_source="https://example.com",
+        )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Claim text",
-            matched_source="https://example.com",
+            matches=[similarity_match],
         )
 
         with pytest.raises(RedisTimeoutError):

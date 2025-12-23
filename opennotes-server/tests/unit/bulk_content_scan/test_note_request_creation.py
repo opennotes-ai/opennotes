@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.bulk_content_scan.schemas import FlaggedMessage
+from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
 
 
 @pytest.fixture
@@ -31,9 +31,13 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
             content="This is a test claim about vaccines",
             author_id="user_001",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Vaccines cause autism",
-            matched_source="https://factcheck.org/vaccines",
+            matches=[
+                SimilarityMatch(
+                    score=0.85,
+                    matched_claim="Vaccines cause autism",
+                    matched_source="https://factcheck.org/vaccines",
+                )
+            ],
         ),
         FlaggedMessage(
             message_id="msg_002",
@@ -41,9 +45,13 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
             content="Another test claim about climate",
             author_id="user_002",
             timestamp=datetime.now(UTC),
-            match_score=0.75,
-            matched_claim="Climate change is a hoax",
-            matched_source="https://factcheck.org/climate",
+            matches=[
+                SimilarityMatch(
+                    score=0.75,
+                    matched_claim="Climate change is a hoax",
+                    matched_source="https://factcheck.org/climate",
+                )
+            ],
         ),
         FlaggedMessage(
             message_id="msg_003",
@@ -51,9 +59,13 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
             content="Third test message",
             author_id="user_003",
             timestamp=datetime.now(UTC),
-            match_score=0.90,
-            matched_claim="Election fraud claim",
-            matched_source="https://factcheck.org/election",
+            matches=[
+                SimilarityMatch(
+                    score=0.90,
+                    matched_claim="Election fraud claim",
+                    matched_source="https://factcheck.org/election",
+                )
+            ],
         ),
     ]
 
