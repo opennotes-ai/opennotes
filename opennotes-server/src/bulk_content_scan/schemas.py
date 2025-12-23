@@ -80,13 +80,25 @@ class FlaggedMessage(SQLAlchemySchema):
         ...,
         ge=0.0,
         le=1.0,
-        description="Similarity score (0.0-1.0)",
+        description="Similarity score (0.0-1.0) or max moderation score",
     )
     matched_claim: str = Field(..., description="Fact-check claim that matched")
     matched_source: str = Field(..., description="URL to the fact-check source")
     scan_type: ScanType = Field(
         default=ScanType.SIMILARITY,
         description="Type of scan that flagged this message",
+    )
+    moderation_categories: dict[str, bool] | None = Field(
+        default=None,
+        description="OpenAI moderation categories (e.g., violence, sexual, hate)",
+    )
+    moderation_scores: dict[str, float] | None = Field(
+        default=None,
+        description="OpenAI moderation category scores (0.0-1.0)",
+    )
+    flagged_categories: list[str] | None = Field(
+        default=None,
+        description="List of category names that were flagged",
     )
 
 

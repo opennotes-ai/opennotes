@@ -77,6 +77,7 @@ class BulkContentScanService:
         session: AsyncSession,
         embedding_service: EmbeddingService,
         redis_client: Redis,
+        moderation_service: Any | None = None,
     ) -> None:
         """Initialize the service.
 
@@ -84,10 +85,12 @@ class BulkContentScanService:
             session: Database session for scan log operations
             embedding_service: Service for similarity search
             redis_client: Redis client for temporary message storage
+            moderation_service: Optional OpenAI moderation service for content moderation
         """
         self.session = session
         self.embedding_service = embedding_service
         self.redis_client = redis_client
+        self.moderation_service = moderation_service
 
     async def initiate_scan(
         self,
@@ -245,6 +248,8 @@ class BulkContentScanService:
                 return await self._similarity_scan_with_score(
                     scan_id, message, community_server_platform_id
                 )
+            case ScanType.OPENAI_MODERATION:
+                return await self._openai_moderation_scan_with_score(scan_id, message)
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None, {
@@ -327,6 +332,8 @@ class BulkContentScanService:
         match scan_type:
             case ScanType.SIMILARITY:
                 return await self._similarity_scan(scan_id, message, community_server_platform_id)
+            case ScanType.OPENAI_MODERATION:
+                return await self._openai_moderation_scan(scan_id, message)
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
@@ -360,6 +367,116 @@ class BulkContentScanService:
             )
 
         return None
+
+    async def _openai_moderation_scan(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+    ) -> FlaggedMessage | None:
+        """Run OpenAI moderation on a message."""
+        if not self.moderation_service:
+            logger.warning(
+                "Moderation service not configured",
+                extra={"scan_id": str(scan_id)},
+            )
+            return None
+
+        try:
+            if message.attachment_urls:
+                moderation_result = await self.moderation_service.moderate_multimodal(
+                    text=message.content,
+                    image_urls=message.attachment_urls,
+                )
+            else:
+                moderation_result = await self.moderation_service.moderate_text(message.content)
+
+            if moderation_result.flagged:
+                return self._build_moderation_flagged_message(message, moderation_result)
+
+        except Exception as e:
+            logger.warning(
+                "Error in OpenAI moderation scan",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None
+
+    async def _openai_moderation_scan_with_score(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+    ) -> tuple[FlaggedMessage | None, dict]:
+        """Run OpenAI moderation and return both flagged result and score info."""
+        score_info = {
+            "message_id": message.message_id,
+            "channel_id": message.channel_id,
+            "similarity_score": 0.0,
+            "is_flagged": False,
+            "matched_claim": None,
+        }
+
+        if not self.moderation_service:
+            logger.warning(
+                "Moderation service not configured",
+                extra={"scan_id": str(scan_id)},
+            )
+            return None, score_info
+
+        try:
+            if message.attachment_urls:
+                moderation_result = await self.moderation_service.moderate_multimodal(
+                    text=message.content,
+                    image_urls=message.attachment_urls,
+                )
+            else:
+                moderation_result = await self.moderation_service.moderate_text(message.content)
+
+            score_info["similarity_score"] = moderation_result.max_score
+            score_info["matched_claim"] = ", ".join(moderation_result.flagged_categories)
+
+            if moderation_result.flagged:
+                try:
+                    flagged_msg = self._build_moderation_flagged_message(message, moderation_result)
+                    score_info["is_flagged"] = True
+                    return flagged_msg, score_info
+                except Exception as build_error:
+                    logger.error(
+                        "Failed to build moderation flagged message",
+                        extra={
+                            "scan_id": str(scan_id),
+                            "message_id": message.message_id,
+                            "error": str(build_error),
+                        },
+                    )
+
+        except Exception as e:
+            logger.warning(
+                "Error in OpenAI moderation scan with score",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None, score_info
+
+    def _build_moderation_flagged_message(
+        self,
+        message: BulkScanMessage,
+        moderation_result: Any,
+    ) -> FlaggedMessage:
+        """Build FlaggedMessage from a moderation result."""
+        return FlaggedMessage(
+            message_id=message.message_id,
+            channel_id=message.channel_id,
+            content=message.content,
+            author_id=message.author_id,
+            timestamp=message.timestamp,
+            match_score=moderation_result.max_score,
+            matched_claim=", ".join(moderation_result.flagged_categories),
+            matched_source="",
+            scan_type=ScanType.OPENAI_MODERATION,
+            moderation_categories=moderation_result.categories,
+            moderation_scores=moderation_result.scores,
+            flagged_categories=moderation_result.flagged_categories,
+        )
 
     def _build_flagged_message(
         self,
