@@ -207,7 +207,7 @@ async def hybrid_search(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        results.append(HybridSearchResult(item=item, rrf_score=row.rrf_score))
+        results.append(HybridSearchResult(item=item, rrf_score=float(row.rrf_score)))
 
     logger.info(
         "Hybrid search completed",
