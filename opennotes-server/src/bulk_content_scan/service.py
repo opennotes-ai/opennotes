@@ -411,12 +411,15 @@ class BulkContentScanService:
         message: BulkScanMessage,
     ) -> tuple[FlaggedMessage | None, dict]:
         """Run OpenAI moderation and return both flagged result and score info."""
-        score_info = {
+        score_info: dict = {
             "message_id": message.message_id,
             "channel_id": message.channel_id,
             "similarity_score": 0.0,
             "is_flagged": False,
             "matched_claim": None,
+            "moderation_flagged": None,
+            "moderation_categories": None,
+            "moderation_scores": None,
         }
 
         if not self.moderation_service:
@@ -437,6 +440,9 @@ class BulkContentScanService:
 
             score_info["similarity_score"] = moderation_result.max_score
             score_info["matched_claim"] = ", ".join(moderation_result.flagged_categories)
+            score_info["moderation_flagged"] = moderation_result.flagged
+            score_info["moderation_categories"] = moderation_result.categories
+            score_info["moderation_scores"] = moderation_result.scores
 
             if moderation_result.flagged:
                 try:

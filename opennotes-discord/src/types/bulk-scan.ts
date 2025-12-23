@@ -89,6 +89,9 @@ export interface MessageScoreInfo {
   threshold: number;
   is_flagged: boolean;
   matched_claim?: string;
+  moderation_flagged?: boolean | null;
+  moderation_categories?: Record<string, boolean> | null;
+  moderation_scores?: Record<string, number> | null;
 }
 
 export interface BulkScanProgressEvent extends BaseEvent {
