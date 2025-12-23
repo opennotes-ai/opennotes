@@ -1,6 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { MessageFlags, ContainerBuilder } from 'discord.js';
+import { MessageFlags, ContainerBuilder, Collection } from 'discord.js';
 import { V2_COLORS } from '../../src/utils/v2-components.js';
+import { buildWelcomeContainer } from '../../src/lib/welcome-content.js';
+
+// Helper to create a Collection from entries (mimics Discord.js Collection)
+function createMockCollection<K, V>(entries: [K, V][]): Collection<K, V> {
+  return new Collection(entries);
+}
+
+// Get the actual welcome content signature for content comparison tests
+function getActualWelcomeContentSignature(): object {
+  return buildWelcomeContainer().toJSON();
+}
 
 const mockLogger = {
   info: jest.fn<(...args: unknown[]) => void>(),
@@ -48,13 +59,22 @@ describe('GuildOnboardingService', () => {
       pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
     };
 
+    const mockBotUser = {
+      id: 'bot-user-123',
+      username: 'OpenNotes',
+      bot: true,
+    };
+
     mockChannel = {
       id: 'channel-123',
       name: 'open-notes',
       guild: mockGuild,
+      client: {
+        user: mockBotUser,
+      },
       send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockMessage),
       messages: {
-        fetchPinned: jest.fn<() => Promise<any>>().mockResolvedValue(new Map()),
+        fetchPinned: jest.fn<() => Promise<any>>().mockResolvedValue(createMockCollection([])),
         fetch: jest.fn<(id: string) => Promise<any>>(),
       },
     };
@@ -442,11 +462,15 @@ describe('GuildOnboardingService', () => {
 
     it('should skip posting if welcome message already exists in channel pins (AC#4)', async () => {
       const existingWelcomeMessageId = 'existing-welcome-123';
+      // Mock message must have author matching bot user and actual welcome content
+      const actualWelcomeContent = getActualWelcomeContentSignature();
       const existingMessage = {
         id: existingWelcomeMessageId,
+        author: { id: 'bot-user-123' },
+        components: [{ type: 17, toJSON: () => actualWelcomeContent }],
         pin: jest.fn(),
       };
-      const pinnedMessages = new Map([[existingWelcomeMessageId, existingMessage]]);
+      const pinnedMessages = createMockCollection([[existingWelcomeMessageId, existingMessage]]);
       mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
@@ -469,17 +493,17 @@ describe('GuildOnboardingService', () => {
 
       expect(mockChannel.send).not.toHaveBeenCalled();
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Welcome message already exists in channel pins',
+        'Welcome message with same content already exists',
         expect.objectContaining({
           guildId: 'guild-123',
-          welcomeMessageId: existingWelcomeMessageId,
+          messageId: existingWelcomeMessageId,
         })
       );
     });
 
     it('should post new welcome message if stored message is not found in pins (AC#5)', async () => {
       const staleWelcomeMessageId = 'deleted-message-123';
-      const pinnedMessages = new Map(); // Empty - message was deleted
+      const pinnedMessages = createMockCollection([]); // Empty - message was deleted
       mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
@@ -507,7 +531,7 @@ describe('GuildOnboardingService', () => {
 
     it('should log when reposting welcome message due to missing pin', async () => {
       const staleWelcomeMessageId = 'deleted-message-123';
-      const pinnedMessages = new Map();
+      const pinnedMessages = createMockCollection([]);
       mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
@@ -593,6 +617,283 @@ describe('GuildOnboardingService', () => {
           error: 'API error',
         })
       );
+    });
+  });
+
+  describe('Welcome Message Idempotency - Content-Based (task-870)', () => {
+    let mockMessage: any;
+    let mockBotUser: any;
+
+    beforeEach(() => {
+      mockMessage = {
+        id: 'message-456',
+        pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+      };
+      mockChannel.send.mockResolvedValue(mockMessage);
+
+      mockBotUser = {
+        id: 'bot-user-123',
+        username: 'OpenNotes',
+        bot: true,
+      };
+
+      // Add bot user to channel's client
+      mockChannel.client = {
+        user: mockBotUser,
+      };
+
+      mockApiClient.getCommunityServerByPlatformId.mockReset();
+      mockApiClient.updateWelcomeMessageId.mockReset();
+      mockApiClient.updateWelcomeMessageId.mockResolvedValue({
+        id: 'community-server-123',
+        platform_id: 'guild-123',
+        welcome_message_id: 'message-456',
+      });
+    });
+
+    describe('AC#1: Search by bot author instead of stored message ID', () => {
+      it('should find existing welcome message by bot author when stored ID is missing', async () => {
+        // Existing welcome message from the bot (not tracked in DB)
+        // Must use actual welcome content for content comparison to match
+        const actualWelcomeContent = getActualWelcomeContentSignature();
+        const existingBotMessage = {
+          id: 'untracked-welcome-123',
+          author: mockBotUser,
+          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        const pinnedMessages = createMockCollection([['untracked-welcome-123', existingBotMessage]]);
+        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+        // DB has no welcome_message_id stored
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: {
+            type: 'community-servers',
+            id: 'community-server-123',
+            attributes: {
+              platform: 'discord',
+              platform_id: 'guild-123',
+              name: 'Test Guild',
+              welcome_message_id: null, // Not tracked
+            },
+          },
+          jsonapi: { version: '1.1' },
+        });
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should NOT post a new message since bot's welcome already exists
+        expect(mockChannel.send).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('AC#2-3: Content comparison', () => {
+      it('should not repost if existing welcome has same content', async () => {
+        // Create a mock existing message with actual welcome content
+        const actualWelcomeContent = getActualWelcomeContentSignature();
+        const existingBotMessage = {
+          id: 'existing-welcome-123',
+          author: mockBotUser,
+          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        const pinnedMessages = createMockCollection([['existing-welcome-123', existingBotMessage]]);
+        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: {
+            type: 'community-servers',
+            id: 'community-server-123',
+            attributes: {
+              platform: 'discord',
+              platform_id: 'guild-123',
+              name: 'Test Guild',
+              welcome_message_id: 'existing-welcome-123',
+            },
+          },
+          jsonapi: { version: '1.1' },
+        });
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should not send new message - content is same
+        expect(mockChannel.send).not.toHaveBeenCalled();
+        // Should not delete old message
+        expect(existingBotMessage.delete).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('AC#4: Delete old message when content changes', () => {
+      it('should delete old welcome and post new when content differs', async () => {
+        // Existing welcome with DIFFERENT content (e.g., old version)
+        // toJSON returns different structure so content comparison fails
+        const existingBotMessage = {
+          id: 'old-welcome-123',
+          author: mockBotUser,
+          components: [{ type: 17, toJSON: () => ({ type: 17, content: 'Old welcome text' }) }],
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        const pinnedMessages = createMockCollection([['old-welcome-123', existingBotMessage]]);
+        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: {
+            type: 'community-servers',
+            id: 'community-server-123',
+            attributes: {
+              platform: 'discord',
+              platform_id: 'guild-123',
+              name: 'Test Guild',
+              welcome_message_id: 'old-welcome-123',
+            },
+          },
+          jsonapi: { version: '1.1' },
+        });
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should delete the old message
+        expect(existingBotMessage.delete).toHaveBeenCalled();
+        // Should post new message
+        expect(mockChannel.send).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('AC#8: Handle multiple identical pinned messages', () => {
+      it('should delete duplicate welcome messages keeping only one', async () => {
+        // Three identical welcome messages pinned (duplicates from bug)
+        // All have same content as current welcome
+        const actualWelcomeContent = getActualWelcomeContentSignature();
+        const welcomeMessage1 = {
+          id: 'welcome-1',
+          author: mockBotUser,
+          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        const welcomeMessage2 = {
+          id: 'welcome-2',
+          author: mockBotUser,
+          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        const welcomeMessage3 = {
+          id: 'welcome-3',
+          author: mockBotUser,
+          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        const pinnedMessages = createMockCollection([
+          ['welcome-1', welcomeMessage1],
+          ['welcome-2', welcomeMessage2],
+          ['welcome-3', welcomeMessage3],
+        ]);
+        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: {
+            type: 'community-servers',
+            id: 'community-server-123',
+            attributes: {
+              platform: 'discord',
+              platform_id: 'guild-123',
+              name: 'Test Guild',
+              welcome_message_id: 'welcome-1',
+            },
+          },
+          jsonapi: { version: '1.1' },
+        });
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should delete 2 duplicates, keep 1
+        const deleteCalls = [
+          welcomeMessage1.delete.mock.calls.length,
+          welcomeMessage2.delete.mock.calls.length,
+          welcomeMessage3.delete.mock.calls.length,
+        ].reduce((sum, count) => sum + count, 0);
+        expect(deleteCalls).toBe(2);
+
+        // Should not post new message (one already exists)
+        expect(mockChannel.send).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('AC#6: Handle API failures gracefully', () => {
+      it('should not post if Discord fetchPinned fails', async () => {
+        // Can't verify Discord state - don't post to avoid duplicates
+        mockChannel.messages.fetchPinned.mockRejectedValue(
+          new Error('Missing permissions')
+        );
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should NOT post when we can't check Discord pins
+        expect(mockChannel.send).not.toHaveBeenCalled();
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Cannot verify welcome message state'),
+          expect.objectContaining({
+            guildId: 'guild-123',
+          })
+        );
+      });
+
+      it('should still post if API fails but Discord shows no welcome message', async () => {
+        // Discord (source of truth) shows no welcome messages
+        mockChannel.messages.fetchPinned.mockResolvedValue(createMockCollection([]));
+        // API fails
+        mockApiClient.getCommunityServerByPlatformId.mockRejectedValue(
+          new Error('500 Internal Server Error')
+        );
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should still post - Discord is the source of truth
+        expect(mockChannel.send).toHaveBeenCalledTimes(1);
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          'API unavailable, proceeding based on Discord state',
+          expect.objectContaining({
+            guildId: 'guild-123',
+          })
+        );
+      });
+
+      it('should update DB with found message ID if DB record is stale', async () => {
+        // Bot's welcome exists but DB has wrong/missing ID
+        // Must use actual welcome content for content comparison to match
+        const actualWelcomeContent = getActualWelcomeContentSignature();
+        const existingBotMessage = {
+          id: 'found-welcome-123',
+          author: mockBotUser,
+          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        const pinnedMessages = createMockCollection([['found-welcome-123', existingBotMessage]]);
+        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: {
+            type: 'community-servers',
+            id: 'community-server-123',
+            attributes: {
+              platform: 'discord',
+              platform_id: 'guild-123',
+              name: 'Test Guild',
+              welcome_message_id: 'wrong-old-id', // Stale ID
+            },
+          },
+          jsonapi: { version: '1.1' },
+        });
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should update DB with correct message ID
+        expect(mockApiClient.updateWelcomeMessageId).toHaveBeenCalledWith(
+          'guild-123',
+          'found-welcome-123'
+        );
+        // Should not post new message
+        expect(mockChannel.send).not.toHaveBeenCalled();
+      });
     });
   });
 });
