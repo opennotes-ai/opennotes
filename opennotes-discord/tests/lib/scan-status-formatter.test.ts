@@ -16,10 +16,14 @@ function createFlaggedMessageResource(
       content,
       author_id: 'author-1',
       timestamp: new Date().toISOString(),
-      match_score: matchScore,
-      matched_claim: matchedClaim,
-      matched_source: 'snopes',
-      scan_type: 'bulk',
+      matches: [
+        {
+          scan_type: 'similarity' as const,
+          score: matchScore,
+          matched_claim: matchedClaim,
+          matched_source: 'snopes',
+        },
+      ],
     },
   };
 }

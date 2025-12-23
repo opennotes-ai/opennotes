@@ -1847,10 +1847,14 @@ describe('ApiClient Wrapper', () => {
               content: 'Flagged content',
               author_id: 'author-1',
               timestamp: '2024-01-15T09:00:00Z',
-              match_score: 0.95,
-              matched_claim: 'Test claim',
-              matched_source: 'snopes',
-              scan_type: 'bulk',
+              matches: [
+                {
+                  scan_type: 'similarity',
+                  score: 0.95,
+                  matched_claim: 'Test claim',
+                  matched_source: 'snopes',
+                },
+              ],
             },
           },
         ],
@@ -1871,7 +1875,11 @@ describe('ApiClient Wrapper', () => {
       expect(result.data.attributes.messages_scanned).toBe(100);
       expect(result.included).toHaveLength(1);
       expect(result.included![0].id).toBe('msg-1');
-      expect(result.included![0].attributes.match_score).toBe(0.95);
+      const firstMatch = result.included![0].attributes.matches![0];
+      expect(firstMatch.scan_type).toBe('similarity');
+      if (firstMatch.scan_type === 'similarity') {
+        expect(firstMatch.score).toBe(0.95);
+      }
     });
 
     it('should call the correct endpoint', async () => {
