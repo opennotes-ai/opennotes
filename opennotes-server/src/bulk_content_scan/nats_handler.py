@@ -247,6 +247,10 @@ async def handle_message_batch_with_progress(
 
     await service.increment_processed_count(event.scan_id, successful_count)
 
+    processed_count = await service.get_processed_count(event.scan_id)
+    channel_ids = list({msg.channel_id for msg in typed_messages})
+
+    message_score_infos: list[MessageScoreInfo] = []
     if debug_mode and all_scores:
         message_score_infos = [
             MessageScoreInfo(
@@ -260,27 +264,31 @@ async def handle_message_batch_with_progress(
             for score in all_scores
         ]
 
-        progress_event = BulkScanProgressEvent(
-            event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
-            scan_id=event.scan_id,
-            community_server_id=event.community_server_id,
-            platform_id=platform_id,
-            batch_number=event.batch_number,
-            messages_in_batch=len(typed_messages),
-            message_scores=message_score_infos,
-            threshold_used=threshold,
-        )
+    progress_event = BulkScanProgressEvent(
+        event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
+        scan_id=event.scan_id,
+        community_server_id=event.community_server_id,
+        platform_id=platform_id,
+        batch_number=event.batch_number,
+        messages_in_batch=len(typed_messages),
+        messages_processed=processed_count,
+        channel_ids=channel_ids,
+        message_scores=message_score_infos,
+        threshold_used=threshold,
+    )
 
-        await event_publisher.publish_event(progress_event)
+    await event_publisher.publish_event(progress_event)
 
-        logger.debug(
-            "Published progress event",
-            extra={
-                "scan_id": str(event.scan_id),
-                "batch_number": event.batch_number,
-                "scores_count": len(message_score_infos),
-            },
-        )
+    logger.debug(
+        "Published progress event",
+        extra={
+            "scan_id": str(event.scan_id),
+            "batch_number": event.batch_number,
+            "messages_processed": processed_count,
+            "channel_ids": channel_ids,
+            "scores_count": len(message_score_infos),
+        },
+    )
 
     for msg in flagged:
         await service.append_flagged_result(event.scan_id, msg)

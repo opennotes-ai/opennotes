@@ -75,6 +75,7 @@ class EventType(str, Enum):
     BULK_SCAN_PROCESSING_FINISHED = "bulk_scan.processing_finished"
     BULK_SCAN_RESULTS = "bulk_scan.results"
     BULK_SCAN_PROGRESS = "bulk_scan.progress"
+    BULK_SCAN_FAILED = "bulk_scan.failed"
 
 
 class BaseEvent(StrictEventSchema):
@@ -357,11 +358,11 @@ class MessageScoreInfo(StrictEventSchema):
 
 
 class BulkScanProgressEvent(BaseEvent):
-    """Event published with progress and scores during vibecheck debug mode.
+    """Event published with progress during bulk scan processing.
 
-    When vibecheck_debug_mode is enabled for a community server, this event
-    is published after each batch of messages is processed, containing
-    similarity scores for ALL messages (not just flagged ones).
+    This event is published after each batch of messages is processed.
+    In debug mode, it includes detailed similarity scores for ALL messages.
+    In normal mode, it includes summary progress information.
     """
 
     event_type: EventType = EventType.BULK_SCAN_PROGRESS
@@ -370,11 +371,33 @@ class BulkScanProgressEvent(BaseEvent):
     platform_id: str = Field(..., description="Platform ID (e.g., Discord guild ID)")
     batch_number: int = Field(..., ge=1, description="Batch sequence number")
     messages_in_batch: int = Field(..., ge=0, description="Number of messages in this batch")
+    messages_processed: int = Field(
+        default=0, ge=0, description="Total messages processed so far in this scan"
+    )
+    channel_ids: list[str] = Field(
+        default_factory=list, description="Channel IDs being processed in this batch"
+    )
     message_scores: list[MessageScoreInfo] = Field(
         default_factory=list,
-        description="Score info for each message in the batch",
+        description="Score info for each message in the batch (debug mode only)",
     )
     threshold_used: float = Field(..., ge=0.0, le=1.0, description="Threshold used for flagging")
+
+
+class BulkScanFailedEvent(BaseEvent):
+    """Event published when a bulk scan fails due to critical errors.
+
+    This event is published by the server when a scan encounters unrecoverable
+    errors that prevent completion. The Discord bot subscribes to this to
+    immediately notify users of failures.
+    """
+
+    event_type: EventType = EventType.BULK_SCAN_FAILED
+    scan_id: UUID = Field(..., description="Failed scan identifier")
+    community_server_id: UUID = Field(..., description="Community server that was being scanned")
+    error_message: str = Field(
+        ..., min_length=1, max_length=5000, description="Error message describing the failure"
+    )
 
 
 EventUnion = (
@@ -393,4 +416,5 @@ EventUnion = (
     | BulkScanProcessingFinishedEvent
     | BulkScanResultsEvent
     | BulkScanProgressEvent
+    | BulkScanFailedEvent
 )

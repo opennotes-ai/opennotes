@@ -27,6 +27,12 @@ export const BACKOFF_INITIAL_MS = 1000;
 export const BACKOFF_MULTIPLIER = 2;
 export const BACKOFF_MAX_MS = 30000;
 
+export const NATS_STALL_WARNING_MS = 30000;
+export const NATS_SILENCE_TIMEOUT_MS = 60000;
+export const NATS_MAX_WAIT_MS = 300000;
+
+export { waitForNatsResults, NatsResultsWaiter } from './nats-results-waiter.js';
+
 export interface BulkScanOptions {
   guild: Guild;
   days: number;

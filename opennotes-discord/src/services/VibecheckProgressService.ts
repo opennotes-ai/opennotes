@@ -1,4 +1,4 @@
-import { Client, EmbedBuilder } from 'discord.js';
+import { Client, EmbedBuilder, Guild } from 'discord.js';
 import { logger } from '../logger.js';
 import { BotChannelService } from './BotChannelService.js';
 import { GuildConfigService } from './GuildConfigService.js';
@@ -57,7 +57,7 @@ export class VibecheckProgressService {
     }
 
     try {
-      const embed = this.formatProgressEmbed(event);
+      const embed = this.formatProgressEmbed(event, guild);
       await channel.send({ embeds: [embed] });
 
       logger.debug('Sent vibecheck progress to bot channel', {
@@ -75,17 +75,34 @@ export class VibecheckProgressService {
     }
   }
 
-  private formatProgressEmbed(event: BulkScanProgressEvent): EmbedBuilder {
-    const { batch_number, messages_in_batch, message_scores, threshold_used } = event;
+  private formatProgressEmbed(event: BulkScanProgressEvent, guild: Guild): EmbedBuilder {
+    const { batch_number, messages_in_batch, message_scores, threshold_used, channel_ids, messages_processed } = event;
 
     const flaggedCount = message_scores.filter((s) => s.is_flagged).length;
     const shortScanId = event.scan_id.substring(0, 8);
+
+    // Resolve channel IDs to names
+    const channelNames = channel_ids
+      .map((id) => guild.channels.cache.get(id)?.name)
+      .filter((name): name is string => Boolean(name))
+      .map((name) => `#${name}`);
+
+    // Format channel display: show up to 3 channels, then ellipsis
+    let channelDisplay = '';
+    if (channelNames.length > 0) {
+      const displayNames = channelNames.slice(0, 3);
+      channelDisplay = `Analyzing ${displayNames.join(', ')}${channelNames.length > 3 ? '...' : ''}`;
+    } else {
+      channelDisplay = `Processing batch ${batch_number}`;
+    }
+
+    const messageCount = messages_processed > 0 ? messages_processed : messages_in_batch;
 
     const embed = new EmbedBuilder()
       .setTitle(`🔍 Vibecheck Progress - Batch ${batch_number}`)
       .setColor(flaggedCount > 0 ? 0xff9900 : 0x00aa00)
       .setDescription(
-        `Processing ${messages_in_batch} messages | Threshold: ${(threshold_used * 100).toFixed(0)}%`
+        `${channelDisplay} (${messageCount} messages) | Threshold: ${(threshold_used * 100).toFixed(0)}%`
       )
       .setFooter({ text: `Scan ID: ${shortScanId}` })
       .setTimestamp();
