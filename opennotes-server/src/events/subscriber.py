@@ -9,7 +9,7 @@ from src.config import settings
 from src.events.nats_client import Subscription, nats_client
 from src.events.schemas import (
     AuditLogCreatedEvent,
-    BulkScanCompletedEvent,
+    BulkScanAllBatchesTransmittedEvent,
     BulkScanMessageBatchEvent,
     EventType,
     NoteCreatedEvent,
@@ -40,7 +40,7 @@ class EventSubscriber:
             EventType.WEBHOOK_RECEIVED: [],
             EventType.AUDIT_LOG_CREATED: [],
             EventType.BULK_SCAN_MESSAGE_BATCH: [],
-            EventType.BULK_SCAN_COMPLETED: [],
+            EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED: [],
         }
         self.subscriptions: list[Subscription] = []
 
@@ -67,7 +67,7 @@ class EventSubscriber:
             EventType.WEBHOOK_RECEIVED: WebhookReceivedEvent,
             EventType.AUDIT_LOG_CREATED: AuditLogCreatedEvent,
             EventType.BULK_SCAN_MESSAGE_BATCH: BulkScanMessageBatchEvent,
-            EventType.BULK_SCAN_COMPLETED: BulkScanCompletedEvent,
+            EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED: BulkScanAllBatchesTransmittedEvent,
         }
         return mapping[event_type]
 

@@ -5,7 +5,7 @@ import { NATS_SUBJECTS, EventType } from '../../src/types/bulk-scan.js';
 describe('NatsPublisher NATS_SUBJECTS', () => {
   it('should have correct subject names matching server expectations', () => {
     expect(NATS_SUBJECTS.BULK_SCAN_BATCH).toBe('OPENNOTES.bulk_scan_message_batch');
-    expect(NATS_SUBJECTS.BULK_SCAN_COMPLETE).toBe('OPENNOTES.bulk_scan_completed');
+    expect(NATS_SUBJECTS.BULK_SCAN_ALL_BATCHES_TRANSMITTED).toBe('OPENNOTES.bulk_scan_all_batches_transmitted');
     expect(NATS_SUBJECTS.BULK_SCAN_RESULT).toBe('OPENNOTES.bulk_scan_results');
   });
 });
@@ -13,7 +13,7 @@ describe('NatsPublisher NATS_SUBJECTS', () => {
 describe('EventType constants', () => {
   it('should have correct event type values', () => {
     expect(EventType.BULK_SCAN_MESSAGE_BATCH).toBe('bulk_scan.message_batch');
-    expect(EventType.BULK_SCAN_COMPLETED).toBe('bulk_scan.completed');
+    expect(EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED).toBe('bulk_scan.all_batches_transmitted');
     expect(EventType.BULK_SCAN_RESULTS).toBe('bulk_scan.results');
   });
 });
@@ -72,36 +72,36 @@ describe('NatsPublisher', () => {
     return { publisher, mockConnect, mockNc };
   }
 
-  describe('publishBulkScanCompleted', () => {
+  describe('publishAllBatchesTransmitted', () => {
     it('should throw error if not connected', async () => {
       const { publisher } = await setupPublisher();
 
-      const completedEvent = {
+      const transmittedEvent = {
         scan_id: '550e8400-e29b-41d4-a716-446655440000',
         community_server_id: '660e8400-e29b-41d4-a716-446655440000',
         messages_scanned: 42,
       };
 
-      await expect(publisher.publishBulkScanCompleted(completedEvent)).rejects.toThrow(
+      await expect(publisher.publishAllBatchesTransmitted(transmittedEvent)).rejects.toThrow(
         'NATS connection not established. Call connect() first.'
       );
     });
 
-    it('should publish to BULK_SCAN_COMPLETE subject with correct payload', async () => {
+    it('should publish to BULK_SCAN_ALL_BATCHES_TRANSMITTED subject with correct payload', async () => {
       const { publisher } = await setupPublisher();
       await publisher.connect('nats://localhost:4222');
 
-      const completedEvent = {
+      const transmittedEvent = {
         scan_id: '550e8400-e29b-41d4-a716-446655440000',
         community_server_id: '660e8400-e29b-41d4-a716-446655440000',
         messages_scanned: 42,
       };
 
-      await publisher.publishBulkScanCompleted(completedEvent);
+      await publisher.publishAllBatchesTransmitted(transmittedEvent);
 
       expect(mockJsPublish).toHaveBeenCalledTimes(1);
       expect(mockJsPublish).toHaveBeenCalledWith(
-        NATS_SUBJECTS.BULK_SCAN_COMPLETE,
+        NATS_SUBJECTS.BULK_SCAN_ALL_BATCHES_TRANSMITTED,
         expect.any(Uint8Array)
       );
     });
@@ -110,13 +110,13 @@ describe('NatsPublisher', () => {
       const { publisher } = await setupPublisher();
       await publisher.connect('nats://localhost:4222');
 
-      const completedEvent = {
+      const transmittedEvent = {
         scan_id: '550e8400-e29b-41d4-a716-446655440000',
         community_server_id: '660e8400-e29b-41d4-a716-446655440000',
         messages_scanned: 100,
       };
 
-      await publisher.publishBulkScanCompleted(completedEvent);
+      await publisher.publishAllBatchesTransmitted(transmittedEvent);
 
       expect(mockCodecEncode).toHaveBeenCalledTimes(1);
       const encodedJson = mockCodecEncode.mock.calls[0][0];
@@ -125,27 +125,27 @@ describe('NatsPublisher', () => {
       expect(parsedEvent.event_id).toBeDefined();
       expect(typeof parsedEvent.event_id).toBe('string');
       expect(parsedEvent.event_id.length).toBeGreaterThan(0);
-      expect(parsedEvent.event_type).toBe(EventType.BULK_SCAN_COMPLETED);
+      expect(parsedEvent.event_type).toBe(EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED);
       expect(parsedEvent.version).toBe('1.0');
       expect(parsedEvent.timestamp).toBeDefined();
       expect(parsedEvent.metadata).toBeDefined();
       expect(typeof parsedEvent.metadata).toBe('object');
-      expect(parsedEvent.scan_id).toBe(completedEvent.scan_id);
-      expect(parsedEvent.community_server_id).toBe(completedEvent.community_server_id);
-      expect(parsedEvent.messages_scanned).toBe(completedEvent.messages_scanned);
+      expect(parsedEvent.scan_id).toBe(transmittedEvent.scan_id);
+      expect(parsedEvent.community_server_id).toBe(transmittedEvent.community_server_id);
+      expect(parsedEvent.messages_scanned).toBe(transmittedEvent.messages_scanned);
     });
 
     it('should handle zero messages scanned', async () => {
       const { publisher } = await setupPublisher();
       await publisher.connect('nats://localhost:4222');
 
-      const completedEvent = {
+      const transmittedEvent = {
         scan_id: '550e8400-e29b-41d4-a716-446655440000',
         community_server_id: '660e8400-e29b-41d4-a716-446655440000',
         messages_scanned: 0,
       };
 
-      await publisher.publishBulkScanCompleted(completedEvent);
+      await publisher.publishAllBatchesTransmitted(transmittedEvent);
 
       const encodedJson = mockCodecEncode.mock.calls[0][0];
       const parsedEvent = JSON.parse(encodedJson);
@@ -161,13 +161,13 @@ describe('NatsPublisher', () => {
       const publishError = new Error('Publish failed');
       mockJsPublish.mockRejectedValueOnce(publishError);
 
-      const completedEvent = {
+      const transmittedEvent = {
         scan_id: '550e8400-e29b-41d4-a716-446655440000',
         community_server_id: '660e8400-e29b-41d4-a716-446655440000',
         messages_scanned: 10,
       };
 
-      await expect(publisher.publishBulkScanCompleted(completedEvent)).rejects.toThrow(
+      await expect(publisher.publishAllBatchesTransmitted(transmittedEvent)).rejects.toThrow(
         'Publish failed'
       );
     });

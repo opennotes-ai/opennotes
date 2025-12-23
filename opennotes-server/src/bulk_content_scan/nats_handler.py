@@ -15,8 +15,9 @@ from src.config import settings
 from src.database import get_session_maker
 from src.events.publisher import event_publisher
 from src.events.schemas import (
-    BulkScanCompletedEvent,
+    BulkScanAllBatchesTransmittedEvent,
     BulkScanMessageBatchEvent,
+    BulkScanProcessingFinishedEvent,
     BulkScanProgressEvent,
     BulkScanResultsEvent,
     EventType,
@@ -153,6 +154,8 @@ async def handle_message_batch_with_progress(
     nats_client: Any,
     platform_id: str,
     debug_mode: bool,
+    messages_scanned: int | None = None,
+    publisher: EventPublisher | None = None,
 ) -> None:
     """Handle message batch with optional progress event emission.
 
@@ -163,12 +166,18 @@ async def handle_message_batch_with_progress(
     This function processes messages individually to track per-message errors
     while still allowing successful messages to be processed.
 
+    After processing, checks if all_batches_transmitted flag is set and
+    all messages are processed - if so, triggers scan completion (dual-completion
+    trigger pattern to fix race condition).
+
     Args:
         event: Message batch event
         service: Bulk scan service
         nats_client: NATS client for publishing progress events
         platform_id: Platform ID for the community server
         debug_mode: Whether vibecheck_debug_mode is enabled
+        messages_scanned: Total messages expected (for completion check)
+        publisher: Event publisher for results (for completion trigger)
     """
     logger.info(
         "Processing message batch with progress",
@@ -288,33 +297,50 @@ async def handle_message_batch_with_progress(
         },
     )
 
+    if messages_scanned is not None and publisher is not None:
+        transmitted = await service.get_all_batches_transmitted(event.scan_id)
+        if transmitted:
+            processed_count = await service.get_processed_count(event.scan_id)
+            if processed_count >= messages_scanned:
+                logger.info(
+                    "Batch handler triggering completion (transmitted flag set)",
+                    extra={
+                        "scan_id": str(event.scan_id),
+                        "processed_count": processed_count,
+                        "messages_scanned": messages_scanned,
+                    },
+                )
+                await finalize_scan(
+                    scan_id=event.scan_id,
+                    community_server_id=event.community_server_id,
+                    messages_scanned=messages_scanned,
+                    service=service,
+                    publisher=publisher,
+                )
 
-async def handle_scan_completed(
-    event: BulkScanCompletedEvent,
+
+async def finalize_scan(
+    scan_id: UUID,
+    community_server_id: UUID,
+    messages_scanned: int,
     service: BulkContentScanService,
     publisher: EventPublisher,
 ) -> None:
-    """Mark scan as complete and publish final results.
+    """Finalize a scan and publish results.
 
-    If 100% of messages failed with errors and no messages were successfully
-    processed, the scan is marked as 'failed' instead of 'completed'.
+    This is called by whichever handler finishes last (batch or transmitted).
+    Implements the dual-completion-trigger pattern to fix the race condition.
 
     Args:
-        event: Scan completion event
+        scan_id: UUID of the scan
+        community_server_id: Community server UUID
+        messages_scanned: Total messages scanned
         service: Bulk scan service
         publisher: Event publisher for results
     """
-    logger.info(
-        "Processing scan completion",
-        extra={
-            "scan_id": str(event.scan_id),
-            "messages_scanned": event.messages_scanned,
-        },
-    )
-
-    flagged = await service.get_flagged_results(event.scan_id)
-    error_summary_data = await service.get_error_summary(event.scan_id)
-    processed_count = await service.get_processed_count(event.scan_id)
+    flagged = await service.get_flagged_results(scan_id)
+    error_summary_data = await service.get_error_summary(scan_id)
+    processed_count = await service.get_processed_count(scan_id)
 
     total_errors = error_summary_data.get("total_errors", 0)
     error_types = error_summary_data.get("error_types", {})
@@ -337,42 +363,105 @@ async def handle_scan_completed(
         )
 
     status = BulkScanStatus.COMPLETED
-    if event.messages_scanned > 0 and processed_count == 0 and total_errors > 0:
+    if messages_scanned > 0 and processed_count == 0 and total_errors > 0:
         status = BulkScanStatus.FAILED
         logger.warning(
             "Scan marked as failed - 100% of messages had errors",
             extra={
-                "scan_id": str(event.scan_id),
-                "messages_scanned": event.messages_scanned,
+                "scan_id": str(scan_id),
+                "messages_scanned": messages_scanned,
                 "total_errors": total_errors,
             },
         )
 
     await service.complete_scan(
-        scan_id=event.scan_id,
-        messages_scanned=event.messages_scanned,
+        scan_id=scan_id,
+        messages_scanned=messages_scanned,
         messages_flagged=len(flagged),
         status=status,
     )
 
     await publisher.publish(
-        scan_id=event.scan_id,
-        messages_scanned=event.messages_scanned,
+        scan_id=scan_id,
+        messages_scanned=messages_scanned,
         messages_flagged=len(flagged),
         flagged_messages=flagged,
         error_summary=error_summary,
     )
 
+    processing_finished_event = BulkScanProcessingFinishedEvent(
+        event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
+        scan_id=scan_id,
+        community_server_id=community_server_id,
+        messages_scanned=messages_scanned,
+        messages_flagged=len(flagged),
+    )
+    await event_publisher.publish_event(processing_finished_event)
+
     logger.info(
-        "Scan completion processed",
+        "Scan finalized",
         extra={
-            "scan_id": str(event.scan_id),
-            "messages_scanned": event.messages_scanned,
+            "scan_id": str(scan_id),
+            "messages_scanned": messages_scanned,
             "messages_flagged": len(flagged),
             "status": status,
             "total_errors": total_errors,
         },
     )
+
+
+async def handle_all_batches_transmitted(
+    event: BulkScanAllBatchesTransmittedEvent,
+    service: BulkContentScanService,
+    publisher: EventPublisher,
+) -> None:
+    """Handle all_batches_transmitted event from Discord bot.
+
+    Sets the transmitted flag and checks if all batches are already processed.
+    If so, triggers scan completion. Otherwise, the batch handler will trigger
+    completion when the last batch is processed.
+
+    Args:
+        event: All batches transmitted event
+        service: Bulk scan service
+        publisher: Event publisher for results
+    """
+    logger.info(
+        "Processing all_batches_transmitted",
+        extra={
+            "scan_id": str(event.scan_id),
+            "messages_scanned": event.messages_scanned,
+        },
+    )
+
+    await service.set_all_batches_transmitted(event.scan_id)
+
+    processed_count = await service.get_processed_count(event.scan_id)
+    if processed_count >= event.messages_scanned:
+        logger.info(
+            "Transmitted handler triggering completion (all batches processed)",
+            extra={
+                "scan_id": str(event.scan_id),
+                "processed_count": processed_count,
+                "messages_scanned": event.messages_scanned,
+            },
+        )
+        await finalize_scan(
+            scan_id=event.scan_id,
+            community_server_id=event.community_server_id,
+            messages_scanned=event.messages_scanned,
+            service=service,
+            publisher=publisher,
+        )
+    else:
+        logger.info(
+            "Transmitted handler not triggering completion (batches still pending)",
+            extra={
+                "scan_id": str(event.scan_id),
+                "processed_count": processed_count,
+                "messages_scanned": event.messages_scanned,
+            },
+        )
 
 
 class BulkScanResultsPublisher:
@@ -503,15 +592,17 @@ class BulkScanEventHandler:
                 debug_mode=debug_mode,
             )
 
-    async def _handle_scan_completed(self, event: BulkScanCompletedEvent) -> None:
-        """Process all collected messages when scan is complete."""
+    async def _handle_all_batches_transmitted(
+        self, event: BulkScanAllBatchesTransmittedEvent
+    ) -> None:
+        """Handle all_batches_transmitted event from Discord bot."""
         async with get_session_maker()() as session:
             service = BulkContentScanService(
                 session=session,
                 embedding_service=self.embedding_service,
                 redis_client=self.redis_client,
             )
-            await handle_scan_completed(event, service, self.publisher)
+            await handle_all_batches_transmitted(event, service, self.publisher)
 
     def register(self) -> None:
         """Register bulk scan event handlers with the subscriber."""
@@ -521,7 +612,7 @@ class BulkScanEventHandler:
             self._handle_message_batch,
         )
         self.subscriber.register_handler(
-            EventType.BULK_SCAN_COMPLETED,
-            self._handle_scan_completed,
+            EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED,
+            self._handle_all_batches_transmitted,
         )
         logger.info("Bulk scan event handlers registered")

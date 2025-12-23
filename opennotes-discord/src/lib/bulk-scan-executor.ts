@@ -18,7 +18,7 @@ import {
   NATS_SUBJECTS,
   type BulkScanMessage,
   type BulkScanBatch,
-  type BulkScanCompleted,
+  type BulkScanAllBatchesTransmitted,
   type ScanProgress,
 } from '../types/bulk-scan.js';
 
@@ -289,21 +289,21 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     total_batches: totalBatches,
   });
 
-  const completedData: BulkScanCompleted = {
+  const transmittedData: BulkScanAllBatchesTransmitted = {
     scan_id: scanId,
     community_server_id: communityServerUuid,
     messages_scanned: messagesProcessed,
   };
 
   try {
-    await natsPublisher.publishBulkScanCompleted(completedData);
-    logger.debug('Published bulk scan completed event', {
+    await natsPublisher.publishAllBatchesTransmitted(transmittedData);
+    logger.debug('Published bulk scan all batches transmitted event', {
       scan_id: scanId,
       community_server_id: communityServerUuid,
       messages_scanned: messagesProcessed,
     });
   } catch (error) {
-    logger.warn('Failed to publish bulk scan completed event, continuing to poll', {
+    logger.warn('Failed to publish bulk scan all batches transmitted event, continuing to poll', {
       error: error instanceof Error ? error.message : String(error),
       scan_id: scanId,
     });
