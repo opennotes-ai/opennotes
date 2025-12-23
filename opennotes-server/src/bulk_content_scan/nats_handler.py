@@ -417,10 +417,22 @@ class BulkScanResultsPublisher:
             error_summary=error_summary,
         )
 
-        await self.nats_client.publish(
-            event_type=EventType.BULK_SCAN_RESULTS,
-            event_data=event.model_dump(mode="json"),
-        )
+        # Convert event_type to NATS subject (matching EventPublisher pattern)
+        event_name = EventType.BULK_SCAN_RESULTS.value.replace(".", "_")
+        subject = f"{settings.NATS_STREAM_NAME}.{event_name}"
+
+        # Serialize event to bytes
+        data = event.model_dump_json().encode()
+
+        # Build headers for correlation and deduplication
+        headers = {
+            "event-id": event.event_id,
+            "event-type": EventType.BULK_SCAN_RESULTS.value,
+            "Msg-Id": event.event_id,
+            "X-Correlation-Id": event.event_id,
+        }
+
+        await self.nats_client.publish(subject, data, headers=headers)
 
         logger.debug(
             "Published bulk scan results event",
