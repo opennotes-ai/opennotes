@@ -58,7 +58,7 @@ class JSONAPILinks(BaseModel):
     Includes JSON:API 1.1 'describedby' link for API documentation.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", json_schema_mode="serialization")
 
     self_: str | None = Field(default=None, serialization_alias="self")
     first: str | None = None

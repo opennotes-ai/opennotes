@@ -324,6 +324,7 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_PREFIX}/docs" if settings.DEBUG else None,
     redoc_url=f"{settings.API_V1_PREFIX}/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
+    separate_input_output_schemas=False,
 )
 
 if settings.ENABLE_TRACING and not settings.TESTING:

@@ -145,6 +145,14 @@ class UserProfileInDB(UserProfileBase, TimestampSchema):
 class UserProfileResponse(UserProfileInDB):
     """API response schema for user profile with nested relationships."""
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True,
+        use_enum_values=True,
+        extra="forbid",
+        json_schema_mode="serialization",
+    )
+
     identities: list["UserIdentityResponse"] = Field(
         default_factory=list, description="Linked authentication identities"
     )
@@ -250,6 +258,7 @@ class UserIdentityResponse(TimestampSchema):
     model_config = ConfigDict(
         from_attributes=True,
         extra="ignore",  # Ignore extra fields like credentials, email_verification_token
+        json_schema_mode="serialization",
     )
 
     id: UUID = Field(..., description="Unique identity identifier")
@@ -366,6 +375,14 @@ class CommunityMemberInDB(CommunityMemberBase, TimestampSchema):
 
 class CommunityMemberResponse(CommunityMemberInDB):
     """API response schema for community membership with nested profile."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True,
+        use_enum_values=True,
+        extra="forbid",
+        json_schema_mode="serialization",
+    )
 
     profile: Optional["UserProfileResponse"] = Field(None, description="Associated user profile")
     inviter: Optional["UserProfileResponse"] = Field(
