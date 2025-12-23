@@ -151,6 +151,11 @@ export type BulkScanSingleResponse = components['schemas']['BulkScanSingleRespon
 export type BulkScanResultsResponse = components['schemas']['BulkScanResultsResponse'];
 export type RecentScanResponse = components['schemas']['RecentScanResponse'];
 export type NoteRequestsResultResponse = components['schemas']['NoteRequestsResultResponse'];
+export type SimilarityMatch = components['schemas']['SimilarityMatch'];
+export type OpenAIModerationMatch = components['schemas']['OpenAIModerationMatch'];
+export type MatchResult = SimilarityMatch | OpenAIModerationMatch;
+export type ScanErrorInfoSchema = components['schemas']['ScanErrorInfoSchema'];
+export type ScanErrorSummarySchema = components['schemas']['ScanErrorSummarySchema'];
 
 // JSON:API v2 types from generated OpenAPI schema
 export type NoteCreateRequest = components['schemas']['NoteCreateRequest'];
