@@ -89,6 +89,9 @@ export interface MessageScoreInfo {
   threshold: number;
   is_flagged: boolean;
   matched_claim?: string;
+  moderation_flagged?: boolean | null;
+  moderation_categories?: Record<string, boolean> | null;
+  moderation_scores?: Record<string, number> | null;
 }
 
 export interface BulkScanProgressEvent extends BaseEvent {
@@ -142,37 +145,15 @@ export interface BulkScanInitiateResponse {
   scan_window_days: number;
 }
 
-export interface FlaggedMessage {
-  message_id: string;
-  channel_id: string;
-  content: string;
-  author_id: string;
-  timestamp: string;
-  match_score: number;
-  matched_claim: string;
-  matched_source: string;
-}
-
-export interface ScanErrorInfo {
-  error_type: string;
-  message_id?: string;
-  batch_number?: number;
-  error_message: string;
-}
-
-export interface ScanErrorSummary {
-  total_errors: number;
-  error_types: Record<string, number>;
-  sample_errors: ScanErrorInfo[];
-}
-
-export interface BulkScanResultsResponse {
-  scan_id: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  messages_scanned: number;
-  flagged_messages: FlaggedMessage[];
-  error_summary?: ScanErrorSummary;
-}
+// Re-export API types from generated schema (single source of truth)
+export type {
+  SimilarityMatch,
+  OpenAIModerationMatch,
+  MatchResult,
+  ScanErrorInfoSchema as ScanErrorInfo,
+  ScanErrorSummarySchema as ScanErrorSummary,
+  FlaggedMessageAttributes as FlaggedMessage,
+} from '../lib/api-client.js';
 
 export interface CreateNoteRequestsRequest {
   message_ids: string[];

@@ -109,18 +109,21 @@ class TestFlaggedMessage:
 
     def test_can_create_flagged_message(self):
         """AC #4: Results include match scores, source info, and original content."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
 
         now = datetime.now(UTC)
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Original fact-check claim text",
+            matched_source="https://snopes.com/article",
+        )
         flagged = FlaggedMessage(
             message_id="msg_12345",
             channel_id="ch_67890",
             content="Some potentially misleading content",
             author_id="user_54321",
             timestamp=now,
-            match_score=0.85,
-            matched_claim="Original fact-check claim text",
-            matched_source="https://snopes.com/article",
+            matches=[similarity_match],
         )
 
         assert flagged.message_id == "msg_12345"
@@ -128,22 +131,18 @@ class TestFlaggedMessage:
         assert flagged.content == "Some potentially misleading content"
         assert flagged.author_id == "user_54321"
         assert flagged.timestamp == now
-        assert flagged.match_score == 0.85
-        assert flagged.matched_claim == "Original fact-check claim text"
-        assert flagged.matched_source == "https://snopes.com/article"
+        assert len(flagged.matches) == 1
+        assert flagged.matches[0].score == 0.85
+        assert flagged.matches[0].matched_claim == "Original fact-check claim text"
+        assert flagged.matches[0].matched_source == "https://snopes.com/article"
 
     def test_match_score_must_be_in_range(self):
         """Match score must be between 0 and 1."""
-        from src.bulk_content_scan.schemas import FlaggedMessage
+        from src.bulk_content_scan.schemas import SimilarityMatch
 
         with pytest.raises(ValidationError):
-            FlaggedMessage(
-                message_id="msg_1",
-                channel_id="ch_1",
-                content="Test",
-                author_id="user_1",
-                timestamp=datetime.now(UTC),
-                match_score=1.5,  # Invalid
+            SimilarityMatch(
+                score=1.5,  # Invalid
                 matched_claim="Claim",
                 matched_source="https://example.com",
             )
@@ -154,9 +153,18 @@ class TestBulkScanResultsResponse:
 
     def test_can_create_results_response(self):
         """AC #6: GET /scans/{scan_id} returns status and flagged results."""
-        from src.bulk_content_scan.schemas import BulkScanResultsResponse, FlaggedMessage
+        from src.bulk_content_scan.schemas import (
+            BulkScanResultsResponse,
+            FlaggedMessage,
+            SimilarityMatch,
+        )
 
         scan_id = uuid4()
+        similarity_match = SimilarityMatch(
+            score=0.9,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+        )
         flagged_messages = [
             FlaggedMessage(
                 message_id="msg_1",
@@ -164,9 +172,7 @@ class TestBulkScanResultsResponse:
                 content="Flagged content",
                 author_id="user_1",
                 timestamp=datetime.now(UTC),
-                match_score=0.9,
-                matched_claim="Claim",
-                matched_source="https://example.com",
+                matches=[similarity_match],
             )
         ]
 
@@ -394,32 +400,53 @@ class TestBulkScanMessage:
         assert message.embed_content == "Embedded article title: Fake News Spreads"
 
 
-class TestFlaggedMessageWithScanType:
-    """Test FlaggedMessage schema with scan_type field."""
+class TestMatchTypes:
+    """Test SimilarityMatch and OpenAIModerationMatch discriminated union types."""
 
-    def test_flagged_message_includes_scan_type_with_default(self):
-        """FlaggedMessage should have scan_type field with SIMILARITY default."""
-        from src.bulk_content_scan.scan_types import ScanType
-        from src.bulk_content_scan.schemas import FlaggedMessage
+    def test_similarity_match_has_correct_scan_type(self):
+        """SimilarityMatch should have scan_type='similarity'."""
+        from src.bulk_content_scan.schemas import SimilarityMatch
 
-        flagged = FlaggedMessage(
-            message_id="msg_12345",
-            channel_id="ch_67890",
-            content="Some potentially misleading content",
-            author_id="user_54321",
-            timestamp=datetime.now(UTC),
-            match_score=0.85,
+        match = SimilarityMatch(
+            score=0.85,
             matched_claim="Original fact-check claim text",
             matched_source="https://snopes.com/article",
         )
 
-        assert flagged.scan_type == ScanType.SIMILARITY
-        assert flagged.scan_type == "similarity"
+        assert match.scan_type == "similarity"
 
-    def test_flagged_message_can_specify_scan_type(self):
-        """FlaggedMessage should allow specifying scan_type."""
-        from src.bulk_content_scan.scan_types import ScanType
-        from src.bulk_content_scan.schemas import FlaggedMessage
+    def test_openai_moderation_match_has_correct_scan_type(self):
+        """OpenAIModerationMatch should have scan_type='openai_moderation'."""
+        from src.bulk_content_scan.schemas import OpenAIModerationMatch
+
+        match = OpenAIModerationMatch(
+            max_score=0.95,
+            categories={"violence": True, "sexual": False},
+            scores={"violence": 0.95, "sexual": 0.01},
+            flagged_categories=["violence"],
+        )
+
+        assert match.scan_type == "openai_moderation"
+
+    def test_flagged_message_can_have_multiple_matches(self):
+        """FlaggedMessage should support multiple match results."""
+        from src.bulk_content_scan.schemas import (
+            FlaggedMessage,
+            OpenAIModerationMatch,
+            SimilarityMatch,
+        )
+
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+        )
+        moderation_match = OpenAIModerationMatch(
+            max_score=0.95,
+            categories={"violence": True},
+            scores={"violence": 0.95},
+            flagged_categories=["violence"],
+        )
 
         flagged = FlaggedMessage(
             message_id="msg_12345",
@@ -427,10 +454,9 @@ class TestFlaggedMessageWithScanType:
             content="Some content",
             author_id="user_54321",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Claim",
-            matched_source="https://example.com",
-            scan_type=ScanType.SIMILARITY,
+            matches=[similarity_match, moderation_match],
         )
 
-        assert flagged.scan_type == ScanType.SIMILARITY
+        assert len(flagged.matches) == 2
+        assert flagged.matches[0].scan_type == "similarity"
+        assert flagged.matches[1].scan_type == "openai_moderation"

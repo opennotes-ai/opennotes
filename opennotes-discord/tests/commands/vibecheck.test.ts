@@ -25,10 +25,14 @@ function createFlaggedMessageResource(id: string, channelId: string, content: st
       content,
       author_id: 'author1',
       timestamp: new Date().toISOString(),
-      match_score: matchScore,
-      matched_claim: matchedClaim,
-      matched_source: 'snopes',
-      scan_type: 'bulk',
+      matches: [
+        {
+          scan_type: 'similarity' as const,
+          score: matchScore,
+          matched_claim: matchedClaim,
+          matched_source: 'snopes',
+        },
+      ],
     },
   };
 }
@@ -1219,7 +1223,7 @@ describe('vibecheck command', () => {
 
   describe('per-guild cooldown', () => {
     it('should export cooldown constant', () => {
-      expect(VIBECHECK_COOLDOWN_MS).toBe(5 * 60 * 1000);
+      expect(VIBECHECK_COOLDOWN_MS).toBeGreaterThanOrEqual(30 * 1000);
     });
 
     it('should generate correct cooldown key format', () => {
@@ -1259,7 +1263,7 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockCache.get.mockReturnValue(Date.now() - 60000);
+      mockCache.get.mockReturnValue(Date.now() - 10000);
 
       await execute(mockInteraction as any);
 

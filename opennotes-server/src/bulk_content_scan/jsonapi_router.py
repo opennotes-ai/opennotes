@@ -30,7 +30,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import get_latest_scan_for_community, has_recent_scan
-from src.bulk_content_scan.schemas import FlaggedMessage
+from src.bulk_content_scan.schemas import FlaggedMessage, MatchResult
 from src.bulk_content_scan.service import (
     BulkContentScanService,
     create_note_requests_from_flagged_messages,
@@ -125,10 +125,10 @@ class FlaggedMessageAttributes(BaseModel):
     content: str = Field(..., description="Message content")
     author_id: str = Field(..., description="Author ID")
     timestamp: datetime = Field(..., description="Message timestamp")
-    match_score: float = Field(..., description="Similarity match score")
-    matched_claim: str = Field(..., description="The claim that was matched")
-    matched_source: str = Field(..., description="Source of the matched claim")
-    scan_type: str = Field(default="similarity", description="Type of scan that flagged this")
+    matches: list[MatchResult] = Field(
+        default_factory=list,
+        description="List of match results from different scan types",
+    )
 
 
 class FlaggedMessageResource(BaseModel):
@@ -436,10 +436,7 @@ def flagged_message_to_resource(msg: FlaggedMessage) -> FlaggedMessageResource:
             content=msg.content,
             author_id=msg.author_id,
             timestamp=msg.timestamp,
-            match_score=msg.match_score,
-            matched_claim=msg.matched_claim,
-            matched_source=msg.matched_source,
-            scan_type=msg.scan_type,
+            matches=msg.matches,
         ),
     )
 

@@ -355,6 +355,15 @@ class MessageScoreInfo(StrictEventSchema):
     threshold: float = Field(..., ge=0.0, le=1.0, description="Threshold used for flagging")
     is_flagged: bool = Field(..., description="Whether message exceeded threshold")
     matched_claim: str | None = Field(None, description="Matched claim text if flagged")
+    moderation_flagged: bool | None = Field(
+        None, description="Whether OpenAI moderation flagged the message"
+    )
+    moderation_categories: dict[str, bool] | None = Field(
+        None, description="OpenAI moderation category flags (e.g., {'violence': true})"
+    )
+    moderation_scores: dict[str, float] | None = Field(
+        None, description="OpenAI moderation category scores (0.0-1.0)"
+    )
 
 
 class BulkScanProgressEvent(BaseEvent):

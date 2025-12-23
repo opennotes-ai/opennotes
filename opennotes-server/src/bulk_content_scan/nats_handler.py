@@ -260,6 +260,9 @@ async def handle_message_batch_with_progress(
                 threshold=threshold,
                 is_flagged=score["is_flagged"],
                 matched_claim=score.get("matched_claim"),
+                moderation_flagged=score.get("moderation_flagged"),
+                moderation_categories=score.get("moderation_categories"),
+                moderation_scores=score.get("moderation_scores"),
             )
             for score in all_scores
         ]

@@ -520,7 +520,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserProfileResponse-Output"
+                  "$ref": "#/components/schemas/UserProfileResponse"
                 }
               }
             }
@@ -580,7 +580,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserProfileResponse-Output"
+                  "$ref": "#/components/schemas/UserProfileResponse"
                 }
               }
             }
@@ -706,7 +706,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserProfileResponse-Output"
+                  "$ref": "#/components/schemas/UserProfileResponse"
                 }
               }
             }
@@ -810,7 +810,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserProfileResponse-Output"
+                  "$ref": "#/components/schemas/UserProfileResponse"
                 }
               }
             }
@@ -844,7 +844,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserProfileResponse-Output"
+                  "$ref": "#/components/schemas/UserProfileResponse"
                 }
               }
             }
@@ -943,7 +943,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserProfileResponse-Output"
+                  "$ref": "#/components/schemas/UserProfileResponse"
                 }
               }
             }
@@ -5835,6 +5835,80 @@
         }
       }
     },
+    "/api/v1/community-servers/{platform_id}/welcome-message": {
+      "patch": {
+        "tags": [
+          "community-servers"
+        ],
+        "summary": "Update Welcome Message",
+        "description": "Update the welcome message ID for a community server.\n\nThis endpoint is typically called by the Discord bot after posting and pinning\na welcome message in the bot channel. Only service accounts (bots) can call this.\n\nArgs:\n    platform_id: Platform-specific ID (e.g., Discord guild ID)\n    request_body: Contains the welcome_message_id to set (or null to clear)\n\nReturns:\n    Updated community server welcome message info\n\nRaises:\n    401: If not authenticated\n    403: If not a service account\n    404: If community server not found",
+        "operationId": "update_welcome_message_api_v1_community_servers__platform_id__welcome_message_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Platform Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WelcomeMessageUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WelcomeMessageUpdateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/community-servers/{community_server_id}/admins": {
       "post": {
         "tags": [
@@ -7063,7 +7137,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -7558,6 +7632,17 @@
             "title": "Messages Flagged",
             "description": "Number of flagged messages",
             "default": 0
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScanErrorSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Summary of errors encountered during scan"
           }
         },
         "type": "object",
@@ -7627,7 +7712,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -7660,7 +7745,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -7765,7 +7850,7 @@
         ],
         "title": "CommunityConfigResponse"
       },
-      "CommunityMemberResponse-Input": {
+      "CommunityMemberResponse": {
         "properties": {
           "created_at": {
             "type": "string",
@@ -7903,7 +7988,7 @@
           "profile": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/UserProfileResponse-Input"
+                "$ref": "#/components/schemas/UserProfileResponse"
               },
               {
                 "type": "null"
@@ -7914,175 +7999,7 @@
           "inviter": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/UserProfileResponse-Input"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Profile of the user who invited this member"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "created_at",
-          "community_id",
-          "id",
-          "profile_id",
-          "joined_at"
-        ],
-        "title": "CommunityMemberResponse",
-        "description": "API response schema for community membership with nested profile."
-      },
-      "CommunityMemberResponse-Output": {
-        "properties": {
-          "created_at": {
-            "type": "string",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "community_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Community Id",
-            "description": "Community identifier"
-          },
-          "is_external": {
-            "type": "boolean",
-            "title": "Is External",
-            "description": "True for external participants, False for internal members",
-            "default": false
-          },
-          "role": {
-            "$ref": "#/components/schemas/CommunityRole",
-            "description": "Member role in the community",
-            "default": "member"
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Permissions",
-            "description": "Role-specific permissions (JSON object). Kept as dict[str, Any] - permission structures vary by community platform (Discord roles, Reddit mod powers, etc.)"
-          },
-          "invitation_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Invitation Reason",
-            "description": "Reason/context for invitation"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id",
-            "description": "Unique membership identifier"
-          },
-          "profile_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Profile Id",
-            "description": "User profile identifier"
-          },
-          "reputation_in_community": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reputation In Community",
-            "description": "Community-specific reputation"
-          },
-          "joined_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Joined At",
-            "description": "When the user joined"
-          },
-          "invited_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Invited By",
-            "description": "Profile ID of the user who invited this member"
-          },
-          "is_active": {
-            "type": "boolean",
-            "title": "Is Active",
-            "description": "Whether membership is active",
-            "default": true
-          },
-          "banned_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Banned At",
-            "description": "Ban timestamp"
-          },
-          "banned_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Banned Reason",
-            "description": "Reason for ban"
-          },
-          "profile": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UserProfileResponse-Output"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Associated user profile"
-          },
-          "inviter": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UserProfileResponse-Output"
+                "$ref": "#/components/schemas/UserProfileResponse"
               },
               {
                 "type": "null"
@@ -8177,7 +8094,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -8387,7 +8304,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -8679,26 +8596,27 @@
             "title": "Timestamp",
             "description": "Message timestamp"
           },
-          "match_score": {
-            "type": "number",
-            "title": "Match Score",
-            "description": "Similarity match score"
-          },
-          "matched_claim": {
-            "type": "string",
-            "title": "Matched Claim",
-            "description": "The claim that was matched"
-          },
-          "matched_source": {
-            "type": "string",
-            "title": "Matched Source",
-            "description": "Source of the matched claim"
-          },
-          "scan_type": {
-            "type": "string",
-            "title": "Scan Type",
-            "description": "Type of scan that flagged this",
-            "default": "similarity"
+          "matches": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SimilarityMatch"
+                },
+                {
+                  "$ref": "#/components/schemas/OpenAIModerationMatch"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "scan_type",
+                "mapping": {
+                  "openai_moderation": "#/components/schemas/OpenAIModerationMatch",
+                  "similarity": "#/components/schemas/SimilarityMatch"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Matches",
+            "description": "List of match results from different scan types"
           }
         },
         "type": "object",
@@ -8706,10 +8624,7 @@
           "channel_id",
           "content",
           "author_id",
-          "timestamp",
-          "match_score",
-          "matched_claim",
-          "matched_source"
+          "timestamp"
         ],
         "title": "FlaggedMessageAttributes",
         "description": "Attributes for a flagged message resource."
@@ -9025,30 +8940,7 @@
         "title": "HybridSearchResultAttributes",
         "description": "Attributes for hybrid search result."
       },
-      "HybridSearchResultResource-Input": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": "hybrid-search-results"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "attributes": {
-            "$ref": "#/components/schemas/HybridSearchResultAttributes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "attributes"
-        ],
-        "title": "HybridSearchResultResource",
-        "description": "JSON:API resource object for hybrid search results."
-      },
-      "HybridSearchResultResource-Output": {
+      "HybridSearchResultResource": {
         "properties": {
           "type": {
             "type": "string",
@@ -9074,7 +8966,7 @@
       "HybridSearchResultResponse": {
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/HybridSearchResultResource-Output"
+            "$ref": "#/components/schemas/HybridSearchResultResource"
           },
           "jsonapi": {
             "additionalProperties": {
@@ -9089,7 +8981,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -9237,7 +9129,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -9304,7 +9196,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -9319,7 +9211,7 @@
         "title": "IdentitySingleResponse",
         "description": "JSON:API response for a single identity resource."
       },
-      "JSONAPILinks-Input": {
+      "JSONAPILinks": {
         "properties": {
           "self_": {
             "anyOf": [
@@ -9366,80 +9258,6 @@
             "title": "Prev"
           },
           "next_": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next"
-          },
-          "describedby": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Describedby"
-          }
-        },
-        "additionalProperties": true,
-        "type": "object",
-        "title": "JSONAPILinks",
-        "description": "JSON:API links object for pagination and resource links.\n\nUses field aliases for 'self' and 'next' which are Python reserved words.\nAlways use by_alias=True when serializing.\nIncludes JSON:API 1.1 'describedby' link for API documentation."
-      },
-      "JSONAPILinks-Output": {
-        "properties": {
-          "self": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Self"
-          },
-          "first": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "First"
-          },
-          "last": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last"
-          },
-          "prev": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prev"
-          },
-          "next": {
             "anyOf": [
               {
                 "type": "string"
@@ -10128,6 +9946,17 @@
             "title": "Messages Flagged",
             "description": "Number of flagged messages",
             "default": 0
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScanErrorSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Summary of errors encountered during scan"
           }
         },
         "type": "object",
@@ -10198,7 +10027,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -10447,7 +10276,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -10513,7 +10342,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -10982,7 +10811,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -11189,7 +11018,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -11255,7 +11084,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -11570,7 +11399,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -11636,7 +11465,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -11774,7 +11603,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -11904,7 +11733,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -11972,7 +11801,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -12005,7 +11834,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -12095,7 +11924,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -12189,6 +12018,56 @@
         "title": "NoteUpdateRequest",
         "description": "JSON:API request body for updating a note."
       },
+      "OpenAIModerationMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "openai_moderation",
+            "title": "Scan Type",
+            "default": "openai_moderation"
+          },
+          "max_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Max Score",
+            "description": "Max moderation score"
+          },
+          "categories": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Categories",
+            "description": "Moderation categories"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Scores",
+            "description": "Category scores"
+          },
+          "flagged_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Flagged Categories",
+            "description": "Flagged category names"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "max_score",
+          "categories",
+          "scores"
+        ],
+        "title": "OpenAIModerationMatch",
+        "description": "Match result from OpenAI moderation scan."
+      },
       "ParticipantStatsAttributes": {
         "properties": {
           "notes_created": {
@@ -12265,7 +12144,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -12436,30 +12315,7 @@
         "title": "PreviouslySeenCheckResultAttributes",
         "description": "Attributes for previously seen check result."
       },
-      "PreviouslySeenCheckResultResource-Input": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": "previously-seen-check-result"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "attributes": {
-            "$ref": "#/components/schemas/PreviouslySeenCheckResultAttributes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "attributes"
-        ],
-        "title": "PreviouslySeenCheckResultResource",
-        "description": "JSON:API resource object for check results."
-      },
-      "PreviouslySeenCheckResultResource-Output": {
+      "PreviouslySeenCheckResultResource": {
         "properties": {
           "type": {
             "type": "string",
@@ -12485,7 +12341,7 @@
       "PreviouslySeenCheckResultResponse": {
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/PreviouslySeenCheckResultResource-Output"
+            "$ref": "#/components/schemas/PreviouslySeenCheckResultResource"
           },
           "jsonapi": {
             "additionalProperties": {
@@ -12500,7 +12356,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -12821,7 +12677,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -12887,7 +12743,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -13029,7 +12885,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -13280,7 +13136,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -13336,7 +13192,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -13431,7 +13287,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -13576,7 +13432,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -13921,7 +13777,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -13987,7 +13843,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -14083,6 +13939,81 @@
         "title": "RequestUpdateRequest",
         "description": "JSON:API request body for updating a request."
       },
+      "ScanErrorInfoSchema": {
+        "properties": {
+          "error_type": {
+            "type": "string",
+            "title": "Error Type",
+            "description": "Type of error (e.g., 'TypeError')"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id",
+            "description": "Message ID that caused error"
+          },
+          "batch_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Number",
+            "description": "Batch number where error occurred"
+          },
+          "error_message": {
+            "type": "string",
+            "title": "Error Message",
+            "description": "Error message details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_type",
+          "error_message"
+        ],
+        "title": "ScanErrorInfoSchema",
+        "description": "Error information for a failed message scan."
+      },
+      "ScanErrorSummarySchema": {
+        "properties": {
+          "total_errors": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Errors",
+            "description": "Total number of errors",
+            "default": 0
+          },
+          "error_types": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Error Types",
+            "description": "Count of errors by type"
+          },
+          "sample_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ScanErrorInfoSchema"
+            },
+            "type": "array",
+            "title": "Sample Errors",
+            "description": "Sample of error messages (up to 5)"
+          }
+        },
+        "type": "object",
+        "title": "ScanErrorSummarySchema",
+        "description": "Summary of errors encountered during scan."
+      },
       "ScoreConfidence": {
         "type": "string",
         "enum": [
@@ -14173,7 +14104,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -14339,30 +14270,7 @@
         "title": "ScoringStatusAttributes",
         "description": "Attributes for scoring status resource."
       },
-      "ScoringStatusResource-Input": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": "scoring-status"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id",
-            "default": "current"
-          },
-          "attributes": {
-            "$ref": "#/components/schemas/ScoringStatusAttributes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "attributes"
-        ],
-        "title": "ScoringStatusResource",
-        "description": "JSON:API resource object for scoring status."
-      },
-      "ScoringStatusResource-Output": {
+      "ScoringStatusResource": {
         "properties": {
           "type": {
             "type": "string",
@@ -14388,7 +14296,7 @@
       "ScoringStatusResponse": {
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/ScoringStatusResource-Output"
+            "$ref": "#/components/schemas/ScoringStatusResource"
           },
           "jsonapi": {
             "additionalProperties": {
@@ -14403,7 +14311,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -14485,6 +14393,42 @@
           "value"
         ],
         "title": "SetConfigRequest"
+      },
+      "SimilarityMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "similarity",
+            "title": "Scan Type",
+            "default": "similarity"
+          },
+          "score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "description": "Similarity score"
+          },
+          "matched_claim": {
+            "type": "string",
+            "title": "Matched Claim",
+            "description": "Fact-check claim that matched"
+          },
+          "matched_source": {
+            "type": "string",
+            "title": "Matched Source",
+            "description": "URL to the fact-check source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "score",
+          "matched_claim",
+          "matched_source"
+        ],
+        "title": "SimilarityMatch",
+        "description": "Match result from similarity scan."
       },
       "SimilaritySearchCreateAttributes": {
         "properties": {
@@ -14626,30 +14570,7 @@
         "title": "SimilaritySearchResultAttributes",
         "description": "Attributes for similarity search result."
       },
-      "SimilaritySearchResultResource-Input": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": "similarity-search-results"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "attributes": {
-            "$ref": "#/components/schemas/SimilaritySearchResultAttributes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "attributes"
-        ],
-        "title": "SimilaritySearchResultResource",
-        "description": "JSON:API resource object for similarity search results."
-      },
-      "SimilaritySearchResultResource-Output": {
+      "SimilaritySearchResultResource": {
         "properties": {
           "type": {
             "type": "string",
@@ -14675,7 +14596,7 @@
       "SimilaritySearchResultResponse": {
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/SimilaritySearchResultResource-Output"
+            "$ref": "#/components/schemas/SimilaritySearchResultResource"
           },
           "jsonapi": {
             "additionalProperties": {
@@ -14690,7 +14611,7 @@
           "links": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JSONAPILinks-Output"
+                "$ref": "#/components/schemas/JSONAPILinks"
               },
               {
                 "type": "null"
@@ -14840,7 +14761,7 @@
         ],
         "title": "UserCreate"
       },
-      "UserIdentityResponse-Input": {
+      "UserIdentityResponse": {
         "properties": {
           "created_at": {
             "type": "string",
@@ -14900,65 +14821,7 @@
         "title": "UserIdentityResponse",
         "description": "API response schema for user identity (excludes sensitive fields)."
       },
-      "UserIdentityResponse-Output": {
-        "properties": {
-          "created_at": {
-            "type": "string",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id",
-            "description": "Unique identity identifier"
-          },
-          "profile_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Profile Id",
-            "description": "Associated user profile ID"
-          },
-          "provider": {
-            "$ref": "#/components/schemas/AuthProvider",
-            "description": "Authentication provider"
-          },
-          "provider_user_id": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Provider User Id",
-            "description": "User's unique ID on the provider"
-          },
-          "email_verified": {
-            "type": "boolean",
-            "title": "Email Verified",
-            "description": "Whether email address is verified"
-          }
-        },
-        "type": "object",
-        "required": [
-          "created_at",
-          "id",
-          "profile_id",
-          "provider",
-          "provider_user_id",
-          "email_verified"
-        ],
-        "title": "UserIdentityResponse",
-        "description": "API response schema for user identity (excludes sensitive fields)."
-      },
-      "UserProfileResponse-Input": {
+      "UserProfileResponse": {
         "properties": {
           "created_at": {
             "type": "string",
@@ -15078,7 +14941,7 @@
           },
           "identities": {
             "items": {
-              "$ref": "#/components/schemas/UserIdentityResponse-Input"
+              "$ref": "#/components/schemas/UserIdentityResponse"
             },
             "type": "array",
             "title": "Identities",
@@ -15086,150 +14949,7 @@
           },
           "community_memberships": {
             "items": {
-              "$ref": "#/components/schemas/CommunityMemberResponse-Input"
-            },
-            "type": "array",
-            "title": "Community Memberships",
-            "description": "Community memberships"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "created_at",
-          "display_name",
-          "id"
-        ],
-        "title": "UserProfileResponse",
-        "description": "API response schema for user profile with nested relationships."
-      },
-      "UserProfileResponse-Output": {
-        "properties": {
-          "created_at": {
-            "type": "string",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Display Name",
-            "description": "User's display name"
-          },
-          "avatar_url": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Avatar Url",
-            "description": "URL to user's avatar image"
-          },
-          "bio": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bio",
-            "description": "User biography/description"
-          },
-          "role": {
-            "type": "string",
-            "title": "Role",
-            "description": "Platform-level role (user, moderator, admin)",
-            "default": "user"
-          },
-          "is_opennotes_admin": {
-            "type": "boolean",
-            "title": "Is Opennotes Admin",
-            "description": "OpenNotes-specific admin flag (grants cross-community admin privileges)",
-            "default": false
-          },
-          "is_human": {
-            "type": "boolean",
-            "title": "Is Human",
-            "description": "Distinguishes human users from bot accounts",
-            "default": true
-          },
-          "is_active": {
-            "type": "boolean",
-            "title": "Is Active",
-            "description": "Whether the profile is active",
-            "default": true
-          },
-          "is_banned": {
-            "type": "boolean",
-            "title": "Is Banned",
-            "description": "Whether the profile is banned",
-            "default": false
-          },
-          "banned_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Banned At",
-            "description": "Timestamp when profile was banned"
-          },
-          "banned_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Banned Reason",
-            "description": "Reason for ban"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id",
-            "description": "Unique profile identifier"
-          },
-          "reputation": {
-            "type": "integer",
-            "title": "Reputation",
-            "description": "Global reputation score",
-            "default": 0
-          },
-          "identities": {
-            "items": {
-              "$ref": "#/components/schemas/UserIdentityResponse-Output"
-            },
-            "type": "array",
-            "title": "Identities",
-            "description": "Linked authentication identities"
-          },
-          "community_memberships": {
-            "items": {
-              "$ref": "#/components/schemas/CommunityMemberResponse-Output"
+              "$ref": "#/components/schemas/CommunityMemberResponse"
             },
             "type": "array",
             "title": "Community Memberships",
@@ -15605,6 +15325,64 @@
         "additionalProperties": false,
         "type": "object",
         "title": "WebhookUpdateRequest"
+      },
+      "WelcomeMessageUpdateRequest": {
+        "properties": {
+          "welcome_message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Welcome Message Id",
+            "description": "Discord message ID of the welcome message, or null to clear"
+          }
+        },
+        "type": "object",
+        "required": [
+          "welcome_message_id"
+        ],
+        "title": "WelcomeMessageUpdateRequest",
+        "description": "Request model for updating welcome message ID."
+      },
+      "WelcomeMessageUpdateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Internal community server UUID"
+          },
+          "platform_id": {
+            "type": "string",
+            "title": "Platform Id",
+            "description": "Platform-specific ID (e.g., Discord guild ID)"
+          },
+          "welcome_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Welcome Message Id",
+            "description": "Discord message ID of the welcome message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "platform_id",
+          "welcome_message_id"
+        ],
+        "title": "WelcomeMessageUpdateResponse",
+        "description": "Response model for welcome message update."
       }
     },
     "securitySchemes": {

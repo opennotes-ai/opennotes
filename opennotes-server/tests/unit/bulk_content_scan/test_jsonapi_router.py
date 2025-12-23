@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def mock_flagged_messages():
     """Create mock flagged messages for testing."""
-    from src.bulk_content_scan.schemas import FlaggedMessage
+    from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
 
     return [
         FlaggedMessage(
@@ -21,9 +21,13 @@ def mock_flagged_messages():
             content="Test message 1",
             author_id="user_1",
             timestamp=datetime.now(UTC),
-            match_score=0.85,
-            matched_claim="Test claim 1",
-            matched_source="https://example.com/1",
+            matches=[
+                SimilarityMatch(
+                    score=0.85,
+                    matched_claim="Test claim 1",
+                    matched_source="https://example.com/1",
+                )
+            ],
         ),
         FlaggedMessage(
             message_id="msg_2",
@@ -31,9 +35,13 @@ def mock_flagged_messages():
             content="Test message 2",
             author_id="user_2",
             timestamp=datetime.now(UTC),
-            match_score=0.75,
-            matched_claim="Test claim 2",
-            matched_source="https://example.com/2",
+            matches=[
+                SimilarityMatch(
+                    score=0.75,
+                    matched_claim="Test claim 2",
+                    matched_source="https://example.com/2",
+                )
+            ],
         ),
     ]
 

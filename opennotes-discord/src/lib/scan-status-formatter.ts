@@ -147,12 +147,27 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
 function formatFlaggedMessagesList(flaggedMessages: FlaggedMessageResource[], guildId: string): string {
   return flaggedMessages.slice(0, 10).map((msg, index) => {
     const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
-    const confidence = formatMatchScore(msg.attributes.match_score);
     const preview = truncateContent(msg.attributes.content);
+
+    // Extract match info from the first match in the matches array
+    const matches = msg.attributes.matches ?? [];
+    const firstMatch = matches[0];
+    let confidence = 'N/A';
+    let matchedClaim = 'Unknown';
+
+    if (firstMatch) {
+      if (firstMatch.scan_type === 'similarity') {
+        confidence = formatMatchScore(firstMatch.score);
+        matchedClaim = firstMatch.matched_claim;
+      } else if (firstMatch.scan_type === 'openai_moderation') {
+        confidence = formatMatchScore(firstMatch.max_score);
+        matchedClaim = (firstMatch.flagged_categories ?? []).join(', ') || 'Moderation flagged';
+      }
+    }
 
     return `**${index + 1}.** [Message](${messageLink})\n` +
       `   Confidence: **${confidence}**\n` +
-      `   Matched: "${msg.attributes.matched_claim}"\n` +
+      `   Matched: "${matchedClaim}"\n` +
       `   Preview: "${preview}"`;
   }).join('\n\n');
 }

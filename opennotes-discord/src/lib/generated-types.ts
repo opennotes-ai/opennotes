@@ -2078,6 +2078,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/community-servers/{platform_id}/welcome-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Welcome Message
+         * @description Update the welcome message ID for a community server.
+         *
+         *     This endpoint is typically called by the Discord bot after posting and pinning
+         *     a welcome message in the bot channel. Only service accounts (bots) can call this.
+         *
+         *     Args:
+         *         platform_id: Platform-specific ID (e.g., Discord guild ID)
+         *         request_body: Contains the welcome_message_id to set (or null to clear)
+         *
+         *     Returns:
+         *         Updated community server welcome message info
+         *
+         *     Raises:
+         *         401: If not authenticated
+         *         403: If not a service account
+         *         404: If community server not found
+         */
+        patch: operations["update_welcome_message_api_v1_community_servers__platform_id__welcome_message_patch"];
+        trace?: never;
+    };
     "/api/v1/community-servers/{community_server_id}/admins": {
         parameters: {
             query?: never;
@@ -2611,7 +2646,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * AdminStatusUpdateAttributes
@@ -2870,6 +2905,8 @@ export interface components {
              * @default 0
              */
             messages_flagged: number;
+            /** @description Summary of errors encountered during scan */
+            error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
         };
         /**
          * BulkScanResultsResource
@@ -2906,7 +2943,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * BulkScanSingleResponse
@@ -2923,7 +2960,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * CommunityAdminResponse
@@ -2994,7 +3031,7 @@ export interface components {
          * CommunityMemberResponse
          * @description API response schema for community membership with nested profile.
          */
-        "CommunityMemberResponse-Input": {
+        CommunityMemberResponse: {
             /**
              * Created At
              * Format: date-time
@@ -3076,96 +3113,9 @@ export interface components {
              */
             banned_reason?: string | null;
             /** @description Associated user profile */
-            profile?: components["schemas"]["UserProfileResponse-Input"] | null;
+            profile?: components["schemas"]["UserProfileResponse"] | null;
             /** @description Profile of the user who invited this member */
-            inviter?: components["schemas"]["UserProfileResponse-Input"] | null;
-        };
-        /**
-         * CommunityMemberResponse
-         * @description API response schema for community membership with nested profile.
-         */
-        "CommunityMemberResponse-Output": {
-            /** Created At */
-            created_at: string;
-            /** Updated At */
-            updated_at?: string | null;
-            /**
-             * Community Id
-             * Format: uuid
-             * @description Community identifier
-             */
-            community_id: string;
-            /**
-             * Is External
-             * @description True for external participants, False for internal members
-             * @default false
-             */
-            is_external: boolean;
-            /**
-             * @description Member role in the community
-             * @default member
-             */
-            role: components["schemas"]["CommunityRole"];
-            /**
-             * Permissions
-             * @description Role-specific permissions (JSON object). Kept as dict[str, Any] - permission structures vary by community platform (Discord roles, Reddit mod powers, etc.)
-             */
-            permissions?: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Invitation Reason
-             * @description Reason/context for invitation
-             */
-            invitation_reason?: string | null;
-            /**
-             * Id
-             * Format: uuid
-             * @description Unique membership identifier
-             */
-            id: string;
-            /**
-             * Profile Id
-             * Format: uuid
-             * @description User profile identifier
-             */
-            profile_id: string;
-            /**
-             * Reputation In Community
-             * @description Community-specific reputation
-             */
-            reputation_in_community?: number | null;
-            /**
-             * Joined At
-             * Format: date-time
-             * @description When the user joined
-             */
-            joined_at: string;
-            /**
-             * Invited By
-             * @description Profile ID of the user who invited this member
-             */
-            invited_by?: string | null;
-            /**
-             * Is Active
-             * @description Whether membership is active
-             * @default true
-             */
-            is_active: boolean;
-            /**
-             * Banned At
-             * @description Ban timestamp
-             */
-            banned_at?: string | null;
-            /**
-             * Banned Reason
-             * @description Reason for ban
-             */
-            banned_reason?: string | null;
-            /** @description Associated user profile */
-            profile?: components["schemas"]["UserProfileResponse-Output"] | null;
-            /** @description Profile of the user who invited this member */
-            inviter?: components["schemas"]["UserProfileResponse-Output"] | null;
+            inviter?: components["schemas"]["UserProfileResponse"] | null;
         };
         /**
          * CommunityMembershipAttributes
@@ -3207,7 +3157,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -3321,7 +3271,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * DiscordOAuthInitResponse
@@ -3490,26 +3440,10 @@ export interface components {
              */
             timestamp: string;
             /**
-             * Match Score
-             * @description Similarity match score
+             * Matches
+             * @description List of match results from different scan types
              */
-            match_score: number;
-            /**
-             * Matched Claim
-             * @description The claim that was matched
-             */
-            matched_claim: string;
-            /**
-             * Matched Source
-             * @description Source of the matched claim
-             */
-            matched_source: string;
-            /**
-             * Scan Type
-             * @description Type of scan that flagged this
-             * @default similarity
-             */
-            scan_type: string;
+            matches?: (components["schemas"]["SimilarityMatch"] | components["schemas"]["OpenAIModerationMatch"])[];
         };
         /**
          * FlaggedMessageResource
@@ -3700,21 +3634,7 @@ export interface components {
          * HybridSearchResultResource
          * @description JSON:API resource object for hybrid search results.
          */
-        "HybridSearchResultResource-Input": {
-            /**
-             * Type
-             * @default hybrid-search-results
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["HybridSearchResultAttributes"];
-        };
-        /**
-         * HybridSearchResultResource
-         * @description JSON:API resource object for hybrid search results.
-         */
-        "HybridSearchResultResource-Output": {
+        HybridSearchResultResource: {
             /**
              * Type
              * @default hybrid-search-results
@@ -3729,7 +3649,7 @@ export interface components {
          * @description JSON:API response for hybrid search results.
          */
         HybridSearchResultResponse: {
-            data: components["schemas"]["HybridSearchResultResource-Output"];
+            data: components["schemas"]["HybridSearchResultResource"];
             /**
              * Jsonapi
              * @default {
@@ -3739,7 +3659,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * IdentityAttributes
@@ -3810,7 +3730,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -3843,7 +3763,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * JSONAPILinks
@@ -3853,7 +3773,7 @@ export interface components {
          *     Always use by_alias=True when serializing.
          *     Includes JSON:API 1.1 'describedby' link for API documentation.
          */
-        "JSONAPILinks-Input": {
+        JSONAPILinks: {
             /** Self */
             self_?: string | null;
             /** First */
@@ -3864,30 +3784,6 @@ export interface components {
             prev?: string | null;
             /** Next */
             next_?: string | null;
-            /** Describedby */
-            describedby?: string | null;
-        } & {
-            [key: string]: unknown;
-        };
-        /**
-         * JSONAPILinks
-         * @description JSON:API links object for pagination and resource links.
-         *
-         *     Uses field aliases for 'self' and 'next' which are Python reserved words.
-         *     Always use by_alias=True when serializing.
-         *     Includes JSON:API 1.1 'describedby' link for API documentation.
-         */
-        "JSONAPILinks-Output": {
-            /** Self */
-            self?: string | null;
-            /** First */
-            first?: string | null;
-            /** Last */
-            last?: string | null;
-            /** Prev */
-            prev?: string | null;
-            /** Next */
-            next?: string | null;
             /** Describedby */
             describedby?: string | null;
         } & {
@@ -4153,6 +4049,8 @@ export interface components {
              * @default 0
              */
             messages_flagged: number;
+            /** @description Summary of errors encountered during scan */
+            error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
         };
         /**
          * LatestScanResource
@@ -4189,7 +4087,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * MonitoredChannelAttributes
@@ -4300,7 +4198,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -4332,7 +4230,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * MonitoredChannelUpdateAttributes
@@ -4556,7 +4454,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -4645,7 +4543,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -4677,7 +4575,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * NotePublisherConfigUpdateAttributes
@@ -4838,7 +4736,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -4870,7 +4768,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * NoteRequestsCreateAttributes
@@ -4954,7 +4852,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * NoteResource
@@ -5032,7 +4930,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             /** Meta */
             meta?: {
                 [key: string]: unknown;
@@ -5067,7 +4965,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * NoteSingleResponse
@@ -5084,7 +4982,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * NoteStatsAttributes
@@ -5134,7 +5032,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * NoteStatus
@@ -5180,6 +5078,41 @@ export interface components {
             data: components["schemas"]["NoteUpdateData"];
         };
         /**
+         * OpenAIModerationMatch
+         * @description Match result from OpenAI moderation scan.
+         */
+        OpenAIModerationMatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scan_type: "openai_moderation";
+            /**
+             * Max Score
+             * @description Max moderation score
+             */
+            max_score: number;
+            /**
+             * Categories
+             * @description Moderation categories
+             */
+            categories: {
+                [key: string]: boolean;
+            };
+            /**
+             * Scores
+             * @description Category scores
+             */
+            scores: {
+                [key: string]: number;
+            };
+            /**
+             * Flagged Categories
+             * @description Flagged category names
+             */
+            flagged_categories?: string[];
+        };
+        /**
          * ParticipantStatsAttributes
          * @description Attributes for participant statistics resource.
          */
@@ -5222,7 +5155,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /** PerformanceMetrics */
         PerformanceMetrics: {
@@ -5316,21 +5249,7 @@ export interface components {
          * PreviouslySeenCheckResultResource
          * @description JSON:API resource object for check results.
          */
-        "PreviouslySeenCheckResultResource-Input": {
-            /**
-             * Type
-             * @default previously-seen-check-result
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["PreviouslySeenCheckResultAttributes"];
-        };
-        /**
-         * PreviouslySeenCheckResultResource
-         * @description JSON:API resource object for check results.
-         */
-        "PreviouslySeenCheckResultResource-Output": {
+        PreviouslySeenCheckResultResource: {
             /**
              * Type
              * @default previously-seen-check-result
@@ -5345,7 +5264,7 @@ export interface components {
          * @description JSON:API response for previously seen check results.
          */
         PreviouslySeenCheckResultResponse: {
-            data: components["schemas"]["PreviouslySeenCheckResultResource-Output"];
+            data: components["schemas"]["PreviouslySeenCheckResultResource"];
             /**
              * Jsonapi
              * @default {
@@ -5355,7 +5274,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * PreviouslySeenMatchResource
@@ -5484,7 +5403,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -5516,7 +5435,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * ProfileAttributes
@@ -5589,7 +5508,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * ProfileUpdateAttributes
@@ -5707,7 +5626,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * RatingResource
@@ -5738,7 +5657,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * RatingStatsAttributes
@@ -5800,7 +5719,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /** RatingThresholdsResponse */
         RatingThresholdsResponse: {
@@ -5888,7 +5807,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * RefreshTokenRequest
@@ -6055,7 +5974,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
             meta?: components["schemas"]["JSONAPIMeta"] | null;
         };
         /**
@@ -6087,7 +6006,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * RequestStatus
@@ -6131,6 +6050,56 @@ export interface components {
          */
         RequestUpdateRequest: {
             data: components["schemas"]["RequestUpdateData"];
+        };
+        /**
+         * ScanErrorInfoSchema
+         * @description Error information for a failed message scan.
+         */
+        ScanErrorInfoSchema: {
+            /**
+             * Error Type
+             * @description Type of error (e.g., 'TypeError')
+             */
+            error_type: string;
+            /**
+             * Message Id
+             * @description Message ID that caused error
+             */
+            message_id?: string | null;
+            /**
+             * Batch Number
+             * @description Batch number where error occurred
+             */
+            batch_number?: number | null;
+            /**
+             * Error Message
+             * @description Error message details
+             */
+            error_message: string;
+        };
+        /**
+         * ScanErrorSummarySchema
+         * @description Summary of errors encountered during scan.
+         */
+        ScanErrorSummarySchema: {
+            /**
+             * Total Errors
+             * @description Total number of errors
+             * @default 0
+             */
+            total_errors: number;
+            /**
+             * Error Types
+             * @description Count of errors by type
+             */
+            error_types?: {
+                [key: string]: number;
+            };
+            /**
+             * Sample Errors
+             * @description Sample of error messages (up to 5)
+             */
+            sample_errors?: components["schemas"]["ScanErrorInfoSchema"][];
         };
         /**
          * ScoreConfidence
@@ -6196,7 +6165,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * ScoringRunRequest
@@ -6291,24 +6260,7 @@ export interface components {
          * ScoringStatusResource
          * @description JSON:API resource object for scoring status.
          */
-        "ScoringStatusResource-Input": {
-            /**
-             * Type
-             * @default scoring-status
-             */
-            type: string;
-            /**
-             * Id
-             * @default current
-             */
-            id: string;
-            attributes: components["schemas"]["ScoringStatusAttributes"];
-        };
-        /**
-         * ScoringStatusResource
-         * @description JSON:API resource object for scoring status.
-         */
-        "ScoringStatusResource-Output": {
+        ScoringStatusResource: {
             /**
              * Type
              * @default scoring-status
@@ -6326,7 +6278,7 @@ export interface components {
          * @description JSON:API response for scoring status.
          */
         ScoringStatusResponse: {
-            data: components["schemas"]["ScoringStatusResource-Output"];
+            data: components["schemas"]["ScoringStatusResource"];
             /**
              * Jsonapi
              * @default {
@@ -6336,7 +6288,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -6375,6 +6327,32 @@ export interface components {
              * @description Configuration value (stringified)
              */
             value: string;
+        };
+        /**
+         * SimilarityMatch
+         * @description Match result from similarity scan.
+         */
+        SimilarityMatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scan_type: "similarity";
+            /**
+             * Score
+             * @description Similarity score
+             */
+            score: number;
+            /**
+             * Matched Claim
+             * @description Fact-check claim that matched
+             */
+            matched_claim: string;
+            /**
+             * Matched Source
+             * @description URL to the fact-check source
+             */
+            matched_source: string;
         };
         /**
          * SimilaritySearchCreateAttributes
@@ -6474,21 +6452,7 @@ export interface components {
          * SimilaritySearchResultResource
          * @description JSON:API resource object for similarity search results.
          */
-        "SimilaritySearchResultResource-Input": {
-            /**
-             * Type
-             * @default similarity-search-results
-             */
-            type: string;
-            /** Id */
-            id: string;
-            attributes: components["schemas"]["SimilaritySearchResultAttributes"];
-        };
-        /**
-         * SimilaritySearchResultResource
-         * @description JSON:API resource object for similarity search results.
-         */
-        "SimilaritySearchResultResource-Output": {
+        SimilaritySearchResultResource: {
             /**
              * Type
              * @default similarity-search-results
@@ -6503,7 +6467,7 @@ export interface components {
          * @description JSON:API response for similarity search results.
          */
         SimilaritySearchResultResponse: {
-            data: components["schemas"]["SimilaritySearchResultResource-Output"];
+            data: components["schemas"]["SimilaritySearchResultResource"];
             /**
              * Jsonapi
              * @default {
@@ -6513,7 +6477,7 @@ export interface components {
             jsonapi: {
                 [key: string]: string;
             };
-            links?: components["schemas"]["JSONAPILinks-Output"] | null;
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /** TierInfo */
         TierInfo: {
@@ -6583,7 +6547,7 @@ export interface components {
          * UserIdentityResponse
          * @description API response schema for user identity (excludes sensitive fields).
          */
-        "UserIdentityResponse-Input": {
+        UserIdentityResponse: {
             /**
              * Created At
              * Format: date-time
@@ -6617,44 +6581,10 @@ export interface components {
             email_verified: boolean;
         };
         /**
-         * UserIdentityResponse
-         * @description API response schema for user identity (excludes sensitive fields).
-         */
-        "UserIdentityResponse-Output": {
-            /** Created At */
-            created_at: string;
-            /** Updated At */
-            updated_at?: string | null;
-            /**
-             * Id
-             * Format: uuid
-             * @description Unique identity identifier
-             */
-            id: string;
-            /**
-             * Profile Id
-             * Format: uuid
-             * @description Associated user profile ID
-             */
-            profile_id: string;
-            /** @description Authentication provider */
-            provider: components["schemas"]["AuthProvider"];
-            /**
-             * Provider User Id
-             * @description User's unique ID on the provider
-             */
-            provider_user_id: string;
-            /**
-             * Email Verified
-             * @description Whether email address is verified
-             */
-            email_verified: boolean;
-        };
-        /**
          * UserProfileResponse
          * @description API response schema for user profile with nested relationships.
          */
-        "UserProfileResponse-Input": {
+        UserProfileResponse: {
             /**
              * Created At
              * Format: date-time
@@ -6733,99 +6663,12 @@ export interface components {
              * Identities
              * @description Linked authentication identities
              */
-            identities?: components["schemas"]["UserIdentityResponse-Input"][];
+            identities?: components["schemas"]["UserIdentityResponse"][];
             /**
              * Community Memberships
              * @description Community memberships
              */
-            community_memberships?: components["schemas"]["CommunityMemberResponse-Input"][];
-        };
-        /**
-         * UserProfileResponse
-         * @description API response schema for user profile with nested relationships.
-         */
-        "UserProfileResponse-Output": {
-            /** Created At */
-            created_at: string;
-            /** Updated At */
-            updated_at?: string | null;
-            /**
-             * Display Name
-             * @description User's display name
-             */
-            display_name: string;
-            /**
-             * Avatar Url
-             * @description URL to user's avatar image
-             */
-            avatar_url?: string | null;
-            /**
-             * Bio
-             * @description User biography/description
-             */
-            bio?: string | null;
-            /**
-             * Role
-             * @description Platform-level role (user, moderator, admin)
-             * @default user
-             */
-            role: string;
-            /**
-             * Is Opennotes Admin
-             * @description OpenNotes-specific admin flag (grants cross-community admin privileges)
-             * @default false
-             */
-            is_opennotes_admin: boolean;
-            /**
-             * Is Human
-             * @description Distinguishes human users from bot accounts
-             * @default true
-             */
-            is_human: boolean;
-            /**
-             * Is Active
-             * @description Whether the profile is active
-             * @default true
-             */
-            is_active: boolean;
-            /**
-             * Is Banned
-             * @description Whether the profile is banned
-             * @default false
-             */
-            is_banned: boolean;
-            /**
-             * Banned At
-             * @description Timestamp when profile was banned
-             */
-            banned_at?: string | null;
-            /**
-             * Banned Reason
-             * @description Reason for ban
-             */
-            banned_reason?: string | null;
-            /**
-             * Id
-             * Format: uuid
-             * @description Unique profile identifier
-             */
-            id: string;
-            /**
-             * Reputation
-             * @description Global reputation score
-             * @default 0
-             */
-            reputation: number;
-            /**
-             * Identities
-             * @description Linked authentication identities
-             */
-            identities?: components["schemas"]["UserIdentityResponse-Output"][];
-            /**
-             * Community Memberships
-             * @description Community memberships
-             */
-            community_memberships?: components["schemas"]["CommunityMemberResponse-Output"][];
+            community_memberships?: components["schemas"]["CommunityMemberResponse"][];
         };
         /**
          * UserProfileSelfUpdate
@@ -6969,6 +6812,39 @@ export interface components {
             channel_id?: string | null;
             /** Active */
             active?: boolean | null;
+        };
+        /**
+         * WelcomeMessageUpdateRequest
+         * @description Request model for updating welcome message ID.
+         */
+        WelcomeMessageUpdateRequest: {
+            /**
+             * Welcome Message Id
+             * @description Discord message ID of the welcome message, or null to clear
+             */
+            welcome_message_id: string | null;
+        };
+        /**
+         * WelcomeMessageUpdateResponse
+         * @description Response model for welcome message update.
+         */
+        WelcomeMessageUpdateResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal community server UUID
+             */
+            id: string;
+            /**
+             * Platform Id
+             * @description Platform-specific ID (e.g., Discord guild ID)
+             */
+            platform_id: string;
+            /**
+             * Welcome Message Id
+             * @description Discord message ID of the welcome message
+             */
+            welcome_message_id: string | null;
         };
     };
     responses: never;
@@ -7367,7 +7243,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserProfileResponse-Output"];
+                    "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7400,7 +7276,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserProfileResponse-Output"];
+                    "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7497,7 +7373,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserProfileResponse-Output"];
+                    "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7579,7 +7455,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserProfileResponse-Output"];
+                    "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
         };
@@ -7603,7 +7479,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserProfileResponse-Output"];
+                    "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7691,7 +7567,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserProfileResponse-Output"];
+                    "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10006,6 +9882,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommunityServerLookupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_welcome_message_api_v1_community_servers__platform_id__welcome_message_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                platform_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WelcomeMessageUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WelcomeMessageUpdateResponse"];
                 };
             };
             /** @description Validation Error */
