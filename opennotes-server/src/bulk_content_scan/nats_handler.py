@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
+from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
 from src.config import settings
 from src.database import get_session_maker
@@ -20,6 +20,8 @@ from src.events.schemas import (
     BulkScanResultsEvent,
     EventType,
     MessageScoreInfo,
+    ScanErrorInfo,
+    ScanErrorSummary,
 )
 from src.events.subscriber import event_subscriber
 from src.fact_checking.embedding_service import EmbeddingService
@@ -150,6 +152,9 @@ async def handle_message_batch_with_progress(
     a progress event containing similarity scores for ALL messages (not just
     flagged ones).
 
+    This function processes messages individually to track per-message errors
+    while still allowing successful messages to be processed.
+
     Args:
         event: Message batch event
         service: Bulk scan service
@@ -170,13 +175,63 @@ async def handle_message_batch_with_progress(
     typed_messages = [BulkScanMessage.model_validate(msg) for msg in event.messages]
     threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
 
-    if debug_mode:
-        flagged, all_scores = await service.process_messages_with_scores(
-            scan_id=event.scan_id,
-            messages=typed_messages,
-            community_server_platform_id=platform_id,
-        )
+    flagged: list[FlaggedMessage] = []
+    all_scores: list[dict] = []
+    successful_count = 0
+    error_count = 0
 
+    for msg in typed_messages:
+        try:
+            if debug_mode:
+                msg_flagged, msg_scores = await service.process_messages_with_scores(
+                    scan_id=event.scan_id,
+                    messages=[msg],
+                    community_server_platform_id=platform_id,
+                )
+                flagged.extend(msg_flagged)
+                all_scores.extend(msg_scores)
+            else:
+                msg_flagged = await service.process_messages(
+                    scan_id=event.scan_id,
+                    messages=[msg],
+                    community_server_platform_id=platform_id,
+                )
+                flagged.extend(msg_flagged)
+            successful_count += 1
+        except Exception as e:
+            error_count += 1
+            error_type = type(e).__name__
+            logger.warning(
+                "Error processing message in batch",
+                extra={
+                    "scan_id": str(event.scan_id),
+                    "message_id": msg.message_id,
+                    "batch_number": event.batch_number,
+                    "error_type": error_type,
+                    "error": str(e),
+                },
+            )
+            await service.record_error(
+                scan_id=event.scan_id,
+                error_type=error_type,
+                error_message=str(e),
+                message_id=msg.message_id,
+                batch_number=event.batch_number,
+            )
+            if debug_mode:
+                all_scores.append(
+                    {
+                        "message_id": msg.message_id,
+                        "channel_id": msg.channel_id,
+                        "similarity_score": 0.0,
+                        "is_flagged": False,
+                        "matched_claim": None,
+                    }
+                )
+
+    await service.increment_processed_count(event.scan_id, successful_count)
+
+    if debug_mode and all_scores:
         message_score_infos = [
             MessageScoreInfo(
                 message_id=score["message_id"],
@@ -210,12 +265,6 @@ async def handle_message_batch_with_progress(
                 "scores_count": len(message_score_infos),
             },
         )
-    else:
-        flagged = await service.process_messages(
-            scan_id=event.scan_id,
-            messages=typed_messages,
-            community_server_platform_id=platform_id,
-        )
 
     for msg in flagged:
         await service.append_flagged_result(event.scan_id, msg)
@@ -225,6 +274,8 @@ async def handle_message_batch_with_progress(
         extra={
             "scan_id": str(event.scan_id),
             "messages_processed": len(event.messages),
+            "messages_successful": successful_count,
+            "messages_errored": error_count,
             "messages_flagged": len(flagged),
         },
     )
@@ -236,6 +287,9 @@ async def handle_scan_completed(
     publisher: EventPublisher,
 ) -> None:
     """Mark scan as complete and publish final results.
+
+    If 100% of messages failed with errors and no messages were successfully
+    processed, the scan is marked as 'failed' instead of 'completed'.
 
     Args:
         event: Scan completion event
@@ -251,11 +305,46 @@ async def handle_scan_completed(
     )
 
     flagged = await service.get_flagged_results(event.scan_id)
+    error_summary_data = await service.get_error_summary(event.scan_id)
+    processed_count = await service.get_processed_count(event.scan_id)
+
+    total_errors = error_summary_data.get("total_errors", 0)
+    error_types = error_summary_data.get("error_types", {})
+    sample_errors = error_summary_data.get("sample_errors", [])
+
+    error_summary = None
+    if total_errors > 0:
+        error_summary = ScanErrorSummary(
+            total_errors=total_errors,
+            error_types=error_types,
+            sample_errors=[
+                ScanErrorInfo(
+                    error_type=err.get("error_type", "Unknown"),
+                    message_id=err.get("message_id"),
+                    batch_number=err.get("batch_number"),
+                    error_message=err.get("error_message", ""),
+                )
+                for err in sample_errors
+            ],
+        )
+
+    status = BulkScanStatus.COMPLETED
+    if event.messages_scanned > 0 and processed_count == 0 and total_errors > 0:
+        status = BulkScanStatus.FAILED
+        logger.warning(
+            "Scan marked as failed - 100% of messages had errors",
+            extra={
+                "scan_id": str(event.scan_id),
+                "messages_scanned": event.messages_scanned,
+                "total_errors": total_errors,
+            },
+        )
 
     await service.complete_scan(
         scan_id=event.scan_id,
         messages_scanned=event.messages_scanned,
         messages_flagged=len(flagged),
+        status=status,
     )
 
     await publisher.publish(
@@ -263,6 +352,7 @@ async def handle_scan_completed(
         messages_scanned=event.messages_scanned,
         messages_flagged=len(flagged),
         flagged_messages=flagged,
+        error_summary=error_summary,
     )
 
     logger.info(
@@ -271,6 +361,8 @@ async def handle_scan_completed(
             "scan_id": str(event.scan_id),
             "messages_scanned": event.messages_scanned,
             "messages_flagged": len(flagged),
+            "status": status,
+            "total_errors": total_errors,
         },
     )
 
@@ -292,6 +384,7 @@ class BulkScanResultsPublisher:
         messages_scanned: int = 0,
         messages_flagged: int = 0,
         flagged_messages: list[FlaggedMessage] | None = None,
+        error_summary: ScanErrorSummary | None = None,
         **_kwargs: Any,
     ) -> None:
         """Publish bulk scan results event.
@@ -301,6 +394,7 @@ class BulkScanResultsPublisher:
             messages_scanned: Total messages processed
             messages_flagged: Number flagged
             flagged_messages: List of FlaggedMessage objects
+            error_summary: Summary of errors encountered during scan
             **_kwargs: Additional arguments (ignored, for protocol compatibility)
         """
         if scan_id is None:
@@ -312,6 +406,7 @@ class BulkScanResultsPublisher:
             messages_scanned=messages_scanned,
             messages_flagged=messages_flagged,
             flagged_messages=flagged_messages or [],
+            error_summary=error_summary,
         )
 
         await self.nats_client.publish(
@@ -324,6 +419,7 @@ class BulkScanResultsPublisher:
             extra={
                 "scan_id": str(scan_id),
                 "event_id": event.event_id,
+                "has_errors": error_summary is not None,
             },
         )
 

@@ -1,5 +1,6 @@
 """Service layer for Bulk Content Scan operations."""
 
+import json
 import uuid as uuid_module
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -30,6 +31,33 @@ def _get_redis_results_key(scan_id: UUID) -> str:
     Example: production:bulk_scan:results:abc-123
     """
     return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:results:{scan_id}"
+
+
+def _get_redis_errors_key(scan_id: UUID) -> str:
+    """Get environment-prefixed Redis key for scan errors.
+
+    Format: {environment}:{prefix}:errors:{scan_id}
+    Example: production:bulk_scan:errors:abc-123
+    """
+    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:errors:{scan_id}"
+
+
+def _get_redis_error_counts_key(scan_id: UUID) -> str:
+    """Get environment-prefixed Redis key for error type counts.
+
+    Format: {environment}:{prefix}:error_counts:{scan_id}
+    Example: production:bulk_scan:error_counts:abc-123
+    """
+    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:error_counts:{scan_id}"
+
+
+def _get_redis_processed_count_key(scan_id: UUID) -> str:
+    """Get environment-prefixed Redis key for processed message count.
+
+    Format: {environment}:{prefix}:processed:{scan_id}
+    Example: production:bulk_scan:processed:abc-123
+    """
+    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:processed:{scan_id}"
 
 
 class BulkContentScanService:
@@ -432,6 +460,112 @@ class BulkContentScanService:
             msg_str = raw_msg.decode() if isinstance(raw_msg, bytes) else raw_msg
             results.append(FlaggedMessage.model_validate_json(msg_str))
         return results
+
+    async def record_error(
+        self,
+        scan_id: UUID,
+        error_type: str,
+        error_message: str,
+        message_id: str | None = None,
+        batch_number: int | None = None,
+    ) -> None:
+        """Record a processing error in Redis.
+
+        Args:
+            scan_id: UUID of the scan
+            error_type: Type of error (e.g., 'TypeError')
+            error_message: Error message details
+            message_id: Message ID that caused the error (optional)
+            batch_number: Batch number where error occurred (optional)
+        """
+        errors_key = _get_redis_errors_key(scan_id)
+        counts_key = _get_redis_error_counts_key(scan_id)
+
+        error_info = {
+            "error_type": error_type,
+            "message_id": message_id,
+            "batch_number": batch_number,
+            "error_message": error_message[:500],
+        }
+
+        await self.redis_client.lpush(errors_key, json.dumps(error_info))  # type: ignore[misc]
+        await self.redis_client.hincrby(counts_key, error_type, 1)  # type: ignore[misc]
+
+        await self.redis_client.expire(errors_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+        await self.redis_client.expire(counts_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+
+        logger.debug(
+            "Recorded scan error",
+            extra={
+                "scan_id": str(scan_id),
+                "error_type": error_type,
+                "message_id": message_id,
+                "batch_number": batch_number,
+            },
+        )
+
+    async def increment_processed_count(self, scan_id: UUID, count: int = 1) -> None:
+        """Increment the count of successfully processed messages.
+
+        Args:
+            scan_id: UUID of the scan
+            count: Number of messages processed
+        """
+        processed_key = _get_redis_processed_count_key(scan_id)
+        await self.redis_client.incrby(processed_key, count)  # type: ignore[misc]
+        await self.redis_client.expire(processed_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+
+    async def get_processed_count(self, scan_id: UUID) -> int:
+        """Get the count of successfully processed messages.
+
+        Args:
+            scan_id: UUID of the scan
+
+        Returns:
+            Number of successfully processed messages
+        """
+        processed_key = _get_redis_processed_count_key(scan_id)
+        count = await self.redis_client.get(processed_key)
+        if count is None:
+            return 0
+        return int(count.decode() if isinstance(count, bytes) else count)
+
+    async def get_error_summary(self, scan_id: UUID) -> dict:
+        """Get error summary from Redis.
+
+        Args:
+            scan_id: UUID of the scan
+
+        Returns:
+            Dictionary with error summary containing:
+            - total_errors: Total count of errors
+            - error_types: Dict mapping error type to count
+            - sample_errors: List of sample error info dicts (up to 5)
+        """
+        errors_key = _get_redis_errors_key(scan_id)
+        counts_key = _get_redis_error_counts_key(scan_id)
+
+        error_counts = await self.redis_client.hgetall(counts_key)  # type: ignore[misc]
+        error_types: dict[str, int] = {}
+        total_errors = 0
+
+        for error_type, count in error_counts.items():
+            type_str = error_type.decode() if isinstance(error_type, bytes) else error_type
+            count_int = int(count.decode() if isinstance(count, bytes) else count)
+            error_types[type_str] = count_int
+            total_errors += count_int
+
+        raw_errors = await self.redis_client.lrange(errors_key, 0, 4)  # type: ignore[misc]
+        sample_errors = []
+        for raw_error in raw_errors:
+            error_str = raw_error.decode() if isinstance(raw_error, bytes) else raw_error
+            sample_errors.append(json.loads(error_str))
+
+        return {
+            "total_errors": total_errors,
+            "error_types": error_types,
+            "sample_errors": sample_errors,
+        }
 
 
 async def create_note_requests_from_flagged_messages(

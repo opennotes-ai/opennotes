@@ -282,6 +282,29 @@ class BulkScanCompletedEvent(BaseEvent):
     messages_scanned: int = Field(..., ge=0, description="Total messages collected")
 
 
+class ScanErrorInfo(StrictEventSchema):
+    """Error information from a failed message scan."""
+
+    error_type: str = Field(..., description="Type of error (e.g., 'TypeError', 'ValueError')")
+    message_id: str | None = Field(None, description="Message ID that caused the error")
+    batch_number: int | None = Field(None, description="Batch number where error occurred")
+    error_message: str = Field(..., description="Error message details")
+
+
+class ScanErrorSummary(StrictEventSchema):
+    """Summary of errors encountered during a bulk scan."""
+
+    total_errors: int = Field(default=0, ge=0, description="Total number of errors")
+    error_types: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of errors by type (e.g., {'TypeError': 5, 'ValueError': 2})",
+    )
+    sample_errors: list[ScanErrorInfo] = Field(
+        default_factory=list,
+        description="Sample of error messages (up to 5)",
+    )
+
+
 class BulkScanResultsEvent(BaseEvent):
     """Event published with scan results after processing is complete."""
 
@@ -292,6 +315,10 @@ class BulkScanResultsEvent(BaseEvent):
     flagged_messages: list[FlaggedMessage] = Field(
         default_factory=list,
         description="Flagged messages with match info",
+    )
+    error_summary: ScanErrorSummary | None = Field(
+        default=None,
+        description="Summary of errors encountered during scan (if any)",
     )
 
 
