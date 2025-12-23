@@ -376,7 +376,8 @@ describe('config command v2 components migration', () => {
       const containerJson = capturedReplyData.components[0];
 
       const separators = containerJson.components.filter((c: any) => c.type === 14);
-      expect(separators.length).toBeGreaterThanOrEqual(4);
+      // Page 0 has 3 separators: header, between visibility/features, and final
+      expect(separators.length).toBeGreaterThanOrEqual(3);
     });
   });
 
