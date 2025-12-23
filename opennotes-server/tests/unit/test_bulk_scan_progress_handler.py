@@ -73,6 +73,7 @@ class TestProgressEventEmission:
         """Progress event should be published when vibecheck_debug_mode is True."""
         from src.bulk_content_scan.nats_handler import handle_message_batch_with_progress
         from src.bulk_content_scan.service import BulkContentScanService
+        from src.events.schemas import BulkScanProgressEvent
 
         scan_id = uuid4()
         community_server_id = uuid4()
@@ -92,17 +93,21 @@ class TestProgressEventEmission:
             redis_client=mock_redis,
         )
 
-        await handle_message_batch_with_progress(
-            event=event,
-            service=service,
-            nats_client=mock_nats_client,
-            platform_id="123456789",
-            debug_mode=True,
-        )
+        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_publisher:
+            mock_publisher.publish_event = AsyncMock()
 
-        mock_nats_client.publish.assert_called()
-        call_args = mock_nats_client.publish.call_args
-        assert call_args.kwargs["event_type"] == EventType.BULK_SCAN_PROGRESS
+            await handle_message_batch_with_progress(
+                event=event,
+                service=service,
+                nats_client=mock_nats_client,
+                platform_id="123456789",
+                debug_mode=True,
+            )
+
+            mock_publisher.publish_event.assert_called_once()
+            published_event = mock_publisher.publish_event.call_args[0][0]
+            assert isinstance(published_event, BulkScanProgressEvent)
+            assert published_event.event_type == EventType.BULK_SCAN_PROGRESS
 
     @pytest.mark.asyncio
     async def test_progress_event_not_published_when_debug_mode_disabled(
@@ -135,17 +140,18 @@ class TestProgressEventEmission:
             redis_client=mock_redis,
         )
 
-        await handle_message_batch_with_progress(
-            event=event,
-            service=service,
-            nats_client=mock_nats_client,
-            platform_id="123456789",
-            debug_mode=False,
-        )
+        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_publisher:
+            mock_publisher.publish_event = AsyncMock()
 
-        for call in mock_nats_client.publish.call_args_list:
-            if call.kwargs.get("event_type") == EventType.BULK_SCAN_PROGRESS:
-                pytest.fail("Progress event should not be published when debug_mode is False")
+            await handle_message_batch_with_progress(
+                event=event,
+                service=service,
+                nats_client=mock_nats_client,
+                platform_id="123456789",
+                debug_mode=False,
+            )
+
+            mock_publisher.publish_event.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_progress_event_includes_all_message_scores(
@@ -181,12 +187,15 @@ class TestProgressEventEmission:
         with patch.object(service, "process_messages_with_scores") as mock_process:
             mock_process.return_value = ([], [])
 
-            await handle_message_batch_with_progress(
-                event=event,
-                service=service,
-                nats_client=mock_nats_client,
-                platform_id="123456789",
-                debug_mode=True,
-            )
+            with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_publisher:
+                mock_publisher.publish_event = AsyncMock()
 
-            mock_process.assert_called_once()
+                await handle_message_batch_with_progress(
+                    event=event,
+                    service=service,
+                    nats_client=mock_nats_client,
+                    platform_id="123456789",
+                    debug_mode=True,
+                )
+
+                mock_process.assert_called_once()

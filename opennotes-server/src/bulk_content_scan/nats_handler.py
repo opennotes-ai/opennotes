@@ -12,6 +12,7 @@ from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
 from src.config import settings
 from src.database import get_session_maker
+from src.events.publisher import event_publisher
 from src.events.schemas import (
     BulkScanCompletedEvent,
     BulkScanMessageBatchEvent,
@@ -199,10 +200,7 @@ async def handle_message_batch_with_progress(
             threshold_used=threshold,
         )
 
-        await nats_client.publish(
-            event_type=EventType.BULK_SCAN_PROGRESS,
-            event_data=progress_event.model_dump(mode="json"),
-        )
+        await event_publisher.publish_event(progress_event)
 
         logger.debug(
             "Published progress event",
