@@ -12,6 +12,7 @@ import {
   formatMessageLink,
   truncateContent,
 } from './bulk-scan-executor.js';
+import { TextPaginator, type PaginatedContent } from './text-paginator.js';
 
 export interface FormatScanStatusOptions {
   scan: LatestScanResponse;
@@ -24,6 +25,13 @@ export interface FormatScanStatusOptions {
 export interface FormatScanStatusResult {
   content: string;
   components?: ActionRowBuilder<ButtonBuilder>[];
+}
+
+export interface FormatScanStatusPaginatedResult {
+  pages: PaginatedContent;
+  header: string;
+  actionButtons?: ActionRowBuilder<ButtonBuilder>;
+  scanId: string;
 }
 
 interface ErrorSummary {
@@ -142,6 +150,86 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
   }
 
   return { content };
+}
+
+export function formatScanStatusPaginated(options: FormatScanStatusOptions): FormatScanStatusPaginatedResult {
+  const { scan, guildId, days, warningMessage, includeButtons = false } = options;
+  const scanId = scan.data.id;
+  const messagesScanned = scan.data.attributes.messages_scanned;
+  const flaggedMessages = scan.included || [];
+  const errorSummary = (scan.data.attributes as Record<string, unknown>).error_summary as ErrorSummary | undefined;
+
+  const daysText = days !== undefined
+    ? `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n`
+    : '';
+
+  const warningText = warningMessage
+    ? `\n\n**Warning:** ${warningMessage}`
+    : '';
+
+  const errorText = errorSummary && errorSummary.total_errors > 0
+    ? formatErrorSummary(errorSummary)
+    : '';
+
+  const header = `**Scan Complete**\n\n` +
+    `**Scan ID:** \`${scanId}\`\n` +
+    daysText +
+    `**Messages scanned:** ${messagesScanned}\n` +
+    `**Flagged:** ${flaggedMessages.length}\n`;
+
+  const resultsContent = formatFlaggedMessagesListFull(flaggedMessages, guildId);
+  const fullContent = `${resultsContent}${errorText}${warningText}`;
+
+  const pages = TextPaginator.paginate(fullContent, { maxCharsPerPage: 1800 });
+
+  let actionButtons: ActionRowBuilder<ButtonBuilder> | undefined;
+  if (includeButtons && flaggedMessages.length > 0) {
+    const createButton = new ButtonBuilder()
+      .setCustomId(`vibecheck_create:${scanId}`)
+      .setLabel('Create Note Requests')
+      .setStyle(ButtonStyle.Primary);
+
+    const dismissButton = new ButtonBuilder()
+      .setCustomId(`vibecheck_dismiss:${scanId}`)
+      .setLabel('Dismiss')
+      .setStyle(ButtonStyle.Secondary);
+
+    actionButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(createButton, dismissButton);
+  }
+
+  return {
+    pages,
+    header,
+    actionButtons,
+    scanId,
+  };
+}
+
+function formatFlaggedMessagesListFull(flaggedMessages: FlaggedMessageResource[], guildId: string): string {
+  return flaggedMessages.map((msg, index) => {
+    const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
+    const preview = truncateContent(msg.attributes.content);
+
+    const matches = msg.attributes.matches ?? [];
+    const firstMatch = matches[0];
+    let confidence = 'N/A';
+    let matchedClaim = 'Unknown';
+
+    if (firstMatch) {
+      if (firstMatch.scan_type === 'similarity') {
+        confidence = formatMatchScore(firstMatch.score);
+        matchedClaim = firstMatch.matched_claim;
+      } else if (firstMatch.scan_type === 'openai_moderation') {
+        confidence = formatMatchScore(firstMatch.max_score);
+        matchedClaim = (firstMatch.flagged_categories ?? []).join(', ') || 'Moderation flagged';
+      }
+    }
+
+    return `**${index + 1}.** [Message](${messageLink})\n` +
+      `   Confidence: **${confidence}**\n` +
+      `   Matched: "${matchedClaim}"\n` +
+      `   Preview: "${preview}"`;
+  }).join('\n\n');
 }
 
 function formatFlaggedMessagesList(flaggedMessages: FlaggedMessageResource[], guildId: string): string {
