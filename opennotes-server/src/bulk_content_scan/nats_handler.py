@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
+from src.community_config.models import CommunityConfig
 from src.config import settings
 from src.database import get_session_maker
 from src.events.publisher import event_publisher
@@ -70,7 +71,10 @@ async def get_vibecheck_debug_mode(
     session: AsyncSession,
     community_server_id: UUID,
 ) -> bool:
-    """Get vibecheck_debug_mode setting from community server.
+    """Get vibecheck_debug_mode setting from community_config table.
+
+    Reads from the community_config key-value store which is set via
+    Discord bot's /config opennotes set command.
 
     Args:
         session: Database session
@@ -80,11 +84,15 @@ async def get_vibecheck_debug_mode(
         True if vibecheck_debug_mode is enabled, False otherwise
     """
     result = await session.execute(
-        select(CommunityServer.vibecheck_debug_mode).where(
-            CommunityServer.id == community_server_id
+        select(CommunityConfig.config_value).where(
+            CommunityConfig.community_server_id == community_server_id,
+            CommunityConfig.config_key == "vibecheck_debug_mode",
         )
     )
-    return result.scalar_one_or_none() or False
+    value = result.scalar_one_or_none()
+    if value is None:
+        return False
+    return value.lower() in ("true", "1", "yes")
 
 
 async def handle_message_batch(
