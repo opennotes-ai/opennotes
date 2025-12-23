@@ -10,6 +10,7 @@ import {
   ComponentType,
   ButtonInteraction,
 } from 'discord.js';
+import { nanoid } from 'nanoid';
 import { logger } from '../logger.js';
 import { cache } from '../cache.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
@@ -17,10 +18,22 @@ import { hasManageGuildPermission } from '../lib/permissions.js';
 import { apiClient, type FlaggedMessageResource } from '../api-client.js';
 import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
-import { formatScanStatus } from '../lib/scan-status-formatter.js';
+import { formatScanStatus, formatScanStatusPaginated } from '../lib/scan-status-formatter.js';
+import { TextPaginator } from '../lib/text-paginator.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
+
+interface VibecheckPaginationState {
+  scanId: string;
+  guildId: string;
+  days: number;
+  messagesScanned: number;
+  flaggedMessages: FlaggedMessageResource[];
+  warningMessage?: string;
+}
+
+const PAGINATION_STATE_TTL = 300;
 
 export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
 
@@ -228,7 +241,10 @@ async function displayFlaggedResults(
   flaggedMessages: FlaggedMessageResource[],
   warningMessage?: string
 ): Promise<void> {
-  const result = formatScanStatus({
+  const stateId = nanoid(10);
+  const currentPage = 1;
+
+  const paginatedResult = formatScanStatusPaginated({
     scan: {
       data: {
         type: 'bulk-scans',
@@ -249,9 +265,38 @@ async function displayFlaggedResults(
     includeButtons: true,
   });
 
+  const state: VibecheckPaginationState = {
+    scanId,
+    guildId,
+    days,
+    messagesScanned,
+    flaggedMessages,
+    warningMessage,
+  };
+  await cache.set(`vibecheck:pagination:${stateId}`, state, PAGINATION_STATE_TTL);
+
+  const pageContent = TextPaginator.getPage(paginatedResult.pages, currentPage);
+  const fullContent = `${paginatedResult.header}\n${pageContent}`;
+
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+
+  if (paginatedResult.pages.totalPages > 1) {
+    const paginationRow = TextPaginator.buildPaginationButtons({
+      currentPage,
+      totalPages: paginatedResult.pages.totalPages,
+      customIdPrefix: 'vibecheck_page',
+      stateId,
+    });
+    components.push(paginationRow);
+  }
+
+  if (paginatedResult.actionButtons) {
+    components.push(paginatedResult.actionButtons);
+  }
+
   await interaction.editReply({
-    content: result.content,
-    components: result.components,
+    content: fullContent,
+    components,
   });
 
   const reply = await interaction.fetchReply();
@@ -263,25 +308,15 @@ async function displayFlaggedResults(
   });
 
   collector.on('collect', (buttonInteraction: ButtonInteraction) => {
-    const [action, buttonScanId] = buttonInteraction.customId.split(':');
-
-    if (buttonScanId !== scanId) {
-      return;
-    }
-
-    if (action === 'vibecheck_dismiss') {
-      void buttonInteraction.update({
-        content: 'Results dismissed.',
-        components: [],
-      }).then(() => {
-        collector.stop();
-      });
-      return;
-    }
-
-    if (action === 'vibecheck_create') {
-      void showAiGenerationPrompt(buttonInteraction, scanId, flaggedMessages, originalUserId);
-    }
+    void handleVibecheckButton(
+      buttonInteraction,
+      scanId,
+      stateId,
+      flaggedMessages,
+      originalUserId,
+      paginatedResult,
+      collector
+    );
   });
 
   collector.on('end', (_collected, reason) => {
@@ -295,6 +330,70 @@ async function displayFlaggedResults(
       });
     }
   });
+}
+
+async function handleVibecheckButton(
+  buttonInteraction: ButtonInteraction,
+  scanId: string,
+  stateId: string,
+  flaggedMessages: FlaggedMessageResource[],
+  originalUserId: string,
+  paginatedResult: ReturnType<typeof formatScanStatusPaginated>,
+  collector: { stop: () => void }
+): Promise<void> {
+  const customId = buttonInteraction.customId;
+
+  if (customId.startsWith('vibecheck_page:')) {
+    const parsed = TextPaginator.parseButtonCustomId(customId);
+    if (!parsed || parsed.stateId !== stateId) {
+      return;
+    }
+
+    const newPage = parsed.page;
+    const pageContent = TextPaginator.getPage(paginatedResult.pages, newPage);
+    const fullContent = `${paginatedResult.header}\n${pageContent}`;
+
+    const components: ActionRowBuilder<ButtonBuilder>[] = [];
+
+    if (paginatedResult.pages.totalPages > 1) {
+      const paginationRow = TextPaginator.buildPaginationButtons({
+        currentPage: newPage,
+        totalPages: paginatedResult.pages.totalPages,
+        customIdPrefix: 'vibecheck_page',
+        stateId,
+      });
+      components.push(paginationRow);
+    }
+
+    if (paginatedResult.actionButtons) {
+      components.push(paginatedResult.actionButtons);
+    }
+
+    await buttonInteraction.update({
+      content: fullContent,
+      components,
+    });
+    return;
+  }
+
+  const [action, buttonScanId] = customId.split(':');
+
+  if (buttonScanId !== scanId) {
+    return;
+  }
+
+  if (action === 'vibecheck_dismiss') {
+    await buttonInteraction.update({
+      content: 'Results dismissed.',
+      components: [],
+    });
+    collector.stop();
+    return;
+  }
+
+  if (action === 'vibecheck_create') {
+    await showAiGenerationPrompt(buttonInteraction, scanId, flaggedMessages, originalUserId);
+  }
 }
 
 async function showAiGenerationPrompt(

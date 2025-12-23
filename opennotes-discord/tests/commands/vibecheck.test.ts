@@ -158,9 +158,38 @@ jest.unstable_mockModule('../../src/lib/bulk-scan-executor.js', () => ({
 }));
 
 const mockFormatScanStatus = jest.fn<(options: any) => { content: string; components?: any[] }>();
+const mockFormatScanStatusPaginated = jest.fn<(options: any) => {
+  pages: { pages: string[]; totalPages: number };
+  header: string;
+  actionButtons?: any;
+  scanId: string;
+}>();
 
 jest.unstable_mockModule('../../src/lib/scan-status-formatter.js', () => ({
   formatScanStatus: mockFormatScanStatus,
+  formatScanStatusPaginated: mockFormatScanStatusPaginated,
+}));
+
+class MockTextPaginator {
+  static paginate = jest.fn((content: string) => ({ pages: [content], totalPages: 1 }));
+  static getPage = jest.fn((paginated: any, page: number) => {
+    if (!paginated || !paginated.pages) return '';
+    const index = Math.max(0, Math.min(page - 1, paginated.pages.length - 1));
+    return paginated.pages[index] ?? '';
+  });
+  static buildPaginationButtons = jest.fn(() => ({
+    components: [],
+    toJSON: () => ({ components: [] }),
+  }));
+  static parseButtonCustomId = jest.fn((customId: string) => {
+    const parts = customId.split(':');
+    if (parts.length !== 3) return null;
+    return { prefix: parts[0], page: parseInt(parts[1], 10), stateId: parts[2] };
+  });
+}
+
+jest.unstable_mockModule('../../src/lib/text-paginator.js', () => ({
+  TextPaginator: MockTextPaginator,
 }));
 
 const MockBotChannelServiceConstructor = jest.fn().mockImplementation(() => mockBotChannelService);
@@ -253,6 +282,19 @@ describe('vibecheck command', () => {
 
     mockFormatScanStatus.mockReturnValue({
       content: '**Scan Complete**\n\n**Scan ID:** `test-scan-123`\n**Messages scanned:** 100\n\nNo potential misinformation was detected.',
+    });
+
+    mockFormatScanStatusPaginated.mockReturnValue({
+      pages: { pages: ['No potential misinformation was detected.'], totalPages: 1 },
+      header: '**Scan Complete**\n\n**Scan ID:** `test-scan-123`\n**Messages scanned:** 100\n**Flagged:** 0\n',
+      actionButtons: undefined,
+      scanId: 'test-scan-123',
+    });
+
+    MockTextPaginator.getPage.mockImplementation((paginated: any, page: number) => {
+      if (!paginated || !paginated.pages) return '';
+      const index = Math.max(0, Math.min(page - 1, paginated.pages.length - 1));
+      return paginated.pages[index] ?? '';
     });
   });
 
@@ -622,6 +664,16 @@ describe('vibecheck command', () => {
         components: [],
       });
 
+      mockFormatScanStatusPaginated.mockReturnValueOnce({
+        pages: {
+          pages: ['[Message](https://discord.com/channels/guild789/channel123/1234567890123456789)\nConfidence: **95%**\nMatched: "Vaccines cause autism"'],
+          totalPages: 1,
+        },
+        header: '**Scan Complete**\n\n**Scan ID:** `scan-123`\n**Messages scanned:** 100\n**Flagged:** 1\n',
+        actionButtons: undefined,
+        scanId: 'scan-123',
+      });
+
       await execute(mockInteraction as any);
 
       const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
@@ -718,16 +770,29 @@ describe('vibecheck command', () => {
         flaggedMessages: flaggedMessages,
       });
 
-      const mockButtonRow = {
+      const mockActionButtons = {
         components: [
           { data: { custom_id: 'vibecheck_create:scan-123', label: 'Create Note Requests', style: ButtonStyle.Primary } },
           { data: { custom_id: 'vibecheck_dismiss:scan-123', label: 'Dismiss', style: ButtonStyle.Secondary } },
         ],
+        toJSON: () => ({
+          components: [
+            { custom_id: 'vibecheck_create:scan-123', label: 'Create Note Requests', style: ButtonStyle.Primary },
+            { custom_id: 'vibecheck_dismiss:scan-123', label: 'Dismiss', style: ButtonStyle.Secondary },
+          ],
+        }),
       };
 
       mockFormatScanStatus.mockReturnValueOnce({
         content: '**Scan Complete**\n\n**Flagged:** 1',
-        components: [mockButtonRow],
+        components: [mockActionButtons],
+      });
+
+      mockFormatScanStatusPaginated.mockReturnValueOnce({
+        pages: { pages: ['Misinformation content'], totalPages: 1 },
+        header: '**Scan Complete**\n\n**Scan ID:** `scan-123`\n**Messages scanned:** 100\n**Flagged:** 1\n',
+        actionButtons: mockActionButtons,
+        scanId: 'scan-123',
       });
 
       await execute(mockInteraction as any);
@@ -737,7 +802,7 @@ describe('vibecheck command', () => {
       expect(lastEditCall.components).toBeDefined();
       expect(lastEditCall.components.length).toBeGreaterThan(0);
 
-      const buttonRow = lastEditCall.components[0];
+      const buttonRow = lastEditCall.components[lastEditCall.components.length - 1];
       const buttons = buttonRow.components || buttonRow.toJSON?.()?.components;
 
       expect(buttons.length).toBe(2);
