@@ -1,0 +1,329 @@
+import { jest } from '@jest/globals';
+import { Client, Collection, ChannelType, EmbedBuilder } from 'discord.js';
+import type { BulkScanProgressEvent } from '../../src/types/bulk-scan.js';
+import { ConfigKey } from '../../src/lib/config-schema.js';
+
+const mockLogger = {
+  debug: jest.fn<(...args: unknown[]) => void>(),
+  info: jest.fn<(...args: unknown[]) => void>(),
+  warn: jest.fn<(...args: unknown[]) => void>(),
+  error: jest.fn<(...args: unknown[]) => void>(),
+};
+
+const mockGuildConfigService = {
+  get: jest.fn<(guildId: string, key: string) => Promise<any>>(),
+  getAll: jest.fn<(guildId: string) => Promise<any>>(),
+  set: jest.fn<(guildId: string, key: string, value: any, updatedBy: string) => Promise<void>>(),
+  reset: jest.fn<(guildId: string, key?: string) => Promise<void>>(),
+};
+
+const mockBotChannelService = {
+  findChannel: jest.fn<(guild: any, channelName: string) => any>(),
+};
+
+const mockApiClient = {
+  getGuildConfig: jest.fn<(guildId: string) => Promise<Record<string, any>>>(),
+  setGuildConfig: jest.fn<(guildId: string, key: string, value: any, updatedBy: string) => Promise<void>>(),
+  resetGuildConfig: jest.fn<(guildId: string) => Promise<void>>(),
+};
+
+jest.unstable_mockModule('../../src/logger.js', () => ({
+  logger: mockLogger,
+}));
+
+jest.unstable_mockModule('../../src/services/GuildConfigService.js', () => {
+  const MockGuildConfigService = function() {
+    return mockGuildConfigService;
+  };
+  return { GuildConfigService: MockGuildConfigService };
+});
+
+jest.unstable_mockModule('../../src/services/BotChannelService.js', () => {
+  const MockBotChannelService = function() {
+    return mockBotChannelService;
+  };
+  return { BotChannelService: MockBotChannelService };
+});
+
+jest.unstable_mockModule('../../src/api-client.js', () => ({
+  apiClient: mockApiClient,
+}));
+
+const { VibecheckProgressService } = await import('../../src/services/VibecheckProgressService.js');
+
+function createMockProgressEvent(overrides: Partial<BulkScanProgressEvent> = {}): BulkScanProgressEvent {
+  return {
+    event_id: 'evt-123',
+    event_type: 'bulk_scan.progress',
+    version: '1.0',
+    timestamp: new Date().toISOString(),
+    metadata: {},
+    scan_id: 'scan-abc-123',
+    community_server_id: 'guild-123',
+    batch_number: 1,
+    messages_in_batch: 10,
+    message_scores: [
+      {
+        message_id: 'msg-001',
+        channel_id: 'ch-123',
+        similarity_score: 0.85,
+        threshold: 0.75,
+        is_flagged: true,
+        matched_claim: 'This is a test claim that was matched',
+      },
+      {
+        message_id: 'msg-002',
+        channel_id: 'ch-123',
+        similarity_score: 0.45,
+        threshold: 0.75,
+        is_flagged: false,
+      },
+    ],
+    threshold_used: 0.75,
+    ...overrides,
+  };
+}
+
+function createMockGuild(id: string = 'guild-123') {
+  return {
+    id,
+    name: 'Test Guild',
+    channels: {
+      cache: new Collection(),
+    },
+  };
+}
+
+function createMockChannel(name: string = 'opennotes-bot') {
+  return {
+    id: 'channel-456',
+    name,
+    type: ChannelType.GuildText,
+    send: jest.fn<(options: any) => Promise<any>>().mockResolvedValue({}),
+  };
+}
+
+function createMockClient(guilds: ReturnType<typeof createMockGuild>[] = []) {
+  const guildsCollection = new Collection<string, ReturnType<typeof createMockGuild>>();
+  guilds.forEach((guild) => guildsCollection.set(guild.id, guild));
+
+  return {
+    guilds: {
+      cache: guildsCollection,
+    },
+  } as unknown as Client;
+}
+
+describe('VibecheckProgressService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('handleProgressEvent', () => {
+    it('should skip if guild not found', async () => {
+      const mockClient = createMockClient([]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({ community_server_id: 'unknown-guild' });
+
+      await service.handleProgressEvent(event);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Guild not found for progress event',
+        expect.objectContaining({ communityServerId: 'unknown-guild' })
+      );
+      expect(mockGuildConfigService.get).not.toHaveBeenCalled();
+    });
+
+    it('should skip if debug mode is disabled', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent();
+
+      mockGuildConfigService.get.mockResolvedValue(false);
+
+      await service.handleProgressEvent(event);
+
+      expect(mockGuildConfigService.get).toHaveBeenCalledWith('guild-123', ConfigKey.VIBECHECK_DEBUG_MODE);
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Vibecheck debug mode not enabled for guild',
+        expect.objectContaining({ guildId: 'guild-123' })
+      );
+    });
+
+    it('should skip if bot channel not found', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent();
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true) // debug mode enabled
+        .mockResolvedValueOnce('opennotes-bot'); // channel name
+      mockBotChannelService.findChannel.mockReturnValue(undefined);
+
+      await service.handleProgressEvent(event);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Bot channel not found for progress event',
+        expect.objectContaining({ guildId: 'guild-123' })
+      );
+    });
+
+    it('should send progress embed when debug mode is enabled', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent();
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true) // debug mode enabled
+        .mockResolvedValueOnce('opennotes-bot'); // channel name
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      expect(mockChannel.send).toHaveBeenCalledWith({
+        embeds: expect.arrayContaining([expect.any(EmbedBuilder)]),
+      });
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Sent vibecheck progress to bot channel',
+        expect.objectContaining({
+          guildId: 'guild-123',
+          scanId: 'scan-abc-123',
+          batchNumber: 1,
+        })
+      );
+    });
+
+    it('should handle send errors gracefully', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent();
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+      mockChannel.send.mockRejectedValue(new Error('Discord API error'));
+
+      await service.handleProgressEvent(event);
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to send progress to bot channel',
+        expect.objectContaining({
+          error: 'Discord API error',
+          guildId: 'guild-123',
+        })
+      );
+    });
+  });
+
+  describe('formatProgressEmbed', () => {
+    it('should format embed with correct title and batch number', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({ batch_number: 5 });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.title).toContain('Batch 5');
+    });
+
+    it('should show orange color when there are flagged messages', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        message_scores: [
+          { message_id: 'msg-1', channel_id: 'ch-1', similarity_score: 0.9, threshold: 0.75, is_flagged: true },
+        ],
+      });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.color).toBe(0xff9900); // orange
+    });
+
+    it('should show green color when no messages are flagged', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({
+        message_scores: [
+          { message_id: 'msg-1', channel_id: 'ch-1', similarity_score: 0.4, threshold: 0.75, is_flagged: false },
+        ],
+      });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.color).toBe(0x00aa00); // green
+    });
+
+    it('should include threshold in description', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({ threshold_used: 0.80 });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.description).toContain('80%');
+    });
+
+    it('should include scan ID in footer', async () => {
+      const mockGuild = createMockGuild('guild-123');
+      const mockChannel = createMockChannel();
+      const mockClient = createMockClient([mockGuild]);
+      const service = new VibecheckProgressService(mockClient);
+      const event = createMockProgressEvent({ scan_id: 'abcd1234-5678-90ab-cdef' });
+
+      mockGuildConfigService.get
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce('opennotes-bot');
+      mockBotChannelService.findChannel.mockReturnValue(mockChannel);
+
+      await service.handleProgressEvent(event);
+
+      const sendCall = mockChannel.send.mock.calls[0][0] as { embeds: EmbedBuilder[] };
+      const embed = sendCall.embeds[0];
+      expect(embed.data.footer?.text).toContain('abcd1234'); // first 8 chars
+    });
+  });
+});

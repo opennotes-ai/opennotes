@@ -73,6 +73,7 @@ class EventType(str, Enum):
     BULK_SCAN_MESSAGE_BATCH = "bulk_scan.message_batch"
     BULK_SCAN_COMPLETED = "bulk_scan.completed"
     BULK_SCAN_RESULTS = "bulk_scan.results"
+    BULK_SCAN_PROGRESS = "bulk_scan.progress"
 
 
 class BaseEvent(StrictEventSchema):
@@ -294,6 +295,39 @@ class BulkScanResultsEvent(BaseEvent):
     )
 
 
+class MessageScoreInfo(StrictEventSchema):
+    """Score information for a single message during vibecheck debug mode."""
+
+    message_id: str = Field(..., description="Discord message ID")
+    channel_id: str = Field(..., description="Discord channel ID")
+    similarity_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Similarity score from embedding search"
+    )
+    threshold: float = Field(..., ge=0.0, le=1.0, description="Threshold used for flagging")
+    is_flagged: bool = Field(..., description="Whether message exceeded threshold")
+    matched_claim: str | None = Field(None, description="Matched claim text if flagged")
+
+
+class BulkScanProgressEvent(BaseEvent):
+    """Event published with progress and scores during vibecheck debug mode.
+
+    When vibecheck_debug_mode is enabled for a community server, this event
+    is published after each batch of messages is processed, containing
+    similarity scores for ALL messages (not just flagged ones).
+    """
+
+    event_type: EventType = EventType.BULK_SCAN_PROGRESS
+    scan_id: UUID = Field(..., description="Scan this progress belongs to")
+    community_server_id: UUID = Field(..., description="Community server being scanned")
+    batch_number: int = Field(..., ge=1, description="Batch sequence number")
+    messages_in_batch: int = Field(..., ge=0, description="Number of messages in this batch")
+    message_scores: list[MessageScoreInfo] = Field(
+        default_factory=list,
+        description="Score info for each message in the batch",
+    )
+    threshold_used: float = Field(..., ge=0.0, le=1.0, description="Threshold used for flagging")
+
+
 EventUnion = (
     NoteCreatedEvent
     | NoteRatedEvent
@@ -308,4 +342,5 @@ EventUnion = (
     | BulkScanMessageBatchEvent
     | BulkScanCompletedEvent
     | BulkScanResultsEvent
+    | BulkScanProgressEvent
 )

@@ -23,6 +23,9 @@ export enum ConfigKey {
   // Bot Channel
   BOT_CHANNEL_NAME = 'bot_channel_name',
   OPENNOTES_ROLE_NAME = 'opennotes_role_name',
+
+  // Debug
+  VIBECHECK_DEBUG_MODE = 'vibecheck_debug_mode',
 }
 
 export type ConfigValue = boolean | number | string;
@@ -142,6 +145,14 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     type: 'string',
     default: 'OpenNotes',
     description: 'Name of the role that can send messages in the bot channel',
+  },
+
+  // Debug
+  [ConfigKey.VIBECHECK_DEBUG_MODE]: {
+    key: ConfigKey.VIBECHECK_DEBUG_MODE,
+    type: 'boolean',
+    default: false,
+    description: 'Enable debug mode to echo vibecheck progress and scores to bot channel',
   },
 };
 

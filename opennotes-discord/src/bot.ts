@@ -42,6 +42,7 @@ import { GuildSetupService } from './services/GuildSetupService.js';
 import { GuildOnboardingService } from './services/GuildOnboardingService.js';
 import { BotChannelService } from './services/BotChannelService.js';
 import { GuildConfigService } from './services/GuildConfigService.js';
+import { VibecheckProgressService } from './services/VibecheckProgressService.js';
 import { apiClient } from './api-client.js';
 import { closeRedisClient } from './redis-client.js';
 import express, { Express } from 'express';
@@ -62,6 +63,7 @@ export class Bot {
   private guildOnboardingService?: GuildOnboardingService;
   private botChannelService?: BotChannelService;
   private guildConfigService?: GuildConfigService;
+  private vibecheckProgressService?: VibecheckProgressService;
   private healthCheckServer?: Express;
   private healthCheckPort?: number;
 
@@ -263,6 +265,13 @@ export class Bot {
       );
 
       logger.info('Note publisher system connected to NATS and subscribed to score updates');
+
+      this.vibecheckProgressService = new VibecheckProgressService(this.client);
+      await this.natsSubscriber.subscribeToProgressUpdates(
+        this.vibecheckProgressService.handleProgressEvent.bind(this.vibecheckProgressService)
+      );
+
+      logger.info('Vibecheck progress service initialized and subscribed to progress updates');
     } catch (error) {
       logger.error('Failed to initialize note publisher system - JetStream is required', {
         error: error instanceof Error ? error.message : String(error),

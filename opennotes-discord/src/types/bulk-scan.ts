@@ -15,6 +15,7 @@ export const EventType = {
   BULK_SCAN_MESSAGE_BATCH: 'bulk_scan.message_batch',
   BULK_SCAN_COMPLETED: 'bulk_scan.completed',
   BULK_SCAN_RESULTS: 'bulk_scan.results',
+  BULK_SCAN_PROGRESS: 'bulk_scan.progress',
 } as const;
 
 export type EventTypeValue = (typeof EventType)[keyof typeof EventType];
@@ -71,6 +72,25 @@ export interface BulkScanCompletedEvent extends BaseEvent {
   messages_scanned: number;
 }
 
+export interface MessageScoreInfo {
+  message_id: string;
+  channel_id: string;
+  similarity_score: number;
+  threshold: number;
+  is_flagged: boolean;
+  matched_claim?: string;
+}
+
+export interface BulkScanProgressEvent extends BaseEvent {
+  event_type: typeof EventType.BULK_SCAN_PROGRESS;
+  scan_id: string;
+  community_server_id: string;
+  batch_number: number;
+  messages_in_batch: number;
+  message_scores: MessageScoreInfo[];
+  threshold_used: number;
+}
+
 export interface ScanProgress {
   channelsProcessed: number;
   totalChannels: number;
@@ -85,6 +105,7 @@ export const NATS_SUBJECTS = {
   BULK_SCAN_BATCH: 'OPENNOTES.bulk_scan_message_batch',
   BULK_SCAN_COMPLETE: 'OPENNOTES.bulk_scan_completed',
   BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan_results',
+  BULK_SCAN_PROGRESS: 'OPENNOTES.bulk_scan_progress',
 } as const;
 
 export interface BulkScanInitiateRequest {

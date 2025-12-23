@@ -10,12 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
+from src.config import settings
 from src.database import get_session_maker
 from src.events.schemas import (
     BulkScanCompletedEvent,
     BulkScanMessageBatchEvent,
+    BulkScanProgressEvent,
     BulkScanResultsEvent,
     EventType,
+    MessageScoreInfo,
 )
 from src.events.subscriber import event_subscriber
 from src.fact_checking.embedding_service import EmbeddingService
@@ -58,6 +61,27 @@ async def get_platform_id(
         select(CommunityServer.platform_id).where(CommunityServer.id == community_server_id)
     )
     return result.scalar_one_or_none()
+
+
+async def get_vibecheck_debug_mode(
+    session: AsyncSession,
+    community_server_id: UUID,
+) -> bool:
+    """Get vibecheck_debug_mode setting from community server.
+
+    Args:
+        session: Database session
+        community_server_id: Community server UUID
+
+    Returns:
+        True if vibecheck_debug_mode is enabled, False otherwise
+    """
+    result = await session.execute(
+        select(CommunityServer.vibecheck_debug_mode).where(
+            CommunityServer.id == community_server_id
+        )
+    )
+    return result.scalar_one_or_none() or False
 
 
 async def handle_message_batch(
@@ -104,6 +128,101 @@ async def handle_message_batch(
 
     logger.debug(
         "Batch processed",
+        extra={
+            "scan_id": str(event.scan_id),
+            "messages_processed": len(event.messages),
+            "messages_flagged": len(flagged),
+        },
+    )
+
+
+async def handle_message_batch_with_progress(
+    event: BulkScanMessageBatchEvent,
+    service: BulkContentScanService,
+    nats_client: Any,
+    platform_id: str,
+    debug_mode: bool,
+) -> None:
+    """Handle message batch with optional progress event emission.
+
+    When debug_mode is True, this function processes messages and publishes
+    a progress event containing similarity scores for ALL messages (not just
+    flagged ones).
+
+    Args:
+        event: Message batch event
+        service: Bulk scan service
+        nats_client: NATS client for publishing progress events
+        platform_id: Platform ID for the community server
+        debug_mode: Whether vibecheck_debug_mode is enabled
+    """
+    logger.info(
+        "Processing message batch with progress",
+        extra={
+            "scan_id": str(event.scan_id),
+            "batch_number": event.batch_number,
+            "message_count": len(event.messages),
+            "debug_mode": debug_mode,
+        },
+    )
+
+    typed_messages = [BulkScanMessage.model_validate(msg) for msg in event.messages]
+    threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
+
+    if debug_mode:
+        flagged, all_scores = await service.process_messages_with_scores(
+            scan_id=event.scan_id,
+            messages=typed_messages,
+            community_server_platform_id=platform_id,
+        )
+
+        message_score_infos = [
+            MessageScoreInfo(
+                message_id=score["message_id"],
+                channel_id=score["channel_id"],
+                similarity_score=score["similarity_score"],
+                threshold=threshold,
+                is_flagged=score["is_flagged"],
+                matched_claim=score.get("matched_claim"),
+            )
+            for score in all_scores
+        ]
+
+        progress_event = BulkScanProgressEvent(
+            event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
+            scan_id=event.scan_id,
+            community_server_id=event.community_server_id,
+            batch_number=event.batch_number,
+            messages_in_batch=len(typed_messages),
+            message_scores=message_score_infos,
+            threshold_used=threshold,
+        )
+
+        await nats_client.publish(
+            event_type=EventType.BULK_SCAN_PROGRESS,
+            event_data=progress_event.model_dump(mode="json"),
+        )
+
+        logger.debug(
+            "Published progress event",
+            extra={
+                "scan_id": str(event.scan_id),
+                "batch_number": event.batch_number,
+                "scores_count": len(message_score_infos),
+            },
+        )
+    else:
+        flagged = await service.process_messages(
+            scan_id=event.scan_id,
+            messages=typed_messages,
+            community_server_platform_id=platform_id,
+        )
+
+    for msg in flagged:
+        await service.append_flagged_result(event.scan_id, msg)
+
+    logger.debug(
+        "Batch processed with progress",
         extra={
             "scan_id": str(event.scan_id),
             "messages_processed": len(event.messages),
