@@ -22,7 +22,7 @@ import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
 import { ConfigKey } from '../lib/config-schema.js';
 
-export const VIBECHECK_COOLDOWN_MS = 5 * 60 * 1000;
+export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
 
 export function getVibecheckCooldownKey(guildId: string): string {
   return `vibecheck:cooldown:${guildId}`;
