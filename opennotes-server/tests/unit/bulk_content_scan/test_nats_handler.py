@@ -236,7 +236,7 @@ class TestHandleAllBatchesTransmitted:
 
         await handle_all_batches_transmitted(event, mock_service, mock_publisher)
 
-        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id)
+        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id, 100)
 
     @pytest.mark.asyncio
     async def test_triggers_completion_when_all_processed(

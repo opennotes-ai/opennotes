@@ -34,7 +34,7 @@ def mock_service():
     )
     service.get_processed_count = AsyncMock(return_value=0)
     service.set_all_batches_transmitted = AsyncMock()
-    service.get_all_batches_transmitted = AsyncMock(return_value=False)
+    service.get_all_batches_transmitted = AsyncMock(return_value=(False, None))
     return service
 
 
@@ -76,7 +76,7 @@ class TestDualCompletionTrigger:
         community_server_id = uuid4()
         messages_scanned = 2
 
-        mock_service.get_all_batches_transmitted = AsyncMock(return_value=True)
+        mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, messages_scanned))
         mock_service.get_processed_count = AsyncMock(return_value=messages_scanned)
 
         event = BulkScanMessageBatchEvent(
@@ -105,7 +105,6 @@ class TestDualCompletionTrigger:
                 nats_client=AsyncMock(),
                 platform_id="test_platform",
                 debug_mode=False,
-                messages_scanned=messages_scanned,
                 publisher=mock_publisher,
             )
 
@@ -123,7 +122,7 @@ class TestDualCompletionTrigger:
         scan_id = uuid4()
         community_server_id = uuid4()
 
-        mock_service.get_all_batches_transmitted = AsyncMock(return_value=False)
+        mock_service.get_all_batches_transmitted = AsyncMock(return_value=(False, None))
 
         event = BulkScanMessageBatchEvent(
             event_id="evt_123",
@@ -151,7 +150,6 @@ class TestDualCompletionTrigger:
                 nats_client=AsyncMock(),
                 platform_id="test_platform",
                 debug_mode=False,
-                messages_scanned=10,
                 publisher=mock_publisher,
             )
 
@@ -180,7 +178,7 @@ class TestDualCompletionTrigger:
 
         await handle_all_batches_transmitted(event, mock_service, mock_publisher)
 
-        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id)
+        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id, messages_scanned)
         mock_service.complete_scan.assert_called_once()
 
     @pytest.mark.asyncio
@@ -206,7 +204,7 @@ class TestDualCompletionTrigger:
 
         await handle_all_batches_transmitted(event, mock_service, mock_publisher)
 
-        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id)
+        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id, messages_scanned)
         mock_service.complete_scan.assert_not_called()
 
     @pytest.mark.asyncio
@@ -289,10 +287,11 @@ class TestRedisTransmittedFlag:
 
     @pytest.mark.asyncio
     async def test_set_all_batches_transmitted_sets_flag(self, mock_service):
-        """Verify set_all_batches_transmitted sets flag in Redis."""
+        """Verify set_all_batches_transmitted sets flag in Redis with messages_scanned."""
         from src.bulk_content_scan.service import BulkContentScanService
 
         scan_id = uuid4()
+        messages_scanned = 10
         mock_redis = AsyncMock()
 
         service = BulkContentScanService.__new__(BulkContentScanService)
@@ -300,21 +299,22 @@ class TestRedisTransmittedFlag:
         service.session = AsyncMock()
         service.embedding_service = AsyncMock()
 
-        await service.set_all_batches_transmitted(scan_id)
+        await service.set_all_batches_transmitted(scan_id, messages_scanned)
 
         mock_redis.set.assert_called()
         call_args = mock_redis.set.call_args
         assert "all_batches_transmitted" in call_args[0][0]
         assert str(scan_id) in call_args[0][0]
+        assert call_args[0][1] == str(messages_scanned)
 
     @pytest.mark.asyncio
     async def test_get_all_batches_transmitted_returns_true_when_set(self, mock_service):
-        """Verify get_all_batches_transmitted returns True when flag is set."""
+        """Verify get_all_batches_transmitted returns (True, messages_scanned) when flag is set."""
         from src.bulk_content_scan.service import BulkContentScanService
 
         scan_id = uuid4()
         mock_redis = AsyncMock()
-        mock_redis.get = AsyncMock(return_value=b"1")
+        mock_redis.get = AsyncMock(return_value=b"10")
 
         service = BulkContentScanService.__new__(BulkContentScanService)
         service.redis_client = mock_redis
@@ -323,11 +323,11 @@ class TestRedisTransmittedFlag:
 
         result = await service.get_all_batches_transmitted(scan_id)
 
-        assert result is True
+        assert result == (True, 10)
 
     @pytest.mark.asyncio
     async def test_get_all_batches_transmitted_returns_false_when_not_set(self, mock_service):
-        """Verify get_all_batches_transmitted returns False when flag not set."""
+        """Verify get_all_batches_transmitted returns (False, None) when flag not set."""
         from src.bulk_content_scan.service import BulkContentScanService
 
         scan_id = uuid4()
@@ -341,4 +341,4 @@ class TestRedisTransmittedFlag:
 
         result = await service.get_all_batches_transmitted(scan_id)
 
-        assert result is False
+        assert result == (False, None)
