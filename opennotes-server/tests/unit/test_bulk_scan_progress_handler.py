@@ -198,4 +198,4 @@ class TestProgressEventEmission:
                     debug_mode=True,
                 )
 
-                mock_process.assert_called_once()
+                assert mock_process.call_count == len(sample_messages)

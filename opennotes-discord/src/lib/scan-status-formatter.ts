@@ -26,12 +26,40 @@ export interface FormatScanStatusResult {
   components?: ActionRowBuilder<ButtonBuilder>[];
 }
 
+interface ErrorSummary {
+  total_errors: number;
+  error_types: Record<string, number>;
+  sample_errors?: Array<{
+    error_type: string;
+    message_id?: string;
+    batch_number?: number;
+    error_message: string;
+  }>;
+}
+
+function formatErrorSummary(errorSummary: ErrorSummary): string {
+  const parts: string[] = [];
+
+  parts.push(`\n\n**⚠️ Processing Errors:** ${errorSummary.total_errors} message(s) failed`);
+
+  const errorTypesList = Object.entries(errorSummary.error_types)
+    .map(([type, count]) => `${type}: ${count}`)
+    .join(', ');
+
+  if (errorTypesList) {
+    parts.push(`**Error types:** ${errorTypesList}`);
+  }
+
+  return parts.join('\n');
+}
+
 export function formatScanStatus(options: FormatScanStatusOptions): FormatScanStatusResult {
   const { scan, guildId, days, warningMessage, includeButtons = false } = options;
   const scanId = scan.data.id;
   const status = scan.data.attributes.status;
   const messagesScanned = scan.data.attributes.messages_scanned;
   const flaggedMessages = scan.included || [];
+  const errorSummary = (scan.data.attributes as Record<string, unknown>).error_summary as ErrorSummary | undefined;
 
   const daysText = days !== undefined
     ? `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n`
@@ -39,6 +67,10 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
 
   const warningText = warningMessage
     ? `\n\n**Warning:** ${warningMessage}`
+    : '';
+
+  const errorText = errorSummary && errorSummary.total_errors > 0
+    ? formatErrorSummary(errorSummary)
     : '';
 
   if (status === 'pending') {
@@ -65,7 +97,7 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
       content: `**Scan Status: Failed**\n\n` +
         `**Scan ID:** \`${scanId}\`\n` +
         daysText +
-        `The scan failed. Please try again later.${warningText}`,
+        `The scan failed due to processing errors. Please try again later.${errorText}${warningText}`,
     };
   }
 
@@ -75,7 +107,7 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
         `**Scan ID:** \`${scanId}\`\n` +
         daysText +
         `**Messages scanned:** ${messagesScanned}\n\n` +
-        `No flagged content found. No potential misinformation was detected.${warningText}`,
+        `No flagged content found. No potential misinformation was detected.${errorText}${warningText}`,
     };
   }
 
@@ -88,7 +120,7 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
     daysText +
     `**Messages scanned:** ${messagesScanned}\n` +
     `**Flagged:** ${flaggedMessages.length}\n\n` +
-    `${resultsContent}${moreText}${warningText}`;
+    `${resultsContent}${moreText}${errorText}${warningText}`;
 
   if (includeButtons && flaggedMessages.length > 0) {
     const createButton = new ButtonBuilder()

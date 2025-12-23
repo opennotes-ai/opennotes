@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.bulk_content_scan.schemas import FlaggedMessage
+from src.bulk_content_scan.schemas import BulkScanStatus, FlaggedMessage
 
 
 @pytest.fixture
@@ -17,6 +17,12 @@ def mock_service():
     service.append_flagged_result = AsyncMock()
     service.get_flagged_results = AsyncMock(return_value=[])
     service.complete_scan = AsyncMock()
+    service.record_error = AsyncMock()
+    service.increment_processed_count = AsyncMock()
+    service.get_error_summary = AsyncMock(
+        return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
+    )
+    service.get_processed_count = AsyncMock(return_value=0)
     return service
 
 
@@ -256,6 +262,7 @@ class TestHandleScanCompleted:
             scan_id=scan_id,
             messages_scanned=100,
             messages_flagged=2,
+            status=BulkScanStatus.COMPLETED,
         )
 
     @pytest.mark.asyncio
@@ -312,6 +319,7 @@ class TestHandleScanCompleted:
             scan_id=scan_id,
             messages_scanned=100,
             messages_flagged=0,
+            status=BulkScanStatus.COMPLETED,
         )
 
         mock_publisher.publish.assert_called_once()

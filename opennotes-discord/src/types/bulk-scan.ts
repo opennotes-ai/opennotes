@@ -132,11 +132,25 @@ export interface FlaggedMessage {
   matched_source: string;
 }
 
+export interface ScanErrorInfo {
+  error_type: string;
+  message_id?: string;
+  batch_number?: number;
+  error_message: string;
+}
+
+export interface ScanErrorSummary {
+  total_errors: number;
+  error_types: Record<string, number>;
+  sample_errors: ScanErrorInfo[];
+}
+
 export interface BulkScanResultsResponse {
   scan_id: string;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   messages_scanned: number;
   flagged_messages: FlaggedMessage[];
+  error_summary?: ScanErrorSummary;
 }
 
 export interface CreateNoteRequestsRequest {

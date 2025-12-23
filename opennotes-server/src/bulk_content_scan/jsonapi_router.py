@@ -139,6 +139,29 @@ class FlaggedMessageResource(BaseModel):
     attributes: FlaggedMessageAttributes
 
 
+class ScanErrorInfoSchema(BaseModel):
+    """Error information for a failed message scan."""
+
+    error_type: str = Field(..., description="Type of error (e.g., 'TypeError')")
+    message_id: str | None = Field(None, description="Message ID that caused error")
+    batch_number: int | None = Field(None, description="Batch number where error occurred")
+    error_message: str = Field(..., description="Error message details")
+
+
+class ScanErrorSummarySchema(BaseModel):
+    """Summary of errors encountered during scan."""
+
+    total_errors: int = Field(default=0, ge=0, description="Total number of errors")
+    error_types: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of errors by type",
+    )
+    sample_errors: list[ScanErrorInfoSchema] = Field(
+        default_factory=list,
+        description="Sample of error messages (up to 5)",
+    )
+
+
 class BulkScanResultsAttributes(BaseModel):
     """Attributes for bulk scan results."""
 
@@ -147,6 +170,10 @@ class BulkScanResultsAttributes(BaseModel):
     status: str = Field(..., description="Scan status")
     messages_scanned: int = Field(default=0, description="Total messages scanned")
     messages_flagged: int = Field(default=0, description="Number of flagged messages")
+    error_summary: ScanErrorSummarySchema | None = Field(
+        None,
+        description="Summary of errors encountered during scan",
+    )
 
 
 class BulkScanResultsResource(BaseModel):
@@ -203,6 +230,10 @@ class LatestScanAttributes(BaseModel):
     completed_at: datetime | None = Field(None, description="When the scan completed")
     messages_scanned: int = Field(default=0, description="Total messages scanned")
     messages_flagged: int = Field(default=0, description="Number of flagged messages")
+    error_summary: ScanErrorSummarySchema | None = Field(
+        None,
+        description="Summary of errors encountered during scan",
+    )
 
 
 class LatestScanResource(BaseModel):
@@ -552,6 +583,25 @@ async def get_scan_results(
             )
 
         flagged_messages = await service.get_flagged_results(scan_id)
+        error_summary_schema: ScanErrorSummarySchema | None = None
+
+        if scan_log.status in ("completed", "failed"):
+            error_summary_data = await service.get_error_summary(scan_id)
+
+            if error_summary_data.get("total_errors", 0) > 0:
+                error_summary_schema = ScanErrorSummarySchema(
+                    total_errors=error_summary_data["total_errors"],
+                    error_types=error_summary_data.get("error_types", {}),
+                    sample_errors=[
+                        ScanErrorInfoSchema(
+                            error_type=err.get("error_type", "Unknown"),
+                            message_id=err.get("message_id"),
+                            batch_number=err.get("batch_number"),
+                            error_message=err.get("error_message", ""),
+                        )
+                        for err in error_summary_data.get("sample_errors", [])
+                    ],
+                )
 
         resource = BulkScanResultsResource(
             type="bulk-scans",
@@ -560,6 +610,7 @@ async def get_scan_results(
                 status=scan_log.status,
                 messages_scanned=scan_log.messages_scanned or 0,
                 messages_flagged=len(flagged_messages),
+                error_summary=error_summary_schema,
             ),
             relationships={
                 "flagged-messages": {
@@ -701,8 +752,26 @@ async def get_latest_scan(
             )
 
         flagged_messages: list[FlaggedMessage] = []
-        if scan_log.status == "completed":
+        error_summary_schema: ScanErrorSummarySchema | None = None
+
+        if scan_log.status in ("completed", "failed"):
             flagged_messages = await service.get_flagged_results(scan_log.id)
+            error_summary_data = await service.get_error_summary(scan_log.id)
+
+            if error_summary_data.get("total_errors", 0) > 0:
+                error_summary_schema = ScanErrorSummarySchema(
+                    total_errors=error_summary_data["total_errors"],
+                    error_types=error_summary_data.get("error_types", {}),
+                    sample_errors=[
+                        ScanErrorInfoSchema(
+                            error_type=err.get("error_type", "Unknown"),
+                            message_id=err.get("message_id"),
+                            batch_number=err.get("batch_number"),
+                            error_message=err.get("error_message", ""),
+                        )
+                        for err in error_summary_data.get("sample_errors", [])
+                    ],
+                )
 
         resource = LatestScanResource(
             type="bulk-scans",
@@ -713,6 +782,7 @@ async def get_latest_scan(
                 completed_at=scan_log.completed_at,
                 messages_scanned=scan_log.messages_scanned or 0,
                 messages_flagged=scan_log.messages_flagged or 0,
+                error_summary=error_summary_schema,
             ),
             relationships={
                 "flagged-messages": {
