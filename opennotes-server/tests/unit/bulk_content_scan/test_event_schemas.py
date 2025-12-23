@@ -21,12 +21,21 @@ class TestBulkScanEventTypes:
         assert hasattr(EventType, "BULK_SCAN_MESSAGE_BATCH")
         assert EventType.BULK_SCAN_MESSAGE_BATCH.value == "bulk_scan.message_batch"
 
-    def test_bulk_scan_completed_event_type_exists(self):
-        """AC #1: NATS subject bulk-content-scan.completion must be defined."""
+    def test_bulk_scan_all_batches_transmitted_event_type_exists(self):
+        """AC #1: NATS subject for all batches transmitted must be defined."""
         from src.events.schemas import EventType
 
-        assert hasattr(EventType, "BULK_SCAN_COMPLETED")
-        assert EventType.BULK_SCAN_COMPLETED.value == "bulk_scan.completed"
+        assert hasattr(EventType, "BULK_SCAN_ALL_BATCHES_TRANSMITTED")
+        assert (
+            EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED.value == "bulk_scan.all_batches_transmitted"
+        )
+
+    def test_bulk_scan_processing_finished_event_type_exists(self):
+        """AC #2: NATS subject for processing finished must be defined."""
+        from src.events.schemas import EventType
+
+        assert hasattr(EventType, "BULK_SCAN_PROCESSING_FINISHED")
+        assert EventType.BULK_SCAN_PROCESSING_FINISHED.value == "bulk_scan.processing_finished"
 
     def test_bulk_scan_results_event_type_exists(self):
         """AC #1: NATS subject bulk-content-scan.results must be defined."""
@@ -129,17 +138,17 @@ class TestBulkScanMessageBatchEvent:
         assert event.event_type == EventType.BULK_SCAN_MESSAGE_BATCH
 
 
-class TestBulkScanCompletedEvent:
-    """Test BulkScanCompletedEvent schema."""
+class TestBulkScanAllBatchesTransmittedEvent:
+    """Test BulkScanAllBatchesTransmittedEvent schema."""
 
     def test_can_create_valid_event(self):
-        """BulkScanCompletedEvent should validate with correct fields."""
-        from src.events.schemas import BulkScanCompletedEvent
+        """BulkScanAllBatchesTransmittedEvent should validate with correct fields."""
+        from src.events.schemas import BulkScanAllBatchesTransmittedEvent
 
         scan_id = uuid4()
         community_server_id = uuid4()
 
-        event = BulkScanCompletedEvent(
+        event = BulkScanAllBatchesTransmittedEvent(
             event_id="evt_123",
             scan_id=scan_id,
             community_server_id=community_server_id,
@@ -151,17 +160,55 @@ class TestBulkScanCompletedEvent:
         assert event.messages_scanned == 100
 
     def test_event_type_is_correct(self):
-        """BulkScanCompletedEvent should have correct event_type."""
-        from src.events.schemas import BulkScanCompletedEvent, EventType
+        """BulkScanAllBatchesTransmittedEvent should have correct event_type."""
+        from src.events.schemas import BulkScanAllBatchesTransmittedEvent, EventType
 
-        event = BulkScanCompletedEvent(
+        event = BulkScanAllBatchesTransmittedEvent(
             event_id="evt_123",
             scan_id=uuid4(),
             community_server_id=uuid4(),
             messages_scanned=50,
         )
 
-        assert event.event_type == EventType.BULK_SCAN_COMPLETED
+        assert event.event_type == EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED
+
+
+class TestBulkScanProcessingFinishedEvent:
+    """Test BulkScanProcessingFinishedEvent schema."""
+
+    def test_can_create_valid_event(self):
+        """BulkScanProcessingFinishedEvent should validate with correct fields."""
+        from src.events.schemas import BulkScanProcessingFinishedEvent
+
+        scan_id = uuid4()
+        community_server_id = uuid4()
+
+        event = BulkScanProcessingFinishedEvent(
+            event_id="evt_123",
+            scan_id=scan_id,
+            community_server_id=community_server_id,
+            messages_scanned=100,
+            messages_flagged=5,
+        )
+
+        assert event.scan_id == scan_id
+        assert event.community_server_id == community_server_id
+        assert event.messages_scanned == 100
+        assert event.messages_flagged == 5
+
+    def test_event_type_is_correct(self):
+        """BulkScanProcessingFinishedEvent should have correct event_type."""
+        from src.events.schemas import BulkScanProcessingFinishedEvent, EventType
+
+        event = BulkScanProcessingFinishedEvent(
+            event_id="evt_123",
+            scan_id=uuid4(),
+            community_server_id=uuid4(),
+            messages_scanned=50,
+            messages_flagged=2,
+        )
+
+        assert event.event_type == EventType.BULK_SCAN_PROCESSING_FINISHED
 
 
 class TestBulkScanResultsEvent:

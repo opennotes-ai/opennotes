@@ -71,7 +71,8 @@ class EventType(str, Enum):
     AUDIT_LOG_CREATED = "audit.log.created"
     BULK_SCAN_INITIATED = "bulk_scan.initiated"
     BULK_SCAN_MESSAGE_BATCH = "bulk_scan.message_batch"
-    BULK_SCAN_COMPLETED = "bulk_scan.completed"
+    BULK_SCAN_ALL_BATCHES_TRANSMITTED = "bulk_scan.all_batches_transmitted"
+    BULK_SCAN_PROCESSING_FINISHED = "bulk_scan.processing_finished"
     BULK_SCAN_RESULTS = "bulk_scan.results"
     BULK_SCAN_PROGRESS = "bulk_scan.progress"
 
@@ -273,13 +274,33 @@ class BulkScanMessageBatchEvent(BaseEvent):
     is_final_batch: bool = Field(default=False, description="Whether this is the last batch")
 
 
-class BulkScanCompletedEvent(BaseEvent):
-    """Event published when message collection phase is complete."""
+class BulkScanAllBatchesTransmittedEvent(BaseEvent):
+    """Event published when Discord bot has transmitted all message batches.
 
-    event_type: EventType = EventType.BULK_SCAN_COMPLETED
+    This event signals that the bot has finished sending all batches to the server.
+    It does NOT mean processing is complete - batches may still be processing.
+    The server uses this to set a flag and potentially trigger completion
+    if all batches have already been processed.
+    """
+
+    event_type: EventType = EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED
+    scan_id: UUID = Field(..., description="Scan identifier")
+    community_server_id: UUID = Field(..., description="Community server that was scanned")
+    messages_scanned: int = Field(..., ge=0, description="Total messages transmitted")
+
+
+class BulkScanProcessingFinishedEvent(BaseEvent):
+    """Event published when server has finished processing all batches.
+
+    This event is published by the server after scan completion is finalized.
+    The Discord bot subscribes to this to know when results are ready.
+    """
+
+    event_type: EventType = EventType.BULK_SCAN_PROCESSING_FINISHED
     scan_id: UUID = Field(..., description="Completed scan identifier")
     community_server_id: UUID = Field(..., description="Community server that was scanned")
-    messages_scanned: int = Field(..., ge=0, description="Total messages collected")
+    messages_scanned: int = Field(..., ge=0, description="Total messages processed")
+    messages_flagged: int = Field(..., ge=0, description="Number of flagged messages")
 
 
 class ScanErrorInfo(StrictEventSchema):
@@ -368,7 +389,8 @@ EventUnion = (
     | AuditLogCreatedEvent
     | BulkScanInitiatedEvent
     | BulkScanMessageBatchEvent
-    | BulkScanCompletedEvent
+    | BulkScanAllBatchesTransmittedEvent
+    | BulkScanProcessingFinishedEvent
     | BulkScanResultsEvent
     | BulkScanProgressEvent
 )

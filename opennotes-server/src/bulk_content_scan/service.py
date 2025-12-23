@@ -60,6 +60,15 @@ def _get_redis_processed_count_key(scan_id: UUID) -> str:
     return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:processed:{scan_id}"
 
 
+def _get_redis_transmitted_key(scan_id: UUID) -> str:
+    """Get environment-prefixed Redis key for all_batches_transmitted flag.
+
+    Format: {environment}:{prefix}:all_batches_transmitted:{scan_id}
+    Example: production:bulk_scan:all_batches_transmitted:abc-123
+    """
+    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:all_batches_transmitted:{scan_id}"
+
+
 class BulkContentScanService:
     """Service for managing bulk content scans."""
 
@@ -543,6 +552,37 @@ class BulkContentScanService:
         if count is None:
             return 0
         return int(count.decode() if isinstance(count, bytes) else count)
+
+    async def set_all_batches_transmitted(self, scan_id: UUID, messages_scanned: int) -> None:
+        """Set the all_batches_transmitted flag for a scan with message count.
+
+        This flag indicates that the Discord bot has finished transmitting
+        all message batches. Used for dual-completion-trigger pattern.
+        Stores messages_scanned so batch handler can retrieve it.
+
+        Args:
+            scan_id: UUID of the scan
+            messages_scanned: Total number of messages transmitted
+        """
+        transmitted_key = _get_redis_transmitted_key(scan_id)
+        await self.redis_client.set(transmitted_key, str(messages_scanned), ex=REDIS_TTL_SECONDS)  # type: ignore[misc]
+
+    async def get_all_batches_transmitted(self, scan_id: UUID) -> tuple[bool, int | None]:
+        """Check if all batches have been transmitted and get message count.
+
+        Args:
+            scan_id: UUID of the scan
+
+        Returns:
+            Tuple of (is_transmitted, messages_scanned).
+            messages_scanned is None if flag is not set.
+        """
+        transmitted_key = _get_redis_transmitted_key(scan_id)
+        value = await self.redis_client.get(transmitted_key)
+        if value is None:
+            return (False, None)
+        messages_scanned = int(value.decode() if isinstance(value, bytes) else value)
+        return (True, messages_scanned)
 
     async def get_error_summary(self, scan_id: UUID) -> dict:
         """Get error summary from Redis.

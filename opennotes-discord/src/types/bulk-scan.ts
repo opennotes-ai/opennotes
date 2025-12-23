@@ -13,7 +13,8 @@ export const VIBE_CHECK_DAYS_OPTIONS: VibeCheckDaysOption[] = [
 
 export const EventType = {
   BULK_SCAN_MESSAGE_BATCH: 'bulk_scan.message_batch',
-  BULK_SCAN_COMPLETED: 'bulk_scan.completed',
+  BULK_SCAN_ALL_BATCHES_TRANSMITTED: 'bulk_scan.all_batches_transmitted',
+  BULK_SCAN_PROCESSING_FINISHED: 'bulk_scan.processing_finished',
   BULK_SCAN_RESULTS: 'bulk_scan.results',
   BULK_SCAN_PROGRESS: 'bulk_scan.progress',
 } as const;
@@ -59,17 +60,25 @@ export interface BulkScanBatchEvent extends BaseEvent {
   is_final_batch: boolean;
 }
 
-export interface BulkScanCompleted {
+export interface BulkScanAllBatchesTransmitted {
   scan_id: string;
   community_server_id: string;
   messages_scanned: number;
 }
 
-export interface BulkScanCompletedEvent extends BaseEvent {
-  event_type: typeof EventType.BULK_SCAN_COMPLETED;
+export interface BulkScanAllBatchesTransmittedEvent extends BaseEvent {
+  event_type: typeof EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED;
   scan_id: string;
   community_server_id: string;
   messages_scanned: number;
+}
+
+export interface BulkScanProcessingFinishedEvent extends BaseEvent {
+  event_type: typeof EventType.BULK_SCAN_PROCESSING_FINISHED;
+  scan_id: string;
+  community_server_id: string;
+  messages_scanned: number;
+  messages_flagged: number;
 }
 
 export interface MessageScoreInfo {
@@ -104,7 +113,8 @@ export const BULK_SCAN_BATCH_SIZE = 100;
 
 export const NATS_SUBJECTS = {
   BULK_SCAN_BATCH: 'OPENNOTES.bulk_scan_message_batch',
-  BULK_SCAN_COMPLETE: 'OPENNOTES.bulk_scan_completed',
+  BULK_SCAN_ALL_BATCHES_TRANSMITTED: 'OPENNOTES.bulk_scan_all_batches_transmitted',
+  BULK_SCAN_PROCESSING_FINISHED: 'OPENNOTES.bulk_scan_processing_finished',
   BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan_results',
   BULK_SCAN_PROGRESS: 'OPENNOTES.bulk_scan_progress',
 } as const;

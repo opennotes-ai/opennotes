@@ -6,9 +6,9 @@ import {
   NATS_SUBJECTS,
   EventType,
   type BulkScanBatch,
-  type BulkScanCompleted,
+  type BulkScanAllBatchesTransmitted,
   type BulkScanBatchEvent,
-  type BulkScanCompletedEvent,
+  type BulkScanAllBatchesTransmittedEvent,
 } from '../types/bulk-scan.js';
 
 export class NatsPublisher {
@@ -101,36 +101,36 @@ export class NatsPublisher {
     }
   }
 
-  async publishBulkScanCompleted(completedData: BulkScanCompleted): Promise<void> {
+  async publishAllBatchesTransmitted(transmittedData: BulkScanAllBatchesTransmitted): Promise<void> {
     if (!this.nc || !this.js) {
       throw new Error('NATS connection not established. Call connect() first.');
     }
 
     try {
-      const event: BulkScanCompletedEvent = {
+      const event: BulkScanAllBatchesTransmittedEvent = {
         event_id: randomUUID(),
-        event_type: EventType.BULK_SCAN_COMPLETED,
+        event_type: EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED,
         version: '1.0',
         timestamp: new Date().toISOString(),
         metadata: {},
-        scan_id: completedData.scan_id,
-        community_server_id: completedData.community_server_id,
-        messages_scanned: completedData.messages_scanned,
+        scan_id: transmittedData.scan_id,
+        community_server_id: transmittedData.community_server_id,
+        messages_scanned: transmittedData.messages_scanned,
       };
 
       const data = this.codec.encode(JSON.stringify(event));
-      await this.js.publish(NATS_SUBJECTS.BULK_SCAN_COMPLETE, data);
+      await this.js.publish(NATS_SUBJECTS.BULK_SCAN_ALL_BATCHES_TRANSMITTED, data);
 
-      logger.debug('Published bulk scan completed to NATS', {
-        subject: NATS_SUBJECTS.BULK_SCAN_COMPLETE,
-        scan_id: completedData.scan_id,
-        community_server_id: completedData.community_server_id,
-        messages_scanned: completedData.messages_scanned,
+      logger.debug('Published all batches transmitted to NATS', {
+        subject: NATS_SUBJECTS.BULK_SCAN_ALL_BATCHES_TRANSMITTED,
+        scan_id: transmittedData.scan_id,
+        community_server_id: transmittedData.community_server_id,
+        messages_scanned: transmittedData.messages_scanned,
       });
     } catch (error) {
-      logger.error('Failed to publish bulk scan completed', {
+      logger.error('Failed to publish all batches transmitted', {
         error: error instanceof Error ? error.message : String(error),
-        scan_id: completedData.scan_id,
+        scan_id: transmittedData.scan_id,
       });
       throw error;
     }
@@ -185,12 +185,12 @@ export const natsPublisher = {
     }
     return publisher.publishBulkScanBatch(subject, batch);
   },
-  publishBulkScanCompleted: async (event: BulkScanCompleted): Promise<void> => {
+  publishAllBatchesTransmitted: async (event: BulkScanAllBatchesTransmitted): Promise<void> => {
     const publisher = getNatsPublisher();
     if (!publisher.isConnected()) {
       await publisher.connect();
     }
-    return publisher.publishBulkScanCompleted(event);
+    return publisher.publishAllBatchesTransmitted(event);
   },
   isConnected: (): boolean => {
     return natsPublisherInstance?.isConnected() ?? false;

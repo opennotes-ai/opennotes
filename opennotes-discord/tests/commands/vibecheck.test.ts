@@ -106,12 +106,12 @@ jest.unstable_mockModule('../../src/types/bulk-scan.js', () => ({
   BULK_SCAN_BATCH_SIZE: 100,
   NATS_SUBJECTS: {
     BULK_SCAN_BATCH: 'OPENNOTES.bulk_scan_message_batch',
-    BULK_SCAN_COMPLETE: 'OPENNOTES.bulk_scan_completed',
+    BULK_SCAN_ALL_BATCHES_TRANSMITTED: 'OPENNOTES.bulk_scan_all_batches_transmitted',
     BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan_results',
   },
   EventType: {
     BULK_SCAN_MESSAGE_BATCH: 'bulk_scan.message_batch',
-    BULK_SCAN_COMPLETED: 'bulk_scan.completed',
+    BULK_SCAN_ALL_BATCHES_TRANSMITTED: 'bulk_scan.all_batches_transmitted',
     BULK_SCAN_RESULTS: 'bulk_scan.results',
   },
 }));
@@ -130,7 +130,7 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
 
 const mockNatsPublisher = {
   publishBulkScanBatch: jest.fn<(subject: string, batch: any) => Promise<void>>().mockResolvedValue(undefined),
-  publishBulkScanCompleted: jest.fn<(data: any) => Promise<void>>().mockResolvedValue(undefined),
+  publishAllBatchesTransmitted: jest.fn<(data: any) => Promise<void>>().mockResolvedValue(undefined),
 };
 
 jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({

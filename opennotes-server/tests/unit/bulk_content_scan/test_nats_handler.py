@@ -212,120 +212,95 @@ class TestHandleMessageBatch:
         assert "Embedding service unavailable" in str(exc_info.value)
 
 
-class TestHandleScanCompleted:
-    """Test handling of BULK_SCAN_COMPLETED events with accumulated results."""
+class TestHandleAllBatchesTransmitted:
+    """Test handling of BULK_SCAN_ALL_BATCHES_TRANSMITTED events."""
 
     @pytest.mark.asyncio
-    async def test_gets_accumulated_flagged_results(self, mock_service, mock_publisher):
-        """Verify get_flagged_results() is called to retrieve accumulated results."""
-        from src.bulk_content_scan.nats_handler import handle_scan_completed
-        from src.events.schemas import BulkScanCompletedEvent
+    async def test_sets_transmitted_flag(self, mock_service, mock_publisher):
+        """Verify set_all_batches_transmitted is called."""
+        from src.bulk_content_scan.nats_handler import handle_all_batches_transmitted
+        from src.events.schemas import BulkScanAllBatchesTransmittedEvent
 
         scan_id = uuid4()
         community_server_id = uuid4()
 
-        event = BulkScanCompletedEvent(
+        mock_service.set_all_batches_transmitted = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=0)
+
+        event = BulkScanAllBatchesTransmittedEvent(
             event_id="evt_123",
             scan_id=scan_id,
             community_server_id=community_server_id,
             messages_scanned=100,
         )
 
-        await handle_scan_completed(event, mock_service, mock_publisher)
+        await handle_all_batches_transmitted(event, mock_service, mock_publisher)
 
-        mock_service.get_flagged_results.assert_called_once_with(scan_id)
+        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id, 100)
 
     @pytest.mark.asyncio
-    async def test_completes_scan_with_accumulated_count(
+    async def test_triggers_completion_when_all_processed(
         self, mock_service, mock_publisher, sample_flagged_message
     ):
-        """Verify complete_scan() receives correct flagged count from accumulated results."""
-        from src.bulk_content_scan.nats_handler import handle_scan_completed
-        from src.events.schemas import BulkScanCompletedEvent
+        """Verify completion triggers when all messages already processed."""
+        from unittest.mock import patch
+
+        from src.bulk_content_scan.nats_handler import handle_all_batches_transmitted
+        from src.events.schemas import BulkScanAllBatchesTransmittedEvent
 
         scan_id = uuid4()
         community_server_id = uuid4()
+        messages_scanned = 100
 
-        flagged_results = [sample_flagged_message, sample_flagged_message]
-        mock_service.get_flagged_results = AsyncMock(return_value=flagged_results)
+        mock_service.set_all_batches_transmitted = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=messages_scanned)
+        mock_service.get_flagged_results = AsyncMock(return_value=[sample_flagged_message])
+        mock_service.get_error_summary = AsyncMock(
+            return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
+        )
 
-        event = BulkScanCompletedEvent(
+        event = BulkScanAllBatchesTransmittedEvent(
             event_id="evt_123",
             scan_id=scan_id,
             community_server_id=community_server_id,
-            messages_scanned=100,
+            messages_scanned=messages_scanned,
         )
 
-        await handle_scan_completed(event, mock_service, mock_publisher)
+        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_event_publisher:
+            mock_event_publisher.publish_event = AsyncMock()
+            await handle_all_batches_transmitted(event, mock_service, mock_publisher)
 
         mock_service.complete_scan.assert_called_once_with(
             scan_id=scan_id,
-            messages_scanned=100,
-            messages_flagged=2,
+            messages_scanned=messages_scanned,
+            messages_flagged=1,
             status=BulkScanStatus.COMPLETED,
         )
 
     @pytest.mark.asyncio
-    async def test_publishes_accumulated_results(
-        self, mock_service, mock_publisher, sample_flagged_message
-    ):
-        """Verify publisher.publish() receives correct accumulated results."""
-        from src.bulk_content_scan.nats_handler import handle_scan_completed
-        from src.events.schemas import BulkScanCompletedEvent
+    async def test_does_not_trigger_when_processing_pending(self, mock_service, mock_publisher):
+        """Verify no completion when batches still processing."""
+        from src.bulk_content_scan.nats_handler import handle_all_batches_transmitted
+        from src.events.schemas import BulkScanAllBatchesTransmittedEvent
 
         scan_id = uuid4()
         community_server_id = uuid4()
 
-        flagged_results = [sample_flagged_message]
-        mock_service.get_flagged_results = AsyncMock(return_value=flagged_results)
+        mock_service.set_all_batches_transmitted = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=50)
 
-        event = BulkScanCompletedEvent(
-            event_id="evt_123",
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages_scanned=50,
-        )
-
-        await handle_scan_completed(event, mock_service, mock_publisher)
-
-        mock_publisher.publish.assert_called_once()
-        call_kwargs = mock_publisher.publish.call_args[1]
-        assert call_kwargs["scan_id"] == scan_id
-        assert call_kwargs["messages_scanned"] == 50
-        assert call_kwargs["messages_flagged"] == 1
-        assert len(call_kwargs["flagged_messages"]) == 1
-
-    @pytest.mark.asyncio
-    async def test_handles_empty_flagged_results(self, mock_service, mock_publisher):
-        """Verify correct handling when no messages were flagged."""
-        from src.bulk_content_scan.nats_handler import handle_scan_completed
-        from src.events.schemas import BulkScanCompletedEvent
-
-        scan_id = uuid4()
-        community_server_id = uuid4()
-
-        mock_service.get_flagged_results = AsyncMock(return_value=[])
-
-        event = BulkScanCompletedEvent(
+        event = BulkScanAllBatchesTransmittedEvent(
             event_id="evt_123",
             scan_id=scan_id,
             community_server_id=community_server_id,
             messages_scanned=100,
         )
 
-        await handle_scan_completed(event, mock_service, mock_publisher)
+        await handle_all_batches_transmitted(event, mock_service, mock_publisher)
 
-        mock_service.complete_scan.assert_called_once_with(
-            scan_id=scan_id,
-            messages_scanned=100,
-            messages_flagged=0,
-            status=BulkScanStatus.COMPLETED,
-        )
-
-        mock_publisher.publish.assert_called_once()
-        call_kwargs = mock_publisher.publish.call_args[1]
-        assert call_kwargs["messages_flagged"] == 0
-        assert call_kwargs["flagged_messages"] == []
+        mock_service.set_all_batches_transmitted.assert_called_once()
+        mock_service.complete_scan.assert_not_called()
+        mock_publisher.publish.assert_not_called()
 
 
 class TestBulkScanHandlerRegistration:
@@ -336,9 +311,9 @@ class TestBulkScanHandlerRegistration:
         import asyncio
 
         from src.bulk_content_scan.nats_handler import (
+            handle_all_batches_transmitted,
             handle_message_batch,
-            handle_scan_completed,
         )
 
         assert asyncio.iscoroutinefunction(handle_message_batch)
-        assert asyncio.iscoroutinefunction(handle_scan_completed)
+        assert asyncio.iscoroutinefunction(handle_all_batches_transmitted)

@@ -32,7 +32,7 @@ import type { CommunityServerJSONAPIResponse } from '../../src/lib/api-client.js
 const mockGetCommunityServerByPlatformId = jest.fn<(platformId: string, platform?: string) => Promise<CommunityServerJSONAPIResponse>>();
 
 const mockPublishBulkScanBatch = jest.fn<(subject: string, batch: any) => Promise<void>>();
-const mockPublishBulkScanCompleted = jest.fn<(completedData: any) => Promise<void>>();
+const mockPublishAllBatchesTransmitted = jest.fn<(transmittedData: any) => Promise<void>>();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -49,7 +49,7 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
 jest.unstable_mockModule('../../src/events/NatsPublisher.js', () => ({
   natsPublisher: {
     publishBulkScanBatch: mockPublishBulkScanBatch,
-    publishBulkScanCompleted: mockPublishBulkScanCompleted,
+    publishAllBatchesTransmitted: mockPublishAllBatchesTransmitted,
   },
 }));
 
@@ -190,7 +190,7 @@ describe('bulk-scan-executor', () => {
       jsonapi: { version: '1.1' },
     });
     mockPublishBulkScanBatch.mockResolvedValue(undefined);
-    mockPublishBulkScanCompleted.mockResolvedValue(undefined);
+    mockPublishAllBatchesTransmitted.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -925,8 +925,8 @@ describe('bulk-scan-executor', () => {
     });
   });
 
-  describe('executeBulkScan - publishBulkScanCompleted', () => {
-    it('should call publishBulkScanCompleted after all batches are published', async () => {
+  describe('executeBulkScan - publishAllBatchesTransmitted', () => {
+    it('should call publishAllBatchesTransmitted after all batches are published', async () => {
       const messages = new Map();
       for (let i = 0; i < 50; i++) {
         const id = generateRecentSnowflake(i * 1000);
@@ -943,15 +943,15 @@ describe('bulk-scan-executor', () => {
         errorId: 'err-test-123',
       });
 
-      expect(mockPublishBulkScanCompleted).toHaveBeenCalledTimes(1);
-      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+      expect(mockPublishAllBatchesTransmitted).toHaveBeenCalledTimes(1);
+      expect(mockPublishAllBatchesTransmitted).toHaveBeenCalledWith({
         scan_id: 'test-scan-123',
         community_server_id: 'community-uuid-123',
         messages_scanned: 50,
       });
     });
 
-    it('should call publishBulkScanCompleted before polling for results', async () => {
+    it('should call publishAllBatchesTransmitted before polling for results', async () => {
       const messages = new Map();
       for (let i = 0; i < 10; i++) {
         const id = generateRecentSnowflake(i * 1000);
@@ -963,8 +963,8 @@ describe('bulk-scan-executor', () => {
 
       const callOrder: string[] = [];
 
-      mockPublishBulkScanCompleted.mockImplementation(async () => {
-        callOrder.push('publishBulkScanCompleted');
+      mockPublishAllBatchesTransmitted.mockImplementation(async () => {
+        callOrder.push('publishAllBatchesTransmitted');
       });
 
       mockGetBulkScanResults.mockImplementation(async () => {
@@ -979,12 +979,12 @@ describe('bulk-scan-executor', () => {
         errorId: 'err-test-123',
       });
 
-      expect(callOrder.indexOf('publishBulkScanCompleted')).toBeLessThan(
+      expect(callOrder.indexOf('publishAllBatchesTransmitted')).toBeLessThan(
         callOrder.indexOf('getBulkScanResults')
       );
     });
 
-    it('should call publishBulkScanCompleted even when no messages found (0 batches)', async () => {
+    it('should call publishAllBatchesTransmitted even when no messages found (0 batches)', async () => {
       const emptyMessages = new Map();
       const channel = createMockChannel('ch-1', emptyMessages);
       const guild = createMockGuild(new Map([['ch-1', channel]]));
@@ -996,15 +996,15 @@ describe('bulk-scan-executor', () => {
         errorId: 'err-test-123',
       });
 
-      expect(mockPublishBulkScanCompleted).toHaveBeenCalledTimes(1);
-      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+      expect(mockPublishAllBatchesTransmitted).toHaveBeenCalledTimes(1);
+      expect(mockPublishAllBatchesTransmitted).toHaveBeenCalledWith({
         scan_id: 'test-scan-123',
         community_server_id: 'community-uuid-123',
         messages_scanned: 0,
       });
     });
 
-    it('should call publishBulkScanCompleted with correct message count across multiple batches', async () => {
+    it('should call publishAllBatchesTransmitted with correct message count across multiple batches', async () => {
       const ch1Messages = new Map();
       for (let i = 0; i < 100; i++) {
         const id = generateRecentSnowflake(i * 1000);
@@ -1028,14 +1028,14 @@ describe('bulk-scan-executor', () => {
         errorId: 'err-test-123',
       });
 
-      expect(mockPublishBulkScanCompleted).toHaveBeenCalledWith({
+      expect(mockPublishAllBatchesTransmitted).toHaveBeenCalledWith({
         scan_id: 'test-scan-123',
         community_server_id: 'community-uuid-123',
         messages_scanned: 175,
       });
     });
 
-    it('should handle publishBulkScanCompleted failure gracefully', async () => {
+    it('should handle publishAllBatchesTransmitted failure gracefully', async () => {
       const messages = new Map();
       for (let i = 0; i < 10; i++) {
         const id = generateRecentSnowflake(i * 1000);
@@ -1045,7 +1045,7 @@ describe('bulk-scan-executor', () => {
       const channel = createMockChannel('ch-1', messages);
       const guild = createMockGuild(new Map([['ch-1', channel]]));
 
-      mockPublishBulkScanCompleted.mockRejectedValue(new Error('NATS connection failed'));
+      mockPublishAllBatchesTransmitted.mockRejectedValue(new Error('NATS connection failed'));
 
       const result = await executeBulkScan({
         guild: guild as any,
@@ -1054,9 +1054,9 @@ describe('bulk-scan-executor', () => {
         errorId: 'err-test-123',
       });
 
-      expect(mockPublishBulkScanCompleted).toHaveBeenCalled();
+      expect(mockPublishAllBatchesTransmitted).toHaveBeenCalled();
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to publish bulk scan completed event'),
+        expect.stringContaining('Failed to publish bulk scan all batches transmitted event'),
         expect.any(Object)
       );
       expect(result.status).toBeDefined();
