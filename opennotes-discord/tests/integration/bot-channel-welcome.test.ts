@@ -41,15 +41,27 @@ describe('Bot Channel Welcome Flow Integration', () => {
       },
     };
 
+    const mockBotUser = {
+      id: 'bot-user-123',
+      username: 'OpenNotes',
+      bot: true,
+    };
+
     mockChannel = {
       id: 'channel-123',
       name: 'open-notes',
       type: ChannelType.GuildText,
       guild: null,
+      client: {
+        user: mockBotUser,
+      },
       send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
       delete: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
       permissionOverwrites: {
         set: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
+      },
+      messages: {
+        fetchPinned: jest.fn<() => Promise<any>>().mockResolvedValue(new Collection()),
       },
     };
 

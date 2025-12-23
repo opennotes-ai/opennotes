@@ -1,5 +1,5 @@
 import { logger } from '../logger.js';
-import { Message, TextChannel, User } from 'discord.js';
+import { Collection, ComponentType, Message, TextChannel, User } from 'discord.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
 import { sendVibeCheckPrompt } from '../lib/vibecheck-prompt.js';
@@ -10,14 +10,19 @@ export interface PostWelcomeOptions {
   skipVibeCheckPrompt?: boolean;
 }
 
+interface WelcomeMessageCheckResult {
+  shouldPost: boolean;
+  existingMessageId?: string;
+}
+
 export class GuildOnboardingService {
   async postWelcomeToChannel(channel: TextChannel, options?: PostWelcomeOptions): Promise<void> {
     const guildId = channel.guild.id;
 
     try {
-      // Check if welcome message already exists
-      const shouldPost = await this.shouldPostWelcomeMessage(channel);
-      if (!shouldPost) {
+      // Check if welcome message already exists (content-based idempotency)
+      const checkResult = await this.checkWelcomeMessageState(channel);
+      if (!checkResult.shouldPost) {
         return;
       }
 
@@ -55,47 +60,168 @@ export class GuildOnboardingService {
     }
   }
 
-  private async shouldPostWelcomeMessage(channel: TextChannel): Promise<boolean> {
+  /**
+   * Check welcome message state using content-based idempotency.
+   * 1. Fetch pinned messages from Discord (source of truth)
+   * 2. Find welcome messages by bot author
+   * 3. Clean up duplicates, keeping one
+   * 4. Compare content - if same, no action needed
+   * 5. If different content, delete old so caller can post new
+   */
+  private async checkWelcomeMessageState(channel: TextChannel): Promise<WelcomeMessageCheckResult> {
     const guildId = channel.guild.id;
+    const botUserId = channel.client.user?.id;
 
+    // Fetch pinned messages from Discord first (source of truth)
+    let pinnedMessages: Collection<string, Message>;
     try {
-      // Get community server to check for existing welcome_message_id
-      const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
-      const welcomeMessageId = communityServer.data.attributes.welcome_message_id;
-
-      if (!welcomeMessageId) {
-        // No welcome message stored, should post
-        return true;
-      }
-
-      // Check if the stored welcome message exists in channel pins
-      const pinnedMessages = await channel.messages.fetchPinned();
-      const messageExists = pinnedMessages.has(welcomeMessageId);
-
-      if (messageExists) {
-        logger.debug('Welcome message already exists in channel pins', {
-          guildId,
-          channelId: channel.id,
-          welcomeMessageId,
-        });
-        return false;
-      }
-
-      // Stored message not found in pins, need to post new one
-      logger.info('Stored welcome message not found in pins, posting new one', {
-        guildId,
-        channelId: channel.id,
-        staleWelcomeMessageId: welcomeMessageId,
-      });
-      return true;
+      pinnedMessages = await channel.messages.fetchPinned();
     } catch (error) {
-      // If we can't check, assume we should post
-      logger.debug('Failed to check for existing welcome message, will post', {
+      logger.warn('Cannot verify welcome message state, skipping post to avoid duplicates', {
         guildId,
         channelId: channel.id,
         error: error instanceof Error ? error.message : String(error),
       });
-      return true;
+      return { shouldPost: false };
+    }
+
+    // Find all welcome messages from the bot (by author ID and container component)
+    const botWelcomeMessages = pinnedMessages.filter((msg) => {
+      const isFromBot = msg.author?.id === botUserId;
+      const hasContainer = msg.components?.some((c) => c.type === ComponentType.Container);
+      return isFromBot && hasContainer;
+    });
+
+    // Get the current welcome content for comparison
+    const currentWelcomeContent = this.getWelcomeContentSignature();
+
+    // If we found bot welcome messages, handle them
+    if (botWelcomeMessages.size > 0) {
+      const messagesArray = Array.from(botWelcomeMessages.values());
+
+      // Clean up duplicates - keep the first one, delete the rest
+      if (messagesArray.length > 1) {
+        await this.deleteDuplicateWelcomeMessages(messagesArray.slice(1), guildId);
+      }
+
+      const existingMessage = messagesArray[0];
+      const existingContentSignature = this.getMessageContentSignature(existingMessage);
+
+      // Compare content
+      if (existingContentSignature === currentWelcomeContent) {
+        logger.debug('Welcome message with same content already exists', {
+          guildId,
+          channelId: channel.id,
+          messageId: existingMessage.id,
+        });
+
+        // Update DB if the stored ID is different/missing
+        await this.syncWelcomeMessageIdIfNeeded(guildId, existingMessage.id);
+
+        return { shouldPost: false, existingMessageId: existingMessage.id };
+      } else {
+        // Content differs - delete old message so we can post new
+        logger.info('Welcome message content changed, replacing old message', {
+          guildId,
+          channelId: channel.id,
+          oldMessageId: existingMessage.id,
+        });
+        await this.deleteMessage(existingMessage, guildId);
+        return { shouldPost: true };
+      }
+    }
+
+    // No bot welcome message found in Discord - we can post
+    // Try to log if there was a stale DB record, but don't fail if API is down
+    try {
+      const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+      const storedMessageId = communityServer.data.attributes.welcome_message_id;
+
+      if (storedMessageId) {
+        logger.info('Stored welcome message not found in pins, posting new one', {
+          guildId,
+          channelId: channel.id,
+          staleWelcomeMessageId: storedMessageId,
+        });
+      }
+    } catch {
+      // API failed but Discord (source of truth) shows no welcome message
+      // Safe to proceed with posting since we checked the actual pins
+      logger.debug('API unavailable, proceeding based on Discord state', {
+        guildId,
+        channelId: channel.id,
+      });
+    }
+
+    return { shouldPost: true };
+  }
+
+  /**
+   * Get a content signature for the current welcome message
+   * Returns an array format to match how Discord stores message.components
+   */
+  private getWelcomeContentSignature(): string {
+    const container = buildWelcomeContainer();
+    return JSON.stringify([container.toJSON()]);
+  }
+
+  /**
+   * Get a content signature from an existing message
+   */
+  private getMessageContentSignature(message: Message): string {
+    return JSON.stringify(message.components?.map((c) => c.toJSON()) ?? []);
+  }
+
+  /**
+   * Delete duplicate welcome messages
+   */
+  private async deleteDuplicateWelcomeMessages(duplicates: Message[], guildId: string): Promise<void> {
+    for (const msg of duplicates) {
+      await this.deleteMessage(msg, guildId);
+    }
+    logger.info('Cleaned up duplicate welcome messages', {
+      guildId,
+      deletedCount: duplicates.length,
+    });
+  }
+
+  /**
+   * Delete a single message with error handling
+   */
+  private async deleteMessage(message: Message, guildId: string): Promise<void> {
+    try {
+      await message.delete();
+      logger.debug('Deleted welcome message', {
+        guildId,
+        messageId: message.id,
+      });
+    } catch (error) {
+      logger.warn('Failed to delete welcome message', {
+        guildId,
+        messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Sync the welcome_message_id in DB if it's different from what we found
+   */
+  private async syncWelcomeMessageIdIfNeeded(guildId: string, foundMessageId: string): Promise<void> {
+    try {
+      const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+      const storedMessageId = communityServer.data.attributes.welcome_message_id;
+
+      if (storedMessageId !== foundMessageId) {
+        await this.updateWelcomeMessageIdInDb(guildId, foundMessageId);
+        logger.debug('Synced stale welcome_message_id in database', {
+          guildId,
+          oldMessageId: storedMessageId,
+          newMessageId: foundMessageId,
+        });
+      }
+    } catch {
+      // Best effort - don't fail if we can't sync
     }
   }
 
