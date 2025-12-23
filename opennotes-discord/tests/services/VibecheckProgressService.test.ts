@@ -63,6 +63,8 @@ function createMockProgressEvent(overrides: Partial<BulkScanProgressEvent> = {})
     platform_id: 'guild-123',
     batch_number: 1,
     messages_in_batch: 10,
+    messages_processed: 100,
+    channel_ids: ['ch-123'],
     message_scores: [
       {
         message_id: 'msg-001',

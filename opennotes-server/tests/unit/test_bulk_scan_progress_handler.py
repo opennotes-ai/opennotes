@@ -110,7 +110,7 @@ class TestProgressEventEmission:
             assert published_event.event_type == EventType.BULK_SCAN_PROGRESS
 
     @pytest.mark.asyncio
-    async def test_progress_event_not_published_when_debug_mode_disabled(
+    async def test_progress_event_published_without_scores_when_debug_mode_disabled(
         self,
         mock_session,
         mock_embedding_service,
@@ -118,9 +118,14 @@ class TestProgressEventEmission:
         mock_nats_client,
         sample_messages,
     ):
-        """Progress event should NOT be published when vibecheck_debug_mode is False."""
+        """Progress event should be published but without message_scores when debug_mode is False.
+
+        As of task-858, progress events are published for ALL scans (not just debug mode).
+        In non-debug mode, message_scores should be empty.
+        """
         from src.bulk_content_scan.nats_handler import handle_message_batch_with_progress
         from src.bulk_content_scan.service import BulkContentScanService
+        from src.events.schemas import BulkScanProgressEvent
 
         scan_id = uuid4()
         community_server_id = uuid4()
@@ -151,7 +156,10 @@ class TestProgressEventEmission:
                 debug_mode=False,
             )
 
-            mock_publisher.publish_event.assert_not_called()
+            mock_publisher.publish_event.assert_called_once()
+            published_event = mock_publisher.publish_event.call_args[0][0]
+            assert isinstance(published_event, BulkScanProgressEvent)
+            assert published_event.message_scores == []
 
     @pytest.mark.asyncio
     async def test_progress_event_includes_all_message_scores(

@@ -17,6 +17,7 @@ export const EventType = {
   BULK_SCAN_PROCESSING_FINISHED: 'bulk_scan.processing_finished',
   BULK_SCAN_RESULTS: 'bulk_scan.results',
   BULK_SCAN_PROGRESS: 'bulk_scan.progress',
+  BULK_SCAN_FAILED: 'bulk_scan.failed',
 } as const;
 
 export type EventTypeValue = (typeof EventType)[keyof typeof EventType];
@@ -97,8 +98,17 @@ export interface BulkScanProgressEvent extends BaseEvent {
   platform_id: string;
   batch_number: number;
   messages_in_batch: number;
+  messages_processed: number;
+  channel_ids: string[];
   message_scores: MessageScoreInfo[];
   threshold_used: number;
+}
+
+export interface BulkScanFailedEvent extends BaseEvent {
+  event_type: typeof EventType.BULK_SCAN_FAILED;
+  scan_id: string;
+  community_server_id: string;
+  error_message: string;
 }
 
 export interface ScanProgress {
@@ -117,6 +127,7 @@ export const NATS_SUBJECTS = {
   BULK_SCAN_PROCESSING_FINISHED: 'OPENNOTES.bulk_scan_processing_finished',
   BULK_SCAN_RESULT: 'OPENNOTES.bulk_scan_results',
   BULK_SCAN_PROGRESS: 'OPENNOTES.bulk_scan_progress',
+  BULK_SCAN_FAILED: 'OPENNOTES.bulk_scan_failed',
 } as const;
 
 export interface BulkScanInitiateRequest {
