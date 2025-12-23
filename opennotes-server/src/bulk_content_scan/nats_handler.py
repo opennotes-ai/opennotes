@@ -352,18 +352,41 @@ class BulkScanEventHandler:
         """
         self.embedding_service = embedding_service
         self.redis_client = redis_client
+        self.nats_client = nats_client
         self.publisher = BulkScanResultsPublisher(nats_client)
         self.subscriber = event_subscriber
 
     async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
         """Handle incoming message batch from Discord bot."""
         async with get_session_maker()() as session:
+            platform_id = await get_platform_id(session, event.community_server_id)
+            if not platform_id:
+                error_msg = (
+                    f"Platform ID not found for community server {event.community_server_id}"
+                )
+                logger.error(
+                    error_msg,
+                    extra={
+                        "scan_id": str(event.scan_id),
+                        "community_server_id": str(event.community_server_id),
+                    },
+                )
+                raise BatchProcessingError(error_msg)
+
+            debug_mode = await get_vibecheck_debug_mode(session, event.community_server_id)
+
             service = BulkContentScanService(
                 session=session,
                 embedding_service=self.embedding_service,
                 redis_client=self.redis_client,
             )
-            await handle_message_batch(event, service)
+            await handle_message_batch_with_progress(
+                event=event,
+                service=service,
+                nats_client=self.nats_client,
+                platform_id=platform_id,
+                debug_mode=debug_mode,
+            )
 
     async def _handle_scan_completed(self, event: BulkScanCompletedEvent) -> None:
         """Process all collected messages when scan is complete."""
