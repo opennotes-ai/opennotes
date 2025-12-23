@@ -80,11 +80,13 @@ class TestBulkScanProgressEvent:
 
         scan_id = uuid4()
         community_server_id = uuid4()
+        platform_id = "1234567890123456789"
 
         event = BulkScanProgressEvent(
             event_id="evt_test123",
             scan_id=scan_id,
             community_server_id=community_server_id,
+            platform_id=platform_id,
             batch_number=1,
             messages_in_batch=50,
             message_scores=[
@@ -109,6 +111,7 @@ class TestBulkScanProgressEvent:
 
         assert event.scan_id == scan_id
         assert event.community_server_id == community_server_id
+        assert event.platform_id == platform_id
         assert event.batch_number == 1
         assert event.messages_in_batch == 50
         assert len(event.message_scores) == 2

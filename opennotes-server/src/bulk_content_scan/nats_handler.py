@@ -192,6 +192,7 @@ async def handle_message_batch_with_progress(
             event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
             scan_id=event.scan_id,
             community_server_id=event.community_server_id,
+            platform_id=platform_id,
             batch_number=event.batch_number,
             messages_in_batch=len(typed_messages),
             message_scores=message_score_infos,
