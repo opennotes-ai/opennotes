@@ -12,6 +12,7 @@ const mockLogger = {
 const mockApiClient = {
   getCommunityServerByPlatformId: jest.fn<(platformId: string, platform?: string) => Promise<any>>(),
   checkRecentScan: jest.fn<(communityServerId: string) => Promise<any>>(),
+  updateWelcomeMessageId: jest.fn<(platformId: string, welcomeMessageId: string | null) => Promise<any>>(),
 };
 
 const mockSendVibeCheckPrompt = jest.fn<(options: any) => Promise<void>>().mockResolvedValue(undefined);
@@ -42,11 +43,20 @@ describe('GuildOnboardingService', () => {
       name: 'Test Guild',
     };
 
+    const mockMessage = {
+      id: 'message-456',
+      pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+    };
+
     mockChannel = {
       id: 'channel-123',
       name: 'open-notes',
       guild: mockGuild,
-      send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({}),
+      send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockMessage),
+      messages: {
+        fetchPinned: jest.fn<() => Promise<any>>().mockResolvedValue(new Map()),
+        fetch: jest.fn<(id: string) => Promise<any>>(),
+      },
     };
 
     mockAdmin = {
@@ -363,6 +373,224 @@ describe('GuildOnboardingService', () => {
           channelId: 'channel-123',
           guildId: 'guild-123',
           adminId: 'admin-123',
+        })
+      );
+    });
+  });
+
+  describe('Welcome Message Persistence (AC#3-5)', () => {
+    let mockMessage: any;
+
+    beforeEach(() => {
+      mockMessage = {
+        id: 'message-456',
+        pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+      };
+      mockChannel.send.mockResolvedValue(mockMessage);
+      mockApiClient.getCommunityServerByPlatformId.mockReset();
+      mockApiClient.updateWelcomeMessageId.mockReset();
+      mockApiClient.updateWelcomeMessageId.mockResolvedValue({
+        id: 'community-server-123',
+        platform_id: 'guild-123',
+        welcome_message_id: 'message-456',
+      });
+    });
+
+    it('should pin the welcome message after posting (AC#3)', async () => {
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            welcome_message_id: null,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+
+      await service.postWelcomeToChannel(mockChannel);
+
+      expect(mockMessage.pin).toHaveBeenCalled();
+    });
+
+    it('should update welcome_message_id in database after posting and pinning (AC#5)', async () => {
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            welcome_message_id: null,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+
+      await service.postWelcomeToChannel(mockChannel);
+
+      expect(mockApiClient.updateWelcomeMessageId).toHaveBeenCalledWith('guild-123', 'message-456');
+    });
+
+    it('should skip posting if welcome message already exists in channel pins (AC#4)', async () => {
+      const existingWelcomeMessageId = 'existing-welcome-123';
+      const existingMessage = {
+        id: existingWelcomeMessageId,
+        pin: jest.fn(),
+      };
+      const pinnedMessages = new Map([[existingWelcomeMessageId, existingMessage]]);
+      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            welcome_message_id: existingWelcomeMessageId,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+
+      await service.postWelcomeToChannel(mockChannel);
+
+      expect(mockChannel.send).not.toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Welcome message already exists in channel pins',
+        expect.objectContaining({
+          guildId: 'guild-123',
+          welcomeMessageId: existingWelcomeMessageId,
+        })
+      );
+    });
+
+    it('should post new welcome message if stored message is not found in pins (AC#5)', async () => {
+      const staleWelcomeMessageId = 'deleted-message-123';
+      const pinnedMessages = new Map(); // Empty - message was deleted
+      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            welcome_message_id: staleWelcomeMessageId,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+
+      await service.postWelcomeToChannel(mockChannel);
+
+      expect(mockChannel.send).toHaveBeenCalledTimes(1);
+      expect(mockMessage.pin).toHaveBeenCalled();
+      expect(mockApiClient.updateWelcomeMessageId).toHaveBeenCalledWith('guild-123', 'message-456');
+    });
+
+    it('should log when reposting welcome message due to missing pin', async () => {
+      const staleWelcomeMessageId = 'deleted-message-123';
+      const pinnedMessages = new Map();
+      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            welcome_message_id: staleWelcomeMessageId,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+
+      await service.postWelcomeToChannel(mockChannel);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Stored welcome message not found in pins, posting new one',
+        expect.objectContaining({
+          guildId: 'guild-123',
+          staleWelcomeMessageId: staleWelcomeMessageId,
+        })
+      );
+    });
+
+    it('should handle pin failure gracefully', async () => {
+      mockMessage.pin.mockRejectedValue(new Error('Missing pin permissions'));
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            welcome_message_id: null,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+
+      await expect(service.postWelcomeToChannel(mockChannel)).resolves.not.toThrow();
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Failed to pin welcome message',
+        expect.objectContaining({
+          guildId: 'guild-123',
+          error: 'Missing pin permissions',
+        })
+      );
+    });
+
+    it('should handle updateWelcomeMessageId API failure gracefully', async () => {
+      mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+        data: {
+          type: 'community-servers',
+          id: 'community-server-123',
+          attributes: {
+            platform: 'discord',
+            platform_id: 'guild-123',
+            name: 'Test Guild',
+            is_active: true,
+            is_public: true,
+            welcome_message_id: null,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      });
+      mockApiClient.updateWelcomeMessageId.mockRejectedValue(new Error('API error'));
+
+      await expect(service.postWelcomeToChannel(mockChannel)).resolves.not.toThrow();
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Failed to update welcome_message_id in database',
+        expect.objectContaining({
+          guildId: 'guild-123',
+          error: 'API error',
         })
       );
     });

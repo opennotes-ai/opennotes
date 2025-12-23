@@ -72,6 +72,11 @@ class CommunityServer(Base):
     is_public: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False, index=True
     )
+    welcome_message_id: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+        comment="Discord message ID of the welcome message in bot channel",
+    )
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=func.now(), index=True
     )
