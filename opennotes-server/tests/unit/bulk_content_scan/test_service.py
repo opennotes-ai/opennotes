@@ -1543,3 +1543,147 @@ class TestConcurrentCompleteScanBehavior:
 
         assert mock_session.execute.call_count == 2
         assert mock_session.commit.call_count == 2
+
+
+class TestIsFlaggedConsistencyWithFlaggedMessage:
+    """Test that is_flagged in score_info is consistent with flagged_msg - task-864.
+
+    Bug: In production, progress events showed is_flagged=True but final results
+    showed no flagged content. Root cause: is_flagged was set BEFORE flagged_msg
+    was built, so if _build_flagged_message threw an exception, is_flagged would
+    be True but flagged_msg would be None.
+    """
+
+    @pytest.mark.asyncio
+    async def test_is_flagged_false_when_build_flagged_message_fails(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """AC #3: is_flagged should remain False if _build_flagged_message fails.
+
+        If building the FlaggedMessage raises an exception, is_flagged in score_info
+        must remain False to prevent inconsistency between progress events and
+        final results.
+        """
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+        from src.fact_checking.embedding_schemas import (
+            FactCheckMatch,
+            SimilaritySearchResponse,
+        )
+
+        high_score_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["misinformation"],
+            title="Fake claim",
+            content="This is a fake claim",
+            source_url="https://snopes.com/fake",
+            similarity_score=0.85,
+            rrf_score=0.5,
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                query_text="test",
+                matches=[high_score_match],
+                dataset_tags=["misinformation"],
+                similarity_threshold=0.35,
+                rrf_score_threshold=0.1,
+                total_matches=1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        msg = BulkScanMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="Test message content that should match",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+        )
+
+        with patch.object(
+            service, "_build_flagged_message", side_effect=ValueError("Build failed")
+        ):
+            flagged, scores = await service.process_messages_with_scores(
+                scan_id=scan_id,
+                messages=msg,
+                community_server_platform_id="guild_123",
+            )
+
+        assert len(flagged) == 0, "No flagged messages when build fails"
+        assert len(scores) == 1, "Should have one score entry"
+        assert scores[0]["is_flagged"] is False, (
+            "is_flagged must be False when _build_flagged_message fails"
+        )
+        assert scores[0]["similarity_score"] == 0.85, "Similarity score should be set"
+
+    @pytest.mark.asyncio
+    async def test_is_flagged_true_when_build_succeeds(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """is_flagged should be True when _build_flagged_message succeeds."""
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+        from src.fact_checking.embedding_schemas import (
+            FactCheckMatch,
+            SimilaritySearchResponse,
+        )
+
+        high_score_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["misinformation"],
+            title="Fake claim",
+            content="This is a fake claim",
+            source_url="https://snopes.com/fake",
+            similarity_score=0.85,
+            rrf_score=0.5,
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                query_text="test",
+                matches=[high_score_match],
+                dataset_tags=["misinformation"],
+                similarity_threshold=0.35,
+                rrf_score_threshold=0.1,
+                total_matches=1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        msg = BulkScanMessage(
+            message_id="msg_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="Test message content that should match",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+        )
+
+        flagged, scores = await service.process_messages_with_scores(
+            scan_id=scan_id,
+            messages=msg,
+            community_server_platform_id="guild_123",
+        )
+
+        assert len(flagged) == 1, "Should have one flagged message"
+        assert len(scores) == 1, "Should have one score entry"
+        assert scores[0]["is_flagged"] is True, (
+            "is_flagged must be True when message exceeds threshold"
+        )
+        assert scores[0]["similarity_score"] == 0.85

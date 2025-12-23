@@ -279,11 +279,25 @@ class BulkContentScanService:
                 score_info["matched_claim"] = best_match.content or best_match.title or ""
 
                 if best_match.similarity_score >= threshold:
-                    score_info["is_flagged"] = True
-                    flagged_msg = self._build_flagged_message(
-                        message, best_match, ScanType.SIMILARITY
-                    )
-                    return flagged_msg, score_info
+                    # Build flagged_msg FIRST - only set is_flagged if building succeeds
+                    # This prevents is_flagged=True in progress events when flagged_msg is None
+                    try:
+                        flagged_msg = self._build_flagged_message(
+                            message, best_match, ScanType.SIMILARITY
+                        )
+                        score_info["is_flagged"] = True
+                        return flagged_msg, score_info
+                    except Exception as build_error:
+                        logger.error(
+                            "Failed to build flagged message",
+                            extra={
+                                "scan_id": str(scan_id),
+                                "message_id": message.message_id,
+                                "error": str(build_error),
+                                "similarity_score": best_match.similarity_score,
+                            },
+                        )
+                        # is_flagged remains False since we couldn't build the message
 
         except Exception as e:
             logger.warning(
