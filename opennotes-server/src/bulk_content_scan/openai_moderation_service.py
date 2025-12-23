@@ -1,25 +1,40 @@
 """OpenAI moderation service for content scanning."""
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
 from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 MODERATION_MODEL = "omni-moderation-latest"
 
+MODERATION_CATEGORY_NAMES = [
+    "violence",
+    "violence/graphic",
+    "sexual",
+    "sexual/minors",
+    "hate",
+    "hate/threatening",
+    "harassment",
+    "harassment/threatening",
+    "self-harm",
+    "self-harm/intent",
+    "self-harm/instructions",
+    "illicit",
+    "illicit/violent",
+]
 
-@dataclass
-class ModerationResult:
+
+class ModerationResult(BaseModel):
     """Result from OpenAI moderation API."""
 
     flagged: bool
     categories: dict[str, bool]
     scores: dict[str, float]
     max_score: float
-    flagged_categories: list[str] = field(default_factory=list)
+    flagged_categories: list[str] = Field(default_factory=list)
 
 
 class OpenAIModerationService:
@@ -103,23 +118,7 @@ class OpenAIModerationService:
         categories_obj = result.categories
         scores_obj = result.category_scores
 
-        category_names = [
-            "violence",
-            "violence/graphic",
-            "sexual",
-            "sexual/minors",
-            "hate",
-            "hate/threatening",
-            "harassment",
-            "harassment/threatening",
-            "self-harm",
-            "self-harm/intent",
-            "self-harm/instructions",
-            "illicit",
-            "illicit/violent",
-        ]
-
-        for name in category_names:
+        for name in MODERATION_CATEGORY_NAMES:
             attr_name = name.replace("/", "_").replace("-", "_")
             if hasattr(categories_obj, attr_name):
                 categories[name] = getattr(categories_obj, attr_name)
