@@ -229,8 +229,15 @@ export interface CommunityServerAttributes {
   description?: string | null;
   is_active: boolean;
   is_public: boolean;
+  welcome_message_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface WelcomeMessageUpdateResponse {
+  id: string;
+  platform_id: string;
+  welcome_message_id: string | null;
 }
 
 // JSONAPI response type for community servers - raw structure from the server
@@ -1103,6 +1110,17 @@ export class ApiClient {
 
     const endpoint = `/api/v2/community-servers/lookup?${params.toString()}`;
     return this.fetchWithRetry<CommunityServerJSONAPIResponse>(endpoint);
+  }
+
+  async updateWelcomeMessageId(
+    platformId: string,
+    welcomeMessageId: string | null
+  ): Promise<WelcomeMessageUpdateResponse> {
+    const endpoint = `/api/v1/community-servers/${platformId}/welcome-message`;
+    return this.fetchWithRetry<WelcomeMessageUpdateResponse>(endpoint, {
+      method: 'PATCH',
+      body: JSON.stringify({ welcome_message_id: welcomeMessageId }),
+    });
   }
 
   async getRatingThresholds(): Promise<RatingThresholdsResponse> {
