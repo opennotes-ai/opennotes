@@ -2,11 +2,11 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Discriminator, Field, field_validator
 
-from src.bulk_content_scan.scan_types import ScanType
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
 
@@ -66,6 +66,33 @@ class BulkScanResponse(SQLAlchemySchema):
     messages_flagged: int = Field(default=0, description="Number of messages flagged")
 
 
+class SimilarityMatch(StrictInputSchema):
+    """Match result from similarity scan."""
+
+    scan_type: Literal["similarity"] = "similarity"
+    score: float = Field(..., ge=0.0, le=1.0, description="Similarity score")
+    matched_claim: str = Field(..., description="Fact-check claim that matched")
+    matched_source: str = Field(..., description="URL to the fact-check source")
+
+
+class OpenAIModerationMatch(StrictInputSchema):
+    """Match result from OpenAI moderation scan."""
+
+    scan_type: Literal["openai_moderation"] = "openai_moderation"
+    max_score: float = Field(..., ge=0.0, le=1.0, description="Max moderation score")
+    categories: dict[str, bool] = Field(..., description="Moderation categories")
+    scores: dict[str, float] = Field(..., description="Category scores")
+    flagged_categories: list[str] = Field(
+        default_factory=list, description="Flagged category names"
+    )
+
+
+MatchResult = Annotated[
+    SimilarityMatch | OpenAIModerationMatch,
+    Discriminator("scan_type"),
+]
+
+
 class FlaggedMessage(SQLAlchemySchema):
     """Schema for a single flagged message in scan results."""
 
@@ -76,29 +103,9 @@ class FlaggedMessage(SQLAlchemySchema):
     content: str = Field(..., description="Original message content")
     author_id: str = Field(..., description="Discord author ID")
     timestamp: datetime = Field(..., description="When the message was posted")
-    match_score: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Similarity score (0.0-1.0) or max moderation score",
-    )
-    matched_claim: str = Field(..., description="Fact-check claim that matched")
-    matched_source: str = Field(..., description="URL to the fact-check source")
-    scan_type: ScanType = Field(
-        default=ScanType.SIMILARITY,
-        description="Type of scan that flagged this message",
-    )
-    moderation_categories: dict[str, bool] | None = Field(
-        default=None,
-        description="OpenAI moderation categories (e.g., violence, sexual, hate)",
-    )
-    moderation_scores: dict[str, float] | None = Field(
-        default=None,
-        description="OpenAI moderation category scores (0.0-1.0)",
-    )
-    flagged_categories: list[str] | None = Field(
-        default=None,
-        description="List of category names that were flagged",
+    matches: list[MatchResult] = Field(
+        default_factory=list,
+        description="List of match results from scans (each includes its scan_type)",
     )
 
 
