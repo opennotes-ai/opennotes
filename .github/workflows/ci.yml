@@ -270,7 +270,7 @@ jobs:
 
   integration-tests-python:
     name: Integration Tests (opennotes-server)
-    needs: [detect-changes, unit-tests-python]
+    needs: [detect-changes]
     if: needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.shared == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
