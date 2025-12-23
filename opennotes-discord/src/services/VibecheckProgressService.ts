@@ -81,7 +81,7 @@ export class VibecheckProgressService {
     const flaggedCount = message_scores.filter((s) => s.is_flagged).length;
     const shortScanId = event.scan_id.substring(0, 8);
 
-    // Resolve channel IDs to names (AC #4)
+    // Resolve channel IDs to names
     const channelNames = channel_ids
       .map((id) => guild.channels.cache.get(id)?.name)
       .filter((name): name is string => Boolean(name))
