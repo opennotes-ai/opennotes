@@ -33,7 +33,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "idx_community_servers_vibecheck_debug_mode",
+        "ix_community_servers_vibecheck_debug_mode",
         "community_servers",
         ["vibecheck_debug_mode"],
         unique=False,
@@ -43,7 +43,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove vibecheck_debug_mode column from community_servers."""
     op.drop_index(
-        "idx_community_servers_vibecheck_debug_mode",
+        "ix_community_servers_vibecheck_debug_mode",
         table_name="community_servers",
     )
     op.drop_column("community_servers", "vibecheck_debug_mode")
