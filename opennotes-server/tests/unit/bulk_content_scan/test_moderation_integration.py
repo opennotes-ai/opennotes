@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -13,6 +13,8 @@ from src.bulk_content_scan.schemas import (
     OpenAIModerationMatch,
     SimilarityMatch,
 )
+
+SAMPLE_FACT_CHECK_ID = UUID("12345678-1234-1234-1234-123456789abc")
 
 
 class TestFlaggedMessageModerationFields:
@@ -44,6 +46,7 @@ class TestFlaggedMessageModerationFields:
             score=0.95,
             matched_claim="some claim",
             matched_source="http://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         msg = FlaggedMessage(
             message_id="123",

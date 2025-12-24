@@ -6353,6 +6353,12 @@ export interface components {
              * @description URL to the fact-check source
              */
             matched_source: string;
+            /**
+             * Fact Check Item Id
+             * Format: uuid
+             * @description UUID of the matched FactCheckItem
+             */
+            fact_check_item_id: string;
         };
         /**
          * SimilaritySearchCreateAttributes

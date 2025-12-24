@@ -2,11 +2,13 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+SAMPLE_FACT_CHECK_ID = UUID("12345678-1234-1234-1234-123456789abc")
 
 
 @pytest.fixture
@@ -26,6 +28,7 @@ def mock_flagged_messages():
                     score=0.85,
                     matched_claim="Test claim 1",
                     matched_source="https://example.com/1",
+                    fact_check_item_id=SAMPLE_FACT_CHECK_ID,
                 )
             ],
         ),
@@ -40,6 +43,7 @@ def mock_flagged_messages():
                     score=0.75,
                     matched_claim="Test claim 2",
                     matched_source="https://example.com/2",
+                    fact_check_item_id=SAMPLE_FACT_CHECK_ID,
                 )
             ],
         ),

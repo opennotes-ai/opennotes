@@ -6,11 +6,13 @@ router.py and jsonapi_router.py (task-849.05).
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
+
+SAMPLE_FACT_CHECK_ID = UUID("12345678-1234-1234-1234-123456789abc")
 
 
 @pytest.fixture
@@ -36,6 +38,7 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
                     score=0.85,
                     matched_claim="Vaccines cause autism",
                     matched_source="https://factcheck.org/vaccines",
+                    fact_check_item_id=SAMPLE_FACT_CHECK_ID,
                 )
             ],
         ),
@@ -50,6 +53,7 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
                     score=0.75,
                     matched_claim="Climate change is a hoax",
                     matched_source="https://factcheck.org/climate",
+                    fact_check_item_id=SAMPLE_FACT_CHECK_ID,
                 )
             ],
         ),
@@ -64,6 +68,7 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
                     score=0.90,
                     matched_claim="Election fraud claim",
                     matched_source="https://factcheck.org/election",
+                    fact_check_item_id=SAMPLE_FACT_CHECK_ID,
                 )
             ],
         ),

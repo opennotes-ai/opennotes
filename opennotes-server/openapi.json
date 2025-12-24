@@ -14418,6 +14418,12 @@
             "type": "string",
             "title": "Matched Source",
             "description": "URL to the fact-check source"
+          },
+          "fact_check_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Fact Check Item Id",
+            "description": "UUID of the matched FactCheckItem"
           }
         },
         "additionalProperties": false,
@@ -14425,7 +14431,8 @@
         "required": [
           "score",
           "matched_claim",
-          "matched_source"
+          "matched_source",
+          "fact_check_item_id"
         ],
         "title": "SimilarityMatch",
         "description": "Match result from similarity scan."

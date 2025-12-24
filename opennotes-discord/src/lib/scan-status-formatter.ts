@@ -213,22 +213,18 @@ function formatFlaggedMessagesListFull(flaggedMessages: FlaggedMessageResource[]
     const matches = msg.attributes.matches ?? [];
     const firstMatch = matches[0];
     let confidence = 'N/A';
-    let matchedClaim = 'Unknown';
 
     if (firstMatch) {
       if (firstMatch.scan_type === 'similarity') {
         confidence = formatMatchScore(firstMatch.score);
-        matchedClaim = firstMatch.matched_claim;
       } else if (firstMatch.scan_type === 'openai_moderation') {
         confidence = formatMatchScore(firstMatch.max_score);
-        matchedClaim = (firstMatch.flagged_categories ?? []).join(', ') || 'Moderation flagged';
       }
     }
 
-    return `**${index + 1}.** [Message](${messageLink})\n` +
-      `   Confidence: **${confidence}**\n` +
-      `   Matched: "${matchedClaim}"\n` +
-      `   Preview: "${preview}"`;
+    return `**${index + 1}.** Preview: "${preview}"\n` +
+      `   [(link to message)](${messageLink})\n` +
+      `   Confidence: **${confidence}**`;
   }).join('\n\n');
 }
 
@@ -241,21 +237,17 @@ function formatFlaggedMessagesList(flaggedMessages: FlaggedMessageResource[], gu
     const matches = msg.attributes.matches ?? [];
     const firstMatch = matches[0];
     let confidence = 'N/A';
-    let matchedClaim = 'Unknown';
 
     if (firstMatch) {
       if (firstMatch.scan_type === 'similarity') {
         confidence = formatMatchScore(firstMatch.score);
-        matchedClaim = firstMatch.matched_claim;
       } else if (firstMatch.scan_type === 'openai_moderation') {
         confidence = formatMatchScore(firstMatch.max_score);
-        matchedClaim = (firstMatch.flagged_categories ?? []).join(', ') || 'Moderation flagged';
       }
     }
 
-    return `**${index + 1}.** [Message](${messageLink})\n` +
-      `   Confidence: **${confidence}**\n` +
-      `   Matched: "${matchedClaim}"\n` +
-      `   Preview: "${preview}"`;
+    return `**${index + 1}.** Preview: "${preview}"\n` +
+      `   [(link to message)](${messageLink})\n` +
+      `   Confidence: **${confidence}**`;
   }).join('\n\n');
 }

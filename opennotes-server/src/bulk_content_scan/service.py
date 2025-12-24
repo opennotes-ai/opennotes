@@ -21,6 +21,7 @@ from src.bulk_content_scan.schemas import (
     SimilarityMatch,
 )
 from src.config import settings
+from src.fact_checking.embedding_schemas import FactCheckMatch
 from src.fact_checking.embedding_service import EmbeddingService
 from src.monitoring import get_logger
 
@@ -491,13 +492,14 @@ class BulkContentScanService:
     def _build_flagged_message(
         self,
         message: BulkScanMessage,
-        match: Any,
+        match: FactCheckMatch,
     ) -> FlaggedMessage:
         """Build FlaggedMessage from a similarity match result."""
         similarity_match = SimilarityMatch(
             score=match.similarity_score,
             matched_claim=match.content or match.title or "",
             matched_source=match.source_url or "",
+            fact_check_item_id=match.id,
         )
         return FlaggedMessage(
             message_id=message.message_id,
