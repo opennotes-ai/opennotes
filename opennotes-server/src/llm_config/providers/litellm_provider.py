@@ -38,15 +38,6 @@ class LiteLLMCompletionParams(BaseModel):
 class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionParams]):
     """
     Unified LLM provider using LiteLLM.
-
-    Supports 100+ LLM providers through a single interface:
-    - OpenAI: "openai/gpt-4o", "openai/gpt-4-turbo"
-    - Anthropic: "anthropic/claude-3-opus", "anthropic/claude-3-sonnet"
-    - Google: "gemini/gemini-1.5-pro"
-    - And many more...
-
-    Key advantage: Consistent API across all providers with automatic
-    parameter filtering to avoid provider-specific compatibility issues.
     """
 
     def __init__(self, api_key: str, default_model: str, settings: LiteLLMProviderSettings) -> None:
