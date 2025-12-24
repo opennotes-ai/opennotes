@@ -6,13 +6,16 @@ import type { NotePublisherConfigService } from '../../src/services/NotePublishe
 import type { NatsSubscriber as NatsSubscriberType } from '../../src/events/NatsSubscriber.js';
 import type { MockNatsServer as MockNatsServerType } from '../utils/mock-nats-server.js';
 import { TEST_SCORE_THRESHOLD, TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
+import { loggerFactory } from '../factories/index.js';
 
-const mockLogger = {
-  debug: jest.fn<(...args: unknown[]) => void>((...args) => console.log('[DEBUG]', ...args)),
-  info: jest.fn<(...args: unknown[]) => void>((...args) => console.log('[INFO]', ...args)),
-  warn: jest.fn<(...args: unknown[]) => void>((...args) => console.warn('[WARN]', ...args)),
-  error: jest.fn<(...args: unknown[]) => void>((...args) => console.error('[ERROR]', ...args)),
-};
+const mockLogger = loggerFactory.build({}, {
+  transient: {
+    debugImpl: (...args: unknown[]) => console.log('[DEBUG]', ...args),
+    infoImpl: (...args: unknown[]) => console.log('[INFO]', ...args),
+    warnImpl: (...args: unknown[]) => console.warn('[WARN]', ...args),
+    errorImpl: (...args: unknown[]) => console.error('[ERROR]', ...args),
+  },
+});
 
 const mockNoteContextService = {
   getNoteContext: jest.fn<() => Promise<any>>(),
