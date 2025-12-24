@@ -89,10 +89,9 @@ function createMockNoteJSONAPIResponse(overrides: {
 }
 
 const natsAvailable = await checkNatsAvailability();
-const SKIP_NATS_TESTS =
-  process.env.CI === 'true' || process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
+const SKIP_NATS_TESTS = process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
 
-if (!natsAvailable && process.env.CI !== 'true') {
+if (!natsAvailable) {
   console.log('NATS not available at localhost:4222, skipping integration tests');
 }
 

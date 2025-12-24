@@ -41,10 +41,9 @@ const { createMockDiscordClient } = await import('../utils/mock-discord.js');
 const { createBaseScoreEvent } = await import('../utils/note-publisher-fixtures.js');
 
 const natsAvailable = await checkNatsAvailability();
-const SKIP_NATS_TESTS =
-  process.env.CI === 'true' || process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
+const SKIP_NATS_TESTS = process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
 
-if (!natsAvailable && process.env.CI !== 'true') {
+if (!natsAvailable) {
   console.log('NATS not available at localhost:4222, skipping error handling tests');
 }
 
