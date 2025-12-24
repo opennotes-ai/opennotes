@@ -56,3 +56,12 @@ export {
   type MockApiClient,
   type ApiClientTransientParams,
 } from './api-client.js';
+
+export {
+  discordMessageFactory,
+  dmMessageFactory,
+  systemMessageFactory,
+  webhookMessageFactory,
+  type MockDiscordMessage,
+  type MessageTransientParams,
+} from './discord-message.js';
