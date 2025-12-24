@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
-import { Client, TextChannel, PermissionsBitField, Message, PermissionFlagsBits, ChannelType } from 'discord.js';
+import { Client, TextChannel, PermissionsBitField, Message, PermissionFlagsBits } from 'discord.js';
+import { discordChannelFactory, DiscordChannelTransientParams } from '../factories/discord-channel.js';
 
 export interface MockDiscordOptions {
   shouldFailPermissions?: boolean;
@@ -49,67 +50,73 @@ export class MockDiscordClient {
   ): jest.Mocked<TextChannel> {
     const mergedOptions = { ...this.options, ...channelOptions };
 
-    const mockChannel: jest.Mocked<TextChannel> = {
-      id: channelId,
-      type: ChannelType.GuildText,
-      isThread: jest.fn(() => false),
-      isTextBased: jest.fn(() => true),
-      isDMBased: jest.fn(() => false),
-      permissionsFor: jest.fn((_userOrRole?: any): PermissionsBitField | null => {
-        if (mergedOptions.shouldFailPermissions) {
-          return null;
-        }
+    const factoryParams: DiscordChannelTransientParams = {
+      isTextChannel: true,
+      isDM: false,
+      isThread: false,
+      hasPermissions: !mergedOptions.shouldFailPermissions,
+      missingPermissions: this.mapMissingPermission(mergedOptions.missingPermission),
+    };
 
-        const permissions = PermissionFlagsBits.SendMessages | PermissionFlagsBits.CreatePublicThreads;
+    const baseChannel = discordChannelFactory.build(
+      { id: channelId },
+      { transient: factoryParams }
+    );
 
-        if (mergedOptions.missingPermission === 'SEND_MESSAGES') {
-          return new PermissionsBitField(PermissionFlagsBits.CreatePublicThreads);
-        }
+    const mockChannel = baseChannel as unknown as jest.Mocked<TextChannel>;
 
-        if (mergedOptions.missingPermission === 'CREATE_PUBLIC_THREADS') {
-          return new PermissionsBitField(PermissionFlagsBits.SendMessages);
-        }
+    (mockChannel as any).send = jest.fn(async (content: any) => {
+      if (mergedOptions.shouldFailSend) {
+        throw new Error('Failed to send message');
+      }
 
-        return new PermissionsBitField(permissions);
-      }) as any,
+      if (mergedOptions.rateLimit) {
+        const error: any = new Error('You are being rate limited.');
+        error.code = 50035;
+        error.status = 429;
+        throw error;
+      }
 
-      send: jest.fn(async (content: any) => {
-        if (mergedOptions.shouldFailSend) {
-          throw new Error('Failed to send message');
-        }
+      const sentMessage: SentMessage = {
+        channelId,
+        timestamp: new Date(),
+      };
 
-        if (mergedOptions.rateLimit) {
-          const error: any = new Error('You are being rate limited.');
-          error.code = 50035;
-          error.status = 429;
-          throw error;
-        }
+      if (typeof content === 'string') {
+        sentMessage.content = content;
+      } else {
+        sentMessage.content = content.content;
+        sentMessage.components = content.components;
+        sentMessage.flags = content.flags;
+      }
 
-        const sentMessage: SentMessage = {
-          channelId,
-          timestamp: new Date(),
-        };
+      this.sentMessages.push(sentMessage);
 
-        if (typeof content === 'string') {
-          sentMessage.content = content;
-        } else {
-          sentMessage.content = content.content;
-          sentMessage.components = content.components;
-          sentMessage.flags = content.flags;
-        }
-
-        this.sentMessages.push(sentMessage);
-
-        return {
-          id: `reply-${Date.now()}`,
-          content: sentMessage.content,
-          channelId,
-        } as Message;
-      }),
-    } as any;
+      return {
+        id: `reply-${Date.now()}`,
+        content: sentMessage.content,
+        channelId,
+      } as Message;
+    });
 
     this.mockChannels.set(channelId, mockChannel);
     return mockChannel;
+  }
+
+  private mapMissingPermission(
+    missingPermission?: 'SEND_MESSAGES' | 'CREATE_PUBLIC_THREADS'
+  ): DiscordChannelTransientParams['missingPermissions'] {
+    if (!missingPermission) {
+      return [];
+    }
+    switch (missingPermission) {
+      case 'SEND_MESSAGES':
+        return ['SendMessages'];
+      case 'CREATE_PUBLIC_THREADS':
+        return ['CreatePublicThreads'];
+      default:
+        return [];
+    }
   }
 
   getClient(): jest.Mocked<Client> {
