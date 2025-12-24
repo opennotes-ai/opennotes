@@ -11,6 +11,7 @@ import {
   ButtonInteraction,
 } from 'discord.js';
 import { nanoid } from 'nanoid';
+import pLimit from 'p-limit';
 import { logger } from '../logger.js';
 import { cache } from '../cache.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
@@ -37,14 +38,17 @@ const PAGINATION_STATE_TTL = 300;
 
 export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
 
+const EXPLANATION_CONCURRENCY_LIMIT = 5;
+
 async function fetchExplanations(
   flaggedMessages: FlaggedMessageResource[],
   communityServerId: string
 ): Promise<Map<string, string>> {
   const explanations = new Map<string, string>();
+  const limit = pLimit(EXPLANATION_CONCURRENCY_LIMIT);
 
   await Promise.all(
-    flaggedMessages.map(async (msg) => {
+    flaggedMessages.map((msg) => limit(async () => {
       const matches = msg.attributes.matches;
       if (!matches || matches.length === 0) {
         return;
@@ -68,7 +72,7 @@ async function fetchExplanations(
           error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
-    })
+    }))
   );
 
   return explanations;

@@ -1831,5 +1831,39 @@ describe('vibecheck command', () => {
       expect(mockApiClient.generateScanExplanation).not.toHaveBeenCalled();
       expect(mockFormatScanStatusPaginated).toHaveBeenCalled();
     });
+
+    it('should limit concurrent generateScanExplanation calls to 5', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      const flaggedMessages: FlaggedMessageResource[] = Array.from({ length: 10 }, (_, i) =>
+        createFlaggedMessageResource(`msg-${i}`, 'ch-1', `Content ${i}`, 0.9, `Claim ${i}`, `fact-check-uuid-${i}`)
+      );
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      let currentConcurrency = 0;
+      let maxConcurrency = 0;
+
+      mockApiClient.generateScanExplanation.mockImplementation(async () => {
+        currentConcurrency++;
+        maxConcurrency = Math.max(maxConcurrency, currentConcurrency);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        currentConcurrency--;
+        return createExplanationResultResponse('Test explanation');
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.generateScanExplanation).toHaveBeenCalledTimes(10);
+      expect(maxConcurrency).toBeLessThanOrEqual(5);
+    });
   });
 });
