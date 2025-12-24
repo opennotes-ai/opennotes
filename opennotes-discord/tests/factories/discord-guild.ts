@@ -10,6 +10,7 @@ export interface MockDiscordGuild {
     cache: Map<string, MockDiscordMember>;
     fetch: ReturnType<typeof jest.fn<(id: string) => Promise<MockDiscordMember | null>>>;
     fetchMe: ReturnType<typeof jest.fn<() => Promise<MockDiscordMember>>>;
+    me: MockDiscordMember | null;
   };
   channels: {
     cache: Map<string, unknown> & { filter: (fn: (channel: unknown) => boolean) => Map<string, unknown> };
@@ -62,6 +63,7 @@ export const discordGuildFactory = Factory.define<MockDiscordGuild, DiscordGuild
           }
           throw new Error('No bot member configured');
         }),
+        me: botMember ?? null,
       },
       channels: {
         cache: channelsCacheWithFilter,

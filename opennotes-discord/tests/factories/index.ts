@@ -11,7 +11,8 @@
  *
  * Re-export shared factories from @opennotes/test-utils:
  */
-export { Factory, noteFactory, ratingFactory } from '@opennotes/test-utils';
+export { Factory, noteFactory, ratingFactory, loggerFactory, cacheFactory } from '@opennotes/test-utils';
+export type { MockLogger, LoggerTransientParams, MockCache, CacheTransientParams } from '@opennotes/test-utils';
 
 /**
  * Discord-specific factories:

@@ -1,12 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { ChannelType, Collection, PermissionFlagsBits } from 'discord.js';
+import { loggerFactory, discordMemberFactory } from '../factories/index.js';
 
-const mockLogger = {
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -29,12 +25,9 @@ describe('BotChannelService', () => {
       name: 'OpenNotes',
     };
 
-    mockBotMember = {
+    mockBotMember = discordMemberFactory.build({
       id: 'bot-123',
-      user: {
-        id: 'bot-user-123',
-      },
-    };
+    });
 
     mockGuild = {
       id: 'guild-123',
