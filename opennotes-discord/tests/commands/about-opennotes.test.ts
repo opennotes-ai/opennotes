@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
 import { MessageFlags, ContainerBuilder } from 'discord.js';
-import { createMockLogger } from '../utils/service-mocks.js';
+import { loggerFactory } from '../factories/index.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,

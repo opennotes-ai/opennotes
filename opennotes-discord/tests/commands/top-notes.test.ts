@@ -1,10 +1,11 @@
 import { jest } from '@jest/globals';
 import { MessageFlags, ChannelType, TextChannel } from 'discord.js';
-import { createMockLogger, createSuccessResult, createErrorResult, createMockTopNotesJSONAPIResponse } from '../utils/service-mocks.js';
+import { createSuccessResult, createErrorResult, createMockTopNotesJSONAPIResponse } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
+import { loggerFactory, cacheFactory } from '../factories/index.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 const mockScoringService = {
   getNoteScore: jest.fn<(...args: any[]) => Promise<any>>(),
   getTopNotes: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -43,14 +44,7 @@ const mockApiClient = {
   createNoteRequest: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-  start: jest.fn<() => void>(),
-  stop: jest.fn<() => void>(),
-  getMetrics: jest.fn(() => ({ size: 0 })),
-};
+const mockCache = cacheFactory.build();
 
 const mockGuildConfigService = {
   get: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue('open-notes'),
