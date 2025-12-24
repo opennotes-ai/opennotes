@@ -273,6 +273,22 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     }
   }
 
+  if (progressCallback) {
+    progressCallback({
+      channelsProcessed,
+      totalChannels,
+      messagesProcessed,
+      currentChannel: undefined,
+    }).catch((error) => {
+      logger.warn('Final progress callback failed', {
+        error: error instanceof Error ? error.message : String(error),
+        scanId,
+        channelsProcessed,
+        totalChannels,
+      });
+    });
+  }
+
   if (currentBatch.length > 0) {
     await queueBatch();
   }

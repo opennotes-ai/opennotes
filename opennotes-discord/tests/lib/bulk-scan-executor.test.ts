@@ -516,7 +516,7 @@ describe('bulk-scan-executor', () => {
         progressCallback,
       });
 
-      expect(progressCallback).toHaveBeenCalledTimes(2);
+      expect(progressCallback).toHaveBeenCalledTimes(3);
 
       expect(progressCallback).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -525,6 +525,39 @@ describe('bulk-scan-executor', () => {
           currentChannel: expect.any(String),
         })
       );
+    });
+
+    it('should call final progress callback with 100% completion after all channels', async () => {
+      const messages = new Map();
+      for (let i = 0; i < 10; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        messages.set(id, createMockMessage(id, `Message ${i}`));
+      }
+
+      const channels = new Map();
+      channels.set('ch-1', createMockChannel('ch-1', messages));
+      channels.set('ch-2', createMockChannel('ch-2', messages));
+
+      const guild = createMockGuild(channels);
+
+      const progressCalls: any[] = [];
+      const progressCallback = jest.fn<(progress: any) => Promise<void>>()
+        .mockImplementation(async (progress) => {
+          progressCalls.push({ ...progress });
+        });
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+        progressCallback,
+      });
+
+      const finalCall = progressCalls[progressCalls.length - 1];
+      expect(finalCall.channelsProcessed).toBe(2);
+      expect(finalCall.totalChannels).toBe(2);
+      expect(finalCall.currentChannel).toBeUndefined();
     });
   });
 
