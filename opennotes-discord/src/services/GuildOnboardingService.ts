@@ -1,5 +1,5 @@
 import { logger } from '../logger.js';
-import { Collection, ComponentType, Message, TextChannel, User } from 'discord.js';
+import { Collection, ComponentType, Message, MessageType, TextChannel, User } from 'discord.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
 import { buildWelcomeContainer } from '../lib/welcome-content.js';
 import { sendVibeCheckPrompt } from '../lib/vibecheck-prompt.js';
@@ -227,15 +227,45 @@ export class GuildOnboardingService {
 
   private async pinWelcomeMessage(message: Message, guildId: string): Promise<void> {
     try {
+      if (message.pinned) {
+        logger.debug('Message already pinned, skipping', {
+          guildId,
+          messageId: message.id,
+        });
+        return;
+      }
+
       await message.pin();
       logger.debug('Pinned welcome message', {
         guildId,
         messageId: message.id,
       });
+
+      await this.deletePinNotification(message);
     } catch (error) {
       logger.warn('Failed to pin welcome message', {
         guildId,
         messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async deletePinNotification(pinnedMessage: Message): Promise<void> {
+    try {
+      const channel = pinnedMessage.channel as TextChannel;
+      const messages = await channel.messages.fetch({ limit: 5, after: pinnedMessage.id });
+
+      const pinNotifications = messages.filter(
+        (msg) => msg.type === MessageType.ChannelPinnedMessage
+      );
+
+      for (const [, notification] of pinNotifications) {
+        await notification.delete();
+      }
+    } catch (error) {
+      logger.debug('Could not delete pin notification', {
+        messageId: pinnedMessage.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }

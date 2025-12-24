@@ -14,6 +14,9 @@ import {
   MessageContextMenuCommandInteraction,
   Message,
   Guild,
+  ChannelType,
+  DMChannel,
+  NonThreadGuildBasedChannel,
 } from 'discord.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
@@ -42,6 +45,7 @@ import { GuildSetupService } from './services/GuildSetupService.js';
 import { GuildOnboardingService } from './services/GuildOnboardingService.js';
 import { BotChannelService } from './services/BotChannelService.js';
 import { GuildConfigService } from './services/GuildConfigService.js';
+import { ConfigKey } from './lib/config-schema.js';
 import { VibecheckProgressService } from './services/VibecheckProgressService.js';
 import { apiClient } from './api-client.js';
 import { closeRedisClient } from './redis-client.js';
@@ -117,6 +121,9 @@ export class Bot {
     });
     this.client.on(Events.GuildCreate, (guild: Guild) => {
       void this.onGuildCreate(guild);
+    });
+    this.client.on(Events.ChannelUpdate, (oldChannel, newChannel) => {
+      void this.onChannelUpdate(oldChannel, newChannel);
     });
     this.client.on(Events.Error, this.onError.bind(this));
   }
@@ -413,6 +420,65 @@ export class Bot {
         guildName: guild.name,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  }
+
+  async onChannelUpdate(
+    oldChannel: DMChannel | NonThreadGuildBasedChannel,
+    newChannel: DMChannel | NonThreadGuildBasedChannel
+  ): Promise<void> {
+    if (!this.guildConfigService) {
+      return;
+    }
+
+    if (oldChannel.isDMBased() || newChannel.isDMBased()) {
+      return;
+    }
+
+    if (!('name' in oldChannel) || !('name' in newChannel)) {
+      return;
+    }
+
+    if (oldChannel.type !== ChannelType.GuildText) {
+      return;
+    }
+
+    if (oldChannel.name === newChannel.name) {
+      return;
+    }
+
+    const guild = newChannel.guild;
+
+    try {
+      const configuredName = (await this.guildConfigService.get(
+        guild.id,
+        ConfigKey.BOT_CHANNEL_NAME
+      )) as string;
+
+      if (oldChannel.name.toLowerCase() !== configuredName.toLowerCase()) {
+        return;
+      }
+
+      await this.guildConfigService.set(
+        guild.id,
+        ConfigKey.BOT_CHANNEL_NAME,
+        newChannel.name,
+        'system'
+      );
+
+      logger.info('Bot channel renamed - config updated', {
+        guildId: guild.id,
+        guildName: guild.name,
+        oldName: oldChannel.name,
+        newName: newChannel.name,
+      });
+    } catch (error) {
+      logger.error('Failed to update bot channel config after rename', {
+        guildId: guild.id,
+        oldName: oldChannel.name,
+        newName: newChannel.name,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
