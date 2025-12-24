@@ -832,8 +832,8 @@ Community Note:"""
         self,
         original_message: str,
         fact_check_data: dict[str, str | float | None],
-        db: AsyncSession | None = None,
-        community_server_id: UUID | None = None,
+        db: AsyncSession,
+        community_server_id: UUID,
     ) -> str:
         """
         Generate a one-sentence explanation for why a message was flagged.
@@ -850,8 +850,8 @@ Community Note:"""
                 - rating: Fact-check rating (e.g., "false", "mostly-false")
                 - source_url: URL to the fact-check source
                 - similarity_score: Match confidence score (0-1)
-            db: Database session (required for LLMService calls in production)
-            community_server_id: Community server UUID (required for LLMService)
+            db: Database session for LLMService calls
+            community_server_id: Community server UUID for LLMService
 
         Returns:
             One-sentence explanation of why the message was flagged
@@ -868,22 +868,15 @@ Be concise and factual. Start directly with the explanation, no preamble."""
             LLMMessage(role="user", content=prompt),
         ]
 
-        if db is not None and community_server_id is not None:
-            response = await self.llm_service.complete(
-                db=db,
-                messages=messages,
-                community_server_id=community_server_id,
-                provider="openai",
-                model=settings.AI_NOTE_WRITER_MODEL,
-                max_tokens=150,
-                temperature=0.3,
-            )
-        else:
-            response = await self.llm_service.complete(
-                messages=messages,
-                max_tokens=150,
-                temperature=0.3,
-            )
+        response = await self.llm_service.complete(
+            db=db,
+            messages=messages,
+            community_server_id=community_server_id,
+            provider="openai",
+            model=settings.AI_NOTE_WRITER_MODEL,
+            max_tokens=150,
+            temperature=0.3,
+        )
 
         return response.content.strip()
 

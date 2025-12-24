@@ -45,10 +45,13 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.config import settings
 from src.database import get_db
 from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import get_embedding_service
 from src.fact_checking.models import FactCheckItem
+from src.llm_config.encryption import EncryptionService
+from src.llm_config.manager import LLMClientManager
 from src.llm_config.service import LLMService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
@@ -507,7 +510,9 @@ async def get_fact_check_item_by_id(
 
 def get_ai_note_writer() -> AINoteWriter:
     """Get AI note writer service."""
-    llm_service = LLMService()
+    encryption_service = EncryptionService(settings.ENCRYPTION_MASTER_KEY)
+    client_manager = LLMClientManager(encryption_service)
+    llm_service = LLMService(client_manager)
     return AINoteWriter(llm_service=llm_service)
 
 

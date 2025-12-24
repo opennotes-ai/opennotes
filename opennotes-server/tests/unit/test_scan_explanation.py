@@ -28,6 +28,8 @@ class TestGenerateScanExplanation:
         )
 
         writer = AINoteWriter(llm_service=mock_llm_service)
+        mock_db = MagicMock()
+        community_server_id = uuid4()
 
         original_message = "COVID vaccines contain microchips"
         fact_check_data = {
@@ -42,6 +44,8 @@ class TestGenerateScanExplanation:
         explanation = await writer.generate_scan_explanation(
             original_message=original_message,
             fact_check_data=fact_check_data,
+            db=mock_db,
+            community_server_id=community_server_id,
         )
 
         assert isinstance(explanation, str)
@@ -65,6 +69,8 @@ class TestGenerateScanExplanation:
         )
 
         writer = AINoteWriter(llm_service=mock_llm_service)
+        mock_db = MagicMock()
+        community_server_id = uuid4()
 
         original_message = "Test message"
         fact_check_data = {
@@ -79,6 +85,8 @@ class TestGenerateScanExplanation:
         await writer.generate_scan_explanation(
             original_message=original_message,
             fact_check_data=fact_check_data,
+            db=mock_db,
+            community_server_id=community_server_id,
         )
 
         call_args = mock_llm_service.complete.call_args
@@ -97,9 +105,13 @@ class TestGenerateScanExplanation:
         mock_llm_service.complete = AsyncMock(side_effect=Exception("LLM service unavailable"))
 
         writer = AINoteWriter(llm_service=mock_llm_service)
+        mock_db = MagicMock()
+        community_server_id = uuid4()
 
         with pytest.raises(Exception, match="LLM service unavailable"):
             await writer.generate_scan_explanation(
                 original_message="Test",
                 fact_check_data={"id": str(uuid4()), "title": "Test"},
+                db=mock_db,
+                community_server_id=community_server_id,
             )
