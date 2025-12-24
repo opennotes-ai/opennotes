@@ -157,19 +157,43 @@ export class GuildOnboardingService {
   }
 
   /**
-   * Get a content signature for the current welcome message
-   * Returns an array format to match how Discord stores message.components
+   * Get a content signature for the current welcome message.
+   * Compares the inner components of the container for stable comparison.
    */
   private getWelcomeContentSignature(): string {
     const container = buildWelcomeContainer();
-    return JSON.stringify([container.toJSON()]);
+    const components = container.data.components ?? [];
+    return this.stableStringify(components);
   }
 
   /**
-   * Get a content signature from an existing message
+   * Get a content signature from an existing message.
+   * Extracts the inner components from the container for apples-to-apples comparison.
    */
   private getMessageContentSignature(message: Message): string {
-    return JSON.stringify(message.components?.map((c) => c.toJSON()) ?? []);
+    const container = message.components?.find((c) => c.type === ComponentType.Container);
+    const components = container?.components?.map((c) => c.toJSON()) ?? [];
+    return this.stableStringify(components);
+  }
+
+  /**
+   * Stable JSON serialization with sorted keys to ensure consistent comparison.
+   */
+  private stableStringify(obj: unknown): string {
+    return JSON.stringify(obj, (_, value) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.keys(value)
+          .sort()
+          .reduce(
+            (sorted, key) => {
+              sorted[key] = value[key];
+              return sorted;
+            },
+            {} as Record<string, unknown>
+          );
+      }
+      return value;
+    });
   }
 
   /**
