@@ -11,6 +11,7 @@ import {
   ButtonInteraction,
 } from 'discord.js';
 import { nanoid } from 'nanoid';
+import pLimit from 'p-limit';
 import { logger } from '../logger.js';
 import { cache } from '../cache.js';
 import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } from '../lib/errors.js';
@@ -36,6 +37,46 @@ interface VibecheckPaginationState {
 const PAGINATION_STATE_TTL = 300;
 
 export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
+
+const EXPLANATION_CONCURRENCY_LIMIT = 5;
+
+async function fetchExplanations(
+  flaggedMessages: FlaggedMessageResource[],
+  communityServerId: string
+): Promise<Map<string, string>> {
+  const explanations = new Map<string, string>();
+  const limit = pLimit(EXPLANATION_CONCURRENCY_LIMIT);
+
+  await Promise.all(
+    flaggedMessages.map((msg) => limit(async () => {
+      const matches = msg.attributes.matches;
+      if (!matches || matches.length === 0) {
+        return;
+      }
+
+      const match = matches[0];
+      if (match.scan_type !== 'similarity' || !match.fact_check_item_id) {
+        return;
+      }
+
+      try {
+        const result = await apiClient.generateScanExplanation(
+          msg.attributes.content,
+          match.fact_check_item_id,
+          communityServerId
+        );
+        explanations.set(msg.id, result.data.attributes.explanation);
+      } catch (error) {
+        logger.warn('Failed to generate explanation for message', {
+          message_id: msg.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }))
+  );
+
+  return explanations;
+}
 
 export function getVibecheckCooldownKey(guildId: string): string {
   return `vibecheck:cooldown:${guildId}`;
@@ -204,6 +245,12 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       return;
     }
 
+    const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
+    const explanations = await fetchExplanations(
+      result.flaggedMessages,
+      communityServer.data.id
+    );
+
     await displayFlaggedResults(
       interaction,
       result.scanId,
@@ -211,7 +258,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       days,
       result.messagesScanned,
       result.flaggedMessages,
-      result.warningMessage
+      result.warningMessage,
+      explanations
     );
   } catch (error) {
     const errorDetails = extractErrorDetails(error);
@@ -239,7 +287,8 @@ async function displayFlaggedResults(
   days: number,
   messagesScanned: number,
   flaggedMessages: FlaggedMessageResource[],
-  warningMessage?: string
+  warningMessage?: string,
+  explanations?: Map<string, string>
 ): Promise<void> {
   const stateId = nanoid(10);
   const currentPage = 1;
@@ -263,6 +312,7 @@ async function displayFlaggedResults(
     days,
     warningMessage,
     includeButtons: true,
+    explanations,
   });
 
   const state: VibecheckPaginationState = {
