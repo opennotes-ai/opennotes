@@ -6,6 +6,7 @@ import {
   natsConnectionFactory,
   createAsyncIterator,
   createMockSubscription,
+  createMockJsMessage,
   type MockNatsConnection,
   type MockJetStreamClient,
   type MockJetStreamManager,
@@ -36,8 +37,11 @@ const mockConsumerOpts = jest.fn(() => createMockConsumerOpts());
 let mockNatsConnection: MockNatsConnection;
 let mockJetStream: MockJetStreamClient;
 let mockJetStreamManager: MockJetStreamManager;
-let mockSubscription: JetStreamSubscription & { messages?: any[] };
-let mockCodec: any;
+let mockSubscription: JetStreamSubscription;
+let mockCodec: {
+  decode: jest.Mock<(data: Uint8Array) => string>;
+  encode: jest.Mock<(str: string) => Uint8Array>;
+};
 
 const mockLogger = loggerFactory.build();
 
@@ -61,14 +65,13 @@ describe('NatsSubscriber', () => {
   let subscriber: InstanceType<typeof NatsSubscriber>;
   const expectedNatsUrl = process.env.NATS_URL || 'nats://localhost:4222';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockCodec = {
       decode: jest.fn<(data: Uint8Array) => string>(),
       encode: jest.fn<(str: string) => Uint8Array>(),
     };
 
-    mockSubscription = createMockSubscription() as JetStreamSubscription & { messages?: any[] };
-    mockSubscription.messages = [];
+    mockSubscription = createMockSubscription();
 
     mockNatsConnection = natsConnectionFactory.build({}, {
       transient: {
@@ -77,10 +80,7 @@ describe('NatsSubscriber', () => {
       },
     });
     mockJetStream = mockNatsConnection.jetstream();
-    mockJetStreamManager = undefined as unknown as MockJetStreamManager;
-    mockNatsConnection.jetstreamManager().then((m: MockJetStreamManager) => {
-      mockJetStreamManager = m;
-    });
+    mockJetStreamManager = await mockNatsConnection.jetstreamManager();
 
     mockConnect.mockResolvedValue(mockNatsConnection);
     mockStringCodec.mockReturnValue(mockCodec);
@@ -272,15 +272,13 @@ describe('NatsSubscriber', () => {
       mockCodec.decode.mockReturnValue(eventJson);
 
       const messageData = new Uint8Array([1, 2, 3]);
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: messageData,
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage as any] });
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
       mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);
@@ -308,15 +306,13 @@ describe('NatsSubscriber', () => {
 
       mockCodec.decode.mockReturnValue('invalid json {');
 
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: new Uint8Array([1, 2, 3]),
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage as any] });
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
       mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);
@@ -352,15 +348,13 @@ describe('NatsSubscriber', () => {
 
       mockCodec.decode.mockReturnValue(JSON.stringify(testEvent));
 
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: new Uint8Array([1, 2, 3]),
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage as any] });
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
       mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);
@@ -394,15 +388,13 @@ describe('NatsSubscriber', () => {
 
       mockCodec.decode.mockReturnValue(JSON.stringify(testEvent));
 
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: new Uint8Array([1, 2, 3]),
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage as any] });
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
       mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);

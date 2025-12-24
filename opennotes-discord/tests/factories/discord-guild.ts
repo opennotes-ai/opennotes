@@ -1,7 +1,8 @@
 import { Factory } from 'fishery';
 import { jest } from '@jest/globals';
 import { Collection } from 'discord.js';
-import type { MockDiscordMember } from './discord-member.js';
+import { discordMemberFactory, type MockDiscordMember } from './discord-member.js';
+import { discordUserFactory } from './discord-user.js';
 
 export interface MockDiscordGuild {
   id: string;
@@ -26,11 +27,12 @@ export interface MockDiscordGuild {
 
 export interface DiscordGuildTransientParams {
   botMember?: MockDiscordMember;
+  noBotMember?: boolean;
 }
 
 export const discordGuildFactory = Factory.define<MockDiscordGuild, DiscordGuildTransientParams>(
   ({ sequence, transientParams }) => {
-    const { botMember } = transientParams;
+    const { botMember: providedBotMember, noBotMember = false } = transientParams;
 
     const membersCache = new Map<string, MockDiscordMember>();
     const channelsCache = new Collection<string, unknown>();
@@ -38,6 +40,22 @@ export const discordGuildFactory = Factory.define<MockDiscordGuild, DiscordGuild
 
     const everyoneRole = { id: `guild-${sequence}`, name: '@everyone' };
     rolesCache.set(everyoneRole.id, everyoneRole);
+
+    const defaultBotMember = noBotMember
+      ? null
+      : (providedBotMember ?? discordMemberFactory.build(
+          {},
+          {
+            associations: {
+              user: discordUserFactory.build({
+                id: `bot-${sequence}`,
+                username: 'OpenNotesBot',
+                displayName: 'OpenNotes Bot',
+                bot: true,
+              }),
+            },
+          }
+        ));
 
     return {
       id: `guild-${sequence}`,
@@ -47,12 +65,12 @@ export const discordGuildFactory = Factory.define<MockDiscordGuild, DiscordGuild
         cache: membersCache,
         fetch: jest.fn<(id: string) => Promise<MockDiscordMember | null>>().mockResolvedValue(null),
         fetchMe: jest.fn<() => Promise<MockDiscordMember>>().mockImplementation(async () => {
-          if (botMember) {
-            return botMember;
+          if (defaultBotMember) {
+            return defaultBotMember;
           }
           throw new Error('No bot member configured');
         }),
-        me: botMember ?? null,
+        me: defaultBotMember,
       },
       channels: {
         cache: channelsCache,

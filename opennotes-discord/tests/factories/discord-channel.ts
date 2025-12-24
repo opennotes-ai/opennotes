@@ -2,6 +2,14 @@ import { Factory } from 'fishery';
 import { jest } from '@jest/globals';
 import { ChannelType, PermissionsBitField, PermissionFlagsBits } from 'discord.js';
 
+export type ChannelPermissionName = 'SendMessages' | 'CreatePublicThreads' | 'ViewChannel';
+
+const PERMISSION_MAP: Record<ChannelPermissionName, bigint> = {
+  SendMessages: PermissionFlagsBits.SendMessages,
+  CreatePublicThreads: PermissionFlagsBits.CreatePublicThreads,
+  ViewChannel: PermissionFlagsBits.ViewChannel,
+} as const;
+
 export interface MockDiscordChannel {
   id: string;
   name: string;
@@ -12,17 +20,17 @@ export interface MockDiscordChannel {
   isDMBased: ReturnType<typeof jest.fn<() => boolean>>;
   isThread: ReturnType<typeof jest.fn<() => boolean>>;
   isVoiceBased: ReturnType<typeof jest.fn<() => boolean>>;
-  permissionsFor: ReturnType<typeof jest.fn<(userOrRole?: any) => PermissionsBitField | null>>;
+  permissionsFor: ReturnType<typeof jest.fn<(userOrRole?: unknown) => PermissionsBitField | null>>;
   permissionOverwrites: {
     set: ReturnType<typeof jest.fn<(overwrites: unknown[]) => Promise<void>>>;
   };
-  send: ReturnType<typeof jest.fn<(content: any) => Promise<any>>>;
+  send: ReturnType<typeof jest.fn<(content: unknown) => Promise<{ id: string }>>>;
   delete: ReturnType<typeof jest.fn<() => Promise<void>>>;
   messages: {
-    fetch: ReturnType<typeof jest.fn<(messageId: string) => Promise<any>>>;
+    fetch: ReturnType<typeof jest.fn<(messageId: string) => Promise<{ id: string; content: string }>>>;
   };
   threads: {
-    create: ReturnType<typeof jest.fn<(options: any) => Promise<any>>>;
+    create: ReturnType<typeof jest.fn<(options: unknown) => Promise<{ id: string; name: string; send: jest.Mock }>>>;
   };
 }
 
@@ -31,7 +39,7 @@ export interface DiscordChannelTransientParams {
   isDM?: boolean;
   isThread?: boolean;
   hasPermissions?: boolean;
-  missingPermissions?: Array<'SendMessages' | 'CreatePublicThreads' | 'ViewChannel'>;
+  missingPermissions?: ChannelPermissionName[];
   guild?: unknown;
 }
 
@@ -56,17 +64,8 @@ export const discordChannelFactory = Factory.define<MockDiscordChannel, DiscordC
 
     let effectivePermissions = basePermissions;
     for (const missing of missingPermissions) {
-      switch (missing) {
-        case 'SendMessages':
-          effectivePermissions &= ~PermissionFlagsBits.SendMessages;
-          break;
-        case 'CreatePublicThreads':
-          effectivePermissions &= ~PermissionFlagsBits.CreatePublicThreads;
-          break;
-        case 'ViewChannel':
-          effectivePermissions &= ~PermissionFlagsBits.ViewChannel;
-          break;
-      }
+      const permissionBit = PERMISSION_MAP[missing];
+      effectivePermissions &= ~permissionBit;
     }
 
     const permissionsFor = jest.fn<(userOrRole?: any) => PermissionsBitField | null>(() => {
