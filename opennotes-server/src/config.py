@@ -179,7 +179,7 @@ class Settings(BaseSettings):
         default=600, description="MEDIUM (10min): General-purpose caching"
     )
     CACHE_LLM_PRICING_TTL: int = Field(
-        default=86400, description="LONG (24hr): LLM pricing data from models.dev API"
+        default=86400, description="LONG (24hr): LLM pricing data cache"
     )
 
     SESSION_TTL: int = Field(
