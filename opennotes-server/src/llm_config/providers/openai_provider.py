@@ -36,12 +36,33 @@ class OpenAICompletionParams(BaseModel):
     presence_penalty: float | None = None
 
 
+# Prefixes for OpenAI reasoning models that require max_completion_tokens instead of max_tokens
+REASONING_MODEL_PREFIXES = ("o1", "o3", "gpt-5")
+
+
 class OpenAIProvider(LLMProvider[OpenAIProviderSettings, OpenAICompletionParams]):
     """
     OpenAI API provider implementation.
 
     Supports GPT-4, GPT-3.5-turbo, and other OpenAI models.
+    Also supports reasoning models (o1, o3, gpt-5) which require max_completion_tokens.
     """
+
+    @staticmethod
+    def _is_reasoning_model(model: str) -> bool:
+        """
+        Check if a model is a reasoning model that uses max_completion_tokens.
+
+        OpenAI reasoning models (o1, o3, gpt-5 families) require max_completion_tokens
+        instead of the traditional max_tokens parameter.
+
+        Args:
+            model: Model identifier
+
+        Returns:
+            True if model is a reasoning model
+        """
+        return model.startswith(REASONING_MODEL_PREFIXES)
 
     def __init__(self, api_key: str, default_model: str, settings: OpenAIProviderSettings) -> None:
         """
@@ -77,18 +98,27 @@ class OpenAIProvider(LLMProvider[OpenAIProviderSettings, OpenAICompletionParams]
             openai.APIError: If API call fails
         """
         params = params or OpenAICompletionParams()
+        model = params.model or self.default_model
+        max_tokens_value = params.max_tokens or self.settings.max_tokens
 
-        response = await self.client.chat.completions.create(
-            model=params.model or self.default_model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],  # type: ignore[misc]
-            max_tokens=params.max_tokens or self.settings.max_tokens,
-            temperature=params.temperature
+        # Build request kwargs - reasoning models use max_completion_tokens
+        request_kwargs: dict = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "temperature": params.temperature
             if params.temperature is not None
             else self.settings.temperature,
-            top_p=params.top_p,
-            frequency_penalty=params.frequency_penalty,
-            presence_penalty=params.presence_penalty,
-        )
+            "top_p": params.top_p,
+            "frequency_penalty": params.frequency_penalty,
+            "presence_penalty": params.presence_penalty,
+        }
+
+        if self._is_reasoning_model(model):
+            request_kwargs["max_completion_tokens"] = max_tokens_value
+        else:
+            request_kwargs["max_tokens"] = max_tokens_value
+
+        response = await self.client.chat.completions.create(**request_kwargs)  # type: ignore[arg-type]
 
         # Handle missing usage data
         if not response.usage:
@@ -122,16 +152,25 @@ class OpenAIProvider(LLMProvider[OpenAIProviderSettings, OpenAICompletionParams]
             Content chunks as they are generated
         """
         params = params or OpenAICompletionParams()
+        model = params.model or self.default_model
+        max_tokens_value = params.max_tokens or self.settings.max_tokens
 
-        stream = await self.client.chat.completions.create(
-            model=params.model or self.default_model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],  # type: ignore[misc]
-            max_tokens=params.max_tokens or self.settings.max_tokens,
-            temperature=params.temperature
+        # Build request kwargs - reasoning models use max_completion_tokens
+        request_kwargs: dict = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "temperature": params.temperature
             if params.temperature is not None
             else self.settings.temperature,
-            stream=True,
-        )
+            "stream": True,
+        }
+
+        if self._is_reasoning_model(model):
+            request_kwargs["max_completion_tokens"] = max_tokens_value
+        else:
+            request_kwargs["max_tokens"] = max_tokens_value
+
+        stream = await self.client.chat.completions.create(**request_kwargs)  # type: ignore[arg-type]
 
         async for chunk in stream:  # type: ignore[union-attr]
             if chunk.choices[0].delta.content:
