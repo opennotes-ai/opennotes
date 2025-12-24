@@ -8,14 +8,6 @@ from src.llm_config.providers.litellm_provider import (
     LiteLLMProviderSettings,
 )
 
-MODEL_PREFIXES: dict[str, str] = {
-    "openai": "openai/",
-    "anthropic": "anthropic/",
-    "vertex_ai": "vertex_ai/",
-    "gemini": "gemini/",
-    "litellm": "",
-}
-
 
 class LLMProviderFactory:
     """
@@ -31,23 +23,6 @@ class LLMProviderFactory:
         "gemini": LiteLLMProvider,
         "litellm": LiteLLMProvider,
     }
-
-    @classmethod
-    def _to_litellm_model(cls, provider_name: str, model: str) -> str:
-        """
-        Convert model name to litellm format with provider prefix.
-
-        Args:
-            provider_name: Provider identifier
-            model: Model name (may or may not have prefix)
-
-        Returns:
-            Model name with appropriate prefix for litellm
-        """
-        prefix = MODEL_PREFIXES.get(provider_name, "")
-        if prefix and not model.startswith(prefix):
-            return f"{prefix}{model}"
-        return model
 
     @classmethod
     def create(
@@ -76,8 +51,13 @@ class LLMProviderFactory:
             )
 
         typed_settings = cls._create_typed_settings(provider_name, settings)
-        litellm_model = cls._to_litellm_model(provider_name, default_model)
-        return provider_class(api_key, litellm_model, typed_settings)
+        # All registered providers are LiteLLMProvider, cast for type safety
+        if provider_class is LiteLLMProvider:
+            return LiteLLMProvider(
+                api_key, default_model, typed_settings, provider_name=provider_name
+            )
+        # Fallback for custom registered providers (without provider_name)
+        return provider_class(api_key, default_model, typed_settings)
 
     @classmethod
     def _create_typed_settings(

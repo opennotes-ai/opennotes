@@ -1,5 +1,6 @@
 """Unit tests for LiteLLM provider."""
 
+from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -93,24 +94,6 @@ class TestLiteLLMProvider:
         response.model = "gpt-4o"
         response.usage = MagicMock(total_tokens=25)
         return response
-
-    def test_init_extracts_provider_prefix(self) -> None:
-        """Provider prefix should be extracted from model name."""
-        provider = LiteLLMProvider(
-            api_key="key",
-            default_model="anthropic/claude-3-opus",
-            settings=LiteLLMProviderSettings(),
-        )
-        assert provider._provider_prefix == "anthropic"
-
-    def test_init_default_prefix_when_no_slash(self) -> None:
-        """Default to 'openai' when no provider prefix in model."""
-        provider = LiteLLMProvider(
-            api_key="key",
-            default_model="gpt-4",
-            settings=LiteLLMProviderSettings(),
-        )
-        assert provider._provider_prefix == "openai"
 
     def test_filter_none_params_removes_none_values(self, provider: LiteLLMProvider) -> None:
         """_filter_none_params should remove all None values."""
@@ -323,32 +306,6 @@ class TestLiteLLMProvider:
 
             assert result is False
 
-    def test_get_completion_cost_calls_litellm(
-        self, provider: LiteLLMProvider, mock_response: MagicMock
-    ) -> None:
-        """get_completion_cost() should use litellm.completion_cost()."""
-        from src.llm_config.providers.base import LLMResponse
-
-        response = LLMResponse(
-            content="Hello!",
-            model="gpt-4o",
-            tokens_used=25,
-            finish_reason="stop",
-            provider="litellm",
-        )
-
-        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
-            mock_litellm.completion_cost.return_value = 0.00125
-
-            cost = provider.get_completion_cost(response, prompt="Hi there")
-
-            assert cost == 0.00125
-            mock_litellm.completion_cost.assert_called_once_with(
-                model="gpt-4o",
-                prompt="Hi there",
-                completion="Hello!",
-            )
-
     @pytest.mark.asyncio
     async def test_close_clears_api_key(self, provider: LiteLLMProvider) -> None:
         """close() should clear the API key."""
@@ -357,3 +314,113 @@ class TestLiteLLMProvider:
         await provider.close()
 
         assert provider.api_key == ""
+
+    @pytest.mark.asyncio
+    async def test_complete_propagates_api_error(self, provider: LiteLLMProvider) -> None:
+        """complete() should propagate API errors."""
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(side_effect=Exception("API rate limit exceeded"))
+
+            with pytest.raises(Exception, match="API rate limit exceeded"):
+                await provider.complete([LLMMessage(role="user", content="Hello")])
+
+    @pytest.mark.asyncio
+    async def test_complete_with_empty_messages(
+        self, provider: LiteLLMProvider, mock_response: MagicMock
+    ) -> None:
+        """complete() should handle empty messages list."""
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+
+            result = await provider.complete([])
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert call_kwargs["messages"] == []
+            assert isinstance(result.content, str)
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_with_penalty_params(self, provider: LiteLLMProvider) -> None:
+        """stream_complete() should pass penalty parameters."""
+        from src.llm_config.providers.litellm_provider import LiteLLMCompletionParams
+
+        async def mock_stream() -> AsyncGenerator[MagicMock, None]:
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = "Hi"
+            yield chunk
+
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_stream())
+
+            params = LiteLLMCompletionParams(
+                top_p=0.9,
+                frequency_penalty=0.5,
+                presence_penalty=0.3,
+            )
+
+            chunks = []
+            async for chunk in provider.stream_complete(
+                [LLMMessage(role="user", content="Hi")],
+                params=params,
+            ):
+                chunks.append(chunk)
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert call_kwargs.get("top_p") == 0.9
+            assert call_kwargs.get("frequency_penalty") == 0.5
+            assert call_kwargs.get("presence_penalty") == 0.3
+
+    def test_provider_name_is_set(self) -> None:
+        """LiteLLMProvider should store provider_name."""
+        from src.llm_config.providers.litellm_provider import (
+            LiteLLMProvider,
+            LiteLLMProviderSettings,
+        )
+
+        provider = LiteLLMProvider(
+            api_key="test-key",
+            default_model="gpt-4o",
+            settings=LiteLLMProviderSettings(),
+            provider_name="openai",
+        )
+
+        assert provider._provider_name == "openai"
+
+    def test_provider_name_defaults_to_litellm(self) -> None:
+        """LiteLLMProvider should default provider_name to 'litellm'."""
+        from src.llm_config.providers.litellm_provider import (
+            LiteLLMProvider,
+            LiteLLMProviderSettings,
+        )
+
+        provider = LiteLLMProvider(
+            api_key="test-key",
+            default_model="gpt-4o",
+            settings=LiteLLMProviderSettings(),
+        )
+
+        assert provider._provider_name == "litellm"
+
+    @pytest.mark.asyncio
+    async def test_complete_returns_provider_name_in_response(
+        self, provider: LiteLLMProvider, mock_response: MagicMock
+    ) -> None:
+        """complete() should return the actual provider name in response."""
+        from src.llm_config.providers.litellm_provider import (
+            LiteLLMProvider,
+            LiteLLMProviderSettings,
+        )
+
+        openai_provider = LiteLLMProvider(
+            api_key="test-key",
+            default_model="gpt-4o",
+            settings=LiteLLMProviderSettings(),
+            provider_name="openai",
+        )
+
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+
+            result = await openai_provider.complete([LLMMessage(role="user", content="Hello")])
+
+            assert result.provider == "openai"

@@ -6,7 +6,9 @@ from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.models import CommunityServer, CommunityServerLLMConfig, LLMUsageLog
 from src.llm_config.providers import (
+    LiteLLMCompletionParams,
     LiteLLMProvider,
+    LiteLLMProviderSettings,
     LLMMessage,
     LLMProvider,
     LLMProviderFactory,
@@ -47,7 +49,9 @@ __all__ = [
     "LLMUsageLog",
     "LLMUsageStatsResponse",
     "LLMUsageTracker",
+    "LiteLLMCompletionParams",
     "LiteLLMProvider",
+    "LiteLLMProviderSettings",
     "SecureString",
     "router",
     "secure_api_key_context",

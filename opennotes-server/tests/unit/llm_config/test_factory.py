@@ -10,7 +10,7 @@ class TestLLMProviderFactoryCreate:
     """Tests for factory.create() method."""
 
     def test_create_openai_returns_litellm_provider(self) -> None:
-        """Creating an openai provider should return LiteLLMProvider with prefixed model."""
+        """Creating an openai provider should return LiteLLMProvider."""
         provider = LLMProviderFactory.create(
             provider_name="openai",
             api_key="test-key",
@@ -18,10 +18,11 @@ class TestLLMProviderFactoryCreate:
             settings={"timeout": 30.0},
         )
         assert isinstance(provider, LiteLLMProvider)
-        assert provider.default_model == "openai/gpt-4o"
+        assert provider.default_model == "gpt-4o"
+        assert provider._provider_name == "openai"
 
     def test_create_anthropic_returns_litellm_provider(self) -> None:
-        """Creating an anthropic provider should return LiteLLMProvider with prefixed model."""
+        """Creating an anthropic provider should return LiteLLMProvider."""
         provider = LLMProviderFactory.create(
             provider_name="anthropic",
             api_key="test-key",
@@ -29,10 +30,11 @@ class TestLLMProviderFactoryCreate:
             settings={"timeout": 30.0},
         )
         assert isinstance(provider, LiteLLMProvider)
-        assert provider.default_model == "anthropic/claude-3-opus-20240229"
+        assert provider.default_model == "claude-3-opus-20240229"
+        assert provider._provider_name == "anthropic"
 
     def test_create_vertex_ai_returns_litellm_provider(self) -> None:
-        """Creating a vertex_ai provider should return LiteLLMProvider with prefixed model."""
+        """Creating a vertex_ai provider should return LiteLLMProvider."""
         provider = LLMProviderFactory.create(
             provider_name="vertex_ai",
             api_key="test-key",
@@ -40,10 +42,11 @@ class TestLLMProviderFactoryCreate:
             settings={"timeout": 30.0},
         )
         assert isinstance(provider, LiteLLMProvider)
-        assert provider.default_model == "vertex_ai/gemini-2.5-pro"
+        assert provider.default_model == "gemini-2.5-pro"
+        assert provider._provider_name == "vertex_ai"
 
     def test_create_gemini_returns_litellm_provider(self) -> None:
-        """Creating a gemini provider should return LiteLLMProvider with prefixed model."""
+        """Creating a gemini provider should return LiteLLMProvider."""
         provider = LLMProviderFactory.create(
             provider_name="gemini",
             api_key="test-key",
@@ -51,10 +54,11 @@ class TestLLMProviderFactoryCreate:
             settings={"timeout": 30.0},
         )
         assert isinstance(provider, LiteLLMProvider)
-        assert provider.default_model == "gemini/gemini-1.5-pro"
+        assert provider.default_model == "gemini-1.5-pro"
+        assert provider._provider_name == "gemini"
 
-    def test_create_litellm_provider_no_prefix(self) -> None:
-        """Creating a litellm provider should not add any prefix."""
+    def test_create_litellm_provider(self) -> None:
+        """Creating a litellm provider should return LiteLLMProvider."""
         provider = LLMProviderFactory.create(
             provider_name="litellm",
             api_key="test-key",
@@ -63,6 +67,7 @@ class TestLLMProviderFactoryCreate:
         )
         assert isinstance(provider, LiteLLMProvider)
         assert provider.default_model == "openai/gpt-4o"
+        assert provider._provider_name == "litellm"
 
     def test_unknown_provider_raises_valueerror(self) -> None:
         """Unknown provider should raise ValueError."""
@@ -74,49 +79,17 @@ class TestLLMProviderFactoryCreate:
                 settings={},
             )
 
-
-class TestToLiteLLMModel:
-    """Tests for _to_litellm_model() helper method."""
-
-    def test_adds_openai_prefix(self) -> None:
-        """Should add openai/ prefix for openai provider."""
-        result = LLMProviderFactory._to_litellm_model("openai", "gpt-4o")
-        assert result == "openai/gpt-4o"
-
-    def test_adds_anthropic_prefix(self) -> None:
-        """Should add anthropic/ prefix for anthropic provider."""
-        result = LLMProviderFactory._to_litellm_model("anthropic", "claude-3-opus")
-        assert result == "anthropic/claude-3-opus"
-
-    def test_adds_vertex_ai_prefix(self) -> None:
-        """Should add vertex_ai/ prefix for vertex_ai provider."""
-        result = LLMProviderFactory._to_litellm_model("vertex_ai", "gemini-2.5-pro")
-        assert result == "vertex_ai/gemini-2.5-pro"
-
-    def test_adds_gemini_prefix(self) -> None:
-        """Should add gemini/ prefix for gemini provider."""
-        result = LLMProviderFactory._to_litellm_model("gemini", "gemini-1.5-flash")
-        assert result == "gemini/gemini-1.5-flash"
-
-    def test_no_prefix_for_litellm_provider(self) -> None:
-        """Should not add prefix for litellm provider (model already in litellm format)."""
-        result = LLMProviderFactory._to_litellm_model("litellm", "openai/gpt-4o")
-        assert result == "openai/gpt-4o"
-
-    def test_no_double_prefix_openai(self) -> None:
-        """Should not double prefix if model already has openai/ prefix."""
-        result = LLMProviderFactory._to_litellm_model("openai", "openai/gpt-4o")
-        assert result == "openai/gpt-4o"
-
-    def test_no_double_prefix_anthropic(self) -> None:
-        """Should not double prefix if model already has anthropic/ prefix."""
-        result = LLMProviderFactory._to_litellm_model("anthropic", "anthropic/claude-3-opus")
-        assert result == "anthropic/claude-3-opus"
-
-    def test_unknown_provider_returns_model_unchanged(self) -> None:
-        """Unknown provider should return model unchanged (no prefix)."""
-        result = LLMProviderFactory._to_litellm_model("custom", "some-model")
-        assert result == "some-model"
+    def test_settings_are_applied(self) -> None:
+        """Provider should have custom settings applied."""
+        provider = LLMProviderFactory.create(
+            provider_name="openai",
+            api_key="test-key",
+            default_model="gpt-4o",
+            settings={"timeout": 60.0, "max_tokens": 2048, "temperature": 0.5},
+        )
+        assert provider.settings.timeout == 60.0
+        assert provider.settings.max_tokens == 2048
+        assert provider.settings.temperature == 0.5
 
 
 class TestListProviders:

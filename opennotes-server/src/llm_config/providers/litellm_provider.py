@@ -38,19 +38,31 @@ class LiteLLMCompletionParams(BaseModel):
 class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionParams]):
     """
     Unified LLM provider using LiteLLM.
+
+    LiteLLM handles model prefixes, parameter translation, and provider-specific
+    quirks internally. Models can be specified with or without provider prefixes
+    (e.g., "gpt-4o" or "openai/gpt-4o").
     """
 
-    def __init__(self, api_key: str, default_model: str, settings: LiteLLMProviderSettings) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        default_model: str,
+        settings: LiteLLMProviderSettings,
+        provider_name: str = "litellm",
+    ) -> None:
         """
         Initialize LiteLLM provider.
 
         Args:
             api_key: API key for the underlying provider
-            default_model: Default model in "provider/model" format (e.g., "openai/gpt-4o")
+            default_model: Default model (e.g., "gpt-4o", "claude-3-opus-20240229")
             settings: Provider settings
+            provider_name: Name of the underlying provider for tracking (e.g., "openai", "anthropic")
         """
         super().__init__(api_key, default_model, settings)
-        self._provider_prefix = default_model.split("/")[0] if "/" in default_model else "openai"
+        self._provider_name = provider_name
+        litellm.drop_params = True
 
     def _filter_none_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """
@@ -113,7 +125,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             model=response.model or model,  # type: ignore[arg-type]
             tokens_used=tokens_used,
             finish_reason=response.choices[0].finish_reason or "stop",  # type: ignore[union-attr]
-            provider="litellm",
+            provider=self._provider_name,
         )
 
     async def stream_complete(
@@ -140,6 +152,9 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
                 "temperature": params.temperature
                 if params.temperature is not None
                 else self.settings.temperature,
+                "top_p": params.top_p,
+                "frequency_penalty": params.frequency_penalty,
+                "presence_penalty": params.presence_penalty,
                 "stream": True,
                 "api_key": self.api_key,
                 "timeout": self.settings.timeout,
@@ -173,20 +188,3 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
     async def close(self) -> None:
         """Close the provider and clean up API key."""
         await super().close()
-
-    def get_completion_cost(self, response: LLMResponse, prompt: str) -> float:
-        """
-        Calculate the cost of a completion using LiteLLM's cost tracking.
-
-        Args:
-            response: The LLMResponse from a completion call
-            prompt: The original prompt text
-
-        Returns:
-            Cost in USD as a float
-        """
-        return litellm.completion_cost(
-            model=response.model,
-            prompt=prompt,
-            completion=response.content,
-        )
