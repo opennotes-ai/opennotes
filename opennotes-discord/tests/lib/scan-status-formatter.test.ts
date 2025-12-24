@@ -241,6 +241,45 @@ describe('formatScanStatus', () => {
     });
   });
 
+  describe('explanations display', () => {
+    it('should display explanation when provided for a flagged message', () => {
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism'),
+      ];
+
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
+      const explanations = new Map([
+        ['msg-1', 'This message contains a claim that has been debunked by fact-checkers.'],
+      ]);
+
+      const result = formatScanStatus({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+        explanations,
+      });
+
+      expect(result.content).toContain('Explanation:');
+      expect(result.content).toContain('debunked by fact-checkers');
+    });
+
+    it('should not display explanation when not provided', () => {
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Some content', 0.85, 'Matched claim'),
+      ];
+
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
+
+      const result = formatScanStatus({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+      });
+
+      expect(result.content).not.toContain('Explanation:');
+    });
+  });
+
   describe('includeButtons option', () => {
     it('should not include buttons when includeButtons is false', () => {
       const flaggedMessages: FlaggedMessageResource[] = [

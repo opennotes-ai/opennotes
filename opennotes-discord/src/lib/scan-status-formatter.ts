@@ -20,6 +20,7 @@ export interface FormatScanStatusOptions {
   days?: number;
   warningMessage?: string;
   includeButtons?: boolean;
+  explanations?: Map<string, string>;
 }
 
 export interface FormatScanStatusResult {
@@ -62,7 +63,7 @@ function formatErrorSummary(errorSummary: ErrorSummary): string {
 }
 
 export function formatScanStatus(options: FormatScanStatusOptions): FormatScanStatusResult {
-  const { scan, guildId, days, warningMessage, includeButtons = false } = options;
+  const { scan, guildId, days, warningMessage, includeButtons = false, explanations } = options;
   const scanId = scan.data.id;
   const status = scan.data.attributes.status;
   const messagesScanned = scan.data.attributes.messages_scanned;
@@ -119,7 +120,7 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
     };
   }
 
-  const resultsContent = formatFlaggedMessagesList(flaggedMessages, guildId);
+  const resultsContent = formatFlaggedMessagesList(flaggedMessages, guildId, explanations);
   const moreCount = flaggedMessages.length > 10 ? flaggedMessages.length - 10 : 0;
   const moreText = moreCount > 0 ? `\n\n_...and ${moreCount} more flagged messages_` : '';
 
@@ -153,7 +154,7 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
 }
 
 export function formatScanStatusPaginated(options: FormatScanStatusOptions): FormatScanStatusPaginatedResult {
-  const { scan, guildId, days, warningMessage, includeButtons = false } = options;
+  const { scan, guildId, days, warningMessage, includeButtons = false, explanations } = options;
   const scanId = scan.data.id;
   const messagesScanned = scan.data.attributes.messages_scanned;
   const flaggedMessages = scan.included || [];
@@ -177,7 +178,7 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
     `**Messages scanned:** ${messagesScanned}\n` +
     `**Flagged:** ${flaggedMessages.length}\n`;
 
-  const resultsContent = formatFlaggedMessagesListFull(flaggedMessages, guildId);
+  const resultsContent = formatFlaggedMessagesListFull(flaggedMessages, guildId, explanations);
   const fullContent = `${resultsContent}${errorText}${warningText}`;
 
   const pages = TextPaginator.paginate(fullContent, { maxCharsPerPage: 1800 });
@@ -205,7 +206,11 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
   };
 }
 
-function formatFlaggedMessagesListFull(flaggedMessages: FlaggedMessageResource[], guildId: string): string {
+function formatFlaggedMessagesListFull(
+  flaggedMessages: FlaggedMessageResource[],
+  guildId: string,
+  explanations?: Map<string, string>
+): string {
   return flaggedMessages.map((msg, index) => {
     const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
     const preview = truncateContent(msg.attributes.content);
@@ -222,18 +227,24 @@ function formatFlaggedMessagesListFull(flaggedMessages: FlaggedMessageResource[]
       }
     }
 
+    const explanation = explanations?.get(msg.id);
+    const explanationLine = explanation ? `\n   Explanation: ${explanation}` : '';
+
     return `**${index + 1}.** Preview: "${preview}"\n` +
       `   [(link to message)](${messageLink})\n` +
-      `   Confidence: **${confidence}**`;
+      `   Confidence: **${confidence}**${explanationLine}`;
   }).join('\n\n');
 }
 
-function formatFlaggedMessagesList(flaggedMessages: FlaggedMessageResource[], guildId: string): string {
+function formatFlaggedMessagesList(
+  flaggedMessages: FlaggedMessageResource[],
+  guildId: string,
+  explanations?: Map<string, string>
+): string {
   return flaggedMessages.slice(0, 10).map((msg, index) => {
     const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
     const preview = truncateContent(msg.attributes.content);
 
-    // Extract match info from the first match in the matches array
     const matches = msg.attributes.matches ?? [];
     const firstMatch = matches[0];
     let confidence = 'N/A';
@@ -246,8 +257,11 @@ function formatFlaggedMessagesList(flaggedMessages: FlaggedMessageResource[], gu
       }
     }
 
+    const explanation = explanations?.get(msg.id);
+    const explanationLine = explanation ? `\n   Explanation: ${explanation}` : '';
+
     return `**${index + 1}.** Preview: "${preview}"\n` +
       `   [(link to message)](${messageLink})\n` +
-      `   Confidence: **${confidence}**`;
+      `   Confidence: **${confidence}**${explanationLine}`;
   }).join('\n\n');
 }

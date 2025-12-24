@@ -156,6 +156,7 @@ export type OpenAIModerationMatch = components['schemas']['OpenAIModerationMatch
 export type MatchResult = SimilarityMatch | OpenAIModerationMatch;
 export type ScanErrorInfoSchema = components['schemas']['ScanErrorInfoSchema'];
 export type ScanErrorSummarySchema = components['schemas']['ScanErrorSummarySchema'];
+export type ExplanationResultResponse = components['schemas']['ExplanationResultResponse'];
 
 // JSON:API v2 types from generated OpenAPI schema
 export type NoteCreateRequest = components['schemas']['NoteCreateRequest'];
@@ -1719,5 +1720,25 @@ export class ApiClient {
     return this.fetchWithRetry<LatestScanResponse>(
       `/api/v2/bulk-scans/communities/${communityServerId}/latest`
     );
+  }
+
+  async generateScanExplanation(
+    originalMessage: string,
+    factCheckItemId: string,
+    communityServerId: string
+  ): Promise<ExplanationResultResponse> {
+    return this.fetchWithRetry<ExplanationResultResponse>('/api/v2/bulk-scans/explanations', {
+      method: 'POST',
+      body: JSON.stringify({
+        data: {
+          type: 'scan-explanations',
+          attributes: {
+            original_message: originalMessage,
+            fact_check_item_id: factCheckItemId,
+            community_server_id: communityServerId,
+          },
+        },
+      }),
+    });
   }
 }

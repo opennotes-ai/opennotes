@@ -1900,6 +1900,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/bulk-scans/explanations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Explanation
+         * @description Generate an AI explanation for why a message was flagged.
+         *
+         *     JSON:API request body must contain:
+         *     - data.type: "scan-explanations"
+         *     - data.attributes.original_message: The flagged message content
+         *     - data.attributes.fact_check_item_id: UUID of the matched fact-check item
+         *     - data.attributes.community_server_id: Community server UUID for context
+         *
+         *     Authorization: Requires admin access to the specified community.
+         *     Service accounts have unrestricted access.
+         *
+         *     Returns a scan-explanations resource with the generated explanation.
+         */
+        post: operations["generate_explanation_api_v2_bulk_scans_explanations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -3341,6 +3372,91 @@ export interface components {
             successfulRatingNeededToEarnIn: number;
             /** Timestampoflaststatechange */
             timestampOfLastStateChange: number;
+        };
+        /**
+         * ExplanationCreateAttributes
+         * @description Attributes for generating a scan explanation.
+         */
+        ExplanationCreateAttributes: {
+            /**
+             * Original Message
+             * @description Original message content that was flagged
+             */
+            original_message: string;
+            /**
+             * Fact Check Item Id
+             * Format: uuid
+             * @description UUID of the matched FactCheckItem
+             */
+            fact_check_item_id: string;
+            /**
+             * Community Server Id
+             * Format: uuid
+             * @description Community server UUID for context
+             */
+            community_server_id: string;
+        };
+        /**
+         * ExplanationCreateData
+         * @description JSON:API data object for explanation generation.
+         */
+        ExplanationCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'scan-explanations'
+             * @constant
+             */
+            type: "scan-explanations";
+            attributes: components["schemas"]["ExplanationCreateAttributes"];
+        };
+        /**
+         * ExplanationCreateRequest
+         * @description JSON:API request body for generating a scan explanation.
+         */
+        ExplanationCreateRequest: {
+            data: components["schemas"]["ExplanationCreateData"];
+        };
+        /**
+         * ExplanationResultAttributes
+         * @description Attributes for explanation result.
+         */
+        ExplanationResultAttributes: {
+            /**
+             * Explanation
+             * @description AI-generated explanation for why message was flagged
+             */
+            explanation: string;
+        };
+        /**
+         * ExplanationResultResource
+         * @description JSON:API resource for explanation result.
+         */
+        ExplanationResultResource: {
+            /**
+             * Type
+             * @default scan-explanations
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ExplanationResultAttributes"];
+        };
+        /**
+         * ExplanationResultResponse
+         * @description JSON:API response for explanation generation.
+         */
+        ExplanationResultResponse: {
+            data: components["schemas"]["ExplanationResultResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * FactCheckMatchResource
@@ -9554,6 +9670,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NoteRequestsResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_explanation_api_v2_bulk_scans_explanations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExplanationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExplanationResultResponse"];
                 };
             };
             /** @description Validation Error */
