@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+
+SAMPLE_FACT_CHECK_ID = UUID("12345678-1234-1234-1234-123456789abc")
 
 
 @pytest.fixture
@@ -435,6 +437,7 @@ class TestAppendFlaggedResult:
             score=0.85,
             matched_claim="Claim text",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
@@ -467,11 +470,13 @@ class TestGetFlaggedResultsFromList:
             score=0.85,
             matched_claim="Claim",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         similarity_match_2 = SimilarityMatch(
             score=0.75,
             matched_claim="Claim 2",
             matched_source="https://example2.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         stored_messages = [
             FlaggedMessage(
@@ -651,6 +656,7 @@ class TestStoreFlaggedResults:
             score=0.85,
             matched_claim="Claim",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_messages = [
             FlaggedMessage(
@@ -1083,6 +1089,7 @@ class TestRedisKeyEnvironmentPrefix:
             score=0.85,
             matched_claim="Claim text",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
@@ -1124,6 +1131,7 @@ class TestRedisKeyEnvironmentPrefix:
             score=0.85,
             matched_claim="Claim text",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
@@ -1188,6 +1196,7 @@ class TestRedisKeyEnvironmentPrefix:
             score=0.85,
             matched_claim="Claim",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_messages = [
             FlaggedMessage(
@@ -1240,6 +1249,7 @@ class TestRedisErrorPropagation:
             score=0.85,
             matched_claim="Claim text",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_message = FlaggedMessage(
             message_id="msg_1",
@@ -1295,6 +1305,7 @@ class TestRedisErrorPropagation:
             score=0.85,
             matched_claim="Claim",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_messages = [
             FlaggedMessage(
@@ -1332,6 +1343,7 @@ class TestRedisErrorPropagation:
             score=0.85,
             matched_claim="Claim text",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_message = FlaggedMessage(
             message_id="msg_1",

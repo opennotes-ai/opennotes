@@ -6,7 +6,8 @@ function createFlaggedMessageResource(
   channelId: string,
   content: string,
   matchScore: number,
-  matchedClaim: string
+  matchedClaim: string,
+  factCheckItemId: string = '12345678-1234-1234-1234-123456789abc'
 ): FlaggedMessageResource {
   return {
     type: 'flagged-messages',
@@ -22,6 +23,7 @@ function createFlaggedMessageResource(
           score: matchScore,
           matched_claim: matchedClaim,
           matched_source: 'snopes',
+          fact_check_item_id: factCheckItemId,
         },
       ],
     },
@@ -105,6 +107,46 @@ describe('formatScanStatus', () => {
   });
 
   describe('completed status with flagged messages', () => {
+    it('should display preview at top, then link to message, then confidence', () => {
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism'),
+      ];
+
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
+
+      const result = formatScanStatus({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+      });
+
+      const lines = result.content.split('\n').filter(l => l.trim());
+      const resultBlock = lines.slice(lines.findIndex(l => l.includes('**1.**')));
+
+      expect(resultBlock[0]).toContain('Preview:');
+      expect(resultBlock[0]).toContain('This vaccine causes autism');
+      expect(resultBlock[1]).toMatch(/\(link to message\)/);
+      expect(resultBlock[1]).toMatch(/discord\.com\/channels/);
+      expect(resultBlock[2]).toContain('Confidence:');
+      expect(resultBlock[2]).toContain('95%');
+    });
+
+    it('should NOT include Matched field', () => {
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism'),
+      ];
+
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
+
+      const result = formatScanStatus({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+      });
+
+      expect(result.content).not.toContain('Matched:');
+    });
+
     it('should include flagged message details', () => {
       const flaggedMessages: FlaggedMessageResource[] = [
         createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism'),
@@ -121,7 +163,6 @@ describe('formatScanStatus', () => {
 
       expect(result.content).toContain('2');
       expect(result.content).toContain('95%');
-      expect(result.content).toContain('Vaccines cause autism');
       expect(result.content).toMatch(/discord\.com\/channels/);
     });
 
@@ -197,6 +238,45 @@ describe('formatScanStatus', () => {
       });
 
       expect(result.content).toContain('7 days');
+    });
+  });
+
+  describe('explanations display', () => {
+    it('should display explanation when provided for a flagged message', () => {
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism'),
+      ];
+
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
+      const explanations = new Map([
+        ['msg-1', 'This message contains a claim that has been debunked by fact-checkers.'],
+      ]);
+
+      const result = formatScanStatus({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+        explanations,
+      });
+
+      expect(result.content).toContain('Explanation:');
+      expect(result.content).toContain('debunked by fact-checkers');
+    });
+
+    it('should not display explanation when not provided', () => {
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Some content', 0.85, 'Matched claim'),
+      ];
+
+      const scan = createLatestScanResponse('scan-123', 'completed', 100, flaggedMessages);
+
+      const result = formatScanStatus({
+        scan,
+        guildId: 'guild-456',
+        days: 7,
+      });
+
+      expect(result.content).not.toContain('Explanation:');
     });
   });
 

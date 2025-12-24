@@ -1,10 +1,12 @@
 """Tests for Bulk Content Scan API Pydantic schemas."""
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
+
+SAMPLE_FACT_CHECK_ID = UUID("12345678-1234-1234-1234-123456789abc")
 
 
 class TestBulkScanCreateRequest:
@@ -116,6 +118,7 @@ class TestFlaggedMessage:
             score=0.85,
             matched_claim="Original fact-check claim text",
             matched_source="https://snopes.com/article",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged = FlaggedMessage(
             message_id="msg_12345",
@@ -145,6 +148,7 @@ class TestFlaggedMessage:
                 score=1.5,  # Invalid
                 matched_claim="Claim",
                 matched_source="https://example.com",
+                fact_check_item_id=SAMPLE_FACT_CHECK_ID,
             )
 
 
@@ -164,6 +168,7 @@ class TestBulkScanResultsResponse:
             score=0.9,
             matched_claim="Claim",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         flagged_messages = [
             FlaggedMessage(
@@ -411,6 +416,7 @@ class TestMatchTypes:
             score=0.85,
             matched_claim="Original fact-check claim text",
             matched_source="https://snopes.com/article",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
 
         assert match.scan_type == "similarity"
@@ -440,6 +446,7 @@ class TestMatchTypes:
             score=0.85,
             matched_claim="Claim",
             matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         moderation_match = OpenAIModerationMatch(
             max_score=0.95,

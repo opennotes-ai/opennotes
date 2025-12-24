@@ -2,11 +2,13 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+SAMPLE_FACT_CHECK_ID = UUID("12345678-1234-1234-1234-123456789abc")
 
 
 @pytest.fixture
@@ -26,6 +28,7 @@ def mock_flagged_messages():
                     score=0.85,
                     matched_claim="Test claim 1",
                     matched_source="https://example.com/1",
+                    fact_check_item_id=SAMPLE_FACT_CHECK_ID,
                 )
             ],
         ),
@@ -40,6 +43,7 @@ def mock_flagged_messages():
                     score=0.75,
                     matched_claim="Test claim 2",
                     matched_source="https://example.com/2",
+                    fact_check_item_id=SAMPLE_FACT_CHECK_ID,
                 )
             ],
         ),
@@ -447,4 +451,95 @@ class TestCreateNoteRequestsEndpoint:
             )
 
         assert response.status_code == 400
+        assert "errors" in response.json()
+
+
+class TestGenerateExplanationEndpoint:
+    """Test POST /bulk-scans/explanations endpoint."""
+
+    def test_generate_explanation_returns_201_with_jsonapi_format(
+        self, client, mock_community_member
+    ):
+        """POST /bulk-scans/explanations returns JSON:API formatted response."""
+        fact_check_id = SAMPLE_FACT_CHECK_ID
+        community_server_id = uuid4()
+
+        mock_fact_check_item = MagicMock()
+        mock_fact_check_item.id = fact_check_id
+        mock_fact_check_item.title = "Vaccine Claim"
+        mock_fact_check_item.content = "This claim is false"
+        mock_fact_check_item.rating = "false"
+        mock_fact_check_item.source_url = "https://snopes.com/fact-check/123"
+
+        mock_ai_note_writer = AsyncMock()
+        mock_ai_note_writer.generate_scan_explanation = AsyncMock(
+            return_value="This message contains a claim that has been debunked by fact-checkers."
+        )
+
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.get_fact_check_item_by_id",
+                new=AsyncMock(return_value=mock_fact_check_item),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.get_ai_note_writer",
+                return_value=mock_ai_note_writer,
+            ),
+        ):
+            response = client.post(
+                "/api/v2/bulk-scans/explanations",
+                json={
+                    "data": {
+                        "type": "scan-explanations",
+                        "attributes": {
+                            "original_message": "COVID vaccines contain microchips",
+                            "fact_check_item_id": str(fact_check_id),
+                            "community_server_id": str(community_server_id),
+                        },
+                    },
+                },
+            )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert "data" in data
+        assert data["data"]["type"] == "scan-explanations"
+        assert "explanation" in data["data"]["attributes"]
+        assert "debunked" in data["data"]["attributes"]["explanation"]
+
+    def test_generate_explanation_returns_404_for_missing_fact_check_item(
+        self, client, mock_community_member
+    ):
+        """Should return 404 if fact_check_item_id not found."""
+        community_server_id = uuid4()
+
+        with (
+            patch(
+                "src.bulk_content_scan.jsonapi_router.verify_scan_admin_access",
+                new=AsyncMock(return_value=mock_community_member),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.get_fact_check_item_by_id",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            response = client.post(
+                "/api/v2/bulk-scans/explanations",
+                json={
+                    "data": {
+                        "type": "scan-explanations",
+                        "attributes": {
+                            "original_message": "Test message",
+                            "fact_check_item_id": str(uuid4()),
+                            "community_server_id": str(community_server_id),
+                        },
+                    },
+                },
+            )
+
+        assert response.status_code == 404
         assert "errors" in response.json()

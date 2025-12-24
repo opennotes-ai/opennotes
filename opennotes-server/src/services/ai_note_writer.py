@@ -827,3 +827,66 @@ Community Note:"""
                 "request_id": request_id,
             },
         )
+
+    async def generate_scan_explanation(
+        self,
+        original_message: str,
+        fact_check_data: dict[str, str | float | None],
+        db: AsyncSession,
+        community_server_id: UUID,
+    ) -> str:
+        """
+        Generate a one-sentence explanation for why a message was flagged.
+
+        This method is used by the vibecheck scan results display to provide
+        users with a quick explanation of why a message matched a fact-check.
+
+        Args:
+            original_message: The original Discord message content
+            fact_check_data: Dictionary containing fact-check info:
+                - id: UUID of the FactCheckItem
+                - title: Title of the fact-check
+                - content: Content/claim text
+                - rating: Fact-check rating (e.g., "false", "mostly-false")
+                - source_url: URL to the fact-check source
+                - similarity_score: Match confidence score (0-1)
+            db: Database session for LLMService calls
+            community_server_id: Community server UUID for LLMService
+
+        Returns:
+            One-sentence explanation of why the message was flagged
+        """
+        prompt = f"""Original message: "{original_message}"
+
+Fact-check information:
+{self._format_fact_check_json(fact_check_data)}
+
+Write a one sentence explanation (max 100 words) of why this message was flagged.
+Be concise and factual. Start directly with the explanation, no preamble."""
+
+        messages = [
+            LLMMessage(role="user", content=prompt),
+        ]
+
+        response = await self.llm_service.complete(
+            db=db,
+            messages=messages,
+            community_server_id=community_server_id,
+            provider="openai",
+            model=settings.AI_NOTE_WRITER_MODEL,
+            max_tokens=150,
+            temperature=0.3,
+        )
+
+        return response.content.strip()
+
+    def _format_fact_check_json(self, fact_check_data: dict[str, str | float | None]) -> str:
+        """Format fact-check data as readable key-value pairs."""
+        lines = []
+        for key, value in fact_check_data.items():
+            if value is not None:
+                if isinstance(value, float):
+                    lines.append(f"- {key}: {value:.2f}")
+                else:
+                    lines.append(f"- {key}: {value}")
+        return "\n".join(lines)

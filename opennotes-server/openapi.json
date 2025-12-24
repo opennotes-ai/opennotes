@@ -5272,6 +5272,71 @@
         }
       }
     },
+    "/api/v2/bulk-scans/explanations": {
+      "post": {
+        "tags": [
+          "bulk-scans-jsonapi"
+        ],
+        "summary": "Generate Explanation",
+        "description": "Generate an AI explanation for why a message was flagged.\n\nJSON:API request body must contain:\n- data.type: \"scan-explanations\"\n- data.attributes.original_message: The flagged message content\n- data.attributes.fact_check_item_id: UUID of the matched fact-check item\n- data.attributes.community_server_id: Community server UUID for context\n\nAuthorization: Requires admin access to the specified community.\nService accounts have unrestricted access.\n\nReturns a scan-explanations resource with the generated explanation.",
+        "operationId": "generate_explanation_api_v2_bulk_scans_explanations_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplanationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExplanationResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/webhooks/register": {
       "post": {
         "tags": [
@@ -8437,6 +8502,140 @@
           "timestampOfLastStateChange"
         ],
         "title": "EnrollmentData"
+      },
+      "ExplanationCreateAttributes": {
+        "properties": {
+          "original_message": {
+            "type": "string",
+            "title": "Original Message",
+            "description": "Original message content that was flagged"
+          },
+          "fact_check_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Fact Check Item Id",
+            "description": "UUID of the matched FactCheckItem"
+          },
+          "community_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Community Server Id",
+            "description": "Community server UUID for context"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "original_message",
+          "fact_check_item_id",
+          "community_server_id"
+        ],
+        "title": "ExplanationCreateAttributes",
+        "description": "Attributes for generating a scan explanation."
+      },
+      "ExplanationCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "scan-explanations",
+            "title": "Type",
+            "description": "Resource type must be 'scan-explanations'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ExplanationCreateAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "ExplanationCreateData",
+        "description": "JSON:API data object for explanation generation."
+      },
+      "ExplanationCreateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ExplanationCreateData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ExplanationCreateRequest",
+        "description": "JSON:API request body for generating a scan explanation."
+      },
+      "ExplanationResultAttributes": {
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "title": "Explanation",
+            "description": "AI-generated explanation for why message was flagged"
+          }
+        },
+        "type": "object",
+        "required": [
+          "explanation"
+        ],
+        "title": "ExplanationResultAttributes",
+        "description": "Attributes for explanation result."
+      },
+      "ExplanationResultResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "scan-explanations"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ExplanationResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ExplanationResultResource",
+        "description": "JSON:API resource for explanation result."
+      },
+      "ExplanationResultResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ExplanationResultResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ExplanationResultResponse",
+        "description": "JSON:API response for explanation generation."
       },
       "FactCheckMatchResource": {
         "properties": {
@@ -14418,6 +14617,12 @@
             "type": "string",
             "title": "Matched Source",
             "description": "URL to the fact-check source"
+          },
+          "fact_check_item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Fact Check Item Id",
+            "description": "UUID of the matched FactCheckItem"
           }
         },
         "additionalProperties": false,
@@ -14425,7 +14630,8 @@
         "required": [
           "score",
           "matched_claim",
-          "matched_source"
+          "matched_source",
+          "fact_check_item_id"
         ],
         "title": "SimilarityMatch",
         "description": "Match result from similarity scan."

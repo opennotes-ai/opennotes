@@ -20,6 +20,7 @@ from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -44,11 +45,17 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.config import settings
 from src.database import get_db
 from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import get_embedding_service
+from src.fact_checking.models import FactCheckItem
+from src.llm_config.encryption import EncryptionService
+from src.llm_config.manager import LLMClientManager
+from src.llm_config.service import LLMService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
+from src.services.ai_note_writer import AINoteWriter
 from src.users.models import User
 from src.users.profile_models import CommunityMember
 
@@ -308,6 +315,55 @@ class NoteRequestsResultResponse(BaseModel):
     links: JSONAPILinks | None = None
 
 
+class ExplanationCreateAttributes(StrictInputSchema):
+    """Attributes for generating a scan explanation."""
+
+    original_message: str = Field(..., description="Original message content that was flagged")
+    fact_check_item_id: UUID = Field(..., description="UUID of the matched FactCheckItem")
+    community_server_id: UUID = Field(..., description="Community server UUID for context")
+
+
+class ExplanationCreateData(BaseModel):
+    """JSON:API data object for explanation generation."""
+
+    type: Literal["scan-explanations"] = Field(
+        ..., description="Resource type must be 'scan-explanations'"
+    )
+    attributes: ExplanationCreateAttributes
+
+
+class ExplanationCreateRequest(BaseModel):
+    """JSON:API request body for generating a scan explanation."""
+
+    data: ExplanationCreateData
+
+
+class ExplanationResultAttributes(BaseModel):
+    """Attributes for explanation result."""
+
+    explanation: str = Field(
+        ..., description="AI-generated explanation for why message was flagged"
+    )
+
+
+class ExplanationResultResource(BaseModel):
+    """JSON:API resource for explanation result."""
+
+    type: str = "scan-explanations"
+    id: str
+    attributes: ExplanationResultAttributes
+
+
+class ExplanationResultResponse(BaseModel):
+    """JSON:API response for explanation generation."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: ExplanationResultResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
+
+
 def create_error_response(
     status_code: int,
     title: str,
@@ -439,6 +495,25 @@ def flagged_message_to_resource(msg: FlaggedMessage) -> FlaggedMessageResource:
             matches=msg.matches,
         ),
     )
+
+
+async def get_fact_check_item_by_id(
+    session: AsyncSession,
+    fact_check_item_id: UUID,
+) -> FactCheckItem | None:
+    """Get a fact check item by ID."""
+    result = await session.execute(
+        select(FactCheckItem).where(FactCheckItem.id == fact_check_item_id)
+    )
+    return result.scalar_one_or_none()
+
+
+def get_ai_note_writer() -> AINoteWriter:
+    """Get AI note writer service."""
+    encryption_service = EncryptionService(settings.ENCRYPTION_MASTER_KEY)
+    client_manager = LLMClientManager(encryption_service)
+    llm_service = LLMService(client_manager)
+    return AINoteWriter(llm_service=llm_service)
 
 
 @router.post("/bulk-scans", response_class=JSONResponse, response_model=BulkScanSingleResponse)
@@ -913,4 +988,98 @@ async def create_note_requests(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to create note requests",
+        )
+
+
+@router.post(
+    "/bulk-scans/explanations",
+    response_class=JSONResponse,
+    response_model=ExplanationResultResponse,
+)
+async def generate_explanation(
+    body: ExplanationCreateRequest,
+    request: HTTPRequest,
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    """Generate an AI explanation for why a message was flagged.
+
+    JSON:API request body must contain:
+    - data.type: "scan-explanations"
+    - data.attributes.original_message: The flagged message content
+    - data.attributes.fact_check_item_id: UUID of the matched fact-check item
+    - data.attributes.community_server_id: Community server UUID for context
+
+    Authorization: Requires admin access to the specified community.
+    Service accounts have unrestricted access.
+
+    Returns a scan-explanations resource with the generated explanation.
+    """
+    try:
+        attrs = body.data.attributes
+
+        try:
+            await verify_scan_admin_access(
+                community_server_id=attrs.community_server_id,
+                current_user=current_user,
+                db=session,
+                request=request,
+            )
+        except HTTPException as e:
+            return create_error_response(
+                status_code=e.status_code,
+                title="Forbidden" if e.status_code == 403 else "Not Found",
+                detail=e.detail,
+            )
+
+        fact_check_item = await get_fact_check_item_by_id(session, attrs.fact_check_item_id)
+
+        if not fact_check_item:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Fact check item {attrs.fact_check_item_id} not found",
+            )
+
+        fact_check_data = {
+            "id": str(fact_check_item.id),
+            "title": fact_check_item.title,
+            "content": fact_check_item.content,
+            "rating": fact_check_item.rating,
+            "source_url": fact_check_item.source_url,
+        }
+
+        ai_note_writer = get_ai_note_writer()
+        explanation = await ai_note_writer.generate_scan_explanation(
+            original_message=attrs.original_message,
+            fact_check_data=fact_check_data,
+            db=session,
+            community_server_id=attrs.community_server_id,
+        )
+
+        resource = ExplanationResultResource(
+            type="scan-explanations",
+            id=str(uuid_module.uuid4()),
+            attributes=ExplanationResultAttributes(explanation=explanation),
+        )
+
+        response = ExplanationResultResponse(
+            data=resource,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to generate explanation (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to generate explanation",
         )

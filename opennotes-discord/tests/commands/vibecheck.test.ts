@@ -31,6 +31,7 @@ function createFlaggedMessageResource(id: string, channelId: string, content: st
           score: matchScore,
           matched_claim: matchedClaim,
           matched_source: 'snopes',
+          fact_check_item_id: '12345678-1234-1234-1234-123456789abc',
         },
       ],
     },
