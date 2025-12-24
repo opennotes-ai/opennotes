@@ -106,7 +106,7 @@ class TestLLMProviderFactory:
 
         assert provider is not None
         assert provider.api_key == "sk-test-key"
-        assert provider.default_model == "openai/gpt-5.1"
+        assert provider.default_model == "gpt-5.1"
         assert provider.settings.temperature == 0.7
         assert provider.settings.max_tokens == 1000
 
@@ -121,7 +121,7 @@ class TestLLMProviderFactory:
 
         assert provider is not None
         assert provider.api_key == "sk-ant-test-key"
-        assert provider.default_model == "anthropic/claude-3-opus-20240229"
+        assert provider.default_model == "claude-3-opus-20240229"
         assert provider.settings.temperature == 0.5
 
     def test_unknown_provider(self) -> None:

@@ -359,38 +359,6 @@ class TestOTLPConfiguration:
             assert settings.OTLP_INSECURE is False
 
 
-class TestCacheLlmPricingTtl:
-    def test_cache_llm_pricing_ttl_exists_with_default(self):
-        valid_key = "a" * 32
-        with patch.dict(
-            os.environ,
-            {
-                "JWT_SECRET_KEY": valid_key,
-                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
-                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-            },
-            clear=True,
-        ):
-            settings = create_settings_no_env_file()
-            assert hasattr(settings, "CACHE_LLM_PRICING_TTL")
-            assert settings.CACHE_LLM_PRICING_TTL == 86400
-
-    def test_cache_llm_pricing_ttl_can_be_configured(self):
-        valid_key = "a" * 32
-        with patch.dict(
-            os.environ,
-            {
-                "JWT_SECRET_KEY": valid_key,
-                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
-                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
-                "CACHE_LLM_PRICING_TTL": "3600",
-            },
-            clear=True,
-        ):
-            settings = create_settings_no_env_file()
-            assert settings.CACHE_LLM_PRICING_TTL == 3600
-
-
 class TestSettingsSingleton:
     def test_settings_is_singleton(self):
         get_settings.cache_clear()

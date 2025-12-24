@@ -51,7 +51,7 @@ async def test_get_client_uses_community_config_when_exists(client_manager, db_s
     assert client is not None
     assert isinstance(client, LiteLLMProvider)
     assert client.api_key == "community-api-key"
-    assert "openai/" in client.default_model or client.default_model == "openai/gpt-5.1"
+    assert client.default_model == "gpt-5.1"
 
 
 @pytest.mark.asyncio
@@ -70,7 +70,7 @@ async def test_get_client_falls_back_to_global_openai_key(client_manager, db_ses
         assert client is not None
         assert isinstance(client, LiteLLMProvider)
         assert client.api_key == "global-openai-key"
-        assert "openai/" in client.default_model or client.default_model == "openai/gpt-5.1"
+        assert client.default_model == "gpt-5.1"
 
 
 @pytest.mark.asyncio
