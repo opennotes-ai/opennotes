@@ -65,3 +65,20 @@ export {
   type MockDiscordMessage,
   type MessageTransientParams,
 } from './discord-message.js';
+
+export {
+  natsConnectionFactory,
+  closedNatsConnectionFactory,
+  failingJetStreamConnectionFactory,
+  createAsyncIterator,
+  createMockJsMessage,
+  createMockSubscription,
+  createMockConnect,
+  createFailingMockConnect,
+  type MockNatsConnection,
+  type MockJetStreamClient,
+  type MockJetStreamManager,
+  type MockConsumerAPI,
+  type MockStatusEvent,
+  type NatsConnectionTransientParams,
+} from './nats-connection.js';
