@@ -1,12 +1,8 @@
 import { jest } from '@jest/globals';
 import jwt from 'jsonwebtoken';
+import { loggerFactory } from './factories/index.js';
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../src/logger.js', () => ({
   logger: mockLogger,
