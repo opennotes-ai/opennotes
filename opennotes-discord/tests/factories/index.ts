@@ -14,9 +14,39 @@
 export { Factory, noteFactory, ratingFactory } from '@opennotes/test-utils';
 
 /**
- * Discord-specific factories will be added here by subtasks 856.01-856.12:
- * - noteRequestFactory (task-856.01)
- * - noteRequestEventFactory (task-856.02)
- * - discordInteractionFactory (task-856.03)
- * - etc.
+ * Discord-specific factories:
  */
+
+export {
+  discordUserFactory,
+  type MockDiscordUser,
+  type DiscordUserTransientParams,
+} from './discord-user.js';
+
+export {
+  discordMemberFactory,
+  adminMemberFactory,
+  type MockDiscordMember,
+  type DiscordMemberTransientParams,
+} from './discord-member.js';
+
+export {
+  discordGuildFactory,
+  type MockDiscordGuild,
+  type DiscordGuildTransientParams,
+} from './discord-guild.js';
+
+export {
+  discordChannelFactory,
+  type MockDiscordChannel,
+  type DiscordChannelTransientParams,
+} from './discord-channel.js';
+
+export {
+  chatInputCommandInteractionFactory,
+  adminInteractionFactory,
+  dmInteractionFactory,
+  type MockChatInputCommandInteraction,
+  type MockCommandInteractionOptions,
+  type ChatInputCommandInteractionTransientParams,
+} from './chat-input-command-interaction.js';
