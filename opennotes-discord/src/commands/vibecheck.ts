@@ -18,7 +18,7 @@ import { hasManageGuildPermission } from '../lib/permissions.js';
 import { apiClient, type FlaggedMessageResource } from '../api-client.js';
 import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
 import { executeBulkScan } from '../lib/bulk-scan-executor.js';
-import { formatScanStatus, formatScanStatusPaginated } from '../lib/scan-status-formatter.js';
+import { formatScanStatusPaginated } from '../lib/scan-status-formatter.js';
 import { TextPaginator } from '../lib/text-paginator.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { serviceProvider } from '../services/index.js';
@@ -496,16 +496,74 @@ async function handleStatusSubcommand(
     const communityServer = await apiClient.getCommunityServerByPlatformId(guildId);
 
     const latestScan = await apiClient.getLatestScan(communityServer.data.id);
+    const flaggedMessages = latestScan.included || [];
 
-    const result = formatScanStatus({
+    const paginatedResult = formatScanStatusPaginated({
       scan: latestScan,
       guildId,
       includeButtons: false,
     });
 
+    const stateId = nanoid(10);
+    const currentPage = 1;
+
+    const state: VibecheckPaginationState = {
+      scanId: latestScan.data.id,
+      guildId,
+      days: 0,
+      messagesScanned: latestScan.data.attributes.messages_scanned,
+      flaggedMessages,
+    };
+    await cache.set(`vibecheck:pagination:${stateId}`, state, PAGINATION_STATE_TTL);
+
+    const pageContent = TextPaginator.getPage(paginatedResult.pages, currentPage);
+    const fullContent = `${paginatedResult.header}\n${pageContent}`;
+
+    const components: ActionRowBuilder<ButtonBuilder>[] = [];
+
+    if (paginatedResult.pages.totalPages > 1) {
+      const paginationRow = TextPaginator.buildPaginationButtons({
+        currentPage,
+        totalPages: paginatedResult.pages.totalPages,
+        customIdPrefix: 'vibecheck_page',
+        stateId,
+      });
+      components.push(paginationRow);
+    }
+
     await interaction.editReply({
-      content: result.content,
+      content: fullContent,
+      components,
     });
+
+    if (paginatedResult.pages.totalPages > 1) {
+      const reply = await interaction.fetchReply();
+      const originalUserId = interaction.user.id;
+      const collector = reply.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 300000,
+        filter: (i) => i.user.id === originalUserId,
+      });
+
+      collector.on('collect', (buttonInteraction: ButtonInteraction) => {
+        void handleStatusPaginationButton(
+          buttonInteraction,
+          stateId,
+          paginatedResult
+        );
+      });
+
+      collector.on('end', (_collected, reason) => {
+        if (reason === 'time') {
+          interaction.editReply({
+            content: `Session expired.\n\n**Scan ID:** \`${latestScan.data.id}\``,
+            components: [],
+          }).catch(() => {
+            /* Silently ignore - interaction may have expired */
+          });
+        }
+      });
+    }
   } catch (error) {
     if (error instanceof ApiError && error.statusCode === 404) {
       await interaction.editReply({
@@ -530,4 +588,42 @@ async function handleStatusSubcommand(
       content: formatErrorForUser(errorId, 'Failed to retrieve scan status. Please try again later.'),
     });
   }
+}
+
+async function handleStatusPaginationButton(
+  buttonInteraction: ButtonInteraction,
+  stateId: string,
+  paginatedResult: ReturnType<typeof formatScanStatusPaginated>
+): Promise<void> {
+  const customId = buttonInteraction.customId;
+
+  if (!customId.startsWith('vibecheck_page:')) {
+    return;
+  }
+
+  const parsed = TextPaginator.parseButtonCustomId(customId);
+  if (!parsed || parsed.stateId !== stateId) {
+    return;
+  }
+
+  const newPage = parsed.page;
+  const pageContent = TextPaginator.getPage(paginatedResult.pages, newPage);
+  const fullContent = `${paginatedResult.header}\n${pageContent}`;
+
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+
+  if (paginatedResult.pages.totalPages > 1) {
+    const paginationRow = TextPaginator.buildPaginationButtons({
+      currentPage: newPage,
+      totalPages: paginatedResult.pages.totalPages,
+      customIdPrefix: 'vibecheck_page',
+      stateId,
+    });
+    components.push(paginationRow);
+  }
+
+  await buttonInteraction.update({
+    content: fullContent,
+    components,
+  });
 }
