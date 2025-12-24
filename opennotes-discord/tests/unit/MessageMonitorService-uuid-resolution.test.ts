@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import type { Client } from 'discord.js';
+import { loggerFactory } from '../factories/index.js';
 
 const mockChannelService = {
   getChannelConfig: jest.fn<() => Promise<any>>(),
@@ -22,6 +23,8 @@ const mockClient = {
     },
   },
 } as unknown as Client;
+
+const mockLogger = loggerFactory.build();
 
 class MockRedisQueue<T> {
   private items: T[] = [];
@@ -111,13 +114,6 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
 jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
   resolveCommunityServerId: mockResolveCommunityServerId,
 }));
-
-const mockLogger = {
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  debug: jest.fn(),
-};
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,

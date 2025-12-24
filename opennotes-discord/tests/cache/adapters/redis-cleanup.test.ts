@@ -1,5 +1,10 @@
 import { jest } from '@jest/globals';
 import type { RedisCacheAdapter } from '../../../src/cache/adapters/redis.js';
+import {
+  loggerFactory,
+  redisClientFactory,
+  type MockRedisClient,
+} from '../../factories/index.js';
 
 process.env.DISCORD_TOKEN = 'test-token';
 process.env.CLIENT_ID = 'test-client-id';
@@ -7,6 +12,7 @@ process.env.SERVER_URL = 'http://localhost:3000';
 process.env.API_KEY = 'test-api-key';
 
 const mockRedisClass = jest.fn();
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('ioredis', () => ({
   __esModule: true,
@@ -14,12 +20,7 @@ jest.unstable_mockModule('ioredis', () => ({
 }));
 
 jest.unstable_mockModule('../../../src/logger.js', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: mockLogger,
 }));
 
 jest.unstable_mockModule('../../../src/utils/url-sanitizer.js', () => ({
@@ -35,17 +36,10 @@ const { RedisCacheAdapter: RedisCacheAdapterClass } = await import('../../../src
 
 describe('RedisCacheAdapter - Memory Leak Prevention', () => {
   let adapter!: RedisCacheAdapter;
-  let mockRedisClient: any;
+  let mockRedisClient: MockRedisClient;
 
   beforeEach(() => {
-    mockRedisClient = {
-      connect: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-      disconnect: jest.fn(),
-      on: jest.fn(),
-      removeAllListeners: jest.fn(),
-      duplicate: jest.fn(),
-    };
-
+    mockRedisClient = redisClientFactory.build();
     mockRedisClass.mockImplementation(() => mockRedisClient);
 
     adapter = new RedisCacheAdapterClass({
