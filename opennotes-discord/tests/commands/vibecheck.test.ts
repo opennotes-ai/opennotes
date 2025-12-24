@@ -7,6 +7,7 @@ import type {
   FlaggedMessageResource,
   CommunityServerJSONAPIResponse,
   NoteRequestsResultResponse,
+  ExplanationResultResponse,
 } from '../../src/lib/api-client.js';
 
 const mockLogger = {
@@ -16,7 +17,14 @@ const mockLogger = {
   debug: jest.fn<(...args: unknown[]) => void>(),
 };
 
-function createFlaggedMessageResource(id: string, channelId: string, content: string, matchScore: number, matchedClaim: string): FlaggedMessageResource {
+function createFlaggedMessageResource(
+  id: string,
+  channelId: string,
+  content: string,
+  matchScore: number,
+  matchedClaim: string,
+  factCheckItemId: string = '12345678-1234-1234-1234-123456789abc'
+): FlaggedMessageResource {
   return {
     type: 'flagged-messages',
     id,
@@ -31,7 +39,7 @@ function createFlaggedMessageResource(id: string, channelId: string, content: st
           score: matchScore,
           matched_claim: matchedClaim,
           matched_source: 'snopes',
-          fact_check_item_id: '12345678-1234-1234-1234-123456789abc',
+          fact_check_item_id: factCheckItemId,
         },
       ],
     },
@@ -69,6 +77,19 @@ function createNoteRequestsResultResponse(createdCount: number, requestIds: stri
   };
 }
 
+function createExplanationResultResponse(explanation: string): ExplanationResultResponse {
+  return {
+    data: {
+      type: 'scan-explanations',
+      id: 'explanation-123',
+      attributes: {
+        explanation,
+      },
+    },
+    jsonapi: { version: '1.1' },
+  };
+}
+
 const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),
   getCommunityServerByPlatformId: jest.fn<(platformId: string) => Promise<CommunityServerJSONAPIResponse>>(),
@@ -76,6 +97,7 @@ const mockApiClient = {
   getBulkScanResults: jest.fn<(scanId: string) => Promise<any>>(),
   createNoteRequestsFromScan: jest.fn<(scanId: string, messageIds: string[], generateAiNotes: boolean) => Promise<NoteRequestsResultResponse>>(),
   getLatestScan: jest.fn<(communityServerId: string) => Promise<LatestScanResponse>>(),
+  generateScanExplanation: jest.fn<(originalMessage: string, factCheckItemId: string, communityServerId: string) => Promise<ExplanationResultResponse>>(),
 };
 
 const mockCache = {
@@ -1598,6 +1620,216 @@ describe('vibecheck command', () => {
           content: expect.stringMatching(/no scans|run.*scan/i),
         })
       );
+    });
+  });
+
+  describe('explanation integration', () => {
+    const createMockInteractionWithCollector = () => {
+      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
+          collectHandlers.set(event, handler);
+          return mockCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockFetchReply = jest.fn<() => Promise<any>>().mockResolvedValue({
+        createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
+      });
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        fetchReply: mockFetchReply,
+      };
+
+      return { mockInteraction, mockCollector, collectHandlers };
+    };
+
+    it('should call generateScanExplanation for each flagged message', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism', 'fact-check-uuid-1'),
+        createFlaggedMessageResource('msg-2', 'ch-2', '5G towers spread COVID', 0.85, '5G causes COVID-19', 'fact-check-uuid-2'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      mockApiClient.generateScanExplanation.mockResolvedValue(
+        createExplanationResultResponse('This message contains a debunked claim.')
+      );
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.generateScanExplanation).toHaveBeenCalledTimes(2);
+      expect(mockApiClient.generateScanExplanation).toHaveBeenCalledWith(
+        'This vaccine causes autism',
+        'fact-check-uuid-1',
+        'community-server-uuid-123'
+      );
+      expect(mockApiClient.generateScanExplanation).toHaveBeenCalledWith(
+        '5G towers spread COVID',
+        'fact-check-uuid-2',
+        'community-server-uuid-123'
+      );
+    });
+
+    it('should pass explanations map to formatScanStatusPaginated', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism', 'fact-check-uuid-1'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      mockApiClient.generateScanExplanation.mockResolvedValueOnce(
+        createExplanationResultResponse('This message contains a claim about vaccines that has been debunked.')
+      );
+
+      await execute(mockInteraction as any);
+
+      expect(mockFormatScanStatusPaginated).toHaveBeenCalledWith(
+        expect.objectContaining({
+          explanations: expect.any(Map),
+        })
+      );
+
+      const callArgs = mockFormatScanStatusPaginated.mock.calls[0][0];
+      expect(callArgs.explanations.get('msg-1')).toBe('This message contains a claim about vaccines that has been debunked.');
+    });
+
+    it('should handle explanation generation errors gracefully', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism', 'fact-check-uuid-1'),
+        createFlaggedMessageResource('msg-2', 'ch-2', '5G towers spread COVID', 0.85, '5G causes COVID-19', 'fact-check-uuid-2'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      mockApiClient.generateScanExplanation
+        .mockResolvedValueOnce(createExplanationResultResponse('First explanation'))
+        .mockRejectedValueOnce(new Error('API error'));
+
+      await execute(mockInteraction as any);
+
+      expect(mockFormatScanStatusPaginated).toHaveBeenCalled();
+      const callArgs = mockFormatScanStatusPaginated.mock.calls[0][0];
+      expect(callArgs.explanations.get('msg-1')).toBe('First explanation');
+      expect(callArgs.explanations.has('msg-2')).toBe(false);
+    });
+
+    it('should not call generateScanExplanation when no flagged messages', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: [],
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.generateScanExplanation).not.toHaveBeenCalled();
+    });
+
+    it('should handle missing fact_check_item_id gracefully', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        {
+          type: 'flagged-messages',
+          id: 'msg-1',
+          attributes: {
+            channel_id: 'ch-1',
+            content: 'Some content',
+            author_id: 'author1',
+            timestamp: new Date().toISOString(),
+            matches: [
+              {
+                scan_type: 'similarity' as const,
+                score: 0.9,
+                matched_claim: 'Some claim',
+                matched_source: 'snopes',
+                fact_check_item_id: null as unknown as string,
+              },
+            ],
+          },
+        },
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.generateScanExplanation).not.toHaveBeenCalled();
+      expect(mockFormatScanStatusPaginated).toHaveBeenCalled();
     });
   });
 });
