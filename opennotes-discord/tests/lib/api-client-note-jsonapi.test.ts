@@ -16,6 +16,11 @@
  */
 import { jest } from '@jest/globals';
 import { ApiClient } from '../../src/lib/api-client.js';
+import {
+  responseFactoryHelpers,
+  loggerFactory,
+  type JsonApiResource,
+} from '@opennotes/test-utils';
 
 interface JSONAPIResource {
   type: string;
@@ -39,13 +44,10 @@ interface JSONAPIListResponse {
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
 
+const mockLogger = loggerFactory.build();
+
 jest.mock('../../src/logger.js', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: mockLogger,
 }));
 
 jest.mock('../../src/utils/gcp-auth.js', () => ({
@@ -56,78 +58,78 @@ jest.mock('../../src/utils/gcp-auth.js', () => ({
 describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
   let apiClient: ApiClient;
 
-  const mockJSONAPINote = {
-    data: {
-      type: 'notes',
-      id: 'note-uuid-123',
-      attributes: {
-        summary: 'This is a test note summary',
-        classification: 'NOT_MISLEADING',
-        status: 'NEEDS_MORE_RATINGS',
-        helpfulness_score: 0.5,
-        author_participant_id: 'user-123',
-        community_server_id: 'community-uuid-456',
-        channel_id: 'channel-789',
-        request_id: 'request-abc',
-        ratings_count: 3,
-        force_published: false,
-        force_published_at: null,
-        ai_generated: false,
-        ai_provider: null,
-        created_at: '2024-01-15T10:00:00Z',
-        updated_at: '2024-01-15T12:00:00Z',
-      },
+  const mockNoteResource: JsonApiResource = {
+    type: 'notes',
+    id: 'note-uuid-123',
+    attributes: {
+      summary: 'This is a test note summary',
+      classification: 'NOT_MISLEADING',
+      status: 'NEEDS_MORE_RATINGS',
+      helpfulness_score: 0.5,
+      author_participant_id: 'user-123',
+      community_server_id: 'community-uuid-456',
+      channel_id: 'channel-789',
+      request_id: 'request-abc',
+      ratings_count: 3,
+      force_published: false,
+      force_published_at: null,
+      ai_generated: false,
+      ai_provider: null,
+      created_at: '2024-01-15T10:00:00Z',
+      updated_at: '2024-01-15T12:00:00Z',
     },
-    jsonapi: { version: '1.1' },
     links: { self: '/api/v2/notes/note-uuid-123' },
   };
 
-  const mockJSONAPINoteList = {
-    data: [
-      {
-        type: 'notes',
-        id: 'note-uuid-1',
-        attributes: {
-          summary: 'First note',
-          classification: 'NOT_MISLEADING',
-          status: 'NEEDS_MORE_RATINGS',
-          helpfulness_score: 0.6,
-          author_participant_id: 'user-1',
-          community_server_id: 'community-uuid-456',
-          channel_id: null,
-          request_id: null,
-          ratings_count: 5,
-          force_published: false,
-          force_published_at: null,
-          created_at: '2024-01-15T10:00:00Z',
-          updated_at: null,
-        },
+  const mockNoteListResources: JsonApiResource[] = [
+    {
+      type: 'notes',
+      id: 'note-uuid-1',
+      attributes: {
+        summary: 'First note',
+        classification: 'NOT_MISLEADING',
+        status: 'NEEDS_MORE_RATINGS',
+        helpfulness_score: 0.6,
+        author_participant_id: 'user-1',
+        community_server_id: 'community-uuid-456',
+        channel_id: null,
+        request_id: null,
+        ratings_count: 5,
+        force_published: false,
+        force_published_at: null,
+        created_at: '2024-01-15T10:00:00Z',
+        updated_at: null,
       },
-      {
-        type: 'notes',
-        id: 'note-uuid-2',
-        attributes: {
-          summary: 'Second note',
-          classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
-          status: 'CURRENTLY_RATED_HELPFUL',
-          helpfulness_score: 0.8,
-          author_participant_id: 'user-2',
-          community_server_id: 'community-uuid-456',
-          channel_id: 'channel-abc',
-          request_id: 'request-xyz',
-          ratings_count: 10,
-          force_published: true,
-          force_published_at: '2024-01-15T11:00:00Z',
-          created_at: '2024-01-14T08:00:00Z',
-          updated_at: '2024-01-15T11:00:00Z',
-        },
+    },
+    {
+      type: 'notes',
+      id: 'note-uuid-2',
+      attributes: {
+        summary: 'Second note',
+        classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
+        status: 'CURRENTLY_RATED_HELPFUL',
+        helpfulness_score: 0.8,
+        author_participant_id: 'user-2',
+        community_server_id: 'community-uuid-456',
+        channel_id: 'channel-abc',
+        request_id: 'request-xyz',
+        ratings_count: 10,
+        force_published: true,
+        force_published_at: '2024-01-15T11:00:00Z',
+        created_at: '2024-01-14T08:00:00Z',
+        updated_at: '2024-01-15T11:00:00Z',
       },
-    ],
-    jsonapi: { version: '1.1' },
-    meta: { count: 2 },
-    links: {
-      self: '/api/v2/notes?page[number]=1&page[size]=20',
-      first: '/api/v2/notes?page[number]=1&page[size]=20',
+    },
+  ];
+
+  const mockCommunityServerResource: JsonApiResource = {
+    type: 'community-servers',
+    id: '550e8400-e29b-41d4-a716-446655440001',
+    attributes: {
+      platform: 'discord',
+      platform_id: 'guild-123',
+      name: 'Test Server',
+      is_active: true,
     },
   };
 
@@ -142,12 +144,9 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
 
   describe('getNote - should return raw JSONAPI structure', () => {
     it('should return JSONAPI response with data.type, data.id, data.attributes', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => mockJSONAPINote,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiSuccess(mockNoteResource)
+      );
 
       const result = await apiClient.getNote('note-uuid-123') as unknown as JSONAPISingleResponse;
 
@@ -162,12 +161,9 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
     });
 
     it('should NOT flatten the response into a custom NoteResponse type', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => mockJSONAPINote,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiSuccess(mockNoteResource)
+      );
 
       const result = await apiClient.getNote('note-uuid-123');
 
@@ -182,30 +178,12 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
   describe('createNote - should return raw JSONAPI structure', () => {
     it('should return JSONAPI response with data.type, data.id, data.attributes', async () => {
       mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-          json: async () => ({
-            data: {
-              type: 'community-servers',
-              id: '550e8400-e29b-41d4-a716-446655440001',
-              attributes: {
-                platform: 'discord',
-                platform_id: 'guild-123',
-                name: 'Test Server',
-                is_active: true,
-              },
-            },
-            jsonapi: { version: '1.1' },
-          }),
-        } as Response)
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 201,
-          headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-          json: async () => mockJSONAPINote,
-        } as Response);
+        .mockResolvedValueOnce(
+          responseFactoryHelpers.jsonApiSuccess(mockCommunityServerResource)
+        )
+        .mockResolvedValueOnce(
+          responseFactoryHelpers.jsonApiSuccess(mockNoteResource, { status: 201 })
+        );
 
       const result = await apiClient.createNote(
         {
@@ -228,30 +206,12 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
 
     it('should NOT flatten the response into a custom Note type', async () => {
       mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-          json: async () => ({
-            data: {
-              type: 'community-servers',
-              id: '550e8400-e29b-41d4-a716-446655440001',
-              attributes: {
-                platform: 'discord',
-                platform_id: 'guild-123',
-                name: 'Test Server',
-                is_active: true,
-              },
-            },
-            jsonapi: { version: '1.1' },
-          }),
-        } as Response)
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 201,
-          headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-          json: async () => mockJSONAPINote,
-        } as Response);
+        .mockResolvedValueOnce(
+          responseFactoryHelpers.jsonApiSuccess(mockCommunityServerResource)
+        )
+        .mockResolvedValueOnce(
+          responseFactoryHelpers.jsonApiSuccess(mockNoteResource, { status: 201 })
+        );
 
       const result = await apiClient.createNote(
         {
@@ -272,25 +232,19 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
 
   describe('forcePublishNote - should return raw JSONAPI structure', () => {
     it('should return JSONAPI response with data.type, data.id, data.attributes', async () => {
-      const forcePublishedNote = {
-        ...mockJSONAPINote,
-        data: {
-          ...mockJSONAPINote.data,
-          attributes: {
-            ...mockJSONAPINote.data.attributes,
-            status: 'CURRENTLY_RATED_HELPFUL',
-            force_published: true,
-            force_published_at: '2024-01-15T14:00:00Z',
-          },
+      const forcePublishedNoteResource: JsonApiResource = {
+        ...mockNoteResource,
+        attributes: {
+          ...mockNoteResource.attributes,
+          status: 'CURRENTLY_RATED_HELPFUL',
+          force_published: true,
+          force_published_at: '2024-01-15T14:00:00Z',
         },
       };
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => forcePublishedNote,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiSuccess(forcePublishedNoteResource)
+      );
 
       const result = await apiClient.forcePublishNote('note-uuid-123') as unknown as JSONAPISingleResponse;
 
@@ -303,23 +257,17 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
     });
 
     it('should NOT flatten the response into a custom NoteResponse type', async () => {
-      const forcePublishedNote = {
-        ...mockJSONAPINote,
-        data: {
-          ...mockJSONAPINote.data,
-          attributes: {
-            ...mockJSONAPINote.data.attributes,
-            force_published: true,
-          },
+      const forcePublishedNoteResource: JsonApiResource = {
+        ...mockNoteResource,
+        attributes: {
+          ...mockNoteResource.attributes,
+          force_published: true,
         },
       };
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => forcePublishedNote,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiSuccess(forcePublishedNoteResource)
+      );
 
       const result = await apiClient.forcePublishNote('note-uuid-123');
 
@@ -332,12 +280,14 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
 
   describe('listNotesWithStatus - should return raw JSONAPI structure', () => {
     it('should return JSONAPI list response with data array of resources', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => mockJSONAPINoteList,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiCollection(mockNoteListResources, {
+          links: {
+            self: '/api/v2/notes?page[number]=1&page[size]=20',
+            first: '/api/v2/notes?page[number]=1&page[size]=20',
+          },
+        })
+      );
 
       const result = await apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS') as unknown as JSONAPIListResponse;
 
@@ -358,22 +308,19 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
     });
 
     it('should return JSONAPI structure with pagination convenience fields', async () => {
-      // listNotesWithStatus returns JSONAPI structure WITH added pagination fields
-      // (total, page, size) for consumer convenience - this is intentional
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => mockJSONAPINoteList,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiCollection(mockNoteListResources, {
+          links: {
+            self: '/api/v2/notes?page[number]=1&page[size]=20',
+            first: '/api/v2/notes?page[number]=1&page[size]=20',
+          },
+        })
+      );
 
       const result = await apiClient.listNotesWithStatus('NEEDS_MORE_RATINGS');
 
-      // Should NOT have flattened 'notes' array
       expect(result).not.toHaveProperty('notes');
-      // Should have JSONAPI data array
       expect(result).toHaveProperty('data');
-      // Pagination convenience fields are added
       expect(result).toHaveProperty('total');
       expect(result).toHaveProperty('page');
       expect(result).toHaveProperty('size');
@@ -382,12 +329,9 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
 
   describe('getNotes (by messageId) - should return raw JSONAPI structure', () => {
     it('should return JSONAPI list response with data array of resources', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => mockJSONAPINoteList,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiCollection(mockNoteListResources)
+      );
 
       const result = await apiClient.getNotes('message-123') as unknown as JSONAPIListResponse;
 
@@ -396,7 +340,6 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
       expect(Array.isArray(result.data)).toBe(true);
 
       if (result.data.length > 0) {
-        // Returns JSONAPI structure with type, id, attributes
         expect(result.data[0]).toHaveProperty('type', 'notes');
         expect(result.data[0]).toHaveProperty('id');
         expect(result.data[0]).toHaveProperty('attributes');
@@ -405,16 +348,12 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
     });
 
     it('should NOT flatten the response into a Note[] array', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/vnd.api+json' }),
-        json: async () => mockJSONAPINoteList,
-      } as Response);
+      mockFetch.mockResolvedValueOnce(
+        responseFactoryHelpers.jsonApiCollection(mockNoteListResources)
+      );
 
       const result = await apiClient.getNotes('message-123') as unknown as JSONAPIListResponse;
 
-      // Should NOT have flattened properties at top level
       expect(result.data[0]).not.toHaveProperty('messageId');
       expect(result.data[0]).not.toHaveProperty('authorId');
       expect(result.data[0]).not.toHaveProperty('content');

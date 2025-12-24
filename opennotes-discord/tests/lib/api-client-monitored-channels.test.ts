@@ -1,14 +1,14 @@
 import { jest } from '@jest/globals';
+import {
+  responseFactoryHelpers,
+  loggerFactory,
+  type JsonApiResource,
+} from '@opennotes/test-utils';
 
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -43,34 +43,26 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
 
   describe('listMonitoredChannels', () => {
     it('should return raw JSONAPI list response structure', async () => {
-      const jsonApiResponse = {
-        data: [
-          {
-            type: 'monitored-channels',
-            id: 'uuid-123',
-            attributes: {
-              community_server_id: 'server-456',
-              channel_id: 'channel-789',
-              enabled: true,
-              similarity_threshold: 0.8,
-              dataset_tags: ['snopes'],
-              previously_seen_autopublish_threshold: null,
-              previously_seen_autorequest_threshold: null,
-              created_at: '2024-01-01T00:00:00Z',
-              updated_at: '2024-01-02T00:00:00Z',
-              updated_by: 'user-123',
-            },
-          },
-        ],
-        jsonapi: { version: '1.0' },
-        links: { self: '/api/v2/monitored-channels' },
-        meta: { count: 1 },
+      const monitoredChannelResource: JsonApiResource = {
+        type: 'monitored-channels',
+        id: 'uuid-123',
+        attributes: {
+          community_server_id: 'server-456',
+          channel_id: 'channel-789',
+          enabled: true,
+          similarity_threshold: 0.8,
+          dataset_tags: ['snopes'],
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-02T00:00:00Z',
+          updated_by: 'user-123',
+        },
       };
 
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(jsonApiResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/vnd.api+json' },
+        responseFactoryHelpers.jsonApiCollection([monitoredChannelResource], {
+          links: { self: '/api/v2/monitored-channels' },
         })
       );
 
@@ -82,39 +74,33 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
       expect(result.data[0].attributes.community_server_id).toBe('server-456');
       expect(result.data[0].attributes.channel_id).toBe('channel-789');
       expect(result.data[0].attributes.enabled).toBe(true);
-      expect(result.jsonapi).toEqual({ version: '1.0' });
+      expect(result.jsonapi).toEqual({ version: '1.1' });
       expect(result.meta?.count).toBe(1);
     });
   });
 
   describe('createMonitoredChannel', () => {
     it('should return raw JSONAPI single response structure', async () => {
-      const jsonApiResponse = {
-        data: {
-          type: 'monitored-channels',
-          id: 'uuid-new-123',
-          attributes: {
-            community_server_id: 'server-456',
-            channel_id: 'channel-new-789',
-            enabled: true,
-            similarity_threshold: 0.8,
-            dataset_tags: ['snopes'],
-            previously_seen_autopublish_threshold: null,
-            previously_seen_autorequest_threshold: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: null,
-            updated_by: 'user-123',
-          },
+      const newChannelResource: JsonApiResource = {
+        type: 'monitored-channels',
+        id: 'uuid-new-123',
+        attributes: {
+          community_server_id: 'server-456',
+          channel_id: 'channel-new-789',
+          enabled: true,
+          similarity_threshold: 0.8,
+          dataset_tags: ['snopes'],
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: null,
+          updated_by: 'user-123',
         },
-        jsonapi: { version: '1.0' },
         links: { self: '/api/v2/monitored-channels/uuid-new-123' },
       };
 
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(jsonApiResponse), {
-          status: 201,
-          headers: { 'Content-Type': 'application/vnd.api+json' },
-        })
+        responseFactoryHelpers.jsonApiSuccess(newChannelResource, { status: 201 })
       );
 
       const result = await client.createMonitoredChannel({
@@ -131,15 +117,15 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
       expect(result!.data.id).toBe('uuid-new-123');
       expect(result!.data.attributes.community_server_id).toBe('server-456');
       expect(result!.data.attributes.channel_id).toBe('channel-new-789');
-      expect(result!.jsonapi).toEqual({ version: '1.0' });
+      expect(result!.jsonapi).toEqual({ version: '1.1' });
     });
 
     it('should return null on 409 conflict', async () => {
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Conflict' }), {
-          status: 409,
-          statusText: 'Conflict',
-          headers: { 'Content-Type': 'application/json' },
+        responseFactoryHelpers.jsonApiError(409, {
+          status: '409',
+          title: 'Conflict',
+          detail: 'Resource already exists',
         })
       );
 
@@ -155,32 +141,26 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
 
   describe('getMonitoredChannelByUuid', () => {
     it('should return raw JSONAPI single response structure', async () => {
-      const jsonApiResponse = {
-        data: {
-          type: 'monitored-channels',
-          id: 'uuid-123',
-          attributes: {
-            community_server_id: 'server-456',
-            channel_id: 'channel-789',
-            enabled: true,
-            similarity_threshold: 0.8,
-            dataset_tags: ['snopes'],
-            previously_seen_autopublish_threshold: 0.9,
-            previously_seen_autorequest_threshold: 0.85,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-02T00:00:00Z',
-            updated_by: 'user-123',
-          },
+      const channelResource: JsonApiResource = {
+        type: 'monitored-channels',
+        id: 'uuid-123',
+        attributes: {
+          community_server_id: 'server-456',
+          channel_id: 'channel-789',
+          enabled: true,
+          similarity_threshold: 0.8,
+          dataset_tags: ['snopes'],
+          previously_seen_autopublish_threshold: 0.9,
+          previously_seen_autorequest_threshold: 0.85,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-02T00:00:00Z',
+          updated_by: 'user-123',
         },
-        jsonapi: { version: '1.0' },
         links: { self: '/api/v2/monitored-channels/uuid-123' },
       };
 
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(jsonApiResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/vnd.api+json' },
-        })
+        responseFactoryHelpers.jsonApiSuccess(channelResource)
       );
 
       const result = await client.getMonitoredChannelByUuid('uuid-123');
@@ -189,40 +169,31 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
       expect(result.data.id).toBe('uuid-123');
       expect(result.data.attributes.channel_id).toBe('channel-789');
       expect(result.data.attributes.previously_seen_autopublish_threshold).toBe(0.9);
-      expect(result.jsonapi).toEqual({ version: '1.0' });
+      expect(result.jsonapi).toEqual({ version: '1.1' });
     });
   });
 
   describe('getMonitoredChannel', () => {
     it('should return raw JSONAPI single response when channel found', async () => {
-      const jsonApiListResponse = {
-        data: [
-          {
-            type: 'monitored-channels',
-            id: 'uuid-123',
-            attributes: {
-              community_server_id: 'server-456',
-              channel_id: 'channel-789',
-              enabled: true,
-              similarity_threshold: 0.8,
-              dataset_tags: ['snopes'],
-              previously_seen_autopublish_threshold: null,
-              previously_seen_autorequest_threshold: null,
-              created_at: '2024-01-01T00:00:00Z',
-              updated_at: null,
-              updated_by: null,
-            },
-          },
-        ],
-        jsonapi: { version: '1.0' },
-        meta: { count: 1 },
+      const channelResource: JsonApiResource = {
+        type: 'monitored-channels',
+        id: 'uuid-123',
+        attributes: {
+          community_server_id: 'server-456',
+          channel_id: 'channel-789',
+          enabled: true,
+          similarity_threshold: 0.8,
+          dataset_tags: ['snopes'],
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: null,
+          updated_by: null,
+        },
       };
 
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(jsonApiListResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/vnd.api+json' },
-        })
+        responseFactoryHelpers.jsonApiCollection([channelResource])
       );
 
       const result = await client.getMonitoredChannel('channel-789', 'server-456');
@@ -234,17 +205,8 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
     });
 
     it('should return null when channel not found', async () => {
-      const jsonApiListResponse = {
-        data: [],
-        jsonapi: { version: '1.0' },
-        meta: { count: 0 },
-      };
-
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(jsonApiListResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/vnd.api+json' },
-        })
+        responseFactoryHelpers.jsonApiCollection([])
       );
 
       const result = await client.getMonitoredChannel('channel-nonexistent', 'server-456');
@@ -255,62 +217,47 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
 
   describe('updateMonitoredChannel', () => {
     it('should return raw JSONAPI single response on successful update', async () => {
-      const listResponse = {
-        data: [
-          {
-            type: 'monitored-channels',
-            id: 'uuid-123',
-            attributes: {
-              community_server_id: 'server-456',
-              channel_id: 'channel-789',
-              enabled: true,
-              similarity_threshold: 0.8,
-              dataset_tags: ['snopes'],
-              previously_seen_autopublish_threshold: null,
-              previously_seen_autorequest_threshold: null,
-              created_at: '2024-01-01T00:00:00Z',
-              updated_at: null,
-              updated_by: null,
-            },
-          },
-        ],
-        jsonapi: { version: '1.0' },
-        meta: { count: 1 },
+      const existingChannelResource: JsonApiResource = {
+        type: 'monitored-channels',
+        id: 'uuid-123',
+        attributes: {
+          community_server_id: 'server-456',
+          channel_id: 'channel-789',
+          enabled: true,
+          similarity_threshold: 0.8,
+          dataset_tags: ['snopes'],
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: null,
+          updated_by: null,
+        },
       };
 
-      const updateResponse = {
-        data: {
-          type: 'monitored-channels',
-          id: 'uuid-123',
-          attributes: {
-            community_server_id: 'server-456',
-            channel_id: 'channel-789',
-            enabled: false,
-            similarity_threshold: 0.9,
-            dataset_tags: ['snopes', 'politifact'],
-            previously_seen_autopublish_threshold: null,
-            previously_seen_autorequest_threshold: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-02T00:00:00Z',
-            updated_by: 'user-456',
-          },
+      const updatedChannelResource: JsonApiResource = {
+        type: 'monitored-channels',
+        id: 'uuid-123',
+        attributes: {
+          community_server_id: 'server-456',
+          channel_id: 'channel-789',
+          enabled: false,
+          similarity_threshold: 0.9,
+          dataset_tags: ['snopes', 'politifact'],
+          previously_seen_autopublish_threshold: null,
+          previously_seen_autorequest_threshold: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-02T00:00:00Z',
+          updated_by: 'user-456',
         },
-        jsonapi: { version: '1.0' },
         links: { self: '/api/v2/monitored-channels/uuid-123' },
       };
 
       mockFetch
         .mockResolvedValueOnce(
-          new Response(JSON.stringify(listResponse), {
-            status: 200,
-            headers: { 'Content-Type': 'application/vnd.api+json' },
-          })
+          responseFactoryHelpers.jsonApiCollection([existingChannelResource])
         )
         .mockResolvedValueOnce(
-          new Response(JSON.stringify(updateResponse), {
-            status: 200,
-            headers: { 'Content-Type': 'application/vnd.api+json' },
-          })
+          responseFactoryHelpers.jsonApiSuccess(updatedChannelResource)
         );
 
       const result = await client.updateMonitoredChannel('channel-789', {
@@ -326,21 +273,12 @@ describe('ApiClient MonitoredChannel Methods - JSONAPI Passthrough', () => {
       expect(result!.data.attributes.enabled).toBe(false);
       expect(result!.data.attributes.similarity_threshold).toBe(0.9);
       expect(result!.data.attributes.dataset_tags).toEqual(['snopes', 'politifact']);
-      expect(result!.jsonapi).toEqual({ version: '1.0' });
+      expect(result!.jsonapi).toEqual({ version: '1.1' });
     });
 
     it('should return null when channel not found', async () => {
-      const listResponse = {
-        data: [],
-        jsonapi: { version: '1.0' },
-        meta: { count: 0 },
-      };
-
       mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify(listResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/vnd.api+json' },
-        })
+        responseFactoryHelpers.jsonApiCollection([])
       );
 
       const result = await client.updateMonitoredChannel('channel-nonexistent', {
