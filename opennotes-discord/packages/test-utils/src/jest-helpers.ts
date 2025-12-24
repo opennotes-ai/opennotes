@@ -1,30 +1,22 @@
 import { jest } from '@jest/globals';
 import { loggerFactory, type MockLogger } from './factories/logger.js';
+import {
+  cacheFactory,
+  type MockCache,
+  type CacheTransientParams,
+} from './factories/cache.js';
 
 export type { MockLogger };
-
-export interface MockCache {
-  get: ReturnType<typeof jest.fn<(key: string) => unknown>>;
-  set: ReturnType<typeof jest.fn<(key: string, value: unknown, ttl?: number) => void>>;
-  delete: ReturnType<typeof jest.fn<(key: string) => void>>;
-  start: ReturnType<typeof jest.fn<() => void>>;
-  stop: ReturnType<typeof jest.fn<() => void>>;
-  getMetrics: ReturnType<typeof jest.fn<() => { size: number }>>;
-}
+export type { MockCache, CacheTransientParams };
 
 export function createMockLogger(): MockLogger {
   return loggerFactory.build();
 }
 
-export function createMockCache(): MockCache {
-  return {
-    get: jest.fn<(key: string) => unknown>(),
-    set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-    delete: jest.fn<(key: string) => void>(),
-    start: jest.fn<() => void>(),
-    stop: jest.fn<() => void>(),
-    getMetrics: jest.fn(() => ({ size: 0 })),
-  };
+export function createMockCache(
+  initialValues?: Record<string, unknown>
+): MockCache {
+  return cacheFactory.build({}, { transient: { initialValues } });
 }
 
 export function createMockInteraction(overrides?: any) {
