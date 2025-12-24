@@ -73,7 +73,10 @@ class SimilarityMatch(StrictInputSchema):
     score: float = Field(..., ge=0.0, le=1.0, description="Similarity score")
     matched_claim: str = Field(..., description="Fact-check claim that matched")
     matched_source: str = Field(..., description="URL to the fact-check source")
-    fact_check_item_id: UUID = Field(..., description="UUID of the matched FactCheckItem")
+    # TODO: Make required (remove None/default) once old scans without this field are flushed from Redis
+    fact_check_item_id: UUID | None = Field(
+        default=None, description="UUID of the matched FactCheckItem"
+    )
 
 
 class OpenAIModerationMatch(StrictInputSchema):
