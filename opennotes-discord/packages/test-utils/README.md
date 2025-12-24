@@ -6,15 +6,18 @@ Shared testing utilities and patterns for Open Notes services. This package prov
 
 ```
 packages/test-utils/
-├── typescript/          # TypeScript/Jest utilities
-│   ├── src/
-│   │   ├── types.ts           # Shared type definitions
-│   │   ├── mock-data.ts       # Mock data factories
-│   │   ├── jest-helpers.ts    # Jest mock helpers
-│   │   └── index.ts           # Main exports
-│   ├── dist/                  # Compiled TypeScript
-│   ├── package.json
-│   └── tsconfig.json
+├── src/
+│   ├── types.ts           # Shared type definitions
+│   ├── mock-data.ts       # Legacy mock data functions
+│   ├── jest-helpers.ts    # Jest mock helpers
+│   ├── factories/         # Fishery test factories
+│   │   ├── index.ts       # Factory exports
+│   │   ├── note.ts        # Note factory
+│   │   └── rating.ts      # Rating factory
+│   └── index.ts           # Main exports
+├── dist/                  # Compiled TypeScript
+├── package.json
+├── tsconfig.json
 │
 └── python/              # Python/pytest utilities
     ├── opennotes_test_utils/
@@ -159,6 +162,110 @@ describe('API Client', () => {
 });
 ```
 
+#### Fishery Factories (Recommended)
+
+Fishery factories provide type-safe, consistent test data with automatic sequencing. This is the recommended approach for creating test fixtures.
+
+**Basic Usage:**
+
+```typescript
+import { noteFactory, ratingFactory } from '@opennotes/test-utils';
+
+describe('Note Tests', () => {
+  it('should build a single note', () => {
+    const note = noteFactory.build();
+
+    expect(note.id).toBe('note-1');
+    expect(note.content).toBe('Test community note');
+  });
+
+  it('should build with overrides', () => {
+    const note = noteFactory.build({
+      content: 'Custom content',
+      authorId: 'custom-author',
+    });
+
+    expect(note.content).toBe('Custom content');
+    expect(note.authorId).toBe('custom-author');
+  });
+
+  it('should build multiple items', () => {
+    const notes = noteFactory.buildList(3);
+
+    expect(notes).toHaveLength(3);
+    expect(notes[0].id).toBe('note-1');
+    expect(notes[1].id).toBe('note-2');
+    expect(notes[2].id).toBe('note-3');
+  });
+});
+```
+
+**Creating Custom Factories:**
+
+```typescript
+import { Factory } from '@opennotes/test-utils';
+import type { NoteRequest } from '../src/types.js';
+
+export const noteRequestFactory = Factory.define<NoteRequest>(({ sequence }) => ({
+  id: `discord-123456789-${sequence}`,
+  messageId: `msg-${sequence}`,
+  channelId: `channel-${sequence}`,
+  guildId: `guild-${sequence}`,
+  authorId: `author-${sequence}`,
+  content: 'Test message content',
+  requestedBy: `user-${sequence}`,
+  requestedAt: new Date().toISOString(),
+  status: 'pending',
+}));
+```
+
+**Factory Patterns:**
+
+```typescript
+// Extend factories with params for common variations
+const adminUserFactory = userFactory.params({ admin: true });
+
+// Use transient params for computed properties
+type UserTransient = { generateEmail: boolean };
+
+const userFactory = Factory.define<User, UserTransient>(
+  ({ sequence, transientParams }) => {
+    const name = `User ${sequence}`;
+    return {
+      id: `user-${sequence}`,
+      name,
+      email: transientParams.generateEmail
+        ? `user-${sequence}@example.com`
+        : null,
+    };
+  }
+);
+
+// Build with transient params
+const user = userFactory.build({}, { transient: { generateEmail: true } });
+
+// Use associations for related objects
+const postFactory = Factory.define<Post>(({ associations }) => ({
+  id: 'post-1',
+  title: 'My Post',
+  author: associations.author || userFactory.build(),
+}));
+
+// Override association when building
+const customAuthor = userFactory.build({ name: 'Custom Author' });
+const post = postFactory.build({}, { associations: { author: customAuthor } });
+```
+
+**When to use Fishery vs createMock functions:**
+
+| Use Case | Recommended Approach |
+|----------|---------------------|
+| Simple one-off mocks | `createMockNote()` |
+| Multiple related items | `noteFactory.buildList(5)` |
+| Unique IDs needed | `noteFactory` (auto-sequencing) |
+| Complex nested data | `Factory.define()` |
+| Type-safe overrides | Fishery factories |
+
 ### Python Testing Patterns
 
 #### Test Fixtures
@@ -252,7 +359,13 @@ interface ServiceResult<T> {
 }
 ```
 
-#### Mock Data Functions
+#### Fishery Factories
+
+- `Factory` - Re-exported from fishery for creating custom factories
+- `noteFactory` - Factory for creating Note objects with auto-sequencing
+- `ratingFactory` - Factory for creating Rating objects with auto-sequencing
+
+#### Mock Data Functions (Legacy)
 
 - `createMockNote(overrides?: Partial<Note>): Note`
 - `createMockRating(overrides?: Partial<Rating>): Rating`
@@ -402,6 +515,13 @@ When adding new test utilities:
 5. **Update this README** - Document new utilities
 
 ## Version History
+
+### 1.1.0 (2024-12-23)
+
+- Added Fishery factory support for type-safe test fixtures
+- New factories: `noteFactory`, `ratingFactory`
+- Re-exported `Factory` from fishery for creating custom factories
+- Added documentation for factory patterns (transient params, associations)
 
 ### 1.0.0 (2024-10-28)
 

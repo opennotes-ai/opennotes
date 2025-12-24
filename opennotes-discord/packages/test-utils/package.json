@@ -26,9 +26,11 @@
   "license": "MIT",
   "devDependencies": {
     "@jest/globals": "^29.7.0",
+    "fishery": "^2.4.0",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "@jest/globals": "^29.7.0"
+    "@jest/globals": "^29.7.0",
+    "fishery": "^2.2.2"
   }
 }
