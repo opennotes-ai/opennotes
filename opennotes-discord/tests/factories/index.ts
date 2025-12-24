@@ -50,3 +50,9 @@ export {
   type MockCommandInteractionOptions,
   type ChatInputCommandInteractionTransientParams,
 } from './chat-input-command-interaction.js';
+
+export {
+  apiClientFactory,
+  type MockApiClient,
+  type ApiClientTransientParams,
+} from './api-client.js';
