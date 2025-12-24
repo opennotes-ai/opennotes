@@ -1,32 +1,8 @@
 import { filterNotesAwaitingUserRating } from '../../src/lib/note-filters.js';
-import type { NoteWithRatings, RatingResponse } from '../../src/lib/types.js';
-
-function createMockRating(overrides?: Partial<RatingResponse>): RatingResponse {
-  return {
-    id: 'rating-1',
-    note_id: 'note-1',
-    rater_participant_id: 'rater-1',
-    helpfulness_level: 'HELPFUL',
-    created_at: '2025-11-01T12:00:00Z',
-    updated_at: '2025-11-01T12:00:00Z',
-    ...overrides,
-  };
-}
-
-function createMockNote(overrides?: Partial<NoteWithRatings>): NoteWithRatings {
-  return {
-    id: 'note-1',
-    author_participant_id: 'author-1',
-    summary: 'Test note summary',
-    classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
-    helpfulness_score: 0.5,
-    status: 'NEEDS_MORE_RATINGS',
-    created_at: '2025-11-01T12:00:00Z',
-    ratings: [],
-    ratings_count: 0,
-    ...overrides,
-  };
-}
+import {
+  noteWithRatingsFactory,
+  ratingResponseFactory,
+} from '../factories/index.js';
 
 describe('note-filters', () => {
   describe('filterNotesAwaitingUserRating', () => {
@@ -35,9 +11,9 @@ describe('note-filters', () => {
     describe('Section 1 - Notes Awaiting Your Rating filter', () => {
       it('should return all notes when none have ratings', () => {
         const notes = [
-          createMockNote({ id: 'note-1', ratings: [], ratings_count: 0 }),
-          createMockNote({ id: 'note-2', ratings: [], ratings_count: 0 }),
-          createMockNote({ id: 'note-3', ratings: [], ratings_count: 0 }),
+          noteWithRatingsFactory.build({ id: 'note-1', ratings: [], ratings_count: 0 }),
+          noteWithRatingsFactory.build({ id: 'note-2', ratings: [], ratings_count: 0 }),
+          noteWithRatingsFactory.build({ id: 'note-3', ratings: [], ratings_count: 0 }),
         ];
 
         const result = filterNotesAwaitingUserRating(notes, currentUserId);
@@ -48,18 +24,18 @@ describe('note-filters', () => {
 
       it('should return notes where only other users have rated', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({ rater_participant_id: 'other-user-1' }),
-              createMockRating({ rater_participant_id: 'other-user-2' }),
+              ratingResponseFactory.build({ rater_participant_id: 'other-user-1' }),
+              ratingResponseFactory.build({ rater_participant_id: 'other-user-2' }),
             ],
             ratings_count: 2,
           }),
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-2',
             ratings: [
-              createMockRating({ rater_participant_id: 'other-user-3' }),
+              ratingResponseFactory.build({ rater_participant_id: 'other-user-3' }),
             ],
             ratings_count: 1,
           }),
@@ -73,10 +49,10 @@ describe('note-filters', () => {
 
       it('should filter out notes where the current user has already rated', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({ rater_participant_id: currentUserId }),
+              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
             ],
             ratings_count: 1,
           }),
@@ -89,30 +65,30 @@ describe('note-filters', () => {
 
       it('should handle mixed scenario - some notes rated by user, some not', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({ rater_participant_id: 'other-user' }),
+              ratingResponseFactory.build({ rater_participant_id: 'other-user' }),
             ],
             ratings_count: 1,
           }),
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-2',
             ratings: [
-              createMockRating({ rater_participant_id: currentUserId }),
+              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
             ],
             ratings_count: 1,
           }),
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-3',
             ratings: [],
             ratings_count: 0,
           }),
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-4',
             ratings: [
-              createMockRating({ rater_participant_id: 'other-user' }),
-              createMockRating({ rater_participant_id: currentUserId }),
+              ratingResponseFactory.build({ rater_participant_id: 'other-user' }),
+              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
             ],
             ratings_count: 2,
           }),
@@ -126,14 +102,14 @@ describe('note-filters', () => {
 
       it('should return empty array when all notes are rated by user', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
-            ratings: [createMockRating({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
             ratings_count: 1,
           }),
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-2',
-            ratings: [createMockRating({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
             ratings_count: 1,
           }),
         ];
@@ -153,10 +129,10 @@ describe('note-filters', () => {
       it('should handle numeric participant IDs converted to string', () => {
         const numericUserId = '12345';
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({ rater_participant_id: '12345' }),
+              ratingResponseFactory.build({ rater_participant_id: '12345' }),
             ],
             ratings_count: 1,
           }),
@@ -169,10 +145,10 @@ describe('note-filters', () => {
 
       it('should handle string vs numeric comparison correctly (String() conversion)', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              { ...createMockRating(), rater_participant_id: 12345 as unknown as string },
+              { ...ratingResponseFactory.build(), rater_participant_id: 12345 as unknown as string },
             ],
             ratings_count: 1,
           }),
@@ -185,10 +161,10 @@ describe('note-filters', () => {
 
       it('should correctly filter when user has rated with HELPFUL rating', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({
+              ratingResponseFactory.build({
                 rater_participant_id: currentUserId,
                 helpfulness_level: 'HELPFUL',
               }),
@@ -204,10 +180,10 @@ describe('note-filters', () => {
 
       it('should correctly filter when user has rated with NOT_HELPFUL rating', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({
+              ratingResponseFactory.build({
                 rater_participant_id: currentUserId,
                 helpfulness_level: 'NOT_HELPFUL',
               }),
@@ -223,10 +199,10 @@ describe('note-filters', () => {
 
       it('should correctly filter when user has rated with SOMEWHAT_HELPFUL rating', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({
+              ratingResponseFactory.build({
                 rater_participant_id: currentUserId,
                 helpfulness_level: 'SOMEWHAT_HELPFUL',
               }),
@@ -242,14 +218,14 @@ describe('note-filters', () => {
 
       it('should handle notes with many ratings from various users', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({ rater_participant_id: 'user-a' }),
-              createMockRating({ rater_participant_id: 'user-b' }),
-              createMockRating({ rater_participant_id: 'user-c' }),
-              createMockRating({ rater_participant_id: 'user-d' }),
-              createMockRating({ rater_participant_id: 'user-e' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-a' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-b' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-c' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-d' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-e' }),
             ],
             ratings_count: 5,
           }),
@@ -263,14 +239,14 @@ describe('note-filters', () => {
 
       it('should filter out note when user is among many raters', () => {
         const notes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              createMockRating({ rater_participant_id: 'user-a' }),
-              createMockRating({ rater_participant_id: 'user-b' }),
-              createMockRating({ rater_participant_id: currentUserId }),
-              createMockRating({ rater_participant_id: 'user-d' }),
-              createMockRating({ rater_participant_id: 'user-e' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-a' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-b' }),
+              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-d' }),
+              ratingResponseFactory.build({ rater_participant_id: 'user-e' }),
             ],
             ratings_count: 5,
           }),
@@ -283,17 +259,17 @@ describe('note-filters', () => {
 
       it('should preserve order of notes after filtering', () => {
         const notes = [
-          createMockNote({ id: 'note-a', ratings: [] }),
-          createMockNote({
+          noteWithRatingsFactory.build({ id: 'note-a', ratings: [] }),
+          noteWithRatingsFactory.build({
             id: 'note-b',
-            ratings: [createMockRating({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
           }),
-          createMockNote({ id: 'note-c', ratings: [] }),
-          createMockNote({
+          noteWithRatingsFactory.build({ id: 'note-c', ratings: [] }),
+          noteWithRatingsFactory.build({
             id: 'note-d',
-            ratings: [createMockRating({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
           }),
-          createMockNote({ id: 'note-e', ratings: [] }),
+          noteWithRatingsFactory.build({ id: 'note-e', ratings: [] }),
         ];
 
         const result = filterNotesAwaitingUserRating(notes, currentUserId);
@@ -304,11 +280,11 @@ describe('note-filters', () => {
 
       it('should not modify the original notes array', () => {
         const originalNotes = [
-          createMockNote({
+          noteWithRatingsFactory.build({
             id: 'note-1',
-            ratings: [createMockRating({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
           }),
-          createMockNote({ id: 'note-2', ratings: [] }),
+          noteWithRatingsFactory.build({ id: 'note-2', ratings: [] }),
         ];
         const notesCopy = [...originalNotes];
 

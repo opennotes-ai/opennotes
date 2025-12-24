@@ -112,3 +112,23 @@ export {
   type MockRedisPipeline,
   type RedisTransientParams,
 } from './redis.js';
+
+export {
+  noteWithRatingsFactory,
+  ratingResponseFactory,
+  requestInfoFactory,
+  type NoteWithRatingsTransientParams,
+  type RatingResponseTransientParams,
+  type RequestInfoTransientParams,
+} from './note-with-ratings.js';
+
+export {
+  flaggedMessageFactory,
+  latestScanResponseFactory,
+  noteRequestsResultFactory,
+  explanationResultFactory,
+  type FlaggedMessageTransientParams,
+  type LatestScanTransientParams,
+  type NoteRequestsResultTransientParams,
+  type ExplanationResultTransientParams,
+} from './scan-response.js';

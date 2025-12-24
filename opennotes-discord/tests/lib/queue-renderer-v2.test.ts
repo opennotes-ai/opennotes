@@ -5,13 +5,9 @@ import {
   ButtonBuilder,
   ButtonStyle,
 } from 'discord.js';
+import { loggerFactory } from '../factories/index.js';
 
-const mockLogger = {
-  info: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
