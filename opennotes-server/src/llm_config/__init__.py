@@ -6,12 +6,11 @@ from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.models import CommunityServer, CommunityServerLLMConfig, LLMUsageLog
 from src.llm_config.providers import (
-    AnthropicProvider,
+    LiteLLMProvider,
     LLMMessage,
     LLMProvider,
     LLMProviderFactory,
     LLMResponse,
-    OpenAIProvider,
 )
 from src.llm_config.schemas import (
     LLMConfigCreate,
@@ -30,7 +29,6 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "AnthropicProvider",
     "CommunityServer",
     "CommunityServerLLMConfig",
     "EncryptionService",
@@ -49,7 +47,7 @@ __all__ = [
     "LLMUsageLog",
     "LLMUsageStatsResponse",
     "LLMUsageTracker",
-    "OpenAIProvider",
+    "LiteLLMProvider",
     "SecureString",
     "router",
     "secure_api_key_context",

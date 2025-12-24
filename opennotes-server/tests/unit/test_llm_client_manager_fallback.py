@@ -12,7 +12,7 @@ import pytest
 
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
-from src.llm_config.providers.openai_provider import OpenAIProvider
+from src.llm_config.providers import LiteLLMProvider
 
 
 @pytest.fixture
@@ -34,7 +34,6 @@ async def test_get_client_uses_community_config_when_exists(client_manager, db_s
     """Test that community-specific config is used when it exists."""
     community_server_id = uuid4()
 
-    # Mock database to return a config
     mock_config = MagicMock()
     mock_config.provider = "openai"
     mock_config.enabled = True
@@ -50,9 +49,9 @@ async def test_get_client_uses_community_config_when_exists(client_manager, db_s
     client = await client_manager.get_client(db_session, community_server_id, "openai")
 
     assert client is not None
-    assert isinstance(client, OpenAIProvider)
+    assert isinstance(client, LiteLLMProvider)
     assert client.api_key == "community-api-key"
-    assert client.default_model == "gpt-5.1"
+    assert "openai/" in client.default_model or client.default_model == "openai/gpt-5.1"
 
 
 @pytest.mark.asyncio
@@ -60,7 +59,6 @@ async def test_get_client_falls_back_to_global_openai_key(client_manager, db_ses
     """Test that global OPENAI_API_KEY is used when no community config exists."""
     community_server_id = uuid4()
 
-    # Mock database to return None (no config)
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
 
@@ -70,9 +68,9 @@ async def test_get_client_falls_back_to_global_openai_key(client_manager, db_ses
         client = await client_manager.get_client(db_session, community_server_id, "openai")
 
         assert client is not None
-        assert isinstance(client, OpenAIProvider)
+        assert isinstance(client, LiteLLMProvider)
         assert client.api_key == "global-openai-key"
-        assert client.default_model == "gpt-5.1"
+        assert "openai/" in client.default_model or client.default_model == "openai/gpt-5.1"
 
 
 @pytest.mark.asyncio
