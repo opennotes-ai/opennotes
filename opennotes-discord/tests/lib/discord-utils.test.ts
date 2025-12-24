@@ -9,11 +9,12 @@ import {
   type ForcePublishConfirmationResultV2,
 } from '../../src/lib/discord-utils.js';
 import { V2_COLORS } from '../../src/utils/v2-components.js';
+import { loggerFactory } from '../factories/index.js';
+
+const mockLogger = loggerFactory.build();
 
 jest.mock('../../src/logger.js', () => ({
-  logger: {
-    debug: jest.fn(),
-  },
+  logger: mockLogger,
 }));
 
 describe('extractPlatformMessageId', () => {

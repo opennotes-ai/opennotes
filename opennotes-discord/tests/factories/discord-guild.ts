@@ -1,5 +1,6 @@
 import { Factory } from 'fishery';
 import { jest } from '@jest/globals';
+import { Collection } from 'discord.js';
 import type { MockDiscordMember } from './discord-member.js';
 
 export interface MockDiscordGuild {
@@ -13,7 +14,7 @@ export interface MockDiscordGuild {
     me: MockDiscordMember | null;
   };
   channels: {
-    cache: Map<string, unknown> & { filter: (fn: (channel: unknown) => boolean) => Map<string, unknown> };
+    cache: Collection<string, unknown>;
     create: ReturnType<typeof jest.fn<(options: any) => Promise<any>>>;
     fetch: ReturnType<typeof jest.fn<(id?: string) => Promise<any>>>;
   };
@@ -32,23 +33,11 @@ export const discordGuildFactory = Factory.define<MockDiscordGuild, DiscordGuild
     const { botMember } = transientParams;
 
     const membersCache = new Map<string, MockDiscordMember>();
-    const channelsCache = new Map<string, unknown>();
+    const channelsCache = new Collection<string, unknown>();
     const rolesCache = new Map<string, { id: string; name: string }>();
 
     const everyoneRole = { id: `guild-${sequence}`, name: '@everyone' };
     rolesCache.set(everyoneRole.id, everyoneRole);
-
-    const channelsCacheWithFilter = Object.assign(channelsCache, {
-      filter: jest.fn((fn: (channel: unknown) => boolean) => {
-        const filtered = new Map<string, unknown>();
-        for (const [key, value] of channelsCache) {
-          if (fn(value)) {
-            filtered.set(key, value);
-          }
-        }
-        return filtered;
-      }),
-    });
 
     return {
       id: `guild-${sequence}`,
@@ -66,7 +55,7 @@ export const discordGuildFactory = Factory.define<MockDiscordGuild, DiscordGuild
         me: botMember ?? null,
       },
       channels: {
-        cache: channelsCacheWithFilter,
+        cache: channelsCache,
         create: jest.fn<(options: any) => Promise<any>>().mockResolvedValue({ id: 'new-channel-id' }),
         fetch: jest.fn<(id?: string) => Promise<any>>().mockResolvedValue(null),
       },
