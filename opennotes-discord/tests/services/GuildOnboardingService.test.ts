@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { MessageFlags, ContainerBuilder, Collection } from 'discord.js';
+import { MessageFlags, ContainerBuilder, Collection, MessageType } from 'discord.js';
 import { V2_COLORS } from '../../src/utils/v2-components.js';
 import { buildWelcomeContainer } from '../../src/lib/welcome-content.js';
 
@@ -893,6 +893,158 @@ describe('GuildOnboardingService', () => {
         );
         // Should not post new message
         expect(mockChannel.send).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('Pin Notification Cleanup (task-875)', () => {
+    let mockMessage: any;
+    let mockBotUser: any;
+
+    beforeEach(() => {
+      mockMessage = {
+        id: 'message-456',
+        pinned: false,
+        pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+      };
+      mockChannel.send.mockResolvedValue(mockMessage);
+
+      mockBotUser = {
+        id: 'bot-user-123',
+        username: 'OpenNotes',
+        bot: true,
+      };
+
+      mockChannel.client = {
+        user: mockBotUser,
+      };
+
+      mockApiClient.getCommunityServerByPlatformId.mockReset();
+      mockApiClient.updateWelcomeMessageId.mockReset();
+      mockApiClient.updateWelcomeMessageId.mockResolvedValue({
+        id: 'community-server-123',
+        platform_id: 'guild-123',
+        welcome_message_id: 'message-456',
+      });
+    });
+
+    describe('AC#1: Check if message is already pinned', () => {
+      it('should skip pinning if message is already pinned', async () => {
+        const alreadyPinnedMessage = {
+          id: 'message-456',
+          pinned: true,
+          pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        mockChannel.send.mockResolvedValue(alreadyPinnedMessage);
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        expect(alreadyPinnedMessage.pin).not.toHaveBeenCalled();
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          'Message already pinned, skipping',
+          expect.objectContaining({
+            guildId: 'guild-123',
+            messageId: 'message-456',
+          })
+        );
+      });
+
+      it('should pin message if not already pinned', async () => {
+        const unpinnedMessage = {
+          id: 'message-456',
+          pinned: false,
+          pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+        mockChannel.send.mockResolvedValue(unpinnedMessage);
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        expect(unpinnedMessage.pin).toHaveBeenCalled();
+      });
+    });
+
+    describe('AC#3: Delete pin notification after pinning', () => {
+      it('should delete pin notification system message after pinning', async () => {
+        const pinnedMessage = {
+          id: 'message-456',
+          pinned: false,
+          pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+          channel: mockChannel,
+        };
+        mockChannel.send.mockResolvedValue(pinnedMessage);
+
+        const pinNotificationMessage = {
+          id: 'notification-789',
+          type: MessageType.ChannelPinnedMessage,
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+
+        const regularMessage = {
+          id: 'regular-123',
+          type: MessageType.Default,
+          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+        };
+
+        const fetchedMessages = createMockCollection([
+          ['notification-789', pinNotificationMessage],
+          ['regular-123', regularMessage],
+        ]);
+        mockChannel.messages.fetch.mockResolvedValue(fetchedMessages);
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        expect(mockChannel.messages.fetch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            limit: 5,
+            after: 'message-456',
+          })
+        );
+        expect(pinNotificationMessage.delete).toHaveBeenCalled();
+        expect(regularMessage.delete).not.toHaveBeenCalled();
+      });
+
+      it('should handle pin notification deletion failure gracefully', async () => {
+        const pinnedMessage = {
+          id: 'message-456',
+          pinned: false,
+          pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+          channel: mockChannel,
+        };
+        mockChannel.send.mockResolvedValue(pinnedMessage);
+
+        const pinNotificationMessage = {
+          id: 'notification-789',
+          type: MessageType.ChannelPinnedMessage,
+          delete: jest.fn<() => Promise<any>>().mockRejectedValue(new Error('Missing permissions')),
+        };
+
+        const fetchedMessages = createMockCollection([
+          ['notification-789', pinNotificationMessage],
+        ]);
+        mockChannel.messages.fetch.mockResolvedValue(fetchedMessages);
+
+        await expect(service.postWelcomeToChannel(mockChannel)).resolves.not.toThrow();
+
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          'Could not delete pin notification',
+          expect.objectContaining({
+            messageId: 'message-456',
+          })
+        );
+      });
+
+      it('should handle message fetch failure gracefully', async () => {
+        const pinnedMessage = {
+          id: 'message-456',
+          pinned: false,
+          pin: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+          channel: mockChannel,
+        };
+        mockChannel.send.mockResolvedValue(pinnedMessage);
+
+        mockChannel.messages.fetch.mockRejectedValue(new Error('API error'));
+
+        await expect(service.postWelcomeToChannel(mockChannel)).resolves.not.toThrow();
       });
     });
   });
