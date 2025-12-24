@@ -2,14 +2,10 @@
 
 from typing import Any, ClassVar
 
-from src.llm_config.providers.anthropic_provider import (
-    AnthropicProvider,
-    AnthropicProviderSettings,
-)
 from src.llm_config.providers.base import LLMProvider
-from src.llm_config.providers.openai_provider import (
-    OpenAIProvider,
-    OpenAIProviderSettings,
+from src.llm_config.providers.litellm_provider import (
+    LiteLLMProvider,
+    LiteLLMProviderSettings,
 )
 
 
@@ -21,8 +17,11 @@ class LLMProviderFactory:
     """
 
     _providers: ClassVar[dict[str, type[LLMProvider[Any, Any]]]] = {
-        "openai": OpenAIProvider,
-        "anthropic": AnthropicProvider,
+        "openai": LiteLLMProvider,
+        "anthropic": LiteLLMProvider,
+        "vertex_ai": LiteLLMProvider,
+        "gemini": LiteLLMProvider,
+        "litellm": LiteLLMProvider,
     }
 
     @classmethod
@@ -52,28 +51,33 @@ class LLMProviderFactory:
             )
 
         typed_settings = cls._create_typed_settings(provider_name, settings)
+        # All registered providers are LiteLLMProvider, cast for type safety
+        if provider_class is LiteLLMProvider:
+            return LiteLLMProvider(
+                api_key, default_model, typed_settings, provider_name=provider_name
+            )
+        # Fallback for custom registered providers (without provider_name)
         return provider_class(api_key, default_model, typed_settings)
 
     @classmethod
-    def _create_typed_settings(cls, provider_name: str, settings: dict[str, Any]) -> Any:
+    def _create_typed_settings(
+        cls,
+        provider_name: str,  # noqa: ARG003
+        settings: dict[str, Any],
+    ) -> LiteLLMProviderSettings:
         """
-        Convert dictionary settings to typed provider settings.
+        Convert dictionary settings to LiteLLMProviderSettings.
+
+        All providers now use LiteLLMProvider, so settings are unified.
 
         Args:
-            provider_name: Provider identifier
+            provider_name: Provider identifier (unused, kept for API compatibility)
             settings: Settings dictionary
 
         Returns:
-            Typed settings instance for the provider
-
-        Raises:
-            ValueError: If settings are invalid for the provider
+            LiteLLMProviderSettings instance
         """
-        if provider_name == "openai":
-            return OpenAIProviderSettings(**settings)
-        if provider_name == "anthropic":
-            return AnthropicProviderSettings(**settings)
-        raise ValueError(f"No settings class defined for provider: {provider_name}")
+        return LiteLLMProviderSettings(**settings)
 
     @classmethod
     def register_provider(cls, name: str, provider_class: type[LLMProvider[Any, Any]]) -> None:

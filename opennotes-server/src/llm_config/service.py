@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, Literal
 from uuid import UUID
 
+import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     retry,
@@ -19,8 +20,8 @@ from tenacity import (
 
 from src.config import settings
 from src.llm_config.manager import LLMClientManager
+from src.llm_config.providers import LiteLLMCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
-from src.llm_config.providers.openai_provider import OpenAICompletionParams, OpenAIProvider
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -32,7 +33,7 @@ class LLMService:
 
     Provides high-level methods that automatically handle:
     - Server-specific → global credential fallback
-    - Provider abstraction (OpenAI/Anthropic)
+    - Provider abstraction (OpenAI/Anthropic/LiteLLM)
     - Caching and resource management
     - Error handling and retries
     """
@@ -84,14 +85,9 @@ class LLMService:
                 f"No {provider} configuration found for community server {community_server_id}"
             )
 
-        # Build provider-specific params
-        if provider == "openai":
-            params = OpenAICompletionParams(
-                model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
-            )
-        else:
-            # For other providers, pass as generic params
-            params = None
+        params = LiteLLMCompletionParams(
+            model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
+        )
 
         logger.info(
             f"Generating completion with {provider}",
@@ -143,13 +139,9 @@ class LLMService:
                 f"No {provider} configuration found for community server {community_server_id}"
             )
 
-        # Build provider-specific params
-        if provider == "openai":
-            params = OpenAICompletionParams(
-                model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
-            )
-        else:
-            params = None
+        params = LiteLLMCompletionParams(
+            model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
+        )
 
         logger.info(
             f"Starting streaming completion with {provider}",
@@ -178,9 +170,11 @@ class LLMService:
         model: str | None = None,
     ) -> tuple[list[float], str, str]:
         """
-        Generate OpenAI embedding for text.
+        Generate embedding for text using LiteLLM.
 
         Automatically retries on errors with exponential backoff.
+        Uses OpenAI provider credentials but can work with any LiteLLM-supported
+        embedding model.
 
         Args:
             db: Database session
@@ -202,11 +196,6 @@ class LLMService:
                 f"No OpenAI configuration found for community server {community_server_id}"
             )
 
-        # Embeddings require direct OpenAI client access
-        # (not yet abstracted in LLMProvider interface)
-        if not isinstance(llm_provider, OpenAIProvider):
-            raise ValueError("Embedding generation requires OpenAI provider")
-
         embedding_model = model or settings.EMBEDDING_MODEL
 
         logger.debug(
@@ -218,23 +207,26 @@ class LLMService:
             },
         )
 
-        response = await llm_provider.client.embeddings.create(
-            model=embedding_model, input=text, encoding_format="float"
+        response = await litellm.aembedding(
+            model=embedding_model,
+            input=[text],
+            api_key=llm_provider.api_key,
+            encoding_format="float",
         )
 
-        embedding = response.data[0].embedding
+        embedding = response.data[0]["embedding"]
 
         logger.info(
             "Embedding generated successfully",
             extra={
                 "text_length": len(text),
                 "community_server_id": str(community_server_id),
-                "tokens_used": response.usage.total_tokens,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
                 "embedding_dimensions": len(embedding),
             },
         )
 
-        return embedding, "openai", embedding_model
+        return embedding, "litellm", embedding_model
 
     @retry(
         retry=retry_if_exception_type(Exception),
@@ -252,9 +244,11 @@ class LLMService:
         model: str | None = None,
     ) -> str:
         """
-        Generate image description using GPT-4 Vision.
+        Generate image description using LiteLLM vision capabilities.
 
         Automatically retries on errors with exponential backoff.
+        Uses OpenAI provider credentials but can work with any LiteLLM-supported
+        vision model.
 
         Args:
             db: Database session
@@ -278,11 +272,6 @@ class LLMService:
                 f"No OpenAI configuration found for community server {community_server_id}"
             )
 
-        # Vision requires direct OpenAI client access
-        # (not yet abstracted in LLMProvider interface)
-        if not isinstance(llm_provider, OpenAIProvider):
-            raise ValueError("Image description requires OpenAI provider")
-
         vision_model = model or settings.VISION_MODEL
 
         logger.debug(
@@ -295,7 +284,7 @@ class LLMService:
             },
         )
 
-        response = await llm_provider.client.chat.completions.create(
+        response = await litellm.acompletion(
             model=vision_model,
             messages=[
                 {
@@ -313,16 +302,17 @@ class LLMService:
                 }
             ],
             max_tokens=max_tokens,
+            api_key=llm_provider.api_key,
         )
 
-        description = response.choices[0].message.content or ""
+        description = response.choices[0].message.content or ""  # type: ignore[union-attr]
 
         logger.info(
             "Image description generated successfully",
             extra={
                 "image_url": image_url[:100],
                 "community_server_id": str(community_server_id),
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,  # type: ignore[union-attr]
                 "description_length": len(description),
             },
         )

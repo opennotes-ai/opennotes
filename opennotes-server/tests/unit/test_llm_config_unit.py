@@ -96,7 +96,7 @@ class TestLLMProviderFactory:
     """Test LLM provider factory."""
 
     def test_create_openai_provider(self) -> None:
-        """Test creating an OpenAI provider."""
+        """Test creating an OpenAI provider via LiteLLM."""
         provider = LLMProviderFactory.create(
             "openai",
             "sk-test-key",
@@ -111,7 +111,7 @@ class TestLLMProviderFactory:
         assert provider.settings.max_tokens == 1000
 
     def test_create_anthropic_provider(self) -> None:
-        """Test creating an Anthropic provider."""
+        """Test creating an Anthropic provider via LiteLLM."""
         provider = LLMProviderFactory.create(
             "anthropic",
             "sk-ant-test-key",
@@ -185,10 +185,10 @@ class TestLLMConfigSchemas:
 def test_import_all_exports() -> None:
     """Test that all public exports are importable."""
     from src.llm_config import (
-        AnthropicProvider,
         CommunityServer,
         CommunityServerLLMConfig,
         EncryptionService,
+        LiteLLMProvider,
         LLMClientManager,
         LLMConfigCreate,
         LLMConfigResponse,
@@ -202,7 +202,6 @@ def test_import_all_exports() -> None:
         LLMUsageLog,
         LLMUsageStatsResponse,
         LLMUsageTracker,
-        OpenAIProvider,
         router,
     )
 
@@ -216,8 +215,7 @@ def test_import_all_exports() -> None:
     assert LLMMessage is not None
     assert LLMResponse is not None
     assert LLMProviderFactory is not None
-    assert OpenAIProvider is not None
-    assert AnthropicProvider is not None
+    assert LiteLLMProvider is not None
     assert LLMConfigCreate is not None
     assert LLMConfigUpdate is not None
     assert LLMConfigResponse is not None
