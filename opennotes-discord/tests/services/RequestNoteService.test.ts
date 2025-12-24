@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { ErrorCode } from '../../src/services/types.js';
+import { apiClientFactory, rateLimiterFactory, type MockApiClient, type MockRateLimiter } from '../factories/index.js';
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: {
@@ -16,21 +17,11 @@ jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
 }));
 
 const { RequestNoteService } = await import('../../src/services/RequestNoteService.js');
-const { ApiClient } = await import('../../src/lib/api-client.js');
-
-type RateLimitResult = { allowed: boolean; remaining: number; resetAt: number };
-type RateLimitError = { code: string; message: string };
-type RateLimiterInterface = {
-  check(userId: string): Promise<RateLimitResult>;
-  reset(userId: string): Promise<void>;
-  createError(resetAt: number): RateLimitError;
-  cleanup?(): Promise<void>;
-};
 
 describe('RequestNoteService', () => {
   let service: InstanceType<typeof RequestNoteService>;
-  let mockApiClient: jest.Mocked<InstanceType<typeof ApiClient>>;
-  let mockRateLimiter: jest.Mocked<RateLimiterInterface>;
+  let mockApiClient: MockApiClient;
+  let mockRateLimiter: MockRateLimiter;
 
   const validInput = {
     messageId: 'msg-123',
@@ -47,25 +38,12 @@ describe('RequestNoteService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockApiClient = {
-      requestNote: jest.fn(),
-    } as any;
-
-    mockRateLimiter = {
-      check: jest.fn(),
-      reset: jest.fn(),
-      createError: jest.fn(),
-    } as any;
-
-    mockRateLimiter.check.mockResolvedValue({
-      allowed: true,
-      remaining: 5,
-      resetAt: Date.now() + 60000,
-    });
+    mockApiClient = apiClientFactory.build();
+    mockRateLimiter = rateLimiterFactory.build();
 
     mockResolveCommunityServerId.mockResolvedValue('f47ac10b-58cc-4372-a567-0e02b2c3d479');
 
-    service = new RequestNoteService(mockApiClient, mockRateLimiter);
+    service = new RequestNoteService(mockApiClient as any, mockRateLimiter);
   });
 
   describe('Validation', () => {

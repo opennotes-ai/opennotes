@@ -1,14 +1,14 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
 import {
-  createMockLogger,
   createMockStatusService,
   createSuccessResult,
   createErrorResult,
 } from '../utils/service-mocks.js';
 import { ErrorCode } from '../../src/services/types.js';
+import { loggerFactory, cacheFactory } from '../factories/index.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 const mockStatusService = createMockStatusService();
 const mockScoringService = {
   getNoteScore: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -66,14 +66,7 @@ const mockApiClient = {
   createNoteRequest: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-  start: jest.fn<() => void>(),
-  stop: jest.fn<() => void>(),
-  getMetrics: jest.fn(() => ({ size: 0 })),
-};
+const mockCache = cacheFactory.build();
 
 const mockServiceProvider = {
   getStatusService: jest.fn(() => mockStatusService),

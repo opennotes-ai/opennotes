@@ -6,13 +6,9 @@ import type { NotePublisherConfigService } from '../../src/services/NotePublishe
 import type { NatsSubscriber as NatsSubscriberType } from '../../src/events/NatsSubscriber.js';
 import type { MockNatsServer as MockNatsServerType } from '../utils/mock-nats-server.js';
 import { TEST_SCORE_THRESHOLD } from '../test-constants.js';
+import { loggerFactory } from '../factories/index.js';
 
-const mockLogger = {
-  debug: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 const mockNoteContextService = {
   getNoteContext: jest.fn<(noteId: string) => Promise<any>>(),

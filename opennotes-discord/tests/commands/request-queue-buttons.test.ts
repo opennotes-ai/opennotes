@@ -1,27 +1,44 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
+import { loggerFactory } from '../factories/index.js';
 
+const mockLogger = loggerFactory.build();
+
+const cacheStore = new Map<string, unknown>();
 const mockCache = {
   get: jest.fn<(key: string) => Promise<unknown>>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<void>>(),
-  delete: jest.fn<(key: string) => Promise<void>>(),
+  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<boolean>>(),
+  delete: jest.fn<(key: string) => Promise<boolean>>(),
+  clear: jest.fn<() => Promise<number>>(),
   start: jest.fn<() => void>(),
   stop: jest.fn<() => void>(),
-  clear: jest.fn<() => Promise<void>>(),
-  getMetrics: jest.fn(() => ({ size: 0 })),
+  getMetrics: jest.fn(() => ({ size: cacheStore.size })),
 };
+
+function setupCacheImplementations() {
+  mockCache.get.mockImplementation(async (key: string) => {
+    return cacheStore.get(key) ?? null;
+  });
+  mockCache.set.mockImplementation(async (key: string, value: unknown, _ttl?: number) => {
+    cacheStore.set(key, value);
+    return true;
+  });
+  mockCache.delete.mockImplementation(async (key: string) => {
+    return cacheStore.delete(key);
+  });
+  mockCache.clear.mockImplementation(async () => {
+    const count = cacheStore.size;
+    cacheStore.clear();
+    return count;
+  });
+}
 
 jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: mockLogger,
 }));
 
 jest.unstable_mockModule('../../src/services/index.js', () => ({
@@ -43,6 +60,8 @@ jest.unstable_mockModule('../../src/lib/config-cache.js', () => ({
 describe('request-queue command - Write Note button', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    cacheStore.clear();
+    setupCacheImplementations();
   });
 
   describe('write_note_modal success response uses v2 formatting', () => {
@@ -145,9 +164,6 @@ describe('request-queue command - Write Note button', () => {
       const modalShortId = 'test1234';
       const modalCacheKey = `write_note_modal_state:${modalShortId}`;
 
-      mockCache.set.mockResolvedValue(undefined);
-      mockCache.get.mockResolvedValue(requestId);
-
       await mockCache.set(modalCacheKey, requestId, 300);
 
       const retrieved = await mockCache.get(modalCacheKey);
@@ -175,9 +191,6 @@ describe('request-queue command - Write Note button', () => {
       const modalShortId = 'test1234';
       const classification = 'NOT_MISLEADING';
       const classificationCacheKey = `write_note_classification:${modalShortId}`;
-
-      mockCache.set.mockResolvedValue(undefined);
-      mockCache.get.mockResolvedValue(classification);
 
       await mockCache.set(classificationCacheKey, classification, 300);
 

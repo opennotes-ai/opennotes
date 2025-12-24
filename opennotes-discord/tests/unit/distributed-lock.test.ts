@@ -6,14 +6,12 @@ import {
   cleanupRedisTestConnection,
   type RedisTestContext,
 } from '../utils/redis-test-helper.js';
+import { loggerFactory } from '../factories/index.js';
+
+const mockLogger = loggerFactory.build();
 
 jest.mock('../../src/logger.js', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: mockLogger,
 }));
 
 describe('DistributedLock', () => {

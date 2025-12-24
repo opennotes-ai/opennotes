@@ -43,6 +43,7 @@
   "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@opennotes/test-utils": "workspace:*",
+    "fishery": "^2.2.2",
     "@types/express": "^4.17.25",
     "@types/ioredis-mock": "^8.2.6",
     "@types/jest": "^29.5.11",

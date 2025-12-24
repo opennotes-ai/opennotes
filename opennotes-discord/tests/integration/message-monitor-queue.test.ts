@@ -7,6 +7,7 @@ import {
   cleanupRedisTestConnection,
   type RedisTestContext,
 } from '../utils/redis-test-helper.js';
+import { loggerFactory } from '../factories/index.js';
 
 const mockChannelService = {
   getChannelConfig: jest.fn<() => Promise<any>>(),
@@ -18,6 +19,8 @@ const mockApiClient = {
 };
 
 const mockClient = {} as Client;
+
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/services/MonitoredChannelService.js', () => ({
   MonitoredChannelService: jest.fn(() => mockChannelService),

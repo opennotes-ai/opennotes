@@ -1,11 +1,7 @@
 import { jest } from '@jest/globals';
+import { loggerFactory, chatInputCommandInteractionFactory } from '../factories/index.js';
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -101,20 +97,9 @@ describe('Scoring Commands Integration Tests', () => {
       const statusBotCommand = bot.commands.get('status-bot');
       expect(statusBotCommand).toBeDefined();
 
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild123',
-        client: { guilds: { cache: { size: 5 } } },
-        deferReply: jest.fn<() => Promise<any>>().mockResolvedValue(undefined as any),
-        editReply: jest.fn<() => Promise<any>>().mockResolvedValue(undefined as any),
-        options: {
-          getString: jest.fn<(name: string) => string | null>(),
-          getInteger: jest.fn<() => number | null>(),
-        },
-      };
-
-      mockInteraction.options.getString.mockReturnValue(null);
-      mockInteraction.options.getInteger.mockReturnValue(null);
+      const mockInteraction = chatInputCommandInteractionFactory.build({
+        commandName: 'status-bot',
+      });
 
       expect(typeof statusBotCommand.execute).toBe('function');
     });

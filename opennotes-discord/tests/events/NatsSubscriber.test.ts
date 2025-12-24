@@ -1,14 +1,19 @@
 import { jest } from '@jest/globals';
 import type { ScoreUpdateEvent } from '../../src/events/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD } from '../test-constants.js';
+import {
+  loggerFactory,
+  natsConnectionFactory,
+  createAsyncIterator,
+  createMockSubscription,
+  createMockJsMessage,
+  type MockNatsConnection,
+  type MockJetStreamClient,
+  type MockJetStreamManager,
+} from '../factories/index.js';
+import type { JetStreamSubscription } from 'nats';
 
 const mockConnect = jest.fn<(...args: any[]) => Promise<any>>();
-const mockSubscribe = jest.fn<(...args: any[]) => any>();
-const mockJsSubscribe = jest.fn<(...args: any[]) => Promise<any>>();
-const mockClose = jest.fn<(...args: any[]) => Promise<any>>();
-const mockIsClosed = jest.fn<() => boolean>();
-const mockDrain = jest.fn<(...args: any[]) => Promise<any>>();
-const mockStatus = jest.fn<() => AsyncIterableIterator<any>>();
 const mockStringCodec = jest.fn(() => ({
   decode: jest.fn<(data: Uint8Array) => string>(),
   encode: jest.fn<(str: string) => Uint8Array>(),
@@ -29,18 +34,16 @@ const createMockConsumerOpts = () => {
 
 const mockConsumerOpts = jest.fn(() => createMockConsumerOpts());
 
-let mockNatsConnection: any;
-let mockJetStream: any;
-let mockJetStreamManager: any;
-let mockSubscription: any;
-let mockCodec: any;
-
-const mockLogger = {
-  debug: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
+let mockNatsConnection: MockNatsConnection;
+let mockJetStream: MockJetStreamClient;
+let mockJetStreamManager: MockJetStreamManager;
+let mockSubscription: JetStreamSubscription;
+let mockCodec: {
+  decode: jest.Mock<(data: Uint8Array) => string>;
+  encode: jest.Mock<(str: string) => Uint8Array>;
 };
+
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('nats', () => ({
   connect: mockConnect,
@@ -58,73 +61,30 @@ jest.unstable_mockModule('../../src/utils/url-sanitizer.js', () => ({
 
 const { NatsSubscriber } = await import('../../src/events/NatsSubscriber.js');
 
-const createAsyncIterator = (values: any[]) => {
-  let index = 0;
-  return {
-    async next() {
-      if (index < values.length) {
-        return { value: values[index++], done: false };
-      }
-      return { value: undefined, done: true };
-    },
-    [Symbol.asyncIterator]() {
-      return this;
-    },
-  } as AsyncIterableIterator<any>;
-};
-
 describe('NatsSubscriber', () => {
   let subscriber: InstanceType<typeof NatsSubscriber>;
   const expectedNatsUrl = process.env.NATS_URL || 'nats://localhost:4222';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockCodec = {
       decode: jest.fn<(data: Uint8Array) => string>(),
       encode: jest.fn<(str: string) => Uint8Array>(),
     };
 
-    mockSubscription = {
-      drain: mockDrain,
-      [Symbol.asyncIterator]: jest.fn(function* (this: any) {
-        yield* this.messages || [];
-      }),
-      messages: [],
-    };
+    mockSubscription = createMockSubscription();
 
-    mockJetStream = {
-      subscribe: mockJsSubscribe.mockResolvedValue(mockSubscription),
-    };
-
-    mockJetStreamManager = {
-      consumers: {
-        delete: jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined),
-        list: jest.fn<(...args: any[]) => any>().mockReturnValue({
-          next: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
-        }),
-        add: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-          name: 'test-consumer',
-          config: {},
-        }),
+    mockNatsConnection = natsConnectionFactory.build({}, {
+      transient: {
+        statusEvents: [{ type: 'connect', data: expectedNatsUrl }],
+        subscription: mockSubscription,
       },
-    };
-
-    mockNatsConnection = {
-      subscribe: mockSubscribe.mockReturnValue(mockSubscription),
-      jetstream: jest.fn<() => any>().mockReturnValue(mockJetStream),
-      jetstreamManager: jest.fn<() => Promise<any>>().mockResolvedValue(mockJetStreamManager),
-      close: mockClose,
-      isClosed: mockIsClosed,
-      status: mockStatus,
-    };
+    });
+    mockJetStream = mockNatsConnection.jetstream();
+    mockJetStreamManager = await mockNatsConnection.jetstreamManager();
 
     mockConnect.mockResolvedValue(mockNatsConnection);
     mockStringCodec.mockReturnValue(mockCodec);
     mockConsumerOpts.mockImplementation(() => createMockConsumerOpts());
-    mockIsClosed.mockReturnValue(false);
-
-    mockStatus.mockReturnValue(
-      createAsyncIterator([{ type: 'connect', data: expectedNatsUrl }])
-    );
 
     subscriber = new NatsSubscriber();
 
@@ -233,7 +193,7 @@ describe('NatsSubscriber', () => {
     it('should setup connection handlers after successful connection', async () => {
       await subscriber.connect();
 
-      expect(mockStatus).toHaveBeenCalled();
+      expect(mockNatsConnection.status).toHaveBeenCalled();
     });
   });
 
@@ -258,7 +218,7 @@ describe('NatsSubscriber', () => {
       await subscriber.subscribeToScoreUpdates(handler);
 
       expect(mockNatsConnection.jetstream).toHaveBeenCalled();
-      expect(mockJsSubscribe).toHaveBeenCalledWith(
+      expect(mockJetStream.subscribe).toHaveBeenCalledWith(
         'OPENNOTES.note_score_updated',
         expect.any(Object)
       );
@@ -274,7 +234,7 @@ describe('NatsSubscriber', () => {
 
     it('should handle subscription errors', async () => {
       const subscriptionError = new Error('Subscription failed');
-      mockJsSubscribe.mockRejectedValueOnce(subscriptionError);
+      mockJetStream.subscribe.mockRejectedValueOnce(subscriptionError);
 
       const handler = jest.fn<(event: ScoreUpdateEvent) => Promise<void>>();
 
@@ -312,15 +272,14 @@ describe('NatsSubscriber', () => {
       mockCodec.decode.mockReturnValue(eventJson);
 
       const messageData = new Uint8Array([1, 2, 3]);
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: messageData,
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      mockSubscription.messages = [mockMessage];
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
+      mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);
 
@@ -347,15 +306,14 @@ describe('NatsSubscriber', () => {
 
       mockCodec.decode.mockReturnValue('invalid json {');
 
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: new Uint8Array([1, 2, 3]),
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      mockSubscription.messages = [mockMessage];
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
+      mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);
 
@@ -390,15 +348,14 @@ describe('NatsSubscriber', () => {
 
       mockCodec.decode.mockReturnValue(JSON.stringify(testEvent));
 
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: new Uint8Array([1, 2, 3]),
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      mockSubscription.messages = [mockMessage];
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
+      mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);
 
@@ -431,15 +388,14 @@ describe('NatsSubscriber', () => {
 
       mockCodec.decode.mockReturnValue(JSON.stringify(testEvent));
 
-      const mockMessage = {
+      const mockMessage = createMockJsMessage({
         data: new Uint8Array([1, 2, 3]),
         subject: 'OPENNOTES.note_score_updated',
-        ack: jest.fn(),
-        nak: jest.fn(),
-        info: { redeliveryCount: 0 },
-      };
+        redeliveryCount: 0,
+      });
 
-      mockSubscription.messages = [mockMessage];
+      const subscriptionWithMessages = createMockSubscription({ messages: [mockMessage] });
+      mockJetStream.subscribe.mockResolvedValue(subscriptionWithMessages);
 
       await subscriber.subscribeToScoreUpdates(handler);
 
@@ -462,7 +418,7 @@ describe('NatsSubscriber', () => {
 
       await subscriber.close();
 
-      expect(mockClose).toHaveBeenCalled();
+      expect(mockNatsConnection.close).toHaveBeenCalled();
 
       expect(mockLogger.info).toHaveBeenCalledWith('Unsubscribed from score update events');
       expect(mockLogger.info).toHaveBeenCalledWith('Closed NATS connection');
@@ -473,7 +429,7 @@ describe('NatsSubscriber', () => {
 
       await subscriber.close();
 
-      expect(mockClose).toHaveBeenCalled();
+      expect(mockNatsConnection.close).toHaveBeenCalled();
 
       expect(mockLogger.info).toHaveBeenCalledWith('Closed NATS connection');
     });
@@ -481,8 +437,8 @@ describe('NatsSubscriber', () => {
     it('should handle closing when not connected', async () => {
       await subscriber.close();
 
-      expect(mockDrain).not.toHaveBeenCalled();
-      expect(mockClose).not.toHaveBeenCalled();
+      expect(mockNatsConnection.drain).not.toHaveBeenCalled();
+      expect(mockNatsConnection.close).not.toHaveBeenCalled();
     });
   });
 
@@ -500,7 +456,7 @@ describe('NatsSubscriber', () => {
     it('should return false when connection is closed', async () => {
       await subscriber.connect();
 
-      mockIsClosed.mockReturnValue(true);
+      mockNatsConnection.isClosed.mockReturnValue(true);
 
       expect(subscriber.isConnected()).toBe(false);
     });
@@ -508,8 +464,8 @@ describe('NatsSubscriber', () => {
 
   describe('connection status handlers', () => {
     it('should log disconnect events', async () => {
-      mockStatus.mockReturnValue(
-        createAsyncIterator([{ type: 'disconnect', data: null }])
+      mockNatsConnection.status.mockReturnValue(
+        createAsyncIterator([{ type: 'disconnect', data: '' }])
       );
 
       await subscriber.connect();
@@ -520,7 +476,7 @@ describe('NatsSubscriber', () => {
     });
 
     it('should log reconnect events', async () => {
-      mockStatus.mockReturnValue(
+      mockNatsConnection.status.mockReturnValue(
         createAsyncIterator([{ type: 'reconnect', data: 'nats://localhost:4222' }])
       );
 
@@ -534,7 +490,7 @@ describe('NatsSubscriber', () => {
     });
 
     it('should log reconnecting events', async () => {
-      mockStatus.mockReturnValue(
+      mockNatsConnection.status.mockReturnValue(
         createAsyncIterator([{ type: 'reconnecting', data: 3 }])
       );
 
@@ -548,7 +504,7 @@ describe('NatsSubscriber', () => {
     });
 
     it('should log error events', async () => {
-      mockStatus.mockReturnValue(
+      mockNatsConnection.status.mockReturnValue(
         createAsyncIterator([{ type: 'error', data: 'Connection timeout' }])
       );
 
@@ -562,9 +518,9 @@ describe('NatsSubscriber', () => {
     });
 
     it('should handle multiple status events', async () => {
-      mockStatus.mockReturnValue(
+      mockNatsConnection.status.mockReturnValue(
         createAsyncIterator([
-          { type: 'disconnect', data: null },
+          { type: 'disconnect', data: '' },
           { type: 'reconnecting', data: 1 },
           { type: 'reconnect', data: 'nats://localhost:4222' },
         ])

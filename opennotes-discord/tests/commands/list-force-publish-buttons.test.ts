@@ -5,28 +5,45 @@ import {
   ActionRowBuilder,
   MessageFlags,
 } from 'discord.js';
+import { loggerFactory } from '../factories/index.js';
 
+const mockLogger = loggerFactory.build();
+
+const cacheStore = new Map<string, unknown>();
 const mockCache = {
   get: jest.fn<(key: string) => Promise<unknown>>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<void>>(),
-  delete: jest.fn<(key: string) => Promise<void>>(),
+  set: jest.fn<(key: string, value: unknown, ttl?: number) => Promise<boolean>>(),
+  delete: jest.fn<(key: string) => Promise<boolean>>(),
+  clear: jest.fn<() => Promise<number>>(),
   start: jest.fn<() => void>(),
   stop: jest.fn<() => void>(),
-  getMetrics: jest.fn(() => ({ size: 0 })),
-  clear: jest.fn<() => Promise<void>>(),
+  getMetrics: jest.fn(() => ({ size: cacheStore.size })),
 };
+
+function setupCacheImplementations() {
+  mockCache.get.mockImplementation(async (key: string) => {
+    return cacheStore.get(key) ?? null;
+  });
+  mockCache.set.mockImplementation(async (key: string, value: unknown, _ttl?: number) => {
+    cacheStore.set(key, value);
+    return true;
+  });
+  mockCache.delete.mockImplementation(async (key: string) => {
+    return cacheStore.delete(key);
+  });
+  mockCache.clear.mockImplementation(async () => {
+    const count = cacheStore.size;
+    cacheStore.clear();
+    return count;
+  });
+}
 
 jest.unstable_mockModule('../../src/cache.js', () => ({
   cache: mockCache,
 }));
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: mockLogger,
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
@@ -52,10 +69,8 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
 describe('list command - Force Publish button confirmation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCache.get.mockResolvedValue(null);
-    mockCache.set.mockResolvedValue(undefined);
-    mockCache.delete.mockResolvedValue(undefined);
-    mockCache.clear.mockResolvedValue(undefined);
+    cacheStore.clear();
+    setupCacheImplementations();
   });
 
   describe('force_publish_confirm button pattern', () => {
@@ -136,9 +151,6 @@ describe('list command - Force Publish button confirmation', () => {
       const shortId = 'test1234';
       const cacheKey = `fp_state:${shortId}`;
       const cacheValue = { noteId, userId: 'user123' };
-
-      mockCache.set.mockResolvedValue(undefined);
-      mockCache.get.mockResolvedValue(cacheValue);
 
       await mockCache.set(cacheKey, cacheValue, 60);
 

@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
 import { ChannelType, TextChannel } from 'discord.js';
-import { createMockLogger } from '../utils/service-mocks.js';
+import { loggerFactory, cacheFactory } from '../factories/index.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 
 const mockApiClient = {
   listNotesWithStatus: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -10,14 +10,7 @@ const mockApiClient = {
   getCommunityServerByPlatformId: jest.fn<(...args: any[]) => Promise<any>>(),
 };
 
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-  start: jest.fn<() => void>(),
-  stop: jest.fn<() => void>(),
-  getMetrics: jest.fn(() => ({ size: 0 })),
-};
+const mockCache = cacheFactory.build();
 
 const mockConfigCache = {
   getRatingThresholds: jest.fn<(...args: any[]) => Promise<any>>(),

@@ -1,8 +1,11 @@
 import { jest } from '@jest/globals';
 import { ChannelType, TextChannel } from 'discord.js';
-import { createMockLogger } from '../utils/service-mocks.js';
+import {
+  loggerFactory,
+  chatInputCommandInteractionFactory,
+} from '../factories/index.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 const mockApiClient = {
   listNotesWithStatus: jest.fn<(...args: any[]) => Promise<any>>(),
   getCommunityServerByPlatformId: jest.fn<(...args: any[]) => Promise<any>>(),
@@ -123,19 +126,19 @@ describe('note-queue-profiled command', () => {
         user: { id: 'bot123' },
       };
 
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        client: mockClient,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('queue-profiled'),
+      const mockInteraction = chatInputCommandInteractionFactory.build(
+        {
+          guildId: 'guild456',
+          channel: mockChannel as any,
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferred: true,
-      };
+        {
+          transient: {
+            subcommand: 'queue-profiled',
+            isDeferred: true,
+          },
+        }
+      );
+      (mockInteraction as any).client = mockClient;
 
       await execute(mockInteraction as any);
 
@@ -165,19 +168,19 @@ describe('note-queue-profiled command', () => {
         user: { id: 'bot123' },
       };
 
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        client: mockClient,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('queue-profiled'),
+      const mockInteraction = chatInputCommandInteractionFactory.build(
+        {
+          guildId: 'guild456',
+          channel: mockChannel as any,
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferred: true,
-      };
+        {
+          transient: {
+            subcommand: 'queue-profiled',
+            isDeferred: true,
+          },
+        }
+      );
+      (mockInteraction as any).client = mockClient;
 
       await execute(mockInteraction as any);
 
@@ -199,19 +202,20 @@ describe('note-queue-profiled command', () => {
         user: { id: 'bot123' },
       };
 
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        client: mockClient,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('queue-profiled'),
+      const mockInteraction = chatInputCommandInteractionFactory.build(
+        {
+          guildId: 'guild456',
+          channel: mockChannel as any,
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferred: true,
-      };
+        {
+          transient: {
+            subcommand: 'queue-profiled',
+            isDeferred: true,
+          },
+        }
+      );
+      (mockInteraction as any).client = mockClient;
+      (mockInteraction.user as any).id = 'user123';
 
 
       await execute(mockInteraction as any);
@@ -240,18 +244,18 @@ describe('note-queue-profiled command', () => {
         user: { id: 'bot123' },
       };
 
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        client: mockClient,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('queue-profiled'),
+      const mockInteraction = chatInputCommandInteractionFactory.build(
+        {
+          guildId: 'guild456',
+          channel: mockChannel as any,
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
+        {
+          transient: {
+            subcommand: 'queue-profiled',
+          },
+        }
+      );
+      (mockInteraction as any).client = mockClient;
 
       Object.setPrototypeOf(mockChannel, {
         constructor: {
@@ -320,19 +324,19 @@ describe('note-queue-profiled command', () => {
         },
       };
 
-      const mockInteraction = {
-        user: { id: 'user123' },
-        guildId: 'guild456',
-        channel: mockChannel,
-        client: mockClient,
-        options: {
-          getSubcommand: jest.fn<() => string>().mockReturnValue('queue-profiled'),
+      const mockInteraction = chatInputCommandInteractionFactory.build(
+        {
+          guildId: 'guild456',
+          channel: mockChannel as any,
         },
-        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
-        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-        deferred: true,
-      };
+        {
+          transient: {
+            subcommand: 'queue-profiled',
+            isDeferred: true,
+          },
+        }
+      );
+      (mockInteraction as any).client = mockClient;
 
       await execute(mockInteraction as any);
 

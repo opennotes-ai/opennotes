@@ -1,13 +1,13 @@
 import { jest } from '@jest/globals';
 import type { RedisCacheAdapter } from '../../../src/cache/adapters/redis.js';
+import {
+  redisClientFactory,
+  createMockSubscriber,
+  type MockRedisClient,
+  type MockRedisSubscriber,
+} from '../../factories/index.js';
 
 const mockRedisClass = jest.fn();
-const mockSubscriberTemplate = {
-  subscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-  unsubscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-  disconnect: jest.fn(),
-  on: jest.fn(),
-};
 
 jest.unstable_mockModule('ioredis', () => ({
   __esModule: true,
@@ -18,26 +18,17 @@ const { RedisCacheAdapter: RedisCacheAdapterClass } = await import('../../../src
 
 describe('RedisCacheAdapter - Subscription Management', () => {
   let adapter!: RedisCacheAdapter;
-  let mockRedisInstance: any;
-  let mockSubscriber: any;
+  let mockRedisInstance: MockRedisClient;
+  let mockSubscriber: MockRedisSubscriber;
 
   beforeEach(() => {
-    mockSubscriber = {
-      subscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-      unsubscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-      disconnect: jest.fn(),
-      on: jest.fn(),
-    };
+    mockSubscriber = createMockSubscriber();
 
-    mockRedisInstance = {
-      connect: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-      disconnect: jest.fn(),
-      duplicate: jest.fn().mockReturnValue(mockSubscriber),
-      on: jest.fn(),
-      ping: jest.fn<() => Promise<string>>().mockResolvedValue('PONG'),
-      removeAllListeners: jest.fn(),
-    };
-
+    mockRedisInstance = redisClientFactory.build({}, {
+      transient: {
+        subscriberFactory: () => mockSubscriber,
+      },
+    });
     mockRedisClass.mockImplementation(() => mockRedisInstance);
 
     adapter = new RedisCacheAdapterClass({
@@ -78,12 +69,7 @@ describe('RedisCacheAdapter - Subscription Management', () => {
       const handler1 = jest.fn();
       const handler2 = jest.fn();
 
-      const mockSubscriber2 = {
-        subscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        unsubscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        disconnect: jest.fn(),
-        on: jest.fn(),
-      };
+      const mockSubscriber2 = createMockSubscriber();
 
       mockRedisInstance.duplicate
         .mockReturnValueOnce(mockSubscriber)
@@ -135,12 +121,7 @@ describe('RedisCacheAdapter - Subscription Management', () => {
       const handler1 = jest.fn();
       const handler2 = jest.fn();
 
-      const mockSubscriber2 = {
-        subscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        unsubscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        disconnect: jest.fn(),
-        on: jest.fn(),
-      };
+      const mockSubscriber2 = createMockSubscriber();
 
       mockRedisInstance.duplicate
         .mockReturnValueOnce(mockSubscriber)
@@ -202,19 +183,8 @@ describe('RedisCacheAdapter - Subscription Management', () => {
     it('should track subscriber count correctly', async () => {
       const handler = jest.fn();
 
-      const mockSubscriber2 = {
-        subscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        unsubscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        disconnect: jest.fn(),
-        on: jest.fn(),
-      };
-
-      const mockSubscriber3 = {
-        subscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        unsubscribe: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        disconnect: jest.fn(),
-        on: jest.fn(),
-      };
+      const mockSubscriber2 = createMockSubscriber();
+      const mockSubscriber3 = createMockSubscriber();
 
       mockRedisInstance.duplicate
         .mockReturnValueOnce(mockSubscriber)
@@ -249,14 +219,15 @@ describe('RedisCacheAdapter - Subscription Management', () => {
 
       const messageHandler = mockSubscriber.on.mock.calls.find(
         (call: any[]) => call[0] === 'message'
-      )?.[1];
+      )?.[1] as ((channel: string, message: string) => void) | undefined;
 
-      messageHandler('test-channel', 'test message');
+      expect(messageHandler).toBeDefined();
+      messageHandler!('test-channel', 'test message');
       expect(handler).toHaveBeenCalledWith('test message');
 
       handler.mockClear();
 
-      messageHandler('other-channel', 'other message');
+      messageHandler!('other-channel', 'other message');
       expect(handler).not.toHaveBeenCalled();
     });
   });

@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import jwtLib from 'jsonwebtoken';
+import { loggerFactory, cacheFactory } from '@opennotes/test-utils';
 
 const TEST_JWT_SECRET = 'jwt-secret-key-1234567890abcdef';
 const TEST_USER_ID = '123456789012345678';
@@ -8,20 +9,9 @@ const TEST_GUILD_ID = '987654321098765432';
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-  start: jest.fn<() => void>(),
-  stop: jest.fn<() => void>(),
-};
+const mockCache = cacheFactory.build();
 
 jest.unstable_mockModule('../src/logger.js', () => ({
   logger: mockLogger,
@@ -74,7 +64,7 @@ const { ApiClient } = await import('../src/lib/api-client.js');
 describe('ApiClient X-Discord-Claims JWT Header', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCache.get.mockReturnValue(null);
+    mockCache.get.mockResolvedValue(null);
   });
 
   it('should send X-Discord-Claims JWT header when user context is provided and JWT secret is configured', async () => {

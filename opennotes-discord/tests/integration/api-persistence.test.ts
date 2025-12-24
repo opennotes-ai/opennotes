@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { loggerFactory, cacheFactory } from '../factories/index.js';
 
 interface MockResponse {
   ok: boolean;
@@ -26,20 +27,8 @@ const createMockResponse = (overrides: Partial<MockResponse> = {}): MockResponse
 const mockFetch = jest.fn<() => Promise<MockResponse>>();
 global.fetch = mockFetch as unknown as typeof fetch;
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
-
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-  start: jest.fn<() => void>(),
-  stop: jest.fn<() => void>(),
-};
+const mockLogger = loggerFactory.build();
+const mockCache = cacheFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
@@ -168,7 +157,7 @@ describe('API Persistence Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCache.get.mockReturnValue(null);
+    mockCache.get.mockResolvedValue(null);
 
     client1 = new ApiClient({ serverUrl: 'http://localhost:8000' });
     client2 = new ApiClient({ serverUrl: 'http://localhost:8000' });

@@ -1,5 +1,10 @@
 import { NotesFormatter } from '../../src/lib/notes-formatter.js';
-import { NoteWithRatings, RatingThresholds } from '../../src/lib/types.js';
+import { RatingThresholds } from '../../src/lib/types.js';
+import {
+  noteWithRatingsFactory,
+  ratingResponseFactory,
+  requestInfoFactory,
+} from '../factories/index.js';
 
 describe('NotesFormatter', () => {
   const mockThresholds: RatingThresholds = {
@@ -7,35 +12,37 @@ describe('NotesFormatter', () => {
     min_raters_per_note: 5,
   };
 
-  const mockNote: NoteWithRatings = {
-    id: '1',
-    author_participant_id: 'author-abc',
-    summary: 'This is a test note summary',
-    classification: 'MISINFORMATION_OR_ABUSE',
-    helpfulness_score: 0.75,
-    status: 'NEEDS_MORE_RATINGS',
-    created_at: '2025-10-31T12:00:00Z',
-    updated_at: '2025-10-31T12:00:00Z',
-    ratings_count: 5,
-    ratings: [
-      {
-        id: '1',
-        note_id: 'note-123',
-        rater_participant_id: 'rater-1',
-        helpfulness_level: 'HELPFUL',
-        created_at: '2025-10-31T12:00:00Z',
-        updated_at: '2025-10-31T12:00:00Z',
-      },
-      {
-        id: '2',
-        note_id: 'note-123',
-        rater_participant_id: 'rater-2',
-        helpfulness_level: 'HELPFUL',
-        created_at: '2025-10-31T12:00:00Z',
-        updated_at: '2025-10-31T12:00:00Z',
-      },
-    ],
-  };
+  const mockNote = noteWithRatingsFactory.build(
+    {
+      id: '1',
+      author_participant_id: 'author-abc',
+      summary: 'This is a test note summary',
+      classification: 'MISINFORMATION_OR_ABUSE',
+      helpfulness_score: 0.75,
+      status: 'NEEDS_MORE_RATINGS',
+      created_at: '2025-10-31T12:00:00Z',
+      updated_at: '2025-10-31T12:00:00Z',
+      ratings_count: 5,
+      ratings: [
+        ratingResponseFactory.build({
+          id: '1',
+          note_id: 'note-123',
+          rater_participant_id: 'rater-1',
+          helpfulness_level: 'HELPFUL',
+          created_at: '2025-10-31T12:00:00Z',
+          updated_at: '2025-10-31T12:00:00Z',
+        }),
+        ratingResponseFactory.build({
+          id: '2',
+          note_id: 'note-123',
+          rater_participant_id: 'rater-2',
+          helpfulness_level: 'HELPFUL',
+          created_at: '2025-10-31T12:00:00Z',
+          updated_at: '2025-10-31T12:00:00Z',
+        }),
+      ],
+    }
+  );
 
   describe('formatStatus', () => {
     it('should format NEEDS_MORE_RATINGS status', () => {
@@ -64,7 +71,11 @@ describe('NotesFormatter', () => {
     });
 
     it('should use critical urgency color for notes with no ratings', () => {
-      const noteNoRatings = { ...mockNote, ratings_count: 0, ratings: [] };
+      const noteNoRatings = noteWithRatingsFactory.build({
+        ...mockNote,
+        ratings_count: 0,
+        ratings: [],
+      });
       const container = NotesFormatter.formatNoteEmbedV2(noteNoRatings, mockThresholds);
       const json = container.toJSON();
 
@@ -72,7 +83,10 @@ describe('NotesFormatter', () => {
     });
 
     it('should use high urgency color for notes below half threshold', () => {
-      const notePartialRatings = { ...mockNote, ratings_count: 3 };
+      const notePartialRatings = noteWithRatingsFactory.build({
+        ...mockNote,
+        ratings_count: 3,
+      });
       const container = NotesFormatter.formatNoteEmbedV2(notePartialRatings, mockThresholds);
       const json = container.toJSON();
 
@@ -114,10 +128,10 @@ describe('NotesFormatter', () => {
     });
 
     it('should sanitize markdown in note summary', () => {
-      const noteWithMarkdown = {
+      const noteWithMarkdown = noteWithRatingsFactory.build({
         ...mockNote,
         summary: 'Text with *bold* and _italic_',
-      };
+      });
       const container = NotesFormatter.formatNoteEmbedV2(noteWithMarkdown, mockThresholds);
       const jsonString = JSON.stringify(container.toJSON());
 
@@ -126,15 +140,15 @@ describe('NotesFormatter', () => {
     });
 
     it('should include original message content from request when available', () => {
-      const noteWithRequest = {
+      const noteWithRequest = noteWithRatingsFactory.build({
         ...mockNote,
-        request: {
+        request: requestInfoFactory.build({
           request_id: 'req-123',
           content: 'Original message content',
           requested_by: 'user-123',
           requested_at: '2025-10-31T12:00:00Z',
-        },
-      };
+        }),
+      });
       const container = NotesFormatter.formatNoteEmbedV2(noteWithRequest, mockThresholds);
       const jsonString = JSON.stringify(container.toJSON());
 
@@ -142,11 +156,10 @@ describe('NotesFormatter', () => {
     });
 
     it('should show Admin Published indicator for force-published notes', () => {
-      const forcePublishedNote = {
-        ...mockNote,
-        force_published: true,
-        force_published_at: '2025-11-08T10:00:00Z',
-      } as any;
+      const forcePublishedNote = noteWithRatingsFactory.build(
+        { ...mockNote },
+        { transient: { forcePublished: true } }
+      );
       const container = NotesFormatter.formatNoteEmbedV2(forcePublishedNote, mockThresholds);
       const jsonString = JSON.stringify(container.toJSON());
 
@@ -161,16 +174,16 @@ describe('NotesFormatter', () => {
     });
 
     it('should include Discord message URL when guildId and channelId are provided', () => {
-      const noteWithChannel = {
+      const noteWithChannel = noteWithRatingsFactory.build({
         ...mockNote,
         channel_id: 'channel-789',
-        request: {
+        request: requestInfoFactory.build({
           request_id: 'discord-1234567890-1699012345678',
           content: 'Test message',
           requested_by: 'user-123',
           requested_at: '2025-10-31T12:00:00Z',
-        },
-      };
+        }),
+      });
       const container = NotesFormatter.formatNoteEmbedV2(
         noteWithChannel,
         mockThresholds,
@@ -242,10 +255,10 @@ describe('NotesFormatter', () => {
     });
 
     it('should show Admin Published indicator for force-published notes in queue', () => {
-      const forcePublishedNote = {
-        ...mockNote,
-        force_published: true,
-      } as any;
+      const forcePublishedNote = noteWithRatingsFactory.build(
+        { ...mockNote },
+        { transient: { forcePublished: true } }
+      );
 
       const container = NotesFormatter.formatQueueEmbedV2([forcePublishedNote], mockThresholds, 1, 1, 10);
       const jsonString = JSON.stringify(container.toJSON());
@@ -261,15 +274,15 @@ describe('NotesFormatter', () => {
     });
 
     it('should sanitize message content from request in queue', () => {
-      const noteWithMarkdownRequest = {
+      const noteWithMarkdownRequest = noteWithRatingsFactory.build({
         ...mockNote,
-        request: {
+        request: requestInfoFactory.build({
           request_id: 'req-123',
           content: 'Message with _formatting_',
           requested_by: 'user-123',
           requested_at: '2025-10-31T12:00:00Z',
-        },
-      };
+        }),
+      });
       const container = NotesFormatter.formatQueueEmbedV2([noteWithMarkdownRequest], mockThresholds, 1, 1, 10);
       const jsonString = JSON.stringify(container.toJSON());
 
@@ -330,15 +343,15 @@ describe('NotesFormatter', () => {
     });
 
     it('should include request ID when available', () => {
-      const noteWithRequest = {
+      const noteWithRequest = noteWithRatingsFactory.build({
         ...mockNote,
-        request: {
+        request: requestInfoFactory.build({
           request_id: 'req-123',
           content: 'Test message',
           requested_by: 'user-123',
           requested_at: '2025-10-31T12:00:00Z',
-        },
-      };
+        }),
+      });
       const container = NotesFormatter.formatRatedNoteEmbedV2(noteWithRequest, true, mockThresholds);
       const jsonString = JSON.stringify(container.toJSON());
 
@@ -346,10 +359,10 @@ describe('NotesFormatter', () => {
     });
 
     it('should sanitize note summary', () => {
-      const noteWithMarkdown = {
+      const noteWithMarkdown = noteWithRatingsFactory.build({
         ...mockNote,
         summary: 'Summary with *bold* text',
-      };
+      });
       const container = NotesFormatter.formatRatedNoteEmbedV2(noteWithMarkdown, true, mockThresholds);
       const jsonString = JSON.stringify(container.toJSON());
 

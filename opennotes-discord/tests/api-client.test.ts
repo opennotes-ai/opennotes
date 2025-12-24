@@ -1,23 +1,12 @@
 import { jest } from '@jest/globals';
+import { loggerFactory, cacheFactory } from '@opennotes/test-utils';
 
-// Mock fetch with proper Response objects
 const mockFetch = jest.fn<typeof fetch>();
 global.fetch = mockFetch;
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-  start: jest.fn<() => void>(),
-  stop: jest.fn<() => void>(),
-};
+const mockCache = cacheFactory.build();
 
 jest.unstable_mockModule('../src/logger.js', () => ({
   logger: mockLogger,
@@ -646,7 +635,7 @@ describe('ApiClient Wrapper', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCache.get.mockReturnValue(null);
+    mockCache.get.mockResolvedValue(null);
   });
 
   describe('healthCheck', () => {

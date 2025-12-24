@@ -1,13 +1,12 @@
 import { jest } from '@jest/globals';
-import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
+import { MessageFlags } from 'discord.js';
 import { ConfigKey } from '../../src/lib/config-schema.js';
+import {
+  chatInputCommandInteractionFactory,
+  loggerFactory,
+} from '../factories/index.js';
 
-const mockLogger = {
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 const mockConfigService = {
   get: jest.fn<(guildId: string, key: ConfigKey) => Promise<boolean>>(),
@@ -27,17 +26,16 @@ const { handleEphemeralError } = await import('../../src/lib/interaction-utils.j
 
 describe('interaction-utils', () => {
   describe('handleEphemeralError', () => {
-    let mockInteraction: jest.Mocked<ChatInputCommandInteraction>;
+    let mockInteraction: any;
     const errorMessage = { content: 'Error occurred' };
     const guildId = 'guild-123';
     const errorId = 'error-456';
 
     beforeEach(() => {
-      mockInteraction = {
-        editReply: jest.fn<() => Promise<unknown>>().mockResolvedValue(undefined),
-        followUp: jest.fn<() => Promise<unknown>>().mockResolvedValue(undefined),
-        deleteReply: jest.fn<() => Promise<unknown>>().mockResolvedValue(undefined),
-      } as unknown as jest.Mocked<ChatInputCommandInteraction>;
+      mockInteraction = chatInputCommandInteractionFactory.build(
+        { guildId },
+        { transient: { isDeferred: true } }
+      );
 
       jest.clearAllMocks();
     });

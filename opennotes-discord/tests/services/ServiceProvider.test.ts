@@ -1,32 +1,20 @@
 import { jest } from '@jest/globals';
+import {
+  loggerFactory,
+  cacheFactory,
+  redisClientFactory,
+  apiClientFactory,
+  asRedis,
+} from '../factories/index.js';
 
 process.env.DISCORD_TOKEN = 'test-token';
 process.env.CLIENT_ID = 'test-client-id';
 process.env.SERVER_URL = 'http://localhost:3000';
 process.env.API_KEY = 'test-api-key';
 
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
-const mockCache = {
-  get: jest.fn(),
-  set: jest.fn(),
-  delete: jest.fn(),
-  clear: jest.fn(),
-};
-
-const mockRedis = {
-  incr: jest.fn<() => Promise<number>>().mockResolvedValue(1),
-  pexpire: jest.fn<() => Promise<number>>().mockResolvedValue(1),
-  pttl: jest.fn<() => Promise<number>>().mockResolvedValue(60000),
-  del: jest.fn<() => Promise<number>>().mockResolvedValue(1),
-  keys: jest.fn<() => Promise<string[]>>().mockResolvedValue([]),
-  info: jest.fn<() => Promise<string>>().mockResolvedValue('used_memory_human:1M'),
-};
+const mockLogger = loggerFactory.build();
+const mockCache = cacheFactory.build();
+const mockRedis = redisClientFactory.build();
 
 jest.unstable_mockModule('../../src/lib/api-client.js', () => ({
   ApiClient: jest.fn(),
@@ -41,20 +29,16 @@ jest.unstable_mockModule('../../src/cache.js', () => ({
 }));
 
 const { ServiceProvider } = await import('../../src/services/ServiceProvider.js');
-const { ApiClient } = await import('../../src/lib/api-client.js');
 
 describe('ServiceProvider', () => {
   let serviceProvider: InstanceType<typeof ServiceProvider>;
-  let mockApiClient: jest.Mocked<InstanceType<typeof ApiClient>>;
+  let mockApiClient: ReturnType<typeof apiClientFactory.build>;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockApiClient = new ApiClient({
-      serverUrl: 'http://localhost:3000',
-      apiKey: 'test-token',
-    }) as jest.Mocked<InstanceType<typeof ApiClient>>;
-    serviceProvider = new ServiceProvider(mockApiClient, mockRedis as any);
+    mockApiClient = apiClientFactory.build();
+    serviceProvider = new ServiceProvider(mockApiClient as any, asRedis(mockRedis));
   });
 
   afterEach(() => {
@@ -112,8 +96,8 @@ describe('ServiceProvider', () => {
 
   describe('instance isolation', () => {
     it('should create independent instances', () => {
-      const provider1 = new ServiceProvider(mockApiClient, mockRedis as any);
-      const provider2 = new ServiceProvider(mockApiClient, mockRedis as any);
+      const provider1 = new ServiceProvider(mockApiClient as any, asRedis(mockRedis));
+      const provider2 = new ServiceProvider(mockApiClient as any, asRedis(mockRedis));
 
       expect(provider1.getWriteNoteService()).not.toBe(provider2.getWriteNoteService());
 

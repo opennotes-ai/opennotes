@@ -5,14 +5,12 @@ import {
   cleanupRedisTestConnection,
   type RedisTestContext,
 } from '../utils/redis-test-helper.js';
+import { loggerFactory } from '../factories/index.js';
+
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: mockLogger,
 }));
 
 jest.unstable_mockModule('../../src/utils/url-sanitizer.js', () => ({

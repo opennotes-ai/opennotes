@@ -9,13 +9,9 @@ import type {
   NoteRequestsResultResponse,
   ExplanationResultResponse,
 } from '../../src/lib/api-client.js';
+import { loggerFactory, cacheFactory } from '../factories/index.js';
 
-const mockLogger = {
-  info: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 function createFlaggedMessageResource(
   id: string,
@@ -100,11 +96,7 @@ const mockApiClient = {
   generateScanExplanation: jest.fn<(originalMessage: string, factCheckItemId: string, communityServerId: string) => Promise<ExplanationResultResponse>>(),
 };
 
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-};
+const mockCache = cacheFactory.build();
 
 const mockExecuteBulkScan = jest.fn<(options: any) => Promise<BulkScanResult>>().mockResolvedValue({
   scanId: 'default-scan-123',
@@ -263,7 +255,7 @@ describe('vibecheck command', () => {
     jest.clearAllMocks();
 
     // Set up cache mock to return null (no cooldown)
-    mockCache.get.mockReturnValue(null);
+    mockCache.get.mockResolvedValue(null);
 
     mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
       data: {
@@ -1351,7 +1343,7 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockCache.get.mockReturnValue(Date.now() - 10000);
+      mockCache.get.mockResolvedValue(Date.now() - 10000);
 
       await execute(mockInteraction as any);
 
@@ -1395,7 +1387,7 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockCache.get.mockReturnValue(now - VIBECHECK_COOLDOWN_MS - 1000);
+      mockCache.get.mockResolvedValue(now - VIBECHECK_COOLDOWN_MS - 1000);
 
       await execute(mockInteraction as any);
 
@@ -1434,7 +1426,7 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockCache.get.mockReturnValue(null);
+      mockCache.get.mockResolvedValue(null);
 
       await execute(mockInteraction as any);
 
@@ -1473,7 +1465,7 @@ describe('vibecheck command', () => {
         editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
-      mockCache.get.mockReturnValue(null);
+      mockCache.get.mockResolvedValue(null);
 
       await execute(mockInteraction as any);
 

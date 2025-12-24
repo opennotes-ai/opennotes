@@ -1,6 +1,7 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import type { JetStreamClient, NatsConnection, PubAck } from 'nats';
 import { NATS_SUBJECTS, EventType } from '../../src/types/bulk-scan.js';
+import { loggerFactory } from '../factories/index.js';
 
 describe('NatsPublisher NATS_SUBJECTS', () => {
   it('should have correct subject names matching server expectations', () => {
@@ -54,12 +55,7 @@ describe('NatsPublisher', () => {
     }));
 
     jest.unstable_mockModule('../../src/logger.js', () => ({
-      logger: {
-        info: jest.fn(),
-        debug: jest.fn(),
-        error: jest.fn(),
-        warn: jest.fn(),
-      },
+      logger: loggerFactory.build(),
     }));
 
     jest.unstable_mockModule('../../src/utils/url-sanitizer.js', () => ({

@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import type { Client } from 'discord.js';
+import { loggerFactory } from '../factories/index.js';
 
 const mockChannelService = {
   getChannelConfig: jest.fn<() => Promise<any>>(),
@@ -11,6 +12,8 @@ const mockApiClient = {
 };
 
 const mockClient = {} as Client;
+
+const mockLogger = loggerFactory.build();
 
 // Mock RedisQueue to avoid needing real Redis
 class MockRedisQueue<T> {
@@ -97,13 +100,6 @@ jest.unstable_mockModule('../../src/services/MonitoredChannelService.js', () => 
 jest.unstable_mockModule('../../src/api-client.js', () => ({
   apiClient: mockApiClient,
 }));
-
-const mockLogger = {
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  debug: jest.fn(),
-};
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,

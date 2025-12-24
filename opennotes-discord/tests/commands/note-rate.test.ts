@@ -2,11 +2,14 @@ import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
 import { ConfigKey } from '../../src/lib/config-schema.js';
 import {
-  createMockLogger,
   createSuccessResult,
   createErrorResult,
   createMockRateNoteService,
 } from '../utils/service-mocks.js';
+import {
+  loggerFactory,
+  chatInputCommandInteractionFactory,
+} from '../factories/index.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_NOTE_UUID } from '../test-constants.js';
 import type { RatingJSONAPIResponse } from '../../src/lib/api-client.js';
@@ -33,7 +36,7 @@ function createMockRatingJSONAPIResponse(overrides: {
   };
 }
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 const mockRateNoteService = createMockRateNoteService();
 const mockGuildConfigService = {
   get: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(false),

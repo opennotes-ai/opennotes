@@ -1,13 +1,9 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { ButtonStyle, ComponentType, type APIButtonComponentWithCustomId } from 'discord.js';
 import { VIBE_CHECK_DAYS_OPTIONS } from '../../src/types/bulk-scan.js';
+import { loggerFactory } from '../factories/index.js';
 
-const mockLogger = {
-  info: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 const mockExecuteBulkScan = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
   scanId: 'scan-123',

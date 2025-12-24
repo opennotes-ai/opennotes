@@ -1,19 +1,8 @@
 import { jest } from '@jest/globals';
+import { loggerFactory, cacheFactory } from '../factories/index.js';
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
-
-const mockCache = {
-  get: jest.fn<(key: string) => unknown>(),
-  set: jest.fn<(key: string, value: unknown, ttl?: number) => void>(),
-  delete: jest.fn<(key: string) => void>(),
-  start: jest.fn<() => void>(),
-  stop: jest.fn<() => void>(),
-};
+const mockLogger = loggerFactory.build();
+const mockCache = cacheFactory.build();
 
 const mockCloseRedisClient = jest.fn<() => void>();
 const mockGetRedisClient = jest.fn(() => null);

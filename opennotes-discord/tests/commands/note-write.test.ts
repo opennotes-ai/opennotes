@@ -1,4 +1,8 @@
 import { jest } from '@jest/globals';
+import {
+  loggerFactory,
+  chatInputCommandInteractionFactory,
+} from '../factories/index.js';
 
 const mockWriteNoteService = {
   execute: jest.fn<() => Promise<any>>(),
@@ -24,12 +28,7 @@ class MockDiscordFormatter {
 
 const mockDiscordFormatter = MockDiscordFormatter;
 
-const mockLogger = {
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 const mockApiClient = {
   healthCheck: jest.fn<() => Promise<any>>(),

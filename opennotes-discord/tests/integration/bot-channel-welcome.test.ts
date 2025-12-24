@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { ChannelType, Collection, MessageFlags } from 'discord.js';
+import {
+  loggerFactory,
+  discordGuildFactory,
+  discordChannelFactory,
+  discordMemberFactory,
+} from '../factories/index.js';
 
-const mockLogger = {
-  info: jest.fn<(...args: unknown[]) => void>(),
-  debug: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
