@@ -1,11 +1,7 @@
 import { jest } from '@jest/globals';
+import { loggerFactory, type MockLogger } from './factories/logger.js';
 
-export interface MockLogger {
-  error: ReturnType<typeof jest.fn<(...args: unknown[]) => void>>;
-  warn: ReturnType<typeof jest.fn<(...args: unknown[]) => void>>;
-  info: ReturnType<typeof jest.fn<(...args: unknown[]) => void>>;
-  debug: ReturnType<typeof jest.fn<(...args: unknown[]) => void>>;
-}
+export type { MockLogger };
 
 export interface MockCache {
   get: ReturnType<typeof jest.fn<(key: string) => unknown>>;
@@ -17,12 +13,7 @@ export interface MockCache {
 }
 
 export function createMockLogger(): MockLogger {
-  return {
-    error: jest.fn<(...args: unknown[]) => void>(),
-    warn: jest.fn<(...args: unknown[]) => void>(),
-    info: jest.fn<(...args: unknown[]) => void>(),
-    debug: jest.fn<(...args: unknown[]) => void>(),
-  };
+  return loggerFactory.build();
 }
 
 export function createMockCache(): MockCache {
