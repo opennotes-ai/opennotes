@@ -305,14 +305,14 @@ class LLMService:
             api_key=llm_provider.api_key,
         )
 
-        description = response.choices[0].message.content or ""
+        description = response.choices[0].message.content or ""  # type: ignore[union-attr]
 
         logger.info(
             "Image description generated successfully",
             extra={
                 "image_url": image_url[:100],
                 "community_server_id": str(community_server_id),
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,  # type: ignore[union-attr]
                 "description_length": len(description),
             },
         )

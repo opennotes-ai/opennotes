@@ -139,3 +139,54 @@ class LLMCostCalculator:
         search = model.lower()
         matches = [m for m in model_cost if search in m.lower()]
         return sorted(matches)[:limit]
+
+    @classmethod
+    async def calculate_cost_async(
+        cls,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> Decimal:
+        """
+        Async wrapper for calculate_cost (litellm's cost functions are synchronous).
+
+        Args:
+            provider: Provider name (e.g., 'openai', 'anthropic') - used for model lookup
+            model: Model identifier
+            input_tokens: Number of input (prompt) tokens
+            output_tokens: Number of output (completion) tokens
+
+        Returns:
+            Cost in USD as a Decimal (precise to 6 decimal places)
+        """
+        litellm_model = f"{provider}/{model}" if "/" not in model else model
+        try:
+            return cls.calculate_cost(litellm_model, input_tokens, output_tokens)
+        except ValueError:
+            return cls.calculate_cost(model, input_tokens, output_tokens)
+
+    @classmethod
+    async def calculate_cost_from_total_tokens_async(
+        cls,
+        provider: str,
+        model: str,
+        total_tokens: int,
+    ) -> Decimal:
+        """
+        Calculate cost when only total tokens are known (no input/output breakdown).
+
+        Uses a conservative 50/50 split between input and output tokens.
+        This is an approximation - prefer calculate_cost_async when token breakdown is available.
+
+        Args:
+            provider: Provider name (e.g., 'openai', 'anthropic')
+            model: Model identifier
+            total_tokens: Total token count (input + output)
+
+        Returns:
+            Cost in USD as a Decimal (precise to 6 decimal places)
+        """
+        input_tokens = total_tokens // 2
+        output_tokens = total_tokens - input_tokens
+        return await cls.calculate_cost_async(provider, model, input_tokens, output_tokens)
