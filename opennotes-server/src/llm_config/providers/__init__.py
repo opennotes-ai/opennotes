@@ -14,6 +14,11 @@ from src.llm_config.providers.base import (
     SettingsT,
 )
 from src.llm_config.providers.factory import LLMProviderFactory
+from src.llm_config.providers.litellm_provider import (
+    LiteLLMCompletionParams,
+    LiteLLMProvider,
+    LiteLLMProviderSettings,
+)
 from src.llm_config.providers.openai_provider import (
     OpenAICompletionParams,
     OpenAIProvider,
@@ -29,6 +34,9 @@ __all__ = [
     "LLMProvider",
     "LLMProviderFactory",
     "LLMResponse",
+    "LiteLLMCompletionParams",
+    "LiteLLMProvider",
+    "LiteLLMProviderSettings",
     "OpenAICompletionParams",
     "OpenAIProvider",
     "OpenAIProviderSettings",
