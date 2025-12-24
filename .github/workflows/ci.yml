@@ -525,6 +525,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Start NATS with JetStream
+        run: |
+          docker run -d --name nats \
+            -p 4222:4222 -p 8222:8222 \
+            nats:2.10-alpine \
+            --jetstream --http_port=8222
+          timeout 30 bash -c 'until wget -q --spider http://localhost:8222/healthz 2>/dev/null; do sleep 1; done'
+          echo "NATS with JetStream is ready"
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -555,6 +564,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://opennotes:opennotes_password@localhost:5432/opennotes_test
           REDIS_URL: redis://localhost:6379
+          NATS_URL: nats://localhost:4222
           NODE_ENV: test
         run: pnpm run test:ci
 

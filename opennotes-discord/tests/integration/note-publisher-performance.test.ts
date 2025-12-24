@@ -58,12 +58,16 @@ const { createMockDiscordClient } = await import('../utils/mock-discord.js');
 const { performanceScenarios } = await import('../utils/note-publisher-fixtures.js');
 
 const natsAvailable = await checkNatsAvailability();
-// TODO(task-832): NATS JetStream streams not properly configured in test environment
-const SKIP_NATS_TESTS =
-  true || process.env.CI === 'true' || process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
+// TODO(task-832): Performance tests fail with "no stream matches subject" - JetStream streams
+// not properly configured. The MockNatsServer doesn't set up JetStream streams correctly.
+// See AC #5 of task-832 for investigation.
+const SKIP_PERFORMANCE_TESTS = true;
+const SKIP_NATS_TESTS = SKIP_PERFORMANCE_TESTS || process.env.SKIP_NATS_TESTS === 'true' || !natsAvailable;
 
-if (!natsAvailable && process.env.CI !== 'true') {
+if (!natsAvailable) {
   console.log('NATS not available at localhost:4222, skipping performance tests');
+} else if (SKIP_PERFORMANCE_TESTS) {
+  console.log('Performance tests temporarily skipped - see task-832 AC #5');
 }
 
 const describeWithNats = SKIP_NATS_TESTS ? describe.skip : describe;
