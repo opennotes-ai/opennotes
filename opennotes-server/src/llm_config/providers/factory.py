@@ -2,15 +2,19 @@
 
 from typing import Any, ClassVar
 
-from src.llm_config.providers.anthropic_provider import (
-    AnthropicProvider,
-    AnthropicProviderSettings,
-)
 from src.llm_config.providers.base import LLMProvider
-from src.llm_config.providers.openai_provider import (
-    OpenAIProvider,
-    OpenAIProviderSettings,
+from src.llm_config.providers.litellm_provider import (
+    LiteLLMProvider,
+    LiteLLMProviderSettings,
 )
+
+MODEL_PREFIXES: dict[str, str] = {
+    "openai": "openai/",
+    "anthropic": "anthropic/",
+    "vertex_ai": "vertex_ai/",
+    "gemini": "gemini/",
+    "litellm": "",
+}
 
 
 class LLMProviderFactory:
@@ -21,9 +25,29 @@ class LLMProviderFactory:
     """
 
     _providers: ClassVar[dict[str, type[LLMProvider[Any, Any]]]] = {
-        "openai": OpenAIProvider,
-        "anthropic": AnthropicProvider,
+        "openai": LiteLLMProvider,
+        "anthropic": LiteLLMProvider,
+        "vertex_ai": LiteLLMProvider,
+        "gemini": LiteLLMProvider,
+        "litellm": LiteLLMProvider,
     }
+
+    @classmethod
+    def _to_litellm_model(cls, provider_name: str, model: str) -> str:
+        """
+        Convert model name to litellm format with provider prefix.
+
+        Args:
+            provider_name: Provider identifier
+            model: Model name (may or may not have prefix)
+
+        Returns:
+            Model name with appropriate prefix for litellm
+        """
+        prefix = MODEL_PREFIXES.get(provider_name, "")
+        if prefix and not model.startswith(prefix):
+            return f"{prefix}{model}"
+        return model
 
     @classmethod
     def create(
@@ -52,28 +76,28 @@ class LLMProviderFactory:
             )
 
         typed_settings = cls._create_typed_settings(provider_name, settings)
-        return provider_class(api_key, default_model, typed_settings)
+        litellm_model = cls._to_litellm_model(provider_name, default_model)
+        return provider_class(api_key, litellm_model, typed_settings)
 
     @classmethod
-    def _create_typed_settings(cls, provider_name: str, settings: dict[str, Any]) -> Any:
+    def _create_typed_settings(
+        cls,
+        provider_name: str,  # noqa: ARG003
+        settings: dict[str, Any],
+    ) -> LiteLLMProviderSettings:
         """
-        Convert dictionary settings to typed provider settings.
+        Convert dictionary settings to LiteLLMProviderSettings.
+
+        All providers now use LiteLLMProvider, so settings are unified.
 
         Args:
-            provider_name: Provider identifier
+            provider_name: Provider identifier (unused, kept for API compatibility)
             settings: Settings dictionary
 
         Returns:
-            Typed settings instance for the provider
-
-        Raises:
-            ValueError: If settings are invalid for the provider
+            LiteLLMProviderSettings instance
         """
-        if provider_name == "openai":
-            return OpenAIProviderSettings(**settings)
-        if provider_name == "anthropic":
-            return AnthropicProviderSettings(**settings)
-        raise ValueError(f"No settings class defined for provider: {provider_name}")
+        return LiteLLMProviderSettings(**settings)
 
     @classmethod
     def register_provider(cls, name: str, provider_class: type[LLMProvider[Any, Any]]) -> None:
