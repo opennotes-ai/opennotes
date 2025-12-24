@@ -82,3 +82,9 @@ export {
   type MockStatusEvent,
   type NatsConnectionTransientParams,
 } from './nats-connection.js';
+
+export {
+  guildConfigFactory,
+  type GuildConfig,
+  type GuildConfigTransientParams,
+} from './guild-config.js';
