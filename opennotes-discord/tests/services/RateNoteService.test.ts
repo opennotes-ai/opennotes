@@ -1,5 +1,7 @@
 import { jest } from '@jest/globals';
 import { ErrorCode } from '../../src/services/types.js';
+import { apiClientFactory, rateLimiterFactory, type MockApiClient, type MockRateLimiter } from '../factories/index.js';
+import type { RatingListJSONAPIResponse } from '../../src/lib/api-client.js';
 
 function createMockRatingJSONAPIResponse(overrides: {
   id?: string;
@@ -28,24 +30,23 @@ function createMockRatingListJSONAPIResponse(ratings: Array<{
   noteId: string;
   userId: string;
   helpfulnessLevel: string;
-}> = []): any {
+}> = []): RatingListJSONAPIResponse {
   return {
     data: ratings.map(r => ({
-      type: 'ratings',
+      type: 'ratings' as const,
       id: r.id,
       attributes: {
         note_id: r.noteId,
         rater_participant_id: r.userId,
-        helpfulness_level: r.helpfulnessLevel,
+        helpfulness_level: r.helpfulnessLevel as 'HELPFUL' | 'NOT_HELPFUL',
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        updated_at: null,
       },
     })),
     jsonapi: { version: '1.1' },
   };
 }
 
-// Mock ApiError class
 class MockApiError extends Error {
   errorId: string;
   constructor(
@@ -65,7 +66,6 @@ class MockApiError extends Error {
   }
 }
 
-// Mock the errors module using unstable_mockModule
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   ApiError: MockApiError,
   generateErrorId: jest.fn(() => 'test-error-id'),
@@ -74,7 +74,6 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
   extractErrorDetails: jest.fn(),
 }));
 
-// Mock the logger
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: {
     info: jest.fn(),
@@ -84,38 +83,19 @@ jest.unstable_mockModule('../../src/logger.js', () => ({
   },
 }));
 
-// Now import the services after mocking
 const { RateNoteService } = await import('../../src/services/RateNoteService.js');
-const { ApiClient } = await import('../../src/lib/api-client.js');
 const ApiError = MockApiError;
-
-type RateLimitResult = { allowed: boolean; remaining: number; resetAt: number };
-type RateLimitError = { code: string; message: string };
-type RateLimiterInterface = {
-  check(userId: string): Promise<RateLimitResult>;
-  reset(userId: string): Promise<void>;
-  createError(resetAt: number): RateLimitError;
-  cleanup?(): Promise<void>;
-};
 
 describe('RateNoteService', () => {
   let service: InstanceType<typeof RateNoteService>;
-  let mockApiClient: jest.Mocked<InstanceType<typeof ApiClient>>;
-  let mockRateLimiter: jest.Mocked<RateLimiterInterface>;
+  let mockApiClient: MockApiClient;
+  let mockRateLimiter: MockRateLimiter;
 
   beforeEach(() => {
-    mockApiClient = {
-      getRatingsForNote: jest.fn(),
-      updateRating: jest.fn(),
-      rateNote: jest.fn(),
-    } as any;
+    mockApiClient = apiClientFactory.build();
+    mockRateLimiter = rateLimiterFactory.build();
 
-    mockRateLimiter = {
-      check: jest.fn(),
-      createError: jest.fn(),
-    } as any;
-
-    service = new RateNoteService(mockApiClient, mockRateLimiter);
+    service = new RateNoteService(mockApiClient as any, mockRateLimiter);
   });
 
   afterEach(() => {
@@ -197,14 +177,6 @@ describe('RateNoteService', () => {
   });
 
   describe('Creating New Ratings', () => {
-    beforeEach(() => {
-      mockRateLimiter.check.mockResolvedValue({
-        allowed: true,
-        remaining: 5,
-        resetAt: Date.now() + 60000,
-      });
-    });
-
     it('should create new rating when user has not rated before', async () => {
       mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
       const mockRating = createMockRatingJSONAPIResponse({
@@ -263,14 +235,6 @@ describe('RateNoteService', () => {
   });
 
   describe('Updating Existing Ratings', () => {
-    beforeEach(() => {
-      mockRateLimiter.check.mockResolvedValue({
-        allowed: true,
-        remaining: 5,
-        resetAt: Date.now() + 60000,
-      });
-    });
-
     it('should update existing rating when user has rated before', async () => {
       const existingRatingsResponse = createMockRatingListJSONAPIResponse([
         {
@@ -359,11 +323,6 @@ describe('RateNoteService', () => {
 
   describe('Error Handling', () => {
     beforeEach(() => {
-      mockRateLimiter.check.mockResolvedValue({
-        allowed: true,
-        remaining: 5,
-        resetAt: Date.now() + 60000,
-      });
       mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
     });
 
@@ -489,14 +448,6 @@ describe('RateNoteService', () => {
   });
 
   describe('Edge Cases', () => {
-    beforeEach(() => {
-      mockRateLimiter.check.mockResolvedValue({
-        allowed: true,
-        remaining: 5,
-        resetAt: Date.now() + 60000,
-      });
-    });
-
     it('should handle string noteId correctly', async () => {
       mockApiClient.getRatingsForNote.mockResolvedValue(createMockRatingListJSONAPIResponse([]));
       mockApiClient.rateNote.mockResolvedValue(createMockRatingJSONAPIResponse({

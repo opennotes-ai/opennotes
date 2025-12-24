@@ -91,6 +91,14 @@ export {
 } from './guild-config.js';
 
 export {
+  rateLimiterFactory,
+  rateLimitedFactory,
+  unlimitedRateLimiterFactory,
+  type MockRateLimiter,
+  type RateLimiterTransientParams,
+} from './rate-limiter.js';
+
+export {
   redisClientFactory,
   disconnectedRedisFactory,
   pubSubRedisFactory,

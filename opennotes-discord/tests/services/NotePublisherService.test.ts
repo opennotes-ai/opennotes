@@ -1,17 +1,13 @@
 import { jest } from '@jest/globals';
 import type { ScoreUpdateEvent } from '../../src/events/types.js';
-import { Client, TextChannel, PermissionsBitField, PermissionFlagsBits, ChannelType, MessageFlags, ContainerBuilder } from 'discord.js';
+import { Client, TextChannel, PermissionsBitField, PermissionFlagsBits, ChannelType, MessageFlags } from 'discord.js';
 import type { NoteContext } from '../../src/services/NoteContextService.js';
 import type { NotePublisherConfig } from '../../src/services/NotePublisherConfigService.js';
 import { TEST_SCORE_THRESHOLD, TEST_SCORE_ABOVE_THRESHOLD, TEST_SCORE_BELOW_THRESHOLD } from '../test-constants.js';
 import { V2_COLORS } from '../../src/utils/v2-components.js';
+import { loggerFactory, apiClientFactory, discordChannelFactory, type MockApiClient } from '../factories/index.js';
 
-const mockLogger = {
-  debug: jest.fn<(...args: unknown[]) => void>(),
-  info: jest.fn<(...args: unknown[]) => void>(),
-  warn: jest.fn<(...args: unknown[]) => void>(),
-  error: jest.fn<(...args: unknown[]) => void>(),
-};
+const mockLogger = loggerFactory.build();
 
 const mockNoteContextService = {
   getNoteContext: jest.fn<() => Promise<NoteContext | null>>(),
@@ -24,13 +20,7 @@ const mockConfigService = {
   setConfig: jest.fn<() => Promise<void>>(),
 };
 
-const mockApiClient = {
-  checkNoteDuplicate: jest.fn<() => Promise<any>>(),
-  getLastNotePost: jest.fn<() => Promise<any>>(),
-  getNote: jest.fn<() => Promise<any>>(),
-  recordNotePublisher: jest.fn<() => Promise<void>>(),
-  getCommunityServerByPlatformId: jest.fn<() => Promise<any>>(),
-};
+const mockApiClient = apiClientFactory.build();
 
 const mockResolveCommunityServerId = jest.fn<(guildId: string) => Promise<string>>();
 
@@ -56,7 +46,6 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
 
 const { NotePublisherService } = await import('../../src/services/NotePublisherService.js');
 
-// Helper to create mock JSONAPI note response
 function createMockNoteJSONAPIResponse(overrides: {
   id?: string;
   summary?: string;
@@ -135,7 +124,7 @@ function createEmptyListResponse(): any {
 describe('NotePublisherService', () => {
   let notePublisherService: InstanceType<typeof NotePublisherService>;
   let mockClient: Client;
-  let mockChannel: TextChannel;
+  let mockChannel: ReturnType<typeof discordChannelFactory.build>;
 
   beforeEach(() => {
     mockClient = {
@@ -146,14 +135,11 @@ describe('NotePublisherService', () => {
       },
     } as any;
 
-    mockChannel = Object.create(TextChannel.prototype);
-    mockChannel.id = 'channel-456';
-    mockChannel.type = ChannelType.GuildText;
-    (mockChannel as any).isThread = jest.fn<() => any>().mockReturnValue(false);
-    (mockChannel as any).isTextBased = jest.fn<() => any>().mockReturnValue(true);
-    (mockChannel as any).isDMBased = jest.fn<() => any>().mockReturnValue(false);
-    mockChannel.permissionsFor = jest.fn<(...args: any[]) => any>();
-    mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>();
+    mockChannel = discordChannelFactory.build({}, { transient: { hasPermissions: true } });
+    Object.assign(mockChannel, {
+      type: ChannelType.GuildText,
+      id: 'channel-456',
+    });
 
     mockConfigService.getDefaultThreshold.mockReturnValue(TEST_SCORE_THRESHOLD);
     mockConfigService.getConfig.mockResolvedValue({
@@ -231,15 +217,15 @@ describe('NotePublisherService', () => {
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
       (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockChannel.send.mockResolvedValue({ id: 'reply-789' });
       mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
       await notePublisherService.handleScoreUpdate(event);
@@ -318,15 +304,15 @@ describe('NotePublisherService', () => {
       const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createMockLastNotePostResponse(sixMinutesAgo.toISOString(), '1', 'channel-456'));
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
       (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note' }));
 
-      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockChannel.send.mockResolvedValue({ id: 'reply-789' });
       mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
       await notePublisherService.handleScoreUpdate(event);
@@ -415,8 +401,8 @@ describe('NotePublisherService', () => {
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['CreatePublicThreads'])
       );
 
@@ -445,8 +431,8 @@ describe('NotePublisherService', () => {
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
       (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
@@ -455,7 +441,7 @@ describe('NotePublisherService', () => {
 
       const discordError: any = new Error('Unknown Message');
       discordError.code = 10008;
-      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockRejectedValue(discordError);
+      mockChannel.send.mockRejectedValue(discordError);
 
       await notePublisherService.handleScoreUpdate(event);
 
@@ -489,15 +475,15 @@ describe('NotePublisherService', () => {
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
       (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'This is a helpful community note' }));
 
-      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockChannel.send.mockResolvedValue({ id: 'reply-789' });
       mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
       await notePublisherService.handleScoreUpdate(event);
@@ -531,8 +517,8 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField([PermissionFlagsBits.SendMessages, PermissionFlagsBits.CreatePublicThreads])
       );
       (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
@@ -559,7 +545,7 @@ describe('NotePublisherService', () => {
 
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockChannel.send.mockResolvedValue({ id: 'reply-789' });
       mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
       await notePublisherService.handleScoreUpdate(event);
@@ -585,8 +571,8 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
 
@@ -638,18 +624,17 @@ describe('NotePublisherService', () => {
         community_server_id: 'guild-123',
       };
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      const permissionsForSpy = jest.fn<(...args: any[]) => any>().mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
-      mockChannel.permissionsFor = permissionsForSpy;
 
       mockApiClient.checkNoteDuplicate.mockResolvedValue(createMockDuplicateCheckResponse(true));
 
       await notePublisherService.handleScoreUpdate(event);
       await notePublisherService.handleScoreUpdate(event);
 
-      expect(permissionsForSpy).toHaveBeenCalledTimes(1);
+      expect(mockChannel.permissionsFor).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -682,15 +667,15 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
         mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -725,15 +710,15 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
         mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -764,15 +749,15 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
         mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -804,15 +789,15 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
         mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -843,8 +828,8 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
@@ -854,7 +839,7 @@ describe('NotePublisherService', () => {
           imageUrls: ['https://example.com/image1.png', 'https://example.com/image2.jpg'],
         }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -884,15 +869,15 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
         mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note without images' }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -923,15 +908,15 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
         mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -969,15 +954,15 @@ describe('NotePublisherService', () => {
         mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
         mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-        mockClient.channels.cache.set('channel-456', mockChannel);
-        (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+        mockClient.channels.cache.set('channel-456', mockChannel as any);
+        mockChannel.permissionsFor.mockReturnValue(
           new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
         );
         (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
         mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Force published note' }));
 
-        mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+        mockChannel.send.mockResolvedValue({ id: 'reply-789' });
         mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
         await notePublisherService.handleScoreUpdate(event);
@@ -1024,15 +1009,15 @@ describe('NotePublisherService', () => {
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
       mockResolveCommunityServerId.mockResolvedValueOnce(resolvedUUID);
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
       (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockChannel.send.mockResolvedValue({ id: 'reply-789' });
       mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
       await notePublisherService.handleScoreUpdate(event);
@@ -1065,15 +1050,15 @@ describe('NotePublisherService', () => {
       mockApiClient.checkNoteDuplicate.mockResolvedValueOnce(createMockDuplicateCheckResponse(false));
       mockApiClient.getLastNotePost.mockResolvedValueOnce(createEmptyListResponse());
 
-      mockClient.channels.cache.set('channel-456', mockChannel);
-      (mockChannel.permissionsFor as jest.Mock).mockReturnValue(
+      mockClient.channels.cache.set('channel-456', mockChannel as any);
+      mockChannel.permissionsFor.mockReturnValue(
         new PermissionsBitField(['SendMessages', 'CreatePublicThreads'])
       );
       (mockClient.channels.fetch as any).mockResolvedValue(mockChannel);
 
       mockApiClient.getNote.mockResolvedValueOnce(createMockNoteJSONAPIResponse({ summary: 'Test note content' }));
 
-      mockChannel.send = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({ id: 'reply-789' });
+      mockChannel.send.mockResolvedValue({ id: 'reply-789' });
       mockApiClient.recordNotePublisher.mockResolvedValue(undefined);
 
       await notePublisherService.handleScoreUpdate(event);
