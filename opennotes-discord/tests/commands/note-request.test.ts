@@ -2,13 +2,16 @@ import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
 import { ConfigKey } from '../../src/lib/config-schema.js';
 import {
-  createMockLogger,
   createSuccessResult,
   createErrorResult,
 } from '../utils/service-mocks.js';
+import {
+  loggerFactory,
+  chatInputCommandInteractionFactory,
+} from '../factories/index.js';
 import { ErrorCode } from '../../src/services/types.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 const mockRequestNoteService = {
   execute: jest.fn<(...args: any[]) => Promise<any>>(),
 };

@@ -1,8 +1,11 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
-import { createMockLogger } from '../utils/service-mocks.js';
+import {
+  loggerFactory,
+  chatInputCommandInteractionFactory,
+} from '../factories/index.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 
 const mockApiClient = {
   forcePublishNote: jest.fn<(noteId: string, userContext?: any) => Promise<any>>(),

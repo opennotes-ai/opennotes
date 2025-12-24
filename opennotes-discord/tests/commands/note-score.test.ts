@@ -1,10 +1,14 @@
 import { jest } from '@jest/globals';
 import { MessageFlags } from 'discord.js';
-import { createMockLogger, createSuccessResult, createErrorResult, createMockNoteScoreJSONAPIResponse } from '../utils/service-mocks.js';
+import { createSuccessResult, createErrorResult, createMockNoteScoreJSONAPIResponse } from '../utils/service-mocks.js';
+import {
+  loggerFactory,
+  chatInputCommandInteractionFactory,
+} from '../factories/index.js';
 import { ErrorCode } from '../../src/services/types.js';
 import { TEST_SCORE_ABOVE_THRESHOLD, TEST_NOTE_UUID } from '../test-constants.js';
 
-const mockLogger = createMockLogger();
+const mockLogger = loggerFactory.build();
 const mockScoringService = {
   getNoteScore: jest.fn<(...args: any[]) => Promise<any>>(),
   getTopNotes: jest.fn<(...args: any[]) => Promise<any>>(),
