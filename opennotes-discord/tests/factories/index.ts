@@ -88,3 +88,18 @@ export {
   type GuildConfig,
   type GuildConfigTransientParams,
 } from './guild-config.js';
+
+export {
+  redisClientFactory,
+  disconnectedRedisFactory,
+  pubSubRedisFactory,
+  createMockSubscriber,
+  createMockRedisClass,
+  simulateMessage,
+  asRedis,
+  type MockRedisClient,
+  type MockRedisSubscriber,
+  type MockRedisMulti,
+  type MockRedisPipeline,
+  type RedisTransientParams,
+} from './redis.js';
