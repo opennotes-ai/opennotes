@@ -1,14 +1,37 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { MessageFlags, ContainerBuilder, Collection, MessageType } from 'discord.js';
 import { V2_COLORS } from '../../src/utils/v2-components.js';
-import { buildWelcomeContainer } from '../../src/lib/welcome-content.js';
+import { buildWelcomeContainer, WELCOME_MESSAGE_REVISION } from '../../src/lib/welcome-content.js';
 
 // Helper to create a Collection from entries (mimics Discord.js Collection)
 function createMockCollection<K, V>(entries: [K, V][]): Collection<K, V> {
   return new Collection(entries);
 }
 
-// Get the actual welcome content signature for content comparison tests
+// Create a mock message with a specific revision (for revision-based idempotency tests)
+function createMockMessageWithRevision(messageId: string, revision: string, botUser: any) {
+  return {
+    id: messageId,
+    author: botUser,
+    createdTimestamp: Date.now(),
+    components: [
+      {
+        type: 17, // Container type
+        components: [
+          {
+            toJSON: () => ({
+              type: 10, // TextDisplay type
+              content: `-# Revision ${revision}`,
+            }),
+          },
+        ],
+      },
+    ],
+    delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+  };
+}
+
+// Get the actual welcome content for tests (includes current revision)
 function getActualWelcomeContentSignature(): object {
   return buildWelcomeContainer().toJSON();
 }
@@ -462,14 +485,8 @@ describe('GuildOnboardingService', () => {
 
     it('should skip posting if welcome message already exists in channel pins (AC#4)', async () => {
       const existingWelcomeMessageId = 'existing-welcome-123';
-      // Mock message must have author matching bot user and actual welcome content
-      const actualWelcomeContent = getActualWelcomeContentSignature();
-      const existingMessage = {
-        id: existingWelcomeMessageId,
-        author: { id: 'bot-user-123' },
-        components: [{ type: 17, toJSON: () => actualWelcomeContent }],
-        pin: jest.fn(),
-      };
+      // Mock message must have author matching bot user and current revision
+      const existingMessage = createMockMessageWithRevision(existingWelcomeMessageId, WELCOME_MESSAGE_REVISION, { id: 'bot-user-123' });
       const pinnedMessages = createMockCollection([[existingWelcomeMessageId, existingMessage]]);
       mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 
@@ -493,10 +510,11 @@ describe('GuildOnboardingService', () => {
 
       expect(mockChannel.send).not.toHaveBeenCalled();
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Welcome message with same content already exists',
+        'Welcome message with same revision already exists',
         expect.objectContaining({
           guildId: 'guild-123',
           messageId: existingWelcomeMessageId,
+          revision: WELCOME_MESSAGE_REVISION,
         })
       );
     });
@@ -620,7 +638,7 @@ describe('GuildOnboardingService', () => {
     });
   });
 
-  describe('Welcome Message Idempotency - Content-Based (task-870)', () => {
+  describe('Welcome Message Idempotency - Revision-Based (task-870, task-881)', () => {
     let mockMessage: any;
     let mockBotUser: any;
 
@@ -654,14 +672,8 @@ describe('GuildOnboardingService', () => {
     describe('AC#1: Search by bot author instead of stored message ID', () => {
       it('should find existing welcome message by bot author when stored ID is missing', async () => {
         // Existing welcome message from the bot (not tracked in DB)
-        // Must use actual welcome content for content comparison to match
-        const actualWelcomeContent = getActualWelcomeContentSignature();
-        const existingBotMessage = {
-          id: 'untracked-welcome-123',
-          author: mockBotUser,
-          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
-          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
-        };
+        // Must use current revision for revision comparison to match
+        const existingBotMessage = createMockMessageWithRevision('untracked-welcome-123', WELCOME_MESSAGE_REVISION, mockBotUser);
         const pinnedMessages = createMockCollection([['untracked-welcome-123', existingBotMessage]]);
         mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 
@@ -687,16 +699,10 @@ describe('GuildOnboardingService', () => {
       });
     });
 
-    describe('AC#2-3: Content comparison', () => {
-      it('should not repost if existing welcome has same content', async () => {
-        // Create a mock existing message with actual welcome content
-        const actualWelcomeContent = getActualWelcomeContentSignature();
-        const existingBotMessage = {
-          id: 'existing-welcome-123',
-          author: mockBotUser,
-          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
-          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
-        };
+    describe('AC#2-3: Revision comparison', () => {
+      it('should not repost if existing welcome has same revision', async () => {
+        // Create a mock existing message with current revision
+        const existingBotMessage = createMockMessageWithRevision('existing-welcome-123', WELCOME_MESSAGE_REVISION, mockBotUser);
         const pinnedMessages = createMockCollection([['existing-welcome-123', existingBotMessage]]);
         mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 
@@ -716,23 +722,17 @@ describe('GuildOnboardingService', () => {
 
         await service.postWelcomeToChannel(mockChannel);
 
-        // Should not send new message - content is same
+        // Should not send new message - revision is same
         expect(mockChannel.send).not.toHaveBeenCalled();
         // Should not delete old message
         expect(existingBotMessage.delete).not.toHaveBeenCalled();
       });
     });
 
-    describe('AC#4: Delete old message when content changes', () => {
-      it('should delete old welcome and post new when content differs', async () => {
-        // Existing welcome with DIFFERENT content (e.g., old version)
-        // toJSON returns different structure so content comparison fails
-        const existingBotMessage = {
-          id: 'old-welcome-123',
-          author: mockBotUser,
-          components: [{ type: 17, toJSON: () => ({ type: 17, content: 'Old welcome text' }) }],
-          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
-        };
+    describe('AC#4: Delete old message when revision changes', () => {
+      it('should delete old welcome and post new when revision differs', async () => {
+        // Existing welcome with DIFFERENT revision (e.g., old version)
+        const existingBotMessage = createMockMessageWithRevision('old-welcome-123', '2024-01-01.1', mockBotUser);
         const pinnedMessages = createMockCollection([['old-welcome-123', existingBotMessage]]);
         mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 
@@ -762,26 +762,14 @@ describe('GuildOnboardingService', () => {
     describe('AC#8: Handle multiple identical pinned messages', () => {
       it('should delete duplicate welcome messages keeping only one', async () => {
         // Three identical welcome messages pinned (duplicates from bug)
-        // All have same content as current welcome
-        const actualWelcomeContent = getActualWelcomeContentSignature();
-        const welcomeMessage1 = {
-          id: 'welcome-1',
-          author: mockBotUser,
-          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
-          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
-        };
-        const welcomeMessage2 = {
-          id: 'welcome-2',
-          author: mockBotUser,
-          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
-          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
-        };
-        const welcomeMessage3 = {
-          id: 'welcome-3',
-          author: mockBotUser,
-          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
-          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
-        };
+        // All have same revision as current welcome
+        const welcomeMessage1 = createMockMessageWithRevision('welcome-1', WELCOME_MESSAGE_REVISION, mockBotUser);
+        welcomeMessage1.createdTimestamp = Date.now() - 2000; // Oldest
+        const welcomeMessage2 = createMockMessageWithRevision('welcome-2', WELCOME_MESSAGE_REVISION, mockBotUser);
+        welcomeMessage2.createdTimestamp = Date.now() - 1000; // Middle
+        const welcomeMessage3 = createMockMessageWithRevision('welcome-3', WELCOME_MESSAGE_REVISION, mockBotUser);
+        welcomeMessage3.createdTimestamp = Date.now(); // Newest (kept)
+
         const pinnedMessages = createMockCollection([
           ['welcome-1', welcomeMessage1],
           ['welcome-2', welcomeMessage2],
@@ -805,13 +793,15 @@ describe('GuildOnboardingService', () => {
 
         await service.postWelcomeToChannel(mockChannel);
 
-        // Should delete 2 duplicates, keep 1
+        // Should delete 2 duplicates, keep the newest one
         const deleteCalls = [
           welcomeMessage1.delete.mock.calls.length,
           welcomeMessage2.delete.mock.calls.length,
           welcomeMessage3.delete.mock.calls.length,
         ].reduce((sum, count) => sum + count, 0);
         expect(deleteCalls).toBe(2);
+        // The newest message should NOT be deleted
+        expect(welcomeMessage3.delete).not.toHaveBeenCalled();
 
         // Should not post new message (one already exists)
         expect(mockChannel.send).not.toHaveBeenCalled();
@@ -859,14 +849,8 @@ describe('GuildOnboardingService', () => {
 
       it('should update DB with found message ID if DB record is stale', async () => {
         // Bot's welcome exists but DB has wrong/missing ID
-        // Must use actual welcome content for content comparison to match
-        const actualWelcomeContent = getActualWelcomeContentSignature();
-        const existingBotMessage = {
-          id: 'found-welcome-123',
-          author: mockBotUser,
-          components: [{ type: 17, toJSON: () => actualWelcomeContent }],
-          delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
-        };
+        // Must use current revision for revision comparison to match
+        const existingBotMessage = createMockMessageWithRevision('found-welcome-123', WELCOME_MESSAGE_REVISION, mockBotUser);
         const pinnedMessages = createMockCollection([['found-welcome-123', existingBotMessage]]);
         mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
 

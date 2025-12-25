@@ -1,10 +1,12 @@
-import { ContainerBuilder, TextDisplayBuilder } from 'discord.js';
+import { ComponentType, ContainerBuilder, Message, TextDisplayBuilder } from 'discord.js';
 import {
   createContainer,
   createSmallSeparator,
   createDivider,
   V2_COLORS,
 } from '../utils/v2-components.js';
+
+export const WELCOME_MESSAGE_REVISION = '2025-12-24.1';
 
 export function buildWelcomeContainer(): ContainerBuilder {
   return createContainer(V2_COLORS.PRIMARY)
@@ -68,5 +70,29 @@ export function buildWelcomeContainer(): ContainerBuilder {
     .addSeparatorComponents(createDivider())
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent('*Open Notes - Community-powered context*')
+    )
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`-# Revision ${WELCOME_MESSAGE_REVISION}`)
     );
+}
+
+const REVISION_PATTERN = /Revision (\d{4}-\d{2}-\d{2}\.\d+)/;
+
+export function extractRevisionFromMessage(message: Message): string | null {
+  const container = message.components?.[0];
+  if (!container || !('components' in container)) {
+    return null;
+  }
+
+  for (const component of container.components) {
+    const data = component.toJSON();
+    if (data.type === ComponentType.TextDisplay && typeof data.content === 'string') {
+      const match = data.content.match(REVISION_PATTERN);
+      if (match) {
+        return match[1];
+      }
+    }
+  }
+
+  return null;
 }
