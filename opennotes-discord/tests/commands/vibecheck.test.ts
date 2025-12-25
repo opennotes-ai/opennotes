@@ -1857,5 +1857,151 @@ describe('vibecheck command', () => {
       expect(mockApiClient.generateScanExplanation).toHaveBeenCalledTimes(10);
       expect(maxConcurrency).toBeLessThanOrEqual(5);
     });
+
+    it('should store explanations in cache when scan completes', async () => {
+      const { mockInteraction } = createMockInteractionWithCollector();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'This vaccine causes autism', 0.95, 'Vaccines cause autism', 'fact-check-uuid-1'),
+        createFlaggedMessageResource('msg-2', 'ch-2', '5G towers spread COVID', 0.85, '5G causes COVID-19', 'fact-check-uuid-2'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      mockApiClient.generateScanExplanation
+        .mockResolvedValueOnce(createExplanationResultResponse('First explanation'))
+        .mockResolvedValueOnce(createExplanationResultResponse('Second explanation'));
+
+      await execute(mockInteraction as any);
+
+      expect(mockCache.set).toHaveBeenCalledWith(
+        'vibecheck:explanations:scan-123',
+        expect.objectContaining({
+          'msg-1': 'First explanation',
+          'msg-2': 'Second explanation',
+        }),
+        expect.any(Number)
+      );
+    });
+  });
+
+  describe('status subcommand explanation display', () => {
+    it('should retrieve explanations from cache and pass to formatter', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Flagged content', 0.9, 'Matched claim', 'fact-check-uuid-1'),
+      ];
+
+      mockApiClient.getLatestScan.mockResolvedValueOnce(
+        createLatestScanResponse('scan-456', 'completed', 100, flaggedMessages)
+      );
+
+      const cachedExplanations = {
+        'msg-1': 'This message contains a debunked claim about vaccines.',
+      };
+      mockCache.get.mockImplementation(async (key: string) => {
+        if (key === 'vibecheck:explanations:scan-456') {
+          return cachedExplanations;
+        }
+        return null;
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockCache.get).toHaveBeenCalledWith('vibecheck:explanations:scan-456');
+      expect(mockFormatScanStatusPaginated).toHaveBeenCalledWith(
+        expect.objectContaining({
+          explanations: expect.any(Map),
+        })
+      );
+
+      const callArgs = mockFormatScanStatusPaginated.mock.calls[0][0];
+      expect(callArgs.explanations.get('msg-1')).toBe('This message contains a debunked claim about vaccines.');
+    });
+
+    it('should work gracefully when no cached explanations exist', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('status'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Flagged content', 0.9, 'Matched claim', 'fact-check-uuid-1'),
+      ];
+
+      mockApiClient.getLatestScan.mockResolvedValueOnce(
+        createLatestScanResponse('scan-789', 'completed', 100, flaggedMessages)
+      );
+
+      mockCache.get.mockResolvedValue(null);
+
+      await execute(mockInteraction as any);
+
+      expect(mockFormatScanStatusPaginated).toHaveBeenCalled();
+    });
   });
 });
