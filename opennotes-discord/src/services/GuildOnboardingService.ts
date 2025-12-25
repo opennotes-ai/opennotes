@@ -15,6 +15,9 @@ interface WelcomeMessageCheckResult {
   existingMessageId?: string;
 }
 
+/** Number of recent messages to scan for stale pin notifications */
+const PIN_NOTIFICATION_CLEANUP_LIMIT = 50;
+
 export class GuildOnboardingService {
   async postWelcomeToChannel(channel: TextChannel, options?: PostWelcomeOptions): Promise<void> {
     const guildId = channel.guild.id;
@@ -263,7 +266,7 @@ export class GuildOnboardingService {
 
   private async cleanupPinNotifications(channel: TextChannel): Promise<void> {
     try {
-      const messages = await channel.messages.fetch({ limit: 50 });
+      const messages = await channel.messages.fetch({ limit: PIN_NOTIFICATION_CLEANUP_LIMIT });
       const pinNotifications = messages.filter(
         (msg) => msg.type === MessageType.ChannelPinnedMessage
       );
@@ -277,8 +280,13 @@ export class GuildOnboardingService {
         try {
           await notification.delete();
           deletedCount++;
-        } catch {
-          // Continue with other notifications even if one fails
+        } catch (error) {
+          logger.debug('Failed to delete individual pin notification', {
+            channelId: channel.id,
+            guildId: channel.guild.id,
+            notificationId: notification.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
 

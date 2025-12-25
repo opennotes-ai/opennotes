@@ -181,13 +181,13 @@ describe('welcome-content', () => {
               components: [
                 {
                   toJSON: () => ({
-                    type: 10,
+                    type: ComponentType.TextDisplay,
                     content: 'Some other content',
                   }),
                 },
                 {
                   toJSON: () => ({
-                    type: 10,
+                    type: ComponentType.TextDisplay,
                     content: revisionContent,
                   }),
                 },

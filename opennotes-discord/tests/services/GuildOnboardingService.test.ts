@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { MessageFlags, ContainerBuilder, Collection, MessageType } from 'discord.js';
+import { MessageFlags, ContainerBuilder, Collection, MessageType, ComponentType } from 'discord.js';
 import { V2_COLORS } from '../../src/utils/v2-components.js';
-import { buildWelcomeContainer, WELCOME_MESSAGE_REVISION } from '../../src/lib/welcome-content.js';
+import { WELCOME_MESSAGE_REVISION } from '../../src/lib/welcome-content.js';
 
 // Helper to create a Collection from entries (mimics Discord.js Collection)
 function createMockCollection<K, V>(entries: [K, V][]): Collection<K, V> {
@@ -16,11 +16,11 @@ function createMockMessageWithRevision(messageId: string, revision: string, botU
     createdTimestamp: Date.now(),
     components: [
       {
-        type: 17, // Container type
+        type: ComponentType.Container,
         components: [
           {
             toJSON: () => ({
-              type: 10, // TextDisplay type
+              type: ComponentType.TextDisplay,
               content: `-# Revision ${revision}`,
             }),
           },
@@ -31,9 +31,27 @@ function createMockMessageWithRevision(messageId: string, revision: string, botU
   };
 }
 
-// Get the actual welcome content for tests (includes current revision)
-function getActualWelcomeContentSignature(): object {
-  return buildWelcomeContainer().toJSON();
+// Create a mock message without revision (legacy format, for migration tests)
+function createMockLegacyMessage(messageId: string, botUser: any) {
+  return {
+    id: messageId,
+    author: botUser,
+    createdTimestamp: Date.now(),
+    components: [
+      {
+        type: ComponentType.Container,
+        components: [
+          {
+            toJSON: () => ({
+              type: ComponentType.TextDisplay,
+              content: 'Welcome to OpenNotes!', // Old content without revision
+            }),
+          },
+        ],
+      },
+    ],
+    delete: jest.fn<() => Promise<any>>().mockResolvedValue(undefined),
+  };
 }
 
 const mockLogger = {
@@ -638,7 +656,7 @@ describe('GuildOnboardingService', () => {
     });
   });
 
-  describe('Welcome Message Idempotency - Revision-Based (task-870, task-881)', () => {
+  describe('Welcome Message Idempotency - Revision-Based (task-881)', () => {
     let mockMessage: any;
     let mockBotUser: any;
 
@@ -756,6 +774,44 @@ describe('GuildOnboardingService', () => {
         expect(existingBotMessage.delete).toHaveBeenCalled();
         // Should post new message
         expect(mockChannel.send).toHaveBeenCalledTimes(1);
+      });
+
+      it('should delete legacy message without revision and post new (migration case)', async () => {
+        // Existing welcome WITHOUT revision string (legacy format before task-881)
+        const legacyMessage = createMockLegacyMessage('legacy-welcome-123', mockBotUser);
+        const pinnedMessages = createMockCollection([['legacy-welcome-123', legacyMessage]]);
+        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+
+        mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
+          data: {
+            type: 'community-servers',
+            id: 'community-server-123',
+            attributes: {
+              platform: 'discord',
+              platform_id: 'guild-123',
+              name: 'Test Guild',
+              welcome_message_id: 'legacy-welcome-123',
+            },
+          },
+          jsonapi: { version: '1.1' },
+        });
+
+        await service.postWelcomeToChannel(mockChannel);
+
+        // Should delete the legacy message (extractRevisionFromMessage returns null)
+        expect(legacyMessage.delete).toHaveBeenCalled();
+        // Should post new message with revision
+        expect(mockChannel.send).toHaveBeenCalledTimes(1);
+        // Should log the revision change with null old revision
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          'Welcome message revision changed, replacing old message',
+          expect.objectContaining({
+            guildId: 'guild-123',
+            oldMessageId: 'legacy-welcome-123',
+            oldRevision: null,
+            newRevision: WELCOME_MESSAGE_REVISION,
+          })
+        );
       });
     });
 

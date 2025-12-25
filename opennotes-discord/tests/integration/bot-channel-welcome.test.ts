@@ -353,7 +353,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
             components: [
               {
                 toJSON: () => ({
-                  type: 10,
+                  type: ComponentType.TextDisplay,
                   content: `-# Revision ${revision}`,
                 }),
               },
