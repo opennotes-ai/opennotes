@@ -20,14 +20,18 @@ pytestmark = pytest.mark.asyncio
 def generate_test_embedding(seed: int = 0) -> list[float]:
     """Generate a deterministic test embedding vector (1536 dimensions).
 
-    Uses a simple pattern to create embeddings that have predictable
-    similarity relationships for testing.
-    """
-    import math
+    Uses seeded numpy RNG to create embeddings with realistic similarity
+    distributions while maintaining determinism for test reproducibility.
 
-    base = [math.sin(i * 0.01 + seed * 0.1) for i in range(1536)]
-    norm = math.sqrt(sum(x * x for x in base))
-    return [x / norm for x in base]
+    Same seed always produces identical embeddings; different seeds produce
+    approximately orthogonal vectors (low cosine similarity).
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    base = rng.standard_normal(1536)
+    norm = np.linalg.norm(base)
+    return (base / norm).tolist()
 
 
 @pytest.fixture
