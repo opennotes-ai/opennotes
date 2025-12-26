@@ -40,6 +40,12 @@ export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
 
 const EXPLANATION_CONCURRENCY_LIMIT = 5;
 
+const EXPLANATION_CACHE_TTL = 28800;
+
+export function getExplanationsCacheKey(scanId: string): string {
+  return `vibecheck:explanations:${scanId}`;
+}
+
 async function fetchExplanations(
   flaggedMessages: FlaggedMessageResource[],
   communityServerId: string
@@ -325,6 +331,11 @@ async function displayFlaggedResults(
   };
   await cache.set(`vibecheck:pagination:${stateId}`, state, PAGINATION_STATE_TTL);
 
+  if (explanations && explanations.size > 0) {
+    const explanationsObject = Object.fromEntries(explanations);
+    await cache.set(getExplanationsCacheKey(scanId), explanationsObject, EXPLANATION_CACHE_TTL);
+  }
+
   const pageContent = TextPaginator.getPage(paginatedResult.pages, currentPage);
   const fullContent = `${paginatedResult.header}\n${pageContent}`;
 
@@ -548,10 +559,18 @@ async function handleStatusSubcommand(
     const latestScan = await apiClient.getLatestScan(communityServer.data.id);
     const flaggedMessages = latestScan.included || [];
 
+    const cachedExplanations = await cache.get<Record<string, string>>(
+      getExplanationsCacheKey(latestScan.data.id)
+    );
+    const explanations = cachedExplanations
+      ? new Map(Object.entries(cachedExplanations))
+      : undefined;
+
     const paginatedResult = formatScanStatusPaginated({
       scan: latestScan,
       guildId,
       includeButtons: false,
+      explanations,
     });
 
     const stateId = nanoid(10);
