@@ -118,11 +118,17 @@ class ChunkEmbedding(Base):
         super().__init__(**kwargs)
 
     fact_check_chunks: Mapped[list["FactCheckChunk"]] = relationship(
-        "FactCheckChunk", back_populates="chunk", cascade="all, delete-orphan"
+        "FactCheckChunk",
+        back_populates="chunk",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     previously_seen_chunks: Mapped[list["PreviouslySeenChunk"]] = relationship(
-        "PreviouslySeenChunk", back_populates="chunk", cascade="all, delete-orphan"
+        "PreviouslySeenChunk",
+        back_populates="chunk",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (
