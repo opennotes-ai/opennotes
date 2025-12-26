@@ -9,9 +9,11 @@ This module provides the ChunkEmbeddingService which handles:
 - Tracking common chunks that appear across multiple documents
 """
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk, PreviouslySeenChunk
@@ -69,6 +71,9 @@ class ChunkEmbeddingService:
         If chunk exists, returns it without generating new embedding.
         If chunk is new, generates embedding via LLMService and creates record.
 
+        Uses INSERT ON CONFLICT DO NOTHING to handle race conditions where
+        concurrent requests try to create the same chunk simultaneously.
+
         Args:
             db: Database session
             chunk_text: The text content of the chunk
@@ -98,28 +103,53 @@ class ChunkEmbeddingService:
             db, chunk_text, community_server_id
         )
 
-        chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            chunk_index=chunk_index,
-            embedding=embedding,
-            embedding_provider=provider,
-            embedding_model=model,
+        now = datetime.now(UTC)
+
+        stmt = (
+            pg_insert(ChunkEmbedding)
+            .values(
+                chunk_text=chunk_text,
+                chunk_index=chunk_index,
+                embedding=embedding,
+                embedding_provider=provider,
+                embedding_model=model,
+                is_common=False,
+                created_at=now,
+            )
+            .on_conflict_do_nothing(index_elements=["chunk_text"])
         )
 
-        db.add(chunk)
-        await db.flush()  # Populate chunk.id from database
+        insert_result = await db.execute(stmt)
+        await db.flush()
 
-        logger.info(
-            "Created new chunk embedding",
-            extra={
-                "text_length": len(chunk_text),
-                "chunk_index": chunk_index,
-                "embedding_provider": provider,
-                "embedding_model": model,
-            },
+        result = await db.execute(
+            select(ChunkEmbedding).where(ChunkEmbedding.chunk_text == chunk_text)
         )
+        chunk = result.scalar_one()
 
-        return chunk, True
+        is_created = insert_result.rowcount > 0
+
+        if is_created:
+            logger.info(
+                "Created new chunk embedding",
+                extra={
+                    "chunk_id": str(chunk.id),
+                    "text_length": len(chunk_text),
+                    "chunk_index": chunk_index,
+                    "embedding_provider": provider,
+                    "embedding_model": model,
+                },
+            )
+        else:
+            logger.debug(
+                "Race condition resolved: using existing chunk",
+                extra={
+                    "chunk_id": str(chunk.id),
+                    "text_length": len(chunk_text),
+                },
+            )
+
+        return chunk, is_created
 
     async def update_is_common_flag(
         self,

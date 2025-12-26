@@ -9,6 +9,47 @@ from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
 from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk, PreviouslySeenChunk
 
 
+def _create_mock_db_for_insert(
+    *, chunk_exists_initially: bool, inserted: bool, returned_chunk: ChunkEmbedding
+) -> AsyncMock:
+    """
+    Create a mock database session for get_or_create_chunk tests.
+
+    The new implementation uses INSERT ON CONFLICT DO NOTHING, so we need to mock:
+    1. First SELECT (check if chunk exists)
+    2. INSERT with ON CONFLICT (if chunk doesn't exist initially)
+    3. Second SELECT (to fetch the actual chunk after insert)
+
+    Args:
+        chunk_exists_initially: Whether the chunk exists on first SELECT
+        inserted: Whether the INSERT actually inserted (rowcount > 0)
+        returned_chunk: The chunk to return from the final SELECT
+    """
+    mock_db = AsyncMock()
+
+    if chunk_exists_initially:
+        mock_lookup_result = MagicMock()
+        mock_lookup_result.scalar_one_or_none.return_value = returned_chunk
+        mock_db.execute.return_value = mock_lookup_result
+    else:
+        mock_lookup_result = MagicMock()
+        mock_lookup_result.scalar_one_or_none.return_value = None
+
+        mock_insert_result = MagicMock()
+        mock_insert_result.rowcount = 1 if inserted else 0
+
+        mock_final_lookup = MagicMock()
+        mock_final_lookup.scalar_one.return_value = returned_chunk
+
+        mock_db.execute.side_effect = [
+            mock_lookup_result,
+            mock_insert_result,
+            mock_final_lookup,
+        ]
+
+    return mock_db
+
+
 class TestGetOrCreateChunk:
     """Tests for ChunkEmbeddingService.get_or_create_chunk() method."""
 
@@ -26,16 +67,23 @@ class TestGetOrCreateChunk:
             llm_service=mock_llm_service,
         )
 
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
+        chunk_text = "This is a test chunk."
+        expected_chunk = ChunkEmbedding(
+            chunk_text=chunk_text,
+            chunk_index=0,
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        expected_chunk.id = uuid4()
 
-        added_objects = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+        mock_db = _create_mock_db_for_insert(
+            chunk_exists_initially=False,
+            inserted=True,
+            returned_chunk=expected_chunk,
+        )
 
         community_server_id = uuid4()
-        chunk_text = "This is a test chunk."
 
         chunk, is_created = await service.get_or_create_chunk(
             db=mock_db,
@@ -44,16 +92,10 @@ class TestGetOrCreateChunk:
         )
 
         assert is_created is True
-        assert isinstance(chunk, ChunkEmbedding)
         assert chunk.chunk_text == chunk_text
-        assert chunk.embedding == [0.1] * 1536
-        assert chunk.embedding_provider == "litellm"
-        assert chunk.embedding_model == "text-embedding-3-small"
         mock_llm_service.generate_embedding.assert_called_once_with(
             mock_db, chunk_text, community_server_id
         )
-        assert len(added_objects) == 1
-        assert added_objects[0] == chunk
 
     @pytest.mark.asyncio
     async def test_returns_existing_chunk_when_exists(self):
@@ -67,16 +109,16 @@ class TestGetOrCreateChunk:
             llm_service=mock_llm_service,
         )
 
-        mock_db = AsyncMock()
         existing_chunk = MagicMock(spec=ChunkEmbedding)
         existing_chunk.id = uuid4()
         existing_chunk.chunk_text = "This is a test chunk."
         existing_chunk.embedding = [0.1] * 1536
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = existing_chunk
-        mock_db.execute.return_value = mock_result
-        mock_db.add = MagicMock()
+        mock_db = _create_mock_db_for_insert(
+            chunk_exists_initially=True,
+            inserted=False,
+            returned_chunk=existing_chunk,
+        )
 
         community_server_id = uuid4()
 
@@ -89,7 +131,6 @@ class TestGetOrCreateChunk:
         assert is_created is False
         assert chunk == existing_chunk
         mock_llm_service.generate_embedding.assert_not_called()
-        mock_db.add.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_stores_embedding_provider_and_model(self):
@@ -105,18 +146,26 @@ class TestGetOrCreateChunk:
             llm_service=mock_llm_service,
         )
 
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
-        mock_db.add = MagicMock()
+        chunk_text = "Test chunk"
+        expected_chunk = ChunkEmbedding(
+            chunk_text=chunk_text,
+            chunk_index=0,
+            embedding=[0.2] * 1536,
+            embedding_provider="anthropic",
+            embedding_model="voyage-2",
+        )
+        expected_chunk.id = uuid4()
 
-        community_server_id = uuid4()
+        mock_db = _create_mock_db_for_insert(
+            chunk_exists_initially=False,
+            inserted=True,
+            returned_chunk=expected_chunk,
+        )
 
         chunk, _ = await service.get_or_create_chunk(
             db=mock_db,
-            chunk_text="Test chunk",
-            community_server_id=community_server_id,
+            chunk_text=chunk_text,
+            community_server_id=uuid4(),
         )
 
         assert chunk.embedding_provider == "anthropic"
@@ -136,20 +185,80 @@ class TestGetOrCreateChunk:
             llm_service=mock_llm_service,
         )
 
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
-        mock_db.add = MagicMock()
+        chunk_text = "Test chunk"
+        expected_chunk = ChunkEmbedding(
+            chunk_text=chunk_text,
+            chunk_index=5,
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        expected_chunk.id = uuid4()
+
+        mock_db = _create_mock_db_for_insert(
+            chunk_exists_initially=False,
+            inserted=True,
+            returned_chunk=expected_chunk,
+        )
 
         chunk, _ = await service.get_or_create_chunk(
             db=mock_db,
-            chunk_text="Test chunk",
+            chunk_text=chunk_text,
             community_server_id=uuid4(),
             chunk_index=5,
         )
 
         assert chunk.chunk_index == 5
+
+    @pytest.mark.asyncio
+    async def test_handles_race_condition_gracefully(self):
+        """Test that concurrent chunk creation is handled via INSERT ON CONFLICT.
+
+        Simulates the race condition where:
+        1. First SELECT finds no existing chunk
+        2. Embedding is generated
+        3. INSERT ON CONFLICT DO NOTHING returns rowcount=0 (another request won)
+        4. Final SELECT retrieves the winner's chunk
+        """
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embedding = AsyncMock(
+            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
+        )
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_text = "Concurrent chunk text"
+        winner_chunk = ChunkEmbedding(
+            chunk_text=chunk_text,
+            chunk_index=0,
+            embedding=[0.9] * 1536,
+            embedding_provider="other-provider",
+            embedding_model="other-model",
+        )
+        winner_chunk.id = uuid4()
+
+        mock_db = _create_mock_db_for_insert(
+            chunk_exists_initially=False,
+            inserted=False,
+            returned_chunk=winner_chunk,
+        )
+
+        community_server_id = uuid4()
+
+        chunk, is_created = await service.get_or_create_chunk(
+            db=mock_db,
+            chunk_text=chunk_text,
+            community_server_id=community_server_id,
+        )
+
+        assert is_created is False
+        assert chunk == winner_chunk
+        assert chunk.embedding_provider == "other-provider"
+        mock_llm_service.generate_embedding.assert_called_once()
 
 
 class TestUpdateIsCommonFlag:
@@ -277,6 +386,64 @@ class TestUpdateIsCommonFlag:
         assert is_common is False
 
 
+def _build_chunk_embed_mock_sequence(
+    chunk_texts: list[str],
+    *,
+    chunks_exist: list[bool] | None = None,
+) -> tuple[list[MagicMock], list[ChunkEmbedding]]:
+    """
+    Build mock execute side effects for chunk_and_embed tests.
+
+    For each chunk, we need:
+    1. get_or_create_chunk:
+       - SELECT (lookup) -> returns chunk if exists, None otherwise
+       - If not exists: INSERT (with rowcount=1), then SELECT (final lookup)
+    2. update_is_common_flag: 3 calls (fact_check count, previously_seen count, update)
+
+    Returns:
+        Tuple of (execute side effects list, created chunks list)
+    """
+    if chunks_exist is None:
+        chunks_exist = [False] * len(chunk_texts)
+
+    side_effects = []
+    created_chunks = []
+
+    for i, chunk_text in enumerate(chunk_texts):
+        chunk = ChunkEmbedding(
+            chunk_text=chunk_text,
+            chunk_index=i,
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        chunk.id = uuid4()
+        created_chunks.append(chunk)
+
+        if chunks_exist[i]:
+            mock_lookup_result = MagicMock()
+            mock_lookup_result.scalar_one_or_none.return_value = chunk
+            side_effects.append(mock_lookup_result)
+        else:
+            mock_lookup_result = MagicMock()
+            mock_lookup_result.scalar_one_or_none.return_value = None
+            side_effects.append(mock_lookup_result)
+
+            mock_insert_result = MagicMock()
+            mock_insert_result.rowcount = 1
+            side_effects.append(mock_insert_result)
+
+            mock_final_lookup = MagicMock()
+            mock_final_lookup.scalar_one.return_value = chunk
+            side_effects.append(mock_final_lookup)
+
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 1
+        side_effects.extend([mock_count_result, mock_count_result, MagicMock()])
+
+    return side_effects, created_chunks
+
+
 class TestChunkAndEmbedFactCheck:
     """Tests for ChunkEmbeddingService.chunk_and_embed_fact_check() method."""
 
@@ -284,7 +451,8 @@ class TestChunkAndEmbedFactCheck:
     async def test_chunks_text_and_creates_embeddings(self):
         """Test that text is chunked and embeddings are created for each chunk."""
         mock_chunking_service = MagicMock()
-        mock_chunking_service.chunk_text.return_value = ["Chunk one.", "Chunk two."]
+        chunk_texts = ["Chunk one.", "Chunk two."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
         mock_llm_service.generate_embedding = AsyncMock(
@@ -297,22 +465,8 @@ class TestChunkAndEmbedFactCheck:
         )
 
         mock_db = AsyncMock()
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = None
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 1
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-        ]
+        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
+        mock_db.execute.side_effect = side_effects
 
         added_objects = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
@@ -340,7 +494,8 @@ class TestChunkAndEmbedFactCheck:
     async def test_creates_join_entries_for_fact_check(self):
         """Test that FactCheckChunk join entries are created with correct IDs."""
         mock_chunking_service = MagicMock()
-        mock_chunking_service.chunk_text.return_value = ["Single chunk."]
+        chunk_texts = ["Single chunk."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
         mock_llm_service.generate_embedding = AsyncMock(
@@ -353,18 +508,8 @@ class TestChunkAndEmbedFactCheck:
         )
 
         mock_db = AsyncMock()
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = None
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 1
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-        ]
+        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
+        mock_db.execute.side_effect = side_effects
 
         added_objects = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
@@ -388,7 +533,8 @@ class TestChunkAndEmbedFactCheck:
     async def test_reuses_existing_chunks(self):
         """Test that existing chunks are reused without generating new embeddings."""
         mock_chunking_service = MagicMock()
-        mock_chunking_service.chunk_text.return_value = ["Existing chunk."]
+        chunk_texts = ["Existing chunk."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
         mock_llm_service.generate_embedding = AsyncMock()
@@ -399,22 +545,10 @@ class TestChunkAndEmbedFactCheck:
         )
 
         mock_db = AsyncMock()
-        existing_chunk = MagicMock(spec=ChunkEmbedding)
-        existing_chunk.id = uuid4()
-        existing_chunk.chunk_text = "Existing chunk."
-
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = existing_chunk
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 2
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-        ]
+        side_effects, expected_chunks = _build_chunk_embed_mock_sequence(
+            chunk_texts, chunks_exist=[True]
+        )
+        mock_db.execute.side_effect = side_effects
 
         added_objects = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
@@ -428,7 +562,7 @@ class TestChunkAndEmbedFactCheck:
 
         mock_llm_service.generate_embedding.assert_not_called()
         assert len(chunks) == 1
-        assert chunks[0] == existing_chunk
+        assert chunks[0] == expected_chunks[0]
 
         chunk_embeddings_added = [o for o in added_objects if isinstance(o, ChunkEmbedding)]
         assert len(chunk_embeddings_added) == 0
@@ -441,7 +575,8 @@ class TestChunkAndEmbedPreviouslySeen:
     async def test_chunks_text_and_creates_embeddings(self):
         """Test that text is chunked and embeddings are created."""
         mock_chunking_service = MagicMock()
-        mock_chunking_service.chunk_text.return_value = ["Chunk A.", "Chunk B."]
+        chunk_texts = ["Chunk A.", "Chunk B."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
         mock_llm_service.generate_embedding = AsyncMock(
@@ -454,22 +589,8 @@ class TestChunkAndEmbedPreviouslySeen:
         )
 
         mock_db = AsyncMock()
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = None
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 1
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-        ]
+        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
+        mock_db.execute.side_effect = side_effects
 
         added_objects = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
@@ -492,7 +613,8 @@ class TestChunkAndEmbedPreviouslySeen:
     async def test_creates_join_entries_for_previously_seen(self):
         """Test that PreviouslySeenChunk join entries are created."""
         mock_chunking_service = MagicMock()
-        mock_chunking_service.chunk_text.return_value = ["Single chunk."]
+        chunk_texts = ["Single chunk."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
         mock_llm_service.generate_embedding = AsyncMock(
@@ -505,18 +627,8 @@ class TestChunkAndEmbedPreviouslySeen:
         )
 
         mock_db = AsyncMock()
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = None
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 1
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-        ]
+        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
+        mock_db.execute.side_effect = side_effects
 
         added_objects = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
@@ -540,7 +652,8 @@ class TestChunkAndEmbedPreviouslySeen:
     async def test_reuses_existing_chunks(self):
         """Test that existing chunks are reused."""
         mock_chunking_service = MagicMock()
-        mock_chunking_service.chunk_text.return_value = ["Shared chunk."]
+        chunk_texts = ["Shared chunk."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
         mock_llm_service.generate_embedding = AsyncMock()
@@ -551,21 +664,10 @@ class TestChunkAndEmbedPreviouslySeen:
         )
 
         mock_db = AsyncMock()
-        existing_chunk = MagicMock(spec=ChunkEmbedding)
-        existing_chunk.id = uuid4()
-
-        mock_lookup_result = MagicMock()
-        mock_lookup_result.scalar_one_or_none.return_value = existing_chunk
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 2
-
-        mock_db.execute.side_effect = [
-            mock_lookup_result,
-            mock_count_result,
-            mock_count_result,
-            MagicMock(),
-        ]
+        side_effects, expected_chunks = _build_chunk_embed_mock_sequence(
+            chunk_texts, chunks_exist=[True]
+        )
+        mock_db.execute.side_effect = side_effects
 
         added_objects = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
@@ -579,7 +681,7 @@ class TestChunkAndEmbedPreviouslySeen:
 
         mock_llm_service.generate_embedding.assert_not_called()
         assert len(chunks) == 1
-        assert chunks[0] == existing_chunk
+        assert chunks[0] == expected_chunks[0]
 
 
 class TestChunkEmbeddingServiceInit:
