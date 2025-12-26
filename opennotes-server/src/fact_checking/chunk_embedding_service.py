@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import func, select, union_all, update
+from sqlalchemy import delete, func, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -321,6 +321,10 @@ class ChunkEmbeddingService:
         Returns:
             List of ChunkEmbedding records (new or existing)
         """
+        await db.execute(
+            delete(FactCheckChunk).where(FactCheckChunk.fact_check_id == fact_check_id)
+        )
+
         chunk_texts = self.chunking_service.chunk_text(text)
 
         chunks: list[ChunkEmbedding] = []
@@ -377,6 +381,12 @@ class ChunkEmbeddingService:
         Returns:
             List of ChunkEmbedding records (new or existing)
         """
+        await db.execute(
+            delete(PreviouslySeenChunk).where(
+                PreviouslySeenChunk.previously_seen_id == previously_seen_id
+            )
+        )
+
         chunk_texts = self.chunking_service.chunk_text(text)
 
         chunks: list[ChunkEmbedding] = []
