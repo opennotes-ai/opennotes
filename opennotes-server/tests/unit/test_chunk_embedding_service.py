@@ -70,7 +70,6 @@ class TestGetOrCreateChunk:
         chunk_text = "This is a test chunk."
         expected_chunk = ChunkEmbedding(
             chunk_text=chunk_text,
-            chunk_index=0,
             embedding=[0.1] * 1536,
             embedding_provider="litellm",
             embedding_model="text-embedding-3-small",
@@ -149,7 +148,6 @@ class TestGetOrCreateChunk:
         chunk_text = "Test chunk"
         expected_chunk = ChunkEmbedding(
             chunk_text=chunk_text,
-            chunk_index=0,
             embedding=[0.2] * 1536,
             embedding_provider="anthropic",
             embedding_model="voyage-2",
@@ -170,45 +168,6 @@ class TestGetOrCreateChunk:
 
         assert chunk.embedding_provider == "anthropic"
         assert chunk.embedding_model == "voyage-2"
-
-    @pytest.mark.asyncio
-    async def test_stores_chunk_index(self):
-        """Test that chunk_index is stored correctly."""
-        mock_chunking_service = MagicMock()
-        mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
-
-        service = ChunkEmbeddingService(
-            chunking_service=mock_chunking_service,
-            llm_service=mock_llm_service,
-        )
-
-        chunk_text = "Test chunk"
-        expected_chunk = ChunkEmbedding(
-            chunk_text=chunk_text,
-            chunk_index=5,
-            embedding=[0.1] * 1536,
-            embedding_provider="litellm",
-            embedding_model="text-embedding-3-small",
-        )
-        expected_chunk.id = uuid4()
-
-        mock_db = _create_mock_db_for_insert(
-            chunk_exists_initially=False,
-            inserted=True,
-            returned_chunk=expected_chunk,
-        )
-
-        chunk, _ = await service.get_or_create_chunk(
-            db=mock_db,
-            chunk_text=chunk_text,
-            community_server_id=uuid4(),
-            chunk_index=5,
-        )
-
-        assert chunk.chunk_index == 5
 
     @pytest.mark.asyncio
     async def test_handles_race_condition_gracefully(self):
@@ -234,7 +193,6 @@ class TestGetOrCreateChunk:
         chunk_text = "Concurrent chunk text"
         winner_chunk = ChunkEmbedding(
             chunk_text=chunk_text,
-            chunk_index=0,
             embedding=[0.9] * 1536,
             embedding_provider="other-provider",
             embedding_model="other-model",
@@ -412,7 +370,6 @@ def _build_chunk_embed_mock_sequence(
     for i, chunk_text in enumerate(chunk_texts):
         chunk = ChunkEmbedding(
             chunk_text=chunk_text,
-            chunk_index=i,
             embedding=[0.1] * 1536,
             embedding_provider="litellm",
             embedding_model="text-embedding-3-small",

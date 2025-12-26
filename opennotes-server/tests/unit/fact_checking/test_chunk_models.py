@@ -87,14 +87,12 @@ class TestChunkEmbeddingModel:
 
         chunk = ChunkEmbedding(
             chunk_text="This is a longer test chunk text for representation",
-            chunk_index=2,
             is_common=True,
         )
 
         repr_str = repr(chunk)
         assert "ChunkEmbedding" in repr_str
         assert "This is a longer tes" in repr_str  # First 20 chars
-        assert "index=2" in repr_str  # chunk_index
 
     def test_model_has_hnsw_index_defined(self):
         """Test ChunkEmbedding has HNSW index configured in table args."""
@@ -136,6 +134,22 @@ class TestFactCheckChunkModel:
 
         assert join.chunk_id == chunk_id
         assert join.fact_check_id == fact_check_id
+        assert join.chunk_index == 0  # Default value
+
+    def test_model_stores_chunk_index(self):
+        """Test FactCheckChunk stores chunk_index for document position."""
+        from src.fact_checking.chunk_models import FactCheckChunk
+
+        chunk_id = UUID("018f5e6e-1234-7890-abcd-ef1234567890")
+        fact_check_id = UUID("018f5e6e-5678-7890-abcd-ef1234567890")
+
+        join = FactCheckChunk(
+            chunk_id=chunk_id,
+            fact_check_id=fact_check_id,
+            chunk_index=5,
+        )
+
+        assert join.chunk_index == 5
 
     def test_model_has_composite_unique_constraint(self):
         """Test FactCheckChunk has unique constraint on (chunk_id, fact_check_id)."""
@@ -197,6 +211,22 @@ class TestPreviouslySeenChunkModel:
 
         assert join.chunk_id == chunk_id
         assert join.previously_seen_id == previously_seen_id
+        assert join.chunk_index == 0  # Default value
+
+    def test_model_stores_chunk_index(self):
+        """Test PreviouslySeenChunk stores chunk_index for message position."""
+        from src.fact_checking.chunk_models import PreviouslySeenChunk
+
+        chunk_id = UUID("018f5e6e-1234-7890-abcd-ef1234567890")
+        previously_seen_id = UUID("018f5e6e-5678-7890-abcd-ef1234567890")
+
+        join = PreviouslySeenChunk(
+            chunk_id=chunk_id,
+            previously_seen_id=previously_seen_id,
+            chunk_index=3,
+        )
+
+        assert join.chunk_index == 3
 
     def test_model_has_composite_unique_constraint(self):
         """Test PreviouslySeenChunk has unique constraint on (chunk_id, previously_seen_id)."""
