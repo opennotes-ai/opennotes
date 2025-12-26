@@ -417,6 +417,7 @@ class TestChunkAndEmbedFactCheck:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
         side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
@@ -444,6 +445,10 @@ class TestChunkAndEmbedFactCheck:
         for entry in join_entries:
             assert entry.fact_check_id == fact_check_id
 
+        service.batch_update_is_common_flags.assert_called_once()
+        call_args = service.batch_update_is_common_flags.call_args
+        assert len(call_args[0][1]) == 2
+
     @pytest.mark.asyncio
     async def test_creates_join_entries_for_fact_check(self):
         """Test that FactCheckChunk join entries are created with correct IDs."""
@@ -460,6 +465,7 @@ class TestChunkAndEmbedFactCheck:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
         side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
@@ -497,6 +503,7 @@ class TestChunkAndEmbedFactCheck:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
         side_effects, expected_chunks = _build_chunk_embed_mock_sequence(
@@ -541,6 +548,7 @@ class TestChunkAndEmbedPreviouslySeen:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
         side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
@@ -563,6 +571,10 @@ class TestChunkAndEmbedPreviouslySeen:
         assert len(chunks) == 2
         assert all(isinstance(c, ChunkEmbedding) for c in chunks)
 
+        service.batch_update_is_common_flags.assert_called_once()
+        call_args = service.batch_update_is_common_flags.call_args
+        assert len(call_args[0][1]) == 2
+
     @pytest.mark.asyncio
     async def test_creates_join_entries_for_previously_seen(self):
         """Test that PreviouslySeenChunk join entries are created."""
@@ -579,6 +591,7 @@ class TestChunkAndEmbedPreviouslySeen:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
         side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
@@ -616,6 +629,7 @@ class TestChunkAndEmbedPreviouslySeen:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
         side_effects, expected_chunks = _build_chunk_embed_mock_sequence(
@@ -670,6 +684,7 @@ class TestEmptyTextHandling:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
         mock_db.add = MagicMock()
@@ -683,3 +698,187 @@ class TestEmptyTextHandling:
 
         assert len(chunks) == 0
         mock_db.add.assert_not_called()
+        service.batch_update_is_common_flags.assert_called_once_with(mock_db, [])
+
+
+class TestBatchUpdateIsCommonFlags:
+    """Tests for ChunkEmbeddingService.batch_update_is_common_flags() method."""
+
+    @pytest.mark.asyncio
+    async def test_empty_chunk_ids_returns_empty_dict(self):
+        """Test that empty chunk_ids list returns empty dict without queries."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        mock_db = AsyncMock()
+
+        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[])
+
+        assert result == {}
+        mock_db.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_marks_common_when_multiple_references(self):
+        """Test chunks with count > 1 are marked as common."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_id = uuid4()
+        mock_db = AsyncMock()
+
+        mock_row = MagicMock()
+        mock_row.chunk_id = chunk_id
+        mock_row.total = 3
+
+        mock_count_result = MagicMock()
+        mock_count_result.all.return_value = [mock_row]
+
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            MagicMock(),
+        ]
+
+        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
+
+        assert result == {chunk_id: True}
+        assert mock_db.execute.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_marks_not_common_when_single_reference(self):
+        """Test chunks with count <= 1 are marked as not common."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_id = uuid4()
+        mock_db = AsyncMock()
+
+        mock_row = MagicMock()
+        mock_row.chunk_id = chunk_id
+        mock_row.total = 1
+
+        mock_count_result = MagicMock()
+        mock_count_result.all.return_value = [mock_row]
+
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            MagicMock(),
+        ]
+
+        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
+
+        assert result == {chunk_id: False}
+        assert mock_db.execute.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_handles_mixed_common_and_not_common(self):
+        """Test batch correctly separates common and not-common chunks."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        common_chunk_id = uuid4()
+        not_common_chunk_id = uuid4()
+
+        mock_db = AsyncMock()
+
+        mock_common_row = MagicMock()
+        mock_common_row.chunk_id = common_chunk_id
+        mock_common_row.total = 5
+
+        mock_not_common_row = MagicMock()
+        mock_not_common_row.chunk_id = not_common_chunk_id
+        mock_not_common_row.total = 1
+
+        mock_count_result = MagicMock()
+        mock_count_result.all.return_value = [mock_common_row, mock_not_common_row]
+
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            MagicMock(),
+            MagicMock(),
+        ]
+
+        result = await service.batch_update_is_common_flags(
+            db=mock_db, chunk_ids=[common_chunk_id, not_common_chunk_id]
+        )
+
+        assert result == {common_chunk_id: True, not_common_chunk_id: False}
+        assert mock_db.execute.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_chunk_ids(self):
+        """Test that duplicate chunk IDs are deduplicated."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_id = uuid4()
+        mock_db = AsyncMock()
+
+        mock_row = MagicMock()
+        mock_row.chunk_id = chunk_id
+        mock_row.total = 2
+
+        mock_count_result = MagicMock()
+        mock_count_result.all.return_value = [mock_row]
+
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            MagicMock(),
+        ]
+
+        result = await service.batch_update_is_common_flags(
+            db=mock_db, chunk_ids=[chunk_id, chunk_id, chunk_id]
+        )
+
+        assert result == {chunk_id: True}
+
+    @pytest.mark.asyncio
+    async def test_handles_chunk_with_zero_references(self):
+        """Test chunks with no references in join tables are marked not common."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_id = uuid4()
+        mock_db = AsyncMock()
+
+        mock_count_result = MagicMock()
+        mock_count_result.all.return_value = []
+
+        mock_db.execute.side_effect = [
+            mock_count_result,
+            MagicMock(),
+        ]
+
+        result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
+
+        assert result == {chunk_id: False}
+        assert mock_db.execute.call_count == 2
