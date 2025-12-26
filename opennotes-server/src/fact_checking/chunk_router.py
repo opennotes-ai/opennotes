@@ -77,57 +77,68 @@ async def process_fact_check_rechunk_batch(
     async_session = async_sessionmaker(engine, expire_on_commit=False)
 
     service = get_chunk_embedding_service()
+    processed_count = 0
 
-    async with async_session() as db:
-        offset = 0
-        processed_count = 0
+    try:
+        async with async_session() as db:
+            offset = 0
 
-        while True:
-            result = await db.execute(
-                select(FactCheckItem)
-                .order_by(FactCheckItem.created_at)
-                .offset(offset)
-                .limit(batch_size)
-            )
-            items = result.scalars().all()
+            while True:
+                result = await db.execute(
+                    select(FactCheckItem)
+                    .order_by(FactCheckItem.created_at)
+                    .offset(offset)
+                    .limit(batch_size)
+                )
+                items = result.scalars().all()
 
-            if not items:
-                break
+                if not items:
+                    break
 
-            for item in items:
-                await db.execute(
-                    delete(FactCheckChunk).where(FactCheckChunk.fact_check_id == item.id)
+                for item in items:
+                    await db.execute(
+                        delete(FactCheckChunk).where(FactCheckChunk.fact_check_id == item.id)
+                    )
+
+                    await service.chunk_and_embed_fact_check(
+                        db=db,
+                        fact_check_id=item.id,
+                        text=item.content,
+                        community_server_id=community_server_id,
+                    )
+                    processed_count += 1
+
+                await db.commit()
+                offset += batch_size
+
+                logger.info(
+                    "Processed fact check rechunk batch",
+                    extra={
+                        "community_server_id": str(community_server_id),
+                        "processed_count": processed_count,
+                        "batch_offset": offset,
+                    },
                 )
 
-                await service.chunk_and_embed_fact_check(
-                    db=db,
-                    fact_check_id=item.id,
-                    text=item.content,
-                    community_server_id=community_server_id,
-                )
-                processed_count += 1
-
-            await db.commit()
-            offset += batch_size
-
-            logger.info(
-                "Processed fact check rechunk batch",
-                extra={
-                    "community_server_id": str(community_server_id),
-                    "processed_count": processed_count,
-                    "batch_offset": offset,
-                },
-            )
-
-    await engine.dispose()
-
-    logger.info(
-        "Completed fact check rechunking",
-        extra={
-            "community_server_id": str(community_server_id),
-            "total_processed": processed_count,
-        },
-    )
+        logger.info(
+            "Completed fact check rechunking",
+            extra={
+                "community_server_id": str(community_server_id),
+                "total_processed": processed_count,
+            },
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to process fact check rechunk batch",
+            extra={
+                "community_server_id": str(community_server_id),
+                "processed_count": processed_count,
+                "error": str(e),
+            },
+            exc_info=True,
+        )
+    finally:
+        await engine.dispose()
 
 
 async def process_previously_seen_rechunk_batch(
@@ -161,62 +172,73 @@ async def process_previously_seen_rechunk_batch(
     async_session = async_sessionmaker(engine, expire_on_commit=False)
 
     service = get_chunk_embedding_service()
+    processed_count = 0
 
-    async with async_session() as db:
-        offset = 0
-        processed_count = 0
+    try:
+        async with async_session() as db:
+            offset = 0
 
-        while True:
-            result = await db.execute(
-                select(PreviouslySeenMessage)
-                .where(PreviouslySeenMessage.community_server_id == community_server_id)
-                .order_by(PreviouslySeenMessage.created_at)
-                .offset(offset)
-                .limit(batch_size)
-            )
-            messages = result.scalars().all()
+            while True:
+                result = await db.execute(
+                    select(PreviouslySeenMessage)
+                    .where(PreviouslySeenMessage.community_server_id == community_server_id)
+                    .order_by(PreviouslySeenMessage.created_at)
+                    .offset(offset)
+                    .limit(batch_size)
+                )
+                messages = result.scalars().all()
 
-            if not messages:
-                break
+                if not messages:
+                    break
 
-            for msg in messages:
-                await db.execute(
-                    delete(PreviouslySeenChunk).where(
-                        PreviouslySeenChunk.previously_seen_id == msg.id
+                for msg in messages:
+                    await db.execute(
+                        delete(PreviouslySeenChunk).where(
+                            PreviouslySeenChunk.previously_seen_id == msg.id
+                        )
                     )
+
+                    content = msg.extra_metadata.get("content", "")
+                    if content:
+                        await service.chunk_and_embed_previously_seen(
+                            db=db,
+                            previously_seen_id=msg.id,
+                            text=content,
+                            community_server_id=community_server_id,
+                        )
+                    processed_count += 1
+
+                await db.commit()
+                offset += batch_size
+
+                logger.info(
+                    "Processed previously seen rechunk batch",
+                    extra={
+                        "community_server_id": str(community_server_id),
+                        "processed_count": processed_count,
+                        "batch_offset": offset,
+                    },
                 )
 
-                content = msg.extra_metadata.get("content", "")
-                if content:
-                    await service.chunk_and_embed_previously_seen(
-                        db=db,
-                        previously_seen_id=msg.id,
-                        text=content,
-                        community_server_id=community_server_id,
-                    )
-                processed_count += 1
-
-            await db.commit()
-            offset += batch_size
-
-            logger.info(
-                "Processed previously seen rechunk batch",
-                extra={
-                    "community_server_id": str(community_server_id),
-                    "processed_count": processed_count,
-                    "batch_offset": offset,
-                },
-            )
-
-    await engine.dispose()
-
-    logger.info(
-        "Completed previously seen message rechunking",
-        extra={
-            "community_server_id": str(community_server_id),
-            "total_processed": processed_count,
-        },
-    )
+        logger.info(
+            "Completed previously seen message rechunking",
+            extra={
+                "community_server_id": str(community_server_id),
+                "total_processed": processed_count,
+            },
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to process previously seen rechunk batch",
+            extra={
+                "community_server_id": str(community_server_id),
+                "processed_count": processed_count,
+                "error": str(e),
+            },
+            exc_info=True,
+        )
+    finally:
+        await engine.dispose()
 
 
 @router.post(
