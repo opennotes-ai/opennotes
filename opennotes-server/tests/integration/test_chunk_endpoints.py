@@ -232,13 +232,36 @@ class TestFactCheckRechunkEndpoint:
     @patch(
         "src.fact_checking.chunk_router.process_fact_check_rechunk_batch", new_callable=AsyncMock
     )
+    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_service_account_can_initiate_rechunk(
         self,
+        mock_get_tracker,
         mock_rechunk_batch,
         service_account_headers,
         community_server_with_data,
     ):
         """Service account can initiate fact check rechunking."""
+        from unittest.mock import MagicMock
+        from uuid import uuid4 as gen_uuid
+
+        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
+
+        mock_tracker = MagicMock()
+        mock_task = RechunkTaskResponse(
+            task_id=gen_uuid(),
+            task_type="fact_check",
+            community_server_id=community_server_with_data["server"].id,
+            batch_size=100,
+            status=RechunkTaskStatus.PENDING,
+            processed_count=0,
+            total_count=3,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_get_tracker.return_value = mock_tracker
+
         server = community_server_with_data["server"]
 
         transport = ASGITransport(app=app)
@@ -250,8 +273,9 @@ class TestFactCheckRechunkEndpoint:
 
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "started"
+            assert data["status"] == "pending"
             assert "total_items" in data
+            assert "task_id" in data
 
     @pytest.mark.asyncio
     async def test_regular_user_gets_403_without_community_membership(
@@ -275,13 +299,36 @@ class TestFactCheckRechunkEndpoint:
     @patch(
         "src.fact_checking.chunk_router.process_fact_check_rechunk_batch", new_callable=AsyncMock
     )
+    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_batch_size_parameter_accepted(
         self,
+        mock_get_tracker,
         mock_rechunk_batch,
         service_account_headers,
         community_server_with_data,
     ):
         """Endpoint accepts custom batch_size parameter."""
+        from unittest.mock import MagicMock
+        from uuid import uuid4 as gen_uuid
+
+        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
+
+        mock_tracker = MagicMock()
+        mock_task = RechunkTaskResponse(
+            task_id=gen_uuid(),
+            task_type="fact_check",
+            community_server_id=community_server_with_data["server"].id,
+            batch_size=50,
+            status=RechunkTaskStatus.PENDING,
+            processed_count=0,
+            total_count=3,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_get_tracker.return_value = mock_tracker
+
         server = community_server_with_data["server"]
 
         transport = ASGITransport(app=app)
@@ -293,7 +340,7 @@ class TestFactCheckRechunkEndpoint:
 
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "started"
+            assert data["status"] == "pending"
 
     @pytest.mark.asyncio
     async def test_invalid_batch_size_rejected(
@@ -360,13 +407,36 @@ class TestPreviouslySeenRechunkEndpoint:
         "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
         new_callable=AsyncMock,
     )
+    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_service_account_can_initiate_rechunk(
         self,
+        mock_get_tracker,
         mock_rechunk_batch,
         service_account_headers,
         community_server_with_data,
     ):
         """Service account can initiate previously seen message rechunking."""
+        from unittest.mock import MagicMock
+        from uuid import uuid4 as gen_uuid
+
+        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
+
+        mock_tracker = MagicMock()
+        mock_task = RechunkTaskResponse(
+            task_id=gen_uuid(),
+            task_type="previously_seen",
+            community_server_id=community_server_with_data["server"].id,
+            batch_size=100,
+            status=RechunkTaskStatus.PENDING,
+            processed_count=0,
+            total_count=2,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_get_tracker.return_value = mock_tracker
+
         server = community_server_with_data["server"]
 
         transport = ASGITransport(app=app)
@@ -378,8 +448,9 @@ class TestPreviouslySeenRechunkEndpoint:
 
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "started"
+            assert data["status"] == "pending"
             assert "total_items" in data
+            assert "task_id" in data
 
     @pytest.mark.asyncio
     async def test_regular_user_gets_403_without_community_membership(
@@ -409,13 +480,36 @@ class TestPreviouslySeenRechunkEndpoint:
         "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
         new_callable=AsyncMock,
     )
+    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_batch_size_parameter_accepted(
         self,
+        mock_get_tracker,
         mock_rechunk_batch,
         service_account_headers,
         community_server_with_data,
     ):
         """Endpoint accepts custom batch_size parameter."""
+        from unittest.mock import MagicMock
+        from uuid import uuid4 as gen_uuid
+
+        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
+
+        mock_tracker = MagicMock()
+        mock_task = RechunkTaskResponse(
+            task_id=gen_uuid(),
+            task_type="previously_seen",
+            community_server_id=community_server_with_data["server"].id,
+            batch_size=75,
+            status=RechunkTaskStatus.PENDING,
+            processed_count=0,
+            total_count=2,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_get_tracker.return_value = mock_tracker
+
         server = community_server_with_data["server"]
 
         transport = ASGITransport(app=app)
@@ -427,7 +521,7 @@ class TestPreviouslySeenRechunkEndpoint:
 
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "started"
+            assert data["status"] == "pending"
 
     @pytest.mark.asyncio
     async def test_invalid_batch_size_rejected(
@@ -468,3 +562,134 @@ class TestPreviouslySeenRechunkEndpoint:
             )
 
             assert response.status_code == 422
+
+
+class TestRechunkConcurrencyControl:
+    """Tests for rechunk endpoint concurrency control.
+
+    Task: task-871.20 - Add rate limiting and concurrency control for rechunk endpoints
+
+    These tests mock the RechunkLockManager at the module level to test the 409 conflict
+    response without requiring real Redis connections.
+    """
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.fact_checking.chunk_router.process_fact_check_rechunk_batch", new_callable=AsyncMock
+    )
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_fact_check_rechunk_returns_409_when_already_in_progress(
+        self,
+        mock_lock_manager,
+        mock_rechunk_batch,
+        service_account_headers,
+        community_server_with_data,
+    ):
+        """Second fact check rechunk request returns 409 when one is in progress."""
+        server = community_server_with_data["server"]
+
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=False)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/fact-check/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 409
+            data = response.json()
+            assert "already in progress" in data["detail"]
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
+        new_callable=AsyncMock,
+    )
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_previously_seen_rechunk_returns_409_when_already_in_progress(
+        self,
+        mock_lock_manager,
+        mock_rechunk_batch,
+        service_account_headers,
+        community_server_with_data,
+    ):
+        """Second previously seen rechunk request returns 409 when one is in progress for same community."""
+        server = community_server_with_data["server"]
+
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=False)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/previously-seen/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 409
+            data = response.json()
+            assert "already in progress" in data["detail"]
+
+    @pytest.mark.asyncio
+    @patch(
+        "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
+        new_callable=AsyncMock,
+    )
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
+    async def test_previously_seen_rechunk_different_communities_allowed(
+        self,
+        mock_get_tracker,
+        mock_lock_manager,
+        mock_rechunk_batch,
+        service_account_headers,
+        community_server_with_data,
+        db,
+    ):
+        """Different communities can rechunk previously seen messages concurrently."""
+        from unittest.mock import MagicMock
+        from uuid import uuid4 as gen_uuid
+
+        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
+        from src.llm_config.models import CommunityServer
+
+        # server1 from community_server_with_data is used implicitly via test setup
+        server2 = CommunityServer(
+            id=uuid4(),
+            platform="discord",
+            platform_id=f"test-server-2-{uuid4().hex[:8]}",
+            name="Test Server 2 for Chunking",
+            is_active=True,
+        )
+        db.add(server2)
+        await db.commit()
+        await db.refresh(server2)
+
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+
+        mock_tracker = MagicMock()
+        mock_task = RechunkTaskResponse(
+            task_id=gen_uuid(),
+            task_type="previously_seen",
+            community_server_id=server2.id,
+            batch_size=100,
+            status=RechunkTaskStatus.PENDING,
+            processed_count=0,
+            total_count=0,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_get_tracker.return_value = mock_tracker
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/previously-seen/rechunk?community_server_id={server2.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "pending"

@@ -1096,3 +1096,328 @@ class TestRechunkingIdempotency:
         assert len(chunks2) == 1
         assert chunks1[0] is chunk
         assert chunks2[0] is chunk
+
+
+class TestGetOrCreateChunksBatch:
+    """Tests for ChunkEmbeddingService.get_or_create_chunks_batch() method."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_for_empty_input(self):
+        """Test that empty input returns empty list without any DB/API calls."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        mock_db = AsyncMock()
+
+        result = await service.get_or_create_chunks_batch(
+            db=mock_db,
+            chunk_texts=[],
+            community_server_id=uuid4(),
+        )
+
+        assert result == []
+        mock_db.execute.assert_not_called()
+        mock_llm_service.generate_embeddings_batch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_creates_new_chunks_when_none_exist(self):
+        """Test batch creation of new chunks when none exist in database."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock(
+            return_value=[
+                ([0.1] * 1536, "litellm", "text-embedding-3-small"),
+                ([0.2] * 1536, "litellm", "text-embedding-3-small"),
+            ]
+        )
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_texts = ["Chunk one.", "Chunk two."]
+        community_server_id = uuid4()
+
+        from src.fact_checking.chunk_models import compute_chunk_text_hash
+
+        created_chunks = []
+        for text in chunk_texts:
+            chunk = ChunkEmbedding(
+                chunk_text=text,
+                chunk_text_hash=compute_chunk_text_hash(text),
+                embedding=[0.1] * 1536,
+                embedding_provider="litellm",
+                embedding_model="text-embedding-3-small",
+            )
+            chunk.id = uuid4()
+            created_chunks.append(chunk)
+
+        mock_db = AsyncMock()
+
+        mock_lookup_result = MagicMock()
+        mock_lookup_result.scalars.return_value.all.return_value = []
+
+        mock_fetch_result = MagicMock()
+        mock_fetch_result.scalars.return_value.all.return_value = created_chunks
+
+        mock_db.execute.side_effect = [
+            mock_lookup_result,
+            MagicMock(),
+            MagicMock(),
+            mock_fetch_result,
+        ]
+
+        result = await service.get_or_create_chunks_batch(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
+
+        mock_llm_service.generate_embeddings_batch.assert_called_once_with(
+            mock_db, chunk_texts, community_server_id
+        )
+        assert len(result) == 2
+        assert all(is_created for _, is_created in result)
+
+    @pytest.mark.asyncio
+    async def test_returns_existing_chunks_without_api_call(self):
+        """Test that existing chunks are returned without making embedding API calls."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_texts = ["Existing chunk."]
+        community_server_id = uuid4()
+
+        from src.fact_checking.chunk_models import compute_chunk_text_hash
+
+        existing_chunk = ChunkEmbedding(
+            chunk_text="Existing chunk.",
+            chunk_text_hash=compute_chunk_text_hash("Existing chunk."),
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        existing_chunk.id = uuid4()
+
+        mock_db = AsyncMock()
+
+        mock_lookup_result = MagicMock()
+        mock_lookup_result.scalars.return_value.all.return_value = [existing_chunk]
+
+        mock_db.execute.return_value = mock_lookup_result
+
+        result = await service.get_or_create_chunks_batch(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
+
+        mock_llm_service.generate_embeddings_batch.assert_not_called()
+        assert len(result) == 1
+        chunk, is_created = result[0]
+        assert chunk == existing_chunk
+        assert is_created is False
+
+    @pytest.mark.asyncio
+    async def test_handles_mixed_existing_and_new_chunks(self):
+        """Test batch with some existing and some new chunks."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock(
+            return_value=[
+                ([0.2] * 1536, "litellm", "text-embedding-3-small"),
+            ]
+        )
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_texts = ["Existing chunk.", "New chunk."]
+        community_server_id = uuid4()
+
+        from src.fact_checking.chunk_models import compute_chunk_text_hash
+
+        existing_chunk = ChunkEmbedding(
+            chunk_text="Existing chunk.",
+            chunk_text_hash=compute_chunk_text_hash("Existing chunk."),
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        existing_chunk.id = uuid4()
+
+        new_chunk = ChunkEmbedding(
+            chunk_text="New chunk.",
+            chunk_text_hash=compute_chunk_text_hash("New chunk."),
+            embedding=[0.2] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        new_chunk.id = uuid4()
+
+        mock_db = AsyncMock()
+
+        mock_lookup_result = MagicMock()
+        mock_lookup_result.scalars.return_value.all.return_value = [existing_chunk]
+
+        mock_fetch_result = MagicMock()
+        mock_fetch_result.scalars.return_value.all.return_value = [new_chunk]
+
+        mock_db.execute.side_effect = [
+            mock_lookup_result,
+            MagicMock(),
+            mock_fetch_result,
+        ]
+
+        result = await service.get_or_create_chunks_batch(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
+
+        mock_llm_service.generate_embeddings_batch.assert_called_once_with(
+            mock_db, ["New chunk."], community_server_id
+        )
+        assert len(result) == 2
+
+        chunk1, is_created1 = result[0]
+        assert chunk1 == existing_chunk
+        assert is_created1 is False
+
+        chunk2, is_created2 = result[1]
+        assert chunk2 == new_chunk
+        assert is_created2 is True
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_input_texts(self):
+        """Test that duplicate texts in input are deduplicated before processing."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock(
+            return_value=[
+                ([0.1] * 1536, "litellm", "text-embedding-3-small"),
+            ]
+        )
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_texts = ["Same chunk.", "Same chunk.", "Same chunk."]
+        community_server_id = uuid4()
+
+        from src.fact_checking.chunk_models import compute_chunk_text_hash
+
+        created_chunk = ChunkEmbedding(
+            chunk_text="Same chunk.",
+            chunk_text_hash=compute_chunk_text_hash("Same chunk."),
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        created_chunk.id = uuid4()
+
+        mock_db = AsyncMock()
+
+        mock_lookup_result = MagicMock()
+        mock_lookup_result.scalars.return_value.all.return_value = []
+
+        mock_fetch_result = MagicMock()
+        mock_fetch_result.scalars.return_value.all.return_value = [created_chunk]
+
+        mock_db.execute.side_effect = [
+            mock_lookup_result,
+            MagicMock(),
+            mock_fetch_result,
+        ]
+
+        result = await service.get_or_create_chunks_batch(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
+
+        mock_llm_service.generate_embeddings_batch.assert_called_once_with(
+            mock_db, ["Same chunk."], community_server_id
+        )
+        assert len(result) == 3
+        for chunk, is_created in result:
+            assert chunk == created_chunk
+            assert is_created is True
+
+    @pytest.mark.asyncio
+    async def test_preserves_input_order(self):
+        """Test that results are returned in the same order as input texts."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock(
+            return_value=[
+                ([0.1] * 1536, "litellm", "text-embedding-3-small"),
+                ([0.2] * 1536, "litellm", "text-embedding-3-small"),
+                ([0.3] * 1536, "litellm", "text-embedding-3-small"),
+            ]
+        )
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_texts = ["First.", "Second.", "Third."]
+        community_server_id = uuid4()
+
+        from src.fact_checking.chunk_models import compute_chunk_text_hash
+
+        created_chunks = []
+        for text in chunk_texts:
+            chunk = ChunkEmbedding(
+                chunk_text=text,
+                chunk_text_hash=compute_chunk_text_hash(text),
+                embedding=[0.1] * 1536,
+                embedding_provider="litellm",
+                embedding_model="text-embedding-3-small",
+            )
+            chunk.id = uuid4()
+            created_chunks.append(chunk)
+
+        mock_db = AsyncMock()
+
+        mock_lookup_result = MagicMock()
+        mock_lookup_result.scalars.return_value.all.return_value = []
+
+        mock_fetch_result = MagicMock()
+        mock_fetch_result.scalars.return_value.all.return_value = created_chunks
+
+        mock_db.execute.side_effect = [
+            mock_lookup_result,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            mock_fetch_result,
+        ]
+
+        result = await service.get_or_create_chunks_batch(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
+
+        assert len(result) == 3
+        for i, (chunk, _) in enumerate(result):
+            assert chunk.chunk_text == chunk_texts[i]
