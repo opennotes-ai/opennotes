@@ -7,10 +7,23 @@ These tests verify that:
 3. Endpoints accept community_server_id and batch_size parameters
 4. Background task processing is triggered for large datasets
 5. Service accounts can access the endpoints
-6. Regular users without admin/moderator role get 403 Forbidden
+6. Regular users without admin/moderator role get 403 Forbidden on BOTH endpoints
+
+Authorization Model:
+Both rechunk endpoints require elevated permissions. Access is granted to:
+- Service accounts (is_service_account=True)
+- OpenNotes admins (is_opennotes_admin=True)
+- Discord users with Manage Server permission (from signed JWT)
+- Community admins/moderators (role='admin'/'moderator')
+
+Regular users without the above permissions receive 403 Forbidden.
 
 Task: task-871.04 - Create API endpoints for bulk re-chunking operations
 Task: task-871.10 - Add authorization check to rechunk endpoints
+Task: task-871.40 - Refactor test fixture inheritance to module-level fixtures
+
+Note: Fixtures are defined at module-level for better pytest-asyncio reliability.
+Class-based fixture inheritance can cause issues with async fixtures.
 """
 
 from unittest.mock import AsyncMock, patch
@@ -23,178 +36,180 @@ from src.auth.auth import create_access_token
 from src.main import app
 
 
-class TestChunkEndpointsFixtures:
-    """Fixtures for chunk endpoint testing scenarios."""
+def _create_auth_headers(user_data: dict) -> dict:
+    """Create auth headers for a user."""
+    user = user_data["user"]
+    token_data = {
+        "sub": str(user.id),
+        "username": user.username,
+        "role": user.role,
+    }
+    access_token = create_access_token(token_data)
+    return {"Authorization": f"Bearer {access_token}"}
 
-    @pytest.fixture
-    async def service_account_user(self, db):
-        """Create a service account user for testing."""
-        from src.users.models import User
 
-        user = User(
+@pytest.fixture
+async def service_account_user(db):
+    """Create a service account user for testing."""
+    from src.users.models import User
+
+    user = User(
+        id=uuid4(),
+        username="chunk-service-account",
+        email="chunk-service@opennotes.local",
+        hashed_password="hashed_password_placeholder",
+        role="user",
+        is_active=True,
+        is_superuser=False,
+        is_service_account=True,
+        discord_id="discord_chunk_service",
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return {"user": user}
+
+
+@pytest.fixture
+async def regular_user(db):
+    """Create a regular user (not a service account)."""
+    from src.users.models import User
+
+    user = User(
+        id=uuid4(),
+        username="regular_chunk_user",
+        email="regular_chunk@example.com",
+        hashed_password="hashed_password_placeholder",
+        role="user",
+        is_active=True,
+        is_superuser=False,
+        is_service_account=False,
+        discord_id="discord_regular_chunk",
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return {"user": user}
+
+
+@pytest.fixture
+async def community_server_with_data(db):
+    """Create a community server with fact check items and previously seen messages."""
+    from src.fact_checking.models import FactCheckItem
+    from src.fact_checking.previously_seen_models import PreviouslySeenMessage
+    from src.llm_config.models import CommunityServer
+    from src.notes.models import Note
+    from src.users.models import User
+    from src.users.profile_crud import create_profile_with_identity
+    from src.users.profile_schemas import AuthProvider, UserProfileCreate
+
+    server = CommunityServer(
+        id=uuid4(),
+        platform="discord",
+        platform_id=f"test-server-{uuid4().hex[:8]}",
+        name="Test Server for Chunking",
+        is_active=True,
+    )
+    db.add(server)
+    await db.flush()
+
+    fact_check_items = []
+    for i in range(3):
+        fact_check = FactCheckItem(
             id=uuid4(),
-            username="chunk-service-account",
-            email="chunk-service@opennotes.local",
-            hashed_password="hashed_password_placeholder",
-            role="user",
-            is_active=True,
-            is_superuser=False,
-            is_service_account=True,
-            discord_id="discord_chunk_service",
+            dataset_name="test-dataset",
+            dataset_tags=["test", "chunking"],
+            title=f"Test Fact Check {i}",
+            content=f"This is the content for fact check item {i}. It has enough text to be chunked.",
         )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
+        db.add(fact_check)
+        fact_check_items.append(fact_check)
 
-        return {"user": user}
+    await db.flush()
 
-    @pytest.fixture
-    async def regular_user(self, db):
-        """Create a regular user (not a service account)."""
-        from src.users.models import User
+    test_user = User(
+        id=uuid4(),
+        username=f"test_user_{uuid4().hex[:8]}",
+        email=f"test_{uuid4().hex[:8]}@example.com",
+        hashed_password="hashed_password_placeholder",
+        role="user",
+        is_active=True,
+        discord_id=f"discord_test_{uuid4().hex[:8]}",
+    )
+    db.add(test_user)
+    await db.flush()
 
-        user = User(
-            id=uuid4(),
-            username="regular_chunk_user",
-            email="regular_chunk@example.com",
-            hashed_password="hashed_password_placeholder",
-            role="user",
-            is_active=True,
-            is_superuser=False,
-            is_service_account=False,
-            discord_id="discord_regular_chunk",
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
+    profile_create = UserProfileCreate(
+        display_name="Test Profile",
+        avatar_url=None,
+        bio=None,
+        role="user",
+        is_opennotes_admin=False,
+        is_human=True,
+        is_active=True,
+        is_banned=False,
+        banned_at=None,
+        banned_reason=None,
+    )
+    profile, _identity = await create_profile_with_identity(
+        db=db,
+        profile_create=profile_create,
+        provider=AuthProvider.DISCORD,
+        provider_user_id=test_user.discord_id,
+        credentials=None,
+    )
+    await db.flush()
 
-        return {"user": user}
+    test_note = Note(
+        author_participant_id="test_participant",
+        author_profile_id=profile.id,
+        community_server_id=server.id,
+        summary="Test note summary",
+        classification="NOT_MISLEADING",
+    )
+    db.add(test_note)
+    await db.flush()
 
-    @pytest.fixture
-    async def community_server_with_data(self, db):
-        """Create a community server with fact check items and previously seen messages."""
-        from src.fact_checking.models import FactCheckItem
-        from src.fact_checking.previously_seen_models import PreviouslySeenMessage
-        from src.llm_config.models import CommunityServer
-        from src.notes.models import Note
-        from src.users.models import User
-        from src.users.profile_crud import create_profile_with_identity
-        from src.users.profile_schemas import AuthProvider, UserProfileCreate
-
-        server = CommunityServer(
-            id=uuid4(),
-            platform="discord",
-            platform_id=f"test-server-{uuid4().hex[:8]}",
-            name="Test Server for Chunking",
-            is_active=True,
-        )
-        db.add(server)
-        await db.flush()
-
-        fact_check_items = []
-        for i in range(3):
-            fact_check = FactCheckItem(
-                id=uuid4(),
-                dataset_name="test-dataset",
-                dataset_tags=["test", "chunking"],
-                title=f"Test Fact Check {i}",
-                content=f"This is the content for fact check item {i}. It has enough text to be chunked.",
-            )
-            db.add(fact_check)
-            fact_check_items.append(fact_check)
-
-        await db.flush()
-
-        test_user = User(
-            id=uuid4(),
-            username=f"test_user_{uuid4().hex[:8]}",
-            email=f"test_{uuid4().hex[:8]}@example.com",
-            hashed_password="hashed_password_placeholder",
-            role="user",
-            is_active=True,
-            discord_id=f"discord_test_{uuid4().hex[:8]}",
-        )
-        db.add(test_user)
-        await db.flush()
-
-        profile_create = UserProfileCreate(
-            display_name="Test Profile",
-            avatar_url=None,
-            bio=None,
-            role="user",
-            is_opennotes_admin=False,
-            is_human=True,
-            is_active=True,
-            is_banned=False,
-            banned_at=None,
-            banned_reason=None,
-        )
-        profile, _identity = await create_profile_with_identity(
-            db=db,
-            profile_create=profile_create,
-            provider=AuthProvider.DISCORD,
-            provider_user_id=test_user.discord_id,
-            credentials=None,
-        )
-        await db.flush()
-
-        test_note = Note(
-            author_participant_id="test_participant",
-            author_profile_id=profile.id,
+    previously_seen_messages = []
+    for _ in range(2):
+        prev_seen = PreviouslySeenMessage(
             community_server_id=server.id,
-            summary="Test note summary",
-            classification="NOT_MISLEADING",
+            original_message_id=f"msg_{uuid4().hex[:16]}",
+            published_note_id=test_note.id,
         )
-        db.add(test_note)
-        await db.flush()
+        db.add(prev_seen)
+        previously_seen_messages.append(prev_seen)
 
-        previously_seen_messages = []
-        for _ in range(2):
-            prev_seen = PreviouslySeenMessage(
-                community_server_id=server.id,
-                original_message_id=f"msg_{uuid4().hex[:16]}",
-                published_note_id=test_note.id,
-            )
-            db.add(prev_seen)
-            previously_seen_messages.append(prev_seen)
+    await db.commit()
 
-        await db.commit()
+    for item in fact_check_items:
+        await db.refresh(item)
+    for item in previously_seen_messages:
+        await db.refresh(item)
+    await db.refresh(server)
 
-        for item in fact_check_items:
-            await db.refresh(item)
-        for item in previously_seen_messages:
-            await db.refresh(item)
-        await db.refresh(server)
-
-        return {
-            "server": server,
-            "fact_check_items": fact_check_items,
-            "previously_seen_messages": previously_seen_messages,
-        }
-
-    def _create_auth_headers(self, user_data):
-        """Create auth headers for a user."""
-        user = user_data["user"]
-        token_data = {
-            "sub": str(user.id),
-            "username": user.username,
-            "role": user.role,
-        }
-        access_token = create_access_token(token_data)
-        return {"Authorization": f"Bearer {access_token}"}
-
-    @pytest.fixture
-    def service_account_headers(self, service_account_user):
-        """Auth headers for service account."""
-        return self._create_auth_headers(service_account_user)
-
-    @pytest.fixture
-    def regular_user_headers(self, regular_user):
-        """Auth headers for regular user."""
-        return self._create_auth_headers(regular_user)
+    return {
+        "server": server,
+        "fact_check_items": fact_check_items,
+        "previously_seen_messages": previously_seen_messages,
+    }
 
 
-class TestFactCheckRechunkEndpoint(TestChunkEndpointsFixtures):
+@pytest.fixture
+def service_account_headers(service_account_user):
+    """Auth headers for service account."""
+    return _create_auth_headers(service_account_user)
+
+
+@pytest.fixture
+def regular_user_headers(regular_user):
+    """Auth headers for regular user."""
+    return _create_auth_headers(regular_user)
+
+
+class TestFactCheckRechunkEndpoint:
     """Tests for POST /api/v1/chunks/fact-check/rechunk endpoint."""
 
     @pytest.mark.asyncio
@@ -321,7 +336,7 @@ class TestFactCheckRechunkEndpoint(TestChunkEndpointsFixtures):
             assert response.status_code == 422
 
 
-class TestPreviouslySeenRechunkEndpoint(TestChunkEndpointsFixtures):
+class TestPreviouslySeenRechunkEndpoint:
     """Tests for POST /api/v1/chunks/previously-seen/rechunk endpoint."""
 
     @pytest.mark.asyncio
@@ -367,17 +382,17 @@ class TestPreviouslySeenRechunkEndpoint(TestChunkEndpointsFixtures):
             assert "total_items" in data
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
-        new_callable=AsyncMock,
-    )
-    async def test_regular_user_can_initiate_rechunk(
+    async def test_regular_user_gets_403_without_community_membership(
         self,
-        mock_rechunk_batch,
         regular_user_headers,
         community_server_with_data,
     ):
-        """Regular authenticated user can initiate previously seen message rechunking."""
+        """Regular user without community membership gets 403 Forbidden.
+
+        Both rechunk endpoints require elevated permissions (service account,
+        OpenNotes admin, Discord Manage Server permission, or community
+        admin/moderator role). Regular users should receive 403.
+        """
         server = community_server_with_data["server"]
 
         transport = ASGITransport(app=app)
@@ -387,9 +402,7 @@ class TestPreviouslySeenRechunkEndpoint(TestChunkEndpointsFixtures):
                 headers=regular_user_headers,
             )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "started"
+            assert response.status_code == 403
 
     @pytest.mark.asyncio
     @patch(
