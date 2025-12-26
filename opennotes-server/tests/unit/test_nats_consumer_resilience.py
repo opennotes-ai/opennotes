@@ -163,3 +163,49 @@ async def test_can_resubscribe_after_consumer_deleted(nats_client, mock_jsm):
 
     resubscribe_count = await nats_client.resubscribe_if_needed()
     assert resubscribe_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_health_check_returns_healthy_when_subscriptions_valid(nats_client, mock_jsm):
+    """Health check should return healthy when all subscriptions are valid."""
+    mock_subscription = MagicMock()
+    nats_client.js.subscribe = AsyncMock(return_value=mock_subscription)
+
+    mock_consumer_info = MagicMock(spec=ConsumerInfo)
+    mock_jsm.consumer_info = AsyncMock(return_value=mock_consumer_info)
+
+    callback = AsyncMock()
+    await nats_client.subscribe("OPENNOTES.test_subject", callback)
+
+    is_healthy = await nats_client.verify_subscriptions_healthy()
+    assert is_healthy is True
+
+    resubscribed = await nats_client.resubscribe_if_needed()
+    assert resubscribed == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_health_check_triggers_resubscribe_when_consumer_missing(nats_client, mock_jsm):
+    """Health check should trigger resubscription when consumer is missing.
+
+    This tests the integration pattern used in main.py's check_nats():
+    1. verify_subscriptions_healthy() returns False
+    2. resubscribe_if_needed() recreates the subscriptions
+    """
+    mock_subscription = MagicMock()
+    nats_client.js.subscribe = AsyncMock(return_value=mock_subscription)
+
+    callback = AsyncMock()
+    await nats_client.subscribe("OPENNOTES.test_subject", callback)
+
+    mock_jsm.consumer_info = AsyncMock(side_effect=Exception("consumer not found"))
+
+    is_healthy = await nats_client.verify_subscriptions_healthy()
+    assert is_healthy is False
+
+    resubscribed = await nats_client.resubscribe_if_needed()
+    assert resubscribed == 1
+
+    assert nats_client.js.subscribe.call_count == 2
