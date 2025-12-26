@@ -1,15 +1,18 @@
 from datetime import UTC, datetime
-from typing import Any
-from uuid import UUID, uuid4
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, CheckConstraint, Index, String, Text, func
+from sqlalchemy import ARRAY, CheckConstraint, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime
 
 from src.database import Base
+
+if TYPE_CHECKING:
+    from src.fact_checking.chunk_models import FactCheckChunk
 
 
 class FactCheckItem(Base):
@@ -41,7 +44,10 @@ class FactCheckItem(Base):
     __tablename__ = "fact_check_items"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4, index=True
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+        index=True,
     )
 
     # Dataset identification
@@ -62,16 +68,19 @@ class FactCheckItem(Base):
     # Rating/verdict
     rating: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in v2.0.
     # Vector embedding for semantic search
     # Using 1536 dimensions for OpenAI text-embedding-3-small
     embedding: Mapped[Any | None] = mapped_column(Vector(1536), nullable=True)
 
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in v2.0.
     # Embedding provider and model tracking
     embedding_provider: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
         comment="LLM provider used for embedding generation (e.g., 'openai', 'anthropic')",
     )
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in v2.0.
     embedding_model: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
@@ -97,6 +106,13 @@ class FactCheckItem(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=lambda: datetime.now(UTC),
+    )
+
+    chunks: Mapped[list["FactCheckChunk"]] = relationship(
+        "FactCheckChunk",
+        back_populates="fact_check_item",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     # Indexes and constraints

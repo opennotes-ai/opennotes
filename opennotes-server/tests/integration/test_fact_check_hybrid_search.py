@@ -20,14 +20,18 @@ pytestmark = pytest.mark.asyncio
 def generate_test_embedding(seed: int = 0) -> list[float]:
     """Generate a deterministic test embedding vector (1536 dimensions).
 
-    Uses a simple pattern to create embeddings that have predictable
-    similarity relationships for testing.
-    """
-    import math
+    Uses seeded numpy RNG to create embeddings with realistic similarity
+    distributions while maintaining determinism for test reproducibility.
 
-    base = [math.sin(i * 0.01 + seed * 0.1) for i in range(1536)]
-    norm = math.sqrt(sum(x * x for x in base))
-    return [x / norm for x in base]
+    Same seed always produces identical embeddings; different seeds produce
+    approximately orthogonal vectors (low cosine similarity).
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    base = rng.standard_normal(1536)
+    norm = np.linalg.norm(base)
+    return (base / norm).tolist()
 
 
 @pytest.fixture
@@ -595,6 +599,256 @@ class TestHybridSearchPreFilterConstant:
         assert len(results) <= max_possible, (
             f"Results should be bounded by 2 * RRF_CTE_PRELIMIT ({max_possible}), "
             f"but got {len(results)}"
+        )
+
+
+@pytest.fixture
+async def chunk_search_test_items():
+    """Create test FactCheckItem records with chunks for testing hybrid_search_with_chunks.
+
+    Creates items with different dataset_tags and associated chunk embeddings.
+    This fixture sets up the full chunking pipeline:
+    - FactCheckItem records
+    - ChunkEmbedding records (unique chunks)
+    - FactCheckChunk join records (linking chunks to items)
+    """
+    from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk
+
+    item_ids = []
+    chunk_ids = []
+
+    async with get_session_maker()() as session:
+        item_snopes = FactCheckItem(
+            dataset_name="snopes",
+            dataset_tags=["snopes", "health"],
+            title="Snopes vaccine fact check",
+            content="This is a snopes article about vaccine safety and effectiveness.",
+            summary="Snopes vaccine check",
+            rating="True",
+        )
+        session.add(item_snopes)
+
+        item_politifact = FactCheckItem(
+            dataset_name="politifact",
+            dataset_tags=["politifact", "politics"],
+            title="Politifact political claim",
+            content="This is a politifact article about political vaccine mandates.",
+            summary="Politifact mandate check",
+            rating="Mostly True",
+        )
+        session.add(item_politifact)
+
+        item_reuters = FactCheckItem(
+            dataset_name="reuters",
+            dataset_tags=["reuters", "health"],
+            title="Reuters vaccine report",
+            content="Reuters reporting on vaccine distribution and effectiveness.",
+            summary="Reuters vaccine report",
+            rating="True",
+        )
+        session.add(item_reuters)
+
+        await session.flush()
+
+        chunk_snopes = ChunkEmbedding(
+            chunk_text="snopes vaccine safety verified",
+            embedding=generate_test_embedding(seed=10),
+            embedding_provider="test",
+            embedding_model="test-model",
+            is_common=False,
+        )
+        session.add(chunk_snopes)
+
+        chunk_politifact = ChunkEmbedding(
+            chunk_text="politifact vaccine mandate claim",
+            embedding=generate_test_embedding(seed=20),
+            embedding_provider="test",
+            embedding_model="test-model",
+            is_common=False,
+        )
+        session.add(chunk_politifact)
+
+        chunk_reuters = ChunkEmbedding(
+            chunk_text="reuters vaccine distribution report",
+            embedding=generate_test_embedding(seed=30),
+            embedding_provider="test",
+            embedding_model="test-model",
+            is_common=False,
+        )
+        session.add(chunk_reuters)
+
+        await session.flush()
+
+        link_snopes = FactCheckChunk(
+            chunk_id=chunk_snopes.id,
+            fact_check_id=item_snopes.id,
+            chunk_index=0,
+        )
+        session.add(link_snopes)
+
+        link_politifact = FactCheckChunk(
+            chunk_id=chunk_politifact.id,
+            fact_check_id=item_politifact.id,
+            chunk_index=0,
+        )
+        session.add(link_politifact)
+
+        link_reuters = FactCheckChunk(
+            chunk_id=chunk_reuters.id,
+            fact_check_id=item_reuters.id,
+            chunk_index=0,
+        )
+        session.add(link_reuters)
+
+        await session.commit()
+
+        await session.refresh(item_snopes)
+        await session.refresh(item_politifact)
+        await session.refresh(item_reuters)
+        await session.refresh(chunk_snopes)
+        await session.refresh(chunk_politifact)
+        await session.refresh(chunk_reuters)
+
+        item_ids = [item_snopes.id, item_politifact.id, item_reuters.id]
+        chunk_ids = [chunk_snopes.id, chunk_politifact.id, chunk_reuters.id]
+
+        yield {
+            "snopes": item_snopes,
+            "politifact": item_politifact,
+            "reuters": item_reuters,
+            "chunk_snopes": chunk_snopes,
+            "chunk_politifact": chunk_politifact,
+            "chunk_reuters": chunk_reuters,
+        }
+
+    async with get_session_maker()() as session:
+        from sqlalchemy import delete
+
+        await session.execute(delete(FactCheckChunk).where(FactCheckChunk.chunk_id.in_(chunk_ids)))
+        await session.execute(delete(ChunkEmbedding).where(ChunkEmbedding.id.in_(chunk_ids)))
+        for item_id in item_ids:
+            result = await session.execute(select(FactCheckItem).where(FactCheckItem.id == item_id))
+            item = result.scalar_one_or_none()
+            if item:
+                await session.delete(item)
+        await session.commit()
+
+
+class TestHybridSearchWithChunksDatasetTagsFiltering:
+    """Tests for dataset_tags filtering in hybrid_search_with_chunks.
+
+    Verifies that dataset_tags filter is applied BEFORE the LIMIT in the
+    chunk_semantic CTE, ensuring valid results are not excluded when
+    chunks from non-matching datasets have better similarity scores.
+    """
+
+    async def test_chunk_search_filters_by_single_dataset_tag(self, chunk_search_test_items):
+        """Test that hybrid_search_with_chunks filters by single dataset_tag.
+
+        When searching with dataset_tags=['snopes'], only items with 'snopes'
+        tag should be returned, even if other items have better similarity.
+        """
+        from src.fact_checking.repository import hybrid_search_with_chunks
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=10)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search_with_chunks(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=["snopes"],
+                limit=10,
+            )
+
+        assert len(results) >= 1, "Should find at least one result with 'snopes' tag"
+
+        for result in results:
+            assert "snopes" in result.item.dataset_tags, (
+                f"All results should have 'snopes' tag, but got: {result.item.dataset_tags}"
+            )
+
+    async def test_chunk_search_filters_by_multiple_dataset_tags(self, chunk_search_test_items):
+        """Test that hybrid_search_with_chunks returns items matching ANY tag.
+
+        When searching with dataset_tags=['snopes', 'politifact'], items with
+        either tag should be returned (array overlap behavior).
+        """
+        from src.fact_checking.repository import hybrid_search_with_chunks
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=10)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search_with_chunks(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=["snopes", "politifact"],
+                limit=10,
+            )
+
+        assert len(results) >= 2, "Should find results from both snopes and politifact"
+
+        for result in results:
+            has_snopes = "snopes" in result.item.dataset_tags
+            has_politifact = "politifact" in result.item.dataset_tags
+            assert has_snopes or has_politifact, (
+                f"All results should have 'snopes' or 'politifact' tag, "
+                f"but got: {result.item.dataset_tags}"
+            )
+
+    async def test_chunk_search_excludes_non_matching_tags(self, chunk_search_test_items):
+        """Test that items with non-matching tags are excluded from chunk search.
+
+        When searching with dataset_tags=['snopes'], items with only 'reuters'
+        or 'politifact' tags should NOT be returned.
+        """
+        from src.fact_checking.repository import hybrid_search_with_chunks
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=10)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search_with_chunks(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                dataset_tags=["snopes"],
+                limit=10,
+            )
+
+        result_dataset_names = [r.item.dataset_name for r in results]
+
+        assert "reuters" not in result_dataset_names, (
+            "Reuters-only items should be excluded when filtering by 'snopes'"
+        )
+        assert "politifact" not in result_dataset_names, (
+            "Politifact-only items should be excluded when filtering by 'snopes'"
+        )
+
+    async def test_chunk_search_without_dataset_tags_returns_all(self, chunk_search_test_items):
+        """Test backward compatibility - no dataset_tags returns all chunk results.
+
+        When dataset_tags is None or not provided, all items should be considered.
+        """
+        from src.fact_checking.repository import hybrid_search_with_chunks
+
+        query_text = "vaccine"
+        query_embedding = generate_test_embedding(seed=10)
+
+        async with get_session_maker()() as session:
+            results = await hybrid_search_with_chunks(
+                session=session,
+                query_text=query_text,
+                query_embedding=query_embedding,
+                limit=10,
+            )
+
+        result_dataset_names = {r.item.dataset_name for r in results}
+        assert len(result_dataset_names) >= 2, (
+            "Without dataset_tags filter, should return items from multiple datasets"
         )
 
 

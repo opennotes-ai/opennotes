@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database import Base
 
 if TYPE_CHECKING:
+    from src.fact_checking.chunk_models import PreviouslySeenChunk
     from src.llm_config.models import CommunityServer
 
 
@@ -37,7 +38,7 @@ class PreviouslySeenMessage(Base):
     __tablename__ = "previously_seen_messages"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()"), index=True
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
 
     # Community server relationship
@@ -45,12 +46,11 @@ class PreviouslySeenMessage(Base):
         PGUUID(as_uuid=True),
         ForeignKey("community_servers.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
 
     # Message identification
     original_message_id: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True, comment="Platform-specific message ID"
+        String(64), nullable=False, comment="Platform-specific message ID"
     )
 
     # Published note reference
@@ -58,20 +58,22 @@ class PreviouslySeenMessage(Base):
         PGUUID(as_uuid=True),
         ForeignKey("notes.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
         comment="Note that was published for this message",
     )
 
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in v2.0.
     # Vector embedding for semantic search
     # Using 1536 dimensions for OpenAI text-embedding-3-small (matches FactCheckItem)
     embedding: Mapped[Any | None] = mapped_column(Vector(1536), nullable=True)
 
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in v2.0.
     # Embedding provider and model tracking
     embedding_provider: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
         comment="LLM provider used for embedding generation (e.g., 'openai', 'anthropic')",
     )
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in v2.0.
     embedding_model: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
@@ -90,6 +92,13 @@ class PreviouslySeenMessage(Base):
 
     # Relationships
     community_server: Mapped["CommunityServer"] = relationship("CommunityServer", lazy="joined")
+
+    chunks: Mapped[list["PreviouslySeenChunk"]] = relationship(
+        "PreviouslySeenChunk",
+        back_populates="previously_seen_message",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize PreviouslySeenMessage with automatic created_at timestamp."""
