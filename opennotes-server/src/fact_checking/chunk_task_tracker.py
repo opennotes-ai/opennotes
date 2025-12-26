@@ -23,6 +23,24 @@ logger = get_logger(__name__)
 RECHUNK_TASK_KEY_PREFIX = "rechunk:task:"
 RECHUNK_TASK_TTL_SECONDS = 86400  # 24 hours
 
+VALID_STATUS_TRANSITIONS: dict[RechunkTaskStatus, set[RechunkTaskStatus]] = {
+    RechunkTaskStatus.PENDING: {RechunkTaskStatus.IN_PROGRESS, RechunkTaskStatus.FAILED},
+    RechunkTaskStatus.IN_PROGRESS: {RechunkTaskStatus.COMPLETED, RechunkTaskStatus.FAILED},
+    RechunkTaskStatus.COMPLETED: set(),
+    RechunkTaskStatus.FAILED: set(),
+}
+
+
+class InvalidStateTransitionError(Exception):
+    """Raised when an invalid state transition is attempted."""
+
+    def __init__(self, current_status: RechunkTaskStatus, target_status: RechunkTaskStatus) -> None:
+        self.current_status = current_status
+        self.target_status = target_status
+        super().__init__(
+            f"Invalid state transition from {current_status.value} to {target_status.value}"
+        )
+
 
 class RechunkTaskTracker:
     """
@@ -118,6 +136,26 @@ class RechunkTaskTracker:
             )
             return None
 
+    def _validate_transition(
+        self, current_status: RechunkTaskStatus, target_status: RechunkTaskStatus
+    ) -> None:
+        """
+        Validate that a status transition is allowed.
+
+        Args:
+            current_status: Current task status
+            target_status: Target status to transition to
+
+        Raises:
+            InvalidStateTransitionError: If the transition is not allowed
+        """
+        if current_status == target_status:
+            return
+
+        valid_targets = VALID_STATUS_TRANSITIONS.get(current_status, set())
+        if target_status not in valid_targets:
+            raise InvalidStateTransitionError(current_status, target_status)
+
     async def update_status(
         self,
         task_id: UUID,
@@ -134,10 +172,20 @@ class RechunkTaskTracker:
 
         Returns:
             The updated task if found, None otherwise
+
+        Raises:
+            InvalidStateTransitionError: If the status transition is invalid
         """
         task = await self.get_task(task_id)
         if task is None:
             return None
+
+        current_status = (
+            RechunkTaskStatus(task.status) if isinstance(task.status, str) else task.status
+        )
+        target_status = RechunkTaskStatus(status) if isinstance(status, str) else status
+
+        self._validate_transition(current_status, target_status)
 
         task.status = status
         task.error = error
@@ -151,6 +199,49 @@ class RechunkTaskTracker:
                 "task_id": str(task_id),
                 "status": status.value if isinstance(status, RechunkTaskStatus) else status,
                 "error": error,
+            },
+        )
+
+        return task
+
+    async def mark_in_progress(
+        self,
+        task_id: UUID,
+    ) -> RechunkTaskResponse | None:
+        """
+        Mark a task as in progress.
+
+        This method validates that the task is in PENDING status before
+        transitioning to IN_PROGRESS.
+
+        Args:
+            task_id: The task's unique identifier
+
+        Returns:
+            The updated task if found, None otherwise
+
+        Raises:
+            InvalidStateTransitionError: If task is not in PENDING status
+        """
+        task = await self.get_task(task_id)
+        if task is None:
+            return None
+
+        current_status = (
+            RechunkTaskStatus(task.status) if isinstance(task.status, str) else task.status
+        )
+        self._validate_transition(current_status, RechunkTaskStatus.IN_PROGRESS)
+
+        task.status = RechunkTaskStatus.IN_PROGRESS
+        task.updated_at = datetime.now(UTC)
+
+        await self._save_task(task)
+
+        logger.info(
+            "Task started",
+            extra={
+                "task_id": str(task_id),
+                "total_count": task.total_count,
             },
         )
 
@@ -196,10 +287,18 @@ class RechunkTaskTracker:
 
         Returns:
             The updated task if found, None otherwise
+
+        Raises:
+            InvalidStateTransitionError: If task is not in IN_PROGRESS status
         """
         task = await self.get_task(task_id)
         if task is None:
             return None
+
+        current_status = (
+            RechunkTaskStatus(task.status) if isinstance(task.status, str) else task.status
+        )
+        self._validate_transition(current_status, RechunkTaskStatus.COMPLETED)
 
         task.status = RechunkTaskStatus.COMPLETED
         task.processed_count = processed_count
@@ -234,10 +333,18 @@ class RechunkTaskTracker:
 
         Returns:
             The updated task if found, None otherwise
+
+        Raises:
+            InvalidStateTransitionError: If task is already COMPLETED or FAILED
         """
         task = await self.get_task(task_id)
         if task is None:
             return None
+
+        current_status = (
+            RechunkTaskStatus(task.status) if isinstance(task.status, str) else task.status
+        )
+        self._validate_transition(current_status, RechunkTaskStatus.FAILED)
 
         task.status = RechunkTaskStatus.FAILED
         task.error = error

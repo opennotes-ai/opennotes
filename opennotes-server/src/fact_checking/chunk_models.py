@@ -223,7 +223,9 @@ class FactCheckChunk(Base):
     chunk: Mapped["ChunkEmbedding"] = relationship(
         "ChunkEmbedding", back_populates="fact_check_chunks"
     )
-    fact_check_item: Mapped["FactCheckItem"] = relationship("FactCheckItem")
+    fact_check_item: Mapped["FactCheckItem"] = relationship(
+        "FactCheckItem", back_populates="chunks"
+    )
 
     __table_args__ = (
         UniqueConstraint("chunk_id", "fact_check_id", name="uq_fact_check_chunks_chunk_fact_check"),
@@ -287,7 +289,9 @@ class PreviouslySeenChunk(Base):
     chunk: Mapped["ChunkEmbedding"] = relationship(
         "ChunkEmbedding", back_populates="previously_seen_chunks"
     )
-    previously_seen_message: Mapped["PreviouslySeenMessage"] = relationship("PreviouslySeenMessage")
+    previously_seen_message: Mapped["PreviouslySeenMessage"] = relationship(
+        "PreviouslySeenMessage", back_populates="chunks"
+    )
 
     __table_args__ = (
         UniqueConstraint(

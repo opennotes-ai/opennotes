@@ -10,6 +10,13 @@ from typing import Any, Literal
 from uuid import UUID
 
 import litellm
+from litellm.exceptions import (
+    APIConnectionError,
+    APIError,
+    RateLimitError,
+    ServiceUnavailableError,
+    Timeout,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     retry,
@@ -23,6 +30,16 @@ from src.llm_config.manager import LLMClientManager
 from src.llm_config.providers import LiteLLMCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
 from src.monitoring import get_logger
+
+TRANSIENT_EXCEPTIONS = (
+    APIConnectionError,
+    Timeout,
+    RateLimitError,
+    ServiceUnavailableError,
+    APIError,
+    ConnectionError,
+    TimeoutError,
+)
 
 logger = get_logger(__name__)
 
@@ -157,7 +174,7 @@ class LLMService:
             yield chunk
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,
@@ -229,7 +246,7 @@ class LLMService:
         return embedding, "litellm", embedding_model
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,
@@ -294,6 +311,11 @@ class LLMService:
             encoding_format="float",
         )
 
+        if len(response.data) != len(texts):
+            raise ValueError(
+                f"API returned {len(response.data)} embeddings but expected {len(texts)}"
+            )
+
         embeddings_by_index = {item["index"]: item["embedding"] for item in response.data}
         results = [(embeddings_by_index[i], "litellm", embedding_model) for i in range(len(texts))]
 
@@ -310,7 +332,7 @@ class LLMService:
         return results
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,

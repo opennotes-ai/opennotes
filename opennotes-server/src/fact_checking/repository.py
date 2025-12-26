@@ -292,11 +292,12 @@ async def hybrid_search_with_chunks(
             f"Embedding must have {settings.EMBEDDING_DIMENSIONS} dimensions, got {len(query_embedding)}"
         )
 
-    query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
+    if not (0.0 <= common_chunk_weight_factor <= 1.0):
+        raise ValueError(
+            f"common_chunk_weight_factor must be between 0.0 and 1.0, got {common_chunk_weight_factor}"
+        )
 
-    tags_filter = ""
-    if dataset_tags:
-        tags_filter = "AND fci.dataset_tags && CAST(:dataset_tags AS text[])"
+    query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
 
     # Convert similarity threshold to max distance (cosine distance = 1 - similarity)
     max_semantic_distance = 1.0 - semantic_similarity_threshold
@@ -414,8 +415,7 @@ async def hybrid_search_with_chunks(
         FROM fact_check_items fci
         LEFT JOIN semantic s ON fci.id = s.id
         LEFT JOIN keyword k ON fci.id = k.id
-        WHERE (s.id IS NOT NULL OR k.id IS NOT NULL)
-            {tags_filter}
+        WHERE s.id IS NOT NULL OR k.id IS NOT NULL
         ORDER BY rrf_score DESC
         LIMIT :limit
     """)

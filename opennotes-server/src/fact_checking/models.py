@@ -1,15 +1,18 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import ARRAY, CheckConstraint, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime
 
 from src.database import Base
+
+if TYPE_CHECKING:
+    from src.fact_checking.chunk_models import FactCheckChunk
 
 
 class FactCheckItem(Base):
@@ -103,6 +106,13 @@ class FactCheckItem(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=lambda: datetime.now(UTC),
+    )
+
+    chunks: Mapped[list["FactCheckChunk"]] = relationship(
+        "FactCheckChunk",
+        back_populates="fact_check_item",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     # Indexes and constraints

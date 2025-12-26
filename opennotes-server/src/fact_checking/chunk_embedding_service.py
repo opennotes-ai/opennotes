@@ -416,6 +416,10 @@ class ChunkEmbeddingService:
         """
         Chunk text and create/reuse embeddings for a FactCheckItem.
 
+        This operation is idempotent: calling it multiple times for the same
+        fact_check_id will produce the same result. Existing FactCheckChunk
+        entries are deleted before creating new ones, ensuring a clean rechunk.
+
         Splits text into semantic chunks, creates or retrieves ChunkEmbedding
         records for each, and creates FactCheckChunk join entries.
 
@@ -478,6 +482,10 @@ class ChunkEmbeddingService:
     ) -> list[ChunkEmbedding]:
         """
         Chunk text and create/reuse embeddings for a PreviouslySeenMessage.
+
+        This operation is idempotent: calling it multiple times for the same
+        previously_seen_id will produce the same result. Existing PreviouslySeenChunk
+        entries are deleted before creating new ones, ensuring a clean rechunk.
 
         Splits text into semantic chunks, creates or retrieves ChunkEmbedding
         records for each, and creates PreviouslySeenChunk join entries.

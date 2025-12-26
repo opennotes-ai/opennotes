@@ -26,7 +26,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from redis.asyncio import Redis
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.auth.community_dependencies import verify_community_admin_by_uuid
@@ -35,7 +35,6 @@ from src.cache.redis_client import RedisClient, redis_client
 from src.config import settings
 from src.database import get_db
 from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-from src.fact_checking.chunk_models import FactCheckChunk, PreviouslySeenChunk
 from src.fact_checking.chunk_task_schemas import (
     RechunkTaskCreate,
     RechunkTaskResponse,
@@ -69,6 +68,21 @@ class RechunkLockManager:
 
     Prevents multiple concurrent rechunk operations for the same resource.
     Uses Redis SET NX (set if not exists) with TTL for distributed locking.
+
+    Redis Unavailability Behavior:
+        When Redis is unavailable (e.g., during startup, network issues, or in
+        test environments without Redis), this lock manager operates in "permissive"
+        mode:
+        - acquire_lock() returns True (allows operation to proceed)
+        - release_lock() returns True (no-op)
+        - is_locked() returns False (reports unlocked)
+
+        This is intentional for development and graceful degradation, but means
+        concurrent operations are not prevented when Redis is down. In production,
+        ensure Redis is available for proper concurrency control.
+
+        A warning is logged when operating without Redis so this behavior is
+        visible in logs.
     """
 
     def __init__(self, redis: Redis | None = None):
@@ -260,10 +274,6 @@ async def process_fact_check_rechunk_batch(
                     break
 
                 for item in items:
-                    await db.execute(
-                        delete(FactCheckChunk).where(FactCheckChunk.fact_check_id == item.id)
-                    )
-
                     await service.chunk_and_embed_fact_check(
                         db=db,
                         fact_check_id=item.id,
@@ -385,12 +395,6 @@ async def process_previously_seen_rechunk_batch(
                     break
 
                 for msg in messages:
-                    await db.execute(
-                        delete(PreviouslySeenChunk).where(
-                            PreviouslySeenChunk.previously_seen_id == msg.id
-                        )
-                    )
-
                     content = (msg.extra_metadata or {}).get("content", "")
                     if content:
                         await service.chunk_and_embed_previously_seen(
@@ -450,25 +454,31 @@ async def process_previously_seen_rechunk_batch(
     "/tasks/{task_id}",
     response_model=RechunkTaskResponse,
     summary="Get rechunk task status",
-    description="Retrieve the current status and progress of a rechunk background task.",
+    description="Retrieve the current status and progress of a rechunk background task. "
+    "Requires admin or moderator access to the community server associated with the task.",
 )
 async def get_rechunk_task_status(
+    request: Request,
     task_id: UUID,
-    _user: Annotated[User, Depends(get_current_user_or_api_key)],
+    user: Annotated[User, Depends(get_current_user_or_api_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
 ) -> RechunkTaskResponse:
     """
     Get the status of a rechunk background task.
 
     Args:
+        request: FastAPI request object
         task_id: The unique identifier of the task
-        _user: Authenticated user (required but not used for authorization)
+        user: Authenticated user
+        db: Database session
         tracker: Task tracker service
 
     Returns:
         Task status including progress metrics
 
     Raises:
+        HTTPException: 403 if user lacks admin/moderator permission for the task's community
         HTTPException: 404 if task not found
     """
     task = await tracker.get_task(task_id)
@@ -477,6 +487,14 @@ async def get_rechunk_task_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Task {task_id} not found or has expired",
         )
+
+    await verify_community_admin_by_uuid(
+        community_server_id=task.community_server_id,
+        current_user=user,
+        db=db,
+        request=request,
+    )
+
     return task
 
 
@@ -548,17 +566,21 @@ async def rechunk_fact_check_items(
             "Please wait for it to complete before starting a new one.",
         )
 
-    result = await db.execute(select(func.count(FactCheckItem.id)))
-    total_items = result.scalar_one()
+    try:
+        result = await db.execute(select(func.count(FactCheckItem.id)))
+        total_items = result.scalar_one()
 
-    task = await tracker.create_task(
-        RechunkTaskCreate(
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=community_server_id,
-            batch_size=batch_size,
-            total_items=total_items,
+        task = await tracker.create_task(
+            RechunkTaskCreate(
+                task_type=RechunkTaskType.FACT_CHECK,
+                community_server_id=community_server_id,
+                batch_size=batch_size,
+                total_items=total_items,
+            )
         )
-    )
+    except Exception:
+        await rechunk_lock_manager.release_lock("fact_check")
+        raise
 
     background_tasks.add_task(
         process_fact_check_rechunk_batch,
@@ -662,21 +684,25 @@ async def rechunk_previously_seen_messages(
             f"for community {community_server_id}. Please wait for it to complete.",
         )
 
-    result = await db.execute(
-        select(func.count(PreviouslySeenMessage.id)).where(
-            PreviouslySeenMessage.community_server_id == community_server_id
+    try:
+        result = await db.execute(
+            select(func.count(PreviouslySeenMessage.id)).where(
+                PreviouslySeenMessage.community_server_id == community_server_id
+            )
         )
-    )
-    total_items = result.scalar_one()
+        total_items = result.scalar_one()
 
-    task = await tracker.create_task(
-        RechunkTaskCreate(
-            task_type=RechunkTaskType.PREVIOUSLY_SEEN,
-            community_server_id=community_server_id,
-            batch_size=batch_size,
-            total_items=total_items,
+        task = await tracker.create_task(
+            RechunkTaskCreate(
+                task_type=RechunkTaskType.PREVIOUSLY_SEEN,
+                community_server_id=community_server_id,
+                batch_size=batch_size,
+                total_items=total_items,
+            )
         )
-    )
+    except Exception:
+        await rechunk_lock_manager.release_lock("previously_seen", str(community_server_id))
+        raise
 
     background_tasks.add_task(
         process_previously_seen_rechunk_batch,
