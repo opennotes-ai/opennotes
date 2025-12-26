@@ -14,10 +14,11 @@ These endpoints are useful for:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
 from src.config import settings
 from src.database import get_db
@@ -246,9 +247,10 @@ async def process_previously_seen_rechunk_batch(
     summary="Re-chunk and re-embed fact check items",
     description="Initiates a background task to re-chunk and re-embed all fact check items. "
     "Useful for updating embeddings after model changes or migration to chunk-based embeddings. "
-    "Requires authentication via API key or JWT token.",
+    "Requires admin or moderator access to the community server.",
 )
 async def rechunk_fact_check_items(
+    request: Request,
     background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -270,7 +272,10 @@ async def rechunk_fact_check_items(
     4. Generates new embeddings via LLMService
     5. Creates new FactCheckChunk entries
 
+    Requires admin or moderator access to the community server.
+
     Args:
+        request: FastAPI request object
         background_tasks: FastAPI background tasks
         user: Authenticated user (via API key or JWT)
         db: Database session
@@ -279,7 +284,17 @@ async def rechunk_fact_check_items(
 
     Returns:
         Dict with status and total item count
+
+    Raises:
+        HTTPException: 403 if user lacks admin/moderator permission for the community
     """
+    await verify_community_admin_by_uuid(
+        community_server_id=community_server_id,
+        current_user=user,
+        db=db,
+        request=request,
+    )
+
     result = await db.execute(select(func.count(FactCheckItem.id)))
     total_items = result.scalar_one()
 
@@ -313,9 +328,10 @@ async def rechunk_fact_check_items(
     summary="Re-chunk and re-embed previously seen messages",
     description="Initiates a background task to re-chunk and re-embed previously seen messages "
     "for the specified community. Useful for updating embeddings after model changes or "
-    "migration to chunk-based embeddings. Requires authentication via API key or JWT token.",
+    "migration to chunk-based embeddings. Requires admin or moderator access to the community server.",
 )
 async def rechunk_previously_seen_messages(
+    request: Request,
     background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -339,7 +355,10 @@ async def rechunk_previously_seen_messages(
     4. Generates new embeddings via LLMService
     5. Creates new PreviouslySeenChunk entries
 
+    Requires admin or moderator access to the community server.
+
     Args:
+        request: FastAPI request object
         background_tasks: FastAPI background tasks
         user: Authenticated user (via API key or JWT)
         db: Database session
@@ -348,7 +367,17 @@ async def rechunk_previously_seen_messages(
 
     Returns:
         Dict with status and total item count
+
+    Raises:
+        HTTPException: 403 if user lacks admin/moderator permission for the community
     """
+    await verify_community_admin_by_uuid(
+        community_server_id=community_server_id,
+        current_user=user,
+        db=db,
+        request=request,
+    )
+
     result = await db.execute(
         select(func.count(PreviouslySeenMessage.id)).where(
             PreviouslySeenMessage.community_server_id == community_server_id

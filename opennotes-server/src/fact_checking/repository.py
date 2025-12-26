@@ -300,9 +300,15 @@ async def hybrid_search_with_chunks(
     # 2. Join through fact_check_chunks to get parent fact_check_item
     # 3. Apply weight reduction for is_common=True chunks
     # 4. Use MAX() to aggregate chunk scores per fact_check_item
+    # Build tags filter for chunk_semantic CTE (joins fact_check_items as fci_chunk)
+    chunk_tags_filter = ""
+    if dataset_tags:
+        chunk_tags_filter = "AND fci_chunk.dataset_tags && CAST(:dataset_tags AS text[])"
+
     rrf_query = text(f"""
         WITH chunk_semantic AS (
             -- Find semantically similar chunks using HNSW index
+            -- Join fact_check_items early to apply tags filter before LIMIT
             SELECT
                 ce.id AS chunk_id,
                 fcc.fact_check_id,
@@ -310,8 +316,10 @@ async def hybrid_search_with_chunks(
                 RANK() OVER (ORDER BY ce.embedding <=> CAST(:embedding AS vector)) AS rank
             FROM chunk_embeddings ce
             JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
+            JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
             WHERE ce.embedding IS NOT NULL
                 AND (ce.embedding <=> CAST(:embedding AS vector)) <= :max_semantic_distance
+                {chunk_tags_filter}
             ORDER BY ce.embedding <=> CAST(:embedding AS vector)
             LIMIT {RRF_CTE_PRELIMIT * 3}
         ),

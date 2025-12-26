@@ -12,7 +12,7 @@ This module provides the ChunkEmbeddingService which handles:
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -200,6 +200,87 @@ class ChunkEmbeddingService:
 
         return is_common
 
+    async def batch_update_is_common_flags(
+        self,
+        db: AsyncSession,
+        chunk_ids: list[UUID],
+    ) -> dict[UUID, bool]:
+        """
+        Batch update is_common flags for multiple chunks.
+
+        This is more efficient than calling update_is_common_flag individually
+        for each chunk, reducing queries from O(3N) to O(3) constant.
+
+        Args:
+            db: Database session
+            chunk_ids: List of chunk UUIDs to update
+
+        Returns:
+            Dictionary mapping chunk_id to its new is_common value
+        """
+        if not chunk_ids:
+            return {}
+
+        unique_ids = list(set(chunk_ids))
+
+        fact_check_counts = (
+            select(
+                FactCheckChunk.chunk_id.label("chunk_id"),
+                func.count().label("cnt"),
+            )
+            .where(FactCheckChunk.chunk_id.in_(unique_ids))
+            .group_by(FactCheckChunk.chunk_id)
+        )
+
+        previously_seen_counts = (
+            select(
+                PreviouslySeenChunk.chunk_id.label("chunk_id"),
+                func.count().label("cnt"),
+            )
+            .where(PreviouslySeenChunk.chunk_id.in_(unique_ids))
+            .group_by(PreviouslySeenChunk.chunk_id)
+        )
+
+        combined = union_all(fact_check_counts, previously_seen_counts).subquery()
+
+        totals_query = select(
+            combined.c.chunk_id,
+            func.sum(combined.c.cnt).label("total"),
+        ).group_by(combined.c.chunk_id)
+
+        result = await db.execute(totals_query)
+        counts = {row.chunk_id: row.total for row in result.all()}
+
+        common_ids = [cid for cid in unique_ids if counts.get(cid, 0) > 1]
+        not_common_ids = [cid for cid in unique_ids if counts.get(cid, 0) <= 1]
+
+        if common_ids:
+            await db.execute(
+                update(ChunkEmbedding)
+                .where(ChunkEmbedding.id.in_(common_ids))
+                .values(is_common=True)
+            )
+
+        if not_common_ids:
+            await db.execute(
+                update(ChunkEmbedding)
+                .where(ChunkEmbedding.id.in_(not_common_ids))
+                .values(is_common=False)
+            )
+
+        result_map = {cid: cid in common_ids for cid in unique_ids}
+
+        logger.debug(
+            "Batch updated is_common flags",
+            extra={
+                "chunk_count": len(unique_ids),
+                "common_count": len(common_ids),
+                "not_common_count": len(not_common_ids),
+            },
+        )
+
+        return result_map
+
     async def chunk_and_embed_fact_check(
         self,
         db: AsyncSession,
@@ -225,6 +306,7 @@ class ChunkEmbeddingService:
         chunk_texts = self.chunking_service.chunk_text(text)
 
         chunks: list[ChunkEmbedding] = []
+        chunk_ids: list[UUID] = []
 
         for idx, chunk_text in enumerate(chunk_texts):
             chunk, _ = await self.get_or_create_chunk(
@@ -233,6 +315,7 @@ class ChunkEmbeddingService:
                 community_server_id=community_server_id,
             )
             chunks.append(chunk)
+            chunk_ids.append(chunk.id)
 
             join_entry = FactCheckChunk(
                 chunk_id=chunk.id,
@@ -241,7 +324,7 @@ class ChunkEmbeddingService:
             )
             db.add(join_entry)
 
-            await self.update_is_common_flag(db, chunk.id)
+        await self.batch_update_is_common_flags(db, chunk_ids)
 
         logger.info(
             "Chunked and embedded fact check item",
@@ -279,6 +362,7 @@ class ChunkEmbeddingService:
         chunk_texts = self.chunking_service.chunk_text(text)
 
         chunks: list[ChunkEmbedding] = []
+        chunk_ids: list[UUID] = []
 
         for idx, chunk_text in enumerate(chunk_texts):
             chunk, _ = await self.get_or_create_chunk(
@@ -287,6 +371,7 @@ class ChunkEmbeddingService:
                 community_server_id=community_server_id,
             )
             chunks.append(chunk)
+            chunk_ids.append(chunk.id)
 
             join_entry = PreviouslySeenChunk(
                 chunk_id=chunk.id,
@@ -295,7 +380,7 @@ class ChunkEmbeddingService:
             )
             db.add(join_entry)
 
-            await self.update_is_common_flag(db, chunk.id)
+        await self.batch_update_is_common_flags(db, chunk_ids)
 
         logger.info(
             "Chunked and embedded previously seen message",

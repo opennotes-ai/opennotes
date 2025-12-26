@@ -571,9 +571,6 @@ neural = [
     { name = "torch" },
     { name = "transformers" },
 ]
-pgvector = [
-    { name = "vecs" },
-]
 
 [[package]]
 name = "click"
@@ -937,18 +934,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/58/46/0028a82567109b5ef6e4d2a1f04a583fb513e6cf9527fcdd09afd817deeb/filelock-3.20.0.tar.gz", hash = "sha256:711e943b4ec6be42e1d4e6690b48dc175c822967466bb31c0c293f34334c13f4", size = 18922, upload-time = "2025-10-08T18:03:50.056Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/76/91/7216b27286936c16f5b4d0c530087e4a54eead683e6b0b73dd0c64844af6/filelock-3.20.0-py3-none-any.whl", hash = "sha256:339b4732ffda5cd79b13f4e2711a31b0365ce445d95d243bb996273d072546a2", size = 16054, upload-time = "2025-10-08T18:03:48.35Z" },
-]
-
-[[package]]
-name = "flupy"
-version = "1.2.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/a5/15fe839297d761e04c4578b11013ed46353e63b44b5e42b59c2078602fa1/flupy-1.2.3.tar.gz", hash = "sha256:220b6d40dea238cd2d66784c0d4d2a5483447a48acd343385768e0c740af9609", size = 12327, upload-time = "2025-07-15T14:08:21.14Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/26/d4d1629f846ae2913e88f74955a3c3f41f3863e74c5fbc1cb79af9550717/flupy-1.2.3-py3-none-any.whl", hash = "sha256:be0f5a393bad2b3534697fbab17081993cd3f5817169dd3a61e8b2e0887612e6", size = 12512, upload-time = "2025-07-18T20:15:21.384Z" },
 ]
 
 [[package]]
@@ -1989,7 +1974,7 @@ dependencies = [
     { name = "argon2-cffi" },
     { name = "asyncpg" },
     { name = "cachetools" },
-    { name = "chonkie", extra = ["neural", "pgvector"] },
+    { name = "chonkie", extra = ["neural"] },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "fastapi-filter" },
@@ -2025,7 +2010,6 @@ dependencies = [
     { name = "tenacity" },
     { name = "torch" },
     { name = "uvicorn", extra = ["standard"] },
-    { name = "vecs" },
     { name = "wandb" },
     { name = "xxhash" },
 ]
@@ -2085,7 +2069,7 @@ requires-dist = [
     { name = "asyncpg", marker = "extra == 'dev'", specifier = ">=0.29.0" },
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "cachetools", specifier = ">=5.3.0" },
-    { name = "chonkie", extras = ["neural", "pgvector"], specifier = ">=0.4.0" },
+    { name = "chonkie", extras = ["neural"], specifier = ">=0.4.0" },
     { name = "cryptography", specifier = ">=41.0.0" },
     { name = "docker", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "fastapi", specifier = ">=0.104.1" },
@@ -2141,7 +2125,6 @@ requires-dist = [
     { name = "torch", marker = "extra == 'dev'", specifier = "==2.1.2" },
     { name = "torch", marker = "extra == 'scoring'", specifier = "==2.1.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
-    { name = "vecs", specifier = ">=0.4.0" },
     { name = "wandb", specifier = ">=0.23.0" },
     { name = "wandb", marker = "extra == 'dev'", specifier = ">=0.15.0" },
     { name = "wandb", marker = "extra == 'scoring'", specifier = ">=0.15.0" },
@@ -4058,19 +4041,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/97/cc/48d232f33d60e2e2e0b42f4e73455b146b76ebe216487e862700457fbf3c/uvloop-0.22.1-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:daf620c2995d193449393d6c62131b3fbd40a63bf7b307a1527856ace637fe88", size = 4328384, upload-time = "2025-10-16T22:16:59.36Z" },
     { url = "https://files.pythonhosted.org/packages/e4/16/c1fd27e9549f3c4baf1dc9c20c456cd2f822dbf8de9f463824b0c0357e06/uvloop-0.22.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:6cde23eeda1a25c75b2e07d39970f3374105d5eafbaab2a4482be82f272d5a5e", size = 4296730, upload-time = "2025-10-16T22:17:00.744Z" },
 ]
-
-[[package]]
-name = "vecs"
-version = "0.4.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "deprecated" },
-    { name = "flupy" },
-    { name = "pgvector" },
-    { name = "psycopg2-binary" },
-    { name = "sqlalchemy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0c/87/9fb55aff1e18278c2a0d93ba48432e060086702e258e7e13068a31376548/vecs-0.4.5.tar.gz", hash = "sha256:7cd3ab65cf88f5869d49f70ae7385e844c4915700da1f2299c938afa56148cb6", size = 22036, upload-time = "2024-12-13T20:53:50.983Z" }
 
 [[package]]
 name = "wandb"

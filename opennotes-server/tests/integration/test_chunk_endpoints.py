@@ -7,8 +7,10 @@ These tests verify that:
 3. Endpoints accept community_server_id and batch_size parameters
 4. Background task processing is triggered for large datasets
 5. Service accounts can access the endpoints
+6. Regular users without admin/moderator role get 403 Forbidden
 
 Task: task-871.04 - Create API endpoints for bulk re-chunking operations
+Task: task-871.10 - Add authorization check to rechunk endpoints
 """
 
 from unittest.mock import AsyncMock, patch
@@ -237,16 +239,12 @@ class TestFactCheckRechunkEndpoint(TestChunkEndpointsFixtures):
             assert "total_items" in data
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_fact_check_rechunk_batch", new_callable=AsyncMock
-    )
-    async def test_regular_user_can_initiate_rechunk(
+    async def test_regular_user_gets_403_without_community_membership(
         self,
-        mock_rechunk_batch,
         regular_user_headers,
         community_server_with_data,
     ):
-        """Regular authenticated user can initiate fact check rechunking."""
+        """Regular user without community membership gets 403 Forbidden."""
         server = community_server_with_data["server"]
 
         transport = ASGITransport(app=app)
@@ -256,9 +254,7 @@ class TestFactCheckRechunkEndpoint(TestChunkEndpointsFixtures):
                 headers=regular_user_headers,
             )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "started"
+            assert response.status_code == 403
 
     @pytest.mark.asyncio
     @patch(

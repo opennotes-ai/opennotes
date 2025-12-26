@@ -352,11 +352,12 @@ def _build_chunk_embed_mock_sequence(
     """
     Build mock execute side effects for chunk_and_embed tests.
 
-    For each chunk, we need:
-    1. get_or_create_chunk:
-       - SELECT (lookup) -> returns chunk if exists, None otherwise
-       - If not exists: INSERT (with rowcount=1), then SELECT (final lookup)
-    2. update_is_common_flag: 3 calls (fact_check count, previously_seen count, update)
+    For each chunk, we need get_or_create_chunk:
+    - SELECT (lookup) -> returns chunk if exists, None otherwise
+    - If not exists: INSERT (with rowcount=1), then SELECT (final lookup)
+
+    Note: batch_update_is_common_flags is called once at the end (not per-chunk)
+    and should be mocked separately via service method patching.
 
     Returns:
         Tuple of (execute side effects list, created chunks list)
@@ -393,10 +394,6 @@ def _build_chunk_embed_mock_sequence(
             mock_final_lookup = MagicMock()
             mock_final_lookup.scalar_one.return_value = chunk
             side_effects.append(mock_final_lookup)
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 1
-        side_effects.extend([mock_count_result, mock_count_result, MagicMock()])
 
     return side_effects, created_chunks
 
