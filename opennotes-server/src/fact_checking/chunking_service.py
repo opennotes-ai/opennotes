@@ -10,6 +10,7 @@ create chunks at natural semantic boundaries rather than arbitrary character
 or token limits.
 """
 
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -46,7 +47,7 @@ class ChunkingService:
     quality chunks compared to simple character or token-based splitting.
 
     The chunker is lazily initialized on first use to avoid loading the
-    model until it's actually needed.
+    model until it's actually needed. Initialization is thread-safe.
 
     Attributes:
         DEFAULT_MODEL: The default model identifier for NeuralChunker
@@ -80,6 +81,7 @@ class ChunkingService:
         self._device_map = device_map
         self._min_characters_per_chunk = min_characters_per_chunk
         self._chunker: NeuralChunker | None = None
+        self._chunker_lock = threading.Lock()
 
     @property
     def chunker(self) -> "NeuralChunker":
@@ -87,19 +89,22 @@ class ChunkingService:
         Get the NeuralChunker instance, initializing it if necessary.
 
         The chunker is lazily initialized on first access to defer model
-        loading until actually needed.
+        loading until actually needed. Uses double-checked locking pattern
+        for thread-safe initialization.
 
         Returns:
             The initialized NeuralChunker instance
         """
         if self._chunker is None:
-            from chonkie.chunker.neural import NeuralChunker
+            with self._chunker_lock:
+                if self._chunker is None:
+                    from chonkie.chunker.neural import NeuralChunker
 
-            self._chunker = NeuralChunker(
-                model=self._model,
-                device_map=self._device_map,
-                min_characters_per_chunk=self._min_characters_per_chunk,
-            )
+                    self._chunker = NeuralChunker(
+                        model=self._model,
+                        device_map=self._device_map,
+                        min_characters_per_chunk=self._min_characters_per_chunk,
+                    )
         return self._chunker
 
     def chunk_text(self, text: str) -> list[str]:
