@@ -18,11 +18,9 @@ class TestChunkEmbeddingModel:
 
         chunk = ChunkEmbedding(
             chunk_text="This is a test chunk of text for embedding.",
-            chunk_index=0,
         )
 
         assert chunk.chunk_text == "This is a test chunk of text for embedding."
-        assert chunk.chunk_index == 0
         assert chunk.is_common is False  # Default value
 
     def test_model_accepts_embedding_vector(self):
@@ -32,7 +30,6 @@ class TestChunkEmbeddingModel:
         embedding = [0.1] * 1536  # 1536 dimensions
         chunk = ChunkEmbedding(
             chunk_text="Test chunk text",
-            chunk_index=0,
             embedding=embedding,
         )
 
@@ -45,7 +42,6 @@ class TestChunkEmbeddingModel:
 
         chunk = ChunkEmbedding(
             chunk_text="Test chunk text",
-            chunk_index=0,
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
         )
@@ -59,7 +55,6 @@ class TestChunkEmbeddingModel:
 
         chunk = ChunkEmbedding(
             chunk_text="Test chunk text",
-            chunk_index=0,
         )
 
         assert chunk.is_common is False
@@ -70,7 +65,6 @@ class TestChunkEmbeddingModel:
 
         chunk = ChunkEmbedding(
             chunk_text="Common disclaimer text",
-            chunk_index=0,
             is_common=True,
         )
 
@@ -82,7 +76,6 @@ class TestChunkEmbeddingModel:
 
         chunk = ChunkEmbedding(
             chunk_text="Test chunk text",
-            chunk_index=0,
             embedding=None,
         )
 

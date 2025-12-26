@@ -46,10 +46,13 @@ class ChunkEmbedding(Base):
     or a previously seen message. Chunks are deduplicated by text content,
     allowing the same chunk to be referenced by multiple source documents.
 
+    Note: chunk_index (position in document) is stored in the join tables
+    (FactCheckChunk, PreviouslySeenChunk) rather than here, because the same
+    chunk text can appear at different positions in different documents.
+
     Attributes:
         id: Unique identifier (UUID v7)
         chunk_text: The text content of the chunk (unique across all chunks)
-        chunk_index: Position of this chunk in the original document (0-indexed)
         embedding: Vector embedding for semantic search (1536 dimensions)
         embedding_provider: LLM provider used for embedding generation
         embedding_model: Model name used for embedding generation
@@ -65,13 +68,6 @@ class ChunkEmbedding(Base):
 
     chunk_text: Mapped[str] = mapped_column(
         Text, nullable=False, unique=True, comment="Unique text content of the chunk"
-    )
-
-    chunk_index: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment="Position of this chunk in the original document (0-indexed)",
     )
 
     embedding: Mapped[Any | None] = mapped_column(
@@ -109,8 +105,6 @@ class ChunkEmbedding(Base):
         """Initialize ChunkEmbedding with default values."""
         if "is_common" not in kwargs:
             kwargs["is_common"] = False
-        if "chunk_index" not in kwargs:
-            kwargs["chunk_index"] = 0
         if "created_at" not in kwargs:
             kwargs["created_at"] = datetime.now(UTC)
         super().__init__(**kwargs)
@@ -137,7 +131,7 @@ class ChunkEmbedding(Base):
 
     def __repr__(self) -> str:
         text_preview = self.chunk_text[:20] if self.chunk_text else ""
-        return f"<ChunkEmbedding(id={self.id}, text='{text_preview}...', index={self.chunk_index})>"
+        return f"<ChunkEmbedding(id={self.id}, text='{text_preview}...')>"
 
 
 class FactCheckChunk(Base):
@@ -152,6 +146,7 @@ class FactCheckChunk(Base):
         id: Unique identifier (UUID v7)
         chunk_id: Foreign key to chunk_embeddings table
         fact_check_id: Foreign key to fact_check_items table
+        chunk_index: Position of this chunk in the fact-check document (0-indexed)
         created_at: Timestamp when relationship was created
     """
 
@@ -165,14 +160,19 @@ class FactCheckChunk(Base):
         PGUUID(as_uuid=True),
         ForeignKey("chunk_embeddings.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
 
     fact_check_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("fact_check_items.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
+    )
+
+    chunk_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Position of this chunk in the fact-check document (0-indexed)",
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -208,6 +208,7 @@ class PreviouslySeenChunk(Base):
         id: Unique identifier (UUID v7)
         chunk_id: Foreign key to chunk_embeddings table
         previously_seen_id: Foreign key to previously_seen_messages table
+        chunk_index: Position of this chunk in the message (0-indexed)
         created_at: Timestamp when relationship was created
     """
 
@@ -221,14 +222,19 @@ class PreviouslySeenChunk(Base):
         PGUUID(as_uuid=True),
         ForeignKey("chunk_embeddings.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
 
     previously_seen_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("previously_seen_messages.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
+    )
+
+    chunk_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Position of this chunk in the message (0-indexed)",
     )
 
     created_at: Mapped[datetime] = mapped_column(

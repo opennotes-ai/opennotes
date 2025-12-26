@@ -198,7 +198,7 @@ async def process_previously_seen_rechunk_batch(
                         )
                     )
 
-                    content = msg.extra_metadata.get("content", "")
+                    content = (msg.extra_metadata or {}).get("content", "")
                     if content:
                         await service.chunk_and_embed_previously_seen(
                             db=db,

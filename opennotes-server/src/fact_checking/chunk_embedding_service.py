@@ -62,7 +62,6 @@ class ChunkEmbeddingService:
         db: AsyncSession,
         chunk_text: str,
         community_server_id: UUID,
-        chunk_index: int = 0,
     ) -> tuple[ChunkEmbedding, bool]:
         """
         Get an existing chunk by text or create a new one with embedding.
@@ -74,11 +73,14 @@ class ChunkEmbeddingService:
         Uses INSERT ON CONFLICT DO NOTHING to handle race conditions where
         concurrent requests try to create the same chunk simultaneously.
 
+        Note: chunk_index is not stored here because chunks are deduplicated
+        by text. The same text can appear at different positions in different
+        documents, so chunk_index is stored in the join tables instead.
+
         Args:
             db: Database session
             chunk_text: The text content of the chunk
             community_server_id: Community server UUID for LLM credentials
-            chunk_index: Position of this chunk in original document (0-indexed)
 
         Returns:
             Tuple of (ChunkEmbedding, is_created) where is_created is True
@@ -109,7 +111,6 @@ class ChunkEmbeddingService:
             pg_insert(ChunkEmbedding)
             .values(
                 chunk_text=chunk_text,
-                chunk_index=chunk_index,
                 embedding=embedding,
                 embedding_provider=provider,
                 embedding_model=model,
@@ -135,7 +136,6 @@ class ChunkEmbeddingService:
                 extra={
                     "chunk_id": str(chunk.id),
                     "text_length": len(chunk_text),
-                    "chunk_index": chunk_index,
                     "embedding_provider": provider,
                     "embedding_model": model,
                 },
@@ -231,13 +231,13 @@ class ChunkEmbeddingService:
                 db=db,
                 chunk_text=chunk_text,
                 community_server_id=community_server_id,
-                chunk_index=idx,
             )
             chunks.append(chunk)
 
             join_entry = FactCheckChunk(
                 chunk_id=chunk.id,
                 fact_check_id=fact_check_id,
+                chunk_index=idx,
             )
             db.add(join_entry)
 
@@ -285,13 +285,13 @@ class ChunkEmbeddingService:
                 db=db,
                 chunk_text=chunk_text,
                 community_server_id=community_server_id,
-                chunk_index=idx,
             )
             chunks.append(chunk)
 
             join_entry = PreviouslySeenChunk(
                 chunk_id=chunk.id,
                 previously_seen_id=previously_seen_id,
+                chunk_index=idx,
             )
             db.add(join_entry)
 
