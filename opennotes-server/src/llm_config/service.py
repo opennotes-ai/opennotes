@@ -10,6 +10,13 @@ from typing import Any, Literal
 from uuid import UUID
 
 import litellm
+from litellm.exceptions import (
+    APIConnectionError,
+    APIError,
+    RateLimitError,
+    ServiceUnavailableError,
+    Timeout,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     retry,
@@ -23,6 +30,16 @@ from src.llm_config.manager import LLMClientManager
 from src.llm_config.providers import LiteLLMCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
 from src.monitoring import get_logger
+
+TRANSIENT_EXCEPTIONS = (
+    APIConnectionError,
+    Timeout,
+    RateLimitError,
+    ServiceUnavailableError,
+    APIError,
+    ConnectionError,
+    TimeoutError,
+)
 
 logger = get_logger(__name__)
 
@@ -157,7 +174,7 @@ class LLMService:
             yield chunk
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,
@@ -229,7 +246,93 @@ class LLMService:
         return embedding, "litellm", embedding_model
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+        stop=stop_after_attempt(5),
+        reraise=True,
+    )
+    async def generate_embeddings_batch(
+        self,
+        db: AsyncSession,
+        texts: list[str],
+        community_server_id: UUID,
+        model: str | None = None,
+    ) -> list[tuple[list[float], str, str]]:
+        """
+        Generate embeddings for multiple texts in a single API call.
+
+        This batch method reduces API calls from N to 1 for N texts, improving
+        performance when embedding multiple chunks.
+
+        Automatically retries on errors with exponential backoff.
+        Uses OpenAI provider credentials but can work with any LiteLLM-supported
+        embedding model.
+
+        Args:
+            db: Database session
+            texts: List of texts to embed
+            community_server_id: Community server UUID
+            model: Embedding model (uses settings.EMBEDDING_MODEL if None)
+
+        Returns:
+            List of tuples (embedding vector, provider name, model name),
+            in the same order as input texts
+
+        Raises:
+            ValueError: If no OpenAI configuration found or if texts is empty
+            Exception: If API call fails after retries
+        """
+        if not texts:
+            return []
+
+        llm_provider = await self.client_manager.get_client(db, community_server_id, "openai")
+
+        if not llm_provider:
+            raise ValueError(
+                f"No OpenAI configuration found for community server {community_server_id}"
+            )
+
+        embedding_model = model or settings.EMBEDDING_MODEL
+
+        logger.debug(
+            "Generating batch embeddings",
+            extra={
+                "text_count": len(texts),
+                "total_text_length": sum(len(t) for t in texts),
+                "community_server_id": str(community_server_id),
+                "model": embedding_model,
+            },
+        )
+
+        response = await litellm.aembedding(
+            model=embedding_model,
+            input=texts,
+            api_key=llm_provider.api_key,
+            encoding_format="float",
+        )
+
+        if len(response.data) != len(texts):
+            raise ValueError(
+                f"API returned {len(response.data)} embeddings but expected {len(texts)}"
+            )
+
+        embeddings_by_index = {item["index"]: item["embedding"] for item in response.data}
+        results = [(embeddings_by_index[i], "litellm", embedding_model) for i in range(len(texts))]
+
+        logger.info(
+            "Batch embeddings generated successfully",
+            extra={
+                "text_count": len(texts),
+                "community_server_id": str(community_server_id),
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
+                "embedding_dimensions": len(results[0][0]) if results else 0,
+            },
+        )
+
+        return results
+
+    @retry(
+        retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
         wait=wait_exponential(multiplier=1, min=1, max=60),
         stop=stop_after_attempt(5),
         reraise=True,

@@ -22,6 +22,7 @@ from src.database import close_db, get_session_maker, init_db
 from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
+from src.fact_checking.chunk_router import router as chunk_router
 from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import (
     router as embeddings_jsonapi_router,
@@ -431,6 +432,7 @@ app.include_router(community_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_servers_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_admin_router, prefix=settings.API_V1_PREFIX)
 app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
+app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes
 app.include_router(health_router)
