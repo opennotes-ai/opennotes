@@ -3,6 +3,7 @@ from src.fact_checking.chunk_models import (
     FactCheckChunk,
     PreviouslySeenChunk,
 )
+from src.fact_checking.chunking_service import ChunkingService, ChunkResult
 from src.fact_checking.embeddings_jsonapi_router import router as embeddings_jsonapi_router
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.monitored_channel_models import MonitoredChannel
@@ -17,6 +18,8 @@ from src.fact_checking.previously_seen_service import PreviouslySeenService
 
 __all__ = [
     "ChunkEmbedding",
+    "ChunkResult",
+    "ChunkingService",
     "FactCheckChunk",
     "FactCheckItem",
     "MonitoredChannel",

@@ -571,6 +571,9 @@ neural = [
     { name = "torch" },
     { name = "transformers" },
 ]
+pgvector = [
+    { name = "vecs" },
+]
 
 [[package]]
 name = "click"
@@ -1986,7 +1989,7 @@ dependencies = [
     { name = "argon2-cffi" },
     { name = "asyncpg" },
     { name = "cachetools" },
-    { name = "chonkie", extra = ["neural"] },
+    { name = "chonkie", extra = ["neural", "pgvector"] },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "fastapi-filter" },
@@ -2082,7 +2085,7 @@ requires-dist = [
     { name = "asyncpg", marker = "extra == 'dev'", specifier = ">=0.29.0" },
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "cachetools", specifier = ">=5.3.0" },
-    { name = "chonkie", extras = ["neural"], specifier = ">=0.4.0" },
+    { name = "chonkie", extras = ["neural", "pgvector"], specifier = ">=0.4.0" },
     { name = "cryptography", specifier = ">=41.0.0" },
     { name = "docker", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "fastapi", specifier = ">=0.104.1" },

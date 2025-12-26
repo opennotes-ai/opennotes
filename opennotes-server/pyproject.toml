@@ -49,7 +49,7 @@ dependencies = [
     "fastapi-filter>=2.0.1",
     "xxhash>=3.6.0",
     "litellm>=1.80.11,<2.0.0",
-    "chonkie[neural]>=0.4.0",
+    "chonkie[neural,pgvector]>=0.4.0",
     "vecs>=0.4.0",
 ]
 
