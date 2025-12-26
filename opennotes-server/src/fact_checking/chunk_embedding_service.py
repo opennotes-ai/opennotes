@@ -107,6 +107,7 @@ class ChunkEmbeddingService:
         )
 
         db.add(chunk)
+        await db.flush()  # Populate chunk.id from database
 
         logger.info(
             "Created new chunk embedding",
