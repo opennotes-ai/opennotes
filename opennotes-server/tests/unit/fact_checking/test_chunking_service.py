@@ -1,6 +1,10 @@
 """Unit tests for ChunkingService with NeuralChunker integration."""
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
+
+from src.fact_checking.chunking_service import ChunkingService, ChunkResult
 
 
 class TestChunkingServiceInitialization:
@@ -8,14 +12,10 @@ class TestChunkingServiceInitialization:
 
     def test_default_model_constant(self):
         """Test ChunkingService has correct default model."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         assert ChunkingService.DEFAULT_MODEL == "mirth/chonky_modernbert_base_1"
 
     def test_initialization_with_defaults(self):
         """Test ChunkingService can be initialized with default parameters."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         service = ChunkingService()
 
         assert service._model == ChunkingService.DEFAULT_MODEL
@@ -25,8 +25,6 @@ class TestChunkingServiceInitialization:
 
     def test_initialization_with_custom_parameters(self):
         """Test ChunkingService can be initialized with custom parameters."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         service = ChunkingService(
             model="custom/model",
             device_map="cuda:0",
@@ -40,8 +38,6 @@ class TestChunkingServiceInitialization:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunker_property_lazy_initialization(self, mock_neural_chunker):
         """Test chunker property initializes NeuralChunker lazily."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_instance = MagicMock()
         mock_neural_chunker.return_value = mock_instance
 
@@ -61,8 +57,6 @@ class TestChunkingServiceInitialization:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunker_property_returns_same_instance(self, mock_neural_chunker):
         """Test chunker property returns same instance on subsequent calls."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_instance = MagicMock()
         mock_neural_chunker.return_value = mock_instance
 
@@ -74,14 +68,51 @@ class TestChunkingServiceInitialization:
         mock_neural_chunker.assert_called_once()
         assert chunker1 is chunker2
 
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_chunker_property_thread_safe_initialization(self, mock_neural_chunker):
+        """Test chunker property creates only one instance under concurrent access."""
+        init_count = 0
+        init_lock = threading.Lock()
+        barrier = threading.Barrier(10)
+
+        def counting_init(*args, **kwargs):
+            nonlocal init_count
+            with init_lock:
+                init_count += 1
+            return MagicMock()
+
+        mock_neural_chunker.side_effect = counting_init
+
+        service = ChunkingService()
+        results = []
+        errors = []
+
+        def access_chunker():
+            try:
+                barrier.wait()
+                chunker = service.chunker
+                results.append(chunker)
+            except Exception as e:
+                errors.append(e)
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(access_chunker) for _ in range(10)]
+            for f in futures:
+                f.result()
+
+        assert not errors, f"Unexpected errors: {errors}"
+        assert init_count == 1, f"Expected 1 initialization, got {init_count}"
+        assert len(results) == 10
+        first_chunker = results[0]
+        for chunker in results[1:]:
+            assert chunker is first_chunker
+
 
 class TestChunkResult:
     """Test ChunkResult dataclass."""
 
     def test_chunk_result_creation(self):
         """Test ChunkResult can be created with required fields."""
-        from src.fact_checking.chunking_service import ChunkResult
-
         result = ChunkResult(
             text="This is a chunk of text.",
             start_index=0,
@@ -96,8 +127,6 @@ class TestChunkResult:
 
     def test_chunk_result_with_token_count(self):
         """Test ChunkResult can include optional token_count."""
-        from src.fact_checking.chunking_service import ChunkResult
-
         result = ChunkResult(
             text="This is a chunk.",
             start_index=0,
@@ -110,8 +139,6 @@ class TestChunkResult:
 
     def test_chunk_result_token_count_defaults_none(self):
         """Test ChunkResult token_count defaults to None."""
-        from src.fact_checking.chunking_service import ChunkResult
-
         result = ChunkResult(
             text="Chunk text",
             start_index=0,
@@ -128,8 +155,6 @@ class TestChunkText:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_text_returns_list_of_strings(self, mock_neural_chunker):
         """Test chunk_text() returns list of chunk strings."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_chunk1 = MagicMock()
         mock_chunk1.text = "First chunk."
         mock_chunk2 = MagicMock()
@@ -148,8 +173,6 @@ class TestChunkText:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_text_empty_string_returns_empty_list(self, mock_neural_chunker):
         """Test chunk_text() with empty string returns empty list."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_instance = MagicMock()
         mock_instance.chunk.return_value = []
         mock_neural_chunker.return_value = mock_instance
@@ -162,8 +185,6 @@ class TestChunkText:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_text_single_chunk(self, mock_neural_chunker):
         """Test chunk_text() with text that results in single chunk."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_chunk = MagicMock()
         mock_chunk.text = "Short text."
 
@@ -183,8 +204,6 @@ class TestChunkTextWithPositions:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_text_with_positions_returns_chunk_results(self, mock_neural_chunker):
         """Test chunk_text_with_positions() returns list of ChunkResult."""
-        from src.fact_checking.chunking_service import ChunkingService, ChunkResult
-
         mock_chunk1 = MagicMock()
         mock_chunk1.text = "First chunk."
         mock_chunk1.start_index = 0
@@ -221,8 +240,6 @@ class TestChunkTextWithPositions:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_text_with_positions_empty_string(self, mock_neural_chunker):
         """Test chunk_text_with_positions() with empty string."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_instance = MagicMock()
         mock_instance.chunk.return_value = []
         mock_neural_chunker.return_value = mock_instance
@@ -235,8 +252,6 @@ class TestChunkTextWithPositions:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_text_with_positions_assigns_sequential_indices(self, mock_neural_chunker):
         """Test chunk_text_with_positions() assigns sequential chunk indices."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         chunks = []
         for i in range(5):
             mock_chunk = MagicMock()
@@ -263,8 +278,6 @@ class TestChunkBatch:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_batch_returns_list_of_string_lists(self, mock_neural_chunker):
         """Test chunk_batch() returns list of chunk string lists."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_chunk1 = MagicMock()
         mock_chunk1.text = "Doc1 chunk1."
         mock_chunk2 = MagicMock()
@@ -292,8 +305,6 @@ class TestChunkBatch:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_batch_empty_list(self, mock_neural_chunker):
         """Test chunk_batch() with empty list."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_instance = MagicMock()
         mock_instance.chunk_batch.return_value = []
         mock_neural_chunker.return_value = mock_instance
@@ -306,8 +317,6 @@ class TestChunkBatch:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_batch_single_document(self, mock_neural_chunker):
         """Test chunk_batch() with single document."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         mock_chunk = MagicMock()
         mock_chunk.text = "Single doc chunk."
 
@@ -327,8 +336,6 @@ class TestChunkBatchWithPositions:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_batch_with_positions_returns_nested_chunk_results(self, mock_neural_chunker):
         """Test chunk_batch_with_positions() returns list of ChunkResult lists."""
-        from src.fact_checking.chunking_service import ChunkingService, ChunkResult
-
         mock_chunk1 = MagicMock()
         mock_chunk1.text = "Doc1 chunk."
         mock_chunk1.start_index = 0
@@ -360,8 +367,6 @@ class TestChunkBatchWithPositions:
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_chunk_batch_with_positions_maintains_per_doc_indices(self, mock_neural_chunker):
         """Test chunk indices reset per document in batch."""
-        from src.fact_checking.chunking_service import ChunkingService
-
         doc1_chunks = []
         for i in range(3):
             c = MagicMock()
@@ -392,3 +397,226 @@ class TestChunkBatchWithPositions:
 
         for i, chunk_result in enumerate(result[1]):
             assert chunk_result.chunk_index == i
+
+
+class TestChunkingModelLoadError:
+    """Test ChunkingModelLoadError exception."""
+
+    def test_chunking_model_load_error_creation(self):
+        """Test ChunkingModelLoadError can be created with message."""
+        from src.fact_checking.chunking_service import ChunkingModelLoadError
+
+        error = ChunkingModelLoadError("Model failed to load")
+
+        assert str(error) == "Model failed to load"
+        assert error.original_error is None
+
+    def test_chunking_model_load_error_with_original(self):
+        """Test ChunkingModelLoadError preserves original error."""
+        from src.fact_checking.chunking_service import ChunkingModelLoadError
+
+        original = OSError("Network error")
+        error = ChunkingModelLoadError("Model failed", original_error=original)
+
+        assert error.original_error is original
+        assert str(error) == "Model failed"
+
+
+class TestChunkerErrorHandling:
+    """Test error handling in chunker initialization."""
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_oserror_raises_chunking_model_load_error(self, mock_neural_chunker):
+        """Test OSError during init raises ChunkingModelLoadError."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        mock_neural_chunker.side_effect = OSError("Model not found")
+
+        service = ChunkingService()
+
+        with pytest.raises(ChunkingModelLoadError) as exc_info:
+            _ = service.chunker
+
+        assert "Failed to load chunking model" in str(exc_info.value)
+        assert exc_info.value.original_error is not None
+        assert isinstance(exc_info.value.original_error, OSError)
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_connection_error_raises_chunking_model_load_error(self, mock_neural_chunker):
+        """Test ConnectionError during init raises ChunkingModelLoadError."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        mock_neural_chunker.side_effect = ConnectionError("Connection refused")
+
+        service = ChunkingService()
+
+        with pytest.raises(ChunkingModelLoadError) as exc_info:
+            _ = service.chunker
+
+        assert "Network error" in str(exc_info.value)
+        assert exc_info.value.original_error is not None
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_timeout_error_raises_chunking_model_load_error(self, mock_neural_chunker):
+        """Test TimeoutError during init raises ChunkingModelLoadError."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        mock_neural_chunker.side_effect = TimeoutError("Download timed out")
+
+        service = ChunkingService()
+
+        with pytest.raises(ChunkingModelLoadError) as exc_info:
+            _ = service.chunker
+
+        assert "Network error" in str(exc_info.value)
+        assert exc_info.value.original_error is not None
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_value_error_raises_chunking_model_load_error(self, mock_neural_chunker):
+        """Test ValueError during init raises ChunkingModelLoadError."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        mock_neural_chunker.side_effect = ValueError("Invalid model config")
+
+        service = ChunkingService()
+
+        with pytest.raises(ChunkingModelLoadError) as exc_info:
+            _ = service.chunker
+
+        assert "Invalid configuration" in str(exc_info.value)
+        assert exc_info.value.original_error is not None
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_generic_exception_raises_chunking_model_load_error(self, mock_neural_chunker):
+        """Test generic Exception during init raises ChunkingModelLoadError."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        mock_neural_chunker.side_effect = RuntimeError("Unexpected runtime error")
+
+        service = ChunkingService()
+
+        with pytest.raises(ChunkingModelLoadError) as exc_info:
+            _ = service.chunker
+
+        assert "Unexpected error" in str(exc_info.value)
+        assert "RuntimeError" in str(exc_info.value)
+        assert exc_info.value.original_error is not None
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_error_message_includes_model_name(self, mock_neural_chunker):
+        """Test error message includes the model identifier."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        mock_neural_chunker.side_effect = OSError("Not found")
+
+        service = ChunkingService(model="custom/test-model")
+
+        with pytest.raises(ChunkingModelLoadError) as exc_info:
+            _ = service.chunker
+
+        assert "custom/test-model" in str(exc_info.value)
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_retry_on_transient_network_error(self, mock_neural_chunker):
+        """Test retry logic for transient network errors."""
+        from src.fact_checking.chunking_service import ChunkingService
+
+        call_count = 0
+        mock_instance = MagicMock()
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise OSError("Temporary network failure")
+            return mock_instance
+
+        mock_neural_chunker.side_effect = side_effect
+
+        service = ChunkingService()
+        chunker = service.chunker
+
+        assert chunker is mock_instance
+        assert call_count == 3
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_no_retry_on_value_error(self, mock_neural_chunker):
+        """Test no retry on ValueError (not a transient error)."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        call_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("Invalid config")
+
+        mock_neural_chunker.side_effect = side_effect
+
+        service = ChunkingService()
+
+        with pytest.raises(ChunkingModelLoadError):
+            _ = service.chunker
+
+        assert call_count == 1
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_max_retries_exceeded(self, mock_neural_chunker):
+        """Test ChunkingModelLoadError raised after max retries exceeded."""
+        import pytest
+
+        from src.fact_checking.chunking_service import (
+            ChunkingModelLoadError,
+            ChunkingService,
+        )
+
+        call_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise OSError("Persistent network failure")
+
+        mock_neural_chunker.side_effect = side_effect
+
+        service = ChunkingService()
+
+        with pytest.raises(ChunkingModelLoadError):
+            _ = service.chunker
+
+        assert call_count == 3
