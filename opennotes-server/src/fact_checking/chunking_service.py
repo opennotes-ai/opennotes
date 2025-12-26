@@ -14,8 +14,27 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from src.monitoring import get_logger
+
 if TYPE_CHECKING:
     from chonkie.chunker.neural import NeuralChunker
+
+logger = get_logger(__name__)
+
+
+class ChunkingModelLoadError(Exception):
+    """Raised when the chunking model fails to load.
+
+    This typically occurs due to:
+    - Network failures during model download
+    - Invalid model identifier
+    - Insufficient disk space or permissions
+    - Corrupted model cache
+    """
+
+    def __init__(self, message: str, original_error: Exception | None = None):
+        super().__init__(message)
+        self.original_error = original_error
 
 
 @dataclass

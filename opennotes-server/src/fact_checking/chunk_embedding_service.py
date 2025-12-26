@@ -25,6 +25,21 @@ from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 
+# Minimum number of document appearances for a chunk to be marked as "common".
+# A chunk with total_count > IS_COMMON_THRESHOLD is flagged is_common=True.
+#
+# Tradeoff:
+# - Lower threshold (e.g., 1): Aggressively marks chunks as common. This reduces
+#   weight for chunks appearing in just 2 documents, which may prematurely
+#   down-weight legitimately important shared content.
+# - Higher threshold (e.g., 4): Only marks chunks appearing in 5+ documents as
+#   common. More conservative, but may fail to down-weight boilerplate text
+#   that appears in fewer documents.
+#
+# Default of 2 means chunks appearing in 3+ documents are marked common.
+# Adjust based on corpus characteristics and search quality observations.
+IS_COMMON_THRESHOLD = 2
+
 
 class ChunkEmbeddingService:
     """
@@ -185,7 +200,7 @@ class ChunkEmbeddingService:
         previously_seen_count = previously_seen_count_result.scalar_one()
 
         total_count = fact_check_count + previously_seen_count
-        is_common = total_count > 1
+        is_common = total_count > IS_COMMON_THRESHOLD
 
         await db.execute(
             update(ChunkEmbedding).where(ChunkEmbedding.id == chunk_id).values(is_common=is_common)
@@ -254,8 +269,8 @@ class ChunkEmbeddingService:
         result = await db.execute(totals_query)
         counts = {row.chunk_id: row.total for row in result.all()}
 
-        common_ids = [cid for cid in unique_ids if counts.get(cid, 0) > 1]
-        not_common_ids = [cid for cid in unique_ids if counts.get(cid, 0) <= 1]
+        common_ids = [cid for cid in unique_ids if counts.get(cid, 0) > IS_COMMON_THRESHOLD]
+        not_common_ids = [cid for cid in unique_ids if counts.get(cid, 0) <= IS_COMMON_THRESHOLD]
 
         if common_ids:
             await db.execute(

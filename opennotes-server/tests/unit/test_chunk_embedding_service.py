@@ -285,7 +285,10 @@ class TestUpdateIsCommonFlag:
 
     @pytest.mark.asyncio
     async def test_counts_both_join_tables(self):
-        """Test that update_is_common_flag counts both FactCheckChunk and PreviouslySeenChunk."""
+        """Test that update_is_common_flag counts both FactCheckChunk and PreviouslySeenChunk.
+
+        With IS_COMMON_THRESHOLD=2, a chunk needs total_count > 2 to be common.
+        """
         mock_chunking_service = MagicMock()
         mock_llm_service = MagicMock()
 
@@ -298,7 +301,7 @@ class TestUpdateIsCommonFlag:
         chunk_id = uuid4()
 
         fact_check_count_result = MagicMock()
-        fact_check_count_result.scalar_one.return_value = 1
+        fact_check_count_result.scalar_one.return_value = 2
 
         previously_seen_count_result = MagicMock()
         previously_seen_count_result.scalar_one.return_value = 1
@@ -826,7 +829,10 @@ class TestBatchUpdateIsCommonFlags:
 
     @pytest.mark.asyncio
     async def test_deduplicates_chunk_ids(self):
-        """Test that duplicate chunk IDs are deduplicated."""
+        """Test that duplicate chunk IDs are deduplicated.
+
+        With IS_COMMON_THRESHOLD=2, a chunk needs total_count > 2 to be common.
+        """
         mock_chunking_service = MagicMock()
         mock_llm_service = MagicMock()
 
@@ -840,7 +846,7 @@ class TestBatchUpdateIsCommonFlags:
 
         mock_row = MagicMock()
         mock_row.chunk_id = chunk_id
-        mock_row.total = 2
+        mock_row.total = 3
 
         mock_count_result = MagicMock()
         mock_count_result.all.return_value = [mock_row]
