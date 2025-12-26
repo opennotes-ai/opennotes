@@ -68,7 +68,7 @@ class LLMService:
         self,
         db: AsyncSession,
         messages: list[LLMMessage],
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
         provider: str = "openai",
         model: str | None = None,
         max_tokens: int | None = None,
@@ -81,7 +81,7 @@ class LLMService:
         Args:
             db: Database session
             messages: Conversation messages
-            community_server_id: Community server UUID
+            community_server_id: Community server UUID, or None for global fallback
             provider: Provider name ('openai', 'anthropic')
             model: Model to use (uses provider default if None)
             max_tokens: Maximum tokens to generate
@@ -98,9 +98,8 @@ class LLMService:
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
         if not llm_provider:
-            raise ValueError(
-                f"No {provider} configuration found for community server {community_server_id}"
-            )
+            context = f"community server {community_server_id}" if community_server_id else "global"
+            raise ValueError(f"No {provider} configuration found for {context}")
 
         params = LiteLLMCompletionParams(
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
@@ -109,7 +108,7 @@ class LLMService:
         logger.info(
             f"Generating completion with {provider}",
             extra={
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
                 "model": model or "default",
                 "message_count": len(messages),
@@ -122,7 +121,7 @@ class LLMService:
         self,
         db: AsyncSession,
         messages: list[LLMMessage],
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
         provider: str = "openai",
         model: str | None = None,
         max_tokens: int | None = None,
@@ -135,7 +134,7 @@ class LLMService:
         Args:
             db: Database session
             messages: Conversation messages
-            community_server_id: Community server UUID
+            community_server_id: Community server UUID, or None for global fallback
             provider: Provider name ('openai', 'anthropic')
             model: Model to use (uses provider default if None)
             max_tokens: Maximum tokens to generate
@@ -152,9 +151,8 @@ class LLMService:
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
         if not llm_provider:
-            raise ValueError(
-                f"No {provider} configuration found for community server {community_server_id}"
-            )
+            context = f"community server {community_server_id}" if community_server_id else "global"
+            raise ValueError(f"No {provider} configuration found for {context}")
 
         params = LiteLLMCompletionParams(
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
@@ -163,7 +161,7 @@ class LLMService:
         logger.info(
             f"Starting streaming completion with {provider}",
             extra={
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "provider": provider,
                 "model": model or "default",
                 "message_count": len(messages),
@@ -183,7 +181,7 @@ class LLMService:
         self,
         db: AsyncSession,
         text: str,
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
         model: str | None = None,
     ) -> tuple[list[float], str, str]:
         """
@@ -196,7 +194,7 @@ class LLMService:
         Args:
             db: Database session
             text: Text to embed
-            community_server_id: Community server UUID
+            community_server_id: Community server UUID, or None for global fallback
             model: Embedding model (uses settings.EMBEDDING_MODEL if None)
 
         Returns:
@@ -209,9 +207,8 @@ class LLMService:
         llm_provider = await self.client_manager.get_client(db, community_server_id, "openai")
 
         if not llm_provider:
-            raise ValueError(
-                f"No OpenAI configuration found for community server {community_server_id}"
-            )
+            context = f"community server {community_server_id}" if community_server_id else "global"
+            raise ValueError(f"No OpenAI configuration found for {context}")
 
         embedding_model = model or settings.EMBEDDING_MODEL
 
@@ -219,7 +216,7 @@ class LLMService:
             "Generating embedding",
             extra={
                 "text_length": len(text),
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "model": embedding_model,
             },
         )
@@ -237,7 +234,7 @@ class LLMService:
             "Embedding generated successfully",
             extra={
                 "text_length": len(text),
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "tokens_used": response.usage.total_tokens if response.usage else 0,
                 "embedding_dimensions": len(embedding),
             },
@@ -255,7 +252,7 @@ class LLMService:
         self,
         db: AsyncSession,
         texts: list[str],
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
         model: str | None = None,
     ) -> list[tuple[list[float], str, str]]:
         """
@@ -271,7 +268,7 @@ class LLMService:
         Args:
             db: Database session
             texts: List of texts to embed
-            community_server_id: Community server UUID
+            community_server_id: Community server UUID, or None for global fallback
             model: Embedding model (uses settings.EMBEDDING_MODEL if None)
 
         Returns:
@@ -288,9 +285,8 @@ class LLMService:
         llm_provider = await self.client_manager.get_client(db, community_server_id, "openai")
 
         if not llm_provider:
-            raise ValueError(
-                f"No OpenAI configuration found for community server {community_server_id}"
-            )
+            context = f"community server {community_server_id}" if community_server_id else "global"
+            raise ValueError(f"No OpenAI configuration found for {context}")
 
         embedding_model = model or settings.EMBEDDING_MODEL
 
@@ -299,7 +295,7 @@ class LLMService:
             extra={
                 "text_count": len(texts),
                 "total_text_length": sum(len(t) for t in texts),
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "model": embedding_model,
             },
         )
@@ -323,7 +319,7 @@ class LLMService:
             "Batch embeddings generated successfully",
             extra={
                 "text_count": len(texts),
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "tokens_used": response.usage.total_tokens if response.usage else 0,
                 "embedding_dimensions": len(results[0][0]) if results else 0,
             },
@@ -341,7 +337,7 @@ class LLMService:
         self,
         db: AsyncSession,
         image_url: str,
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
         detail: Literal["low", "high", "auto"] = "auto",
         max_tokens: int = 300,
         model: str | None = None,
@@ -356,7 +352,7 @@ class LLMService:
         Args:
             db: Database session
             image_url: URL of image to describe
-            community_server_id: Community server UUID
+            community_server_id: Community server UUID, or None for global fallback
             detail: Image detail level ('low', 'high', 'auto')
             max_tokens: Maximum tokens in description
             model: Vision model (uses settings.VISION_MODEL if None)
@@ -371,9 +367,8 @@ class LLMService:
         llm_provider = await self.client_manager.get_client(db, community_server_id, "openai")
 
         if not llm_provider:
-            raise ValueError(
-                f"No OpenAI configuration found for community server {community_server_id}"
-            )
+            context = f"community server {community_server_id}" if community_server_id else "global"
+            raise ValueError(f"No OpenAI configuration found for {context}")
 
         vision_model = model or settings.VISION_MODEL
 
@@ -381,7 +376,7 @@ class LLMService:
             "Generating image description",
             extra={
                 "image_url": image_url[:100],
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "model": vision_model,
                 "detail": detail,
             },
@@ -414,7 +409,7 @@ class LLMService:
             "Image description generated successfully",
             extra={
                 "image_url": image_url[:100],
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "tokens_used": response.usage.total_tokens if response.usage else 0,  # type: ignore[union-attr]
                 "description_length": len(description),
             },

@@ -141,12 +141,14 @@ class LLMClientManager:
             cache_ttl: Cache TTL in seconds (default: 1 hour)
         """
         self.encryption_service = encryption_service
-        self.client_cache: EvictingTTLCache[tuple[UUID, str], LLMProvider[Any, Any]] = (
+        self.client_cache: EvictingTTLCache[tuple[UUID | None, str], LLMProvider[Any, Any]] = (
             EvictingTTLCache(maxsize=1000, ttl=cache_ttl, eviction_callback=self._cleanup_provider)
         )
         self.locks: dict[str, asyncio.Lock] = {}
 
-    def _cleanup_provider(self, key: tuple[UUID, str], provider: LLMProvider[Any, Any]) -> None:
+    def _cleanup_provider(
+        self, key: tuple[UUID | None, str], provider: LLMProvider[Any, Any]
+    ) -> None:
         """
         Cleanup callback for evicted cache entries.
 
@@ -165,7 +167,7 @@ class LLMClientManager:
         self.locks.pop(lock_key, None)
 
     async def get_client(
-        self, db: AsyncSession, community_server_id: UUID, provider: str
+        self, db: AsyncSession, community_server_id: UUID | None, provider: str
     ) -> LLMProvider[Any, Any] | None:
         """
         Get or create an LLM provider client for the given community and provider.
@@ -173,9 +175,12 @@ class LLMClientManager:
         Uses caching to avoid repeated database queries and API key decryption.
         Thread-safe via per-key locks.
 
+        When community_server_id is None, uses global API key directly without
+        attempting to load community-specific configuration.
+
         Args:
             db: Database session
-            community_server_id: Community server UUID
+            community_server_id: Community server UUID, or None for global fallback
             provider: Provider name ('openai', 'anthropic', etc.)
 
         Returns:
@@ -203,40 +208,44 @@ class LLMClientManager:
             return client
 
     async def _load_client(
-        self, db: AsyncSession, community_server_id: UUID, provider: str
+        self, db: AsyncSession, community_server_id: UUID | None, provider: str
     ) -> LLMProvider[Any, Any] | None:
         """
         Load and initialize an LLM client from database configuration.
 
         Falls back to global API key if no community-specific configuration exists.
+        When community_server_id is None, uses global API key directly.
 
         Args:
             db: Database session
-            community_server_id: Community server UUID
+            community_server_id: Community server UUID, or None for global fallback
             provider: Provider name
 
         Returns:
             Initialized LLM provider, or None if not found/disabled
         """
-        result = await db.execute(
-            select(CommunityServerLLMConfig).where(
-                CommunityServerLLMConfig.community_server_id == community_server_id,
-                CommunityServerLLMConfig.provider == provider,
-                CommunityServerLLMConfig.enabled == True,
+        config = None
+        if community_server_id is not None:
+            result = await db.execute(
+                select(CommunityServerLLMConfig).where(
+                    CommunityServerLLMConfig.community_server_id == community_server_id,
+                    CommunityServerLLMConfig.provider == provider,
+                    CommunityServerLLMConfig.enabled == True,
+                )
             )
-        )
-        config = result.scalar_one_or_none()
+            config = result.scalar_one_or_none()
 
         if not config:
-            # Fall back to global API key if configured
             global_key = self._get_global_api_key(provider)
             if global_key:
                 default_model = self._get_default_model(provider)
                 logger = get_logger(__name__)
                 logger.info(
-                    f"Using global {provider} API key as fallback for community server",
+                    f"Using global {provider} API key",
                     extra={
-                        "community_server_id": str(community_server_id),
+                        "community_server_id": str(community_server_id)
+                        if community_server_id
+                        else None,
                         "provider": provider,
                         "api_key_source": "global",
                     },

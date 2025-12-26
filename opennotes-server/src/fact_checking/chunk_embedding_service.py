@@ -83,7 +83,7 @@ class ChunkEmbeddingService:
         self,
         db: AsyncSession,
         chunk_texts: list[str],
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
     ) -> list[tuple[ChunkEmbedding, bool]]:
         """
         Get existing chunks or create new ones with embeddings in batch.
@@ -98,7 +98,8 @@ class ChunkEmbeddingService:
         Args:
             db: Database session
             chunk_texts: List of text contents to get or create chunks for
-            community_server_id: Community server UUID for LLM credentials
+            community_server_id: Community server UUID for LLM credentials,
+                or None for global fallback
 
         Returns:
             List of (ChunkEmbedding, is_created) tuples in the same order as input texts.
@@ -179,7 +180,7 @@ class ChunkEmbeddingService:
         self,
         db: AsyncSession,
         chunk_text: str,
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
     ) -> tuple[ChunkEmbedding, bool]:
         """
         Get an existing chunk by text or create a new one with embedding.
@@ -198,7 +199,8 @@ class ChunkEmbeddingService:
         Args:
             db: Database session
             chunk_text: The text content of the chunk
-            community_server_id: Community server UUID for LLM credentials
+            community_server_id: Community server UUID for LLM credentials,
+                or None for global fallback
 
         Returns:
             Tuple of (ChunkEmbedding, is_created) where is_created is True
@@ -411,7 +413,7 @@ class ChunkEmbeddingService:
         db: AsyncSession,
         fact_check_id: UUID,
         text: str,
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
     ) -> list[ChunkEmbedding]:
         """
         Chunk text and create/reuse embeddings for a FactCheckItem.
@@ -429,7 +431,8 @@ class ChunkEmbeddingService:
             db: Database session
             fact_check_id: UUID of the FactCheckItem
             text: Text content to chunk and embed
-            community_server_id: Community server UUID for LLM credentials
+            community_server_id: Community server UUID for LLM credentials,
+                or None for global fallback
 
         Returns:
             List of ChunkEmbedding records (new or existing)
@@ -478,7 +481,7 @@ class ChunkEmbeddingService:
         db: AsyncSession,
         previously_seen_id: UUID,
         text: str,
-        community_server_id: UUID,
+        community_server_id: UUID | None = None,
     ) -> list[ChunkEmbedding]:
         """
         Chunk text and create/reuse embeddings for a PreviouslySeenMessage.
@@ -496,7 +499,8 @@ class ChunkEmbeddingService:
             db: Database session
             previously_seen_id: UUID of the PreviouslySeenMessage
             text: Text content to chunk and embed
-            community_server_id: Community server UUID for LLM credentials
+            community_server_id: Community server UUID for LLM credentials,
+                or None for global fallback
 
         Returns:
             List of ChunkEmbedding records (new or existing)

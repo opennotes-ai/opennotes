@@ -36,7 +36,9 @@ class RechunkTaskBase(BaseModel):
     task_type: RechunkTaskType = Field(
         ..., description="Type of rechunk operation (fact_check or previously_seen)"
     )
-    community_server_id: UUID = Field(..., description="Community server ID for the operation")
+    community_server_id: UUID | None = Field(
+        None, description="Community server ID for LLM credentials (None uses global fallback)"
+    )
     batch_size: int = Field(..., ge=1, le=1000, description="Batch size for processing")
 
 

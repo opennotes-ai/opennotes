@@ -213,7 +213,7 @@ def get_chunk_embedding_service() -> ChunkEmbeddingService:
 
 async def process_fact_check_rechunk_batch(
     task_id: UUID,
-    community_server_id: UUID,
+    community_server_id: UUID | None,
     batch_size: int,
     db_url: str,
     redis_url: str,
@@ -231,7 +231,8 @@ async def process_fact_check_rechunk_batch(
 
     Args:
         task_id: UUID of the task for status tracking
-        community_server_id: UUID of the community server for LLM credentials
+        community_server_id: UUID of the community server for LLM credentials,
+            or None to use global fallback
         batch_size: Number of items to process in each batch
         db_url: Database connection URL
         redis_url: Redis connection URL for task tracking
@@ -291,7 +292,9 @@ async def process_fact_check_rechunk_batch(
                     "Processed fact check rechunk batch",
                     extra={
                         "task_id": str(task_id),
-                        "community_server_id": str(community_server_id),
+                        "community_server_id": str(community_server_id)
+                        if community_server_id
+                        else None,
                         "processed_count": processed_count,
                         "batch_offset": offset,
                     },
@@ -303,7 +306,7 @@ async def process_fact_check_rechunk_batch(
             "Completed fact check rechunking",
             extra={
                 "task_id": str(task_id),
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "total_processed": processed_count,
             },
         )
@@ -315,7 +318,7 @@ async def process_fact_check_rechunk_batch(
             "Failed to process fact check rechunk batch",
             extra={
                 "task_id": str(task_id),
-                "community_server_id": str(community_server_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
                 "processed_count": processed_count,
                 "error": error_msg,
             },
@@ -455,7 +458,8 @@ async def process_previously_seen_rechunk_batch(
     response_model=RechunkTaskResponse,
     summary="Get rechunk task status",
     description="Retrieve the current status and progress of a rechunk background task. "
-    "Requires admin or moderator access to the community server associated with the task.",
+    "If the task is associated with a community server, requires admin or moderator access. "
+    "If the task was started without a community server (global credentials), only requires authentication.",
 )
 async def get_rechunk_task_status(
     request: Request,
@@ -488,12 +492,13 @@ async def get_rechunk_task_status(
             detail=f"Task {task_id} not found or has expired",
         )
 
-    await verify_community_admin_by_uuid(
-        community_server_id=task.community_server_id,
-        current_user=user,
-        db=db,
-        request=request,
-    )
+    if task.community_server_id is not None:
+        await verify_community_admin_by_uuid(
+            community_server_id=task.community_server_id,
+            current_user=user,
+            db=db,
+            request=request,
+        )
 
     return task
 
@@ -504,7 +509,8 @@ async def get_rechunk_task_status(
     summary="Re-chunk and re-embed fact check items",
     description="Initiates a background task to re-chunk and re-embed all fact check items. "
     "Useful for updating embeddings after model changes or migration to chunk-based embeddings. "
-    "Requires admin or moderator access to the community server. "
+    "When community_server_id is provided, requires admin or moderator access. "
+    "When not provided, uses global LLM credentials and only requires authentication. "
     "Rate limited to 1 request per minute. Returns 409 if operation already in progress.",
 )
 @limiter.limit("1/minute")
@@ -514,7 +520,10 @@ async def rechunk_fact_check_items(
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
-    community_server_id: UUID = Query(..., description="Community server ID for LLM credentials"),
+    community_server_id: UUID | None = Query(
+        None,
+        description="Community server ID for LLM credentials (optional, uses global fallback if not provided)",
+    ),
     batch_size: int = Query(
         default=100,
         ge=1,
@@ -532,7 +541,8 @@ async def rechunk_fact_check_items(
     4. Generates new embeddings via LLMService
     5. Creates new FactCheckChunk entries
 
-    Requires admin or moderator access to the community server.
+    When community_server_id is provided, requires admin or moderator access
+    to that community. When not provided, uses global LLM credentials.
     Only one fact check rechunk operation can run at a time.
 
     Args:
@@ -541,7 +551,7 @@ async def rechunk_fact_check_items(
         user: Authenticated user (via API key or JWT)
         db: Database session
         tracker: Task tracker service
-        community_server_id: Community server UUID for LLM credentials
+        community_server_id: Community server UUID for LLM credentials (optional)
         batch_size: Number of items to process per batch (default 100, max 1000)
 
     Returns:
@@ -551,12 +561,13 @@ async def rechunk_fact_check_items(
         HTTPException: 403 if user lacks admin/moderator permission for the community
         HTTPException: 409 if a fact check rechunk operation is already in progress
     """
-    await verify_community_admin_by_uuid(
-        community_server_id=community_server_id,
-        current_user=user,
-        db=db,
-        request=request,
-    )
+    if community_server_id is not None:
+        await verify_community_admin_by_uuid(
+            community_server_id=community_server_id,
+            current_user=user,
+            db=db,
+            request=request,
+        )
 
     lock_acquired = await rechunk_lock_manager.acquire_lock("fact_check")
     if not lock_acquired:
@@ -597,7 +608,7 @@ async def rechunk_fact_check_items(
         extra={
             "task_id": str(task.task_id),
             "user_id": str(user.id),
-            "community_server_id": str(community_server_id),
+            "community_server_id": str(community_server_id) if community_server_id else None,
             "batch_size": batch_size,
             "total_items": total_items,
         },

@@ -699,6 +699,86 @@ class TestChunkEmbeddingServiceInit:
         assert service.llm_service == mock_llm_service
 
 
+class TestOptionalCommunityServerId:
+    """Tests for optional community_server_id (global fallback) behavior."""
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_chunk_with_none_community_server_id(self):
+        """Test that get_or_create_chunk works with None community_server_id (global fallback)."""
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_service.generate_embedding = AsyncMock(
+            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
+        )
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_text = "Test chunk with global fallback."
+        expected_chunk = ChunkEmbedding(
+            chunk_text=chunk_text,
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        expected_chunk.id = uuid4()
+
+        mock_db = _create_mock_db_for_insert(
+            chunk_exists_initially=False,
+            inserted=True,
+            returned_chunk=expected_chunk,
+        )
+
+        chunk, is_created = await service.get_or_create_chunk(
+            db=mock_db,
+            chunk_text=chunk_text,
+            community_server_id=None,
+        )
+
+        assert is_created is True
+        assert chunk.chunk_text == chunk_text
+        mock_llm_service.generate_embedding.assert_called_once_with(mock_db, chunk_text, None)
+
+    @pytest.mark.asyncio
+    async def test_chunk_and_embed_fact_check_with_none_community_server_id(self):
+        """Test that chunk_and_embed_fact_check works with None community_server_id."""
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Chunk one."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+
+        fact_check_id = uuid4()
+
+        chunks = await service.chunk_and_embed_fact_check(
+            db=mock_db,
+            fact_check_id=fact_check_id,
+            text="Chunk one.",
+            community_server_id=None,
+        )
+
+        service.get_or_create_chunks_batch.assert_called_once_with(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=None,
+        )
+        assert len(chunks) == 1
+
+
 class TestEmptyTextHandling:
     """Tests for edge cases with empty or minimal text."""
 
