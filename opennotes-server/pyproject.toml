@@ -49,6 +49,8 @@ dependencies = [
     "fastapi-filter>=2.0.1",
     "xxhash>=3.6.0",
     "litellm>=1.80.11,<2.0.0",
+    "chonkie[neural]>=0.4.0",
+    "vecs>=0.4.0",
 ]
 
 [project.optional-dependencies]
@@ -131,6 +133,7 @@ ignore = [
 "src/llm_config/manager.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/middleware/profile_tracking.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/database.py" = ["ARG002"]  # TypeDecorator methods require dialect param for base class compatibility
+"src/fact_checking/chunking_service.py" = ["PLC0415"]  # Lazy import for NeuralChunker to defer model loading
 
 [tool.ruff.format]
 quote-style = "double"
