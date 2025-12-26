@@ -45,13 +45,6 @@ def upgrade() -> None:
             comment="Unique text content of the chunk",
         ),
         sa.Column(
-            "chunk_index",
-            sa.Integer(),
-            nullable=False,
-            server_default="0",
-            comment="Position of this chunk in the original document (0-indexed)",
-        ),
-        sa.Column(
             "embedding",
             Vector(1536),
             nullable=True,
@@ -124,6 +117,13 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column(
+            "chunk_index",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+            comment="Position of this chunk in the fact-check document (0-indexed)",
+        ),
+        sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
@@ -157,6 +157,13 @@ def upgrade() -> None:
             UUID(as_uuid=True),
             sa.ForeignKey("previously_seen_messages.id", ondelete="CASCADE"),
             nullable=False,
+        ),
+        sa.Column(
+            "chunk_index",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+            comment="Position of this chunk in the message (0-indexed)",
         ),
         sa.Column(
             "created_at",

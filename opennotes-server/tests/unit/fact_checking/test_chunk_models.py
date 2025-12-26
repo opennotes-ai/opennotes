@@ -121,7 +121,7 @@ class TestFactCheckChunkModel:
         assert FactCheckChunk.__tablename__ == "fact_check_chunks"
 
     def test_model_creates_with_required_fields(self):
-        """Test FactCheckChunk can be instantiated with FK fields."""
+        """Test FactCheckChunk can be instantiated with FK and chunk_index fields."""
         from src.fact_checking.chunk_models import FactCheckChunk
 
         chunk_id = UUID("018f5e6e-1234-7890-abcd-ef1234567890")
@@ -130,11 +130,12 @@ class TestFactCheckChunkModel:
         join = FactCheckChunk(
             chunk_id=chunk_id,
             fact_check_id=fact_check_id,
+            chunk_index=0,
         )
 
         assert join.chunk_id == chunk_id
         assert join.fact_check_id == fact_check_id
-        assert join.chunk_index == 0  # Default value
+        assert join.chunk_index == 0
 
     def test_model_stores_chunk_index(self):
         """Test FactCheckChunk stores chunk_index for document position."""
@@ -198,7 +199,7 @@ class TestPreviouslySeenChunkModel:
         assert PreviouslySeenChunk.__tablename__ == "previously_seen_chunks"
 
     def test_model_creates_with_required_fields(self):
-        """Test PreviouslySeenChunk can be instantiated with FK fields."""
+        """Test PreviouslySeenChunk can be instantiated with FK and chunk_index fields."""
         from src.fact_checking.chunk_models import PreviouslySeenChunk
 
         chunk_id = UUID("018f5e6e-1234-7890-abcd-ef1234567890")
@@ -207,11 +208,12 @@ class TestPreviouslySeenChunkModel:
         join = PreviouslySeenChunk(
             chunk_id=chunk_id,
             previously_seen_id=previously_seen_id,
+            chunk_index=0,
         )
 
         assert join.chunk_id == chunk_id
         assert join.previously_seen_id == previously_seen_id
-        assert join.chunk_index == 0  # Default value
+        assert join.chunk_index == 0
 
     def test_model_stores_chunk_index(self):
         """Test PreviouslySeenChunk stores chunk_index for message position."""
