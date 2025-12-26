@@ -85,7 +85,6 @@ def upgrade() -> None:
         ),
     )
 
-    op.create_index("idx_chunk_embeddings_id", "chunk_embeddings", ["id"])
     op.create_index("idx_chunk_embeddings_is_common", "chunk_embeddings", ["is_common"])
     op.create_index(
         "idx_chunk_embeddings_embedding_version",
@@ -117,14 +116,12 @@ def upgrade() -> None:
             UUID(as_uuid=True),
             sa.ForeignKey("chunk_embeddings.id", ondelete="CASCADE"),
             nullable=False,
-            index=True,
         ),
         sa.Column(
             "fact_check_id",
             UUID(as_uuid=True),
             sa.ForeignKey("fact_check_items.id", ondelete="CASCADE"),
             nullable=False,
-            index=True,
         ),
         sa.Column(
             "created_at",
@@ -137,7 +134,6 @@ def upgrade() -> None:
         ),
     )
 
-    op.create_index("idx_fact_check_chunks_id", "fact_check_chunks", ["id"])
     op.create_index("idx_fact_check_chunks_chunk_id", "fact_check_chunks", ["chunk_id"])
     op.create_index("idx_fact_check_chunks_fact_check_id", "fact_check_chunks", ["fact_check_id"])
 
@@ -155,14 +151,12 @@ def upgrade() -> None:
             UUID(as_uuid=True),
             sa.ForeignKey("chunk_embeddings.id", ondelete="CASCADE"),
             nullable=False,
-            index=True,
         ),
         sa.Column(
             "previously_seen_id",
             UUID(as_uuid=True),
             sa.ForeignKey("previously_seen_messages.id", ondelete="CASCADE"),
             nullable=False,
-            index=True,
         ),
         sa.Column(
             "created_at",
@@ -177,7 +171,6 @@ def upgrade() -> None:
         ),
     )
 
-    op.create_index("idx_previously_seen_chunks_id", "previously_seen_chunks", ["id"])
     op.create_index("idx_previously_seen_chunks_chunk_id", "previously_seen_chunks", ["chunk_id"])
     op.create_index(
         "idx_previously_seen_chunks_previously_seen_id",
