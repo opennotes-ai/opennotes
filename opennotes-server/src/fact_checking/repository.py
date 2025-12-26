@@ -44,6 +44,13 @@ DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR = 0.5
 # - Keyword search is cheaper but still benefits from bounded results
 RRF_CTE_PRELIMIT = 20
 
+# Multiplier applied to RRF_CTE_PRELIMIT for chunk-level CTEs.
+# When searching chunks, multiple chunks can map to the same parent fact_check_item.
+# We fetch more chunk candidates (PRELIMIT * 3 = 60) to ensure enough unique
+# parent items remain after the GROUP BY aggregation step.
+# Higher values improve recall but increase query cost; 3x provides good balance.
+RRF_CHUNK_PRELIMIT_MULTIPLIER = 3
+
 
 @dataclass
 class HybridSearchResult:
@@ -321,7 +328,7 @@ async def hybrid_search_with_chunks(
                 AND (ce.embedding <=> CAST(:embedding AS vector)) <= :max_semantic_distance
                 {chunk_tags_filter}
             ORDER BY ce.embedding <=> CAST(:embedding AS vector)
-            LIMIT {RRF_CTE_PRELIMIT * 3}
+            LIMIT {RRF_CTE_PRELIMIT * RRF_CHUNK_PRELIMIT_MULTIPLIER}
         ),
         semantic_scores AS (
             -- Aggregate chunk semantic scores per fact_check_item using MAX()
@@ -353,14 +360,15 @@ async def hybrid_search_with_chunks(
                 ce.is_common,
                 ts_rank_cd(ce.search_vector, query) AS relevance,
                 RANK() OVER (ORDER BY ts_rank_cd(ce.search_vector, query) DESC) AS rank
-            FROM chunk_embeddings ce, plainto_tsquery('english', :query_text) query
+            FROM chunk_embeddings ce
+            CROSS JOIN LATERAL plainto_tsquery('english', :query_text) AS query
             JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
             JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
             WHERE ce.search_vector @@ query
                 AND ts_rank_cd(ce.search_vector, query) >= :min_keyword_relevance
                 {chunk_tags_filter}
             ORDER BY ts_rank_cd(ce.search_vector, query) DESC
-            LIMIT {RRF_CTE_PRELIMIT * 3}
+            LIMIT {RRF_CTE_PRELIMIT * RRF_CHUNK_PRELIMIT_MULTIPLIER}
         ),
         keyword_scores AS (
             -- Aggregate chunk keyword scores per fact_check_item using MAX()
