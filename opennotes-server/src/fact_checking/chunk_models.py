@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import xxhash
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
@@ -39,6 +40,17 @@ if TYPE_CHECKING:
     from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 
 
+def compute_chunk_text_hash(chunk_text: str) -> str:
+    """
+    Compute xxh3_64 hash of chunk text.
+
+    Returns a 16-character hexadecimal string representing the 64-bit hash.
+    Used for efficient uniqueness checking instead of indexing full text content,
+    which avoids PostgreSQL B-tree index size limits on TEXT columns.
+    """
+    return xxhash.xxh3_64(chunk_text.encode()).hexdigest()
+
+
 class ChunkEmbedding(Base):
     """
     Stores unique text chunks with their vector embeddings.
@@ -53,7 +65,8 @@ class ChunkEmbedding(Base):
 
     Attributes:
         id: Unique identifier (UUID v7)
-        chunk_text: The text content of the chunk (unique across all chunks)
+        chunk_text: The text content of the chunk
+        chunk_text_hash: xxh3_64 hash of chunk_text for efficient uniqueness (unique)
         embedding: Vector embedding for semantic search (1536 dimensions)
         embedding_provider: LLM provider used for embedding generation
         embedding_model: Model name used for embedding generation
@@ -68,7 +81,14 @@ class ChunkEmbedding(Base):
     )
 
     chunk_text: Mapped[str] = mapped_column(
-        Text, nullable=False, unique=True, comment="Unique text content of the chunk"
+        Text, nullable=False, comment="Text content of the chunk"
+    )
+
+    chunk_text_hash: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        unique=True,
+        comment="xxh3_64 hash of chunk_text for efficient uniqueness checking",
     )
 
     embedding: Mapped[Any | None] = mapped_column(
@@ -110,11 +130,13 @@ class ChunkEmbedding(Base):
     )
 
     def __init__(self, **kwargs: Any) -> None:
-        """Initialize ChunkEmbedding with default values."""
+        """Initialize ChunkEmbedding with default values and auto-compute hash."""
         if "is_common" not in kwargs:
             kwargs["is_common"] = False
         if "created_at" not in kwargs:
             kwargs["created_at"] = datetime.now(UTC)
+        if "chunk_text" in kwargs and "chunk_text_hash" not in kwargs:
+            kwargs["chunk_text_hash"] = compute_chunk_text_hash(kwargs["chunk_text"])
         super().__init__(**kwargs)
 
     fact_check_chunks: Mapped[list["FactCheckChunk"]] = relationship(

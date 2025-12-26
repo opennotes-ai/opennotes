@@ -401,6 +401,41 @@ def _build_chunk_embed_mock_sequence(
     return side_effects, created_chunks
 
 
+def _create_batch_mock_result(
+    chunk_texts: list[str],
+    *,
+    chunks_exist: list[bool] | None = None,
+) -> tuple[list[tuple[ChunkEmbedding, bool]], list[ChunkEmbedding]]:
+    """
+    Create mock return value for get_or_create_chunks_batch.
+
+    Args:
+        chunk_texts: List of chunk text contents
+        chunks_exist: Which chunks already existed (default: all new)
+
+    Returns:
+        Tuple of (batch result list, created chunks list)
+    """
+    if chunks_exist is None:
+        chunks_exist = [False] * len(chunk_texts)
+
+    created_chunks = []
+    batch_result = []
+
+    for i, chunk_text in enumerate(chunk_texts):
+        chunk = ChunkEmbedding(
+            chunk_text=chunk_text,
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        chunk.id = uuid4()
+        created_chunks.append(chunk)
+        batch_result.append((chunk, not chunks_exist[i]))
+
+    return batch_result, created_chunks
+
+
 class TestChunkAndEmbedFactCheck:
     """Tests for ChunkEmbeddingService.chunk_and_embed_fact_check() method."""
 
@@ -412,21 +447,18 @@ class TestChunkAndEmbedFactCheck:
         mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
 
         service = ChunkEmbeddingService(
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
-        mock_db.execute.side_effect = side_effects
-
-        added_objects = []
+        added_objects: list[object] = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
 
         fact_check_id = uuid4()
@@ -440,6 +472,11 @@ class TestChunkAndEmbedFactCheck:
         )
 
         mock_chunking_service.chunk_text.assert_called_once_with("Chunk one. Chunk two.")
+        service.get_or_create_chunks_batch.assert_called_once_with(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
         assert len(chunks) == 2
         assert all(isinstance(c, ChunkEmbedding) for c in chunks)
 
@@ -460,21 +497,18 @@ class TestChunkAndEmbedFactCheck:
         mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
 
         service = ChunkEmbeddingService(
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
-        mock_db.execute.side_effect = side_effects
-
-        added_objects = []
+        added_objects: list[object] = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
 
         fact_check_id = uuid4()
@@ -500,21 +534,19 @@ class TestChunkAndEmbedFactCheck:
         mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock()
 
         service = ChunkEmbeddingService(
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+
+        batch_result, expected_chunks = _create_batch_mock_result(chunk_texts, chunks_exist=[True])
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        side_effects, expected_chunks = _build_chunk_embed_mock_sequence(
-            chunk_texts, chunks_exist=[True]
-        )
-        mock_db.execute.side_effect = side_effects
-
-        added_objects = []
+        added_objects: list[object] = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
 
         chunks = await service.chunk_and_embed_fact_check(
@@ -524,7 +556,6 @@ class TestChunkAndEmbedFactCheck:
             community_server_id=uuid4(),
         )
 
-        mock_llm_service.generate_embedding.assert_not_called()
         assert len(chunks) == 1
         assert chunks[0] == expected_chunks[0]
 
@@ -543,21 +574,18 @@ class TestChunkAndEmbedPreviouslySeen:
         mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
 
         service = ChunkEmbeddingService(
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
-        mock_db.execute.side_effect = side_effects
-
-        added_objects = []
+        added_objects: list[object] = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
 
         previously_seen_id = uuid4()
@@ -571,6 +599,11 @@ class TestChunkAndEmbedPreviouslySeen:
         )
 
         mock_chunking_service.chunk_text.assert_called_once()
+        service.get_or_create_chunks_batch.assert_called_once_with(
+            db=mock_db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
         assert len(chunks) == 2
         assert all(isinstance(c, ChunkEmbedding) for c in chunks)
 
@@ -586,21 +619,18 @@ class TestChunkAndEmbedPreviouslySeen:
         mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock(
-            return_value=([0.1] * 1536, "litellm", "text-embedding-3-small")
-        )
 
         service = ChunkEmbeddingService(
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        side_effects, _ = _build_chunk_embed_mock_sequence(chunk_texts)
-        mock_db.execute.side_effect = side_effects
-
-        added_objects = []
+        added_objects: list[object] = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
 
         previously_seen_id = uuid4()
@@ -626,21 +656,19 @@ class TestChunkAndEmbedPreviouslySeen:
         mock_chunking_service.chunk_text.return_value = chunk_texts
 
         mock_llm_service = MagicMock()
-        mock_llm_service.generate_embedding = AsyncMock()
+        mock_llm_service.generate_embeddings_batch = AsyncMock()
 
         service = ChunkEmbeddingService(
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+
+        batch_result, expected_chunks = _create_batch_mock_result(chunk_texts, chunks_exist=[True])
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        side_effects, expected_chunks = _build_chunk_embed_mock_sequence(
-            chunk_texts, chunks_exist=[True]
-        )
-        mock_db.execute.side_effect = side_effects
-
-        added_objects = []
+        added_objects: list[object] = []
         mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
 
         chunks = await service.chunk_and_embed_previously_seen(
@@ -650,7 +678,6 @@ class TestChunkAndEmbedPreviouslySeen:
             community_server_id=uuid4(),
         )
 
-        mock_llm_service.generate_embedding.assert_not_called()
         assert len(chunks) == 1
         assert chunks[0] == expected_chunks[0]
 
@@ -687,6 +714,7 @@ class TestEmptyTextHandling:
             chunking_service=mock_chunking_service,
             llm_service=mock_llm_service,
         )
+        service.get_or_create_chunks_batch = AsyncMock(return_value=[])
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
@@ -888,3 +916,183 @@ class TestBatchUpdateIsCommonFlags:
 
         assert result == {chunk_id: False}
         assert mock_db.execute.call_count == 2
+
+
+class TestRechunkingIdempotency:
+    """Tests for re-chunking the same entity multiple times."""
+
+    @pytest.mark.asyncio
+    async def test_rechunk_fact_check_deletes_existing_entries(self):
+        """Test that re-chunking a fact check deletes existing join entries first."""
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Chunk one."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        added_objects: list[object] = []
+        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+
+        fact_check_id = uuid4()
+        community_server_id = uuid4()
+
+        await service.chunk_and_embed_fact_check(
+            db=mock_db,
+            fact_check_id=fact_check_id,
+            text="Chunk one.",
+            community_server_id=community_server_id,
+        )
+
+        assert mock_db.execute.call_count >= 1
+        first_call = mock_db.execute.call_args_list[0]
+        assert "DELETE" in str(first_call).upper() or "delete" in str(first_call)
+
+    @pytest.mark.asyncio
+    async def test_rechunk_previously_seen_deletes_existing_entries(self):
+        """Test that re-chunking a previously seen message deletes existing join entries first."""
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Chunk one."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        added_objects: list[object] = []
+        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+
+        previously_seen_id = uuid4()
+        community_server_id = uuid4()
+
+        await service.chunk_and_embed_previously_seen(
+            db=mock_db,
+            previously_seen_id=previously_seen_id,
+            text="Chunk one.",
+            community_server_id=community_server_id,
+        )
+
+        assert mock_db.execute.call_count >= 1
+        first_call = mock_db.execute.call_args_list[0]
+        assert "DELETE" in str(first_call).upper() or "delete" in str(first_call)
+
+    @pytest.mark.asyncio
+    async def test_rechunk_fact_check_twice_succeeds(self):
+        """Test that calling chunk_and_embed_fact_check twice doesn't raise errors."""
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Same chunk."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk = ChunkEmbedding(
+            chunk_text="Same chunk.",
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        chunk.id = uuid4()
+
+        service.get_or_create_chunks_batch = AsyncMock(return_value=[(chunk, False)])
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+
+        fact_check_id = uuid4()
+        community_server_id = uuid4()
+
+        chunks1 = await service.chunk_and_embed_fact_check(
+            db=mock_db,
+            fact_check_id=fact_check_id,
+            text="Same chunk.",
+            community_server_id=community_server_id,
+        )
+
+        mock_db.add.reset_mock()
+
+        chunks2 = await service.chunk_and_embed_fact_check(
+            db=mock_db,
+            fact_check_id=fact_check_id,
+            text="Same chunk.",
+            community_server_id=community_server_id,
+        )
+
+        assert len(chunks1) == 1
+        assert len(chunks2) == 1
+        assert chunks1[0] is chunk
+        assert chunks2[0] is chunk
+
+    @pytest.mark.asyncio
+    async def test_rechunk_previously_seen_twice_succeeds(self):
+        """Test that calling chunk_and_embed_previously_seen twice doesn't raise errors."""
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Same chunk."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk = ChunkEmbedding(
+            chunk_text="Same chunk.",
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        chunk.id = uuid4()
+
+        service.get_or_create_chunks_batch = AsyncMock(return_value=[(chunk, False)])
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+
+        previously_seen_id = uuid4()
+        community_server_id = uuid4()
+
+        chunks1 = await service.chunk_and_embed_previously_seen(
+            db=mock_db,
+            previously_seen_id=previously_seen_id,
+            text="Same chunk.",
+            community_server_id=community_server_id,
+        )
+
+        mock_db.add.reset_mock()
+
+        chunks2 = await service.chunk_and_embed_previously_seen(
+            db=mock_db,
+            previously_seen_id=previously_seen_id,
+            text="Same chunk.",
+            community_server_id=community_server_id,
+        )
+
+        assert len(chunks1) == 1
+        assert len(chunks2) == 1
+        assert chunks1[0] is chunk
+        assert chunks2[0] is chunk

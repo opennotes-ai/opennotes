@@ -14,6 +14,14 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from tenacity import (
+    RetryError,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from src.monitoring import get_logger
 
 if TYPE_CHECKING:
@@ -138,48 +146,38 @@ class ChunkingService:
 
     def _initialize_chunker(self) -> "NeuralChunker":
         """
-        Initialize the NeuralChunker with error handling.
+        Initialize the NeuralChunker with error handling and retry logic.
+
+        Uses tenacity to automatically retry on transient network failures
+        (OSError, ConnectionError, TimeoutError) with exponential backoff.
+        Maximum 3 attempts with waits of 2s, 4s between retries.
 
         Returns:
             The initialized NeuralChunker instance
 
         Raises:
-            ChunkingModelLoadError: If initialization fails
+            ChunkingModelLoadError: If initialization fails after all retries
         """
-        from chonkie.chunker.neural import NeuralChunker
+        logger.info(
+            "Initializing NeuralChunker with model=%s, device=%s",
+            self._model,
+            self._device_map,
+        )
 
         try:
-            logger.info(
-                "Initializing NeuralChunker with model=%s, device=%s",
-                self._model,
-                self._device_map,
-            )
-            chunker = NeuralChunker(
-                model=self._model,
-                device_map=self._device_map,
-                min_characters_per_chunk=self._min_characters_per_chunk,
-            )
+            chunker = self._load_chunker_with_retry()
             logger.info("NeuralChunker initialized successfully")
             return chunker
 
-        except (ConnectionError, TimeoutError) as e:
+        except RetryError as e:
+            original = e.last_attempt.exception() if e.last_attempt else None
             error_msg = (
-                f"Network error while downloading chunking model '{self._model}': {e}. "
-                "Please check your internet connection and try again."
+                f"Failed to load chunking model '{self._model}' after 3 attempts. "
+                f"Last error: {original}. "
+                "Please check your internet connection and try again later."
             )
             logger.error(error_msg)
-            raise ChunkingModelLoadError(error_msg, original_error=e) from e
-
-        except OSError as e:
-            error_msg = (
-                f"Failed to load chunking model '{self._model}': {e}. "
-                "This may be due to network issues during model download, "
-                "invalid model identifier, or insufficient disk space. "
-                "Check your internet connection and verify the model exists "
-                "on Hugging Face Hub."
-            )
-            logger.error(error_msg)
-            raise ChunkingModelLoadError(error_msg, original_error=e) from e
+            raise ChunkingModelLoadError(error_msg, original_error=original) from e
 
         except ValueError as e:
             error_msg = (
@@ -190,11 +188,49 @@ class ChunkingService:
             raise ChunkingModelLoadError(error_msg, original_error=e) from e
 
         except Exception as e:
-            error_msg = (
-                f"Unexpected error loading chunking model '{self._model}': {type(e).__name__}: {e}"
-            )
+            if isinstance(e, NETWORK_RETRY_EXCEPTIONS):
+                error_msg = (
+                    f"Network error while downloading chunking model '{self._model}': {e}. "
+                    "Please check your internet connection and try again."
+                )
+            else:
+                error_msg = (
+                    f"Unexpected error loading chunking model '{self._model}': "
+                    f"{type(e).__name__}: {e}"
+                )
             logger.exception(error_msg)
             raise ChunkingModelLoadError(error_msg, original_error=e) from e
+
+    @retry(
+        retry=retry_if_exception_type(NETWORK_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=8),
+        before_sleep=_log_retry_attempt,
+        reraise=False,
+    )
+    def _load_chunker_with_retry(self) -> "NeuralChunker":
+        """
+        Load the NeuralChunker with automatic retry on network failures.
+
+        This method is decorated with tenacity retry logic to handle transient
+        network issues during model download from Hugging Face Hub.
+
+        Returns:
+            The initialized NeuralChunker instance
+
+        Raises:
+            OSError: On file system or network errors (will be retried)
+            ConnectionError: On connection failures (will be retried)
+            TimeoutError: On timeout (will be retried)
+            ValueError: On invalid configuration (not retried)
+        """
+        from chonkie.chunker.neural import NeuralChunker
+
+        return NeuralChunker(
+            model=self._model,
+            device_map=self._device_map,
+            min_characters_per_chunk=self._min_characters_per_chunk,
+        )
 
     def chunk_text(self, text: str) -> list[str]:
         """

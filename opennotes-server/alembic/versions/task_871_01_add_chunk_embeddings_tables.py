@@ -6,6 +6,7 @@ Create three tables for chunk-based embeddings:
 - previously_seen_chunks: Join table linking chunks to previously_seen_messages
 
 Includes:
+- xxh3_64 hash column for efficient uniqueness checking (avoids B-tree index size limits on TEXT)
 - HNSW index for vector similarity search
 - GIN index on tsvector for full-text search
 - Trigger to auto-populate search_vector on insert/update
@@ -46,8 +47,14 @@ def upgrade() -> None:
             "chunk_text",
             sa.Text(),
             nullable=False,
+            comment="Text content of the chunk",
+        ),
+        sa.Column(
+            "chunk_text_hash",
+            sa.String(16),
+            nullable=False,
             unique=True,
-            comment="Unique text content of the chunk",
+            comment="xxh3_64 hash of chunk_text for efficient uniqueness checking",
         ),
         sa.Column(
             "embedding",

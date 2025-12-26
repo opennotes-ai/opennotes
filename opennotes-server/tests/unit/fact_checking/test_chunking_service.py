@@ -426,8 +426,8 @@ class TestChunkerErrorHandling:
     """Test error handling in chunker initialization."""
 
     @patch("chonkie.chunker.neural.NeuralChunker")
-    def test_oserror_raises_chunking_model_load_error(self, mock_neural_chunker):
-        """Test OSError during init raises ChunkingModelLoadError."""
+    def test_oserror_retries_and_raises_chunking_model_load_error(self, mock_neural_chunker):
+        """Test OSError during init retries and raises ChunkingModelLoadError."""
         import pytest
 
         from src.fact_checking.chunking_service import (
@@ -442,13 +442,16 @@ class TestChunkerErrorHandling:
         with pytest.raises(ChunkingModelLoadError) as exc_info:
             _ = service.chunker
 
-        assert "Failed to load chunking model" in str(exc_info.value)
+        assert "after 3 attempts" in str(exc_info.value)
         assert exc_info.value.original_error is not None
         assert isinstance(exc_info.value.original_error, OSError)
+        assert mock_neural_chunker.call_count == 3
 
     @patch("chonkie.chunker.neural.NeuralChunker")
-    def test_connection_error_raises_chunking_model_load_error(self, mock_neural_chunker):
-        """Test ConnectionError during init raises ChunkingModelLoadError."""
+    def test_connection_error_retries_and_raises_chunking_model_load_error(
+        self, mock_neural_chunker
+    ):
+        """Test ConnectionError during init retries and raises ChunkingModelLoadError."""
         import pytest
 
         from src.fact_checking.chunking_service import (
@@ -463,12 +466,13 @@ class TestChunkerErrorHandling:
         with pytest.raises(ChunkingModelLoadError) as exc_info:
             _ = service.chunker
 
-        assert "Network error" in str(exc_info.value)
+        assert "after 3 attempts" in str(exc_info.value)
         assert exc_info.value.original_error is not None
+        assert mock_neural_chunker.call_count == 3
 
     @patch("chonkie.chunker.neural.NeuralChunker")
-    def test_timeout_error_raises_chunking_model_load_error(self, mock_neural_chunker):
-        """Test TimeoutError during init raises ChunkingModelLoadError."""
+    def test_timeout_error_retries_and_raises_chunking_model_load_error(self, mock_neural_chunker):
+        """Test TimeoutError during init retries and raises ChunkingModelLoadError."""
         import pytest
 
         from src.fact_checking.chunking_service import (
@@ -483,12 +487,13 @@ class TestChunkerErrorHandling:
         with pytest.raises(ChunkingModelLoadError) as exc_info:
             _ = service.chunker
 
-        assert "Network error" in str(exc_info.value)
+        assert "after 3 attempts" in str(exc_info.value)
         assert exc_info.value.original_error is not None
+        assert mock_neural_chunker.call_count == 3
 
     @patch("chonkie.chunker.neural.NeuralChunker")
-    def test_value_error_raises_chunking_model_load_error(self, mock_neural_chunker):
-        """Test ValueError during init raises ChunkingModelLoadError."""
+    def test_value_error_does_not_retry(self, mock_neural_chunker):
+        """Test ValueError during init does not retry."""
         import pytest
 
         from src.fact_checking.chunking_service import (
@@ -505,10 +510,11 @@ class TestChunkerErrorHandling:
 
         assert "Invalid configuration" in str(exc_info.value)
         assert exc_info.value.original_error is not None
+        assert mock_neural_chunker.call_count == 1
 
     @patch("chonkie.chunker.neural.NeuralChunker")
-    def test_generic_exception_raises_chunking_model_load_error(self, mock_neural_chunker):
-        """Test generic Exception during init raises ChunkingModelLoadError."""
+    def test_generic_exception_does_not_retry(self, mock_neural_chunker):
+        """Test generic Exception during init does not retry."""
         import pytest
 
         from src.fact_checking.chunking_service import (
@@ -526,6 +532,7 @@ class TestChunkerErrorHandling:
         assert "Unexpected error" in str(exc_info.value)
         assert "RuntimeError" in str(exc_info.value)
         assert exc_info.value.original_error is not None
+        assert mock_neural_chunker.call_count == 1
 
     @patch("chonkie.chunker.neural.NeuralChunker")
     def test_error_message_includes_model_name(self, mock_neural_chunker):
@@ -545,3 +552,38 @@ class TestChunkerErrorHandling:
             _ = service.chunker
 
         assert "custom/test-model" in str(exc_info.value)
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_retry_succeeds_on_second_attempt(self, mock_neural_chunker):
+        """Test retry mechanism succeeds when network error is transient."""
+        from src.fact_checking.chunking_service import ChunkingService
+
+        mock_instance = MagicMock()
+        mock_neural_chunker.side_effect = [
+            ConnectionError("First attempt failed"),
+            mock_instance,
+        ]
+
+        service = ChunkingService()
+        result = service.chunker
+
+        assert result is mock_instance
+        assert mock_neural_chunker.call_count == 2
+
+    @patch("chonkie.chunker.neural.NeuralChunker")
+    def test_retry_succeeds_on_third_attempt(self, mock_neural_chunker):
+        """Test retry mechanism succeeds when network errors occur twice."""
+        from src.fact_checking.chunking_service import ChunkingService
+
+        mock_instance = MagicMock()
+        mock_neural_chunker.side_effect = [
+            TimeoutError("First attempt timed out"),
+            OSError("Second attempt failed"),
+            mock_instance,
+        ]
+
+        service = ChunkingService()
+        result = service.chunker
+
+        assert result is mock_instance
+        assert mock_neural_chunker.call_count == 3

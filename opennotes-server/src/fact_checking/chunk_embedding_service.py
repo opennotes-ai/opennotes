@@ -18,7 +18,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk, PreviouslySeenChunk
+from src.fact_checking.chunk_models import (
+    ChunkEmbedding,
+    FactCheckChunk,
+    PreviouslySeenChunk,
+    compute_chunk_text_hash,
+)
 from src.fact_checking.chunking_service import ChunkingService
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
@@ -74,6 +79,102 @@ class ChunkEmbeddingService:
         self.chunking_service = chunking_service
         self.llm_service = llm_service
 
+    async def get_or_create_chunks_batch(
+        self,
+        db: AsyncSession,
+        chunk_texts: list[str],
+        community_server_id: UUID,
+    ) -> list[tuple[ChunkEmbedding, bool]]:
+        """
+        Get existing chunks or create new ones with embeddings in batch.
+
+        Optimizes for performance by:
+        1. Batch querying all existing chunks in a single DB query
+        2. Batch generating embeddings for missing chunks in a single API call
+        3. Batch inserting new chunks with ON CONFLICT DO NOTHING
+
+        This reduces API calls from O(N) to O(1) and DB round trips significantly.
+
+        Args:
+            db: Database session
+            chunk_texts: List of text contents to get or create chunks for
+            community_server_id: Community server UUID for LLM credentials
+
+        Returns:
+            List of (ChunkEmbedding, is_created) tuples in the same order as input texts.
+            is_created is True if a new chunk was created, False if existing was found.
+        """
+        if not chunk_texts:
+            return []
+
+        unique_texts = list(dict.fromkeys(chunk_texts))
+        text_to_hash = {text: compute_chunk_text_hash(text) for text in unique_texts}
+        unique_hashes = list(text_to_hash.values())
+
+        result = await db.execute(
+            select(ChunkEmbedding).where(ChunkEmbedding.chunk_text_hash.in_(unique_hashes))
+        )
+        existing_by_hash = {chunk.chunk_text_hash: chunk for chunk in result.scalars().all()}
+
+        missing_texts = [t for t in unique_texts if text_to_hash[t] not in existing_by_hash]
+
+        new_by_hash: dict[str, ChunkEmbedding] = {}
+        if missing_texts:
+            embeddings = await self.llm_service.generate_embeddings_batch(
+                db, missing_texts, community_server_id
+            )
+
+            now = datetime.now(UTC)
+
+            for text, (embedding, provider, model) in zip(missing_texts, embeddings, strict=True):
+                chunk_hash = text_to_hash[text]
+                stmt = (
+                    pg_insert(ChunkEmbedding)
+                    .values(
+                        chunk_text=text,
+                        chunk_text_hash=chunk_hash,
+                        embedding=embedding,
+                        embedding_provider=provider,
+                        embedding_model=model,
+                        is_common=False,
+                        created_at=now,
+                    )
+                    .on_conflict_do_nothing(index_elements=["chunk_text_hash"])
+                )
+                await db.execute(stmt)
+
+            await db.flush()
+
+            missing_hashes = [text_to_hash[t] for t in missing_texts]
+            result = await db.execute(
+                select(ChunkEmbedding).where(ChunkEmbedding.chunk_text_hash.in_(missing_hashes))
+            )
+            for chunk in result.scalars().all():
+                new_by_hash[chunk.chunk_text_hash] = chunk
+
+        text_to_chunk: dict[str, tuple[ChunkEmbedding, bool]] = {}
+        for text in unique_texts:
+            chunk_hash = text_to_hash[text]
+            if chunk_hash in existing_by_hash:
+                text_to_chunk[text] = (existing_by_hash[chunk_hash], False)
+            else:
+                text_to_chunk[text] = (new_by_hash[chunk_hash], True)
+
+        results = [text_to_chunk[text] for text in chunk_texts]
+
+        new_count = sum(1 for _, is_created in text_to_chunk.values() if is_created)
+        logger.info(
+            "Batch get_or_create chunks completed",
+            extra={
+                "total_texts": len(chunk_texts),
+                "unique_texts": len(unique_texts),
+                "existing_count": len(existing_by_hash),
+                "new_count": new_count,
+            },
+        )
+
+        return results
+
     async def get_or_create_chunk(
         self,
         db: AsyncSession,
@@ -103,8 +204,10 @@ class ChunkEmbeddingService:
             Tuple of (ChunkEmbedding, is_created) where is_created is True
             if a new chunk was created, False if existing was found
         """
+        chunk_hash = compute_chunk_text_hash(chunk_text)
+
         result = await db.execute(
-            select(ChunkEmbedding).where(ChunkEmbedding.chunk_text == chunk_text)
+            select(ChunkEmbedding).where(ChunkEmbedding.chunk_text_hash == chunk_hash)
         )
         existing = result.scalar_one_or_none()
 
@@ -114,6 +217,7 @@ class ChunkEmbeddingService:
                 extra={
                     "chunk_id": str(existing.id),
                     "text_length": len(chunk_text),
+                    "chunk_hash": chunk_hash,
                 },
             )
             return existing, False
@@ -128,20 +232,21 @@ class ChunkEmbeddingService:
             pg_insert(ChunkEmbedding)
             .values(
                 chunk_text=chunk_text,
+                chunk_text_hash=chunk_hash,
                 embedding=embedding,
                 embedding_provider=provider,
                 embedding_model=model,
                 is_common=False,
                 created_at=now,
             )
-            .on_conflict_do_nothing(index_elements=["chunk_text"])
+            .on_conflict_do_nothing(index_elements=["chunk_text_hash"])
         )
 
         insert_result = await db.execute(stmt)
         await db.flush()
 
         result = await db.execute(
-            select(ChunkEmbedding).where(ChunkEmbedding.chunk_text == chunk_text)
+            select(ChunkEmbedding).where(ChunkEmbedding.chunk_text_hash == chunk_hash)
         )
         chunk = result.scalar_one()
 
@@ -154,6 +259,7 @@ class ChunkEmbeddingService:
                 extra={
                     "chunk_id": str(chunk.id),
                     "text_length": len(chunk_text),
+                    "chunk_hash": chunk_hash,
                     "embedding_provider": provider,
                     "embedding_model": model,
                 },
@@ -164,6 +270,7 @@ class ChunkEmbeddingService:
                 extra={
                     "chunk_id": str(chunk.id),
                     "text_length": len(chunk_text),
+                    "chunk_hash": chunk_hash,
                 },
             )
 
@@ -312,6 +419,8 @@ class ChunkEmbeddingService:
         Splits text into semantic chunks, creates or retrieves ChunkEmbedding
         records for each, and creates FactCheckChunk join entries.
 
+        Uses batch embedding for optimal performance when processing multiple chunks.
+
         Args:
             db: Database session
             fact_check_id: UUID of the FactCheckItem
@@ -327,15 +436,16 @@ class ChunkEmbeddingService:
 
         chunk_texts = self.chunking_service.chunk_text(text)
 
+        chunk_results = await self.get_or_create_chunks_batch(
+            db=db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
+
         chunks: list[ChunkEmbedding] = []
         chunk_ids: list[UUID] = []
 
-        for idx, chunk_text in enumerate(chunk_texts):
-            chunk, _ = await self.get_or_create_chunk(
-                db=db,
-                chunk_text=chunk_text,
-                community_server_id=community_server_id,
-            )
+        for idx, (chunk, _) in enumerate(chunk_results):
             chunks.append(chunk)
             chunk_ids.append(chunk.id)
 
@@ -372,6 +482,8 @@ class ChunkEmbeddingService:
         Splits text into semantic chunks, creates or retrieves ChunkEmbedding
         records for each, and creates PreviouslySeenChunk join entries.
 
+        Uses batch embedding for optimal performance when processing multiple chunks.
+
         Args:
             db: Database session
             previously_seen_id: UUID of the PreviouslySeenMessage
@@ -389,15 +501,16 @@ class ChunkEmbeddingService:
 
         chunk_texts = self.chunking_service.chunk_text(text)
 
+        chunk_results = await self.get_or_create_chunks_batch(
+            db=db,
+            chunk_texts=chunk_texts,
+            community_server_id=community_server_id,
+        )
+
         chunks: list[ChunkEmbedding] = []
         chunk_ids: list[UUID] = []
 
-        for idx, chunk_text in enumerate(chunk_texts):
-            chunk, _ = await self.get_or_create_chunk(
-                db=db,
-                chunk_text=chunk_text,
-                community_server_id=community_server_id,
-            )
+        for idx, (chunk, _) in enumerate(chunk_results):
             chunks.append(chunk)
             chunk_ids.append(chunk.id)
 
