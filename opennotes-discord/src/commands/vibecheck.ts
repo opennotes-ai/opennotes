@@ -40,7 +40,7 @@ export const VIBECHECK_COOLDOWN_MS = 1 * 60 * 1000;
 
 const EXPLANATION_CONCURRENCY_LIMIT = 5;
 
-const EXPLANATION_CACHE_TTL = 3600;
+const EXPLANATION_CACHE_TTL = 28800;
 
 export function getExplanationsCacheKey(scanId: string): string {
   return `vibecheck:explanations:${scanId}`;
