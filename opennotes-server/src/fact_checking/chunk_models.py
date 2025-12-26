@@ -28,6 +28,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -63,7 +64,7 @@ class ChunkEmbedding(Base):
     __tablename__ = "chunk_embeddings"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()"), index=True
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
 
     chunk_text: Mapped[str] = mapped_column(
@@ -98,7 +99,14 @@ class ChunkEmbedding(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
+        server_default=text("NOW()"),
         comment="Timestamp when record was created",
+    )
+
+    search_vector: Mapped[Any | None] = mapped_column(
+        TSVECTOR,
+        nullable=True,
+        comment="Full-text search vector for chunk text (auto-populated by trigger)",
     )
 
     def __init__(self, **kwargs: Any) -> None:
@@ -127,6 +135,7 @@ class ChunkEmbedding(Base):
         ),
         Index("idx_chunk_embeddings_is_common", "is_common"),
         Index("idx_chunk_embeddings_embedding_version", "embedding_provider", "embedding_model"),
+        Index("idx_chunk_embeddings_search_vector", "search_vector", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:
@@ -153,7 +162,7 @@ class FactCheckChunk(Base):
     __tablename__ = "fact_check_chunks"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()"), index=True
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
 
     chunk_id: Mapped[UUID] = mapped_column(
@@ -172,6 +181,7 @@ class FactCheckChunk(Base):
         Integer,
         nullable=False,
         default=0,
+        server_default="0",
         comment="Position of this chunk in the fact-check document (0-indexed)",
     )
 
@@ -179,6 +189,7 @@ class FactCheckChunk(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
+        server_default=text("NOW()"),
     )
 
     chunk: Mapped["ChunkEmbedding"] = relationship(
@@ -215,7 +226,7 @@ class PreviouslySeenChunk(Base):
     __tablename__ = "previously_seen_chunks"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()"), index=True
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("uuidv7()")
     )
 
     chunk_id: Mapped[UUID] = mapped_column(
@@ -234,6 +245,7 @@ class PreviouslySeenChunk(Base):
         Integer,
         nullable=False,
         default=0,
+        server_default="0",
         comment="Position of this chunk in the message (0-indexed)",
     )
 
@@ -241,6 +253,7 @@ class PreviouslySeenChunk(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
+        server_default=text("NOW()"),
     )
 
     chunk: Mapped["ChunkEmbedding"] = relationship(

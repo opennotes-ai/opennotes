@@ -242,21 +242,21 @@ async def hybrid_search_with_chunks(
     """
     Perform hybrid search using chunk embeddings with TF-IDF-like weight reduction.
 
-    This function searches through chunk_embeddings instead of the deprecated
-    embedding column on fact_check_items. It applies weight reduction to common
-    chunks (is_common=True) similar to inverse document frequency in TF-IDF,
+    This function searches through chunk_embeddings for both semantic and keyword
+    searches, providing true chunk-level hybrid search. It applies weight reduction
+    to common chunks (is_common=True) similar to inverse document frequency in TF-IDF,
     reducing the contribution of frequently occurring text patterns.
 
     Uses Reciprocal Rank Fusion (RRF) to combine rankings from:
-    - Chunk-based semantic search via chunk_embeddings table (pgvector HNSW index)
-    - PostgreSQL full-text search on fact_check_items (ts_rank_cd with weighted tsvector)
+    - Chunk-based semantic search via chunk_embeddings.embedding (pgvector HNSW index)
+    - Chunk-based full-text search via chunk_embeddings.search_vector (GIN index)
 
-    The RRF formula with weight reduction for semantic chunks:
+    The RRF formula with weight reduction for both semantic and keyword chunks:
     - Non-common chunks: score = 1/(k + rank)
     - Common chunks: score = (1/(k + rank)) * common_chunk_weight_factor
 
     Multiple chunks per fact_check_item are aggregated using MAX() to select
-    the best-matching chunk's score.
+    the best-matching chunk's score from each search method.
 
     Args:
         session: Async database session
@@ -323,8 +323,8 @@ async def hybrid_search_with_chunks(
             ORDER BY ce.embedding <=> CAST(:embedding AS vector)
             LIMIT {RRF_CTE_PRELIMIT * 3}
         ),
-        chunk_scores AS (
-            -- Aggregate chunk scores per fact_check_item using MAX()
+        semantic_scores AS (
+            -- Aggregate chunk semantic scores per fact_check_item using MAX()
             -- Apply weight reduction for common chunks (TF-IDF-like IDF)
             SELECT
                 fact_check_id,
@@ -336,21 +336,51 @@ async def hybrid_search_with_chunks(
             GROUP BY fact_check_id
         ),
         semantic AS (
-            -- Re-rank by aggregated chunk scores
+            -- Re-rank by aggregated chunk semantic scores
             SELECT
                 fact_check_id AS id,
                 RANK() OVER (ORDER BY semantic_score DESC) AS rank
-            FROM chunk_scores
+            FROM semantic_scores
             ORDER BY semantic_score DESC
             LIMIT {RRF_CTE_PRELIMIT}
         ),
+        chunk_keyword AS (
+            -- Find keyword-matching chunks using GIN index on search_vector
+            -- Join fact_check_items early to apply tags filter before LIMIT
+            SELECT
+                ce.id AS chunk_id,
+                fcc.fact_check_id,
+                ce.is_common,
+                ts_rank_cd(ce.search_vector, query) AS relevance,
+                RANK() OVER (ORDER BY ts_rank_cd(ce.search_vector, query) DESC) AS rank
+            FROM chunk_embeddings ce, plainto_tsquery('english', :query_text) query
+            JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
+            JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
+            WHERE ce.search_vector @@ query
+                AND ts_rank_cd(ce.search_vector, query) >= :min_keyword_relevance
+                {chunk_tags_filter}
+            ORDER BY ts_rank_cd(ce.search_vector, query) DESC
+            LIMIT {RRF_CTE_PRELIMIT * 3}
+        ),
+        keyword_scores AS (
+            -- Aggregate chunk keyword scores per fact_check_item using MAX()
+            -- Apply weight reduction for common chunks (TF-IDF-like IDF)
+            SELECT
+                fact_check_id,
+                MAX(
+                    (1.0 / ({RRF_K_CONSTANT} + rank)) *
+                    CASE WHEN is_common THEN :common_weight ELSE 1.0 END
+                ) AS keyword_score
+            FROM chunk_keyword
+            GROUP BY fact_check_id
+        ),
         keyword AS (
-            SELECT id, RANK() OVER (ORDER BY ts_rank_cd(search_vector, query) DESC) AS rank
-            FROM fact_check_items, plainto_tsquery('english', :query_text) query
-            WHERE search_vector @@ query
-                AND ts_rank_cd(search_vector, query) >= :min_keyword_relevance
-                {tags_filter.replace("fci.", "")}
-            ORDER BY ts_rank_cd(search_vector, query) DESC
+            -- Re-rank by aggregated chunk keyword scores
+            SELECT
+                fact_check_id AS id,
+                RANK() OVER (ORDER BY keyword_score DESC) AS rank
+            FROM keyword_scores
+            ORDER BY keyword_score DESC
             LIMIT {RRF_CTE_PRELIMIT}
         )
         SELECT

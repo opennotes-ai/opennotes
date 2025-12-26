@@ -10,10 +10,12 @@ This module provides the ChunkEmbeddingService which handles:
 """
 
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import func, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk, PreviouslySeenChunk
@@ -128,7 +130,8 @@ class ChunkEmbeddingService:
         )
         chunk = result.scalar_one()
 
-        is_created = insert_result.rowcount > 0
+        cursor_result = cast(CursorResult[Any], insert_result)
+        is_created = cursor_result.rowcount > 0
 
         if is_created:
             logger.info(

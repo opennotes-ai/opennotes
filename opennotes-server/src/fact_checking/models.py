@@ -72,13 +72,13 @@ class FactCheckItem(Base):
     embedding_provider: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
-        comment="DEPRECATED: Use chunk_embeddings table. LLM provider used for embedding generation.",
+        comment="LLM provider used for embedding generation (e.g., 'openai', 'anthropic')",
     )
     # DEPRECATED: Use chunk_embeddings table instead. Will be removed in future version.
     embedding_model: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
-        comment="DEPRECATED: Use chunk_embeddings table. Model name used for embedding generation.",
+        comment="Model name used for embedding generation (e.g., 'text-embedding-3-small')",
     )
 
     # Flexible metadata for dataset-specific fields
