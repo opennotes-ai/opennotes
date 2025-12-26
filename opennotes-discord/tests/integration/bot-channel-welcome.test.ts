@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { ChannelType, Collection, MessageFlags } from 'discord.js';
+import { ChannelType, Collection, ComponentType, MessageFlags, MessageType } from 'discord.js';
 import {
   loggerFactory,
   discordGuildFactory,
@@ -15,7 +15,7 @@ jest.unstable_mockModule('../../src/logger.js', () => ({
 
 const { BotChannelService } = await import('../../src/services/BotChannelService.js');
 const { GuildOnboardingService } = await import('../../src/services/GuildOnboardingService.js');
-const { buildWelcomeContainer } = await import('../../src/lib/welcome-content.js');
+const { buildWelcomeContainer, WELCOME_MESSAGE_REVISION } = await import('../../src/lib/welcome-content.js');
 
 describe('Bot Channel Welcome Flow Integration', () => {
   let botChannelService: InstanceType<typeof BotChannelService>;
@@ -63,6 +63,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
       },
       messages: {
         fetchPinned: jest.fn<() => Promise<any>>().mockResolvedValue(new Collection()),
+        fetch: jest.fn<() => Promise<any>>().mockResolvedValue(new Collection()),
       },
     };
 
@@ -336,6 +337,108 @@ describe('Bot Channel Welcome Flow Integration', () => {
 
       expect(result.wasCreated).toBe(false);
       expect(result.channel).toBe(upperCaseChannel);
+    });
+  });
+
+  describe('Revision-based Idempotency', () => {
+    function createMockPinnedMessage(revision: string, messageId = 'msg-123') {
+      return {
+        id: messageId,
+        author: { id: 'bot-user-123' },
+        createdTimestamp: Date.now(),
+        type: 0,
+        components: [
+          {
+            type: ComponentType.Container,
+            components: [
+              {
+                toJSON: () => ({
+                  type: ComponentType.TextDisplay,
+                  content: `-# Revision ${revision}`,
+                }),
+              },
+            ],
+          },
+        ],
+        delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      };
+    }
+
+    it('should include revision string in welcome message', async () => {
+      await guildOnboardingService.postWelcomeToChannel(mockChannel);
+
+      const sendCall = mockChannel.send.mock.calls[0][0];
+      const container = sendCall.components[0];
+      const allContent = JSON.stringify(container.toJSON().components);
+
+      expect(allContent).toContain('Revision');
+      expect(allContent).toContain(WELCOME_MESSAGE_REVISION);
+    });
+
+    it('should skip posting if revision matches existing pinned message', async () => {
+      const existingMessage = createMockPinnedMessage(WELCOME_MESSAGE_REVISION);
+      const pinnedCollection = new Collection([['msg-123', existingMessage]]);
+      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedCollection);
+      mockChannel.messages.fetch.mockResolvedValue(new Collection());
+
+      await guildOnboardingService.postWelcomeToChannel(mockChannel);
+
+      expect(mockChannel.send).not.toHaveBeenCalled();
+      expect(existingMessage.delete).not.toHaveBeenCalled();
+    });
+
+    it('should replace message if revision differs', async () => {
+      const existingMessage = createMockPinnedMessage('2024-01-01.1');
+      const pinnedCollection = new Collection([['msg-123', existingMessage]]);
+      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedCollection);
+      mockChannel.messages.fetch.mockResolvedValue(new Collection());
+
+      const newMessage = {
+        id: 'new-msg-456',
+        pin: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        pinned: false,
+        channel: mockChannel,
+      };
+      mockChannel.send.mockResolvedValue(newMessage);
+
+      await guildOnboardingService.postWelcomeToChannel(mockChannel);
+
+      expect(existingMessage.delete).toHaveBeenCalled();
+      expect(mockChannel.send).toHaveBeenCalled();
+    });
+
+    it('should keep most recent message when multiple welcome messages exist', async () => {
+      const olderMessage = createMockPinnedMessage(WELCOME_MESSAGE_REVISION, 'old-msg');
+      olderMessage.createdTimestamp = Date.now() - 10000;
+      const newerMessage = createMockPinnedMessage(WELCOME_MESSAGE_REVISION, 'new-msg');
+      newerMessage.createdTimestamp = Date.now();
+
+      const pinnedCollection = new Collection([
+        ['old-msg', olderMessage],
+        ['new-msg', newerMessage],
+      ]);
+      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedCollection);
+      mockChannel.messages.fetch.mockResolvedValue(new Collection());
+
+      await guildOnboardingService.postWelcomeToChannel(mockChannel);
+
+      expect(olderMessage.delete).toHaveBeenCalled();
+      expect(newerMessage.delete).not.toHaveBeenCalled();
+      expect(mockChannel.send).not.toHaveBeenCalled();
+    });
+
+    it('should clean up pin notifications on startup', async () => {
+      const pinNotification = {
+        id: 'pin-notification-123',
+        type: MessageType.ChannelPinnedMessage,
+        delete: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      };
+      const messageCollection = new Collection([['pin-notification-123', pinNotification]]);
+      mockChannel.messages.fetch.mockResolvedValue(messageCollection);
+
+      await guildOnboardingService.postWelcomeToChannel(mockChannel);
+
+      expect(pinNotification.delete).toHaveBeenCalled();
     });
   });
 });

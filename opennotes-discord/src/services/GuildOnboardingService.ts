@@ -1,7 +1,7 @@
 import { logger } from '../logger.js';
 import { Collection, ComponentType, Message, MessageType, TextChannel, User } from 'discord.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
-import { buildWelcomeContainer } from '../lib/welcome-content.js';
+import { buildWelcomeContainer, WELCOME_MESSAGE_REVISION, extractRevisionFromMessage } from '../lib/welcome-content.js';
 import { sendVibeCheckPrompt } from '../lib/vibecheck-prompt.js';
 import { apiClient } from '../api-client.js';
 
@@ -15,12 +15,18 @@ interface WelcomeMessageCheckResult {
   existingMessageId?: string;
 }
 
+/** Number of recent messages to scan for stale pin notifications */
+const PIN_NOTIFICATION_CLEANUP_LIMIT = 50;
+
 export class GuildOnboardingService {
   async postWelcomeToChannel(channel: TextChannel, options?: PostWelcomeOptions): Promise<void> {
     const guildId = channel.guild.id;
 
     try {
-      // Check if welcome message already exists (content-based idempotency)
+      // Clean up any stale pin notifications from channel history
+      await this.cleanupPinNotifications(channel);
+
+      // Check if welcome message already exists (revision-based idempotency)
       const checkResult = await this.checkWelcomeMessageState(channel);
       if (!checkResult.shouldPost) {
         return;
@@ -61,18 +67,19 @@ export class GuildOnboardingService {
   }
 
   /**
-   * Check welcome message state using content-based idempotency.
+   * Check welcome message state using revision-based comparison.
    * 1. Fetch pinned messages from Discord (source of truth)
    * 2. Find welcome messages by bot author
-   * 3. Clean up duplicates, keeping one
-   * 4. Compare content - if same, no action needed
-   * 5. If different content, delete old so caller can post new
+   * 3. Sort by timestamp, delete duplicates keeping most recent
+   * 4. Extract revision from most recent, compare with current code revision
+   * 5. If same revision, no action needed
+   * 6. If different revision, delete old so caller can post new
    */
   private async checkWelcomeMessageState(channel: TextChannel): Promise<WelcomeMessageCheckResult> {
     const guildId = channel.guild.id;
     const botUserId = channel.client.user?.id;
 
-    // Fetch pinned messages from Discord first (source of truth)
+    // Fetch pinned messages from Discord (source of truth)
     let pinnedMessages: Collection<string, Message>;
     try {
       pinnedMessages = await channel.messages.fetchPinned();
@@ -92,41 +99,43 @@ export class GuildOnboardingService {
       return isFromBot && hasContainer;
     });
 
-    // Get the current welcome content for comparison
-    const currentWelcomeContent = this.getWelcomeContentSignature();
-
-    // If we found bot welcome messages, handle them
     if (botWelcomeMessages.size > 0) {
-      const messagesArray = Array.from(botWelcomeMessages.values());
+      // Sort by timestamp (most recent first) and convert to array
+      const messagesArray = Array.from(botWelcomeMessages.values()).sort(
+        (a, b) => b.createdTimestamp - a.createdTimestamp
+      );
 
-      // Clean up duplicates - keep the first one, delete the rest
+      // Delete duplicates - keep the most recent, delete the rest
       if (messagesArray.length > 1) {
         await this.deleteDuplicateWelcomeMessages(messagesArray.slice(1), guildId);
       }
 
-      const existingMessage = messagesArray[0];
-      const existingContentSignature = this.getMessageContentSignature(existingMessage);
+      const mostRecentMessage = messagesArray[0];
+      const existingRevision = extractRevisionFromMessage(mostRecentMessage);
 
-      // Compare content
-      if (existingContentSignature === currentWelcomeContent) {
-        logger.debug('Welcome message with same content already exists', {
+      // Compare revisions
+      if (existingRevision === WELCOME_MESSAGE_REVISION) {
+        logger.debug('Welcome message with same revision already exists', {
           guildId,
           channelId: channel.id,
-          messageId: existingMessage.id,
+          messageId: mostRecentMessage.id,
+          revision: existingRevision,
         });
 
         // Update DB if the stored ID is different/missing
-        await this.syncWelcomeMessageIdIfNeeded(guildId, existingMessage.id);
+        await this.syncWelcomeMessageIdIfNeeded(guildId, mostRecentMessage.id);
 
-        return { shouldPost: false, existingMessageId: existingMessage.id };
+        return { shouldPost: false, existingMessageId: mostRecentMessage.id };
       } else {
-        // Content differs - delete old message so we can post new
-        logger.info('Welcome message content changed, replacing old message', {
+        // Revision differs - delete old message so we can post new
+        logger.info('Welcome message revision changed, replacing old message', {
           guildId,
           channelId: channel.id,
-          oldMessageId: existingMessage.id,
+          oldMessageId: mostRecentMessage.id,
+          oldRevision: existingRevision,
+          newRevision: WELCOME_MESSAGE_REVISION,
         });
-        await this.deleteMessage(existingMessage, guildId);
+        await this.deleteMessage(mostRecentMessage, guildId);
         return { shouldPost: true };
       }
     }
@@ -154,46 +163,6 @@ export class GuildOnboardingService {
     }
 
     return { shouldPost: true };
-  }
-
-  /**
-   * Get a content signature for the current welcome message.
-   * Compares the inner components of the container for stable comparison.
-   */
-  private getWelcomeContentSignature(): string {
-    const container = buildWelcomeContainer();
-    const components = container.data.components ?? [];
-    return this.stableStringify(components);
-  }
-
-  /**
-   * Get a content signature from an existing message.
-   * Extracts the inner components from the container for apples-to-apples comparison.
-   */
-  private getMessageContentSignature(message: Message): string {
-    const container = message.components?.find((c) => c.type === ComponentType.Container);
-    const components = container?.components?.map((c) => c.toJSON()) ?? [];
-    return this.stableStringify(components);
-  }
-
-  /**
-   * Stable JSON serialization with sorted keys to ensure consistent comparison.
-   */
-  private stableStringify(obj: unknown): string {
-    return JSON.stringify(obj, (_, value) => {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return Object.keys(value)
-          .sort()
-          .reduce(
-            (sorted, key) => {
-              sorted[key] = value[key];
-              return sorted;
-            },
-            {} as Record<string, unknown>
-          );
-      }
-      return value;
-    });
   }
 
   /**
@@ -290,6 +259,48 @@ export class GuildOnboardingService {
     } catch (error) {
       logger.debug('Could not delete pin notification', {
         messageId: pinnedMessage.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async cleanupPinNotifications(channel: TextChannel): Promise<void> {
+    try {
+      const messages = await channel.messages.fetch({ limit: PIN_NOTIFICATION_CLEANUP_LIMIT });
+      const pinNotifications = messages.filter(
+        (msg) => msg.type === MessageType.ChannelPinnedMessage
+      );
+
+      if (pinNotifications.size === 0) {
+        return;
+      }
+
+      let deletedCount = 0;
+      for (const [, notification] of pinNotifications) {
+        try {
+          await notification.delete();
+          deletedCount++;
+        } catch (error) {
+          logger.debug('Failed to delete individual pin notification', {
+            channelId: channel.id,
+            guildId: channel.guild.id,
+            notificationId: notification.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (deletedCount > 0) {
+        logger.debug('Cleaned up pin notifications', {
+          channelId: channel.id,
+          guildId: channel.guild.id,
+          deletedCount,
+        });
+      }
+    } catch (error) {
+      logger.debug('Could not cleanup pin notifications', {
+        channelId: channel.id,
+        guildId: channel.guild.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
