@@ -21,6 +21,19 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+NETWORK_RETRY_EXCEPTIONS = (OSError, ConnectionError, TimeoutError)
+
+
+def _log_retry_attempt(retry_state) -> None:
+    """Log retry attempts for model loading."""
+    attempt = retry_state.attempt_number
+    exception = retry_state.outcome.exception() if retry_state.outcome else None
+    logger.warning(
+        "NeuralChunker model loading attempt %d failed: %s. Retrying...",
+        attempt,
+        exception,
+    )
+
 
 class ChunkingModelLoadError(Exception):
     """Raised when the chunking model fails to load.
@@ -113,18 +126,75 @@ class ChunkingService:
 
         Returns:
             The initialized NeuralChunker instance
+
+        Raises:
+            ChunkingModelLoadError: If the model fails to load
         """
         if self._chunker is None:
             with self._chunker_lock:
                 if self._chunker is None:
-                    from chonkie.chunker.neural import NeuralChunker
-
-                    self._chunker = NeuralChunker(
-                        model=self._model,
-                        device_map=self._device_map,
-                        min_characters_per_chunk=self._min_characters_per_chunk,
-                    )
+                    self._chunker = self._initialize_chunker()
         return self._chunker
+
+    def _initialize_chunker(self) -> "NeuralChunker":
+        """
+        Initialize the NeuralChunker with error handling.
+
+        Returns:
+            The initialized NeuralChunker instance
+
+        Raises:
+            ChunkingModelLoadError: If initialization fails
+        """
+        from chonkie.chunker.neural import NeuralChunker
+
+        try:
+            logger.info(
+                "Initializing NeuralChunker with model=%s, device=%s",
+                self._model,
+                self._device_map,
+            )
+            chunker = NeuralChunker(
+                model=self._model,
+                device_map=self._device_map,
+                min_characters_per_chunk=self._min_characters_per_chunk,
+            )
+            logger.info("NeuralChunker initialized successfully")
+            return chunker
+
+        except (ConnectionError, TimeoutError) as e:
+            error_msg = (
+                f"Network error while downloading chunking model '{self._model}': {e}. "
+                "Please check your internet connection and try again."
+            )
+            logger.error(error_msg)
+            raise ChunkingModelLoadError(error_msg, original_error=e) from e
+
+        except OSError as e:
+            error_msg = (
+                f"Failed to load chunking model '{self._model}': {e}. "
+                "This may be due to network issues during model download, "
+                "invalid model identifier, or insufficient disk space. "
+                "Check your internet connection and verify the model exists "
+                "on Hugging Face Hub."
+            )
+            logger.error(error_msg)
+            raise ChunkingModelLoadError(error_msg, original_error=e) from e
+
+        except ValueError as e:
+            error_msg = (
+                f"Invalid configuration for chunking model '{self._model}': {e}. "
+                "Please verify the model identifier and parameters are correct."
+            )
+            logger.error(error_msg)
+            raise ChunkingModelLoadError(error_msg, original_error=e) from e
+
+        except Exception as e:
+            error_msg = (
+                f"Unexpected error loading chunking model '{self._model}': {type(e).__name__}: {e}"
+            )
+            logger.exception(error_msg)
+            raise ChunkingModelLoadError(error_msg, original_error=e) from e
 
     def chunk_text(self, text: str) -> list[str]:
         """
