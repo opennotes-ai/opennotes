@@ -269,10 +269,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async def check_nats() -> Any:
         try:
             is_connected = await nats_client.is_connected()
-            return ComponentHealth(
-                status=HealthStatus.HEALTHY if is_connected else HealthStatus.UNHEALTHY,
-                error=None if is_connected else "NATS not connected",
-            )
+            if not is_connected:
+                return ComponentHealth(
+                    status=HealthStatus.UNHEALTHY,
+                    error="NATS not connected",
+                )
+
+            subscriptions_healthy = await nats_client.verify_subscriptions_healthy()
+            if not subscriptions_healthy:
+                resubscribed = await nats_client.resubscribe_if_needed()
+                logger.warning(
+                    f"NATS subscriptions were unhealthy, resubscribed {resubscribed} consumers"
+                )
+                return ComponentHealth(
+                    status=HealthStatus.DEGRADED,
+                    details={"resubscribed_count": resubscribed},
+                )
+
+            return ComponentHealth(status=HealthStatus.HEALTHY)
         except Exception as e:
             return ComponentHealth(
                 status=HealthStatus.UNHEALTHY,

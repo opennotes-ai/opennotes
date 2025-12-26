@@ -24,6 +24,22 @@ class Subscription(Protocol):
     async def unsubscribe(self) -> None: ...
 
 
+class SubscriptionInfo:
+    """Tracks information about an active subscription for health monitoring."""
+
+    def __init__(
+        self,
+        subject: str,
+        consumer_name: str,
+        callback: MessageCallback,
+        subscription: Subscription,
+    ) -> None:
+        self.subject = subject
+        self.consumer_name = consumer_name
+        self.callback = callback
+        self.subscription = subscription
+
+
 class NATSClientManager:
     def __init__(self) -> None:
         self.nc: NATSClient | None = None
@@ -32,6 +48,7 @@ class NATSClientManager:
             name="nats",
             expected_exception=NATSError,
         )
+        self.active_subscriptions: dict[str, SubscriptionInfo] = {}
 
     async def connect(
         self,
@@ -221,8 +238,9 @@ class NATSClientManager:
         message processing. With WORK_QUEUE retention policy and queue groups,
         each message is delivered to exactly one instance in the queue group.
 
-        If there's a conflict with existing consumers (e.g., old ephemeral
-        consumers from a previous deployment), they will be cleaned up first.
+        IMPORTANT: This method does NOT delete existing consumers before subscribing.
+        Multiple instances can join the same consumer group. We only delete consumers
+        when there's an actual conflict (different config) indicated by BadRequestError.
         """
         if not self.nc:
             raise RuntimeError("NATS client not connected")
@@ -239,10 +257,8 @@ class NATSClientManager:
             ack_wait=settings.NATS_ACK_WAIT_SECONDS,
         )
 
-        await self._cleanup_conflicting_consumers(subject, consumer_name)
-
         try:
-            return await asyncio.wait_for(
+            subscription = await asyncio.wait_for(
                 self.js.subscribe(
                     subject,
                     cb=callback,
@@ -250,6 +266,13 @@ class NATSClientManager:
                 ),
                 timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
             )
+            self.active_subscriptions[subject] = SubscriptionInfo(
+                subject=subject,
+                consumer_name=consumer_name,
+                callback=callback,
+                subscription=subscription,
+            )
+            return subscription
         except BadRequestError as e:
             if "filtered consumer not unique" in str(e) or "consumer name already in use" in str(e):
                 logger.warning(
@@ -257,7 +280,7 @@ class NATSClientManager:
                     f"cleaning up existing consumers and retrying..."
                 )
                 await self._cleanup_conflicting_consumers(subject, consumer_name)
-                return await asyncio.wait_for(
+                subscription = await asyncio.wait_for(
                     self.js.subscribe(
                         subject,
                         cb=callback,
@@ -265,6 +288,13 @@ class NATSClientManager:
                     ),
                     timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
                 )
+                self.active_subscriptions[subject] = SubscriptionInfo(
+                    subject=subject,
+                    consumer_name=consumer_name,
+                    callback=callback,
+                    subscription=subscription,
+                )
+                return subscription
             logger.error(f"Failed to subscribe to subject '{subject}': {e}")
             raise
         except Exception as e:
@@ -287,6 +317,72 @@ class NATSClientManager:
         except Exception as e:
             logger.debug(f"NATS ping failed: {e}")
             return False
+
+    async def verify_subscriptions_healthy(self) -> bool:
+        """Check if all tracked subscriptions have valid consumers.
+
+        Returns True if all consumers exist, False if any are missing.
+        This detects when another instance has deleted our consumers.
+        """
+        if not self.js:
+            return False
+
+        if not self.active_subscriptions:
+            return True
+
+        try:
+            jsm = self.js._jsm
+            for subject, info in self.active_subscriptions.items():
+                try:
+                    await jsm.consumer_info(settings.NATS_STREAM_NAME, info.consumer_name)
+                except Exception:
+                    logger.warning(
+                        f"Consumer '{info.consumer_name}' for subject '{subject}' "
+                        f"not found - may have been deleted by another instance"
+                    )
+                    return False
+            return True
+        except Exception as e:
+            logger.error(f"Error verifying subscription health: {e}")
+            return False
+
+    async def resubscribe_if_needed(self) -> int:
+        """Re-subscribe to subjects where the consumer was deleted.
+
+        Returns the number of subscriptions that were recreated.
+        """
+        if not self.js:
+            return 0
+
+        resubscribe_count = 0
+        jsm = self.js._jsm
+
+        subjects_to_resubscribe: list[tuple[str, SubscriptionInfo]] = []
+
+        for subject, info in self.active_subscriptions.items():
+            try:
+                await jsm.consumer_info(settings.NATS_STREAM_NAME, info.consumer_name)
+            except Exception:
+                logger.info(
+                    f"Consumer '{info.consumer_name}' missing, will re-subscribe to '{subject}'"
+                )
+                subjects_to_resubscribe.append((subject, info))
+
+        for subject, info in subjects_to_resubscribe:
+            try:
+                try:
+                    await info.subscription.unsubscribe()
+                except Exception:
+                    pass
+
+                del self.active_subscriptions[subject]
+                await self.subscribe(subject, info.callback)
+                resubscribe_count += 1
+                logger.info(f"Successfully re-subscribed to '{subject}'")
+            except Exception as e:
+                logger.error(f"Failed to re-subscribe to '{subject}': {e}")
+
+        return resubscribe_count
 
 
 nats_client = NATSClientManager()
