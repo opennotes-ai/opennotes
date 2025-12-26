@@ -62,20 +62,23 @@ class PreviouslySeenMessage(Base):
         comment="Note that was published for this message",
     )
 
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in future version.
     # Vector embedding for semantic search
     # Using 1536 dimensions for OpenAI text-embedding-3-small (matches FactCheckItem)
     embedding: Mapped[Any | None] = mapped_column(Vector(1536), nullable=True)
 
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in future version.
     # Embedding provider and model tracking
     embedding_provider: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
-        comment="LLM provider used for embedding generation (e.g., 'openai', 'anthropic')",
+        comment="DEPRECATED: Use chunk_embeddings table. LLM provider used for embedding generation.",
     )
+    # DEPRECATED: Use chunk_embeddings table instead. Will be removed in future version.
     embedding_model: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
-        comment="Model name used for embedding generation (e.g., 'text-embedding-3-small')",
+        comment="DEPRECATED: Use chunk_embeddings table. Model name used for embedding generation.",
     )
 
     # Flexible metadata for additional context
