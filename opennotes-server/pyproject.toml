@@ -50,6 +50,7 @@ dependencies = [
     "xxhash>=3.6.0",
     "litellm>=1.80.11,<2.0.0",
     "chonkie[neural]>=1.3.0,<2.0.0",
+    "transformers>=4.36.0,<4.41.0",
 ]
 
 [project.optional-dependencies]
@@ -197,6 +198,7 @@ dev = [
     "basedpyright>=1.34.0",
     "docker>=7.0.0",
     "hypothesis>=6.142.5",
+    "mypy>=1.19.1",
     "pynacl>=1.6.1",
     "pytest-asyncio>=0.21.1",
     "pytest-cov>=4.1.0",
