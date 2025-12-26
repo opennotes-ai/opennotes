@@ -170,7 +170,8 @@ class ChunkingService:
             return chunker
 
         except RetryError as e:
-            original = e.last_attempt.exception() if e.last_attempt else None
+            exc = e.last_attempt.exception() if e.last_attempt else None
+            original = exc if isinstance(exc, Exception) else None
             error_msg = (
                 f"Failed to load chunking model '{self._model}' after 3 attempts. "
                 f"Last error: {original}. "
