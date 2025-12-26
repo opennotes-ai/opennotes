@@ -65,7 +65,7 @@ class RechunkTaskProgress(BaseModel):
 class RechunkTaskResponse(RechunkTaskBase):
     """Response schema for rechunk task status with full details."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, from_attributes=True)
 
     task_id: UUID = Field(..., description="Unique task identifier")
     status: RechunkTaskStatus = Field(..., description="Current task status")
@@ -93,7 +93,7 @@ class RechunkTaskResponse(RechunkTaskBase):
 class RechunkTaskStartResponse(BaseModel):
     """Response schema for starting a rechunk task."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, from_attributes=True)
 
     task_id: UUID = Field(..., description="Unique task identifier for status polling")
     status: RechunkTaskStatus = Field(..., description="Initial task status (pending)")
