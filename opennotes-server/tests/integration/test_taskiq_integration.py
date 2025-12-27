@@ -43,9 +43,14 @@ async def setup_nats_redis(db_session: Any) -> Any:
     This fixture connects to real NATS and Redis services
     provided by testcontainers via the test_services fixture.
     """
+    from src.tasks.broker import reset_broker
+
     os.environ["INTEGRATION_TESTS"] = "true"
 
     logger.info("Setting up Redis and NATS for taskiq integration tests...")
+
+    reset_broker()
+    logger.info("Reset taskiq broker for fresh configuration")
 
     try:
         redis_url = os.environ.get("REDIS_URL")
@@ -62,6 +67,8 @@ async def setup_nats_redis(db_session: Any) -> Any:
         logger.error(f"Failed to connect to NATS: {e}")
         raise
 
+    import src.tasks.example  # noqa: F401
+
     yield
 
     logger.info("Tearing down messaging services...")
@@ -74,7 +81,38 @@ async def setup_nats_redis(db_session: Any) -> Any:
 
     await nats_client.disconnect()
     await redis_client.disconnect()
+    reset_broker()
     logger.info("Messaging services teardown complete")
+
+
+async def run_receiver(broker: Any) -> None:
+    """
+    Run a simple receiver loop that processes tasks from the broker.
+
+    This iterates over the broker's listen() async generator and executes
+    each received task message. The Receiver.callback handles ack/reject
+    internally, so we don't need to do it ourselves.
+    """
+    from nats.errors import ConnectionClosedError
+    from taskiq.receiver import Receiver
+
+    receiver = Receiver(broker)
+    logger.info("Receiver initialized, starting to listen...")
+
+    try:
+        async for message in broker.listen():
+            logger.debug(f"Received message: {message}")
+            try:
+                await receiver.callback(message)
+            except Exception as e:
+                logger.error(f"Error processing message: {e}")
+    except asyncio.CancelledError:
+        logger.info("Receiver cancelled, shutting down...")
+        raise
+    except ConnectionClosedError:
+        logger.info("NATS connection closed, receiver stopping...")
+    except Exception as e:
+        logger.error(f"Receiver error: {e}")
 
 
 @pytest.fixture
@@ -87,18 +125,34 @@ async def setup_taskiq_broker(setup_nats_redis: Any) -> Any:
 
     Imports are done inside the fixture to allow tests to be collected
     even when the modules don't exist yet (TDD RED phase).
+
+    The fixture also starts a background worker task to process messages,
+    since taskiq requires a worker to execute tasks dispatched via kiq().
     """
-    from src.tasks.broker import broker
+    from src.tasks.broker import get_broker
+
+    actual_broker = get_broker()
 
     logger.info("Starting taskiq broker...")
-    await broker.startup()
+    await actual_broker.startup()
     logger.info("Taskiq broker started successfully")
 
-    yield broker
+    logger.info("Starting background worker task...")
+    worker_task = asyncio.create_task(run_receiver(actual_broker))
+    logger.info("Background worker started")
+
+    yield actual_broker
 
     logger.info("Shutting down taskiq broker...")
-    await broker.shutdown()
+    await actual_broker.shutdown()
     logger.info("Taskiq broker shutdown complete")
+
+    logger.info("Cancelling background worker...")
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        logger.info("Background worker cancelled")
 
 
 class TestBrokerLifecycle:
@@ -123,18 +177,27 @@ class TestBrokerLifecycle:
         logger.info("Broker shutdown successfully")
 
     @pytest.mark.asyncio
-    async def test_broker_double_startup_is_safe(self, setup_nats_redis: Any) -> None:
+    async def test_broker_can_dispatch_after_restart(self, setup_nats_redis: Any) -> None:
         """
-        Verify calling startup() twice doesn't cause issues.
+        Verify broker can dispatch tasks after restart cycle.
 
-        Brokers should handle idempotent startup gracefully.
+        This tests that the broker can be started, stopped, and restarted
+        cleanly for multiple task dispatches.
         """
-        from src.tasks.broker import broker
+        from src.tasks.broker import get_broker, reset_broker
 
-        await broker.startup()
-        await broker.startup()
+        # First cycle
+        broker1 = get_broker()
+        await broker1.startup()
+        await broker1.shutdown()
 
-        await broker.shutdown()
+        # Reset and create fresh broker
+        reset_broker()
+
+        # Second cycle with fresh broker
+        broker2 = get_broker()
+        await broker2.startup()
+        await broker2.shutdown()
 
 
 class TestTaskDispatch:
@@ -289,7 +352,7 @@ class TestBrokerConfiguration:
     """Test broker configuration with environment variables."""
 
     @pytest.mark.asyncio
-    async def test_broker_uses_environment_urls(self, setup_nats_redis: Any) -> None:
+    async def test_broker_uses_environment_urls(self, setup_taskiq_broker: Any) -> None:
         """
         Verify broker uses NATS_URL and REDIS_URL from environment.
 
@@ -302,10 +365,6 @@ class TestBrokerConfiguration:
         assert nats_url is not None, "NATS_URL should be set by test fixtures"
         assert redis_url is not None, "REDIS_URL should be set by test fixtures"
 
-        from src.tasks.broker import broker
-
-        await broker.startup()
-
         from src.tasks.example import example_task
 
         task = await example_task.kiq("config test")
@@ -314,5 +373,4 @@ class TestBrokerConfiguration:
         assert result.return_value == "Processed: config test"
         assert not result.is_err
 
-        await broker.shutdown()
         logger.info("Broker correctly used environment configuration")
