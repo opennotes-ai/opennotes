@@ -6,7 +6,9 @@ enabling clients to poll for completion status and progress metrics.
 """
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from uuid import UUID, uuid4
 
 from src.cache.redis_client import RedisClient, redis_client
@@ -29,6 +31,23 @@ VALID_STATUS_TRANSITIONS: dict[RechunkTaskStatus, set[RechunkTaskStatus]] = {
     RechunkTaskStatus.COMPLETED: set(),
     RechunkTaskStatus.FAILED: set(),
 }
+
+
+class TaskLookupErrorReason(str, Enum):
+    """Reason for task lookup failure."""
+
+    NOT_FOUND = "not_found"
+    REDIS_ERROR = "redis_error"
+    PARSE_ERROR = "parse_error"
+
+
+@dataclass
+class TaskLookupError:
+    """Structured error for task lookup failures."""
+
+    reason: TaskLookupErrorReason
+    message: str
+    task_id: UUID
 
 
 class InvalidStateTransitionError(Exception):
@@ -74,7 +93,7 @@ class RechunkTaskTracker:
             The created task with assigned ID and timestamps
 
         Raises:
-            RuntimeError: If Redis is not connected
+            RuntimeError: If Redis fails to persist the task
         """
         now = datetime.now(UTC)
         task_id = uuid4()
@@ -92,7 +111,9 @@ class RechunkTaskTracker:
             updated_at=now,
         )
 
-        await self._save_task(task)
+        success = await self._save_task(task)
+        if not success:
+            raise RuntimeError(f"Failed to persist task {task_id} to Redis")
 
         logger.info(
             "Created rechunk task",
@@ -135,6 +156,51 @@ class RechunkTaskTracker:
                 extra={"task_id": str(task_id), "error": str(e)},
             )
             return None
+
+    async def get_task_or_error(self, task_id: UUID) -> RechunkTaskResponse | TaskLookupError:
+        """
+        Retrieve a task by its ID with structured error information.
+
+        Unlike get_task which returns None for all failure cases, this method
+        returns structured error information to help diagnose the failure reason.
+
+        Args:
+            task_id: The task's unique identifier
+
+        Returns:
+            The task if found, or a TaskLookupError with the reason for failure
+        """
+        key = self._task_key(task_id)
+
+        try:
+            data = await self._redis.get(key)
+        except Exception as e:
+            return TaskLookupError(
+                reason=TaskLookupErrorReason.REDIS_ERROR,
+                message=f"Redis error while fetching task: {e}",
+                task_id=task_id,
+            )
+
+        if data is None:
+            return TaskLookupError(
+                reason=TaskLookupErrorReason.NOT_FOUND,
+                message=f"Task {task_id} not found",
+                task_id=task_id,
+            )
+
+        try:
+            task_dict = json.loads(data)
+            task_dict["task_id"] = UUID(task_dict["task_id"])
+            task_dict["community_server_id"] = UUID(task_dict["community_server_id"])
+            task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
+            task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
+            return RechunkTaskResponse(**task_dict)
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            return TaskLookupError(
+                reason=TaskLookupErrorReason.PARSE_ERROR,
+                message=f"Failed to parse task data: {e}",
+                task_id=task_id,
+            )
 
     def _validate_transition(
         self, current_status: RechunkTaskStatus, target_status: RechunkTaskStatus
@@ -326,19 +392,43 @@ class RechunkTaskTracker:
         """
         Mark a task as failed.
 
+        If Redis is unavailable or the task cannot be found, logs the error
+        for recovery purposes and returns None.
+
         Args:
             task_id: The task's unique identifier
             error: Error message describing the failure
             processed_count: Number of items processed before failure
 
         Returns:
-            The updated task if found, None otherwise
+            The updated task if found and updated, None otherwise
 
         Raises:
             InvalidStateTransitionError: If task is already COMPLETED or FAILED
         """
-        task = await self.get_task(task_id)
+        try:
+            task = await self.get_task(task_id)
+        except Exception as e:
+            logger.error(
+                "Failed to retrieve task for mark_failed - error details logged for recovery",
+                extra={
+                    "task_id": str(task_id),
+                    "original_error": error,
+                    "redis_error": str(e),
+                    "processed_count": processed_count,
+                },
+            )
+            return None
+
         if task is None:
+            logger.error(
+                "Task not found for mark_failed - error details logged for recovery",
+                extra={
+                    "task_id": str(task_id),
+                    "original_error": error,
+                    "processed_count": processed_count,
+                },
+            )
             return None
 
         current_status = (
@@ -351,7 +441,19 @@ class RechunkTaskTracker:
         task.processed_count = processed_count
         task.updated_at = datetime.now(UTC)
 
-        await self._save_task(task)
+        try:
+            await self._save_task(task)
+        except Exception as e:
+            logger.error(
+                "Failed to persist task failure - error details logged for recovery",
+                extra={
+                    "task_id": str(task_id),
+                    "original_error": error,
+                    "redis_error": str(e),
+                    "processed_count": processed_count,
+                },
+            )
+            return None
 
         logger.error(
             "Task failed",
@@ -365,12 +467,95 @@ class RechunkTaskTracker:
 
         return task
 
-    async def _save_task(self, task: RechunkTaskResponse) -> None:
+    async def mark_failed_force(
+        self,
+        task_id: UUID,
+        error: str,
+        processed_count: int,
+        task_type: RechunkTaskType,
+        community_server_id: UUID | None,
+        batch_size: int,
+        total_items: int,
+    ) -> RechunkTaskResponse | None:
+        """
+        Force-create a failed task record even if the original task doesn't exist.
+
+        This is used when a background task fails during startup before it can
+        update the task status. It creates a new FAILED task record with the
+        original task_id so that clients polling for status can see the error.
+
+        Args:
+            task_id: The task's unique identifier (must match the original)
+            error: Error message describing the failure
+            processed_count: Number of items processed before failure
+            task_type: Type of rechunk operation
+            community_server_id: Community server ID for LLM credentials
+            batch_size: Original batch size
+            total_items: Original total items count
+
+        Returns:
+            The created failed task if successful, None if Redis is unavailable
+        """
+        now = datetime.now(UTC)
+
+        task = RechunkTaskResponse(
+            task_id=task_id,
+            task_type=task_type,
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+            status=RechunkTaskStatus.FAILED,
+            processed_count=processed_count,
+            total_count=total_items,
+            error=error,
+            created_at=now,
+            updated_at=now,
+        )
+
+        try:
+            success = await self._save_task(task)
+            if not success:
+                logger.error(
+                    "Failed to force-persist failed task - error details logged for recovery",
+                    extra={
+                        "task_id": str(task_id),
+                        "error": error,
+                        "processed_count": processed_count,
+                    },
+                )
+                return None
+        except Exception as e:
+            logger.error(
+                "Exception during force-persist of failed task - error details logged for recovery",
+                extra={
+                    "task_id": str(task_id),
+                    "error": error,
+                    "redis_error": str(e),
+                    "processed_count": processed_count,
+                },
+            )
+            return None
+
+        logger.error(
+            "Force-created failed task record",
+            extra={
+                "task_id": str(task_id),
+                "error": error,
+                "processed_count": processed_count,
+                "total_count": total_items,
+            },
+        )
+
+        return task
+
+    async def _save_task(self, task: RechunkTaskResponse) -> bool:
         """
         Save task to Redis with TTL.
 
         Args:
             task: The task to save
+
+        Returns:
+            True if save succeeded, False otherwise
         """
         key = self._task_key(task.task_id)
 
@@ -393,7 +578,8 @@ class RechunkTaskTracker:
             "updated_at": task.updated_at.isoformat(),
         }
 
-        await self._redis.set(key, json.dumps(task_dict), ttl=RECHUNK_TASK_TTL_SECONDS)
+        result = await self._redis.set(key, json.dumps(task_dict), ttl=RECHUNK_TASK_TTL_SECONDS)
+        return result is not False
 
 
 def get_rechunk_task_tracker() -> RechunkTaskTracker:
