@@ -18,7 +18,7 @@ from src.community_servers.admin_router import router as community_admin_router
 from src.community_servers.router import router as community_servers_router
 from src.config import settings
 from src.config_router import router as config_router
-from src.database import close_db, get_session_maker, init_db
+from src.database import close_db, get_engine, get_session_maker, init_db
 from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
@@ -345,6 +345,7 @@ app = FastAPI(
 
 if settings.ENABLE_TRACING and not settings.TESTING:
     tracing_manager.instrument_fastapi(app)
+    tracing_manager.instrument_sqlalchemy(get_engine().sync_engine)
 
 app.state.limiter = limiter
 app.state.health_checker = health_checker
