@@ -7,7 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from nats.errors import Error as NATSError
-from opentelemetry import baggage, context, propagate, trace
+from opentelemetry import propagate, trace
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -58,12 +58,6 @@ class EventPublisher:
         for key in ("traceparent", "tracestate", "baggage"):
             if key in carrier:
                 headers[key] = carrier[key]
-
-        ctx = context.get_current()
-        for bag_key in ("discord.user_id", "discord.guild_id", "request_id"):
-            value = baggage.get_baggage(bag_key, ctx)
-            if value:
-                headers[f"X-Baggage-{bag_key.replace('.', '-')}"] = value
 
         return headers
 
@@ -139,16 +133,17 @@ class EventPublisher:
         if headers:
             default_headers.update(headers)
 
-        default_headers = self._inject_trace_context(default_headers)
-
         with self._tracer.start_as_current_span(
             f"nats.publish.{event.event_type.value}",
             kind=trace.SpanKind.PRODUCER,
         ) as span:
+            # Inject trace context INSIDE the span so traceparent includes producer span ID
+            default_headers = self._inject_trace_context(default_headers)
+
             span.set_attribute("messaging.system", "nats")
-            span.set_attribute("messaging.destination", subject)
-            span.set_attribute("messaging.message_id", event.event_id)
-            span.set_attribute("messaging.operation", "publish")
+            span.set_attribute("messaging.destination.name", subject)
+            span.set_attribute("messaging.message.id", event.event_id)
+            span.set_attribute("messaging.operation.type", "publish")
 
             try:
                 result = await self._publish_with_retries(subject, data, default_headers, event)

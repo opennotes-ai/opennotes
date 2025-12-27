@@ -347,8 +347,7 @@ app = FastAPI(
 if settings.ENABLE_TRACING and not settings.TESTING:
     tracing_manager.instrument_fastapi(app)
     tracing_manager.instrument_sqlalchemy(get_engine().sync_engine)
-
-app.add_middleware(DiscordContextMiddleware)
+    app.add_middleware(DiscordContextMiddleware)
 
 app.state.limiter = limiter
 app.state.health_checker = health_checker

@@ -1,16 +1,19 @@
 import logging
 from typing import Any
 
-from opentelemetry import baggage, context, trace
+from opentelemetry import baggage, context, propagate, trace
+from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +102,17 @@ class TracingManager:
         sampler = ParentBasedTraceIdRatio(self.sample_rate)
         self._tracer_provider = TracerProvider(resource=resource, sampler=sampler)
         trace.set_tracer_provider(self._tracer_provider)
+
+        # Configure W3C Trace Context + Baggage propagation
+        propagate.set_global_textmap(
+            CompositePropagator(
+                [
+                    TraceContextTextMapPropagator(),
+                    W3CBaggagePropagator(),
+                ]
+            )
+        )
+        logger.info("W3C Trace Context and Baggage propagators configured")
 
         self._tracer_provider.add_span_processor(BaggageSpanProcessor())
         logger.info("Baggage span processor enabled")

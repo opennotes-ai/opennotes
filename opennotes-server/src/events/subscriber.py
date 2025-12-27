@@ -98,13 +98,13 @@ class EventSubscriber:
             kind=trace.SpanKind.CONSUMER,
         ) as span:
             span.set_attribute("messaging.system", "nats")
-            span.set_attribute("messaging.operation", "receive")
+            span.set_attribute("messaging.operation.type", "receive")
 
             try:
                 event_class = self._get_event_class(event_type)
                 event = event_class.model_validate_json(msg.data)  # type: ignore[attr-defined]
 
-                span.set_attribute("messaging.message_id", event.event_id)
+                span.set_attribute("messaging.message.id", event.event_id)
 
                 metadata = msg.metadata
                 delivery_count = metadata.num_delivered if metadata else 1

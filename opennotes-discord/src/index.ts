@@ -43,7 +43,10 @@ function setupShutdownHandlers(): void {
         isShuttingDown = true;
         try {
           await Promise.race([
-            bot.stop(),
+            (async () => {
+              await bot.stop();
+              await shutdownTelemetry();
+            })(),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Shutdown timeout')), 5000))
           ]);
         } catch (cleanupError) {
@@ -66,7 +69,10 @@ function setupShutdownHandlers(): void {
         isShuttingDown = true;
         try {
           await Promise.race([
-            bot.stop(),
+            (async () => {
+              await bot.stop();
+              await shutdownTelemetry();
+            })(),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Shutdown timeout')), 5000))
           ]);
         } catch (cleanupError) {

@@ -86,9 +86,13 @@ function parseOtlpHeaders(headersStr: string | undefined): Record<string, string
 
   const headers: Record<string, string> = {};
   for (const pair of headersStr.split(',')) {
-    const [key, value] = pair.split('=');
-    if (key && value) {
-      headers[key.trim()] = value.trim();
+    const eqIndex = pair.indexOf('=');
+    if (eqIndex > 0) {
+      const key = pair.slice(0, eqIndex).trim();
+      const value = pair.slice(eqIndex + 1).trim();
+      if (key && value) {
+        headers[key] = value;
+      }
     }
   }
   return headers;
