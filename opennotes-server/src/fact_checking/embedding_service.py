@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.fact_checking.previously_seen_schemas import PreviouslySeenMessageMatch
-from src.fact_checking.repository import RRF_K_CONSTANT, hybrid_search
+from src.fact_checking.repository import RRF_K_CONSTANT, hybrid_search_with_chunks
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
@@ -237,7 +237,7 @@ class EmbeddingService:
 
         query_embedding = await self.generate_embedding(db, query_text, community_server_id)
 
-        hybrid_results = await hybrid_search(
+        hybrid_results = await hybrid_search_with_chunks(
             session=db,
             query_text=query_text,
             query_embedding=query_embedding,
