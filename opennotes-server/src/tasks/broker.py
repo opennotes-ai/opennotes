@@ -165,7 +165,8 @@ def register_task(task_name: str | None = None) -> Callable[[Callable[..., T]], 
         _all_registered_tasks[name] = func
 
         if _broker_instance is not None:
-            _broker_instance.register_task(func, task_name=name)
+            task_obj = _broker_instance.register_task(func, task_name=name)
+            _registered_task_objects[name] = task_obj
 
         return LazyTask(func, name)
 
