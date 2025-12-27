@@ -43,6 +43,7 @@ from src.llm_config.router import router as llm_config_router
 from src.llm_config.service import LLMService
 from src.middleware.audit import AuditMiddleware
 from src.middleware.csrf import CSRFMiddleware
+from src.middleware.discord_context import DiscordContextMiddleware
 from src.middleware.internal_auth import InternalHeaderValidationMiddleware
 from src.middleware.rate_limiting import limiter
 from src.middleware.request_size import RequestSizeLimitMiddleware
@@ -346,6 +347,7 @@ app = FastAPI(
 if settings.ENABLE_TRACING and not settings.TESTING:
     tracing_manager.instrument_fastapi(app)
     tracing_manager.instrument_sqlalchemy(get_engine().sync_engine)
+    app.add_middleware(DiscordContextMiddleware)
 
 app.state.limiter = limiter
 app.state.health_checker = health_checker

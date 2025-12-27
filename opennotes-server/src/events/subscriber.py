@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from nats.aio.msg import Msg
+from opentelemetry import context, propagate, trace
 
 from src.config import settings
 from src.events.nats_client import Subscription, nats_client
@@ -22,9 +23,22 @@ from src.events.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
 
 
 EventHandler = Callable[[Any], Awaitable[None]]
+
+
+def _extract_trace_context(msg: Msg) -> context.Context:
+    """Extract W3C Trace Context from NATS message headers."""
+    carrier: dict[str, str] = {}
+
+    if msg.headers:
+        for key in ("traceparent", "tracestate", "baggage"):
+            if key in msg.headers:
+                carrier[key] = msg.headers[key]
+
+    return propagate.extract(carrier)
 
 
 class EventSubscriber:
@@ -76,61 +90,80 @@ class EventSubscriber:
         event_type: EventType,
         msg: Msg,
     ) -> None:
-        try:
-            event_class = self._get_event_class(event_type)
-            event = event_class.model_validate_json(msg.data)  # type: ignore[attr-defined]
+        parent_ctx = _extract_trace_context(msg)
 
-            metadata = msg.metadata
-            delivery_count = metadata.num_delivered if metadata else 1
+        with _tracer.start_as_current_span(
+            f"nats.consume.{event_type.value}",
+            context=parent_ctx,
+            kind=trace.SpanKind.CONSUMER,
+        ) as span:
+            span.set_attribute("messaging.system", "nats")
+            span.set_attribute("messaging.operation.type", "receive")
 
-            logger.info(
-                f"Received event {event.event_id} of type {event_type.value} "
-                f"(delivery attempt {delivery_count})"
-            )
+            try:
+                event_class = self._get_event_class(event_type)
+                event = event_class.model_validate_json(msg.data)  # type: ignore[attr-defined]
 
-            handlers = self.handlers.get(event_type, [])
+                span.set_attribute("messaging.message.id", event.event_id)
 
-            handler_tasks = [
-                asyncio.wait_for(
-                    handler(event),
-                    timeout=settings.NATS_HANDLER_TIMEOUT,
+                metadata = msg.metadata
+                delivery_count = metadata.num_delivered if metadata else 1
+                span.set_attribute("messaging.delivery_attempt", delivery_count)
+
+                logger.info(
+                    f"Received event {event.event_id} of type {event_type.value} "
+                    f"(delivery attempt {delivery_count})"
                 )
-                for handler in handlers
-            ]
 
-            results = await asyncio.gather(*handler_tasks, return_exceptions=True)
+                handlers = self.handlers.get(event_type, [])
 
-            failed = False
-            for i, result in enumerate(results):
-                if isinstance(result, asyncio.TimeoutError):
-                    logger.error(
-                        f"Handler {i} timeout for event {event.event_id} after "
-                        f"{settings.NATS_HANDLER_TIMEOUT}s"
+                handler_tasks = [
+                    asyncio.wait_for(
+                        handler(event),
+                        timeout=settings.NATS_HANDLER_TIMEOUT,
                     )
-                    failed = True
-                elif isinstance(result, Exception):
-                    logger.error(
-                        f"Handler {i} failed for event {event.event_id}: {result}",
-                        exc_info=result,
-                    )
-                    failed = True
+                    for handler in handlers
+                ]
 
-            if failed:
+                results = await asyncio.gather(*handler_tasks, return_exceptions=True)
+
+                failed = False
+                for i, result in enumerate(results):
+                    if isinstance(result, asyncio.TimeoutError):
+                        logger.error(
+                            f"Handler {i} timeout for event {event.event_id} after "
+                            f"{settings.NATS_HANDLER_TIMEOUT}s"
+                        )
+                        failed = True
+                    elif isinstance(result, Exception):
+                        logger.error(
+                            f"Handler {i} failed for event {event.event_id}: {result}",
+                            exc_info=result,
+                        )
+                        failed = True
+
+                if failed:
+                    await msg.nak()
+                    span.set_status(trace.StatusCode.ERROR, "Handler failed")
+                    logger.warning(
+                        f"Negative acknowledged event {event.event_id} due to handler failure "
+                        f"(attempt {delivery_count})"
+                    )
+                else:
+                    await msg.ack()
+                    span.set_status(trace.StatusCode.OK)
+                    logger.debug(f"Acknowledged event {event.event_id}")
+
+            except TimeoutError as e:
+                logger.error("Handler timeout for event processing")
+                span.set_status(trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
                 await msg.nak()
-                logger.warning(
-                    f"Negative acknowledged event {event.event_id} due to handler failure "
-                    f"(attempt {delivery_count})"
-                )
-            else:
-                await msg.ack()
-                logger.debug(f"Acknowledged event {event.event_id}")
-
-        except TimeoutError:
-            logger.error("Handler timeout for event processing")
-            await msg.nak()
-        except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
-            await msg.nak()
+            except Exception as e:
+                logger.error(f"Error processing message: {e}", exc_info=True)
+                span.set_status(trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
+                await msg.nak()
 
     async def subscribe_all(self) -> None:
         for event_type in EventType:

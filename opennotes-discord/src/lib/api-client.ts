@@ -17,6 +17,8 @@ import { ApiError } from './errors.js';
 import { logger } from '../logger.js';
 import { getIdentityToken, isRunningOnGCP } from '../utils/gcp-auth.js';
 import { createDiscordClaimsToken } from '../utils/discord-claims.js';
+import { nanoid } from 'nanoid';
+import { injectTraceContext } from '../telemetry.js';
 
 // Types from generated OpenAPI schema
 export type NoteStatus = components['schemas']['NoteStatus'];
@@ -639,9 +641,11 @@ export class ApiClient {
     await this.ensureGCPDetectionComplete();
 
     const url = `${this.baseUrl}${endpoint}`;
+    const requestId = nanoid();
 
     let headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      'X-Request-Id': requestId,
       ...options.headers as Record<string, string>,
     };
 
@@ -657,13 +661,15 @@ export class ApiClient {
       const identityToken = await getIdentityToken(this.baseUrl);
       if (identityToken) {
         headers['Authorization'] = `Bearer ${identityToken}`;
-        logger.debug('Added IAM identity token to request', { endpoint });
+        logger.debug('Added IAM identity token to request', { endpoint, requestId });
       } else {
-        logger.warn('Failed to get IAM identity token', { endpoint });
+        logger.warn('Failed to get IAM identity token', { endpoint, requestId });
       }
     }
 
     headers = this.addProfileHeaders(headers, context);
+
+    headers = injectTraceContext(headers);
 
     const requestBody = options.body ? (JSON.parse(options.body as string) as unknown) : undefined;
 
@@ -677,6 +683,7 @@ export class ApiClient {
         attempt,
         url,
         timeout: this.requestTimeout,
+        requestId,
       });
 
       const response = await fetch(url, {
@@ -712,6 +719,7 @@ export class ApiClient {
           requestBody: this.sanitizeForLogging(requestBody),
           attempt,
           maxAttempts: this.retryAttempts,
+          requestId,
         });
 
         const apiError = new ApiError(
@@ -735,6 +743,7 @@ export class ApiClient {
             maxAttempts: this.retryAttempts,
             delayMs,
             statusCode: response.status,
+            requestId,
           });
           await this.delay(delayMs);
           return this.fetchWithRetry<T>(endpoint, options, attempt + 1, context);
@@ -749,6 +758,7 @@ export class ApiClient {
           endpoint,
           method: options.method || 'GET',
           statusCode: response.status,
+          requestId,
         });
         return null as T;
       }
@@ -764,6 +774,7 @@ export class ApiClient {
         endpoint,
         method: options.method || 'GET',
         statusCode: response.status,
+        requestId,
       });
 
       return responseData as T;
@@ -782,6 +793,7 @@ export class ApiClient {
           method: options.method || 'GET',
           timeout: this.requestTimeout,
           attempt,
+          requestId,
         });
 
         throw new ApiError(
@@ -804,6 +816,7 @@ export class ApiClient {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
         attempt,
+        requestId,
       });
 
       if (attempt < this.retryAttempts) {
@@ -811,6 +824,7 @@ export class ApiClient {
           endpoint,
           attempt: attempt + 1,
           maxAttempts: this.retryAttempts,
+          requestId,
         });
         await this.delay(this.retryDelayMs * attempt);
         return this.fetchWithRetry<T>(endpoint, options, attempt + 1, context);
