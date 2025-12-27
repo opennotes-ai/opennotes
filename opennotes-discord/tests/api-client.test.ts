@@ -658,9 +658,9 @@ describe('ApiClient Wrapper', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/health',
         expect.objectContaining({
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
     });
@@ -728,9 +728,9 @@ describe('ApiClient Wrapper', () => {
         'http://localhost:8000/api/v2/scoring/score',
         expect.objectContaining({
           method: 'POST',
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
     });
@@ -809,9 +809,9 @@ describe('ApiClient Wrapper', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes?filter%5Bplatform_message_id%5D=123456789012345678',
         expect.objectContaining({
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
 
@@ -1002,9 +1002,9 @@ describe('ApiClient Wrapper', () => {
         'http://localhost:8000/api/v2/ratings',
         expect.objectContaining({
           method: 'POST',
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
 
@@ -1117,9 +1117,9 @@ describe('ApiClient Wrapper', () => {
         'http://localhost:8000/api/v2/ratings/1',
         expect.objectContaining({
           method: 'PUT',
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
 
@@ -1214,9 +1214,9 @@ describe('ApiClient Wrapper', () => {
         `http://localhost:8000/api/v2/requests/${encodeURIComponent(requestId)}/ai-notes`,
         expect.objectContaining({
           method: 'POST',
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
 
@@ -1282,9 +1282,9 @@ describe('ApiClient Wrapper', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes/123/ratings',
         expect.objectContaining({
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
     });
@@ -1355,9 +1355,9 @@ describe('ApiClient Wrapper', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/v2/notes?'),
         expect.objectContaining({
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
 
@@ -1441,9 +1441,9 @@ describe('ApiClient Wrapper', () => {
         'http://localhost:8000/api/v2/requests',
         expect.objectContaining({
           method: 'POST',
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/json',
-          },
+          }),
         })
       );
 

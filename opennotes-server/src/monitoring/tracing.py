@@ -37,9 +37,9 @@ class BaggageSpanProcessor(SpanProcessor):
 
         for key in BAGGAGE_KEYS_TO_PROPAGATE:
             value = baggage.get_baggage(key, ctx)
-            if value:
+            if value is not None:
                 attr_key = key.replace(".", "_")
-                span.set_attribute(attr_key, value)
+                span.set_attribute(attr_key, str(value))
 
     def on_end(self, span: ReadableSpan) -> None:
         pass
