@@ -1,15 +1,14 @@
 """
 Integration tests for taskiq with NATS broker and Redis result backend.
 
-TDD RED PHASE: These tests are written BEFORE the implementation exists.
-They will fail on import because src.tasks.broker and src.tasks.example
-do not exist yet. This defines the expected API for the implementation.
+This module tests the taskiq integration with NATS JetStream for message
+delivery and Redis for result storage.
 
-Expected modules to be created:
+Implementation modules:
 - src/tasks/broker.py - Configures NATS broker with Redis result backend
-- src/tasks/example.py - Example task for testing
+- src/tasks/example.py - Example tasks for testing
 
-Expected API:
+API usage:
     from src.tasks.broker import broker
     from src.tasks.example import example_task
 
@@ -307,12 +306,12 @@ class TestResultBackend:
         logger.info(f"Result verified for task {task_id}")
 
     @pytest.mark.asyncio
-    async def test_result_timeout_behavior(self, setup_taskiq_broker: Any) -> None:
+    async def test_slow_task_completes_within_timeout(self, setup_taskiq_broker: Any) -> None:
         """
-        Verify wait_result respects timeout parameter.
+        Verify a slow task completes when given sufficient timeout.
 
-        If a task takes longer than the timeout, wait_result should
-        raise an appropriate exception or return a timeout indicator.
+        This tests that a task which takes some time to execute will
+        complete successfully when wait_result is given enough time.
         """
         from src.tasks.example import slow_task
 
@@ -322,6 +321,25 @@ class TestResultBackend:
         result = await task.wait_result(timeout=10)
         assert not result.is_err
         logger.info("Slow task completed within timeout")
+
+    @pytest.mark.asyncio
+    async def test_result_timeout_exceeded_raises_error(self, setup_taskiq_broker: Any) -> None:
+        """
+        Verify wait_result raises error when timeout is exceeded.
+
+        When a task takes longer than the specified timeout, wait_result
+        should raise a TimeoutError or return a result indicating timeout.
+        """
+        from taskiq import TaskiqResultTimeoutError
+
+        from src.tasks.example import slow_task
+
+        task = await slow_task.kiq(delay_seconds=5.0)
+        logger.info(f"Slow task dispatched for timeout test: {task.task_id}")
+
+        with pytest.raises(TaskiqResultTimeoutError):
+            await task.wait_result(timeout=0.1)
+        logger.info("Timeout error raised as expected")
 
 
 class TestErrorHandling:
