@@ -322,3 +322,36 @@ class TestRechunkTaskTracker:
         assert result.status == RechunkTaskStatus.FAILED
         assert result.error == "Connection lost"
         assert result.processed_count == 25
+
+    @pytest.mark.asyncio
+    async def test_get_task_handles_null_community_server_id(self, tracker, mock_redis):
+        """Get task correctly deserializes when community_server_id is null.
+
+        Bug: task-896 - The deserialization code unconditionally called UUID()
+        on community_server_id, causing 'badly formed hexadecimal UUID string'
+        when the field was None (for global credentials fallback).
+        """
+        import json
+
+        task_id = uuid4()
+        stored_data = {
+            "task_id": str(task_id),
+            "task_type": "fact_check",
+            "community_server_id": None,  # Using global credentials fallback
+            "batch_size": 100,
+            "status": "in_progress",
+            "processed_count": 25,
+            "total_count": 50,
+            "error": None,
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "updated_at": "2024-01-01T00:00:00+00:00",
+        }
+        mock_redis.get.return_value = json.dumps(stored_data)
+
+        result = await tracker.get_task(task_id)
+
+        assert result is not None
+        assert result.task_id == task_id
+        assert result.community_server_id is None
+        assert result.status == RechunkTaskStatus.IN_PROGRESS
+        assert result.processed_count == 25
