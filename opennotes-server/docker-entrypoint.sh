@@ -5,20 +5,18 @@ echo "=================================================="
 echo "Open Notes Server - Startup"
 echo "=================================================="
 
-# Check if migrations should be skipped
+# Run migrations (unless skipped)
 if [ "${SKIP_MIGRATIONS}" = "true" ]; then
     echo "INFO: SKIP_MIGRATIONS is set to true, skipping database migrations"
-    echo "Starting server..."
-    exec python -m src.main
-fi
+else
+    # Run migrations with PostgreSQL advisory lock
+    # This ensures only one instance runs migrations at a time
+    python scripts/run_migrations_with_lock.py
 
-# Run migrations with PostgreSQL advisory lock
-# This ensures only one instance runs migrations at a time
-python scripts/run_migrations_with_lock.py
-
-if [ $? -ne 0 ]; then
-    echo "ERROR: Migration process failed. Server will not start."
-    exit 1
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Migration process failed. Server will not start."
+        exit 1
+    fi
 fi
 
 # Seed API keys for development if enabled
