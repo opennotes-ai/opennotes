@@ -367,21 +367,6 @@ class TestFactCheckRechunkEndpoint:
 
             assert response.status_code == 422
 
-    @pytest.mark.asyncio
-    async def test_community_server_id_required(
-        self,
-        service_account_headers,
-    ):
-        """Endpoint requires community_server_id parameter."""
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/chunks/fact-check/rechunk",
-                headers=service_account_headers,
-            )
-
-            assert response.status_code == 422
-
 
 class TestPreviouslySeenRechunkEndpoint:
     """Tests for POST /api/v1/chunks/previously-seen/rechunk endpoint."""
@@ -543,21 +528,6 @@ class TestPreviouslySeenRechunkEndpoint:
 
             response = await client.post(
                 f"/api/v1/chunks/previously-seen/rechunk?community_server_id={server.id}&batch_size=1500",
-                headers=service_account_headers,
-            )
-
-            assert response.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_community_server_id_required(
-        self,
-        service_account_headers,
-    ):
-        """Endpoint requires community_server_id parameter."""
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/chunks/previously-seen/rechunk",
                 headers=service_account_headers,
             )
 

@@ -99,12 +99,12 @@ class ChunkingService:
         ['First topic here.', 'Second topic starts now.']
     """
 
-    DEFAULT_MODEL = "mirth/chonky_modernbert_base_1"
+    DEFAULT_MODEL = "mirth/chonky_distilbert_base_uncased_1"
 
     def __init__(
         self,
         model: str = DEFAULT_MODEL,
-        device_map: str = "cpu",
+        device_map: str | None = None,
         min_characters_per_chunk: int = 50,
     ) -> None:
         """
@@ -112,8 +112,13 @@ class ChunkingService:
 
         Args:
             model: The identifier or path to the fine-tuned BERT model
-                   used for detecting semantic shifts
-            device_map: Device to run inference on ('cpu', 'cuda', 'mps')
+                   used for detecting semantic shifts. The previous default
+                   'mirth/chonky_modernbert_base_1' has tokenizer compatibility
+                   issues with current transformers/tokenizers versions.
+            device_map: Device to run inference on. Use None (default) to load
+                       on CPU without requiring the accelerate library. Pass
+                       'cuda', 'mps', or 'auto' for GPU support (requires
+                       accelerate library to be installed).
             min_characters_per_chunk: Minimum number of characters required
                                       for a text segment to be a valid chunk
         """
@@ -229,7 +234,7 @@ class ChunkingService:
 
         return NeuralChunker(
             model=self._model,
-            device_map=self._device_map,
+            device_map=self._device_map,  # type: ignore[arg-type]  # chonkie accepts None but types as str
             min_characters_per_chunk=self._min_characters_per_chunk,
         )
 
