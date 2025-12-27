@@ -146,7 +146,8 @@ class RechunkTaskTracker:
         try:
             task_dict = json.loads(data)
             task_dict["task_id"] = UUID(task_dict["task_id"])
-            task_dict["community_server_id"] = UUID(task_dict["community_server_id"])
+            csi = task_dict.get("community_server_id")
+            task_dict["community_server_id"] = UUID(csi) if csi else None
             task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
             task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
             return RechunkTaskResponse(**task_dict)
@@ -191,7 +192,8 @@ class RechunkTaskTracker:
         try:
             task_dict = json.loads(data)
             task_dict["task_id"] = UUID(task_dict["task_id"])
-            task_dict["community_server_id"] = UUID(task_dict["community_server_id"])
+            csi = task_dict.get("community_server_id")
+            task_dict["community_server_id"] = UUID(csi) if csi else None
             task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
             task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
             return RechunkTaskResponse(**task_dict)
