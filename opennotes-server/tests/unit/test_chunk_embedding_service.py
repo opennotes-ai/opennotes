@@ -1248,6 +1248,214 @@ class TestRechunkingIdempotency:
             )
 
 
+class TestDuplicateChunksInDocument:
+    """Tests for handling documents where the same chunk appears at multiple positions.
+
+    Bug fix: task-901 - When a document contains repeated text (e.g., headers, disclaimers),
+    the same chunk can appear at multiple positions. The code must deduplicate join_entries
+    to avoid 'ON CONFLICT DO UPDATE command cannot affect row a second time' errors.
+    """
+
+    @pytest.mark.asyncio
+    async def test_fact_check_with_repeated_chunks_succeeds(self):
+        """Test that fact check with same chunk at multiple positions doesn't fail.
+
+        Simulates a document like:
+        - "Header" (position 0)
+        - "Content" (position 1)
+        - "Header" (position 2) - same text as position 0
+        """
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Header", "Content", "Header"]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        header_chunk = ChunkEmbedding(
+            chunk_text="Header",
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        header_chunk.id = uuid4()
+
+        content_chunk = ChunkEmbedding(
+            chunk_text="Content",
+            embedding=[0.2] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        content_chunk.id = uuid4()
+
+        batch_result = [
+            (header_chunk, True),
+            (content_chunk, True),
+            (header_chunk, False),
+        ]
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
+
+        fact_check_id = uuid4()
+
+        chunks = await service.chunk_and_embed_fact_check(
+            db=mock_db,
+            fact_check_id=fact_check_id,
+            text="Header Content Header",
+            community_server_id=uuid4(),
+        )
+
+        assert len(chunks) == 3
+        assert chunks[0] is header_chunk
+        assert chunks[1] is content_chunk
+        assert chunks[2] is header_chunk
+
+        insert_calls = [
+            c
+            for c in execute_calls
+            if "INSERT" in str(c).upper() and "fact_check_chunks" in str(c).lower()
+        ]
+        assert len(insert_calls) >= 1
+
+    @pytest.mark.asyncio
+    async def test_previously_seen_with_repeated_chunks_succeeds(self):
+        """Test that previously seen with same chunk at multiple positions doesn't fail."""
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Disclaimer", "Body", "Disclaimer"]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        disclaimer_chunk = ChunkEmbedding(
+            chunk_text="Disclaimer",
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        disclaimer_chunk.id = uuid4()
+
+        body_chunk = ChunkEmbedding(
+            chunk_text="Body",
+            embedding=[0.2] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        body_chunk.id = uuid4()
+
+        batch_result = [
+            (disclaimer_chunk, True),
+            (body_chunk, True),
+            (disclaimer_chunk, False),
+        ]
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
+
+        previously_seen_id = uuid4()
+
+        chunks = await service.chunk_and_embed_previously_seen(
+            db=mock_db,
+            previously_seen_id=previously_seen_id,
+            text="Disclaimer Body Disclaimer",
+            community_server_id=uuid4(),
+        )
+
+        assert len(chunks) == 3
+        assert chunks[0] is disclaimer_chunk
+        assert chunks[1] is body_chunk
+        assert chunks[2] is disclaimer_chunk
+
+        insert_calls = [
+            c
+            for c in execute_calls
+            if "INSERT" in str(c).upper() and "previously_seen_chunks" in str(c).lower()
+        ]
+        assert len(insert_calls) >= 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_duplicates_handled_correctly(self):
+        """Test document with chunk appearing more than twice."""
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["A", "B", "A", "C", "A"]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        chunk_a = ChunkEmbedding(
+            chunk_text="A",
+            embedding=[0.1] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        chunk_a.id = uuid4()
+
+        chunk_b = ChunkEmbedding(
+            chunk_text="B",
+            embedding=[0.2] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        chunk_b.id = uuid4()
+
+        chunk_c = ChunkEmbedding(
+            chunk_text="C",
+            embedding=[0.3] * 1536,
+            embedding_provider="litellm",
+            embedding_model="text-embedding-3-small",
+        )
+        chunk_c.id = uuid4()
+
+        batch_result = [
+            (chunk_a, True),
+            (chunk_b, True),
+            (chunk_a, False),
+            (chunk_c, True),
+            (chunk_a, False),
+        ]
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock()
+
+        fact_check_id = uuid4()
+
+        chunks = await service.chunk_and_embed_fact_check(
+            db=mock_db,
+            fact_check_id=fact_check_id,
+            text="A B A C A",
+            community_server_id=uuid4(),
+        )
+
+        assert len(chunks) == 5
+        assert chunks[0] is chunk_a
+        assert chunks[1] is chunk_b
+        assert chunks[2] is chunk_a
+        assert chunks[3] is chunk_c
+        assert chunks[4] is chunk_a
+
+
 class TestGetOrCreateChunksBatch:
     """Tests for ChunkEmbeddingService.get_or_create_chunks_batch() method."""
 
