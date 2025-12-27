@@ -1,3 +1,7 @@
+import { initTelemetry, shutdownTelemetry } from './telemetry.js';
+
+initTelemetry();
+
 import { Bot } from './bot.js';
 import { logger } from './logger.js';
 
@@ -26,6 +30,7 @@ function setupShutdownHandlers(): void {
         isShuttingDown = true;
         logger.info(`Received ${signal}, shutting down gracefully`);
         await bot.stop();
+        await shutdownTelemetry();
         process.exit(0);
       })();
     });

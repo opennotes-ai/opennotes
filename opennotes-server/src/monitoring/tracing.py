@@ -1,18 +1,51 @@
 import logging
 from typing import Any
 
-from opentelemetry import trace
+from opentelemetry import baggage, context, trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
 
 logger = logging.getLogger(__name__)
+
+BAGGAGE_KEYS_TO_PROPAGATE = [
+    "discord.user_id",
+    "discord.username",
+    "discord.guild_id",
+    "request_id",
+]
+
+
+class BaggageSpanProcessor(SpanProcessor):
+    """SpanProcessor that copies baggage items to span attributes.
+
+    This ensures context like user ID, guild ID, and request ID are visible
+    on every span without requiring explicit attribute setting.
+    """
+
+    def on_start(self, span: Span, parent_context: context.Context | None = None) -> None:
+        ctx = parent_context or context.get_current()
+
+        for key in BAGGAGE_KEYS_TO_PROPAGATE:
+            value = baggage.get_baggage(key, ctx)
+            if value:
+                attr_key = key.replace(".", "_")
+                span.set_attribute(attr_key, value)
+
+    def on_end(self, span: ReadableSpan) -> None:
+        pass
+
+    def shutdown(self) -> None:
+        pass
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:  # noqa: ARG002
+        return True
 
 
 class TracingManager:
@@ -66,6 +99,9 @@ class TracingManager:
         sampler = ParentBasedTraceIdRatio(self.sample_rate)
         self._tracer_provider = TracerProvider(resource=resource, sampler=sampler)
         trace.set_tracer_provider(self._tracer_provider)
+
+        self._tracer_provider.add_span_processor(BaggageSpanProcessor())
+        logger.info("Baggage span processor enabled")
 
         if self.otlp_endpoint:
             headers = self._parse_headers()

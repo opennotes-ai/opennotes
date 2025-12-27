@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from nats.errors import Error as NATSError
+from opentelemetry import baggage, context, propagate, trace
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -43,10 +44,28 @@ logger = logging.getLogger(__name__)
 class EventPublisher:
     def __init__(self) -> None:
         self.nats = nats_client
+        self._tracer = trace.get_tracer(__name__)
 
     def _get_subject(self, event_type: EventType) -> str:
         event_name = event_type.value.replace(".", "_")
         return f"{settings.NATS_STREAM_NAME}.{event_name}"
+
+    def _inject_trace_context(self, headers: dict[str, str]) -> dict[str, str]:
+        """Inject W3C Trace Context and Baggage into NATS message headers."""
+        carrier: dict[str, str] = {}
+        propagate.inject(carrier)
+
+        for key in ("traceparent", "tracestate", "baggage"):
+            if key in carrier:
+                headers[key] = carrier[key]
+
+        ctx = context.get_current()
+        for bag_key in ("discord.user_id", "discord.guild_id", "request_id"):
+            value = baggage.get_baggage(bag_key, ctx)
+            if value:
+                headers[f"X-Baggage-{bag_key.replace('.', '-')}"] = value
+
+        return headers
 
     @retry(
         stop=stop_after_attempt(settings.NATS_PUBLISH_MAX_RETRIES),
@@ -120,21 +139,36 @@ class EventPublisher:
         if headers:
             default_headers.update(headers)
 
-        try:
-            return await self._publish_with_retries(subject, data, default_headers, event)
-        except Exception as e:
-            # This except block only runs AFTER all retries are exhausted
-            # Get the actual exception type name (e.g., "Error" for nats.errors.Error)
-            error_type = e.__class__.__name__
-            instance_id = InstanceMetadata.get_instance_id()
-            nats_events_failed_total.labels(
-                event_type=event.event_type.value, error_type=error_type, instance_id=instance_id
-            ).inc()
-            logger.error(
-                f"Failed to publish event {event.event_id} of type {event.event_type.value}: {e}",
-                extra={"event_id": event.event_id, "error_type": error_type},
-            )
-            raise
+        default_headers = self._inject_trace_context(default_headers)
+
+        with self._tracer.start_as_current_span(
+            f"nats.publish.{event.event_type.value}",
+            kind=trace.SpanKind.PRODUCER,
+        ) as span:
+            span.set_attribute("messaging.system", "nats")
+            span.set_attribute("messaging.destination", subject)
+            span.set_attribute("messaging.message_id", event.event_id)
+            span.set_attribute("messaging.operation", "publish")
+
+            try:
+                result = await self._publish_with_retries(subject, data, default_headers, event)
+                span.set_status(trace.StatusCode.OK)
+                return result
+            except Exception as e:
+                error_type = e.__class__.__name__
+                instance_id = InstanceMetadata.get_instance_id()
+                nats_events_failed_total.labels(
+                    event_type=event.event_type.value,
+                    error_type=error_type,
+                    instance_id=instance_id,
+                ).inc()
+                logger.error(
+                    f"Failed to publish event {event.event_id} of type {event.event_type.value}: {e}",
+                    extra={"event_id": event.event_id, "error_type": error_type},
+                )
+                span.set_status(trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
+                raise
 
     async def publish_note_created(
         self,
