@@ -147,7 +147,8 @@ class RechunkTaskTracker:
             task_dict = json.loads(data)
             task_dict["task_id"] = UUID(task_dict["task_id"])
             csi = task_dict.get("community_server_id")
-            task_dict["community_server_id"] = UUID(csi) if csi else None
+            # Handle both JSON null and legacy "None" string from str(None)
+            task_dict["community_server_id"] = UUID(csi) if csi and csi != "None" else None
             task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
             task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
             return RechunkTaskResponse(**task_dict)
@@ -193,7 +194,8 @@ class RechunkTaskTracker:
             task_dict = json.loads(data)
             task_dict["task_id"] = UUID(task_dict["task_id"])
             csi = task_dict.get("community_server_id")
-            task_dict["community_server_id"] = UUID(csi) if csi else None
+            # Handle both JSON null and legacy "None" string from str(None)
+            task_dict["community_server_id"] = UUID(csi) if csi and csi != "None" else None
             task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
             task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
             return RechunkTaskResponse(**task_dict)
@@ -568,7 +570,10 @@ class RechunkTaskTracker:
                 if isinstance(task.task_type, RechunkTaskType)
                 else task.task_type
             ),
-            "community_server_id": str(task.community_server_id),
+            # Serialize None as JSON null, not string "None"
+            "community_server_id": str(task.community_server_id)
+            if task.community_server_id
+            else None,
             "batch_size": task.batch_size,
             "status": (
                 task.status.value if isinstance(task.status, RechunkTaskStatus) else task.status

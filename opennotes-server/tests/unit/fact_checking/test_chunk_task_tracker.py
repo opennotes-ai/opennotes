@@ -355,3 +355,65 @@ class TestRechunkTaskTracker:
         assert result.community_server_id is None
         assert result.status == RechunkTaskStatus.IN_PROGRESS
         assert result.processed_count == 25
+
+    @pytest.mark.asyncio
+    async def test_create_task_serializes_null_community_server_id_as_json_null(
+        self, tracker, mock_redis
+    ):
+        """Create task with community_server_id=None stores JSON null, not string 'None'.
+
+        Bug: task-898 - str(None) produces "None" string which cannot be parsed as UUID.
+        The serialization must use JSON null for None values.
+        """
+        import json
+
+        task_data = RechunkTaskCreate(
+            task_type=RechunkTaskType.FACT_CHECK,
+            community_server_id=None,  # Using global credentials fallback
+            batch_size=100,
+            total_items=50,
+        )
+
+        await tracker.create_task(task_data)
+
+        # Get the JSON that was stored in Redis
+        call_args = mock_redis.set.call_args
+        stored_json = call_args.args[1]
+        stored_data = json.loads(stored_json)
+
+        # Must be JSON null (Python None), not the string "None"
+        assert stored_data["community_server_id"] is None
+        assert stored_data["community_server_id"] != "None"
+
+    @pytest.mark.asyncio
+    async def test_get_task_handles_legacy_none_string_community_server_id(
+        self, tracker, mock_redis
+    ):
+        """Get task handles legacy data where community_server_id is string 'None'.
+
+        Bug: task-898 - Legacy data may have str(None) = "None" stored in Redis.
+        Deserialization must handle this gracefully by treating "None" as null.
+        """
+        import json
+
+        task_id = uuid4()
+        stored_data = {
+            "task_id": str(task_id),
+            "task_type": "fact_check",
+            "community_server_id": "None",  # Legacy bug: str(None) produced this
+            "batch_size": 100,
+            "status": "in_progress",
+            "processed_count": 25,
+            "total_count": 50,
+            "error": None,
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "updated_at": "2024-01-01T00:00:00+00:00",
+        }
+        mock_redis.get.return_value = json.dumps(stored_data)
+
+        result = await tracker.get_task(task_id)
+
+        # Should handle "None" string as null, not crash
+        assert result is not None
+        assert result.task_id == task_id
+        assert result.community_server_id is None

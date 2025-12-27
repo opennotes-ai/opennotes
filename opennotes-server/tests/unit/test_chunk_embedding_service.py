@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk, PreviouslySeenChunk
+from src.fact_checking.chunk_models import ChunkEmbedding
 
 
 def _create_mock_db_for_insert(
@@ -458,8 +458,8 @@ class TestChunkAndEmbedFactCheck:
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
 
         fact_check_id = uuid4()
         community_server_id = uuid4()
@@ -480,10 +480,9 @@ class TestChunkAndEmbedFactCheck:
         assert len(chunks) == 2
         assert all(isinstance(c, ChunkEmbedding) for c in chunks)
 
-        join_entries = [o for o in added_objects if isinstance(o, FactCheckChunk)]
-        assert len(join_entries) == 2
-        for entry in join_entries:
-            assert entry.fact_check_id == fact_check_id
+        # Verify upsert INSERT was called (uses db.execute instead of db.add)
+        insert_calls = [c for c in execute_calls if "INSERT" in str(c).upper()]
+        assert len(insert_calls) >= 1
 
         service.batch_update_is_common_flags.assert_called_once()
         call_args = service.batch_update_is_common_flags.call_args
@@ -491,7 +490,7 @@ class TestChunkAndEmbedFactCheck:
 
     @pytest.mark.asyncio
     async def test_creates_join_entries_for_fact_check(self):
-        """Test that FactCheckChunk join entries are created with correct IDs."""
+        """Test that FactCheckChunk join entries are created via upsert."""
         mock_chunking_service = MagicMock()
         chunk_texts = ["Single chunk."]
         mock_chunking_service.chunk_text.return_value = chunk_texts
@@ -503,13 +502,13 @@ class TestChunkAndEmbedFactCheck:
             llm_service=mock_llm_service,
         )
 
-        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        batch_result, _created_chunks = _create_batch_mock_result(chunk_texts)
         service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
 
         fact_check_id = uuid4()
         community_server_id = uuid4()
@@ -521,10 +520,14 @@ class TestChunkAndEmbedFactCheck:
             community_server_id=community_server_id,
         )
 
-        join_entries = [o for o in added_objects if isinstance(o, FactCheckChunk)]
-        assert len(join_entries) == 1
-        assert join_entries[0].chunk_id == chunks[0].id
-        assert join_entries[0].fact_check_id == fact_check_id
+        # Verify INSERT statement for fact_check_chunks was executed
+        insert_calls = [
+            c
+            for c in execute_calls
+            if "INSERT" in str(c).upper() and "fact_check_chunks" in str(c).lower()
+        ]
+        assert len(insert_calls) >= 1, "Expected INSERT for fact_check_chunks"
+        assert len(chunks) == 1
 
     @pytest.mark.asyncio
     async def test_reuses_existing_chunks(self):
@@ -613,7 +616,7 @@ class TestChunkAndEmbedPreviouslySeen:
 
     @pytest.mark.asyncio
     async def test_creates_join_entries_for_previously_seen(self):
-        """Test that PreviouslySeenChunk join entries are created."""
+        """Test that PreviouslySeenChunk join entries are created via upsert."""
         mock_chunking_service = MagicMock()
         chunk_texts = ["Single chunk."]
         mock_chunking_service.chunk_text.return_value = chunk_texts
@@ -630,8 +633,8 @@ class TestChunkAndEmbedPreviouslySeen:
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
 
         previously_seen_id = uuid4()
         community_server_id = uuid4()
@@ -643,10 +646,14 @@ class TestChunkAndEmbedPreviouslySeen:
             community_server_id=community_server_id,
         )
 
-        join_entries = [o for o in added_objects if isinstance(o, PreviouslySeenChunk)]
-        assert len(join_entries) == 1
-        assert join_entries[0].chunk_id == chunks[0].id
-        assert join_entries[0].previously_seen_id == previously_seen_id
+        # Verify INSERT statement for previously_seen_chunks was executed
+        insert_calls = [
+            c
+            for c in execute_calls
+            if "INSERT" in str(c).upper() and "previously_seen_chunks" in str(c).lower()
+        ]
+        assert len(insert_calls) >= 1, "Expected INSERT for previously_seen_chunks"
+        assert len(chunks) == 1
 
     @pytest.mark.asyncio
     async def test_reuses_existing_chunks(self):
@@ -1002,8 +1009,13 @@ class TestRechunkingIdempotency:
     """Tests for re-chunking the same entity multiple times."""
 
     @pytest.mark.asyncio
-    async def test_rechunk_fact_check_deletes_existing_entries(self):
-        """Test that re-chunking a fact check deletes existing join entries first."""
+    async def test_rechunk_fact_check_cleans_up_stale_entries(self):
+        """Test that re-chunking cleans up stale chunk references after upsert.
+
+        With the upsert-first-then-cleanup approach:
+        1. INSERT ON CONFLICT DO UPDATE for current chunks
+        2. DELETE for chunks no longer referenced
+        """
         mock_chunking_service = MagicMock()
         chunk_texts = ["Chunk one."]
         mock_chunking_service.chunk_text.return_value = chunk_texts
@@ -1020,8 +1032,8 @@ class TestRechunkingIdempotency:
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
 
         fact_check_id = uuid4()
         community_server_id = uuid4()
@@ -1033,13 +1045,20 @@ class TestRechunkingIdempotency:
             community_server_id=community_server_id,
         )
 
-        assert mock_db.execute.call_count >= 1
-        first_call = mock_db.execute.call_args_list[0]
-        assert "DELETE" in str(first_call).upper() or "delete" in str(first_call)
+        # Should have both INSERT (upsert) and DELETE (cleanup)
+        insert_calls = [c for c in execute_calls if "INSERT" in str(c).upper()]
+        delete_calls = [c for c in execute_calls if "DELETE" in str(c).upper()]
+        assert len(insert_calls) >= 1, "Expected INSERT for upsert"
+        assert len(delete_calls) >= 1, "Expected DELETE for stale cleanup"
 
     @pytest.mark.asyncio
-    async def test_rechunk_previously_seen_deletes_existing_entries(self):
-        """Test that re-chunking a previously seen message deletes existing join entries first."""
+    async def test_rechunk_previously_seen_cleans_up_stale_entries(self):
+        """Test that re-chunking cleans up stale chunk references after upsert.
+
+        With the upsert-first-then-cleanup approach:
+        1. INSERT ON CONFLICT DO UPDATE for current chunks
+        2. DELETE for chunks no longer referenced
+        """
         mock_chunking_service = MagicMock()
         chunk_texts = ["Chunk one."]
         mock_chunking_service.chunk_text.return_value = chunk_texts
@@ -1056,8 +1075,8 @@ class TestRechunkingIdempotency:
         service.batch_update_is_common_flags = AsyncMock(return_value={})
 
         mock_db = AsyncMock()
-        added_objects: list[object] = []
-        mock_db.add = MagicMock(side_effect=lambda x: added_objects.append(x))
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
 
         previously_seen_id = uuid4()
         community_server_id = uuid4()
@@ -1069,9 +1088,11 @@ class TestRechunkingIdempotency:
             community_server_id=community_server_id,
         )
 
-        assert mock_db.execute.call_count >= 1
-        first_call = mock_db.execute.call_args_list[0]
-        assert "DELETE" in str(first_call).upper() or "delete" in str(first_call)
+        # Should have both INSERT (upsert) and DELETE (cleanup)
+        insert_calls = [c for c in execute_calls if "INSERT" in str(c).upper()]
+        delete_calls = [c for c in execute_calls if "DELETE" in str(c).upper()]
+        assert len(insert_calls) >= 1, "Expected INSERT for upsert"
+        assert len(delete_calls) >= 1, "Expected DELETE for stale cleanup"
 
     @pytest.mark.asyncio
     async def test_rechunk_fact_check_twice_succeeds(self):
@@ -1176,6 +1197,55 @@ class TestRechunkingIdempotency:
         assert len(chunks2) == 1
         assert chunks1[0] is chunk
         assert chunks2[0] is chunk
+
+    @pytest.mark.asyncio
+    async def test_rechunk_uses_upsert_for_join_entries(self):
+        """Test that rechunking uses INSERT ON CONFLICT (upsert) for FactCheckChunk entries.
+
+        Bug: task-898 - Direct db.add() can cause duplicate key violations if
+        there are session state issues or race conditions. Using upsert ensures
+        idempotent behavior even when duplicates exist.
+        """
+        mock_chunking_service = MagicMock()
+        chunk_texts = ["Chunk one.", "Chunk two."]
+        mock_chunking_service.chunk_text.return_value = chunk_texts
+
+        mock_llm_service = MagicMock()
+
+        service = ChunkEmbeddingService(
+            chunking_service=mock_chunking_service,
+            llm_service=mock_llm_service,
+        )
+
+        batch_result, _ = _create_batch_mock_result(chunk_texts)
+        service.get_or_create_chunks_batch = AsyncMock(return_value=batch_result)
+        service.batch_update_is_common_flags = AsyncMock(return_value={})
+
+        mock_db = AsyncMock()
+        execute_calls: list[object] = []
+        mock_db.execute = AsyncMock(side_effect=lambda stmt: execute_calls.append(stmt))
+
+        fact_check_id = uuid4()
+
+        await service.chunk_and_embed_fact_check(
+            db=mock_db,
+            fact_check_id=fact_check_id,
+            text="Chunk one. Chunk two.",
+            community_server_id=uuid4(),
+        )
+
+        insert_calls = [
+            call
+            for call in execute_calls
+            if "INSERT" in str(call).upper() and "fact_check_chunks" in str(call).lower()
+        ]
+        assert len(insert_calls) > 0, "Expected INSERT statement for fact_check_chunks"
+
+        for insert_call in insert_calls:
+            call_str = str(insert_call).upper()
+            assert "ON CONFLICT" in call_str, (
+                f"Expected ON CONFLICT (upsert) clause in: {insert_call}"
+            )
 
 
 class TestGetOrCreateChunksBatch:

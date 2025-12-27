@@ -419,8 +419,9 @@ class ChunkEmbeddingService:
         Chunk text and create/reuse embeddings for a FactCheckItem.
 
         This operation is idempotent: calling it multiple times for the same
-        fact_check_id will produce the same result. Existing FactCheckChunk
-        entries are deleted before creating new ones, ensuring a clean rechunk.
+        fact_check_id will produce the same result. Uses upsert (INSERT ON
+        CONFLICT) to create or update FactCheckChunk entries, then removes
+        any stale entries that are no longer part of the current chunking.
 
         Splits text into semantic chunks, creates or retrieves ChunkEmbedding
         records for each, and creates FactCheckChunk join entries.
@@ -437,10 +438,6 @@ class ChunkEmbeddingService:
         Returns:
             List of ChunkEmbedding records (new or existing)
         """
-        await db.execute(
-            delete(FactCheckChunk).where(FactCheckChunk.fact_check_id == fact_check_id)
-        )
-
         chunk_texts = self.chunking_service.chunk_text(text)
 
         chunk_results = await self.get_or_create_chunks_batch(
@@ -451,17 +448,44 @@ class ChunkEmbeddingService:
 
         chunks: list[ChunkEmbedding] = []
         chunk_ids: list[UUID] = []
+        join_entries: list[dict[str, Any]] = []
 
         for idx, (chunk, _) in enumerate(chunk_results):
             chunks.append(chunk)
             chunk_ids.append(chunk.id)
-
-            join_entry = FactCheckChunk(
-                chunk_id=chunk.id,
-                fact_check_id=fact_check_id,
-                chunk_index=idx,
+            join_entries.append(
+                {
+                    "chunk_id": chunk.id,
+                    "fact_check_id": fact_check_id,
+                    "chunk_index": idx,
+                    "created_at": datetime.now(UTC),
+                }
             )
-            db.add(join_entry)
+
+        # Use upsert to handle race conditions and ensure idempotency
+        # If a duplicate (chunk_id, fact_check_id) exists, update the chunk_index
+        if join_entries:
+            stmt = pg_insert(FactCheckChunk).values(join_entries)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_fact_check_chunks_chunk_fact_check",
+                set_={"chunk_index": stmt.excluded.chunk_index},
+            )
+            await db.execute(stmt)
+
+        # Delete stale chunk references that are no longer part of this fact check
+        # (e.g., if a fact check went from chunks A,B,C to A,B, we clean up C)
+        if chunk_ids:
+            await db.execute(
+                delete(FactCheckChunk).where(
+                    FactCheckChunk.fact_check_id == fact_check_id,
+                    FactCheckChunk.chunk_id.notin_(chunk_ids),
+                )
+            )
+        else:
+            # No chunks means delete all references for this fact check
+            await db.execute(
+                delete(FactCheckChunk).where(FactCheckChunk.fact_check_id == fact_check_id)
+            )
 
         await self.batch_update_is_common_flags(db, chunk_ids)
 
@@ -487,8 +511,9 @@ class ChunkEmbeddingService:
         Chunk text and create/reuse embeddings for a PreviouslySeenMessage.
 
         This operation is idempotent: calling it multiple times for the same
-        previously_seen_id will produce the same result. Existing PreviouslySeenChunk
-        entries are deleted before creating new ones, ensuring a clean rechunk.
+        previously_seen_id will produce the same result. Uses upsert (INSERT ON
+        CONFLICT) to create or update PreviouslySeenChunk entries, then removes
+        any stale entries that are no longer part of the current chunking.
 
         Splits text into semantic chunks, creates or retrieves ChunkEmbedding
         records for each, and creates PreviouslySeenChunk join entries.
@@ -505,12 +530,6 @@ class ChunkEmbeddingService:
         Returns:
             List of ChunkEmbedding records (new or existing)
         """
-        await db.execute(
-            delete(PreviouslySeenChunk).where(
-                PreviouslySeenChunk.previously_seen_id == previously_seen_id
-            )
-        )
-
         chunk_texts = self.chunking_service.chunk_text(text)
 
         chunk_results = await self.get_or_create_chunks_batch(
@@ -521,17 +540,46 @@ class ChunkEmbeddingService:
 
         chunks: list[ChunkEmbedding] = []
         chunk_ids: list[UUID] = []
+        join_entries: list[dict[str, Any]] = []
 
         for idx, (chunk, _) in enumerate(chunk_results):
             chunks.append(chunk)
             chunk_ids.append(chunk.id)
-
-            join_entry = PreviouslySeenChunk(
-                chunk_id=chunk.id,
-                previously_seen_id=previously_seen_id,
-                chunk_index=idx,
+            join_entries.append(
+                {
+                    "chunk_id": chunk.id,
+                    "previously_seen_id": previously_seen_id,
+                    "chunk_index": idx,
+                    "created_at": datetime.now(UTC),
+                }
             )
-            db.add(join_entry)
+
+        # Use upsert to handle race conditions and ensure idempotency
+        # If a duplicate (chunk_id, previously_seen_id) exists, update the chunk_index
+        if join_entries:
+            stmt = pg_insert(PreviouslySeenChunk).values(join_entries)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_previously_seen_chunks_chunk_previously_seen",
+                set_={"chunk_index": stmt.excluded.chunk_index},
+            )
+            await db.execute(stmt)
+
+        # Delete stale chunk references that are no longer part of this message
+        # (e.g., if a message went from chunks A,B,C to A,B, we clean up C)
+        if chunk_ids:
+            await db.execute(
+                delete(PreviouslySeenChunk).where(
+                    PreviouslySeenChunk.previously_seen_id == previously_seen_id,
+                    PreviouslySeenChunk.chunk_id.notin_(chunk_ids),
+                )
+            )
+        else:
+            # No chunks means delete all references for this message
+            await db.execute(
+                delete(PreviouslySeenChunk).where(
+                    PreviouslySeenChunk.previously_seen_id == previously_seen_id
+                )
+            )
 
         await self.batch_update_is_common_flags(db, chunk_ids)
 
