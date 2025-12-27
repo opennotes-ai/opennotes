@@ -39,7 +39,11 @@ export class GuildConfigService {
 
   async get(guildId: string, key: ConfigKey): Promise<ConfigValue> {
     const config = await this.getGuildConfig(guildId);
-    return config[key] ?? ConfigValidator.getDefault(key);
+    const rawValue = config[key];
+    if (rawValue === undefined || rawValue === null) {
+      return ConfigValidator.getDefault(key);
+    }
+    return ConfigValidator.parseValue(key, rawValue);
   }
 
   async getAll(guildId: string): Promise<GuildConfig> {
@@ -116,10 +120,13 @@ export class GuildConfigService {
       // Fetch from API
       const config = await this.apiClient.getGuildConfig(guildId);
 
-      // Merge with defaults
+      // Merge with defaults and parse values to proper types
       const fullConfig: GuildConfig = {} as GuildConfig;
       for (const key of ConfigValidator.getAllKeys()) {
-        fullConfig[key] = (config[key] as ConfigValue | undefined) ?? ConfigValidator.getDefault(key);
+        const rawValue = config[key];
+        fullConfig[key] = rawValue !== undefined && rawValue !== null
+          ? ConfigValidator.parseValue(key, rawValue)
+          : ConfigValidator.getDefault(key);
       }
 
       // Update cache

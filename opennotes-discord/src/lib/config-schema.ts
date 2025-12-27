@@ -216,4 +216,38 @@ export class ConfigValidator {
   static getDescription(key: ConfigKey): string {
     return CONFIG_SCHEMA[key]?.description || 'No description available';
   }
+
+  static parseValue(key: ConfigKey, value: unknown): ConfigValue {
+    const schema = CONFIG_SCHEMA[key];
+    if (!schema) {
+      return String(value);
+    }
+
+    switch (schema.type) {
+      case 'boolean': {
+        if (typeof value === 'boolean') {
+          return value;
+        }
+        if (value === 'true' || value === '1' || value === 'yes') {
+          return true;
+        }
+        if (value === 'false' || value === '0' || value === 'no') {
+          return false;
+        }
+        return schema.default as boolean;
+      }
+
+      case 'number': {
+        if (typeof value === 'number') {
+          return value;
+        }
+        const num = parseFloat(String(value));
+        return isNaN(num) ? (schema.default as number) : num;
+      }
+
+      case 'string':
+      default:
+        return String(value);
+    }
+  }
 }
