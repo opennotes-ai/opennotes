@@ -190,3 +190,12 @@ class _BrokerProxy:
 
 # Export a proxy that lazily creates the broker
 broker = _BrokerProxy()
+
+__all__ = [
+    "LazyTask",
+    "PullBasedJetStreamBroker",
+    "broker",
+    "get_broker",
+    "register_task",
+    "reset_broker",
+]

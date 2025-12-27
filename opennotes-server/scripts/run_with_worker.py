@@ -12,13 +12,14 @@ Environment Variables:
     SERVER_HOST: Host to bind the API server (default: 0.0.0.0)
     SERVER_PORT: Port for the API server (default: 8000)
     LOG_LEVEL: Logging level (default: info)
+    TASKIQ_TASK_MODULES: Space-separated list of task modules (default: src.tasks.example)
 """
 
-import asyncio
 import os
 import signal
 import subprocess
 import sys
+import time
 
 
 def get_env_var(name: str, default: str) -> str:
@@ -58,16 +59,19 @@ class ProcessManager:
 
     def start_worker(self) -> subprocess.Popen:
         """Start the taskiq worker process."""
+        task_modules = get_env_var("TASKIQ_TASK_MODULES", "src.tasks.example").split()
+
         cmd = [
             sys.executable,
             "-m",
             "taskiq",
             "worker",
             "src.tasks.broker:broker",
-            "src.tasks.example",  # Include task modules for discovery
+            *task_modules,
         ]
 
         print(f"Starting taskiq worker: {' '.join(cmd)}")
+        print(f"Task modules: {task_modules}")
         return subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
 
     def handle_signal(self, signum: int, _frame: object) -> None:
@@ -125,8 +129,7 @@ class ProcessManager:
                     self.shutdown()
                     return worker_status
 
-                # Check every 100ms
-                asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.1))
+                time.sleep(0.1)
 
         except Exception as e:
             print(f"Error: {e}")

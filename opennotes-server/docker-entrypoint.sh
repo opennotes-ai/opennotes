@@ -39,7 +39,9 @@ case "$RUN_MODE" in
         ;;
     "worker")
         echo "Starting taskiq worker only..."
-        exec python -m taskiq worker src.tasks.broker:broker src.tasks.example
+        TASKIQ_TASK_MODULES="${TASKIQ_TASK_MODULES:-src.tasks.example}"
+        echo "Task modules: $TASKIQ_TASK_MODULES"
+        exec python -m taskiq worker src.tasks.broker:broker $TASKIQ_TASK_MODULES
         ;;
     "both")
         echo "Starting API server and taskiq worker..."

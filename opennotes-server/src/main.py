@@ -71,7 +71,7 @@ from src.notes.stats_jsonapi_router import router as stats_jsonapi_router
 from src.services.ai_note_writer import AINoteWriter
 from src.services.vision_service import VisionService
 from src.startup_validation import run_startup_checks
-from src.tasks.broker import get_broker, reset_broker
+from src.tasks.broker import PullBasedJetStreamBroker, get_broker, reset_broker
 from src.users.admin_router import router as admin_router
 from src.users.communities_jsonapi_router import router as communities_jsonapi_router
 from src.users.profile_router import router as profile_auth_router
@@ -130,7 +130,7 @@ async def _connect_nats() -> None:
             raise
 
 
-async def _start_taskiq_broker() -> Any:
+async def _start_taskiq_broker() -> PullBasedJetStreamBroker | None:
     """Start taskiq broker for background task dispatch, allowing failure in test mode."""
     try:
         taskiq_broker = get_broker()
