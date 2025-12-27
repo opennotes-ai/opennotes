@@ -12,14 +12,14 @@ class TestChunkingServiceInitialization:
 
     def test_default_model_constant(self):
         """Test ChunkingService has correct default model."""
-        assert ChunkingService.DEFAULT_MODEL == "mirth/chonky_modernbert_base_1"
+        assert ChunkingService.DEFAULT_MODEL == "mirth/chonky_distilbert_base_uncased_1"
 
     def test_initialization_with_defaults(self):
         """Test ChunkingService can be initialized with default parameters."""
         service = ChunkingService()
 
         assert service._model == ChunkingService.DEFAULT_MODEL
-        assert service._device_map == "cpu"
+        assert service._device_map is None
         assert service._min_characters_per_chunk == 50
         assert service._chunker is None
 
@@ -48,8 +48,8 @@ class TestChunkingServiceInitialization:
         chunker = service.chunker
 
         mock_neural_chunker.assert_called_once_with(
-            model="mirth/chonky_modernbert_base_1",
-            device_map="cpu",
+            model="mirth/chonky_distilbert_base_uncased_1",
+            device_map=None,
             min_characters_per_chunk=50,
         )
         assert chunker is mock_instance
