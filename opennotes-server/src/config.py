@@ -238,6 +238,23 @@ class Settings(BaseSettings):
         default=120, description="Duplicate message detection window (default: 2 minutes)"
     )
 
+    TASKIQ_STREAM_NAME: str = Field(
+        default="OPENNOTES_TASKS",
+        description="NATS JetStream stream name for taskiq background tasks",
+    )
+    TASKIQ_RESULT_EXPIRY: int = Field(
+        default=3600,
+        description="Time in seconds to keep task results in Redis (default: 1 hour)",
+    )
+    TASKIQ_DEFAULT_RETRY_COUNT: int = Field(
+        default=3,
+        description="Default number of retries for failed tasks",
+    )
+    TASKIQ_RETRY_DELAY: int = Field(
+        default=5,
+        description="Delay in seconds between task retries",
+    )
+
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = Field(default=5)
     CIRCUIT_BREAKER_TIMEOUT: int = Field(default=60)
     CIRCUIT_BREAKER_EXPECTED_EXCEPTION: str = Field(default="Exception")
