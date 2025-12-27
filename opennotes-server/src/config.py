@@ -434,6 +434,10 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    OTLP_HEADERS: str | None = Field(
+        default=None,
+        description="OTLP exporter headers in 'key=value,key2=value2' format for authentication",
+    )
 
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")

@@ -23,6 +23,7 @@ class TracingManager:
         environment: str,
         otlp_endpoint: str | None = None,
         otlp_insecure: bool = False,
+        otlp_headers: str | None = None,
         enable_console_export: bool = False,
         sample_rate: float = 0.1,
     ) -> None:
@@ -31,10 +32,23 @@ class TracingManager:
         self.environment = environment
         self.otlp_endpoint = otlp_endpoint
         self.otlp_insecure = otlp_insecure
+        self.otlp_headers = otlp_headers
         self.enable_console_export = enable_console_export
         self.sample_rate = sample_rate
         self._tracer_provider: TracerProvider | None = None
         self._instrumented_components: set[str] = set()
+
+    def _parse_headers(self) -> tuple[tuple[str, str], ...] | None:
+        """Parse OTLP headers from 'key=value,key2=value2' format to tuple of tuples."""
+        if not self.otlp_headers:
+            return None
+        headers = []
+        for raw_pair in self.otlp_headers.split(","):
+            pair = raw_pair.strip()
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                headers.append((key.strip(), value.strip()))
+        return tuple(headers) if headers else None
 
     def setup(self) -> None:
         if self._tracer_provider is not None:
@@ -54,12 +68,17 @@ class TracingManager:
         trace.set_tracer_provider(self._tracer_provider)
 
         if self.otlp_endpoint:
+            headers = self._parse_headers()
             otlp_exporter = OTLPSpanExporter(
-                endpoint=self.otlp_endpoint, insecure=self.otlp_insecure
+                endpoint=self.otlp_endpoint,
+                insecure=self.otlp_insecure,
+                headers=headers,
             )
             self._tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+            headers_status = "with auth" if headers else "no auth"
             logger.info(
-                f"OTLP tracing enabled: {self.otlp_endpoint} (insecure={self.otlp_insecure})"
+                f"OTLP tracing enabled: {self.otlp_endpoint} "
+                f"(insecure={self.otlp_insecure}, {headers_status})"
             )
 
         if self.enable_console_export:
