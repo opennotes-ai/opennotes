@@ -100,6 +100,7 @@ tracing_manager = TracingManager(
     environment=settings.ENVIRONMENT,
     otlp_endpoint=settings.OTLP_ENDPOINT,
     otlp_insecure=settings.OTLP_INSECURE,
+    otlp_headers=settings.OTLP_HEADERS,
     enable_console_export=settings.ENABLE_CONSOLE_TRACING,
 )
 
