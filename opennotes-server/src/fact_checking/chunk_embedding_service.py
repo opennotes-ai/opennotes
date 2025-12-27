@@ -449,18 +449,21 @@ class ChunkEmbeddingService:
         chunks: list[ChunkEmbedding] = []
         chunk_ids: list[UUID] = []
         join_entries: list[dict[str, Any]] = []
+        seen_chunk_ids: set[UUID] = set()
 
         for idx, (chunk, _) in enumerate(chunk_results):
             chunks.append(chunk)
             chunk_ids.append(chunk.id)
-            join_entries.append(
-                {
-                    "chunk_id": chunk.id,
-                    "fact_check_id": fact_check_id,
-                    "chunk_index": idx,
-                    "created_at": datetime.now(UTC),
-                }
-            )
+            if chunk.id not in seen_chunk_ids:
+                seen_chunk_ids.add(chunk.id)
+                join_entries.append(
+                    {
+                        "chunk_id": chunk.id,
+                        "fact_check_id": fact_check_id,
+                        "chunk_index": idx,
+                        "created_at": datetime.now(UTC),
+                    }
+                )
 
         # Use upsert to handle race conditions and ensure idempotency
         # If a duplicate (chunk_id, fact_check_id) exists, update the chunk_index
@@ -541,18 +544,21 @@ class ChunkEmbeddingService:
         chunks: list[ChunkEmbedding] = []
         chunk_ids: list[UUID] = []
         join_entries: list[dict[str, Any]] = []
+        seen_chunk_ids: set[UUID] = set()
 
         for idx, (chunk, _) in enumerate(chunk_results):
             chunks.append(chunk)
             chunk_ids.append(chunk.id)
-            join_entries.append(
-                {
-                    "chunk_id": chunk.id,
-                    "previously_seen_id": previously_seen_id,
-                    "chunk_index": idx,
-                    "created_at": datetime.now(UTC),
-                }
-            )
+            if chunk.id not in seen_chunk_ids:
+                seen_chunk_ids.add(chunk.id)
+                join_entries.append(
+                    {
+                        "chunk_id": chunk.id,
+                        "previously_seen_id": previously_seen_id,
+                        "chunk_index": idx,
+                        "created_at": datetime.now(UTC),
+                    }
+                )
 
         # Use upsert to handle race conditions and ensure idempotency
         # If a duplicate (chunk_id, previously_seen_id) exists, update the chunk_index
