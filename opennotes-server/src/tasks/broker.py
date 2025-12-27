@@ -4,6 +4,7 @@ Taskiq broker configuration with NATS JetStream and Redis result backend.
 This module configures the taskiq broker for distributed task processing using:
 - PullBasedJetStreamBroker: Pull-based NATS JetStream broker for reliable message delivery
 - RedisAsyncResultBackend: Redis for storing task results
+- SimpleRetryMiddleware: Automatic retry for failed tasks
 
 The broker is lazily initialized to support dynamic configuration in tests.
 
@@ -20,11 +21,13 @@ Usage:
     await broker.shutdown()
 """
 
+import functools
 import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
 
 import taskiq_fastapi
+from taskiq import SimpleRetryMiddleware
 from taskiq_nats import PullBasedJetStreamBroker
 from taskiq_redis import RedisAsyncResultBackend
 
@@ -46,17 +49,30 @@ def _create_broker() -> PullBasedJetStreamBroker:
     logger.info(
         f"Creating taskiq broker with NATS: {settings.NATS_URL}, Redis: {settings.REDIS_URL}"
     )
+    logger.info(
+        f"Taskiq config: stream={settings.TASKIQ_STREAM_NAME}, "
+        f"result_expiry={settings.TASKIQ_RESULT_EXPIRY}s, "
+        f"retry_count={settings.TASKIQ_DEFAULT_RETRY_COUNT}"
+    )
 
     result_backend = RedisAsyncResultBackend(
         redis_url=settings.REDIS_URL,
-        result_ex_time=3600,
+        result_ex_time=settings.TASKIQ_RESULT_EXPIRY,
     )
 
-    new_broker = PullBasedJetStreamBroker(
-        servers=[settings.NATS_URL],
-        stream_name="OPENNOTES_TASKS",
-        durable="opennotes-taskiq-worker",
-    ).with_result_backend(result_backend)
+    retry_middleware = SimpleRetryMiddleware(
+        default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,
+    )
+
+    new_broker = (
+        PullBasedJetStreamBroker(
+            servers=[settings.NATS_URL],
+            stream_name=settings.TASKIQ_STREAM_NAME,
+            durable="opennotes-taskiq-worker",
+        )
+        .with_result_backend(result_backend)
+        .with_middlewares(retry_middleware)
+    )
 
     taskiq_fastapi.init(new_broker, "src.main:app")
 
@@ -101,13 +117,22 @@ class LazyTask:
     This wrapper allows tasks to be decorated at import time before the
     broker is created. When methods like .kiq() are called, it looks up
     the actual task from the broker.
+
+    Uses functools.update_wrapper to preserve the original function's
+    metadata (__name__, __doc__, __annotations__, __module__, etc.).
     """
+
+    __name__: str
+    __doc__: str | None
+    __annotations__: dict[str, Any]
+    __module__: str
+    __qualname__: str
+    __wrapped__: Callable[..., Any]
 
     def __init__(self, func: Callable[..., Any], task_name: str) -> None:
         self._func = func
         self._task_name = task_name
-        self.__name__ = func.__name__
-        self.__doc__ = func.__doc__
+        functools.update_wrapper(self, func)
 
     def _get_registered_task(self) -> Any:
         """Get the actual registered task from the broker."""
@@ -188,6 +213,43 @@ class _BrokerProxy:
         return f"<BrokerProxy wrapping {get_broker()!r}>"
 
 
+def is_broker_initialized() -> bool:
+    """
+    Check if the broker has been initialized.
+
+    Returns True if the broker instance has been created, False otherwise.
+    This is useful for health checks to verify the broker is ready.
+    """
+    return _broker_instance is not None
+
+
+def get_broker_health() -> dict[str, Any]:
+    """
+    Get health status of the taskiq broker.
+
+    Returns a dict with:
+    - initialized: Whether the broker instance exists
+    - stream_name: The configured NATS stream name
+    - registered_tasks: Number of registered tasks
+
+    This is used by the /health/taskiq endpoint.
+    """
+    settings = get_settings()
+
+    if _broker_instance is None:
+        return {
+            "initialized": False,
+            "stream_name": settings.TASKIQ_STREAM_NAME,
+            "registered_tasks": 0,
+        }
+
+    return {
+        "initialized": True,
+        "stream_name": settings.TASKIQ_STREAM_NAME,
+        "registered_tasks": len(_registered_task_objects),
+    }
+
+
 # Export a proxy that lazily creates the broker
 broker = _BrokerProxy()
 
@@ -196,6 +258,8 @@ __all__ = [
     "PullBasedJetStreamBroker",
     "broker",
     "get_broker",
+    "get_broker_health",
+    "is_broker_initialized",
     "register_task",
     "reset_broker",
 ]

@@ -14,6 +14,7 @@ from src.circuit_breaker import circuit_breaker_registry
 from src.config import settings
 from src.events.nats_client import nats_client
 from src.monitoring import DistributedHealthCoordinator, HealthChecker
+from src.tasks.broker import get_broker_health, is_broker_initialized
 
 logger = logging.getLogger(__name__)
 
@@ -227,15 +228,67 @@ async def nats_health() -> ServiceStatus:
         )
 
 
+@router.get("/health/taskiq", response_model=ServiceStatus)
+async def taskiq_health() -> ServiceStatus:
+    """
+    Check taskiq broker health status.
+
+    Returns status information about the taskiq background task system:
+    - Whether the broker is initialized
+    - The configured stream name
+    - Number of registered tasks
+    """
+    start = time.time()
+
+    try:
+        is_initialized = is_broker_initialized()
+        latency_ms = (time.time() - start) * 1000
+
+        if not is_initialized:
+            return ServiceStatus(
+                status="degraded",
+                latency_ms=latency_ms,
+                message="Taskiq broker not initialized",
+                details=get_broker_health(),
+            )
+
+        health_info = get_broker_health()
+
+        return ServiceStatus(
+            status="healthy",
+            latency_ms=latency_ms,
+            message="Taskiq broker is operational",
+            details=health_info,
+        )
+
+    except Exception as e:
+        latency_ms = (time.time() - start) * 1000
+        logger.error(f"Taskiq health check failed: {e}")
+        return ServiceStatus(
+            status="unhealthy",
+            latency_ms=latency_ms,
+            message=f"Taskiq health check failed: {e!s}",
+        )
+
+
 @router.get("/health/detailed", response_model=HealthCheckResponse)
 async def detailed_health() -> HealthCheckResponse:
     redis_status = await redis_health()
     nats_status = await nats_health()
+    taskiq_status = await taskiq_health()
 
     overall_status = "healthy"
-    if redis_status.status == "unhealthy" or nats_status.status == "unhealthy":
+    if (
+        redis_status.status == "unhealthy"
+        or nats_status.status == "unhealthy"
+        or taskiq_status.status == "unhealthy"
+    ):
         overall_status = "unhealthy"
-    elif redis_status.status == "degraded" or nats_status.status == "degraded":
+    elif (
+        redis_status.status == "degraded"
+        or nats_status.status == "degraded"
+        or taskiq_status.status == "degraded"
+    ):
         overall_status = "degraded"
 
     return HealthCheckResponse(
@@ -245,6 +298,7 @@ async def detailed_health() -> HealthCheckResponse:
         services={
             "redis": redis_status,
             "nats": nats_status,
+            "taskiq": taskiq_status,
         },
         components=None,
     )

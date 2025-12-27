@@ -105,6 +105,11 @@ RUN_MODE=worker ./docker-entrypoint.sh
 RUN_MODE=both ./docker-entrypoint.sh
 ```
 
+> **Note:** `RUN_MODE=both` does not support hot reload (`--reload`). The worker
+> process runs alongside the server, and uvicorn's reload mechanism only applies
+> to the server process. For development with hot reload, run the server and
+> worker as separate processes.
+
 ### Kubernetes
 
 For production, run separate deployments:
@@ -146,6 +151,9 @@ The broker uses environment variables from `src.config`:
 
 - `NATS_URL`: NATS server URL (default: `nats://localhost:4222`)
 - `REDIS_URL`: Redis URL for result storage (default: `redis://localhost:6379/0`)
+- `TASKIQ_STREAM_NAME`: NATS JetStream stream name (default: `OPENNOTES_TASKS`)
+- `TASKIQ_RESULT_EXPIRY`: Time in seconds to keep results in Redis (default: `3600`)
+- `TASKIQ_DEFAULT_RETRY_COUNT`: Number of automatic retries for failed tasks (default: `3`)
 
 ## Error Handling
 
