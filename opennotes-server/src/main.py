@@ -71,6 +71,7 @@ from src.notes.stats_jsonapi_router import router as stats_jsonapi_router
 from src.services.ai_note_writer import AINoteWriter
 from src.services.vision_service import VisionService
 from src.startup_validation import run_startup_checks
+from src.tasks.broker import get_broker, reset_broker
 from src.users.admin_router import router as admin_router
 from src.users.communities_jsonapi_router import router as communities_jsonapi_router
 from src.users.profile_router import router as profile_auth_router
@@ -114,6 +115,34 @@ health_checker = HealthChecker(
 )
 
 distributed_health = DistributedHealthCoordinator()
+
+
+async def _connect_nats() -> None:
+    """Connect to NATS, allowing failure in test mode."""
+    try:
+        await nats_client.connect()
+        logger.info("NATS connection established")
+    except Exception as e:
+        logger.error(f"Failed to connect to NATS: {e}")
+        if settings.TESTING or settings.ENVIRONMENT == "test":
+            logger.warning("Running in test mode - continuing without NATS connection")
+        else:
+            raise
+
+
+async def _start_taskiq_broker() -> Any:
+    """Start taskiq broker for background task dispatch, allowing failure in test mode."""
+    try:
+        taskiq_broker = get_broker()
+        await taskiq_broker.startup()
+        logger.info("Taskiq broker started for task dispatch")
+        return taskiq_broker
+    except Exception as e:
+        logger.error(f"Failed to start taskiq broker: {e}")
+        if settings.TESTING or settings.ENVIRONMENT == "test":
+            logger.warning("Running in test mode - continuing without taskiq broker")
+            return None
+        raise
 
 
 async def _init_ai_services() -> tuple[
@@ -238,15 +267,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await interaction_cache.connect()
     logger.info("Redis connections established")
 
-    try:
-        await nats_client.connect()
-        logger.info("NATS connection established")
-    except Exception as e:
-        logger.error(f"Failed to connect to NATS: {e}")
-        if settings.TESTING or settings.ENVIRONMENT == "test":
-            logger.warning("Running in test mode - continuing without NATS connection")
-        else:
-            raise
+    await _connect_nats()
+    app.state.taskiq_broker = await _start_taskiq_broker()
 
     # Initialize AI Note Writer and Vision services if enabled
     ai_note_writer, vision_service, llm_service = await _init_ai_services()
@@ -314,6 +336,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if ai_note_writer:
         await ai_note_writer.stop()
         logger.info("AI Note Writer service stopped")
+
+    # Shutdown taskiq broker
+    if hasattr(app.state, "taskiq_broker") and app.state.taskiq_broker:
+        try:
+            await app.state.taskiq_broker.shutdown()
+            reset_broker()
+            logger.info("Taskiq broker shutdown complete")
+        except Exception as e:
+            logger.warning(f"Error shutting down taskiq broker: {e}")
 
     try:
         await nats_client.disconnect()

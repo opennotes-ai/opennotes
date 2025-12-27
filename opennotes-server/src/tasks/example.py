@@ -3,14 +3,18 @@ Example tasks for testing taskiq integration.
 
 These tasks demonstrate the taskiq task pattern and are used by integration tests
 to verify the broker and result backend are working correctly.
+
+Tasks use the register_task() decorator for lazy broker initialization, which allows
+the broker to be configured with dynamic settings (e.g., from testcontainers) before
+the tasks are actually registered with it.
 """
 
 import asyncio
 
-from src.tasks.broker import broker
+from src.tasks.broker import register_task
 
 
-@broker.task
+@register_task()
 async def example_task(message: str) -> str:
     """
     Process a message and return the result.
@@ -24,7 +28,7 @@ async def example_task(message: str) -> str:
     return f"Processed: {message}"
 
 
-@broker.task
+@register_task()
 async def slow_task(delay_seconds: float) -> str:
     """
     A slow task that sleeps for a specified duration.
@@ -39,7 +43,7 @@ async def slow_task(delay_seconds: float) -> str:
     return "Done"
 
 
-@broker.task
+@register_task()
 async def failing_task() -> None:
     """
     A task that always fails with a ValueError.

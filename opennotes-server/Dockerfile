@@ -18,7 +18,10 @@ COPY opennotes-server/scripts/ ./scripts/
 COPY opennotes-server/docker-entrypoint.sh ./
 COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 
-RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
+RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py scripts/run_with_worker.py
+
+# RUN_MODE controls startup: server (default), worker, or both
+ENV RUN_MODE=server
 
 EXPOSE 8000
 
@@ -34,7 +37,10 @@ COPY opennotes-server/scripts/ ./scripts/
 COPY opennotes-server/docker-entrypoint.sh ./
 COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 
-RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
+RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py scripts/run_with_worker.py
+
+# RUN_MODE controls startup: server (default), worker, or both
+ENV RUN_MODE=server
 
 EXPOSE 8000
 
