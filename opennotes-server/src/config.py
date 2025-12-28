@@ -55,7 +55,11 @@ class Settings(BaseSettings):
         return v
 
     PROJECT_NAME: str = "Open Notes Scoring API"
-    VERSION: str = "0.0.1"
+    VERSION: str = Field(
+        default="0.0.1",
+        validation_alias="SERVICE_VERSION",
+        description="Service version for tracing",
+    )
     API_V1_PREFIX: str = "/api/v1"
     API_V2_PREFIX: str = "/api/v2"
 

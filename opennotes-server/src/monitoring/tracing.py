@@ -162,9 +162,16 @@ class TracingManager:
         if "sqlalchemy" in self._instrumented_components:
             logger.warning("SQLAlchemy already instrumented, skipping")
             return
-        SQLAlchemyInstrumentor().instrument(engine=engine)
+        SQLAlchemyInstrumentor().instrument(
+            engine=engine,
+            enable_commenter=True,
+            commenter_options={
+                "opentelemetry_values": True,
+            },
+            enable_attribute_commenter=True,
+        )
         self._instrumented_components.add("sqlalchemy")
-        logger.info("SQLAlchemy instrumentation enabled")
+        logger.info("SQLAlchemy instrumentation enabled with query-level tracing")
 
     def shutdown(self) -> None:
         if self._tracer_provider:
