@@ -5,6 +5,7 @@ This module configures the taskiq broker for distributed task processing using:
 - PullBasedJetStreamBroker: Pull-based NATS JetStream broker for reliable message delivery
 - RedisAsyncResultBackend: Redis for storing task results
 - SimpleRetryMiddleware: Automatic retry for failed tasks
+- OpenTelemetryMiddleware: Distributed tracing with W3C Trace Context propagation
 
 The broker is lazily initialized to support dynamic configuration in tests.
 
@@ -28,6 +29,7 @@ from typing import Any, TypeVar
 
 import taskiq_fastapi
 from taskiq import SimpleRetryMiddleware
+from taskiq.middlewares.opentelemetry_middleware import OpenTelemetryMiddleware
 from taskiq_nats import PullBasedJetStreamBroker
 from taskiq_redis import RedisAsyncResultBackend
 
@@ -64,6 +66,8 @@ def _create_broker() -> PullBasedJetStreamBroker:
         default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,
     )
 
+    tracing_middleware = OpenTelemetryMiddleware()
+
     new_broker = (
         PullBasedJetStreamBroker(
             servers=[settings.NATS_URL],
@@ -71,8 +75,10 @@ def _create_broker() -> PullBasedJetStreamBroker:
             durable="opennotes-taskiq-worker",
         )
         .with_result_backend(result_backend)
-        .with_middlewares(retry_middleware)
+        .with_middlewares(tracing_middleware, retry_middleware)
     )
+
+    logger.info("Taskiq broker configured with OpenTelemetry tracing middleware")
 
     taskiq_fastapi.init(new_broker, "src.main:app")
 
