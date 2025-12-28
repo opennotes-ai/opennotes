@@ -38,7 +38,7 @@ import {
 } from '@opentelemetry/core';
 
 const SERVICE_NAME = 'opennotes-discord';
-const SERVICE_VERSION = process.env.npm_package_version || '0.0.1';
+const SERVICE_VERSION = process.env.SERVICE_VERSION || process.env.npm_package_version || '0.0.1';
 const ENVIRONMENT = process.env.NODE_ENV || 'development';
 
 const BAGGAGE_KEYS_TO_PROPAGATE = [
