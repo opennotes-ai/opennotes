@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.fact_checking.chunk_router import RECHUNK_LOCK_PREFIX, RechunkLockManager
+from src.fact_checking.rechunk_lock import RECHUNK_LOCK_PREFIX, RechunkLockManager
 
 
 class TestRechunkLockManager:
@@ -190,9 +190,7 @@ class TestRechunkLockManager:
         assert manager.redis is mock_redis
 
     @pytest.mark.asyncio
-    async def test_redis_property_falls_back_to_global(self):
-        """Redis property falls back to global redis_client when not injected."""
+    async def test_redis_property_returns_none_when_not_injected(self):
+        """Redis property returns None when not injected (no global fallback in base class)."""
         manager = RechunkLockManager(redis=None)
-        from src.cache.redis_client import redis_client
-
-        assert manager.redis is redis_client.client
+        assert manager.redis is None
