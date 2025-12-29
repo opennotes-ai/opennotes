@@ -30,6 +30,8 @@ class TestBrokerConfiguration:
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
             settings.TASKIQ_RESULT_EXPIRY = 7200
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 5
+            settings.NATS_USERNAME = None
+            settings.NATS_PASSWORD = None
             mock_settings.return_value = settings
 
             mock_broker_instance = MagicMock()
@@ -207,6 +209,8 @@ class TestBrokerConnectionFailure:
             settings.TASKIQ_STREAM_NAME = "TEST"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_USERNAME = None
+            settings.NATS_PASSWORD = None
             mock_settings.return_value = settings
 
             mock_broker = MagicMock()
@@ -251,6 +255,8 @@ class TestBrokerConnectionFailure:
             settings.TASKIQ_STREAM_NAME = "TEST"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_USERNAME = None
+            settings.NATS_PASSWORD = None
             mock_settings.return_value = settings
 
             mock_backend = MagicMock()
@@ -294,6 +300,8 @@ class TestRetryMiddlewareConfiguration:
             settings.TASKIQ_STREAM_NAME = "TEST"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 10
+            settings.NATS_USERNAME = None
+            settings.NATS_PASSWORD = None
             mock_settings.return_value = settings
 
             mock_broker_instance = MagicMock()
@@ -307,3 +315,45 @@ class TestRetryMiddlewareConfiguration:
 
             mock_retry.assert_called_once_with(default_retry_count=10)
             mock_broker_instance.with_middlewares.assert_called_once()
+
+
+class TestBrokerAuthentication:
+    """Test broker NATS authentication configuration."""
+
+    def test_broker_passes_auth_when_credentials_configured(self) -> None:
+        """Verify broker passes user/password when NATS credentials are set."""
+        with (
+            patch("src.tasks.broker._broker_instance", None),
+            patch("src.tasks.broker._registered_task_objects", {}),
+            patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.RedisAsyncResultBackend"),
+            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.taskiq_fastapi"),
+        ):
+            settings = MagicMock()
+            settings.NATS_URL = "nats://test:4222"
+            settings.REDIS_URL = "redis://test:6379"
+            settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
+            settings.TASKIQ_RESULT_EXPIRY = 3600
+            settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_USERNAME = "testuser"
+            settings.NATS_PASSWORD = "testpass"
+            mock_settings.return_value = settings
+
+            mock_broker_instance = MagicMock()
+            mock_broker_instance.with_result_backend.return_value = mock_broker_instance
+            mock_broker_instance.with_middlewares.return_value = mock_broker_instance
+            mock_broker.return_value = mock_broker_instance
+
+            from src.tasks.broker import _create_broker
+
+            _create_broker()
+
+            mock_broker.assert_called_once_with(
+                servers=["nats://test:4222"],
+                stream_name="TEST_STREAM",
+                durable="opennotes-taskiq-worker",
+                user="testuser",
+                password="testpass",
+            )
