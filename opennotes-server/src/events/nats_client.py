@@ -64,7 +64,7 @@ class NATSClientManager:
             retry_backoff_base: Base for exponential backoff (wait = base^attempt seconds)
         """
         url = settings.NATS_URL
-        has_auth = settings.NATS_USERNAME and settings.NATS_PASSWORD
+        has_auth = bool(settings.NATS_USERNAME and settings.NATS_PASSWORD)
         logger.info(f"Connecting to NATS at {url} (auth: {has_auth})")
 
         connect_kwargs: dict[str, object] = {

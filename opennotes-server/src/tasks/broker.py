@@ -68,11 +68,18 @@ def _create_broker() -> PullBasedJetStreamBroker:
 
     tracing_middleware = OpenTelemetryMiddleware()
 
+    connection_kwargs: dict[str, Any] = {}
+    if settings.NATS_USERNAME and settings.NATS_PASSWORD:
+        connection_kwargs["user"] = settings.NATS_USERNAME
+        connection_kwargs["password"] = settings.NATS_PASSWORD
+        logger.info("Taskiq broker configured with NATS authentication")
+
     new_broker = (
         PullBasedJetStreamBroker(
             servers=[settings.NATS_URL],
             stream_name=settings.TASKIQ_STREAM_NAME,
             durable="opennotes-taskiq-worker",
+            **connection_kwargs,
         )
         .with_result_backend(result_backend)
         .with_middlewares(tracing_middleware, retry_middleware)
