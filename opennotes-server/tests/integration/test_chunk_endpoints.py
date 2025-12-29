@@ -277,6 +277,12 @@ class TestFactCheckRechunkEndpoint:
             assert "total_items" in data
             assert "task_id" in data
 
+            mock_task.kiq.assert_called_once()
+            call_kwargs = mock_task.kiq.call_args.kwargs
+            assert call_kwargs["task_id"] == data["task_id"]
+            assert call_kwargs["community_server_id"] == str(server.id)
+            assert call_kwargs["batch_size"] == 100
+
     @pytest.mark.asyncio
     async def test_regular_user_gets_403_without_community_membership(
         self,
@@ -435,6 +441,12 @@ class TestPreviouslySeenRechunkEndpoint:
             assert data["status"] == "pending"
             assert "total_items" in data
             assert "task_id" in data
+
+            mock_task.kiq.assert_called_once()
+            call_kwargs = mock_task.kiq.call_args.kwargs
+            assert call_kwargs["task_id"] == data["task_id"]
+            assert call_kwargs["community_server_id"] == str(server.id)
+            assert call_kwargs["batch_size"] == 100
 
     @pytest.mark.asyncio
     async def test_regular_user_gets_403_without_community_membership(

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from cachetools import TTLCache
 from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -157,38 +158,45 @@ class EmbeddingService:
             span.set_attribute("embedding.text_length", len(text))
             span.set_attribute("embedding.community_server_id", community_server_id)
 
-            cache_key = self._get_cache_key(text)
-            if cache_key in self.embedding_cache:
-                span.set_attribute("embedding.cache_hit", True)
-                logger.debug(
-                    "Embedding cache hit",
-                    extra={"text_length": len(text), "cache_key": cache_key[:16]},
+            try:
+                cache_key = self._get_cache_key(text)
+                if cache_key in self.embedding_cache:
+                    span.set_attribute("embedding.cache_hit", True)
+                    logger.debug(
+                        "Embedding cache hit",
+                        extra={"text_length": len(text), "cache_key": cache_key[:16]},
+                    )
+                    return self.embedding_cache[cache_key]  # type: ignore[no-any-return]
+
+                span.set_attribute("embedding.cache_hit", False)
+
+                # Convert guild ID string to UUID for LLMService
+                # Get CommunityServer UUID from platform_id (Discord guild ID)
+                result = await db.execute(
+                    select(CommunityServer.id).where(
+                        CommunityServer.platform_id == community_server_id
+                    )
                 )
-                return self.embedding_cache[cache_key]  # type: ignore[no-any-return]
+                community_server_uuid = result.scalar_one_or_none()
 
-            span.set_attribute("embedding.cache_hit", False)
+                if not community_server_uuid:
+                    raise ValueError(
+                        f"Community server not found for platform_id: {community_server_id}"
+                    )
 
-            # Convert guild ID string to UUID for LLMService
-            # Get CommunityServer UUID from platform_id (Discord guild ID)
-            result = await db.execute(
-                select(CommunityServer.id).where(CommunityServer.platform_id == community_server_id)
-            )
-            community_server_uuid = result.scalar_one_or_none()
-
-            if not community_server_uuid:
-                raise ValueError(
-                    f"Community server not found for platform_id: {community_server_id}"
+                # Generate embedding via LLMService (handles retries internally)
+                # LLMService returns tuple of (embedding, provider, model)
+                embedding, _, _ = await self.llm_service.generate_embedding(
+                    db, text, community_server_uuid
                 )
 
-            # Generate embedding via LLMService (handles retries internally)
-            # LLMService returns tuple of (embedding, provider, model)
-            embedding, _, _ = await self.llm_service.generate_embedding(
-                db, text, community_server_uuid
-            )
+                self.embedding_cache[cache_key] = embedding
 
-            self.embedding_cache[cache_key] = embedding
-
-            return embedding
+                return embedding
+            except Exception as e:
+                span.record_exception(e)
+                span.set_status(StatusCode.ERROR, str(e))
+                raise
 
     async def similarity_search(
         self,
@@ -247,79 +255,86 @@ class EmbeddingService:
             span.set_attribute("search.rrf_score_threshold", rrf_score_threshold)
             span.set_attribute("search.limit", limit)
 
-            logger.debug(
-                "Starting hybrid similarity search",
-                extra={
-                    "text_length": len(query_text),
-                    "community_server_id": community_server_id,
-                    "dataset_tags": dataset_tags,
-                    "similarity_threshold": threshold,
-                    "rrf_score_threshold": rrf_score_threshold,
-                    "limit": limit,
-                },
-            )
-
-            query_embedding = await self.generate_embedding(db, query_text, community_server_id)
-
-            hybrid_results = await hybrid_search_with_chunks(
-                session=db,
-                query_text=query_text,
-                query_embedding=query_embedding,
-                limit=limit,
-                dataset_tags=dataset_tags if dataset_tags else None,
-                semantic_similarity_threshold=threshold,
-            )
-
-            matches = [
-                FactCheckMatch(
-                    id=result.item.id,
-                    dataset_name=result.item.dataset_name,
-                    dataset_tags=result.item.dataset_tags,
-                    title=result.item.title,
-                    content=result.item.content,
-                    summary=result.item.summary,
-                    rating=result.item.rating,
-                    source_url=result.item.source_url,
-                    published_date=result.item.published_date,
-                    author=result.item.author,
-                    embedding_provider=result.item.embedding_provider,
-                    embedding_model=result.item.embedding_model,
-                    similarity_score=min(result.rrf_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0),
+            try:
+                logger.debug(
+                    "Starting hybrid similarity search",
+                    extra={
+                        "text_length": len(query_text),
+                        "community_server_id": community_server_id,
+                        "dataset_tags": dataset_tags,
+                        "similarity_threshold": threshold,
+                        "rrf_score_threshold": rrf_score_threshold,
+                        "limit": limit,
+                    },
                 )
-                for result in hybrid_results
-            ]
 
-            matches = [m for m in matches if m.similarity_score >= rrf_score_threshold]
+                query_embedding = await self.generate_embedding(db, query_text, community_server_id)
 
-            matches = matches[:limit]
+                hybrid_results = await hybrid_search_with_chunks(
+                    session=db,
+                    query_text=query_text,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                    dataset_tags=dataset_tags if dataset_tags else None,
+                    semantic_similarity_threshold=threshold,
+                )
 
-            span.set_attribute("search.result_count", len(matches))
-            span.set_attribute("search.hybrid_search_count", len(hybrid_results))
-            if matches:
-                span.set_attribute("search.top_score", matches[0].similarity_score)
+                matches = [
+                    FactCheckMatch(
+                        id=result.item.id,
+                        dataset_name=result.item.dataset_name,
+                        dataset_tags=result.item.dataset_tags,
+                        title=result.item.title,
+                        content=result.item.content,
+                        summary=result.item.summary,
+                        rating=result.item.rating,
+                        source_url=result.item.source_url,
+                        published_date=result.item.published_date,
+                        author=result.item.author,
+                        embedding_provider=result.item.embedding_provider,
+                        embedding_model=result.item.embedding_model,
+                        similarity_score=min(
+                            result.rrf_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0
+                        ),
+                    )
+                    for result in hybrid_results
+                ]
 
-            logger.info(
-                "Hybrid similarity search completed",
-                extra={
-                    "text_length": len(query_text),
-                    "community_server_id": community_server_id,
-                    "dataset_tags": dataset_tags,
-                    "similarity_threshold": threshold,
-                    "rrf_score_threshold": rrf_score_threshold,
-                    "matches_found": len(matches),
-                    "top_score": matches[0].similarity_score if matches else None,
-                    "hybrid_search_count": len(hybrid_results),
-                },
-            )
+                matches = [m for m in matches if m.similarity_score >= rrf_score_threshold]
 
-            return SimilaritySearchResponse(
-                matches=matches,
-                query_text=query_text,
-                dataset_tags=dataset_tags,
-                similarity_threshold=threshold,
-                rrf_score_threshold=rrf_score_threshold,
-                total_matches=len(matches),
-            )
+                matches = matches[:limit]
+
+                span.set_attribute("search.result_count", len(matches))
+                span.set_attribute("search.hybrid_search_count", len(hybrid_results))
+                if matches:
+                    span.set_attribute("search.top_score", matches[0].similarity_score)
+
+                logger.info(
+                    "Hybrid similarity search completed",
+                    extra={
+                        "text_length": len(query_text),
+                        "community_server_id": community_server_id,
+                        "dataset_tags": dataset_tags,
+                        "similarity_threshold": threshold,
+                        "rrf_score_threshold": rrf_score_threshold,
+                        "matches_found": len(matches),
+                        "top_score": matches[0].similarity_score if matches else None,
+                        "hybrid_search_count": len(hybrid_results),
+                    },
+                )
+
+                return SimilaritySearchResponse(
+                    matches=matches,
+                    query_text=query_text,
+                    dataset_tags=dataset_tags,
+                    similarity_threshold=threshold,
+                    rrf_score_threshold=rrf_score_threshold,
+                    total_matches=len(matches),
+                )
+            except Exception as e:
+                span.record_exception(e)
+                span.set_status(StatusCode.ERROR, str(e))
+                raise
 
     def _get_cache_key(self, text: str) -> str:
         """

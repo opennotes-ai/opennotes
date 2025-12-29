@@ -25,7 +25,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +46,7 @@ from src.fact_checking.chunk_task_tracker import (
 )
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
+from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.tasks.rechunk_tasks import (
@@ -57,142 +57,18 @@ from src.users.models import User
 
 logger = get_logger(__name__)
 
-RECHUNK_LOCK_TTL_SECONDS = 3600
-RECHUNK_LOCK_PREFIX = "rechunk:lock"
 
-
-class RechunkLockManager:
-    """
-    Distributed lock manager for rechunk operations using Redis.
-
-    Prevents multiple concurrent rechunk operations for the same resource.
-    Uses Redis SET NX (set if not exists) with TTL for distributed locking.
-
-    Redis Unavailability Behavior:
-        When Redis is unavailable (e.g., during startup, network issues, or in
-        test environments without Redis), this lock manager operates in "permissive"
-        mode:
-        - acquire_lock() returns True (allows operation to proceed)
-        - release_lock() returns True (no-op)
-        - is_locked() returns False (reports unlocked)
-
-        This is intentional for development and graceful degradation, but means
-        concurrent operations are not prevented when Redis is down. In production,
-        ensure Redis is available for proper concurrency control.
-
-        A warning is logged when operating without Redis so this behavior is
-        visible in logs.
-    """
-
-    def __init__(self, redis: Redis | None = None):
-        self._redis = redis
+class _GlobalRechunkLockManager(RechunkLockManager):
+    """Lock manager that uses the global redis_client as fallback."""
 
     @property
-    def redis(self) -> Redis | None:
-        """Get Redis client, falling back to global redis_client if not set."""
+    def redis(self):
         if self._redis is not None:
             return self._redis
         return redis_client.client
 
-    def _get_lock_key(self, operation: str, resource_id: str | None = None) -> str:
-        """Generate lock key for an operation."""
-        if resource_id:
-            return f"{RECHUNK_LOCK_PREFIX}:{operation}:{resource_id}"
-        return f"{RECHUNK_LOCK_PREFIX}:{operation}"
 
-    async def acquire_lock(
-        self,
-        operation: str,
-        resource_id: str | None = None,
-        ttl: int = RECHUNK_LOCK_TTL_SECONDS,
-    ) -> bool:
-        """
-        Attempt to acquire a lock for a rechunk operation.
-
-        Args:
-            operation: Operation type (e.g., 'fact_check', 'previously_seen')
-            resource_id: Resource identifier (e.g., community_server_id)
-            ttl: Lock TTL in seconds (default: 1 hour)
-
-        Returns:
-            True if lock was acquired, False if already locked
-        """
-        if not self.redis:
-            logger.warning("Redis not available, allowing operation without lock")
-            return True
-
-        key = self._get_lock_key(operation, resource_id)
-        try:
-            result = await self.redis.set(key, "locked", nx=True, ex=ttl)
-            if result:
-                logger.info(
-                    "Acquired rechunk lock",
-                    extra={"operation": operation, "resource_id": resource_id, "key": key},
-                )
-            return result is not None
-        except Exception as e:
-            logger.error(
-                "Failed to acquire rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "error": str(e)},
-            )
-            return True
-
-    async def release_lock(self, operation: str, resource_id: str | None = None) -> bool:
-        """
-        Release a lock for a rechunk operation.
-
-        Args:
-            operation: Operation type (e.g., 'fact_check', 'previously_seen')
-            resource_id: Resource identifier (e.g., community_server_id)
-
-        Returns:
-            True if lock was released, False otherwise
-        """
-        if not self.redis:
-            return True
-
-        key = self._get_lock_key(operation, resource_id)
-        try:
-            result = await self.redis.delete(key)
-            logger.info(
-                "Released rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "key": key},
-            )
-            return result > 0
-        except Exception as e:
-            logger.error(
-                "Failed to release rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "error": str(e)},
-            )
-            return False
-
-    async def is_locked(self, operation: str, resource_id: str | None = None) -> bool:
-        """
-        Check if a rechunk operation is currently locked.
-
-        Args:
-            operation: Operation type (e.g., 'fact_check', 'previously_seen')
-            resource_id: Resource identifier (e.g., community_server_id)
-
-        Returns:
-            True if locked, False otherwise
-        """
-        if not self.redis:
-            return False
-
-        key = self._get_lock_key(operation, resource_id)
-        try:
-            result = await self.redis.exists(key)
-            return result > 0
-        except Exception as e:
-            logger.error(
-                "Failed to check rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "error": str(e)},
-            )
-            return False
-
-
-rechunk_lock_manager = RechunkLockManager()
+rechunk_lock_manager = _GlobalRechunkLockManager()
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -335,13 +211,17 @@ async def rechunk_fact_check_items(
         await rechunk_lock_manager.release_lock("fact_check")
         raise
 
-    await process_fact_check_rechunk_task.kiq(
-        task_id=str(task.task_id),
-        community_server_id=str(community_server_id) if community_server_id else None,
-        batch_size=batch_size,
-        db_url=settings.DATABASE_URL,
-        redis_url=settings.REDIS_URL,
-    )
+    try:
+        await process_fact_check_rechunk_task.kiq(
+            task_id=str(task.task_id),
+            community_server_id=str(community_server_id) if community_server_id else None,
+            batch_size=batch_size,
+            db_url=settings.DATABASE_URL,
+            redis_url=settings.REDIS_URL,
+        )
+    except Exception:
+        await rechunk_lock_manager.release_lock("fact_check")
+        raise
 
     logger.info(
         "Started fact check rechunking task",
@@ -453,13 +333,17 @@ async def rechunk_previously_seen_messages(
         await rechunk_lock_manager.release_lock("previously_seen", str(community_server_id))
         raise
 
-    await process_previously_seen_rechunk_task.kiq(
-        task_id=str(task.task_id),
-        community_server_id=str(community_server_id),
-        batch_size=batch_size,
-        db_url=settings.DATABASE_URL,
-        redis_url=settings.REDIS_URL,
-    )
+    try:
+        await process_previously_seen_rechunk_task.kiq(
+            task_id=str(task.task_id),
+            community_server_id=str(community_server_id),
+            batch_size=batch_size,
+            db_url=settings.DATABASE_URL,
+            redis_url=settings.REDIS_URL,
+        )
+    except Exception:
+        await rechunk_lock_manager.release_lock("previously_seen", str(community_server_id))
+        raise
 
     logger.info(
         "Started previously seen message rechunking task",
