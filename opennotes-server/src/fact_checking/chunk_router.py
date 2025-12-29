@@ -24,17 +24,15 @@ Status Tracking:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
-from redis.asyncio import Redis
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
-from src.cache.redis_client import RedisClient, redis_client
+from src.cache.redis_client import redis_client
 from src.config import settings
 from src.database import get_db
-from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
 from src.fact_checking.chunk_task_schemas import (
     RechunkTaskCreate,
     RechunkTaskResponse,
@@ -46,411 +44,33 @@ from src.fact_checking.chunk_task_tracker import (
     RechunkTaskTracker,
     get_rechunk_task_tracker,
 )
-from src.fact_checking.chunking_service import ChunkingService
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
-from src.llm_config.encryption import EncryptionService
-from src.llm_config.manager import LLMClientManager
-from src.llm_config.service import LLMService
+from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
+from src.tasks.rechunk_tasks import (
+    process_fact_check_rechunk_task,
+    process_previously_seen_rechunk_task,
+)
 from src.users.models import User
 
 logger = get_logger(__name__)
 
-RECHUNK_LOCK_TTL_SECONDS = 3600
-RECHUNK_LOCK_PREFIX = "rechunk:lock"
 
-
-class RechunkLockManager:
-    """
-    Distributed lock manager for rechunk operations using Redis.
-
-    Prevents multiple concurrent rechunk operations for the same resource.
-    Uses Redis SET NX (set if not exists) with TTL for distributed locking.
-
-    Redis Unavailability Behavior:
-        When Redis is unavailable (e.g., during startup, network issues, or in
-        test environments without Redis), this lock manager operates in "permissive"
-        mode:
-        - acquire_lock() returns True (allows operation to proceed)
-        - release_lock() returns True (no-op)
-        - is_locked() returns False (reports unlocked)
-
-        This is intentional for development and graceful degradation, but means
-        concurrent operations are not prevented when Redis is down. In production,
-        ensure Redis is available for proper concurrency control.
-
-        A warning is logged when operating without Redis so this behavior is
-        visible in logs.
-    """
-
-    def __init__(self, redis: Redis | None = None):
-        self._redis = redis
+class _GlobalRechunkLockManager(RechunkLockManager):
+    """Lock manager that uses the global redis_client as fallback."""
 
     @property
-    def redis(self) -> Redis | None:
-        """Get Redis client, falling back to global redis_client if not set."""
+    def redis(self):
         if self._redis is not None:
             return self._redis
         return redis_client.client
 
-    def _get_lock_key(self, operation: str, resource_id: str | None = None) -> str:
-        """Generate lock key for an operation."""
-        if resource_id:
-            return f"{RECHUNK_LOCK_PREFIX}:{operation}:{resource_id}"
-        return f"{RECHUNK_LOCK_PREFIX}:{operation}"
 
-    async def acquire_lock(
-        self,
-        operation: str,
-        resource_id: str | None = None,
-        ttl: int = RECHUNK_LOCK_TTL_SECONDS,
-    ) -> bool:
-        """
-        Attempt to acquire a lock for a rechunk operation.
-
-        Args:
-            operation: Operation type (e.g., 'fact_check', 'previously_seen')
-            resource_id: Resource identifier (e.g., community_server_id)
-            ttl: Lock TTL in seconds (default: 1 hour)
-
-        Returns:
-            True if lock was acquired, False if already locked
-        """
-        if not self.redis:
-            logger.warning("Redis not available, allowing operation without lock")
-            return True
-
-        key = self._get_lock_key(operation, resource_id)
-        try:
-            result = await self.redis.set(key, "locked", nx=True, ex=ttl)
-            if result:
-                logger.info(
-                    "Acquired rechunk lock",
-                    extra={"operation": operation, "resource_id": resource_id, "key": key},
-                )
-            return result is not None
-        except Exception as e:
-            logger.error(
-                "Failed to acquire rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "error": str(e)},
-            )
-            return True
-
-    async def release_lock(self, operation: str, resource_id: str | None = None) -> bool:
-        """
-        Release a lock for a rechunk operation.
-
-        Args:
-            operation: Operation type (e.g., 'fact_check', 'previously_seen')
-            resource_id: Resource identifier (e.g., community_server_id)
-
-        Returns:
-            True if lock was released, False otherwise
-        """
-        if not self.redis:
-            return True
-
-        key = self._get_lock_key(operation, resource_id)
-        try:
-            result = await self.redis.delete(key)
-            logger.info(
-                "Released rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "key": key},
-            )
-            return result > 0
-        except Exception as e:
-            logger.error(
-                "Failed to release rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "error": str(e)},
-            )
-            return False
-
-    async def is_locked(self, operation: str, resource_id: str | None = None) -> bool:
-        """
-        Check if a rechunk operation is currently locked.
-
-        Args:
-            operation: Operation type (e.g., 'fact_check', 'previously_seen')
-            resource_id: Resource identifier (e.g., community_server_id)
-
-        Returns:
-            True if locked, False otherwise
-        """
-        if not self.redis:
-            return False
-
-        key = self._get_lock_key(operation, resource_id)
-        try:
-            result = await self.redis.exists(key)
-            return result > 0
-        except Exception as e:
-            logger.error(
-                "Failed to check rechunk lock",
-                extra={"operation": operation, "resource_id": resource_id, "error": str(e)},
-            )
-            return False
-
-
-rechunk_lock_manager = RechunkLockManager()
+rechunk_lock_manager = _GlobalRechunkLockManager()
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
-
-
-def get_chunk_embedding_service() -> ChunkEmbeddingService:
-    """Create ChunkEmbeddingService with required dependencies."""
-    llm_client_manager = LLMClientManager(
-        encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
-    )
-    llm_service = LLMService(client_manager=llm_client_manager)
-    chunking_service = ChunkingService()
-    return ChunkEmbeddingService(
-        chunking_service=chunking_service,
-        llm_service=llm_service,
-    )
-
-
-async def process_fact_check_rechunk_batch(
-    task_id: UUID,
-    community_server_id: UUID | None,
-    batch_size: int,
-    db_url: str,
-    redis_url: str,
-    lock_manager: RechunkLockManager | None = None,
-) -> None:
-    """
-    Background task to process fact check item re-chunking.
-
-    This function:
-    1. Queries FactCheckItem records (all items, as they don't have community_server_id)
-    2. For each item, clears existing FactCheckChunk entries
-    3. Re-chunks and embeds the content using ChunkEmbeddingService
-    4. Updates task progress in Redis
-    5. Releases the lock when complete
-
-    Args:
-        task_id: UUID of the task for status tracking
-        community_server_id: UUID of the community server for LLM credentials,
-            or None to use global fallback
-        batch_size: Number of items to process in each batch
-        db_url: Database connection URL
-        redis_url: Redis connection URL for task tracking
-        lock_manager: Optional lock manager for releasing the lock when done
-    """
-    engine = create_async_engine(
-        db_url,
-        pool_pre_ping=True,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
-        pool_timeout=settings.DB_POOL_TIMEOUT,
-        pool_recycle=settings.DB_POOL_RECYCLE,
-    )
-    async_session = async_sessionmaker(engine, expire_on_commit=False)
-
-    redis_client_bg = RedisClient()
-    await redis_client_bg.connect(redis_url)
-    tracker = RechunkTaskTracker(redis_client_bg)
-
-    service = get_chunk_embedding_service()
-    processed_count = 0
-    manager = lock_manager or rechunk_lock_manager
-
-    try:
-        await tracker.update_status(task_id, RechunkTaskStatus.IN_PROGRESS)
-
-        async with async_session() as db:
-            offset = 0
-
-            while True:
-                result = await db.execute(
-                    select(FactCheckItem)
-                    .order_by(FactCheckItem.created_at)
-                    .offset(offset)
-                    .limit(batch_size)
-                )
-                items = result.scalars().all()
-
-                if not items:
-                    break
-
-                for item in items:
-                    await service.chunk_and_embed_fact_check(
-                        db=db,
-                        fact_check_id=item.id,
-                        text=item.content,
-                        community_server_id=community_server_id,
-                    )
-                    processed_count += 1
-
-                await db.commit()
-                offset += batch_size
-
-                await tracker.update_progress(task_id, processed_count)
-
-                logger.info(
-                    "Processed fact check rechunk batch",
-                    extra={
-                        "task_id": str(task_id),
-                        "community_server_id": str(community_server_id)
-                        if community_server_id
-                        else None,
-                        "processed_count": processed_count,
-                        "batch_offset": offset,
-                    },
-                )
-
-        await tracker.mark_completed(task_id, processed_count)
-
-        logger.info(
-            "Completed fact check rechunking",
-            extra={
-                "task_id": str(task_id),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "total_processed": processed_count,
-            },
-        )
-    except Exception as e:
-        error_msg = str(e)
-        await tracker.mark_failed(task_id, error_msg, processed_count)
-
-        logger.error(
-            "Failed to process fact check rechunk batch",
-            extra={
-                "task_id": str(task_id),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "processed_count": processed_count,
-                "error": error_msg,
-            },
-            exc_info=True,
-        )
-    finally:
-        await redis_client_bg.disconnect()
-        await engine.dispose()
-        await manager.release_lock("fact_check")
-
-
-async def process_previously_seen_rechunk_batch(
-    task_id: UUID,
-    community_server_id: UUID,
-    batch_size: int,
-    db_url: str,
-    redis_url: str,
-    lock_manager: RechunkLockManager | None = None,
-) -> None:
-    """
-    Background task to process previously seen message re-chunking.
-
-    This function:
-    1. Queries PreviouslySeenMessage records for the specified community
-    2. For each message, clears existing PreviouslySeenChunk entries
-    3. Re-chunks and embeds the content using ChunkEmbeddingService
-    4. Updates task progress in Redis
-    5. Releases the lock when complete
-
-    Note: PreviouslySeenMessage stores message IDs, not content. The actual
-    content would need to be retrieved from the message archive. For now,
-    we use the metadata if available or skip if no content is present.
-
-    Args:
-        task_id: UUID of the task for status tracking
-        community_server_id: UUID of the community server
-        batch_size: Number of items to process in each batch
-        db_url: Database connection URL
-        redis_url: Redis connection URL for task tracking
-        lock_manager: Optional lock manager for releasing the lock when done
-    """
-    engine = create_async_engine(
-        db_url,
-        pool_pre_ping=True,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
-        pool_timeout=settings.DB_POOL_TIMEOUT,
-        pool_recycle=settings.DB_POOL_RECYCLE,
-    )
-    async_session = async_sessionmaker(engine, expire_on_commit=False)
-
-    redis_client_bg = RedisClient()
-    await redis_client_bg.connect(redis_url)
-    tracker = RechunkTaskTracker(redis_client_bg)
-
-    service = get_chunk_embedding_service()
-    processed_count = 0
-    manager = lock_manager or rechunk_lock_manager
-
-    try:
-        await tracker.update_status(task_id, RechunkTaskStatus.IN_PROGRESS)
-
-        async with async_session() as db:
-            offset = 0
-
-            while True:
-                result = await db.execute(
-                    select(PreviouslySeenMessage)
-                    .where(PreviouslySeenMessage.community_server_id == community_server_id)
-                    .order_by(PreviouslySeenMessage.created_at)
-                    .offset(offset)
-                    .limit(batch_size)
-                )
-                messages = result.scalars().all()
-
-                if not messages:
-                    break
-
-                for msg in messages:
-                    content = (msg.extra_metadata or {}).get("content", "")
-                    if content:
-                        await service.chunk_and_embed_previously_seen(
-                            db=db,
-                            previously_seen_id=msg.id,
-                            text=content,
-                            community_server_id=community_server_id,
-                        )
-                    processed_count += 1
-
-                await db.commit()
-                offset += batch_size
-
-                await tracker.update_progress(task_id, processed_count)
-
-                logger.info(
-                    "Processed previously seen rechunk batch",
-                    extra={
-                        "task_id": str(task_id),
-                        "community_server_id": str(community_server_id),
-                        "processed_count": processed_count,
-                        "batch_offset": offset,
-                    },
-                )
-
-        await tracker.mark_completed(task_id, processed_count)
-
-        logger.info(
-            "Completed previously seen message rechunking",
-            extra={
-                "task_id": str(task_id),
-                "community_server_id": str(community_server_id),
-                "total_processed": processed_count,
-            },
-        )
-    except Exception as e:
-        error_msg = str(e)
-        await tracker.mark_failed(task_id, error_msg, processed_count)
-
-        logger.error(
-            "Failed to process previously seen rechunk batch",
-            extra={
-                "task_id": str(task_id),
-                "community_server_id": str(community_server_id),
-                "processed_count": processed_count,
-                "error": error_msg,
-            },
-            exc_info=True,
-        )
-    finally:
-        await redis_client_bg.disconnect()
-        await engine.dispose()
-        await manager.release_lock("previously_seen", str(community_server_id))
 
 
 @router.get(
@@ -516,7 +136,6 @@ async def get_rechunk_task_status(
 @limiter.limit("1/minute")
 async def rechunk_fact_check_items(
     request: Request,
-    background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
@@ -547,7 +166,6 @@ async def rechunk_fact_check_items(
 
     Args:
         request: FastAPI request object
-        background_tasks: FastAPI background tasks
         user: Authenticated user (via API key or JWT)
         db: Database session
         tracker: Task tracker service
@@ -593,15 +211,17 @@ async def rechunk_fact_check_items(
         await rechunk_lock_manager.release_lock("fact_check")
         raise
 
-    background_tasks.add_task(
-        process_fact_check_rechunk_batch,
-        task_id=task.task_id,
-        community_server_id=community_server_id,
-        batch_size=batch_size,
-        db_url=settings.DATABASE_URL,
-        redis_url=settings.REDIS_URL,
-        lock_manager=rechunk_lock_manager,
-    )
+    try:
+        await process_fact_check_rechunk_task.kiq(
+            task_id=str(task.task_id),
+            community_server_id=str(community_server_id) if community_server_id else None,
+            batch_size=batch_size,
+            db_url=settings.DATABASE_URL,
+            redis_url=settings.REDIS_URL,
+        )
+    except Exception:
+        await rechunk_lock_manager.release_lock("fact_check")
+        raise
 
     logger.info(
         "Started fact check rechunking task",
@@ -635,7 +255,6 @@ async def rechunk_fact_check_items(
 @limiter.limit("1/minute")
 async def rechunk_previously_seen_messages(
     request: Request,
-    background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
@@ -664,7 +283,6 @@ async def rechunk_previously_seen_messages(
 
     Args:
         request: FastAPI request object
-        background_tasks: FastAPI background tasks
         user: Authenticated user (via API key or JWT)
         db: Database session
         tracker: Task tracker service
@@ -715,15 +333,17 @@ async def rechunk_previously_seen_messages(
         await rechunk_lock_manager.release_lock("previously_seen", str(community_server_id))
         raise
 
-    background_tasks.add_task(
-        process_previously_seen_rechunk_batch,
-        task_id=task.task_id,
-        community_server_id=community_server_id,
-        batch_size=batch_size,
-        db_url=settings.DATABASE_URL,
-        redis_url=settings.REDIS_URL,
-        lock_manager=rechunk_lock_manager,
-    )
+    try:
+        await process_previously_seen_rechunk_task.kiq(
+            task_id=str(task.task_id),
+            community_server_id=str(community_server_id),
+            batch_size=batch_size,
+            db_url=settings.DATABASE_URL,
+            redis_url=settings.REDIS_URL,
+        )
+    except Exception:
+        await rechunk_lock_manager.release_lock("previously_seen", str(community_server_id))
+        raise
 
     logger.info(
         "Started previously seen message rechunking task",
