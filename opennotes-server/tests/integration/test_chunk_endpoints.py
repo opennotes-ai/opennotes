@@ -229,14 +229,12 @@ class TestFactCheckRechunkEndpoint:
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_fact_check_rechunk_batch", new_callable=AsyncMock
-    )
+    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
     @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_service_account_can_initiate_rechunk(
         self,
         mock_get_tracker,
-        mock_rechunk_batch,
+        mock_task,
         service_account_headers,
         community_server_with_data,
     ):
@@ -246,8 +244,10 @@ class TestFactCheckRechunkEndpoint:
 
         from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
 
+        mock_task.kiq = AsyncMock()
+
         mock_tracker = MagicMock()
-        mock_task = RechunkTaskResponse(
+        task_response = RechunkTaskResponse(
             task_id=gen_uuid(),
             task_type="fact_check",
             community_server_id=community_server_with_data["server"].id,
@@ -259,7 +259,7 @@ class TestFactCheckRechunkEndpoint:
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
-        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_tracker.create_task = AsyncMock(return_value=task_response)
         mock_get_tracker.return_value = mock_tracker
 
         server = community_server_with_data["server"]
@@ -296,14 +296,12 @@ class TestFactCheckRechunkEndpoint:
             assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_fact_check_rechunk_batch", new_callable=AsyncMock
-    )
+    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
     @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_batch_size_parameter_accepted(
         self,
         mock_get_tracker,
-        mock_rechunk_batch,
+        mock_task,
         service_account_headers,
         community_server_with_data,
     ):
@@ -313,8 +311,10 @@ class TestFactCheckRechunkEndpoint:
 
         from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
 
+        mock_task.kiq = AsyncMock()
+
         mock_tracker = MagicMock()
-        mock_task = RechunkTaskResponse(
+        task_response = RechunkTaskResponse(
             task_id=gen_uuid(),
             task_type="fact_check",
             community_server_id=community_server_with_data["server"].id,
@@ -326,7 +326,7 @@ class TestFactCheckRechunkEndpoint:
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
-        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_tracker.create_task = AsyncMock(return_value=task_response)
         mock_get_tracker.return_value = mock_tracker
 
         server = community_server_with_data["server"]
@@ -388,15 +388,12 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
-        new_callable=AsyncMock,
-    )
+    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
     @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_service_account_can_initiate_rechunk(
         self,
         mock_get_tracker,
-        mock_rechunk_batch,
+        mock_task,
         service_account_headers,
         community_server_with_data,
     ):
@@ -406,8 +403,10 @@ class TestPreviouslySeenRechunkEndpoint:
 
         from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
 
+        mock_task.kiq = AsyncMock()
+
         mock_tracker = MagicMock()
-        mock_task = RechunkTaskResponse(
+        task_response = RechunkTaskResponse(
             task_id=gen_uuid(),
             task_type="previously_seen",
             community_server_id=community_server_with_data["server"].id,
@@ -419,7 +418,7 @@ class TestPreviouslySeenRechunkEndpoint:
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
-        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_tracker.create_task = AsyncMock(return_value=task_response)
         mock_get_tracker.return_value = mock_tracker
 
         server = community_server_with_data["server"]
@@ -461,15 +460,12 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
-        new_callable=AsyncMock,
-    )
+    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
     @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_batch_size_parameter_accepted(
         self,
         mock_get_tracker,
-        mock_rechunk_batch,
+        mock_task,
         service_account_headers,
         community_server_with_data,
     ):
@@ -479,8 +475,10 @@ class TestPreviouslySeenRechunkEndpoint:
 
         from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
 
+        mock_task.kiq = AsyncMock()
+
         mock_tracker = MagicMock()
-        mock_task = RechunkTaskResponse(
+        task_response = RechunkTaskResponse(
             task_id=gen_uuid(),
             task_type="previously_seen",
             community_server_id=community_server_with_data["server"].id,
@@ -492,7 +490,7 @@ class TestPreviouslySeenRechunkEndpoint:
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
-        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_tracker.create_task = AsyncMock(return_value=task_response)
         mock_get_tracker.return_value = mock_tracker
 
         server = community_server_with_data["server"]
@@ -544,20 +542,19 @@ class TestRechunkConcurrencyControl:
     """
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_fact_check_rechunk_batch", new_callable=AsyncMock
-    )
+    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_fact_check_rechunk_returns_409_when_already_in_progress(
         self,
         mock_lock_manager,
-        mock_rechunk_batch,
+        mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Second fact check rechunk request returns 409 when one is in progress."""
         server = community_server_with_data["server"]
 
+        mock_task.kiq = AsyncMock()
         mock_lock_manager.acquire_lock = AsyncMock(return_value=False)
 
         transport = ASGITransport(app=app)
@@ -572,21 +569,19 @@ class TestRechunkConcurrencyControl:
             assert "already in progress" in data["detail"]
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
-        new_callable=AsyncMock,
-    )
+    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_previously_seen_rechunk_returns_409_when_already_in_progress(
         self,
         mock_lock_manager,
-        mock_rechunk_batch,
+        mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Second previously seen rechunk request returns 409 when one is in progress for same community."""
         server = community_server_with_data["server"]
 
+        mock_task.kiq = AsyncMock()
         mock_lock_manager.acquire_lock = AsyncMock(return_value=False)
 
         transport = ASGITransport(app=app)
@@ -601,17 +596,14 @@ class TestRechunkConcurrencyControl:
             assert "already in progress" in data["detail"]
 
     @pytest.mark.asyncio
-    @patch(
-        "src.fact_checking.chunk_router.process_previously_seen_rechunk_batch",
-        new_callable=AsyncMock,
-    )
+    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_previously_seen_rechunk_different_communities_allowed(
         self,
         mock_get_tracker,
         mock_lock_manager,
-        mock_rechunk_batch,
+        mock_task,
         service_account_headers,
         community_server_with_data,
         db,
@@ -623,7 +615,8 @@ class TestRechunkConcurrencyControl:
         from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
         from src.llm_config.models import CommunityServer
 
-        # server1 from community_server_with_data is used implicitly via test setup
+        mock_task.kiq = AsyncMock()
+
         server2 = CommunityServer(
             id=uuid4(),
             platform="discord",
@@ -638,7 +631,7 @@ class TestRechunkConcurrencyControl:
         mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
 
         mock_tracker = MagicMock()
-        mock_task = RechunkTaskResponse(
+        task_response = RechunkTaskResponse(
             task_id=gen_uuid(),
             task_type="previously_seen",
             community_server_id=server2.id,
@@ -650,7 +643,7 @@ class TestRechunkConcurrencyControl:
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
-        mock_tracker.create_task = AsyncMock(return_value=mock_task)
+        mock_tracker.create_task = AsyncMock(return_value=task_response)
         mock_get_tracker.return_value = mock_tracker
 
         transport = ASGITransport(app=app)
