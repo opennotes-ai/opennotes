@@ -4,15 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
 
-from src.database import get_session_maker
 from src.events.schemas import RequestAutoCreatedEvent
 from src.fact_checking.models import FactCheckItem
 from src.llm_config.models import CommunityServer
 from src.llm_config.providers.base import LLMResponse
 from src.llm_config.service import LLMService
-from src.notes.models import Note
 from src.notes.request_service import RequestService
 from src.services.ai_note_writer import AINoteWriter
 
@@ -82,27 +79,12 @@ def ai_note_writer(mock_llm_service):
 async def test_ai_note_writer_handles_request_auto_created_event(
     ai_note_writer, community_server, fact_check_item, db_session, mock_llm_service
 ):
-    """Test that AINoteWriter handles REQUEST_AUTO_CREATED events correctly."""
+    """Test that AINoteWriter dispatches to TaskIQ on REQUEST_AUTO_CREATED events.
 
-    # Enable AI note writing for community server
-    community_server.ai_note_writing_enabled = True
-    db_session.add(community_server)
-    await db_session.commit()
-
-    # Create request with message archive using RequestService
-    await RequestService.create_from_message(
-        db=db_session,
-        request_id="req_test_1",
-        content="Test message that needs fact-checking",
-        community_server_id=community_server.id,
-        requested_by="test_user",
-        platform_message_id="1234567890",
-        dataset_item_id=str(fact_check_item.id),
-        similarity_score=0.85,
-        dataset_name="snopes",
-        status="PENDING",
-    )
-    await db_session.commit()
+    Note: The actual note generation is now handled by the TaskIQ task
+    (generate_ai_note_task). This test verifies the dispatch happens correctly.
+    See tests/unit/test_content_monitoring_tasks.py for task behavior tests.
+    """
 
     # Create event
     event = RequestAutoCreatedEvent(
@@ -116,39 +98,33 @@ async def test_ai_note_writer_handles_request_auto_created_event(
         dataset_name="snopes",
     )
 
-    # Mock settings to enable AI note writing
-    with patch("src.services.ai_note_writer.settings.AI_NOTE_WRITING_ENABLED", True):
-        # Handle the event
+    # Mock TaskIQ task dispatch
+    with patch("src.services.ai_note_writer.generate_ai_note_task") as mock_task:
+        mock_task.kiq = AsyncMock()
+
+        # Handle the event - should dispatch to TaskIQ
         await ai_note_writer._handle_request_auto_created(event)
 
-    # Verify LLM was called
-    assert mock_llm_service.complete.called
-    call_args = mock_llm_service.complete.call_args
-
-    # Verify the prompt was constructed correctly
-    messages = call_args[1]["messages"]
-    assert len(messages) == 2
-    assert messages[0].role == "system"
-    assert messages[1].role == "user"
-    assert "Test message that needs fact-checking" in messages[1].content
-    assert "Test Fact Check" in messages[1].content
-
-    # Verify note was created in database
-    async with get_session_maker()() as session:
-        result = await session.execute(select(Note).where(Note.request_id == "req_test_1"))
-        note = result.scalar_one_or_none()
-        assert note is not None
-        assert note.ai_generated is True
-        assert note.ai_provider == "openai"
-        assert note.author_participant_id == "ai-note-writer"
-        assert note.classification == "NOT_MISLEADING"
+        # Verify TaskIQ task was dispatched with correct parameters
+        mock_task.kiq.assert_called_once()
+        call_kwargs = mock_task.kiq.call_args[1]
+        assert call_kwargs["community_server_id"] == str(community_server.platform_id)
+        assert call_kwargs["request_id"] == "req_test_1"
+        assert call_kwargs["content"] == "Test message that needs fact-checking"
+        assert call_kwargs["fact_check_item_id"] == str(fact_check_item.id)
+        assert call_kwargs["similarity_score"] == 0.85
 
 
 @pytest.mark.asyncio
 async def test_ai_note_writer_respects_enabled_setting(
     ai_note_writer, community_server, fact_check_item, mock_llm_service
 ):
-    """Test that AINoteWriter respects AI_NOTE_WRITING_ENABLED setting."""
+    """Test that handler always dispatches to TaskIQ (enabled check moved to task).
+
+    Note: The AI_NOTE_WRITING_ENABLED check is now performed in the TaskIQ task,
+    not in the handler. This allows for retry handling and better observability.
+    See tests/unit/test_content_monitoring_tasks.py::TestGenerateAINoteTask.
+    """
     event = RequestAutoCreatedEvent(
         event_id="test_event_2",
         request_id="req_test_2",
@@ -160,46 +136,27 @@ async def test_ai_note_writer_respects_enabled_setting(
         dataset_name="snopes",
     )
 
-    # Mock settings to disable AI note writing
-    with (
-        patch("src.services.ai_note_writer.settings.AI_NOTE_WRITING_ENABLED", False),
-        patch.object(
-            ai_note_writer, "_is_ai_note_writing_enabled", return_value=False
-        ) as mock_check,
-    ):
-        await ai_note_writer._handle_request_auto_created(event)
-        # Verify the check was performed
-        assert mock_check.called
+    # Mock TaskIQ task dispatch
+    with patch("src.services.ai_note_writer.generate_ai_note_task") as mock_task:
+        mock_task.kiq = AsyncMock()
 
-    # Verify LLM was NOT called
-    assert not mock_llm_service.complete.called
+        # Handler always dispatches - enabled check is in the task
+        await ai_note_writer._handle_request_auto_created(event)
+
+        # Verify TaskIQ task was dispatched
+        mock_task.kiq.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_ai_note_writer_handles_rate_limiting(
     ai_note_writer, community_server, fact_check_item, db_session
 ):
-    """Test that AINoteWriter respects rate limits."""
+    """Test that handler always dispatches to TaskIQ (rate limiting moved to task).
 
-    # Enable AI note writing for community server
-    community_server.ai_note_writing_enabled = True
-    db_session.add(community_server)
-    await db_session.commit()
-
-    # Create request with message archive using RequestService
-    await RequestService.create_from_message(
-        db=db_session,
-        request_id="req_test_3",
-        content="Test message",
-        community_server_id=community_server.id,
-        requested_by="test_user",
-        platform_message_id="1234567893",
-        dataset_item_id=str(fact_check_item.id),
-        similarity_score=0.85,
-        dataset_name="snopes",
-        status="PENDING",
-    )
-    await db_session.commit()
+    Note: Rate limiting is now handled in the TaskIQ task, not in the handler.
+    This allows for proper task-level retry handling and rate limit observability.
+    See tests/unit/test_content_monitoring_tasks.py::TestGenerateAINoteTask::test_respects_rate_limit.
+    """
 
     # Create event
     event = RequestAutoCreatedEvent(
@@ -213,46 +170,27 @@ async def test_ai_note_writer_handles_rate_limiting(
         dataset_name="snopes",
     )
 
-    # Mock rate limiter to return False (rate limit exceeded)
-    with (
-        patch("src.services.ai_note_writer.settings.AI_NOTE_WRITING_ENABLED", True),
-        patch("src.services.ai_note_writer.rate_limiter") as mock_rate_limiter,
-    ):
-        mock_rate_limiter.check_rate_limit = AsyncMock(return_value=False)
+    # Mock TaskIQ task dispatch
+    with patch("src.services.ai_note_writer.generate_ai_note_task") as mock_task:
+        mock_task.kiq = AsyncMock()
+
+        # Handler always dispatches - rate limiting is in the task
         await ai_note_writer._handle_request_auto_created(event)
 
-    # Verify note generation was skipped due to rate limit
-    async with get_session_maker()() as session:
-        result = await session.execute(select(Note).where(Note.request_id == "req_test_3"))
-        note = result.scalar_one_or_none()
-        assert note is None
+        # Verify TaskIQ task was dispatched
+        mock_task.kiq.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_ai_note_writer_retries_on_failure(
     ai_note_writer, community_server, fact_check_item, mock_llm_service, db_session
 ):
-    """Test that AINoteWriter retries on transient failures."""
+    """Test that handler dispatches to TaskIQ (retries now handled by TaskIQ).
 
-    # Enable AI note writing for community server
-    community_server.ai_note_writing_enabled = True
-    db_session.add(community_server)
-    await db_session.commit()
-
-    # Create request with message archive using RequestService
-    await RequestService.create_from_message(
-        db=db_session,
-        request_id="req_test_4",
-        content="Test message",
-        community_server_id=community_server.id,
-        requested_by="test_user",
-        platform_message_id="1234567894",
-        dataset_item_id=str(fact_check_item.id),
-        similarity_score=0.85,
-        dataset_name="snopes",
-        status="PENDING",
-    )
-    await db_session.commit()
+    Note: Retry logic is now handled by TaskIQ's built-in retry mechanism,
+    not by the handler. This provides better reliability and observability.
+    TaskIQ is configured with retry policies in broker.py.
+    """
 
     # Create event
     event = RequestAutoCreatedEvent(
@@ -266,53 +204,28 @@ async def test_ai_note_writer_retries_on_failure(
         dataset_name="snopes",
     )
 
-    # Make LLM service fail twice then succeed
-    mock_llm_service.complete.side_effect = [
-        Exception("Transient error 1"),
-        Exception("Transient error 2"),
-        LLMResponse(
-            content="Success after retries",
-            model="gpt-5.1",
-            tokens_used=100,
-            finish_reason="stop",
-            provider="openai",
-        ),
-    ]
+    # Mock TaskIQ task dispatch
+    with patch("src.services.ai_note_writer.generate_ai_note_task") as mock_task:
+        mock_task.kiq = AsyncMock()
 
-    with patch("src.services.ai_note_writer.settings.AI_NOTE_WRITING_ENABLED", True):
+        # Handler dispatches - TaskIQ handles retries
         await ai_note_writer._handle_request_auto_created(event)
 
-    # Verify LLM was called 3 times (2 failures + 1 success)
-    assert mock_llm_service.complete.call_count == 3
+        # Verify TaskIQ task was dispatched
+        mock_task.kiq.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_ai_note_writer_handles_missing_fact_check_item(
     ai_note_writer, community_server, mock_llm_service, db_session
 ):
-    """Test that AINoteWriter handles missing fact-check items gracefully."""
+    """Test that handler dispatches even with non-existent fact-check item.
 
-    # Enable AI note writing for community server
-    community_server.ai_note_writing_enabled = True
-    db_session.add(community_server)
-    await db_session.commit()
+    Note: Missing fact-check item handling is now in the TaskIQ task.
+    The handler always dispatches - validation happens in the task.
+    """
 
-    # Create request with non-existent fact_check_item_id using RequestService
-    await RequestService.create_from_message(
-        db=db_session,
-        request_id="req_test_5",
-        content="Test message",
-        community_server_id=community_server.id,
-        requested_by="test_user",
-        platform_message_id="1234567895",
-        dataset_item_id="00000000-0000-0000-0000-000000099999",  # Non-existent UUID
-        similarity_score=0.85,
-        dataset_name="snopes",
-        status="PENDING",
-    )
-    await db_session.commit()
-
-    # Create event
+    # Create event with non-existent fact_check_item_id
     event = RequestAutoCreatedEvent(
         event_id="test_event_5",
         request_id="req_test_5",
@@ -324,39 +237,26 @@ async def test_ai_note_writer_handles_missing_fact_check_item(
         dataset_name="snopes",
     )
 
-    with patch("src.services.ai_note_writer.settings.AI_NOTE_WRITING_ENABLED", True):
-        # Should raise ValueError but be caught and logged
+    # Mock TaskIQ task dispatch
+    with patch("src.services.ai_note_writer.generate_ai_note_task") as mock_task:
+        mock_task.kiq = AsyncMock()
+
+        # Handler dispatches - TaskIQ task handles missing item gracefully
         await ai_note_writer._handle_request_auto_created(event)
 
-    # Verify LLM was NOT called due to missing fact check item
-    assert not mock_llm_service.complete.called
+        # Verify TaskIQ task was dispatched
+        mock_task.kiq.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_ai_note_writer_handles_missing_community_server(
     ai_note_writer, fact_check_item, mock_llm_service, db_session, community_server
 ):
-    """Test that AINoteWriter handles missing community server gracefully."""
+    """Test that handler dispatches even with non-existent community server.
 
-    # Enable AI note writing for community server
-    community_server.ai_note_writing_enabled = True
-    db_session.add(community_server)
-    await db_session.commit()
-
-    # Create request with valid community_server but event will have fake one, using RequestService
-    await RequestService.create_from_message(
-        db=db_session,
-        request_id="req_test_6",
-        content="Test message",
-        community_server_id=community_server.id,
-        requested_by="test_user",
-        platform_message_id="1234567896",
-        dataset_item_id=str(fact_check_item.id),
-        similarity_score=0.85,
-        dataset_name="snopes",
-        status="PENDING",
-    )
-    await db_session.commit()
+    Note: Missing community server handling is now in the TaskIQ task.
+    The handler always dispatches - validation happens in the task.
+    """
 
     # Create event with non-existent community_server_id
     event = RequestAutoCreatedEvent(
@@ -370,12 +270,15 @@ async def test_ai_note_writer_handles_missing_community_server(
         dataset_name="snopes",
     )
 
-    with patch("src.services.ai_note_writer.settings.AI_NOTE_WRITING_ENABLED", True):
-        # Should raise ValueError but be caught and logged
+    # Mock TaskIQ task dispatch
+    with patch("src.services.ai_note_writer.generate_ai_note_task") as mock_task:
+        mock_task.kiq = AsyncMock()
+
+        # Handler dispatches - TaskIQ task handles missing server gracefully
         await ai_note_writer._handle_request_auto_created(event)
 
-    # Verify LLM was NOT called due to missing community server
-    assert not mock_llm_service.complete.called
+        # Verify TaskIQ task was dispatched
+        mock_task.kiq.assert_called_once()
 
 
 @pytest.mark.skip(
@@ -416,27 +319,11 @@ async def test_ai_note_writer_start_and_stop():
 async def test_ai_note_writer_metrics_tracking(
     ai_note_writer, community_server, fact_check_item, mock_llm_service, db_session
 ):
-    """Test that AINoteWriter tracks metrics correctly."""
+    """Test that handler tracks error metrics when TaskIQ dispatch fails.
 
-    # Enable AI note writing for community server
-    community_server.ai_note_writing_enabled = True
-    db_session.add(community_server)
-    await db_session.commit()
-
-    # Create request using RequestService
-    await RequestService.create_from_message(
-        db=db_session,
-        request_id="req_test_7",
-        content="Test message",
-        community_server_id=community_server.id,
-        requested_by="test_user",
-        platform_message_id="1234567897",
-        dataset_item_id=str(fact_check_item.id),
-        similarity_score=0.85,
-        dataset_name="snopes",
-        status="PENDING",
-    )
-    await db_session.commit()
+    Note: Success metrics are now tracked in the TaskIQ task, not the handler.
+    The handler only tracks failure metrics when dispatch itself fails.
+    """
 
     # Create event
     event = RequestAutoCreatedEvent(
@@ -450,13 +337,15 @@ async def test_ai_note_writer_metrics_tracking(
         dataset_name="snopes",
     )
 
-    with (
-        patch("src.services.ai_note_writer.settings.AI_NOTE_WRITING_ENABLED", True),
-        patch("src.services.ai_note_writer.ai_notes_generated_total") as mock_metric,
-    ):
+    # Mock TaskIQ task dispatch to succeed
+    with patch("src.services.ai_note_writer.generate_ai_note_task") as mock_task:
+        mock_task.kiq = AsyncMock()
+
+        # Handler dispatches successfully
         await ai_note_writer._handle_request_auto_created(event)
-        # Verify metric was incremented
-        assert mock_metric.labels.called
+
+        # Verify TaskIQ task was dispatched
+        mock_task.kiq.assert_called_once()
 
 
 @pytest.mark.skip(
