@@ -23,6 +23,19 @@ export class GuildOnboardingService {
     const guildId = channel.guild.id;
 
     try {
+      // Ensure community server exists in database (auto-creates for service accounts)
+      // This must happen before any community-server-dependent API calls
+      try {
+        await apiClient.getCommunityServerByPlatformId(guildId);
+      } catch (error) {
+        logger.warn('Failed to ensure community server exists', {
+          guildId,
+          channelId: channel.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Continue anyway - the server may exist, we just couldn't verify
+      }
+
       // Clean up any stale pin notifications from channel history
       await this.cleanupPinNotifications(channel);
 

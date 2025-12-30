@@ -94,6 +94,10 @@ async def lookup_community_server(
         auto_create=auto_create,
     )
 
+    # Commit if auto-created (flush happened in get_community_server_by_platform_id)
+    if auto_create and community_server:
+        await db.commit()
+
     if not community_server:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
