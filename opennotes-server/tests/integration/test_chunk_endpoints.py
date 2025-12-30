@@ -668,3 +668,111 @@ class TestRechunkConcurrencyControl:
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "pending"
+
+
+class TestRechunkKiqFailure:
+    """Test lock release when .kiq() fails (task-909.04)."""
+
+    @pytest.mark.asyncio
+    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
+    async def test_fact_check_kiq_failure_releases_lock(
+        self,
+        mock_get_tracker,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+    ):
+        """Lock is released when .kiq() fails for fact check rechunk."""
+        from unittest.mock import MagicMock
+        from uuid import uuid4 as gen_uuid
+
+        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
+
+        mock_task.kiq = AsyncMock(side_effect=Exception("NATS connection failed"))
+
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
+
+        mock_tracker = MagicMock()
+        task_response = RechunkTaskResponse(
+            task_id=gen_uuid(),
+            task_type="fact_check",
+            community_server_id=community_server_with_data["server"].id,
+            batch_size=100,
+            status=RechunkTaskStatus.PENDING,
+            processed_count=0,
+            total_count=3,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        mock_tracker.create_task = AsyncMock(return_value=task_response)
+        mock_get_tracker.return_value = mock_tracker
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/fact-check/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 500
+
+            mock_lock_manager.release_lock.assert_called_with("fact_check")
+
+    @pytest.mark.asyncio
+    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
+    async def test_previously_seen_kiq_failure_releases_lock(
+        self,
+        mock_get_tracker,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+    ):
+        """Lock is released when .kiq() fails for previously seen rechunk."""
+        from unittest.mock import MagicMock
+        from uuid import uuid4 as gen_uuid
+
+        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
+
+        mock_task.kiq = AsyncMock(side_effect=Exception("NATS connection failed"))
+
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
+
+        mock_tracker = MagicMock()
+        task_response = RechunkTaskResponse(
+            task_id=gen_uuid(),
+            task_type="previously_seen",
+            community_server_id=community_server_with_data["server"].id,
+            batch_size=100,
+            status=RechunkTaskStatus.PENDING,
+            processed_count=0,
+            total_count=2,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+        mock_tracker.create_task = AsyncMock(return_value=task_response)
+        mock_get_tracker.return_value = mock_tracker
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/previously-seen/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 500
+
+            mock_lock_manager.release_lock.assert_called_with("previously_seen", str(server.id))
