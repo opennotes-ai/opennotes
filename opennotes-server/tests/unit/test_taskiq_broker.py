@@ -5,9 +5,13 @@ These tests verify broker configuration, metadata preservation,
 and error handling without requiring actual NATS/Redis connections.
 """
 
+from contextlib import AbstractContextManager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from opentelemetry import context as context_api
+from opentelemetry.trace import Span
+from taskiq import TaskiqMessage, TaskiqResult
 
 
 class TestBrokerConfiguration:
@@ -22,7 +26,6 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
-            patch("src.tasks.broker.OpenTelemetryMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -200,7 +203,6 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.SimpleRetryMiddleware"),
-            patch("src.tasks.broker.OpenTelemetryMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
@@ -246,7 +248,6 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis_class,
             patch("src.tasks.broker.SimpleRetryMiddleware"),
-            patch("src.tasks.broker.OpenTelemetryMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
@@ -292,7 +293,6 @@ class TestRetryMiddlewareConfiguration:
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
-            patch("src.tasks.broker.OpenTelemetryMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://localhost:4222"
@@ -329,7 +329,6 @@ class TestBrokerAuthentication:
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware"),
-            patch("src.tasks.broker.OpenTelemetryMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -357,3 +356,218 @@ class TestBrokerAuthentication:
                 user="testuser",
                 password="testpass",
             )
+
+
+class TestSafeOpenTelemetryMiddleware:
+    """Test SafeOpenTelemetryMiddleware handles context token errors gracefully."""
+
+    def _create_mock_message(self, task_id: str = "test-task-123") -> TaskiqMessage:
+        """Create a mock TaskiqMessage for testing."""
+        return TaskiqMessage(
+            task_id=task_id,
+            task_name="test:task",
+            labels={},
+            args=[],
+            kwargs={},
+        )
+
+    def _create_mock_result(self) -> TaskiqResult:
+        """Create a mock TaskiqResult for testing."""
+        return TaskiqResult(
+            is_err=False,
+            log=None,
+            return_value={"status": "completed"},
+            execution_time=0.1,
+        )
+
+    def test_post_save_handles_context_mismatch_error(self) -> None:
+        """
+        Verify post_save catches 'Token was created in a different Context' error.
+
+        This error occurs when async tasks run in different coroutine contexts
+        than where the OpenTelemetry context was originally attached.
+        """
+        from src.tasks.broker import SafeOpenTelemetryMiddleware
+
+        middleware = SafeOpenTelemetryMiddleware()
+        message = self._create_mock_message()
+        result = self._create_mock_result()
+
+        mock_span = MagicMock(spec=Span)
+        mock_span.is_recording.return_value = True
+
+        mock_activation: AbstractContextManager[Span] = MagicMock()
+
+        mock_token = MagicMock()
+
+        ctx_dict = {(message.task_id, False): (mock_span, mock_activation, mock_token)}
+        object.__setattr__(message, "__otel_task_span", ctx_dict)
+
+        with patch.object(
+            context_api,
+            "detach",
+            side_effect=ValueError(f"{mock_token!r} was created in a different Context"),
+        ):
+            middleware.post_save(message, result)
+
+        mock_activation.__exit__.assert_called_once_with(None, None, None)
+        mock_span.set_attribute.assert_any_call("taskiq.action", "execute")
+        mock_span.set_attribute.assert_any_call("taskiq.task_name", "test:task")
+
+    def test_post_save_propagates_other_value_errors(self) -> None:
+        """
+        Verify post_save re-raises ValueErrors that are not context-related.
+
+        Only the specific 'Token was created in a different Context' error
+        should be caught and logged; other ValueErrors should propagate.
+        """
+        from src.tasks.broker import SafeOpenTelemetryMiddleware
+
+        middleware = SafeOpenTelemetryMiddleware()
+        message = self._create_mock_message()
+        result = self._create_mock_result()
+
+        mock_span = MagicMock(spec=Span)
+        mock_span.is_recording.return_value = True
+
+        mock_activation: AbstractContextManager[Span] = MagicMock()
+        mock_token = MagicMock()
+
+        ctx_dict = {(message.task_id, False): (mock_span, mock_activation, mock_token)}
+        object.__setattr__(message, "__otel_task_span", ctx_dict)
+
+        with (
+            patch.object(
+                context_api,
+                "detach",
+                side_effect=ValueError("Some other ValueError"),
+            ),
+            pytest.raises(ValueError, match="Some other ValueError"),
+        ):
+            middleware.post_save(message, result)
+
+    def test_post_save_works_normally_without_token(self) -> None:
+        """
+        Verify post_save works correctly when there is no context token.
+
+        This happens when the sending process is not instrumented with
+        OpenTelemetry, so there's no incoming context to attach/detach.
+        """
+        from src.tasks.broker import SafeOpenTelemetryMiddleware
+
+        middleware = SafeOpenTelemetryMiddleware()
+        message = self._create_mock_message()
+        result = self._create_mock_result()
+
+        mock_span = MagicMock(spec=Span)
+        mock_span.is_recording.return_value = True
+
+        mock_activation: AbstractContextManager[Span] = MagicMock()
+
+        ctx_dict = {(message.task_id, False): (mock_span, mock_activation, None)}
+        object.__setattr__(message, "__otel_task_span", ctx_dict)
+
+        with patch.object(context_api, "detach") as mock_detach:
+            middleware.post_save(message, result)
+
+        mock_detach.assert_not_called()
+
+        mock_activation.__exit__.assert_called_once_with(None, None, None)
+
+    def test_post_save_handles_no_context(self) -> None:
+        """
+        Verify post_save handles case when no context is attached to message.
+        """
+        from src.tasks.broker import SafeOpenTelemetryMiddleware
+
+        middleware = SafeOpenTelemetryMiddleware()
+        message = self._create_mock_message()
+        result = self._create_mock_result()
+
+        middleware.post_save(message, result)
+
+    def test_post_save_successful_detach(self) -> None:
+        """
+        Verify post_save calls detach normally when it succeeds.
+
+        In the normal case (same async context), detach should be called
+        and succeed without any special handling.
+        """
+        from src.tasks.broker import SafeOpenTelemetryMiddleware
+
+        middleware = SafeOpenTelemetryMiddleware()
+        message = self._create_mock_message()
+        result = self._create_mock_result()
+
+        mock_span = MagicMock(spec=Span)
+        mock_span.is_recording.return_value = True
+
+        mock_activation: AbstractContextManager[Span] = MagicMock()
+        mock_token = MagicMock()
+
+        ctx_dict = {(message.task_id, False): (mock_span, mock_activation, mock_token)}
+        object.__setattr__(message, "__otel_task_span", ctx_dict)
+
+        with patch.object(context_api, "detach") as mock_detach:
+            middleware.post_save(message, result)
+
+        mock_detach.assert_called_once_with(mock_token)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_tasks_with_context_isolation(self) -> None:
+        """
+        Verify SafeOpenTelemetryMiddleware handles concurrent async tasks.
+
+        This test simulates the production scenario where multiple async
+        tasks run concurrently and context tokens may cross task boundaries,
+        causing 'Token was created in a different Context' errors.
+        """
+        import asyncio
+
+        from src.tasks.broker import SafeOpenTelemetryMiddleware
+
+        middleware = SafeOpenTelemetryMiddleware()
+        errors: list[Exception] = []
+
+        async def simulate_task_lifecycle(task_num: int) -> None:
+            """Simulate a complete task lifecycle with middleware hooks."""
+            message = TaskiqMessage(
+                task_id=f"task-{task_num}",
+                task_name="test:concurrent_task",
+                labels={},
+                args=[],
+                kwargs={},
+            )
+            result = TaskiqResult(
+                is_err=False,
+                log=None,
+                return_value={"task_num": task_num},
+                execution_time=0.01,
+            )
+
+            mock_span = MagicMock(spec=Span)
+            mock_span.is_recording.return_value = True
+
+            mock_activation: AbstractContextManager[Span] = MagicMock()
+
+            mock_token = MagicMock()
+
+            ctx_dict = {(message.task_id, False): (mock_span, mock_activation, mock_token)}
+            object.__setattr__(message, "__otel_task_span", ctx_dict)
+
+            await asyncio.sleep(0.001 * (task_num % 5))
+
+            try:
+                with patch.object(
+                    context_api,
+                    "detach",
+                    side_effect=ValueError(f"{mock_token!r} was created in a different Context"),
+                ):
+                    middleware.post_save(message, result)
+            except Exception as e:
+                errors.append(e)
+
+        tasks = [simulate_task_lifecycle(i) for i in range(10)]
+        await asyncio.gather(*tasks)
+
+        assert len(errors) == 0, f"Expected no errors, got: {errors}"

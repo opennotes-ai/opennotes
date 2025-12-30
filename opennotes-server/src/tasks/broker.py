@@ -5,7 +5,8 @@ This module configures the taskiq broker for distributed task processing using:
 - PullBasedJetStreamBroker: Pull-based NATS JetStream broker for reliable message delivery
 - RedisAsyncResultBackend: Redis for storing task results
 - SimpleRetryMiddleware: Automatic retry for failed tasks
-- OpenTelemetryMiddleware: Distributed tracing with W3C Trace Context propagation
+- SafeOpenTelemetryMiddleware: Distributed tracing with W3C Trace Context propagation
+  (wraps OpenTelemetryMiddleware with safe context detach for async tasks)
 
 The broker is lazily initialized to support dynamic configuration in tests.
 
@@ -27,8 +28,13 @@ import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from taskiq import SimpleRetryMiddleware
-from taskiq.middlewares.opentelemetry_middleware import OpenTelemetryMiddleware
+from opentelemetry import context as context_api
+from taskiq import SimpleRetryMiddleware, TaskiqMessage, TaskiqResult
+from taskiq.middlewares.opentelemetry_middleware import (
+    OpenTelemetryMiddleware,
+    detach_context,
+    retrieve_context,
+)
 from taskiq_nats import PullBasedJetStreamBroker
 from taskiq_redis import RedisAsyncResultBackend
 
@@ -37,6 +43,69 @@ from src.config import get_settings
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+R = TypeVar("R")
+
+
+class SafeOpenTelemetryMiddleware(OpenTelemetryMiddleware):
+    """
+    OpenTelemetry middleware with safe context detach for async tasks.
+
+    This middleware wraps the standard OpenTelemetryMiddleware to handle the
+    "Token was created in a different Context" ValueError that occurs when
+    async tasks run concurrently.
+
+    The issue occurs because:
+    1. OpenTelemetry context uses Python's contextvars
+    2. In async execution, context tokens can be created in one coroutine context
+    3. When detach() is called in a different coroutine context, it fails
+
+    This wrapper catches the ValueError during context detach and logs it as a
+    warning instead of letting it propagate. The span tracking itself is unaffected
+    since the span has already been ended before detach is called.
+
+    See: https://github.com/google/adk-python/issues/860
+    """
+
+    def post_save(
+        self,
+        message: TaskiqMessage,
+        result: TaskiqResult[R],  # noqa: ARG002 (required by parent interface)
+    ) -> None:
+        """
+        Close span from pre_execute with safe context detach.
+
+        This overrides the parent method to catch ValueError during context
+        detach, which can occur when async tasks run in different coroutine
+        contexts than where the context was attached.
+        """
+        ctx = retrieve_context(message)
+
+        if ctx is None:
+            logger.warning("no existing span found for task_id=%s", message.task_id)
+            return
+
+        span, activation, token = ctx
+
+        if span.is_recording():
+            span.set_attribute("taskiq.action", "execute")
+            span.set_attribute("taskiq.task_name", message.task_name)
+
+        activation.__exit__(None, None, None)
+        detach_context(message)
+
+        if token is not None:
+            try:
+                context_api.detach(token)  # type: ignore[arg-type]
+            except ValueError as e:
+                if "was created in a different Context" in str(e):
+                    logger.debug(
+                        "Context token detach skipped (async context mismatch) for task_id=%s: %s",
+                        message.task_id,
+                        e,
+                    )
+                else:
+                    raise
+
 
 _broker_instance: PullBasedJetStreamBroker | None = None
 _all_registered_tasks: dict[str, tuple[Callable[..., Any], dict[str, Any]]] = {}
@@ -65,7 +134,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
         default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,
     )
 
-    tracing_middleware = OpenTelemetryMiddleware()
+    tracing_middleware = SafeOpenTelemetryMiddleware()
 
     connection_kwargs: dict[str, Any] = {}
     if settings.NATS_USERNAME and settings.NATS_PASSWORD:
@@ -84,7 +153,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
         .with_middlewares(tracing_middleware, retry_middleware)
     )
 
-    logger.info("Taskiq broker configured with OpenTelemetry tracing middleware")
+    logger.info("Taskiq broker configured with SafeOpenTelemetryMiddleware")
 
     return new_broker
 
@@ -280,6 +349,7 @@ broker = _BrokerProxy()
 __all__ = [
     "LazyTask",
     "PullBasedJetStreamBroker",
+    "SafeOpenTelemetryMiddleware",
     "broker",
     "get_broker",
     "get_broker_health",
