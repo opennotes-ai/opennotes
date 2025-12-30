@@ -318,6 +318,181 @@ describe('vibecheck-prompt-handler', () => {
           content: expect.stringContaining('No accessible text channels'),
         });
       });
+
+      it('should handle scan execution failure', async () => {
+        mockCacheGet.mockResolvedValue({
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'channel-123',
+          selectedDays: 7,
+        });
+
+        mockExecuteBulkScan.mockRejectedValue(new Error('NATS connection failed'));
+
+        const mockGuild = { id: 'guild-123', name: 'Test Guild' };
+        const mockChannel = Object.assign(Object.create(TextChannel.prototype), {
+          guild: mockGuild,
+          id: 'channel-123',
+          name: 'open-notes',
+        });
+        const interaction = createMockInteraction({
+          customId: 'vibecheck_prompt_start',
+          isButton: () => true,
+          channel: mockChannel,
+        });
+
+        await handleVibecheckPromptInteraction(interaction as any);
+
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          'Vibe check scan from prompt failed',
+          expect.objectContaining({
+            error: 'NATS connection failed',
+          })
+        );
+        expect(interaction.message.edit).toHaveBeenCalledWith({
+          content: expect.stringContaining('encountered an error'),
+        });
+      });
+
+      it('should handle scan with failed status', async () => {
+        mockCacheGet.mockResolvedValue({
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'channel-123',
+          selectedDays: 7,
+        });
+
+        mockExecuteBulkScan.mockResolvedValue({
+          scanId: 'scan-456',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 1,
+          status: 'failed',
+          flaggedMessages: [],
+        });
+
+        const mockGuild = { id: 'guild-123', name: 'Test Guild' };
+        const mockChannel = Object.assign(Object.create(TextChannel.prototype), {
+          guild: mockGuild,
+          id: 'channel-123',
+          name: 'open-notes',
+        });
+        const interaction = createMockInteraction({
+          customId: 'vibecheck_prompt_start',
+          isButton: () => true,
+          channel: mockChannel,
+        });
+
+        await handleVibecheckPromptInteraction(interaction as any);
+
+        expect(interaction.message.edit).toHaveBeenLastCalledWith({
+          content: expect.stringContaining('Scan analysis failed'),
+        });
+      });
+
+      it('should handle scan with timeout status', async () => {
+        mockCacheGet.mockResolvedValue({
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'channel-123',
+          selectedDays: 7,
+        });
+
+        mockExecuteBulkScan.mockResolvedValue({
+          scanId: 'scan-789',
+          messagesScanned: 100,
+          channelsScanned: 5,
+          batchesPublished: 1,
+          status: 'timeout',
+          flaggedMessages: [],
+        });
+
+        const mockGuild = { id: 'guild-123', name: 'Test Guild' };
+        const mockChannel = Object.assign(Object.create(TextChannel.prototype), {
+          guild: mockGuild,
+          id: 'channel-123',
+          name: 'open-notes',
+        });
+        const interaction = createMockInteraction({
+          customId: 'vibecheck_prompt_start',
+          isButton: () => true,
+          channel: mockChannel,
+        });
+
+        await handleVibecheckPromptInteraction(interaction as any);
+
+        expect(interaction.message.edit).toHaveBeenLastCalledWith({
+          content: expect.stringContaining('Scan analysis failed'),
+        });
+      });
+
+      it('should display flagged messages count when issues found', async () => {
+        mockCacheGet.mockResolvedValue({
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'channel-123',
+          selectedDays: 7,
+        });
+
+        mockExecuteBulkScan.mockResolvedValue({
+          scanId: 'scan-999',
+          messagesScanned: 500,
+          channelsScanned: 10,
+          batchesPublished: 2,
+          status: 'completed',
+          flaggedMessages: [
+            { messageId: 'msg-1', content: 'test' },
+            { messageId: 'msg-2', content: 'test2' },
+            { messageId: 'msg-3', content: 'test3' },
+          ],
+        });
+
+        const mockGuild = { id: 'guild-123', name: 'Test Guild' };
+        const mockChannel = Object.assign(Object.create(TextChannel.prototype), {
+          guild: mockGuild,
+          id: 'channel-123',
+          name: 'open-notes',
+        });
+        const interaction = createMockInteraction({
+          customId: 'vibecheck_prompt_start',
+          isButton: () => true,
+          channel: mockChannel,
+        });
+
+        await handleVibecheckPromptInteraction(interaction as any);
+
+        expect(interaction.message.edit).toHaveBeenLastCalledWith({
+          content: expect.stringContaining('Flagged:** 3'),
+        });
+      });
+
+      it('should reject invalid days selection', async () => {
+        mockCacheGet.mockResolvedValue({
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'channel-123',
+          selectedDays: null,
+        });
+
+        const interaction = createMockInteraction({
+          customId: 'vibecheck_prompt_days',
+          isStringSelectMenu: () => true,
+          values: ['invalid'],
+        });
+
+        await handleVibecheckPromptInteraction(interaction as any);
+
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          'Invalid days selection in vibecheck prompt',
+          expect.objectContaining({
+            raw_value: 'invalid',
+          })
+        );
+        expect(interaction.reply).toHaveBeenCalledWith({
+          content: expect.stringContaining('Invalid selection'),
+          ephemeral: true,
+        });
+      });
     });
   });
 });

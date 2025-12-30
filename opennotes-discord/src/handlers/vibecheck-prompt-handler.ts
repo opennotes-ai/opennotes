@@ -133,6 +133,19 @@ async function handleDaysSelect(
 ): Promise<void> {
   const selectedDays = parseInt(interaction.values[0], 10);
 
+  if (isNaN(selectedDays) || selectedDays <= 0) {
+    logger.warn('Invalid days selection in vibecheck prompt', {
+      error_id: errorId,
+      message_id: messageId,
+      raw_value: interaction.values[0],
+    });
+    await interaction.reply({
+      content: 'Invalid selection. Please try again.',
+      ephemeral: true,
+    });
+    return;
+  }
+
   const updatedState: VibecheckPromptState = {
     ...state,
     selectedDays,

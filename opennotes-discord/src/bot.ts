@@ -167,7 +167,12 @@ export class Bot {
     this.guildConfigService = new GuildConfigService(apiClient);
     logger.info('Bot channel service initialized');
 
-    await this.waitForServerReady();
+    const serverReadiness = await this.waitForServerReady();
+    if (!serverReadiness.ready) {
+      logger.warn('Proceeding with bot initialization despite server not being ready', {
+        waitedMs: serverReadiness.waitedMs,
+      });
+    }
     await this.ensureBotChannelsForAllGuilds();
 
     await this.initializeMessageMonitoring();

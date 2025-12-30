@@ -234,8 +234,8 @@ describe('vibecheck-prompt', () => {
       );
     });
 
-    it('should log error if storing state fails but continue', async () => {
-      const { mockAdmin, mockBotChannel } = createMockSetup();
+    it('should edit message to show error when state storage fails', async () => {
+      const { mockAdmin, mockBotChannel, mockPromptMessage } = createMockSetup();
       mockSetVibecheckPromptState.mockRejectedValue(new Error('Redis error'));
 
       await sendVibeCheckPrompt({
@@ -249,6 +249,35 @@ describe('vibecheck-prompt', () => {
         'Failed to store vibecheck prompt state in Redis',
         expect.objectContaining({
           error: 'Redis error',
+        })
+      );
+      expect(mockPromptMessage.edit).toHaveBeenCalledWith({
+        content: expect.stringContaining('Failed to set up vibe check prompt'),
+        components: [],
+      });
+    });
+
+    it('should handle message edit failure after state storage failure gracefully', async () => {
+      const { mockAdmin, mockBotChannel, mockPromptMessage } = createMockSetup();
+      mockSetVibecheckPromptState.mockRejectedValue(new Error('Redis error'));
+      mockPromptMessage.edit.mockRejectedValue(new Error('Edit failed'));
+
+      await sendVibeCheckPrompt({
+        botChannel: mockBotChannel as any,
+        admin: mockAdmin as any,
+        guildId: 'guild-123',
+      });
+
+      expect(mockBotChannel.send).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to store vibecheck prompt state in Redis',
+        expect.any(Object)
+      );
+      expect(mockPromptMessage.edit).toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Failed to edit message after state storage failure',
+        expect.objectContaining({
+          error: 'Edit failed',
         })
       );
     });

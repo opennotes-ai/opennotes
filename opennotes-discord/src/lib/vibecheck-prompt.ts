@@ -111,5 +111,19 @@ Select how many days back you'd like to scan:`;
       message_id: message.id,
       error: cacheError instanceof Error ? cacheError.message : String(cacheError),
     });
+
+    // Edit the message to indicate the error since interactions won't work
+    try {
+      await message.edit({
+        content: 'Failed to set up vibe check prompt. Please use `/vibecheck` instead.',
+        components: [],
+      });
+    } catch (editError) {
+      logger.debug('Failed to edit message after state storage failure', {
+        error_id: errorId,
+        message_id: message.id,
+        error: editError instanceof Error ? editError.message : String(editError),
+      });
+    }
   }
 }
