@@ -66,7 +66,7 @@ class ProcessManager:
             "-m",
             "taskiq",
             "worker",
-            "src.tasks.broker:broker",
+            "src.tasks.broker:get_broker",
             *task_modules,
         ]
 
