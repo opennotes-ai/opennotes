@@ -1079,7 +1079,7 @@ When running the server in debug mode:
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Open Notes Scoring API",
+    "title": "Open Notes Server",
     "version": "1.0.0"
   },
   "paths": {

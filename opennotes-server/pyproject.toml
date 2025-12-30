@@ -1,7 +1,7 @@
 [project]
 name = "opennotes-server"
 version = "0.0.2"
-description = "Open Notes scoring API"
+description = "Open Notes Server"
 authors = [{name = "Open Notes Team", email = "team@opennotes.ai"}]
 readme = "README.md"
 requires-python = ">=3.11"

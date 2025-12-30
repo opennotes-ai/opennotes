@@ -54,7 +54,7 @@ class Settings(BaseSettings):
             return [check.strip() for check in v.split(",")]
         return v
 
-    PROJECT_NAME: str = "Open Notes Scoring API"
+    PROJECT_NAME: str = "Open Notes Server"
     VERSION: str = Field(
         default="0.0.1",
         validation_alias="SERVICE_VERSION",
