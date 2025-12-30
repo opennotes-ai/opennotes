@@ -8,6 +8,18 @@ function createMockCollection<K, V>(entries: [K, V][]): Collection<K, V> {
   return new Collection(entries);
 }
 
+// Helper to create FetchPinnedMessagesResponse format (Discord.js v14.25+)
+function createMockPinsResponse(messages: any[]) {
+  return {
+    hasMore: false,
+    items: messages.map((msg) => ({
+      message: msg,
+      pinnedAt: new Date(),
+      pinnedTimestamp: Date.now(),
+    })),
+  };
+}
+
 // Create a mock message with a specific revision (for revision-based idempotency tests)
 function createMockMessageWithRevision(messageId: string, revision: string, botUser: any) {
   return {
@@ -115,7 +127,7 @@ describe('GuildOnboardingService', () => {
       },
       send: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(mockMessage),
       messages: {
-        fetchPinned: jest.fn<() => Promise<any>>().mockResolvedValue(createMockCollection([])),
+        fetchPins: jest.fn<() => Promise<any>>().mockResolvedValue(createMockPinsResponse([])),
         fetch: jest.fn<(id: string) => Promise<any>>(),
       },
     };
@@ -505,8 +517,7 @@ describe('GuildOnboardingService', () => {
       const existingWelcomeMessageId = 'existing-welcome-123';
       // Mock message must have author matching bot user and current revision
       const existingMessage = createMockMessageWithRevision(existingWelcomeMessageId, WELCOME_MESSAGE_REVISION, { id: 'bot-user-123' });
-      const pinnedMessages = createMockCollection([[existingWelcomeMessageId, existingMessage]]);
-      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+      mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([existingMessage]));
 
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
         data: {
@@ -539,8 +550,8 @@ describe('GuildOnboardingService', () => {
 
     it('should post new welcome message if stored message is not found in pins (AC#5)', async () => {
       const staleWelcomeMessageId = 'deleted-message-123';
-      const pinnedMessages = createMockCollection([]); // Empty - message was deleted
-      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+      // Empty - message was deleted
+      mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([]));
 
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
         data: {
@@ -567,8 +578,7 @@ describe('GuildOnboardingService', () => {
 
     it('should log when reposting welcome message due to missing pin', async () => {
       const staleWelcomeMessageId = 'deleted-message-123';
-      const pinnedMessages = createMockCollection([]);
-      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+      mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([]));
 
       mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
         data: {
@@ -692,8 +702,7 @@ describe('GuildOnboardingService', () => {
         // Existing welcome message from the bot (not tracked in DB)
         // Must use current revision for revision comparison to match
         const existingBotMessage = createMockMessageWithRevision('untracked-welcome-123', WELCOME_MESSAGE_REVISION, mockBotUser);
-        const pinnedMessages = createMockCollection([['untracked-welcome-123', existingBotMessage]]);
-        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+        mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([existingBotMessage]));
 
         // DB has no welcome_message_id stored
         mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
@@ -721,8 +730,7 @@ describe('GuildOnboardingService', () => {
       it('should not repost if existing welcome has same revision', async () => {
         // Create a mock existing message with current revision
         const existingBotMessage = createMockMessageWithRevision('existing-welcome-123', WELCOME_MESSAGE_REVISION, mockBotUser);
-        const pinnedMessages = createMockCollection([['existing-welcome-123', existingBotMessage]]);
-        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+        mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([existingBotMessage]));
 
         mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
           data: {
@@ -751,8 +759,7 @@ describe('GuildOnboardingService', () => {
       it('should delete old welcome and post new when revision differs', async () => {
         // Existing welcome with DIFFERENT revision (e.g., old version)
         const existingBotMessage = createMockMessageWithRevision('old-welcome-123', '2024-01-01.1', mockBotUser);
-        const pinnedMessages = createMockCollection([['old-welcome-123', existingBotMessage]]);
-        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+        mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([existingBotMessage]));
 
         mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
           data: {
@@ -779,8 +786,7 @@ describe('GuildOnboardingService', () => {
       it('should delete legacy message without revision and post new (migration case)', async () => {
         // Existing welcome WITHOUT revision string (legacy format before task-881)
         const legacyMessage = createMockLegacyMessage('legacy-welcome-123', mockBotUser);
-        const pinnedMessages = createMockCollection([['legacy-welcome-123', legacyMessage]]);
-        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+        mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([legacyMessage]));
 
         mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
           data: {
@@ -826,12 +832,7 @@ describe('GuildOnboardingService', () => {
         const welcomeMessage3 = createMockMessageWithRevision('welcome-3', WELCOME_MESSAGE_REVISION, mockBotUser);
         welcomeMessage3.createdTimestamp = Date.now(); // Newest (kept)
 
-        const pinnedMessages = createMockCollection([
-          ['welcome-1', welcomeMessage1],
-          ['welcome-2', welcomeMessage2],
-          ['welcome-3', welcomeMessage3],
-        ]);
-        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+        mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([welcomeMessage1, welcomeMessage2, welcomeMessage3]));
 
         mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
           data: {
@@ -865,9 +866,9 @@ describe('GuildOnboardingService', () => {
     });
 
     describe('AC#6: Handle API failures gracefully', () => {
-      it('should not post if Discord fetchPinned fails', async () => {
+      it('should not post if Discord fetchPins fails', async () => {
         // Can't verify Discord state - don't post to avoid duplicates
-        mockChannel.messages.fetchPinned.mockRejectedValue(
+        mockChannel.messages.fetchPins.mockRejectedValue(
           new Error('Missing permissions')
         );
 
@@ -885,7 +886,7 @@ describe('GuildOnboardingService', () => {
 
       it('should still post if API fails but Discord shows no welcome message', async () => {
         // Discord (source of truth) shows no welcome messages
-        mockChannel.messages.fetchPinned.mockResolvedValue(createMockCollection([]));
+        mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([]));
         // API fails
         mockApiClient.getCommunityServerByPlatformId.mockRejectedValue(
           new Error('500 Internal Server Error')
@@ -907,8 +908,7 @@ describe('GuildOnboardingService', () => {
         // Bot's welcome exists but DB has wrong/missing ID
         // Must use current revision for revision comparison to match
         const existingBotMessage = createMockMessageWithRevision('found-welcome-123', WELCOME_MESSAGE_REVISION, mockBotUser);
-        const pinnedMessages = createMockCollection([['found-welcome-123', existingBotMessage]]);
-        mockChannel.messages.fetchPinned.mockResolvedValue(pinnedMessages);
+        mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([existingBotMessage]));
 
         mockApiClient.getCommunityServerByPlatformId.mockResolvedValue({
           data: {

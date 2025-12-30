@@ -5,21 +5,14 @@ import { loggerFactory } from '../factories/index.js';
 
 const mockLogger = loggerFactory.build();
 
-const mockExecuteBulkScan = jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue({
-  scanId: 'scan-123',
-  messagesScanned: 100,
-  channelsScanned: 5,
-  batchesPublished: 1,
-  status: 'completed',
-  flaggedMessages: [],
-});
+const mockSetVibecheckPromptState = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
 
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
 
-jest.unstable_mockModule('../../src/lib/bulk-scan-executor.js', () => ({
-  executeBulkScan: mockExecuteBulkScan,
+jest.unstable_mockModule('../../src/handlers/vibecheck-prompt-handler.js', () => ({
+  setVibecheckPromptState: mockSetVibecheckPromptState,
 }));
 
 jest.unstable_mockModule('../../src/lib/errors.js', () => ({
@@ -106,18 +99,8 @@ describe('vibecheck-prompt', () => {
 
   describe('sendVibeCheckPrompt', () => {
     const createMockSetup = () => {
-      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
-      const mockCollector = {
-        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
-          collectHandlers.set(event, handler);
-          return mockCollector;
-        }),
-        stop: jest.fn(),
-      };
-
       const mockPromptMessage = {
         id: 'prompt-message-123',
-        createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
         edit: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
       };
 
@@ -164,8 +147,6 @@ describe('vibecheck-prompt', () => {
         mockAdmin,
         mockBotChannel,
         mockPromptMessage,
-        mockCollector,
-        collectHandlers,
       };
     };
 
@@ -214,7 +195,7 @@ describe('vibecheck-prompt', () => {
       expect(sendCall.content.toLowerCase()).toContain('misinformation');
     });
 
-    it('should filter interactions to only the admin who triggered the prompt', async () => {
+    it('should store prompt state in Redis after sending message', async () => {
       const { mockAdmin, mockBotChannel, mockPromptMessage } = createMockSetup();
 
       await sendVibeCheckPrompt({
@@ -223,24 +204,20 @@ describe('vibecheck-prompt', () => {
         guildId: 'guild-123',
       });
 
-      expect(mockPromptMessage.createMessageComponentCollector).toHaveBeenCalledWith(
-        expect.objectContaining({
-          filter: expect.any(Function),
-        })
+      expect(mockSetVibecheckPromptState).toHaveBeenCalledWith(
+        mockPromptMessage.id,
+        {
+          guildId: 'guild-123',
+          adminId: 'admin-123',
+          botChannelId: 'bot-channel-123',
+          selectedDays: null,
+        }
       );
-
-      const collectorOptions = mockPromptMessage.createMessageComponentCollector.mock.calls[0][0] as { filter: (i: { user: { id: string } }) => boolean };
-      const filter = collectorOptions.filter;
-
-      const adminInteraction = { user: { id: 'admin-123' } };
-      const otherInteraction = { user: { id: 'other-user' } };
-
-      expect(filter(adminInteraction)).toBe(true);
-      expect(filter(otherInteraction)).toBe(false);
     });
 
-    it('should handle No Thanks button click by dismissing the prompt', async () => {
-      const { mockAdmin, mockBotChannel, collectHandlers } = createMockSetup();
+    it('should handle send failure gracefully', async () => {
+      const { mockAdmin, mockBotChannel } = createMockSetup();
+      mockBotChannel.send.mockRejectedValue(new Error('Send failed'));
 
       await sendVibeCheckPrompt({
         botChannel: mockBotChannel as any,
@@ -248,31 +225,18 @@ describe('vibecheck-prompt', () => {
         guildId: 'guild-123',
       });
 
-      const mockButtonInteraction = {
-        customId: VIBECHECK_PROMPT_CUSTOM_IDS.NO_THANKS,
-        user: { id: 'admin-123' },
-        isButton: () => true,
-        isStringSelectMenu: () => false,
-        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      const collectHandler = collectHandlers.get('collect');
-      expect(collectHandler).toBeDefined();
-
-      if (collectHandler) {
-        await collectHandler(mockButtonInteraction);
-      }
-
-      expect(mockButtonInteraction.update).toHaveBeenCalledWith(
+      expect(mockSetVibecheckPromptState).not.toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Failed to send vibe check prompt in bot channel',
         expect.objectContaining({
-          content: expect.stringContaining('dismissed'),
-          components: [],
+          error: 'Send failed',
         })
       );
     });
 
-    it('should update buttons when days are selected from dropdown', async () => {
-      const { mockAdmin, mockBotChannel, collectHandlers } = createMockSetup();
+    it('should edit message to show error when state storage fails', async () => {
+      const { mockAdmin, mockBotChannel, mockPromptMessage } = createMockSetup();
+      mockSetVibecheckPromptState.mockRejectedValue(new Error('Redis error'));
 
       await sendVibeCheckPrompt({
         botChannel: mockBotChannel as any,
@@ -280,40 +244,23 @@ describe('vibecheck-prompt', () => {
         guildId: 'guild-123',
       });
 
-      const mockSelectInteraction = {
-        customId: VIBECHECK_PROMPT_CUSTOM_IDS.DAYS_SELECT,
-        user: { id: 'admin-123' },
-        isButton: () => false,
-        isStringSelectMenu: () => true,
-        values: ['7'],
-        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      const collectHandler = collectHandlers.get('collect');
-      if (collectHandler) {
-        await collectHandler(mockSelectInteraction);
-      }
-
-      expect(mockSelectInteraction.update).toHaveBeenCalledWith(
+      expect(mockBotChannel.send).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to store vibecheck prompt state in Redis',
         expect.objectContaining({
-          components: expect.arrayContaining([
-            expect.anything(),
-            expect.objectContaining({
-              components: expect.arrayContaining([
-                expect.objectContaining({
-                  data: expect.objectContaining({
-                    disabled: false,
-                  }),
-                }),
-              ]),
-            }),
-          ]),
+          error: 'Redis error',
         })
       );
+      expect(mockPromptMessage.edit).toHaveBeenCalledWith({
+        content: expect.stringContaining('Failed to set up vibe check prompt'),
+        components: [],
+      });
     });
 
-    it('should trigger vibecheck scan when Start button is clicked after selecting days', async () => {
-      const { mockAdmin, mockBotChannel, collectHandlers } = createMockSetup();
+    it('should handle message edit failure after state storage failure gracefully', async () => {
+      const { mockAdmin, mockBotChannel, mockPromptMessage } = createMockSetup();
+      mockSetVibecheckPromptState.mockRejectedValue(new Error('Redis error'));
+      mockPromptMessage.edit.mockRejectedValue(new Error('Edit failed'));
 
       await sendVibeCheckPrompt({
         botChannel: mockBotChannel as any,
@@ -321,61 +268,16 @@ describe('vibecheck-prompt', () => {
         guildId: 'guild-123',
       });
 
-      const mockSelectInteraction = {
-        customId: VIBECHECK_PROMPT_CUSTOM_IDS.DAYS_SELECT,
-        user: { id: 'admin-123' },
-        isButton: () => false,
-        isStringSelectMenu: () => true,
-        values: ['7'],
-        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      const collectHandler = collectHandlers.get('collect');
-      if (collectHandler) {
-        await collectHandler(mockSelectInteraction);
-      }
-
-      const mockStartInteraction = {
-        customId: VIBECHECK_PROMPT_CUSTOM_IDS.START,
-        user: { id: 'admin-123' },
-        isButton: () => true,
-        isStringSelectMenu: () => false,
-        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
-      };
-
-      if (collectHandler) {
-        await collectHandler(mockStartInteraction);
-      }
-
-      expect(mockExecuteBulkScan).toHaveBeenCalledWith(
-        expect.objectContaining({
-          guild: mockBotChannel.guild,
-          days: 7,
-          initiatorId: 'admin-123',
-        })
+      expect(mockBotChannel.send).toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to store vibecheck prompt state in Redis',
+        expect.any(Object)
       );
-    });
-
-    it('should handle timeout by cleaning up the prompt message', async () => {
-      const { mockAdmin, mockBotChannel, collectHandlers, mockPromptMessage } = createMockSetup();
-
-      await sendVibeCheckPrompt({
-        botChannel: mockBotChannel as any,
-        admin: mockAdmin as any,
-        guildId: 'guild-123',
-      });
-
-      const endHandler = collectHandlers.get('end');
-      expect(endHandler).toBeDefined();
-
-      if (endHandler) {
-        await endHandler(new Map(), 'time');
-      }
-
-      expect(mockPromptMessage.edit).toHaveBeenCalledWith(
+      expect(mockPromptMessage.edit).toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Failed to edit message after state storage failure',
         expect.objectContaining({
-          content: expect.stringContaining('expired'),
-          components: [],
+          error: 'Edit failed',
         })
       );
     });

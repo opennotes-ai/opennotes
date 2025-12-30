@@ -37,6 +37,10 @@ import * as noteRequestContextCommand from './commands/note-request-context.js';
 
 import { NatsSubscriber } from './events/NatsSubscriber.js';
 import { initializeNatsPublisher, closeNatsPublisher } from './events/NatsPublisher.js';
+import {
+  isVibecheckPromptInteraction,
+  handleVibecheckPromptInteraction,
+} from './handlers/vibecheck-prompt-handler.js';
 import { NotePublisherService } from './services/NotePublisherService.js';
 import { NoteContextService } from './services/NoteContextService.js';
 import { NotePublisherConfigService } from './services/NotePublisherConfigService.js';
@@ -163,6 +167,12 @@ export class Bot {
     this.guildConfigService = new GuildConfigService(apiClient);
     logger.info('Bot channel service initialized');
 
+    const serverReadiness = await this.waitForServerReady();
+    if (!serverReadiness.ready) {
+      logger.warn('Proceeding with bot initialization despite server not being ready', {
+        waitedMs: serverReadiness.waitedMs,
+      });
+    }
     await this.ensureBotChannelsForAllGuilds();
 
     await this.initializeMessageMonitoring();
@@ -224,6 +234,20 @@ export class Bot {
           await listCommand.handleRequestReplyButton(interaction);
         } catch (error) {
           logger.error('Request reply button failed', { error });
+        }
+      } else if (isVibecheckPromptInteraction(interaction.customId)) {
+        try {
+          await handleVibecheckPromptInteraction(interaction);
+        } catch (error) {
+          logger.error('Vibecheck prompt button failed', { error });
+        }
+      }
+    } else if (interaction.isStringSelectMenu()) {
+      if (isVibecheckPromptInteraction(interaction.customId)) {
+        try {
+          await handleVibecheckPromptInteraction(interaction);
+        } catch (error) {
+          logger.error('Vibecheck prompt select menu failed', { error });
         }
       }
     } else if (interaction.isModalSubmit()) {
@@ -485,6 +509,50 @@ export class Bot {
 
   private onError(error: Error): void {
     logger.error('Client error', { error: error.message, stack: error.stack });
+  }
+
+  private async waitForServerReady(maxWaitMs: number = 60000): Promise<{ ready: boolean; waitedMs: number }> {
+    const startTime = Date.now();
+    let waitMs = 500;
+    const maxBackoff = 8000;
+
+    logger.info('Waiting for server API to be ready...');
+
+    while (Date.now() - startTime < maxWaitMs) {
+      try {
+        await apiClient.healthCheck();
+        const waitedMs = Date.now() - startTime;
+        logger.info('Server API is ready', { waitedMs });
+        return { ready: true, waitedMs };
+      } catch (error) {
+        const elapsed = Date.now() - startTime;
+        const remaining = maxWaitMs - elapsed;
+
+        if (remaining <= 0) {
+          break;
+        }
+
+        logger.debug('Server not ready yet, retrying...', {
+          error: error instanceof Error ? error.message : String(error),
+          nextRetryMs: Math.min(waitMs, remaining),
+          elapsedMs: elapsed,
+        });
+
+        await this.delay(Math.min(waitMs, remaining));
+        waitMs = Math.min(waitMs * 2, maxBackoff);
+      }
+    }
+
+    const waitedMs = Date.now() - startTime;
+    logger.warn('Server API not ready after timeout, continuing with limited functionality', {
+      waitedMs,
+      maxWaitMs,
+    });
+    return { ready: false, waitedMs };
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async start(): Promise<void> {

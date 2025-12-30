@@ -95,7 +95,11 @@ export class GuildOnboardingService {
     // Fetch pinned messages from Discord (source of truth)
     let pinnedMessages: Collection<string, Message>;
     try {
-      pinnedMessages = await channel.messages.fetchPinned();
+      const pinsResponse = await channel.messages.fetchPins();
+      // Convert FetchPinnedMessagesResponse to Collection for compatibility
+      pinnedMessages = new Collection(
+        pinsResponse.items.map((pin) => [pin.message.id, pin.message] as [string, Message])
+      );
     } catch (error) {
       logger.warn('Cannot verify welcome message state, skipping post to avoid duplicates', {
         guildId,
