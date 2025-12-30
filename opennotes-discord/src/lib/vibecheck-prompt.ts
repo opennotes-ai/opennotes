@@ -4,23 +4,19 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ButtonInteraction,
-  MessageComponentInteraction,
   User,
   Message as DiscordMessage,
 } from 'discord.js';
 import { logger } from '../logger.js';
-import { generateErrorId, extractErrorDetails } from './errors.js';
+import { generateErrorId } from './errors.js';
 import { VIBE_CHECK_DAYS_OPTIONS } from '../types/bulk-scan.js';
-import { executeBulkScan } from './bulk-scan-executor.js';
+import { setVibecheckPromptState } from '../handlers/vibecheck-prompt-handler.js';
 
 export const VIBECHECK_PROMPT_CUSTOM_IDS = {
   DAYS_SELECT: 'vibecheck_prompt_days',
   START: 'vibecheck_prompt_start',
   NO_THANKS: 'vibecheck_prompt_no_thanks',
 } as const;
-
-const COLLECTOR_TIMEOUT_MS = 300000;
 
 export interface VibeCheckPromptOptions {
   botChannel: TextChannel;
@@ -95,158 +91,25 @@ Select how many days back you'd like to scan:`;
     return;
   }
 
-  let selectedDays: number | null = null;
-
-  const collector = message.createMessageComponentCollector({
-    filter: (interaction: MessageComponentInteraction) => interaction.user.id === admin.id,
-    time: COLLECTOR_TIMEOUT_MS,
-  });
-
-  collector.on('collect', (interaction: MessageComponentInteraction) => {
-    void (async (): Promise<void> => { try {
-      if (interaction.isStringSelectMenu() && interaction.customId === VIBECHECK_PROMPT_CUSTOM_IDS.DAYS_SELECT) {
-        selectedDays = parseInt(interaction.values[0], 10);
-
-        const updatedSelectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-          createDaysSelectMenu()
-        );
-        const updatedButtonRow = createPromptButtons(true);
-
-        await interaction.update({
-          content: `**Vibe Check Available**
-
-Would you like to scan your server for potential misinformation? This will check recent messages against known fact-checking databases.
-
-Selected: **${selectedDays} day${selectedDays === 1 ? '' : 's'}**`,
-          components: [updatedSelectRow, updatedButtonRow],
-        });
-      } else if (interaction.isButton()) {
-        if (interaction.customId === VIBECHECK_PROMPT_CUSTOM_IDS.NO_THANKS) {
-          await interaction.update({
-            content: 'Vibe check prompt dismissed. You can run `/vibecheck` anytime to scan your server.',
-            components: [],
-          });
-          collector.stop('dismissed');
-        } else if (interaction.customId === VIBECHECK_PROMPT_CUSTOM_IDS.START && selectedDays !== null) {
-          await interaction.update({
-            content: `Starting vibe check scan for the last ${selectedDays} day${selectedDays === 1 ? '' : 's'}...`,
-            components: [],
-          });
-
-          await runVibeCheckScan({
-            interaction,
-            guildId,
-            days: selectedDays,
-            botChannel,
-            promptMessage: message,
-            errorId,
-          });
-
-          collector.stop('started');
-        }
-      }
-    } catch (error) {
-      const errorDetails = extractErrorDetails(error);
-      logger.error('Error handling vibe check prompt interaction', {
-        error_id: errorId,
-        error: errorDetails.message,
-        error_type: errorDetails.type,
-        stack: errorDetails.stack,
-      });
-    }
-    })();
-  });
-
-  collector.on('end', (_collected, reason) => {
-    void (async (): Promise<void> => {
-    if (reason === 'time') {
-      try {
-        await message.edit({
-          content: 'Vibe check prompt expired. You can run `/vibecheck` anytime to scan your server.',
-          components: [],
-        });
-      } catch (error) {
-        logger.debug('Failed to edit expired vibe check prompt', {
-          error_id: errorId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    })();
-  });
-}
-
-interface RunVibeCheckScanOptions {
-  interaction: ButtonInteraction;
-  guildId: string;
-  days: number;
-  botChannel: TextChannel;
-  promptMessage: DiscordMessage;
-  errorId: string;
-}
-
-async function runVibeCheckScan(options: RunVibeCheckScanOptions): Promise<void> {
-  const { interaction, guildId, days, botChannel, promptMessage, errorId } = options;
-
-  const guild = botChannel.guild;
-  if (!guild) {
-    await promptMessage.edit({
-      content: 'Unable to access server information. Please try `/vibecheck` instead.',
-    });
-    return;
-  }
-
   try {
-    const result = await executeBulkScan({
-      guild,
-      days,
-      initiatorId: interaction.user.id,
-      errorId,
+    await setVibecheckPromptState(message.id, {
+      guildId,
+      adminId: admin.id,
+      botChannelId: botChannel.id,
+      selectedDays: null,
     });
 
-    if (result.channelsScanned === 0) {
-      await promptMessage.edit({
-        content: 'No accessible text channels found to scan.',
-      });
-      return;
-    }
-
-    await promptMessage.edit({
-      content: `Scan complete! Analyzing ${result.messagesScanned} messages for potential misinformation...\n\n**Scan ID:** \`${result.scanId}\``,
-    });
-
-    if (result.status === 'failed' || result.status === 'timeout') {
-      await promptMessage.edit({
-        content: `Scan analysis failed. Please try again later.\n\n**Scan ID:** \`${result.scanId}\``,
-      });
-      return;
-    }
-
-    const warningText = result.warningMessage
-      ? `\n\n**Warning:** ${result.warningMessage}`
-      : '';
-
-    if (result.flaggedMessages.length === 0) {
-      await promptMessage.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\nNo potential misinformation was detected. Your community looks healthy!${warningText}`,
-      });
-    } else {
-      await promptMessage.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Flagged:** ${result.flaggedMessages.length}\n\nUse \`/vibecheck ${days}\` for detailed results and to create note requests.${warningText}`,
-      });
-    }
-  } catch (error) {
-    const errorDetails = extractErrorDetails(error);
-    logger.error('Vibe check scan from prompt failed', {
+    logger.debug('Vibecheck prompt state stored in Redis', {
       error_id: errorId,
+      message_id: message.id,
       guild_id: guildId,
-      error: errorDetails.message,
-      error_type: errorDetails.type,
-      stack: errorDetails.stack,
+      admin_id: admin.id,
     });
-
-    await promptMessage.edit({
-      content: 'The scan encountered an error. Please try using `/vibecheck` instead.',
+  } catch (cacheError) {
+    logger.error('Failed to store vibecheck prompt state in Redis', {
+      error_id: errorId,
+      message_id: message.id,
+      error: cacheError instanceof Error ? cacheError.message : String(cacheError),
     });
   }
 }
