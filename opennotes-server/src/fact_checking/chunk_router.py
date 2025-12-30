@@ -34,6 +34,7 @@ from src.cache.redis_client import redis_client
 from src.config import settings
 from src.database import get_db
 from src.fact_checking.chunk_task_schemas import (
+    RechunkTaskCancelResponse,
     RechunkTaskCreate,
     RechunkTaskResponse,
     RechunkTaskStartResponse,
@@ -362,4 +363,135 @@ async def rechunk_previously_seen_messages(
         total_items=total_items,
         batch_size=batch_size,
         message=f"Re-chunking {total_items} previously seen messages in batches of {batch_size}",
+    )
+
+
+@router.get(
+    "/tasks",
+    response_model=list[RechunkTaskResponse],
+    summary="List all rechunk tasks",
+    description="List all active rechunk tasks. Optionally filter by status. "
+    "Requires authentication.",
+)
+async def list_rechunk_tasks(
+    user: Annotated[User, Depends(get_current_user_or_api_key)],
+    tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
+    task_status: RechunkTaskStatus | None = Query(
+        None,
+        alias="status",
+        description="Filter by task status (pending, in_progress, completed, failed)",
+    ),
+) -> list[RechunkTaskResponse]:
+    """
+    List all rechunk tasks.
+
+    Args:
+        user: Authenticated user
+        tracker: Task tracker service
+        task_status: Optional status filter
+
+    Returns:
+        List of rechunk tasks
+    """
+    return await tracker.list_tasks(status=task_status)
+
+
+@router.delete(
+    "/tasks/{task_id}",
+    response_model=RechunkTaskCancelResponse,
+    summary="Cancel a rechunk task",
+    description="Cancel a rechunk task and release its lock. "
+    "By default, only allows canceling tasks in PENDING or IN_PROGRESS state. "
+    "Use force=true to cancel tasks in any state (including COMPLETED/FAILED). "
+    "Requires admin/moderator permission for the task's community, "
+    "or OpenNotes admin for global tasks.",
+)
+async def cancel_rechunk_task(
+    request: Request,
+    task_id: UUID,
+    user: Annotated[User, Depends(get_current_user_or_api_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
+    force: bool = Query(
+        False,
+        description="Skip state validation and cancel task in any state",
+    ),
+) -> RechunkTaskCancelResponse:
+    """
+    Cancel a rechunk task and release its lock.
+
+    Args:
+        request: FastAPI request object
+        task_id: The unique identifier of the task to cancel
+        user: Authenticated user
+        db: Database session
+        tracker: Task tracker service
+        force: If True, skip state validation
+
+    Returns:
+        Cancel response with task_id and lock_released status
+
+    Raises:
+        HTTPException: 400 if task is in terminal state and force=False
+        HTTPException: 403 if user lacks permission
+        HTTPException: 404 if task not found
+    """
+    task = await tracker.get_task(task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found or has expired",
+        )
+
+    task_status_value = (
+        RechunkTaskStatus(task.status) if isinstance(task.status, str) else task.status
+    )
+    if not force and task_status_value in (
+        RechunkTaskStatus.COMPLETED,
+        RechunkTaskStatus.FAILED,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Task {task_id} is in terminal state ({task_status_value.value}). "
+            "Use force=true to cancel anyway.",
+        )
+
+    if task.community_server_id is not None:
+        await verify_community_admin_by_uuid(
+            community_server_id=task.community_server_id,
+            current_user=user,
+            db=db,
+            request=request,
+        )
+    elif not getattr(user, "is_service_account", False) and not getattr(
+        user, "is_opennotes_admin", False
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only OpenNotes admins or service accounts can cancel global tasks",
+        )
+
+    task_type_value = (
+        task.task_type.value if isinstance(task.task_type, RechunkTaskType) else task.task_type
+    )
+    resource_id = str(task.community_server_id) if task.community_server_id else None
+    lock_released = await rechunk_lock_manager.release_lock(task_type_value, resource_id)
+
+    await tracker.delete_task(task_id)
+
+    logger.info(
+        "Cancelled rechunk task",
+        extra={
+            "task_id": str(task_id),
+            "user_id": str(user.id),
+            "task_type": task_type_value,
+            "lock_released": lock_released,
+            "force": force,
+        },
+    )
+
+    return RechunkTaskCancelResponse(
+        task_id=task_id,
+        message=f"Task {task_id} cancelled successfully",
+        lock_released=lock_released,
     )

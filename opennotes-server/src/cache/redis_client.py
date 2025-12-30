@@ -1,5 +1,6 @@
 import logging
 import os
+from collections.abc import AsyncIterator
 from typing import Any
 
 import redis.asyncio as redis
@@ -232,6 +233,53 @@ class RedisClient:
         except Exception as e:
             logger.error(f"Redis INFO failed: {e}")
             return {}
+
+    async def scan_iter(self, match: str | None = None) -> AsyncIterator[str]:
+        """
+        Iterate over keys matching the pattern using SCAN.
+
+        Args:
+            match: Pattern to match keys against
+
+        Yields:
+            Key strings matching the pattern
+        """
+        if not self.client:
+            return
+
+        cursor = 0
+        while True:
+            try:
+                cursor, keys = await self.circuit_breaker.call(
+                    self.client.scan, cursor, match=match
+                )
+                for key in keys:
+                    yield key.decode("utf-8") if isinstance(key, bytes) else key
+                if cursor == 0:
+                    break
+            except Exception as e:
+                logger.error(f"Redis SCAN failed for pattern '{match}': {e}")
+                break
+
+    async def mget(self, keys: list[str]) -> list[str | None]:
+        """
+        Get multiple keys at once.
+
+        Args:
+            keys: List of keys to get
+
+        Returns:
+            List of values (None for missing keys)
+        """
+        if not self.client or not keys:
+            return []
+
+        try:
+            values = await self.circuit_breaker.call(self.client.mget, keys)
+            return [v.decode("utf-8") if isinstance(v, bytes) else v for v in values]
+        except Exception as e:
+            logger.error(f"Redis MGET failed for keys: {e}")
+            return []
 
 
 redis_client = RedisClient()

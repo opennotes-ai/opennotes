@@ -102,3 +102,13 @@ class RechunkTaskStartResponse(BaseModel):
     total_items: int = Field(..., ge=0, description="Total items to process")
     batch_size: int = Field(..., ge=1, le=1000, description="Batch size for processing")
     message: str = Field(..., description="Human-readable status message")
+
+
+class RechunkTaskCancelResponse(BaseModel):
+    """Response schema for cancelling a rechunk task."""
+
+    model_config = ConfigDict(use_enum_values=True, from_attributes=True)
+
+    task_id: UUID = Field(..., description="ID of the cancelled task")
+    message: str = Field(..., description="Human-readable status message")
+    lock_released: bool = Field(..., description="Whether the lock was successfully released")
