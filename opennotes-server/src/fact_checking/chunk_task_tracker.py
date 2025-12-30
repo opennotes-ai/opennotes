@@ -127,6 +127,30 @@ class RechunkTaskTracker:
 
         return task
 
+    def _parse_task_dict(self, data: str) -> RechunkTaskResponse:
+        """
+        Parse JSON task data to RechunkTaskResponse.
+
+        Args:
+            data: JSON string of task data from Redis
+
+        Returns:
+            Parsed RechunkTaskResponse
+
+        Raises:
+            json.JSONDecodeError: If JSON parsing fails
+            KeyError: If required fields are missing
+            ValueError: If field values are invalid
+        """
+        task_dict = json.loads(data)
+        task_dict["task_id"] = UUID(task_dict["task_id"])
+        csi = task_dict.get("community_server_id")
+        # Handle both JSON null and legacy "None" string from str(None)
+        task_dict["community_server_id"] = UUID(csi) if csi and csi != "None" else None
+        task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
+        task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
+        return RechunkTaskResponse(**task_dict)
+
     async def get_task(self, task_id: UUID) -> RechunkTaskResponse | None:
         """
         Retrieve a task by its ID.
@@ -144,14 +168,7 @@ class RechunkTaskTracker:
             return None
 
         try:
-            task_dict = json.loads(data)
-            task_dict["task_id"] = UUID(task_dict["task_id"])
-            csi = task_dict.get("community_server_id")
-            # Handle both JSON null and legacy "None" string from str(None)
-            task_dict["community_server_id"] = UUID(csi) if csi and csi != "None" else None
-            task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
-            task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
-            return RechunkTaskResponse(**task_dict)
+            return self._parse_task_dict(data)
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             logger.error(
                 "Failed to parse task data from Redis",
@@ -191,14 +208,7 @@ class RechunkTaskTracker:
             )
 
         try:
-            task_dict = json.loads(data)
-            task_dict["task_id"] = UUID(task_dict["task_id"])
-            csi = task_dict.get("community_server_id")
-            # Handle both JSON null and legacy "None" string from str(None)
-            task_dict["community_server_id"] = UUID(csi) if csi and csi != "None" else None
-            task_dict["created_at"] = datetime.fromisoformat(task_dict["created_at"])
-            task_dict["updated_at"] = datetime.fromisoformat(task_dict["updated_at"])
-            return RechunkTaskResponse(**task_dict)
+            return self._parse_task_dict(data)
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             return TaskLookupError(
                 reason=TaskLookupErrorReason.PARSE_ERROR,
@@ -587,6 +597,93 @@ class RechunkTaskTracker:
 
         result = await self._redis.set(key, json.dumps(task_dict), ttl=RECHUNK_TASK_TTL_SECONDS)
         return result is not False
+
+    async def delete_task(self, task_id: UUID) -> bool:
+        """
+        Delete a task from Redis.
+
+        Args:
+            task_id: The task's unique identifier
+
+        Returns:
+            True if task was deleted, False if not found or error occurred
+        """
+        key = self._task_key(task_id)
+        try:
+            result = await self._redis.delete(key)
+            if result > 0:
+                logger.info(
+                    "Deleted rechunk task",
+                    extra={"task_id": str(task_id)},
+                )
+                return True
+            return False
+        except Exception as e:
+            logger.error(
+                "Failed to delete rechunk task",
+                extra={"task_id": str(task_id), "error": str(e)},
+            )
+            return False
+
+    async def list_tasks(
+        self, status: RechunkTaskStatus | None = None
+    ) -> list[RechunkTaskResponse]:
+        """
+        List all rechunk tasks, optionally filtered by status.
+
+        Args:
+            status: Optional status filter
+
+        Returns:
+            List of tasks matching the filter
+        """
+        tasks: list[RechunkTaskResponse] = []
+        pattern = f"{RECHUNK_TASK_KEY_PREFIX}*"
+        mget_batch_size = 100  # Batch mget calls to bound memory usage
+
+        try:
+            keys: list[str] = []
+            async for key in self._redis.scan_iter(match=pattern):
+                keys.append(key)
+
+            if not keys:
+                return tasks
+
+            # Process keys in batches to avoid unbounded memory growth
+            for i in range(0, len(keys), mget_batch_size):
+                batch_keys = keys[i : i + mget_batch_size]
+                values = await self._redis.mget(batch_keys)
+
+                for data in values:
+                    if data is None:
+                        continue
+                    try:
+                        task = self._parse_task_dict(data)
+
+                        if status is not None:
+                            task_status = (
+                                RechunkTaskStatus(task.status)
+                                if isinstance(task.status, str)
+                                else task.status
+                            )
+                            if task_status != status:
+                                continue
+
+                        tasks.append(task)
+                    except (json.JSONDecodeError, KeyError, ValueError) as e:
+                        logger.warning(
+                            "Failed to parse task data during list",
+                            extra={"error": str(e)},
+                        )
+                        continue
+
+        except Exception as e:
+            logger.error(
+                "Failed to list rechunk tasks",
+                extra={"error": str(e)},
+            )
+
+        return tasks
 
 
 def get_rechunk_task_tracker() -> RechunkTaskTracker:
