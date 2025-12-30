@@ -28,6 +28,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+import redis.asyncio as aioredis
 from opentelemetry import context as context_api
 from taskiq import SimpleRetryMiddleware, TaskiqMessage, TaskiqResult
 from taskiq.middlewares.opentelemetry_middleware import (
@@ -38,6 +39,7 @@ from taskiq.middlewares.opentelemetry_middleware import (
 from taskiq_nats import PullBasedJetStreamBroker
 from taskiq_redis import RedisAsyncResultBackend
 
+from src.cache.redis_client import create_redis_connection, get_redis_connection_kwargs
 from src.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -125,10 +127,20 @@ def _create_broker() -> PullBasedJetStreamBroker:
         f"retry_count={settings.TASKIQ_DEFAULT_RETRY_COUNT}"
     )
 
-    result_backend = RedisAsyncResultBackend(
-        redis_url=settings.REDIS_URL,
-        result_ex_time=settings.TASKIQ_RESULT_EXPIRY,
-    )
+    redis_kwargs = get_redis_connection_kwargs(settings.REDIS_URL)
+    ssl_cert_reqs = redis_kwargs.get("ssl_cert_reqs")
+
+    result_backend_kwargs: dict[str, Any] = {
+        "redis_url": settings.REDIS_URL,
+        "result_ex_time": settings.TASKIQ_RESULT_EXPIRY,
+    }
+    if ssl_cert_reqs is not None:
+        result_backend_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
+        logger.info(
+            "TaskIQ Redis result backend configured with SSL (ssl_cert_reqs=%s)", ssl_cert_reqs
+        )
+
+    result_backend: RedisAsyncResultBackend = RedisAsyncResultBackend(**result_backend_kwargs)
 
     retry_middleware = SimpleRetryMiddleware(
         default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,
@@ -343,6 +355,55 @@ def get_broker_health() -> dict[str, Any]:
     }
 
 
+async def check_redis_ssl_connectivity() -> dict[str, Any]:
+    """
+    Check Redis SSL connectivity for TaskIQ result backend.
+
+    This health check verifies that the Redis connection can be established
+    with proper SSL configuration. It's useful for validating TLS connectivity
+    at worker startup.
+
+    Returns a dict with:
+    - healthy: Whether connection succeeded
+    - ssl_enabled: Whether SSL is configured (rediss:// URL)
+    - ssl_cert_reqs: The ssl_cert_reqs setting if SSL is enabled
+    - error: Error message if connection failed (only present on failure)
+    """
+    settings = get_settings()
+    redis_url = settings.REDIS_URL
+    ssl_enabled = redis_url.startswith("rediss://")
+
+    result: dict[str, Any] = {
+        "healthy": False,
+        "ssl_enabled": ssl_enabled,
+    }
+
+    if ssl_enabled:
+        redis_kwargs = get_redis_connection_kwargs(redis_url)
+        result["ssl_cert_reqs"] = redis_kwargs.get("ssl_cert_reqs")
+
+    try:
+        client = await create_redis_connection(redis_url)
+        try:
+            await client.ping()
+            result["healthy"] = True
+            logger.info(
+                "Redis SSL connectivity check passed (ssl_enabled=%s, ssl_cert_reqs=%s)",
+                ssl_enabled,
+                result.get("ssl_cert_reqs"),
+            )
+        finally:
+            await client.aclose()
+    except aioredis.RedisError as e:
+        result["error"] = str(e)
+        logger.error("Redis SSL connectivity check failed: %s", e)
+    except Exception as e:
+        result["error"] = str(e)
+        logger.error("Redis SSL connectivity check failed with unexpected error: %s", e)
+
+    return result
+
+
 # Export a proxy that lazily creates the broker
 broker = _BrokerProxy()
 
@@ -351,6 +412,7 @@ __all__ = [
     "PullBasedJetStreamBroker",
     "SafeOpenTelemetryMiddleware",
     "broker",
+    "check_redis_ssl_connectivity",
     "get_broker",
     "get_broker_health",
     "is_broker_initialized",

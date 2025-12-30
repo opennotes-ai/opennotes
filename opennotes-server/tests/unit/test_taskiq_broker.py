@@ -23,6 +23,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker._broker_instance", None),
             patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
@@ -36,6 +37,7 @@ class TestBrokerConfiguration:
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
             mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {}
 
             mock_broker_instance = MagicMock()
             mock_broker_instance.with_result_backend.return_value = mock_broker_instance
@@ -60,6 +62,81 @@ class TestBrokerConfiguration:
             mock_retry.assert_called_once_with(
                 default_retry_count=5,
             )
+
+    def test_broker_passes_ssl_cert_reqs_for_rediss_url(self) -> None:
+        """Verify broker passes ssl_cert_reqs when using rediss:// URL."""
+        with (
+            patch("src.tasks.broker._broker_instance", None),
+            patch("src.tasks.broker._registered_task_objects", {}),
+            patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
+            patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
+            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.SimpleRetryMiddleware"),
+        ):
+            settings = MagicMock()
+            settings.NATS_URL = "nats://test:4222"
+            settings.REDIS_URL = "rediss://secure-redis:6380"
+            settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
+            settings.TASKIQ_RESULT_EXPIRY = 3600
+            settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_USERNAME = None
+            settings.NATS_PASSWORD = None
+            mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {"ssl_cert_reqs": "none"}
+
+            mock_broker_instance = MagicMock()
+            mock_broker_instance.with_result_backend.return_value = mock_broker_instance
+            mock_broker_instance.with_middlewares.return_value = mock_broker_instance
+            mock_broker.return_value = mock_broker_instance
+
+            from src.tasks.broker import _create_broker
+
+            _create_broker()
+
+            mock_redis.assert_called_once_with(
+                redis_url="rediss://secure-redis:6380",
+                result_ex_time=3600,
+                ssl_cert_reqs="none",
+            )
+
+    def test_broker_does_not_pass_ssl_for_redis_url(self) -> None:
+        """Verify broker does not pass ssl_cert_reqs when using redis:// URL."""
+        with (
+            patch("src.tasks.broker._broker_instance", None),
+            patch("src.tasks.broker._registered_task_objects", {}),
+            patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
+            patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
+            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.SimpleRetryMiddleware"),
+        ):
+            settings = MagicMock()
+            settings.NATS_URL = "nats://test:4222"
+            settings.REDIS_URL = "redis://localhost:6379"
+            settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
+            settings.TASKIQ_RESULT_EXPIRY = 3600
+            settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_USERNAME = None
+            settings.NATS_PASSWORD = None
+            mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {}
+
+            mock_broker_instance = MagicMock()
+            mock_broker_instance.with_result_backend.return_value = mock_broker_instance
+            mock_broker_instance.with_middlewares.return_value = mock_broker_instance
+            mock_broker.return_value = mock_broker_instance
+
+            from src.tasks.broker import _create_broker
+
+            _create_broker()
+
+            mock_redis.assert_called_once_with(
+                redis_url="redis://localhost:6379",
+                result_ex_time=3600,
+            )
+            call_kwargs = mock_redis.call_args[1]
+            assert "ssl_cert_reqs" not in call_kwargs
 
 
 class TestLazyTaskMetadata:
@@ -571,3 +648,118 @@ class TestSafeOpenTelemetryMiddleware:
         await asyncio.gather(*tasks)
 
         assert len(errors) == 0, f"Expected no errors, got: {errors}"
+
+
+class TestRedisSSLConnectivityCheck:
+    """Test Redis SSL connectivity health check."""
+
+    @pytest.mark.asyncio
+    async def test_check_redis_ssl_connectivity_with_ssl_url(self) -> None:
+        """Verify health check reports SSL enabled for rediss:// URL."""
+        with (
+            patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
+            patch("src.tasks.broker.create_redis_connection") as mock_create_conn,
+        ):
+            settings = MagicMock()
+            settings.REDIS_URL = "rediss://secure-redis:6380"
+            mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {"ssl_cert_reqs": "none"}
+
+            mock_client = AsyncMock()
+            mock_client.ping = AsyncMock(return_value=True)
+            mock_client.aclose = AsyncMock()
+            mock_create_conn.return_value = mock_client
+
+            from src.tasks.broker import check_redis_ssl_connectivity
+
+            result = await check_redis_ssl_connectivity()
+
+            assert result["healthy"] is True
+            assert result["ssl_enabled"] is True
+            assert result["ssl_cert_reqs"] == "none"
+            assert "error" not in result
+            mock_client.ping.assert_called_once()
+            mock_client.aclose.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_check_redis_ssl_connectivity_with_non_ssl_url(self) -> None:
+        """Verify health check reports SSL disabled for redis:// URL."""
+        with (
+            patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
+            patch("src.tasks.broker.create_redis_connection") as mock_create_conn,
+        ):
+            settings = MagicMock()
+            settings.REDIS_URL = "redis://localhost:6379"
+            mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {}
+
+            mock_client = AsyncMock()
+            mock_client.ping = AsyncMock(return_value=True)
+            mock_client.aclose = AsyncMock()
+            mock_create_conn.return_value = mock_client
+
+            from src.tasks.broker import check_redis_ssl_connectivity
+
+            result = await check_redis_ssl_connectivity()
+
+            assert result["healthy"] is True
+            assert result["ssl_enabled"] is False
+            assert "ssl_cert_reqs" not in result
+            assert "error" not in result
+
+    @pytest.mark.asyncio
+    async def test_check_redis_ssl_connectivity_connection_failure(self) -> None:
+        """Verify health check reports error on connection failure."""
+        import redis.asyncio as redis
+
+        with (
+            patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
+            patch("src.tasks.broker.create_redis_connection") as mock_create_conn,
+        ):
+            settings = MagicMock()
+            settings.REDIS_URL = "rediss://unreachable:6380"
+            mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {"ssl_cert_reqs": "none"}
+
+            mock_create_conn.side_effect = redis.RedisError("Connection refused")
+
+            from src.tasks.broker import check_redis_ssl_connectivity
+
+            result = await check_redis_ssl_connectivity()
+
+            assert result["healthy"] is False
+            assert result["ssl_enabled"] is True
+            assert result["ssl_cert_reqs"] == "none"
+            assert "Connection refused" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_check_redis_ssl_connectivity_ping_failure(self) -> None:
+        """Verify health check reports error when ping fails after connection."""
+        import redis.asyncio as redis
+
+        with (
+            patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
+            patch("src.tasks.broker.create_redis_connection") as mock_create_conn,
+        ):
+            settings = MagicMock()
+            settings.REDIS_URL = "rediss://secure-redis:6380"
+            mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {"ssl_cert_reqs": "none"}
+
+            mock_client = AsyncMock()
+            mock_client.ping = AsyncMock(side_effect=redis.RedisError("SSL handshake failed"))
+            mock_client.aclose = AsyncMock()
+            mock_create_conn.return_value = mock_client
+
+            from src.tasks.broker import check_redis_ssl_connectivity
+
+            result = await check_redis_ssl_connectivity()
+
+            assert result["healthy"] is False
+            assert result["ssl_enabled"] is True
+            assert "SSL handshake failed" in result["error"]
+            mock_client.aclose.assert_called_once()
