@@ -591,3 +591,227 @@ class TestTaskIQLabels:
         _, labels = _all_registered_tasks["rechunk:previously_seen"]
         assert labels.get("component") == "rechunk"
         assert labels.get("task_type") == "batch"
+
+
+class TestDeadlockRetryForFactCheckItem:
+    """Test deadlock retry logic for fact check item processing (task-924)."""
+
+    @pytest.mark.asyncio
+    async def test_retries_on_deadlock_and_succeeds(self):
+        """Retries on deadlock and eventually succeeds."""
+        from asyncpg.exceptions import DeadlockDetectedError
+
+        from src.tasks.rechunk_tasks import _process_fact_check_item_with_retry
+
+        item_id = uuid4()
+        item_content = "test content"
+        community_server_id = uuid4()
+
+        call_count = [0]
+
+        async def mock_chunk_and_embed(db, fact_check_id, text, community_server_id):
+            call_count[0] += 1
+            if call_count[0] < 3:
+                raise DeadlockDetectedError("")
+            return []
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_engine = MagicMock()
+
+        mock_service = MagicMock()
+        mock_service.chunk_and_embed_fact_check = mock_chunk_and_embed
+
+        with patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker):
+            await _process_fact_check_item_with_retry(
+                engine=mock_engine,
+                service=mock_service,
+                item_id=item_id,
+                item_content=item_content,
+                community_server_id=community_server_id,
+            )
+
+        assert call_count[0] == 3
+
+    @pytest.mark.asyncio
+    async def test_raises_after_max_retries_exhausted(self):
+        """Raises deadlock error after max retries exhausted."""
+        from asyncpg.exceptions import DeadlockDetectedError
+
+        from src.tasks.rechunk_tasks import _process_fact_check_item_with_retry
+
+        item_id = uuid4()
+        item_content = "test content"
+        community_server_id = uuid4()
+
+        call_count = [0]
+
+        async def mock_chunk_and_embed(db, fact_check_id, text, community_server_id):
+            call_count[0] += 1
+            raise DeadlockDetectedError("")
+
+        mock_db = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_engine = MagicMock()
+
+        mock_service = MagicMock()
+        mock_service.chunk_and_embed_fact_check = mock_chunk_and_embed
+
+        with (
+            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
+            pytest.raises(DeadlockDetectedError),
+        ):
+            await _process_fact_check_item_with_retry(
+                engine=mock_engine,
+                service=mock_service,
+                item_id=item_id,
+                item_content=item_content,
+                community_server_id=community_server_id,
+            )
+
+        assert call_count[0] == 3
+
+    @pytest.mark.asyncio
+    async def test_does_not_retry_non_deadlock_errors(self):
+        """Does not retry on non-deadlock exceptions."""
+        from src.tasks.rechunk_tasks import _process_fact_check_item_with_retry
+
+        item_id = uuid4()
+        item_content = "test content"
+        community_server_id = uuid4()
+
+        call_count = [0]
+
+        async def mock_chunk_and_embed(db, fact_check_id, text, community_server_id):
+            call_count[0] += 1
+            raise ValueError("not a deadlock")
+
+        mock_db = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_engine = MagicMock()
+
+        mock_service = MagicMock()
+        mock_service.chunk_and_embed_fact_check = mock_chunk_and_embed
+
+        with (
+            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
+            pytest.raises(ValueError, match="not a deadlock"),
+        ):
+            await _process_fact_check_item_with_retry(
+                engine=mock_engine,
+                service=mock_service,
+                item_id=item_id,
+                item_content=item_content,
+                community_server_id=community_server_id,
+            )
+
+        assert call_count[0] == 1
+
+    @pytest.mark.asyncio
+    async def test_creates_fresh_session_for_each_retry(self):
+        """Creates a fresh database session for each retry attempt."""
+        from asyncpg.exceptions import DeadlockDetectedError
+
+        from src.tasks.rechunk_tasks import _process_fact_check_item_with_retry
+
+        item_id = uuid4()
+        item_content = "test content"
+        community_server_id = uuid4()
+
+        call_count = [0]
+        session_instances = []
+
+        async def mock_chunk_and_embed(db, fact_check_id, text, community_server_id):
+            call_count[0] += 1
+            session_instances.append(db)
+            if call_count[0] < 2:
+                raise DeadlockDetectedError("")
+            return []
+
+        def create_new_mock_session():
+            mock_db = AsyncMock()
+            mock_db.commit = AsyncMock()
+            mock_session = MagicMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            return mock_session
+
+        mock_engine = MagicMock()
+
+        mock_service = MagicMock()
+        mock_service.chunk_and_embed_fact_check = mock_chunk_and_embed
+
+        mock_session_maker = MagicMock(
+            side_effect=[create_new_mock_session(), create_new_mock_session()]
+        )
+
+        with patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker):
+            await _process_fact_check_item_with_retry(
+                engine=mock_engine,
+                service=mock_service,
+                item_id=item_id,
+                item_content=item_content,
+                community_server_id=community_server_id,
+            )
+
+        assert len(session_instances) == 2
+        assert session_instances[0] is not session_instances[1]
+
+
+class TestDeadlockRetryForPreviouslySeenItem:
+    """Test deadlock retry logic for previously seen message processing (task-924)."""
+
+    @pytest.mark.asyncio
+    async def test_retries_on_deadlock_and_succeeds(self):
+        """Retries on deadlock and eventually succeeds."""
+        from asyncpg.exceptions import DeadlockDetectedError
+
+        from src.tasks.rechunk_tasks import _process_previously_seen_item_with_retry
+
+        item_id = uuid4()
+        item_content = "test content"
+        community_server_id = uuid4()
+
+        call_count = [0]
+
+        async def mock_chunk_and_embed(db, previously_seen_id, text, community_server_id):
+            call_count[0] += 1
+            if call_count[0] < 2:
+                raise DeadlockDetectedError("")
+            return []
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_engine = MagicMock()
+
+        mock_service = MagicMock()
+        mock_service.chunk_and_embed_previously_seen = mock_chunk_and_embed
+
+        with patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker):
+            await _process_previously_seen_item_with_retry(
+                engine=mock_engine,
+                service=mock_service,
+                item_id=item_id,
+                item_content=item_content,
+                community_server_id=community_server_id,
+            )
+
+        assert call_count[0] == 2

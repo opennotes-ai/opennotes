@@ -862,6 +862,7 @@ class TestBatchUpdateIsCommonFlags:
         mock_count_result.all.return_value = [mock_row]
 
         mock_db.execute.side_effect = [
+            MagicMock(),
             mock_count_result,
             MagicMock(),
         ]
@@ -869,7 +870,7 @@ class TestBatchUpdateIsCommonFlags:
         result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
 
         assert result == {chunk_id: True}
-        assert mock_db.execute.call_count == 2
+        assert mock_db.execute.call_count == 3
 
     @pytest.mark.asyncio
     async def test_marks_not_common_when_single_reference(self):
@@ -893,6 +894,7 @@ class TestBatchUpdateIsCommonFlags:
         mock_count_result.all.return_value = [mock_row]
 
         mock_db.execute.side_effect = [
+            MagicMock(),
             mock_count_result,
             MagicMock(),
         ]
@@ -900,7 +902,7 @@ class TestBatchUpdateIsCommonFlags:
         result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
 
         assert result == {chunk_id: False}
-        assert mock_db.execute.call_count == 2
+        assert mock_db.execute.call_count == 3
 
     @pytest.mark.asyncio
     async def test_handles_mixed_common_and_not_common(self):
@@ -930,6 +932,7 @@ class TestBatchUpdateIsCommonFlags:
         mock_count_result.all.return_value = [mock_common_row, mock_not_common_row]
 
         mock_db.execute.side_effect = [
+            MagicMock(),
             mock_count_result,
             MagicMock(),
             MagicMock(),
@@ -940,7 +943,7 @@ class TestBatchUpdateIsCommonFlags:
         )
 
         assert result == {common_chunk_id: True, not_common_chunk_id: False}
-        assert mock_db.execute.call_count == 3
+        assert mock_db.execute.call_count == 4
 
     @pytest.mark.asyncio
     async def test_deduplicates_chunk_ids(self):
@@ -967,6 +970,7 @@ class TestBatchUpdateIsCommonFlags:
         mock_count_result.all.return_value = [mock_row]
 
         mock_db.execute.side_effect = [
+            MagicMock(),
             mock_count_result,
             MagicMock(),
         ]
@@ -995,6 +999,7 @@ class TestBatchUpdateIsCommonFlags:
         mock_count_result.all.return_value = []
 
         mock_db.execute.side_effect = [
+            MagicMock(),
             mock_count_result,
             MagicMock(),
         ]
@@ -1002,7 +1007,7 @@ class TestBatchUpdateIsCommonFlags:
         result = await service.batch_update_is_common_flags(db=mock_db, chunk_ids=[chunk_id])
 
         assert result == {chunk_id: False}
-        assert mock_db.execute.call_count == 2
+        assert mock_db.execute.call_count == 3
 
 
 class TestRechunkingIdempotency:

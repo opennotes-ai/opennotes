@@ -12,16 +12,24 @@ OpenTelemetry Integration:
 - Tasks are instrumented with spans for tracing
 - Exceptions are recorded on spans with proper error status
 - Trace context is propagated via TaskIQ's OpenTelemetryMiddleware
+
+Deadlock Handling:
+- Individual items are processed with retry logic for deadlock recovery
+- Each retry uses a fresh database session to avoid corrupted transaction state
+- Exponential backoff prevents thundering herd on retry
 """
 
+import asyncio
+import random
 from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from src.cache.redis_client import RedisClient
+from src.common.db_retry import is_deadlock_error
 from src.config import get_settings
 from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
 from src.fact_checking.chunk_task_schemas import RechunkTaskStatus
@@ -39,6 +47,10 @@ from src.tasks.broker import register_task
 logger = get_logger(__name__)
 _tracer = trace.get_tracer(__name__)
 
+MAX_DEADLOCK_RETRIES = 3
+DEADLOCK_BASE_DELAY = 0.1
+DEADLOCK_MAX_DELAY = 2.0
+
 
 def get_chunk_embedding_service() -> ChunkEmbeddingService:
     """Create ChunkEmbeddingService with required dependencies."""
@@ -52,6 +64,146 @@ def get_chunk_embedding_service() -> ChunkEmbeddingService:
         chunking_service=chunking_service,
         llm_service=llm_service,
     )
+
+
+async def _process_fact_check_item_with_retry(
+    engine: AsyncEngine,
+    service: ChunkEmbeddingService,
+    item_id: UUID,
+    item_content: str,
+    community_server_id: UUID | None,
+) -> None:
+    """
+    Process a single fact check item with deadlock retry.
+
+    Uses a fresh database session for each retry attempt to avoid corrupted
+    transaction state after a deadlock rollback.
+
+    Args:
+        engine: Database engine for creating sessions
+        service: ChunkEmbeddingService instance
+        item_id: UUID of the fact check item
+        item_content: Text content to chunk and embed
+        community_server_id: Optional community server ID for LLM credentials
+    """
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
+    last_exception: Exception | None = None
+
+    for attempt in range(1, MAX_DEADLOCK_RETRIES + 1):
+        try:
+            async with async_session() as db:
+                await service.chunk_and_embed_fact_check(
+                    db=db,
+                    fact_check_id=item_id,
+                    text=item_content,
+                    community_server_id=community_server_id,
+                )
+                await db.commit()
+                return
+        except Exception as e:
+            if not is_deadlock_error(e):
+                raise
+
+            last_exception = e
+
+            if attempt >= MAX_DEADLOCK_RETRIES:
+                logger.warning(
+                    "Deadlock retry exhausted for fact check item",
+                    extra={
+                        "fact_check_id": str(item_id),
+                        "attempt": attempt,
+                        "max_attempts": MAX_DEADLOCK_RETRIES,
+                    },
+                )
+                raise
+
+            delay = min(DEADLOCK_BASE_DELAY * (2 ** (attempt - 1)), DEADLOCK_MAX_DELAY)
+            jittered_delay = delay * (1 + random.uniform(-0.1, 0.1))
+
+            logger.info(
+                "Deadlock detected for fact check item, retrying",
+                extra={
+                    "fact_check_id": str(item_id),
+                    "attempt": attempt,
+                    "max_attempts": MAX_DEADLOCK_RETRIES,
+                    "delay_seconds": round(jittered_delay, 3),
+                },
+            )
+
+            await asyncio.sleep(jittered_delay)
+
+    if last_exception:
+        raise last_exception
+
+
+async def _process_previously_seen_item_with_retry(
+    engine: AsyncEngine,
+    service: ChunkEmbeddingService,
+    item_id: UUID,
+    item_content: str,
+    community_server_id: UUID,
+) -> None:
+    """
+    Process a single previously seen message with deadlock retry.
+
+    Uses a fresh database session for each retry attempt to avoid corrupted
+    transaction state after a deadlock rollback.
+
+    Args:
+        engine: Database engine for creating sessions
+        service: ChunkEmbeddingService instance
+        item_id: UUID of the previously seen message
+        item_content: Text content to chunk and embed
+        community_server_id: Community server ID for LLM credentials
+    """
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
+    last_exception: Exception | None = None
+
+    for attempt in range(1, MAX_DEADLOCK_RETRIES + 1):
+        try:
+            async with async_session() as db:
+                await service.chunk_and_embed_previously_seen(
+                    db=db,
+                    previously_seen_id=item_id,
+                    text=item_content,
+                    community_server_id=community_server_id,
+                )
+                await db.commit()
+                return
+        except Exception as e:
+            if not is_deadlock_error(e):
+                raise
+
+            last_exception = e
+
+            if attempt >= MAX_DEADLOCK_RETRIES:
+                logger.warning(
+                    "Deadlock retry exhausted for previously seen message",
+                    extra={
+                        "previously_seen_id": str(item_id),
+                        "attempt": attempt,
+                        "max_attempts": MAX_DEADLOCK_RETRIES,
+                    },
+                )
+                raise
+
+            delay = min(DEADLOCK_BASE_DELAY * (2 ** (attempt - 1)), DEADLOCK_MAX_DELAY)
+            jittered_delay = delay * (1 + random.uniform(-0.1, 0.1))
+
+            logger.info(
+                "Deadlock detected for previously seen message, retrying",
+                extra={
+                    "previously_seen_id": str(item_id),
+                    "attempt": attempt,
+                    "max_attempts": MAX_DEADLOCK_RETRIES,
+                    "delay_seconds": round(jittered_delay, 3),
+                },
+            )
+
+            await asyncio.sleep(jittered_delay)
+
+    if last_exception:
+        raise last_exception
 
 
 @register_task(task_name="rechunk:fact_check", component="rechunk", task_type="batch")
@@ -130,15 +282,15 @@ async def process_fact_check_rechunk_task(
                         break
 
                     for item in items:
-                        await service.chunk_and_embed_fact_check(
-                            db=db,
-                            fact_check_id=item.id,
-                            text=item.content,
+                        await _process_fact_check_item_with_retry(
+                            engine=engine,
+                            service=service,
+                            item_id=item.id,
+                            item_content=item.content,
                             community_server_id=community_uuid,
                         )
                         processed_count += 1
 
-                    await db.commit()
                     offset += batch_size
 
                     await tracker.update_progress(task_uuid, processed_count)
@@ -267,15 +419,15 @@ async def process_previously_seen_rechunk_task(
                     for msg in messages:
                         content = (msg.extra_metadata or {}).get("content", "")
                         if content:
-                            await service.chunk_and_embed_previously_seen(
-                                db=db,
-                                previously_seen_id=msg.id,
-                                text=content,
+                            await _process_previously_seen_item_with_retry(
+                                engine=engine,
+                                service=service,
+                                item_id=msg.id,
+                                item_content=content,
                                 community_server_id=community_uuid,
                             )
                         processed_count += 1
 
-                    await db.commit()
                     offset += batch_size
 
                     await tracker.update_progress(task_uuid, processed_count)
