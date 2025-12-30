@@ -590,6 +590,298 @@ class TestTaskIQLabels:
         assert labels.get("task_type") == "audit"
 
 
+class TestErrorPaths:
+    """Test error handling paths for content monitoring tasks."""
+
+    @pytest.mark.asyncio
+    async def test_batch_task_missing_platform_id_returns_error(self):
+        """Task returns error status when platform_id not found for community server."""
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+        mock_redis.client = MagicMock()
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
+
+            result = await process_bulk_scan_batch_task(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                messages=[make_test_message("msg1", "ch1", "test")],
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            assert result["status"] == "error"
+            assert "Platform ID not found" in result["error"]
+            mock_redis.disconnect.assert_called_once()
+            mock_engine.return_value.dispose.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ai_note_task_missing_community_server_returns_error(self):
+        """Task returns error status when community server not found."""
+        community_server_id = "nonexistent_platform_id"
+        fact_check_item_id = str(uuid4())
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_rate_limiter = MagicMock()
+        mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, None))
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.AI_NOTE_WRITING_ENABLED = True
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.webhooks.rate_limit.rate_limiter", mock_rate_limiter),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import generate_ai_note_task
+
+            result = await generate_ai_note_task(
+                community_server_id=community_server_id,
+                request_id="req123",
+                content="test content",
+                fact_check_item_id=fact_check_item_id,
+                similarity_score=0.85,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+            )
+
+            assert result["status"] == "error"
+            assert "Community server not found" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_ai_note_task_missing_fact_check_item_returns_error(self):
+        """Task returns error status when fact-check item not found."""
+        community_server_id = "platform123"
+        fact_check_item_id = str(uuid4())
+        community_server_uuid = uuid4()
+
+        mock_result_community = MagicMock()
+        mock_result_community.scalar_one_or_none.return_value = community_server_uuid
+
+        mock_result_fact_check = MagicMock()
+        mock_result_fact_check.scalar_one_or_none.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[mock_result_community, mock_result_fact_check]
+        )
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_rate_limiter = MagicMock()
+        mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, None))
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.AI_NOTE_WRITING_ENABLED = True
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.webhooks.rate_limit.rate_limiter", mock_rate_limiter),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import generate_ai_note_task
+
+            result = await generate_ai_note_task(
+                community_server_id=community_server_id,
+                request_id="req123",
+                content="test content",
+                fact_check_item_id=fact_check_item_id,
+                similarity_score=0.85,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+            )
+
+            assert result["status"] == "error"
+            assert "Fact-check item not found" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_persist_audit_log_task_full_execution(self):
+        """Test persist_audit_log_task creates audit log with all fields."""
+        user_id = str(uuid4())
+        community_server_id = str(uuid4())
+        action = "note.created"
+        resource = "note"
+        resource_id = "note123"
+        details = {"note_id": "note123", "author": "user456"}
+        ip_address = "192.168.1.1"
+        user_agent = "Mozilla/5.0 TestAgent"
+        created_at = "2024-01-15T10:30:00+00:00"
+
+        mock_audit_log = MagicMock()
+        mock_audit_log.id = uuid4()
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import persist_audit_log_task
+
+            result = await persist_audit_log_task(
+                user_id=user_id,
+                community_server_id=community_server_id,
+                action=action,
+                resource=resource,
+                resource_id=resource_id,
+                details=details,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                created_at=created_at,
+            )
+
+            assert result["status"] == "completed"
+            assert "audit_log_id" in result
+            mock_session.add.assert_called_once()
+            mock_session.commit.assert_called_once()
+
+            added_audit_log = mock_session.add.call_args[0][0]
+            assert added_audit_log.action == action
+            assert added_audit_log.resource == resource
+            assert added_audit_log.resource_id == resource_id
+            assert added_audit_log.ip_address == ip_address
+            assert added_audit_log.user_agent == user_agent
+
+    @pytest.mark.asyncio
+    async def test_persist_audit_log_task_with_null_optional_fields(self):
+        """Test persist_audit_log_task handles null optional fields correctly."""
+        mock_audit_log = MagicMock()
+        mock_audit_log.id = uuid4()
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import persist_audit_log_task
+
+            result = await persist_audit_log_task(
+                user_id=None,
+                community_server_id=None,
+                action="system.startup",
+                resource="server",
+                resource_id=None,
+                details=None,
+                ip_address=None,
+                user_agent=None,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                created_at=None,
+            )
+
+            assert result["status"] == "completed"
+            mock_session.add.assert_called_once()
+
+            added_audit_log = mock_session.add.call_args[0][0]
+            assert added_audit_log.user_id is None
+            assert added_audit_log.resource_id is None
+            assert added_audit_log.details is None
+            assert added_audit_log.ip_address is None
+            assert added_audit_log.user_agent is None
+
+
 class TestOpenTelemetryTracing:
     """Test OpenTelemetry tracing integration (AC #6)."""
 
