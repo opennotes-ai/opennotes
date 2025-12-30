@@ -54,7 +54,7 @@ def get_chunk_embedding_service() -> ChunkEmbeddingService:
     )
 
 
-@register_task(task_name="rechunk:fact_check")
+@register_task(task_name="rechunk:fact_check", component="rechunk", task_type="batch")
 async def process_fact_check_rechunk_task(
     task_id: str,
     community_server_id: str | None,
@@ -189,7 +189,7 @@ async def process_fact_check_rechunk_task(
             await lock_manager.release_lock("fact_check")
 
 
-@register_task(task_name="rechunk:previously_seen")
+@register_task(task_name="rechunk:previously_seen", component="rechunk", task_type="batch")
 async def process_previously_seen_rechunk_task(
     task_id: str,
     community_server_id: str,

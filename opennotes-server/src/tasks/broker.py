@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 _broker_instance: PullBasedJetStreamBroker | None = None
-_all_registered_tasks: dict[str, Callable[..., Any]] = {}
+_all_registered_tasks: dict[str, tuple[Callable[..., Any], dict[str, Any]]] = {}
 _registered_task_objects: dict[str, Any] = {}
 
 
@@ -101,9 +101,10 @@ def get_broker() -> PullBasedJetStreamBroker:
 def _register_all_tasks(broker_instance: PullBasedJetStreamBroker) -> None:
     """Register all tasks with the broker instance and store task objects."""
     _registered_task_objects.clear()
-    for task_name, func in _all_registered_tasks.items():
-        logger.debug(f"Registering task: {task_name}")
-        task_obj = broker_instance.register_task(func, task_name=task_name)
+    for task_name, task_data in _all_registered_tasks.items():
+        func, labels = task_data
+        logger.debug(f"Registering task: {task_name} with labels: {labels}")
+        task_obj = broker_instance.register_task(func, task_name=task_name, **labels)
         _registered_task_objects[task_name] = task_obj
 
 
@@ -172,7 +173,9 @@ class LazyTask:
         return f"<LazyTask {self._task_name}>"
 
 
-def register_task(task_name: str | None = None) -> Callable[[Callable[..., T]], LazyTask]:
+def register_task(
+    task_name: str | None = None, **labels: Any
+) -> Callable[[Callable[..., T]], LazyTask]:
     """
     Decorator to register a task with the broker.
 
@@ -183,6 +186,12 @@ def register_task(task_name: str | None = None) -> Callable[[Callable[..., T]], 
     Returns a LazyTask wrapper that provides .kiq() method for
     task dispatch.
 
+    Args:
+        task_name: Optional custom task name. Defaults to module:function_name.
+        **labels: Optional labels for the task (e.g., component="rechunk", type="batch").
+            Labels are passed to the broker and can be used for routing, filtering,
+            and observability in dashboards and traces.
+
     Usage:
         @register_task()
         async def my_task(arg: str) -> str:
@@ -192,15 +201,20 @@ def register_task(task_name: str | None = None) -> Callable[[Callable[..., T]], 
         @register_task(task_name="custom_name")
         async def my_task(arg: str) -> str:
             return f"Processed: {arg}"
+
+        # Or with labels for observability:
+        @register_task(task_name="rechunk:fact_check", component="rechunk", type="batch")
+        async def process_rechunk(arg: str) -> str:
+            return f"Processed: {arg}"
     """
 
     def decorator(func: Callable[..., T]) -> LazyTask:
         name = task_name or f"{func.__module__}:{func.__name__}"
 
-        _all_registered_tasks[name] = func
+        _all_registered_tasks[name] = (func, labels)
 
         if _broker_instance is not None:
-            task_obj = _broker_instance.register_task(func, task_name=name)
+            task_obj = _broker_instance.register_task(func, task_name=name, **labels)
             _registered_task_objects[name] = task_obj
 
         return LazyTask(func, name)
