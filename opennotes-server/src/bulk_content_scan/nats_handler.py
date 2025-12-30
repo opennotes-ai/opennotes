@@ -29,6 +29,10 @@ from src.events.subscriber import event_subscriber
 from src.fact_checking.embedding_service import EmbeddingService
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
+from src.tasks.content_monitoring_tasks import (
+    finalize_bulk_scan_task,
+    process_bulk_scan_batch_task,
+)
 
 logger = get_logger(__name__)
 
@@ -571,49 +575,100 @@ class BulkScanEventHandler:
         self.subscriber = event_subscriber
 
     async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
-        """Handle incoming message batch from Discord bot."""
-        async with get_session_maker()() as session:
-            platform_id = await get_platform_id(session, event.community_server_id)
-            if not platform_id:
-                error_msg = (
-                    f"Platform ID not found for community server {event.community_server_id}"
-                )
-                logger.error(
-                    error_msg,
-                    extra={
-                        "scan_id": str(event.scan_id),
-                        "community_server_id": str(event.community_server_id),
-                    },
-                )
-                raise BatchProcessingError(error_msg)
+        """Handle incoming message batch by dispatching to TaskIQ.
 
-            debug_mode = await get_vibecheck_debug_mode(session, event.community_server_id)
+        Uses the hybrid NATS→TaskIQ pattern:
+        - NATS provides cross-service event routing from Discord bot
+        - TaskIQ provides retries, result storage, and tracing
 
-            service = BulkContentScanService(
-                session=session,
-                embedding_service=self.embedding_service,
-                redis_client=self.redis_client,
-            )
-            await handle_message_batch_with_progress(
-                event=event,
-                service=service,
-                nats_client=self.nats_client,
-                platform_id=platform_id,
-                debug_mode=debug_mode,
-                publisher=self.publisher,
-            )
+        See ADR-004: NATS vs TaskIQ Usage Boundaries
+        """
+        logger.info(
+            "Dispatching bulk scan batch to TaskIQ",
+            extra={
+                "scan_id": str(event.scan_id),
+                "batch_number": event.batch_number,
+                "message_count": len(event.messages),
+            },
+        )
+
+        await process_bulk_scan_batch_task.kiq(
+            scan_id=str(event.scan_id),
+            community_server_id=str(event.community_server_id),
+            batch_number=event.batch_number,
+            messages=[msg.model_dump() for msg in event.messages],
+            db_url=settings.DATABASE_URL,
+            redis_url=settings.REDIS_URL,
+        )
 
     async def _handle_all_batches_transmitted(
         self, event: BulkScanAllBatchesTransmittedEvent
     ) -> None:
-        """Handle all_batches_transmitted event from Discord bot."""
+        """Handle all_batches_transmitted event by setting flag and checking completion.
+
+        Uses the hybrid NATS→TaskIQ pattern:
+        - NATS delivers the transmitted event from Discord bot
+        - We set the transmitted flag in Redis
+        - If all batches are already processed, dispatch finalization to TaskIQ
+
+        This implements the dual-completion-trigger pattern:
+        - Batch handler triggers finalization when last batch completes (after transmitted)
+        - Transmitted handler triggers finalization if all batches already done
+        """
+        logger.info(
+            "Processing all_batches_transmitted",
+            extra={
+                "scan_id": str(event.scan_id),
+                "messages_scanned": event.messages_scanned,
+            },
+        )
+
         async with get_session_maker()() as session:
             service = BulkContentScanService(
                 session=session,
                 embedding_service=self.embedding_service,
                 redis_client=self.redis_client,
             )
-            await handle_all_batches_transmitted(event, service, self.publisher)
+
+            await service.set_all_batches_transmitted(event.scan_id, event.messages_scanned)
+
+            processed_count = await service.get_processed_count(event.scan_id)
+            if processed_count >= event.messages_scanned:
+                should_dispatch = await service.try_set_finalize_dispatched(event.scan_id)
+                if should_dispatch:
+                    logger.info(
+                        "Transmitted handler dispatching finalization to TaskIQ",
+                        extra={
+                            "scan_id": str(event.scan_id),
+                            "processed_count": processed_count,
+                            "messages_scanned": event.messages_scanned,
+                        },
+                    )
+                    await finalize_bulk_scan_task.kiq(
+                        scan_id=str(event.scan_id),
+                        community_server_id=str(event.community_server_id),
+                        messages_scanned=event.messages_scanned,
+                        db_url=settings.DATABASE_URL,
+                        redis_url=settings.REDIS_URL,
+                    )
+                else:
+                    logger.info(
+                        "Transmitted handler skipping finalization (already dispatched)",
+                        extra={
+                            "scan_id": str(event.scan_id),
+                            "processed_count": processed_count,
+                            "messages_scanned": event.messages_scanned,
+                        },
+                    )
+            else:
+                logger.info(
+                    "Transmitted handler not triggering completion (batches still pending)",
+                    extra={
+                        "scan_id": str(event.scan_id),
+                        "processed_count": processed_count,
+                        "messages_scanned": event.messages_scanned,
+                    },
+                )
 
     def register(self) -> None:
         """Register bulk scan event handlers with the subscriber."""

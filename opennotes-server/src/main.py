@@ -168,12 +168,12 @@ async def _init_ai_services() -> tuple[
     await ai_note_writer.start()
     logger.info("AI Note Writer service started")
 
-    await _register_vision_handler(vision_service)
+    await _register_vision_handler()
 
     return ai_note_writer, vision_service, llm_service
 
 
-async def _register_vision_handler(vision_service: VisionService) -> None:
+async def _register_vision_handler() -> None:
     """Register vision description event handler for async processing."""
     if not await nats_client.is_connected():
         logger.warning(
@@ -182,7 +182,7 @@ async def _register_vision_handler(vision_service: VisionService) -> None:
         )
         return
 
-    vision_handler = VisionDescriptionHandler(vision_service=vision_service)
+    vision_handler = VisionDescriptionHandler()
     vision_handler.register()
     try:
         await event_subscriber.subscribe(EventType.VISION_DESCRIPTION_REQUESTED)

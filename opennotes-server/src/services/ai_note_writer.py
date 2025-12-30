@@ -16,7 +16,6 @@ from tenacity import (
 )
 
 from src.config import settings
-from src.database import get_session_maker
 from src.events.schemas import EventType, RequestAutoCreatedEvent
 from src.events.subscriber import event_subscriber
 from src.fact_checking.models import FactCheckItem
@@ -26,13 +25,15 @@ from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import (
-    Counter,
-    Histogram,
+    ai_note_generation_duration_seconds,
+    ai_notes_failed_total,
+    ai_notes_generated_total,
 )
 from src.notes import loaders as note_loaders
 from src.notes.message_archive_models import ContentType
 from src.notes.models import Note, Request
 from src.services.vision_service import VisionService
+from src.tasks.content_monitoring_tasks import generate_ai_note_task
 from src.webhooks.rate_limit import rate_limiter
 
 logger = get_logger(__name__)
@@ -45,26 +46,6 @@ class NoteGenerationStrategy(str, Enum):
     GENERAL_EXPLANATION = (
         "general_explanation"  # General explanation (default, no fact-check required)
     )
-
-
-# Metrics for AI note generation
-ai_notes_generated_total = Counter(
-    "ai_notes_generated_total",
-    "Total number of AI-generated notes",
-    ["community_server_id", "dataset_name", "instance_id"],
-)
-
-ai_notes_failed_total = Counter(
-    "ai_notes_failed_total",
-    "Total number of failed AI note generation attempts",
-    ["community_server_id", "error_type", "instance_id"],
-)
-
-ai_note_generation_duration_seconds = Histogram(
-    "ai_note_generation_duration_seconds",
-    "Duration of AI note generation in seconds",
-    ["community_server_id", "instance_id"],
-)
 
 
 class AINoteWriter:
@@ -156,58 +137,45 @@ class AINoteWriter:
 
     async def _handle_request_auto_created(self, event: RequestAutoCreatedEvent) -> None:
         """
-        Handle REQUEST_AUTO_CREATED event and generate AI note.
+        Handle REQUEST_AUTO_CREATED event by dispatching to TaskIQ.
+
+        Uses the hybrid NATS→TaskIQ pattern:
+        - NATS provides cross-service event routing
+        - TaskIQ provides retries, result storage, and tracing
 
         Args:
             event: Request auto-created event
         """
-        instance_id = InstanceMetadata.get_instance_id()
+        logger.info(
+            f"Dispatching AI note generation to TaskIQ: {event.request_id}",
+            extra={
+                "request_id": event.request_id,
+                "fact_check_item_id": event.fact_check_item_id,
+                "community_server_id": event.community_server_id,
+                "similarity_score": event.similarity_score,
+            },
+        )
 
         try:
-            logger.info(
-                f"Received request auto-created event: {event.request_id}",
+            await generate_ai_note_task.kiq(
+                community_server_id=event.community_server_id,
+                request_id=event.request_id,
+                content=event.content,
+                fact_check_item_id=event.fact_check_item_id,
+                similarity_score=event.similarity_score,
+                db_url=settings.DATABASE_URL,
+            )
+
+            logger.debug(
+                f"AI note generation dispatched to TaskIQ: {event.request_id}",
                 extra={
                     "request_id": event.request_id,
                     "fact_check_item_id": event.fact_check_item_id,
-                    "community_server_id": event.community_server_id,
-                    "similarity_score": event.similarity_score,
                 },
             )
 
-            async with get_session_maker()() as db:
-                # Check if AI note writing is enabled for this community server
-                if not await self._is_ai_note_writing_enabled(db, event.community_server_id):
-                    logger.info(
-                        f"AI note writing disabled for community server {event.community_server_id}"
-                    )
-                    return
-
-                # Check rate limits
-                rate_limit_key = f"ai_note_writer:{event.community_server_id}"
-                allowed, _ = await rate_limiter.check_rate_limit(community_server_id=rate_limit_key)
-                if not allowed:
-                    logger.warning(
-                        f"Rate limit exceeded for AI note writing: {event.community_server_id}"
-                    )
-                    return
-
-                # Generate and submit note
-                start_time = time.time()
-
-                await self._generate_and_submit_note(db, event)
-
-                duration = time.time() - start_time
-                ai_note_generation_duration_seconds.labels(
-                    community_server_id=event.community_server_id, instance_id=instance_id
-                ).observe(duration)
-
-                ai_notes_generated_total.labels(
-                    community_server_id=event.community_server_id,
-                    dataset_name=event.dataset_name,
-                    instance_id=instance_id,
-                ).inc()
-
         except Exception as e:
+            instance_id = InstanceMetadata.get_instance_id()
             error_type = type(e).__name__
             ai_notes_failed_total.labels(
                 community_server_id=event.community_server_id,
@@ -215,12 +183,13 @@ class AINoteWriter:
                 instance_id=instance_id,
             ).inc()
             logger.exception(
-                f"Failed to generate AI note for request {event.request_id}: {e}",
+                f"Failed to dispatch AI note generation to TaskIQ: {event.request_id}: {e}",
                 extra={
                     "request_id": event.request_id,
                     "error_type": error_type,
                 },
             )
+            raise
 
     async def generate_note_for_request(self, db: AsyncSession, request_id: str) -> Note:
         """

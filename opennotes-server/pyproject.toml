@@ -133,6 +133,7 @@ ignore = [
 "tests/**/*.py" = ["PLR2004", "S101", "ARG002", "PLR0912", "PLC0415"]
 "alembic/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in migrations
 "scripts/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in scripts
+"src/tasks/**/*.py" = ["PLC0415"]  # Lazy imports required for TaskIQ tasks to avoid import-time settings validation
 "src/monitoring/logging.py" = ["PLC0415"]  # Circular dependency: imports handled in try-except blocks
 "src/llm_config/manager.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/middleware/profile_tracking.py" = ["RUF006"]  # Fire-and-forget background tasks intentional

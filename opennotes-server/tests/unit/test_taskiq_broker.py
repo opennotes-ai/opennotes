@@ -27,6 +27,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
+            patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -36,6 +37,7 @@ class TestBrokerConfiguration:
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 5
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
+            settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
             mock_redis_kwargs.return_value = {}
 
@@ -280,6 +282,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.TaskIQMetricsMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
@@ -290,6 +293,7 @@ class TestBrokerConnectionFailure:
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
+            settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
 
             mock_broker = MagicMock()
@@ -325,6 +329,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis_class,
             patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.TaskIQMetricsMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
@@ -335,6 +340,7 @@ class TestBrokerConnectionFailure:
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
+            settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
 
             mock_backend = MagicMock()
@@ -370,6 +376,7 @@ class TestRetryMiddlewareConfiguration:
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
+            patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://localhost:4222"
@@ -379,6 +386,7 @@ class TestRetryMiddlewareConfiguration:
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 10
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
+            settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
 
             mock_broker_instance = MagicMock()
@@ -406,6 +414,7 @@ class TestBrokerAuthentication:
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -415,6 +424,7 @@ class TestBrokerAuthentication:
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_USERNAME = "testuser"
             settings.NATS_PASSWORD = "testpass"
+            settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
 
             mock_broker_instance = MagicMock()

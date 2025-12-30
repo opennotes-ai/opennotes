@@ -1,3 +1,14 @@
+"""
+Audit log worker using hybrid NATS→TaskIQ pattern.
+
+NATS events trigger TaskIQ tasks for audit log persistence. This provides:
+- Cross-service event routing via NATS JetStream
+- Retries, result storage, and tracing via TaskIQ
+- Self-contained workers that create their own connections
+
+See ADR-004: NATS vs TaskIQ Usage Boundaries
+"""
+
 import asyncio
 import logging
 import signal
@@ -5,98 +16,77 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from prometheus_client import Counter, Histogram
-from sqlalchemy.exc import SQLAlchemyError
 
-from src.database import get_session_maker
+from src.config import settings
 from src.events.schemas import AuditLogCreatedEvent, EventType
 from src.events.subscriber import event_subscriber
-from src.users.models import AuditLog
+from src.tasks.content_monitoring_tasks import persist_audit_log_task
 
 logger = logging.getLogger(__name__)
 
-audit_events_processed_total = Counter(
-    "audit_events_processed_total",
-    "Total number of audit events processed by worker",
+audit_events_dispatched_total = Counter(
+    "audit_events_dispatched_total",
+    "Total number of audit events dispatched to TaskIQ",
     ["status"],
 )
 
-audit_processing_duration_seconds = Histogram(
-    "audit_processing_duration_seconds",
-    "Time taken to process audit events",
-    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
-)
-
-audit_processing_lag_seconds = Histogram(
-    "audit_processing_lag_seconds",
-    "Lag between event creation and processing",
-    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0],
-)
-
-audit_db_write_failures_total = Counter(
-    "audit_db_write_failures_total",
-    "Total number of failed audit log database writes",
+audit_dispatch_lag_seconds = Histogram(
+    "audit_dispatch_lag_seconds",
+    "Lag between event creation and dispatch to TaskIQ",
+    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0],
 )
 
 
 class AuditWorker:
+    """
+    Audit worker that dispatches audit log events to TaskIQ.
+
+    This worker:
+    1. Receives NATS events from the event subscriber
+    2. Dispatches work to TaskIQ for reliable execution
+    3. TaskIQ handles retries, result storage, and tracing
+    """
+
     def __init__(self) -> None:
         self.subscriber = event_subscriber
         self.running = False
         self.shutdown_event = asyncio.Event()
 
     async def handle_audit_event(self, event: AuditLogCreatedEvent) -> None:
-        start_time = datetime.now(UTC)
+        """Dispatch audit log event to TaskIQ task."""
+        now = datetime.now(UTC)
+        lag = (now - event.created_at).total_seconds()
+        audit_dispatch_lag_seconds.observe(lag)
+
+        logger.debug(f"Dispatching audit event {event.event_id} to TaskIQ (lag: {lag:.2f}s)")
 
         try:
-            now = datetime.now(UTC)
-            lag = (now - event.created_at).total_seconds()
-            audit_processing_lag_seconds.observe(lag)
-
-            logger.debug(
-                f"Processing audit event {event.event_id} for user {event.user_id} "
-                f"(lag: {lag:.2f}s)"
+            await persist_audit_log_task.kiq(
+                user_id=str(event.user_id) if event.user_id else None,
+                community_server_id=None,
+                action=event.action,
+                resource=event.resource,
+                resource_id=event.resource_id,
+                details={"raw": event.details} if event.details else None,
+                ip_address=event.ip_address,
+                user_agent=event.user_agent,
+                db_url=settings.DATABASE_URL,
+                created_at=event.created_at.isoformat(),
             )
 
-            async with get_session_maker()() as session:
-                audit_log = AuditLog(
-                    user_id=event.user_id,
-                    action=event.action,
-                    resource=event.resource,
-                    resource_id=event.resource_id,
-                    details=event.details,
-                    ip_address=event.ip_address,
-                    user_agent=event.user_agent,
-                    created_at=event.created_at,
-                )
-                session.add(audit_log)
-                await session.commit()
+            audit_events_dispatched_total.labels(status="dispatched").inc()
+            logger.debug(f"Audit event {event.event_id} dispatched to TaskIQ")
 
-            processing_time = (datetime.now(UTC) - start_time).total_seconds()
-            audit_processing_duration_seconds.observe(processing_time)
-            audit_events_processed_total.labels(status="success").inc()
-
-            logger.debug(
-                f"Successfully processed audit event {event.event_id} in {processing_time:.3f}s"
-            )
-
-        except SQLAlchemyError as e:
-            logger.error(
-                f"Database error processing audit event {event.event_id}: {e}",
-                exc_info=True,
-            )
-            audit_db_write_failures_total.inc()
-            audit_events_processed_total.labels(status="db_error").inc()
-            raise
         except Exception as e:
+            audit_events_dispatched_total.labels(status="dispatch_error").inc()
             logger.error(
-                f"Unexpected error processing audit event {event.event_id}: {e}",
+                f"Failed to dispatch audit event {event.event_id} to TaskIQ: {e}",
                 exc_info=True,
             )
-            audit_events_processed_total.labels(status="error").inc()
             raise
 
     async def start(self) -> None:
-        logger.info("Starting audit worker...")
+        logger.info("Starting audit worker (TaskIQ dispatch mode)...")
         self.running = True
 
         self.subscriber.register_handler(

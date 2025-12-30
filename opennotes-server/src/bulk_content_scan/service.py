@@ -76,6 +76,19 @@ def _get_redis_transmitted_key(scan_id: UUID) -> str:
     return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:all_batches_transmitted:{scan_id}"
 
 
+def _get_redis_finalize_dispatched_key(scan_id: UUID) -> str:
+    """Get environment-prefixed Redis key for finalize_dispatched flag.
+
+    This key is used for idempotency to prevent double dispatch of
+    finalize_bulk_scan_task when both batch and transmitted handlers
+    attempt to dispatch simultaneously.
+
+    Format: {environment}:{prefix}:finalize_dispatched:{scan_id}
+    Example: production:bulk_scan:finalize_dispatched:abc-123
+    """
+    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:finalize_dispatched:{scan_id}"
+
+
 class BulkContentScanService:
     """Service for managing bulk content scans."""
 
@@ -713,6 +726,25 @@ class BulkContentScanService:
             return (False, None)
         messages_scanned = int(value.decode() if isinstance(value, bytes) else value)
         return (True, messages_scanned)
+
+    async def try_set_finalize_dispatched(self, scan_id: UUID) -> bool:
+        """Atomically attempt to set the finalize_dispatched flag.
+
+        Uses Redis SETNX (SET if Not eXists) to ensure only one handler
+        can dispatch finalization. This prevents the race condition where
+        both the batch handler and transmitted handler attempt to dispatch
+        finalize_bulk_scan_task simultaneously.
+
+        Args:
+            scan_id: UUID of the scan
+
+        Returns:
+            True if this call set the flag (caller should dispatch finalization)
+            False if flag was already set (another handler already dispatched)
+        """
+        key = _get_redis_finalize_dispatched_key(scan_id)
+        result = await self.redis_client.set(key, "1", nx=True, ex=REDIS_TTL_SECONDS)  # type: ignore[misc]
+        return result is True
 
     async def get_error_summary(self, scan_id: UUID) -> dict:
         """Get error summary from Redis.

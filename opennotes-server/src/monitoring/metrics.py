@@ -408,6 +408,28 @@ encryption_keys_needing_rotation = Gauge(
     registry=registry,
 )
 
+ai_notes_generated_total = Counter(
+    "ai_notes_generated_total",
+    "Total number of AI-generated notes",
+    ["community_server_id", "dataset_name", "instance_id"],
+    registry=registry,
+)
+
+ai_notes_failed_total = Counter(
+    "ai_notes_failed_total",
+    "Total number of failed AI note generation attempts",
+    ["community_server_id", "error_type", "instance_id"],
+    registry=registry,
+)
+
+ai_note_generation_duration_seconds = Histogram(
+    "ai_note_generation_duration_seconds",
+    "Duration of AI note generation in seconds",
+    ["community_server_id", "instance_id"],
+    registry=registry,
+    buckets=(0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
+)
+
 
 def get_metrics() -> bytes:
     return generate_latest(registry)
