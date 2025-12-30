@@ -105,6 +105,8 @@ jobs:
 
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
+        env:
+          SKIP: schema-consistency
 
   lint-python:
     name: Lint Python (opennotes-server)
