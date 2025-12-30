@@ -188,7 +188,7 @@ def register_task(
 
     Args:
         task_name: Optional custom task name. Defaults to module:function_name.
-        **labels: Optional labels for the task (e.g., component="rechunk", type="batch").
+        **labels: Optional labels for the task (e.g., component="rechunk", task_type="batch").
             Labels are passed to the broker and can be used for routing, filtering,
             and observability in dashboards and traces.
 
@@ -203,7 +203,7 @@ def register_task(
             return f"Processed: {arg}"
 
         # Or with labels for observability:
-        @register_task(task_name="rechunk:fact_check", component="rechunk", type="batch")
+        @register_task(task_name="rechunk:fact_check", component="rechunk", task_type="batch")
         async def process_rechunk(arg: str) -> str:
             return f"Processed: {arg}"
     """
