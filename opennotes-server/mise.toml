@@ -1,4 +1,8 @@
 # Open Notes Server - mise configuration
+#
+# This is the server-specific configuration. Main development tasks
+# (db:migrate, build:containers, test:server, etc.) are defined at the
+# parent opennotes/ level. Use `mise tasks` there for the full task list.
 
 [tools]
 python = "3.11"
@@ -78,28 +82,13 @@ run = [
 # Database Tasks
 # ========================================
 
-[tasks."db:upgrade"]
-description = "Run database migrations"
-run = "uv run alembic upgrade head"
-
 [tasks."db:downgrade"]
 description = "Rollback one migration"
 run = "uv run alembic downgrade -1"
 
-[tasks."db:history"]
-description = "Show migration history"
-run = "uv run alembic history"
-
 [tasks."db:current"]
 description = "Show current migration"
 run = "uv run alembic current"
-
-[tasks."db:create"]
-description = "Create new migration"
-run = 'uv run alembic revision --autogenerate -m "{{arg(name="message")}}"'
-usage = '''
-arg "message" description="Migration message"
-'''
 
 [tasks."db:reset"]
 description = "Reset database (drop and recreate)"
@@ -109,8 +98,8 @@ run = [
     "uv run alembic upgrade head"
 ]
 
-[tasks."db:seed-api-keys"]
-description = "Seed development API keys into database"
+[tasks."db:seed"]
+description = "Seed development data into database"
 run = "uv run python scripts/seed_api_keys.py"
 
 # ========================================
@@ -121,7 +110,7 @@ run = "uv run python scripts/seed_api_keys.py"
 description = "Serve API documentation"
 run = "uv run python -m http.server 8001 --directory ../../docs"
 
-[tasks."docs:generate"]
+[tasks."docs:generate:openapi"]
 description = "Generate OpenAPI specification (JSON and YAML)"
 run = "uv run python generate_openapi.py"
 
@@ -129,9 +118,9 @@ run = "uv run python generate_openapi.py"
 description = "Check if OpenAPI schema is in sync with FastAPI app"
 run = "uv run python scripts/check-openapi-sync.py"
 
-[tasks."docs:api"]
-description = "Generate API documentation"
-depends = ["docs:generate"]
+# ========================================
+# SDK Tasks
+# ========================================
 
 [tasks."sdk:test"]
 description = "Test all SDKs"
@@ -148,18 +137,6 @@ run = "cd ../../sdks/python/opennotes-python && python -m build"
 [tasks."sdk:publish:python"]
 description = "Publish Python SDK to PyPI"
 run = "cd ../../sdks/python/opennotes-python && python -m twine upload dist/*"
-
-# ========================================
-# Build Tasks
-# ========================================
-
-[tasks.build]
-description = "Build production Docker image"
-run = "docker build -t opennotes-server:latest ."
-
-[tasks."build:minimal"]
-description = "Build minimal production image"
-run = "docker build -f Dockerfile.minimal -t opennotes-server:minimal ."
 
 # ========================================
 # Utility Tasks
@@ -194,14 +171,6 @@ run = [
 [tasks.freeze]
 description = "Freeze current dependencies"
 run = "uv pip freeze > requirements.txt"
-
-# ========================================
-# Performance Tasks
-# ========================================
-
-[tasks.profile]
-description = "Profile the application"
-run = "uv run python -m cProfile -o profile.stats src/main.py"
 
 # ========================================
 # Pre-commit Hooks

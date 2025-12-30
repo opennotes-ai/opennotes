@@ -259,7 +259,7 @@ jobs:
           JWT_SECRET_KEY: dGVzdC1qd3Qtc2VjcmV0LWtleS1mb3ItY2ktdGVzdGluZy1vbmx5LWRvLW5vdC11c2UtaW4tcHJvZHVjdGlvbg==
           CREDENTIALS_ENCRYPTION_KEY: cXRS8fmiHqGBVHwrX_9J7D4tHp_ZpFTMr3_XjP7kF1Y=
           ENCRYPTION_MASTER_KEY: R3pKvHGkdPxBc6FZ4N8qYmV2sJwLxTnC9A7M5E1bUh0=
-        run: mise run test:server:unit
+        run: mise run test:server -- tests/unit/
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -358,7 +358,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           NATS_URL: nats://localhost:4222
           SKIP_TESTCONTAINERS: "1"
-        run: mise run test:server:integration -- -n 0
+        run: mise run test:server -- tests/integration/ -n 0
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

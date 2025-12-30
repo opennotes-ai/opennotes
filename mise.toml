@@ -1,5 +1,19 @@
 # Open Notes Multi-Service Project Configuration
-# This replaces the Makefile with mise task runner
+# ==============================================
+#
+# Task Naming Convention: verb:noun:object:environment
+#   - build:containers:server     (build container for server)
+#   - build:types:openapi         (build OpenAPI types)
+#   - test:server                 (run server tests)
+#   - lint:discord                (run discord linter)
+#   - db:migrate                  (run database migrations)
+#   - validate:api                (validate API endpoints)
+#
+# For specific test/lint options, use -- to pass args:
+#   - mise run test:server -- -k test_auth
+#   - mise run lint:server -- --fix
+#
+# See: mise tasks
 
 [tools]
 python = "3.11"
@@ -7,8 +21,6 @@ uv = "latest"
 node = "20"
 pnpm = "latest"
 yq = "latest"
-# Note: docker and kubectl should be installed via system package managers
-# mise does not manage these tools in its registry
 
 [env]
 IMAGE_TAG = "latest"
@@ -19,7 +31,7 @@ server_dir = "opennotes-server"
 discord_dir = "opennotes-discord"
 
 # ========================================
-# Environment Variable Conversion Tasks
+# Internal Helper Tasks
 # ========================================
 
 [tasks."_env:convert"]
@@ -49,6 +61,28 @@ find opennotes-* -name ".env" -not -name "*.yaml" -type f -delete
 echo "Cleaned up generated .env files"
 '''
 
+[tasks."_db:get-prefix"]
+description = "Internal: Detect environment and output command prefix for database operations"
+dir = "{{vars.server_dir}}"
+run = '''
+# Check if opennotes-server container is running
+if docker ps -q -f name=opennotes-server | grep -q .; then
+    echo "Running inside opennotes-server container..." >&2
+    echo "docker exec opennotes-server "
+else
+    echo "Running on host..." >&2
+    # Check if database is accessible before proceeding
+    if [ -z "${DATABASE_URL:-}" ]; then
+        echo "DATABASE_URL not set. Cannot run database operations on host." >&2
+        echo "   Either:" >&2
+        echo "   1. Start containers: mise run dev:up" >&2
+        echo "   2. Set DATABASE_URL environment variable" >&2
+        exit 1
+    fi
+    echo ""
+fi
+'''
+
 # ========================================
 # Development Tasks
 # ========================================
@@ -61,350 +95,17 @@ run = [
 ]
 
 [tasks.dev]
-description = "Start development environment"
-depends = ["dev:up"]
+description = "Start development environment and generate types"
 run = '''
 # Generate OpenAPI spec and TypeScript types
-echo "📝 Generating OpenAPI spec and TypeScript types..."
+echo "Generating OpenAPI spec and TypeScript types..."
 cd {{vars.server_dir}} && uv run python scripts/generate-openapi.py --output openapi.json
 cd ../{{vars.discord_dir}} && pnpm types:generate
 
 echo ""
-echo "✅ Development environment started!"
+echo "Development environment ready!"
 echo "   Server: http://localhost:8000"
 echo "   Discord: http://localhost:3000"
-echo ""
-echo "   View logs: mise run logs"
-echo "   Stop: mise run dev:down"
-'''
-
-[tasks."dev:logs"]
-description = "View development logs (works with OpenTofu or docker-compose)"
-usage = '''
-flag "-f --follow" negate="--no-follow" help="Follow log output" default=#true
-flag "--tail <lines>" help="Number of lines to show from the end of the logs" default="all"
-flag "--since <time>" help="Show logs since timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)" default=""
-'''
-run = '''
-args=()
-[[ "${usage_follow?}" == "true" ]] && args+=("-f")
-[[ "${usage_tail:-all}" != "all" ]] && args+=("--tail=${usage_tail}")
-[[ -n "${usage_since:-}" ]] && args+=("--since=${usage_since}")
-
-# Show logs from both server and discord containers
-docker logs "${args[@]}" opennotes-server 2>&1 &
-docker logs "${args[@]}" opennotes-discord 2>&1 &
-wait
-'''
-alias = "logs"
-
-[tasks."dev:clean"]
-description = "Clean up containers and volumes"
-run = [
-    "docker-compose down -v",
-    "docker-compose -f docker-compose.yml -f docker-compose.prod.yml down -v",
-    "docker-compose --profile monitoring down -v",
-    { task = "_env:cleanup" },
-    'find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true',
-    'find . -type d -name "node_modules" -exec rm -rf {} + 2>/dev/null || true',
-    'find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true'
-]
-alias = "clean"
-
-# ========================================
-# Docker Tasks
-# ========================================
-
-[tasks."docker:build"]
-description = "Build all Docker images for production"
-depends = ["_env:convert"]
-run = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
-alias = "build"
-
-[tasks."docker:build:dev"]
-description = "Build Docker images for development"
-depends = ["_env:convert"]
-run = "docker-compose build"
-
-[tasks."docker:build:server"]
-description = "Build opennotes-server image"
-dir = "{{vars.server_dir}}"
-run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} ."
-
-[tasks."docker:build:discord"]
-description = "Build opennotes-discord image"
-dir = "{{vars.discord_dir}}"
-run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} ."
-
-[tasks."docker:up"]
-description = "Start all services (alias for dev:up)"
-depends = ["dev:up"]
-alias = "start"
-
-[tasks."dev:up"]
-description = "Start development environment (auto-loads docker-compose.override.yml)"
-depends = ["_env:convert"]
-run = "docker-compose up -d"
-
-[tasks."dev:down"]
-description = "Stop development environment"
-run = [
-    "docker-compose down",
-    { task = "_env:cleanup" }
-]
-
-[tasks."staging:up"]
-description = "Start staging environment (uses production config with staging env vars)"
-depends = ["_env:convert"]
-run = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
-
-[tasks."staging:down"]
-description = "Stop staging environment"
-run = [
-    "docker-compose -f docker-compose.yml -f docker-compose.prod.yml down",
-    { task = "_env:cleanup" }
-]
-
-[tasks."prod:up"]
-description = "Start production environment"
-depends = ["_env:convert"]
-run = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
-
-[tasks."prod:down"]
-description = "Stop production environment"
-run = [
-    "docker-compose -f docker-compose.yml -f docker-compose.prod.yml down",
-    { task = "_env:cleanup" }
-]
-
-[tasks."test:env:up"]
-description = "Start test environment (requires dev down first, or use different ports via env vars)"
-depends = ["_env:convert"]
-run = "docker-compose up -d"
-
-[tasks."test:env:down"]
-description = "Stop test environment"
-run = [
-    "docker-compose down -v",
-    { task = "_env:cleanup" }
-]
-
-[tasks."docker:stop"]
-description = "Stop all services"
-run = [
-    "docker-compose stop",
-    { task = "_env:cleanup" }
-]
-alias = "stop"
-
-[tasks."docker:restart"]
-description = "Restart all services"
-depends = ["_env:convert"]
-run = "docker-compose restart"
-alias = "restart"
-
-[tasks."docker:ps"]
-description = "Show running containers (works with OpenTofu or docker-compose)"
-run = "docker ps -f label=project=opennotes"
-alias = "ps"
-
-[tasks."docker:prune"]
-description = "Prune unused Docker resources"
-confirm = "This will remove all unused Docker resources. Continue?"
-run = "docker system prune -af --volumes"
-
-[tasks."validate:compose"]
-description = "Validate docker-compose configuration for all environments"
-run = "./scripts/validate-compose.sh"
-
-# ========================================
-# Deployment Tasks
-# ========================================
-
-[tasks."deploy:discord"]
-description = "Deploy Discord bot (rebuild and restart - works with OpenTofu or docker-compose)"
-depends = ["_env:convert"]
-run = '''
-echo "🔨 Building Discord bot..."
-# Build from project root - Dockerfile expects parent directory as context
-docker build -t opennotes-discord:local -f {{vars.discord_dir}}/Dockerfile .
-
-echo "🔄 Restarting Discord bot..."
-# Check if using OpenTofu (state file exists)
-# Uses MULTIVERSE_ROOT from parent mise.toml to work in both opennotes/ and worktrees/
-if [ -f "$MULTIVERSE_ROOT/infrastructure/environments/local/terraform.tfstate" ]; then
-    echo "   Detected OpenTofu management - recreating container..."
-    cd "$MULTIVERSE_ROOT/infrastructure/environments/local"
-    export SOPS_AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
-    tofu apply -replace="docker_container.opennotes_discord[0]" -auto-approve
-    cd - >/dev/null
-else
-    echo "   Using docker restart..."
-    docker restart opennotes-discord
-fi
-
-echo "⏳ Waiting for bot to start and register commands..."
-sleep 5
-
-echo "🔍 Verifying command registration..."
-docker logs --tail=20 opennotes-discord | grep -E "(Registering slash commands|Slash commands registered successfully|Bot ready)" || echo "⚠️  Could not verify command registration - check logs manually"
-
-echo ""
-echo "📋 Checking status..."
-docker ps -f name=opennotes-discord
-
-echo ""
-echo "✅ Discord bot deployed!"
-echo "   Commands are automatically registered when the bot starts."
-echo "   If Discord UI doesn't show updated commands, wait 1-2 minutes for Discord's cache to refresh."
-echo ""
-echo "   View logs: mise run logs:discord"
-'''
-
-[tasks."deploy:server"]
-description = "Deploy server (rebuild and restart - works with OpenTofu or docker-compose)"
-depends = ["_env:convert"]
-run = '''
-echo "🔨 Building server..."
-# Build from project root - Dockerfile expects parent directory as context
-docker build -t opennotes-server:local -f {{vars.server_dir}}/Dockerfile .
-
-echo "🔄 Restarting server..."
-# Check if using OpenTofu (state file exists)
-# Uses MULTIVERSE_ROOT from parent mise.toml to work in both opennotes/ and worktrees/
-if [ -f "$MULTIVERSE_ROOT/infrastructure/environments/local/terraform.tfstate" ]; then
-    echo "   Detected OpenTofu management - recreating container..."
-    cd "$MULTIVERSE_ROOT/infrastructure/environments/local"
-    export SOPS_AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
-    tofu apply -replace="docker_container.opennotes_server[0]" -auto-approve
-    cd - >/dev/null
-else
-    echo "   Using docker restart..."
-    docker restart opennotes-server
-fi
-
-echo "📝 Regenerating OpenAPI spec and TypeScript types..."
-cd {{vars.server_dir}} && uv run python scripts/generate-openapi.py --output openapi.json
-cd ../{{vars.discord_dir}} && pnpm types:generate
-
-echo "📋 Checking status..."
-docker ps -f name=opennotes-server
-
-echo ""
-echo "✅ Server deployed and types regenerated!"
-echo "   View logs: mise run logs:server"
-'''
-
-[tasks."deploy:all"]
-description = "Deploy all services (rebuild and restart - works with OpenTofu or docker-compose)"
-depends = ["_env:convert"]
-run = '''
-echo "🔨 Building all services..."
-# Build from project root - Dockerfiles expect parent directory as context
-docker build -t opennotes-server:local -f {{vars.server_dir}}/Dockerfile .
-docker build -t opennotes-discord:local -f {{vars.discord_dir}}/Dockerfile .
-
-echo "🔄 Restarting all services..."
-# Check if using OpenTofu (state file exists)
-# Uses MULTIVERSE_ROOT from parent mise.toml to work in both opennotes/ and worktrees/
-if [ -f "$MULTIVERSE_ROOT/infrastructure/environments/local/terraform.tfstate" ]; then
-    echo "   Detected OpenTofu management - recreating containers..."
-    cd "$MULTIVERSE_ROOT/infrastructure/environments/local"
-    export SOPS_AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
-    tofu apply -replace="docker_container.opennotes_server[0]" -replace="docker_container.opennotes_discord[0]" -auto-approve
-    cd - >/dev/null
-else
-    echo "   Using docker restart..."
-    docker restart opennotes-server opennotes-discord
-fi
-
-echo "📋 Checking status..."
-docker ps -f label=project=opennotes
-
-echo ""
-echo "✅ All services deployed!"
-echo "   View logs: mise run logs"
-'''
-
-[tasks."restart:discord"]
-description = "Restart Discord bot without rebuilding (works with OpenTofu or docker-compose)"
-run = '''
-echo "🔄 Restarting Discord bot..."
-docker restart opennotes-discord
-
-echo "⏳ Waiting for bot to start..."
-sleep 3
-
-echo "📋 Checking status..."
-docker ps -f name=opennotes-discord
-
-echo ""
-echo "✅ Discord bot restarted!"
-echo "   View logs: mise run logs:discord"
-'''
-
-[tasks."restart:server"]
-description = "Restart server without rebuilding (works with OpenTofu or docker-compose)"
-run = '''
-echo "🔄 Restarting server..."
-docker restart opennotes-server
-
-echo "⏳ Waiting for server to start..."
-sleep 3
-
-echo "📋 Checking status..."
-docker ps -f name=opennotes-server
-
-echo ""
-echo "✅ Server restarted!"
-echo "   View logs: mise run logs:server"
-'''
-
-[tasks."restart:all"]
-description = "Restart all services without rebuilding (works with OpenTofu or docker-compose)"
-run = '''
-echo "🔄 Restarting all services..."
-docker restart opennotes-server opennotes-discord opennotes-postgres opennotes-redis opennotes-nats 2>/dev/null || true
-
-echo "⏳ Waiting for services to start..."
-sleep 5
-
-echo "📋 Checking status..."
-docker ps -f label=project=opennotes
-
-echo ""
-echo "✅ All services restarted!"
-echo "   View logs: mise run logs"
-'''
-
-[tasks."logs:discord"]
-description = "View Discord bot logs (works with OpenTofu or docker-compose)"
-usage = '''
-flag "-f --follow" negate="--no-follow" help="Follow log output" default=#true
-flag "-n --tail <lines>" help="Number of lines to show from the end of the logs" default="all"
-flag "--since <time>" help="Show logs since timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)" default=""
-'''
-run = '''
-args=()
-[[ "${usage_follow:-false}" == "true" ]] && args+=("-f")
-[[ "${usage_tail:-all}" != "all" ]] && args+=("--tail=${usage_tail:-all}")
-[[ -n "${usage_since:-}" ]] && args+=("--since=${usage_since}")
-docker logs "${args[@]}" opennotes-discord
-'''
-
-[tasks."logs:server"]
-description = "View server logs (works with OpenTofu or docker-compose)"
-usage = '''
-flag "-f --follow" negate="--no-follow" help="Follow log output" default=#true
-flag "-n --tail <lines>" help="Number of lines to show from the end of the logs" default="all"
-flag "--since <time>" help="Show logs since timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)" default=""
-'''
-run = '''
-args=()
-[[ "${usage_follow:-false}" == "true" ]] && args+=("-f")
-[[ "${usage_tail:-all}" != "all" ]] && args+=("--tail=${usage_tail:-all}")
-[[ -n "${usage_since:-}" ]] && args+=("--since=${usage_since}")
-docker logs "${args[@]}" opennotes-server
 '''
 
 # ========================================
@@ -416,133 +117,17 @@ description = "Run all tests"
 depends = ["test:server", "test:discord"]
 
 [tasks."test:server"]
-description = "Run server tests in parallel (uses testcontainers for isolation)"
-dir = "{{vars.server_dir}}"
-usage = '''
-flag "--cov" help="Enable coverage reporting (off by default due to potential side effects)"
-'''
-run = '''
-if [[ "${usage_cov:-false}" == "true" ]]; then
-    uv run pytest -v --cov=src --cov-report=term-missing --cov-report=html "$@"
-else
-    uv run pytest -v "$@"
-fi
-'''
-sources = ["src/**/*.py", "tests/**/*.py"]
-# Note: Worker count configured in pytest.ini (-n 4) to prevent Docker resource exhaustion
-# Each worker gets its own isolated database (opennotes_test_gw0, gw1, etc.)
-# Use test:server:serial for sequential execution when debugging
-env = { PYTHONPATH = "." }
-
-[tasks."test:server:serial"]
-description = "Run server tests sequentially (useful for debugging)"
+description = "Run server tests (pass options via --)"
 dir = "{{vars.server_dir}}"
 run = 'uv run pytest -v "$@"'
 sources = ["src/**/*.py", "tests/**/*.py"]
-# Note: Sequential execution provides clearer output for debugging
 env = { PYTHONPATH = "." }
-
-[tasks."test:server:unit"]
-description = "Run only unit tests (no database/integration tests)"
-dir = "{{vars.server_dir}}"
-run = 'uv run pytest -v tests/unit/ "$@"'
-sources = ["src/**/*.py", "tests/unit/**/*.py"]
-env = { PYTHONPATH = "." }
-
-[tasks."test:server:integration"]
-description = "Run only integration tests (requires services)"
-dir = "{{vars.server_dir}}"
-run = 'uv run pytest -v tests/integration/ tests/auth/ tests/users/ tests/services/ "$@"'
-sources = ["src/**/*.py", "tests/integration/**/*.py", "tests/auth/**/*.py", "tests/users/**/*.py", "tests/services/**/*.py"]
-env = { PYTHONPATH = "." }
-
-[tasks."test:cleanup"]
-description = "Clean up orphaned test containers from interrupted test runs"
-dir = "{{vars.server_dir}}"
-run = "bash scripts/cleanup-test-containers.sh"
-
-[tasks."test:cleanup:full"]
-description = "Force cleanup of ALL test containers (regardless of age)"
-confirm = "This will remove ALL test containers. Continue?"
-run = '''
-echo "⚠️  Removing ALL test containers..."
-containers=$(docker ps -aq --filter "label=opennotes.test.session_id")
-if [ -z "$containers" ]; then
-    echo "✓ No test containers found"
-    exit 0
-fi
-echo "$containers" | xargs -r docker stop -t 10 || true
-echo "$containers" | xargs -r docker rm || true
-echo "✓ All test containers removed"
-'''
 
 [tasks."test:discord"]
-description = "Run Discord bot tests"
+description = "Run Discord bot tests (pass options via --)"
 dir = "{{vars.discord_dir}}"
 run = "pnpm test \"$@\""
 sources = ["src/**/*.ts", "tests/**/*.ts"]
-
-[tasks."test:discord:integration"]
-description = "Run Discord bot integration tests (requires NATS and other infrastructure)"
-dir = "{{vars.discord_dir}}"
-depends = ["dev:up"]
-run = "pnpm test tests/integration/ \"$@\""
-sources = ["src/**/*.ts", "tests/**/*.ts"]
-
-[tasks."test:integration"]
-description = "Run integration tests"
-dir = "tests"
-depends = ["dev:up"]
-run = "uv run pytest integration/ -v --tb=short"
-
-[tasks."test:integration:server"]
-description = "Run server integration tests"
-dir = "tests"
-run = "uv run pytest integration/test_server_bot.py -v"
-
-[tasks."test:integration:webhooks"]
-description = "Run webhook integration tests"
-dir = "tests"
-run = "uv run pytest integration/test_webhooks.py -v"
-
-[tasks."test:integration:errors"]
-description = "Run error scenario tests"
-dir = "tests"
-run = "uv run pytest integration/test_errors.py -v"
-
-[tasks."test:integration:e2e"]
-description = "Run end-to-end workflow tests"
-dir = "tests"
-run = "uv run pytest integration/test_end_to_end.py -v"
-
-[tasks."test:integration:load"]
-description = "Run load tests with locust"
-dir = "tests"
-run = "uv run locust -f integration/test_load.py --headless -u 100 -r 10 -t 60s --host http://localhost:8001"
-
-[tasks."test:integration:load:ui"]
-description = "Run load tests with UI"
-dir = "tests"
-run = "uv run locust -f integration/test_load.py --host http://localhost:8001"
-
-[tasks."test:integration:all"]
-description = "Run all integration tests including load tests"
-depends = ["test:integration", "test:integration:load"]
-
-[tasks."test:e2e"]
-description = "Run end-to-end tests with docker-compose (requires dev down first)"
-depends = ["_env:convert"]
-run = "docker-compose up --abort-on-container-exit"
-
-[tasks."test:e2e:build"]
-description = "Build and run end-to-end tests"
-depends = ["_env:convert"]
-run = [
-    "docker-compose build",
-    "docker-compose up --abort-on-container-exit",
-    "docker-compose down -v",
-    { task = "_env:cleanup" }
-]
 
 # ========================================
 # Linting Tasks
@@ -553,70 +138,36 @@ description = "Run all linters"
 depends = ["lint:server", "lint:discord"]
 
 [tasks."lint:server"]
-description = "Run Python linters"
+description = "Run Python linters (use -- --fix to auto-fix)"
 dir = "{{vars.server_dir}}"
-run = [
-    "uv run ruff format --check src tests",
-    "uv run ruff check src tests",
-    "uv run basedpyright src"
-]
+run = '''
+# Check if --fix was passed
+if [[ " $* " == *" --fix "* ]]; then
+    echo "Fixing Python linting issues..."
+    uv run ruff format src tests
+    uv run ruff check --fix src tests
+else
+    uv run ruff format --check src tests
+    uv run ruff check src tests
+    uv run basedpyright src
+fi
+'''
 
 [tasks."lint:discord"]
-description = "Run TypeScript linters"
+description = "Run TypeScript linters (use -- --fix to auto-fix)"
 dir = "{{vars.discord_dir}}"
-run = "pnpm run lint"
-
-[tasks."lint:fix"]
-description = "Fix linting issues"
-run = [
-    { task = "lint:fix:server" },
-    { task = "lint:fix:discord" }
-]
-alias = "fix"
-
-[tasks."lint:fix:server"]
-description = "Fix Python linting issues"
-dir = "{{vars.server_dir}}"
-run = [
-    "uv run ruff format src tests",
-    "uv run ruff check --fix src tests"
-]
-
-[tasks."lint:fix:discord"]
-description = "Fix TypeScript linting issues"
-dir = "{{vars.discord_dir}}"
-run = "pnpm run lint:fix"
-
-[tasks."schema:check"]
-description = "Validate schema consistency across Pydantic models"
-dir = "{{vars.server_dir}}"
-run = "uv run python scripts/check_schema_consistency.py"
+run = '''
+# Check if --fix was passed
+if [[ " $* " == *" --fix "* ]]; then
+    pnpm run lint:fix
+else
+    pnpm run lint
+fi
+'''
 
 # ========================================
 # Database Tasks
 # ========================================
-
-[tasks."_db:get-prefix"]
-description = "Internal: Detect environment and output command prefix for database operations"
-dir = "{{vars.server_dir}}"
-run = '''
-# Check if opennotes-server container is running
-if docker ps -q -f name=opennotes-server | grep -q .; then
-    echo "🐳 Running inside opennotes-server container..." >&2
-    echo "docker exec opennotes-server "
-else
-    echo "💻 Running on host..." >&2
-    # Check if database is accessible before proceeding
-    if [ -z "${DATABASE_URL:-}" ]; then
-        echo "⚠️  DATABASE_URL not set. Cannot run database operations on host." >&2
-        echo "   Either:" >&2
-        echo "   1. Start containers: mise run dev:up" >&2
-        echo "   2. Set DATABASE_URL environment variable" >&2
-        exit 1
-    fi
-    echo ""
-fi
-'''
 
 [tasks."db:migrate"]
 description = "Run database migrations (container-aware)"
@@ -665,275 +216,47 @@ description = "Open Redis CLI"
 run = "docker exec -it opennotes-redis redis-cli"
 
 # ========================================
-# Deployment Tasks
+# Build Tasks
 # ========================================
 
-[tasks.deploy]
-description = "Deploy to environment"
-run = "./scripts/deploy.sh --environment {{env.ENVIRONMENT}} --service {{env.SERVICE}} --tag {{env.IMAGE_TAG}}"
-confirm = "Deploy to {{env.ENVIRONMENT}} environment?"
-env = { ENVIRONMENT = "{{arg(name='env')}}", SERVICE = "{{arg(name='service')}}", IMAGE_TAG = "{{arg(name='tag')}}" }
-usage = '''
-arg "env" description="Target environment" default="staging"
-arg "service" description="Service to deploy" default="all"
-arg "tag" description="Image tag" default="latest"
-'''
+[tasks."build:containers:all"]
+description = "Build all Docker images"
+depends = ["_env:convert"]
+run = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
+alias = "build"
 
-[tasks.rollback]
-description = "Rollback deployment"
-run = "./scripts/rollback.sh --environment {{env.ENVIRONMENT}} --service {{env.SERVICE}} --tag {{env.IMAGE_TAG}}"
-confirm = "Rollback {{env.ENVIRONMENT}} to {{env.IMAGE_TAG}}?"
-env = { ENVIRONMENT = "{{arg(name='env')}}", SERVICE = "{{arg(name='service')}}", IMAGE_TAG = "{{arg(name='tag')}}" }
-usage = '''
-arg "env" description="Target environment" default="production"
-arg "service" description="Service to rollback" default="all"
-arg "tag" description="Previous version tag"
-'''
-
-[tasks.backup]
-description = "Create backup"
-run = "./scripts/backup.sh --environment {{env.ENVIRONMENT}}"
-env = { ENVIRONMENT = "{{arg(name='env')}}" }
-usage = '''
-arg "env" description="Environment to backup" default="production"
-'''
-
-[tasks."health:check"]
-description = "Run health checks"
-run = "./scripts/health-check.sh --environment {{env.ENVIRONMENT}} --service {{env.SERVICE}}"
-env = { ENVIRONMENT = "{{arg(name='env')}}", SERVICE = "{{arg(name='service')}}" }
-usage = '''
-arg "env" description="Environment to check" default="production"
-arg "service" description="Service to check" default="all"
-'''
-alias = "health"
-
-# ========================================
-# Security Tasks
-# ========================================
-
-[tasks."security:scan"]
-description = "Run security scans"
-run = [
-    { task = "security:scan:server" },
-    { task = "security:scan:discord" }
-]
-
-[tasks."security:scan:server"]
-description = "Run Python security scans"
+[tasks."build:containers:server"]
+description = "Build opennotes-server image"
 dir = "{{vars.server_dir}}"
-run = [
-    "uv run bandit -r src",
-    "uv run safety check",
-    "uv run pip-audit"
-]
+run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} ."
 
-[tasks."security:scan:discord"]
-description = "Run Node.js security audit"
+[tasks."build:containers:discord"]
+description = "Build opennotes-discord image"
 dir = "{{vars.discord_dir}}"
-run = "pnpm audit"
+run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} ."
 
-# ========================================
-# Kubernetes Tasks
-# ========================================
-
-[tasks."k8s:apply"]
-description = "Apply Kubernetes manifests"
-run = "kubectl apply -f k8s/base/"
-
-[tasks."k8s:delete"]
-description = "Delete Kubernetes resources"
-confirm = "Delete all Kubernetes resources?"
-run = "kubectl delete -f k8s/base/"
-
-[tasks."k8s:status"]
-description = "Show Kubernetes status"
-run = "kubectl get all -n opennotes"
-
-# ========================================
-# Monitoring Tasks
-# ========================================
-
-[tasks."monitoring:up"]
-description = "Start monitoring stack with development environment"
-depends = ["_env:convert"]
-run = "docker-compose --profile monitoring up -d"
-
-[tasks."monitoring:up:dev"]
-description = "Start monitoring stack with development environment"
-depends = ["_env:convert"]
-run = "docker-compose --profile monitoring up -d"
-
-[tasks."monitoring:up:prod"]
-description = "Start monitoring stack with production environment"
-depends = ["_env:convert"]
-run = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring up -d"
-
-[tasks."monitoring:down"]
-description = "Stop monitoring stack"
-run = [
-    "docker-compose --profile monitoring down",
-    { task = "_env:cleanup" }
-]
-
-[tasks."monitoring:logs"]
-description = "View monitoring logs"
-usage = '''
-flag "-f --follow" negate="--no-follow" help="Follow log output" default=#true
-flag "-n --tail <lines>" help="Number of lines to show from the end of the logs" default="all"
-flag "--since <time>" help="Show logs since timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)" default=""
-'''
-run = '''
-args=()
-[[ "${usage_follow:-false}" == "true" ]] && args+=("-f")
-[[ "${usage_tail:-all}" != "all" ]] && args+=("--tail=${usage_tail:-all}")
-[[ -n "${usage_since:-}" ]] && args+=("--since=${usage_since}")
-docker-compose --profile monitoring logs ${args[@]} prometheus grafana loki tempo alertmanager
-'''
-
-[tasks."monitoring:status"]
-description = "Check monitoring status"
-run = [
-    "echo 'Grafana: http://localhost:3001 (admin/admin)'",
-    "echo 'Prometheus: http://localhost:9090'",
-    "echo 'Loki: http://localhost:3100'",
-    "echo 'Tempo: http://localhost:3200'",
-    "echo 'Alertmanager: http://localhost:9093'",
-    "docker-compose --profile monitoring ps"
-]
-
-# ========================================
-# API Validation Tasks
-# ========================================
-
-[tasks."api:generate-spec"]
-description = "Generate OpenAPI specification from server and regenerate TypeScript types"
+[tasks."build:types:openapi"]
+description = "Generate OpenAPI specification and TypeScript types"
 dir = "{{vars.server_dir}}"
 run = '''
-echo "📝 Generating OpenAPI specification..."
+echo "Generating OpenAPI specification..."
 uv run python scripts/generate-openapi.py --output openapi.json
 
-echo "🔄 Regenerating TypeScript types for Discord bot..."
+echo "Regenerating TypeScript types for Discord bot..."
 cd ../{{vars.discord_dir}} && pnpm types:generate
 
-echo "✅ OpenAPI spec and TypeScript types updated!"
+echo "OpenAPI spec and TypeScript types updated!"
 '''
 
-[tasks."api:validate-endpoints"]
+# ========================================
+# Validation Tasks
+# ========================================
+
+[tasks."validate:api"]
 description = "Validate Discord bot endpoints against OpenAPI spec"
-depends = ["api:generate-spec"]
+depends = ["build:types:openapi"]
 run = "python3 opennotes/scripts/validate-api-endpoints.py"
-
-[tasks."api:validate"]
-description = "Alias for api:validate-endpoints"
-depends = ["api:validate-endpoints"]
 alias = "validate-api"
-
-# ========================================
-# Composite Workflows
-# ========================================
-
-[tasks."ci:check"]
-description = "Run CI checks (lint + test + api validation)"
-depends = ["lint", "test", "security:scan", "api:validate"]
-
-[tasks."release:prepare"]
-description = "Prepare for release"
-depends = ["lint:fix", "test", "docker:build"]
-run = [
-    "echo 'Release preparation complete'",
-    "echo 'Run: mise deploy staging' to deploy to staging'"
-]
-
-[tasks."setup:local"]
-description = "Set up local development environment"
-run = [
-    { task = "install" },
-    { task = "dev" },
-    { task = "db:migrate" },
-    "echo 'Local setup complete!'"
-]
-
-# ========================================
-# Migration Tasks
-# ========================================
-
-[tasks."migrate:backup"]
-description = "Backup existing Discord bot data"
-run = "uv run python migration/scripts/01_backup_existing.py --source-type discord_sqlite --source-connection ./data/discord_bot.db --backup-dir ./backups"
-
-[tasks."migrate:extract"]
-description = "Extract data from Discord bot"
-run = "uv run python migration/scripts/02_extract_discord_data.py --source-type discord_sqlite --source-connection ./data/discord_bot.db --output-dir ./staging"
-
-[tasks."migrate:transform"]
-description = "Transform data to new schema"
-run = "uv run python migration/scripts/03_transform_data.py --input-dir ./staging --output-dir ./staging"
-
-[tasks."migrate:validate"]
-description = "Validate transformed data"
-run = "uv run python migration/scripts/04_validate_data.py --input-dir ./staging --strict"
-
-[tasks."migrate:load"]
-description = "Load data into database"
-run = "uv run python migration/scripts/05_load_to_database.py --input-dir ./staging --database-url $DATABASE_URL --redis-url $REDIS_URL --populate-cache --init-nats"
-env = { DATABASE_URL = "{{env.DATABASE_URL}}", REDIS_URL = "{{env.REDIS_URL}}" }
-
-[tasks."migrate:verify"]
-description = "Verify migration success"
-run = "uv run python migration/scripts/06_verify_migration.py --input-dir ./staging --database-url $DATABASE_URL"
-env = { DATABASE_URL = "{{env.DATABASE_URL}}" }
-
-[tasks."migrate:cleanup"]
-description = "Cleanup temporary migration files"
-run = "uv run python migration/scripts/07_cleanup.py --staging-dir ./staging --keep-reports"
-
-[tasks."migrate:run"]
-description = "Run full migration process"
-confirm = "Start migration? This will modify production data."
-run = "uv run python migration/cli.py start --config migration/config.yaml"
-
-[tasks."migrate:status"]
-description = "Show migration status"
-run = "uv run python migration/cli.py status"
-
-[tasks."migrate:rollback"]
-description = "Rollback migration to snapshot"
-confirm = "Rollback migration? This will restore previous state."
-run = "uv run python migration/cli.py rollback --to-snapshot {{arg(name='snapshot')}} --database-url $DATABASE_URL"
-env = { DATABASE_URL = "{{env.DATABASE_URL}}" }
-usage = '''
-arg "snapshot" description="Snapshot ID to rollback to" required=true
-'''
-
-[tasks."migrate:report"]
-description = "Generate migration report"
-run = "uv run python migration/cli.py report --output ./staging/migration_report.txt"
-
-[tasks."migrate:list-snapshots"]
-description = "List available migration snapshots"
-run = "uv run python migration/cli.py list-snapshots --database-url $DATABASE_URL"
-env = { DATABASE_URL = "{{env.DATABASE_URL}}" }
-
-[tasks."migrate:test"]
-description = "Run migration tests"
-run = "uv run pytest migration/tests/ -v"
-
-# ========================================
-# Utility Tasks
-# ========================================
-
-[tasks.help]
-description = "Show available tasks"
-run = "mise tasks"
-alias = "h"
-
-[tasks.version]
-description = "Show project versions"
-run = [
-    "echo 'Server: ' && cd {{vars.server_dir}} && python -c 'from src.config import settings; print(settings.VERSION)'",
-    "echo 'Discord: ' && cd {{vars.discord_dir}} && node -p 'require(\"./package.json\").version'"
-]
 
 # ========================================
 # Task Configuration
