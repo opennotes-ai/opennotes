@@ -82,68 +82,48 @@ await example_task.kiq("data")
 
 ### Development
 
+Workers run as a dedicated container alongside the API server:
+
 ```bash
-# Run worker separately
-taskiq worker src.tasks.broker:broker src.tasks.example
+# Start all services including the worker
+docker compose up
+
+# Or start services individually
+docker compose up opennotes-server   # API server
+docker compose up opennotes-worker   # Taskiq worker
+```
+
+For local development without Docker:
+
+```bash
+# Run worker separately from the API server
+python -m taskiq worker src.tasks.broker:get_broker src.tasks.rechunk_tasks
 
 # Or with uvicorn reload
-taskiq worker src.tasks.broker:broker src.tasks.example --reload
+python -m taskiq worker src.tasks.broker:get_broker src.tasks.rechunk_tasks --reload
 ```
 
-### Docker
+### Docker Compose
 
-Set the `RUN_MODE` environment variable:
+The `docker-compose.yml` defines separate services:
 
-```bash
-# API server only (default)
-RUN_MODE=server ./docker-entrypoint.sh
+- `opennotes-server`: Runs the FastAPI API server only
+- `opennotes-worker`: Runs the taskiq worker process
 
-# Worker only
-RUN_MODE=worker ./docker-entrypoint.sh
+This architecture ensures:
+- Clean separation of concerns
+- Independent scaling of API and workers
+- Workers don't compete with API for memory
+- Easier debugging and monitoring
 
-# Both server and worker in same container
-RUN_MODE=both ./docker-entrypoint.sh
-```
+### Cloud Run
 
-> **Note:** `RUN_MODE=both` does not support hot reload (`--reload`). The worker
-> process runs alongside the server, and uvicorn's reload mechanism only applies
-> to the server process. For development with hot reload, run the server and
-> worker as separate processes.
+In production, workers run in a Cloud Run Worker Pool (see task-915):
 
-### Kubernetes
+- **opennotes-server**: Cloud Run Service for HTTP API
+- **opennotes-worker**: Cloud Run Worker Pool for background processing
 
-For production, run separate deployments:
-
-```yaml
-# API Server Deployment
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: opennotes-server
-spec:
-  template:
-    spec:
-      containers:
-        - name: server
-          env:
-            - name: RUN_MODE
-              value: "server"
-
----
-# Worker Deployment
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: opennotes-worker
-spec:
-  template:
-    spec:
-      containers:
-        - name: worker
-          env:
-            - name: RUN_MODE
-              value: "worker"
-```
+Worker pools are optimized for pull-based workloads like taskiq consumers.
 
 ## Configuration
 
@@ -180,10 +160,9 @@ if result.is_err:
 
 ## Adding New Tasks
 
-1. Create a new module or add to `src/tasks/example.py`
+1. Create a new module in `src/tasks/`
 2. Use the `@register_task()` decorator
-3. Import the module in the worker command (add to `taskiq worker` args)
-4. Update the Docker entrypoint if needed
+3. Update the worker command in `docker-compose.yml` to include the new module
 
 Example:
 
@@ -197,7 +176,8 @@ async def process_webhook(payload: dict) -> bool:
     return True
 ```
 
-Update worker command:
-```bash
-taskiq worker src.tasks.broker:broker src.tasks.example src.tasks.my_tasks
+Update the `opennotes-worker` service in `docker-compose.yml`:
+
+```yaml
+command: ["python", "-m", "taskiq", "worker", "src.tasks.broker:get_broker", "src.tasks.rechunk_tasks", "src.tasks.my_tasks"]
 ```

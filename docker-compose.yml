@@ -196,6 +196,47 @@ services:
     networks:
       - opennotes
 
+  # Open Notes Taskiq Worker - Background task processor for ML/chunking operations
+  # This service runs taskiq workers that consume tasks from NATS queue
+  opennotes-worker:
+    build:
+      context: .
+      dockerfile: ./opennotes-server/Dockerfile
+    command: ["python", "-m", "taskiq", "worker", "src.tasks.broker:get_broker", "src.tasks.rechunk_tasks"]
+    environment:
+      # Environment configuration
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-false}
+
+      # Database connection
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-opennotes}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-opennotes}
+
+      # Cache and messaging
+      - REDIS_URL=redis://redis:6379/${REDIS_DB:-0}
+      - NATS_URL=nats://nats:4222
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENABLE_JSON_LOGGING=${ENABLE_JSON_LOGGING:-false}
+
+      # Authentication (needed for database access)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT secret key is required}
+      - CREDENTIALS_ENCRYPTION_KEY=${CREDENTIALS_ENCRYPTION_KEY:-WnBxdZ2BU0Mh-jhZgVO2rRkncGmz0d54PTdyH_oaL38=}
+      - ENCRYPTION_MASTER_KEY=${ENCRYPTION_MASTER_KEY:-Eh1uymAtKUglSt9gjKN_Ft96bBOnu0Y8uNxm1AoNN-Q=}
+
+      # OpenAI for rechunking tasks
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - opennotes
+
   # Open Notes Audit Worker - Background worker for async audit log processing
   opennotes-audit-worker:
     build:
