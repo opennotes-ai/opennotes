@@ -63,9 +63,10 @@ Benefits:
 """
 
 import json
+import logging
 import uuid as uuid_module
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from opentelemetry import trace
@@ -73,38 +74,19 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.bulk_content_scan.nats_handler import BulkScanResultsPublisher
-from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
-from src.bulk_content_scan.service import BulkContentScanService
-from src.cache.redis_client import RedisClient
-from src.config import get_settings
-from src.events.publisher import event_publisher
-from src.events.schemas import (
-    BulkScanProcessingFinishedEvent,
-    ScanErrorInfo,
-    ScanErrorSummary,
-)
-from src.fact_checking.embedding_service import EmbeddingService
-from src.fact_checking.models import FactCheckItem
-from src.llm_config.encryption import EncryptionService
-from src.llm_config.manager import LLMClientManager
-from src.llm_config.models import CommunityServer
-from src.llm_config.providers.base import LLMMessage
-from src.llm_config.service import LLMService
-from src.monitoring import get_logger
-from src.notes.message_archive_models import MessageArchive
-from src.notes.models import Note
-from src.services.vision_service import VisionService
 from src.tasks.broker import register_task
-from src.users.models import AuditLog
-from src.webhooks.rate_limit import rate_limiter
 
-logger = get_logger(__name__)
+if TYPE_CHECKING:
+    from src.fact_checking.models import FactCheckItem
+
+logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer(__name__)
 
 
 def _create_db_engine(db_url: str) -> Any:
     """Create async database engine with pool settings."""
+    from src.config import get_settings
+
     settings = get_settings()
     return create_async_engine(
         db_url,
@@ -116,8 +98,13 @@ def _create_db_engine(db_url: str) -> Any:
     )
 
 
-def _get_llm_service() -> LLMService:
+def _get_llm_service() -> Any:
     """Create LLMService with required dependencies."""
+    from src.config import get_settings
+    from src.llm_config.encryption import EncryptionService
+    from src.llm_config.manager import LLMClientManager
+    from src.llm_config.service import LLMService
+
     settings = get_settings()
     llm_client_manager = LLMClientManager(
         encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
@@ -127,6 +114,8 @@ def _get_llm_service() -> LLMService:
 
 async def _get_platform_id(session: Any, community_server_id: UUID) -> str | None:
     """Get platform ID from community server UUID."""
+    from src.llm_config.models import CommunityServer
+
     result = await session.execute(
         select(CommunityServer.platform_id).where(CommunityServer.id == community_server_id)
     )
@@ -162,6 +151,11 @@ async def process_bulk_scan_batch_task(
     Returns:
         dict with status and messages_processed
     """
+    from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import RedisClient
+    from src.fact_checking.embedding_service import EmbeddingService
+
     with _tracer.start_as_current_span("content.batch_scan") as span:
         span.set_attribute("task.scan_id", scan_id)
         span.set_attribute("task.community_server_id", community_server_id)
@@ -317,6 +311,18 @@ async def finalize_bulk_scan_task(
     Returns:
         dict with status and results summary
     """
+    from src.bulk_content_scan.nats_handler import BulkScanResultsPublisher
+    from src.bulk_content_scan.schemas import BulkScanStatus
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import RedisClient
+    from src.events.publisher import event_publisher
+    from src.events.schemas import (
+        BulkScanProcessingFinishedEvent,
+        ScanErrorInfo,
+        ScanErrorSummary,
+    )
+    from src.fact_checking.embedding_service import EmbeddingService
+
     with _tracer.start_as_current_span("content.finalize_scan") as span:
         span.set_attribute("task.scan_id", scan_id)
         span.set_attribute("task.community_server_id", community_server_id)
@@ -468,6 +474,13 @@ async def generate_ai_note_task(
     Returns:
         dict with status and note_id if created
     """
+    from src.config import get_settings
+    from src.fact_checking.models import FactCheckItem
+    from src.llm_config.models import CommunityServer
+    from src.llm_config.providers.base import LLMMessage
+    from src.notes.models import Note
+    from src.webhooks.rate_limit import rate_limiter
+
     with _tracer.start_as_current_span("content.ai_note") as span:
         span.set_attribute("task.community_server_id", community_server_id)
         span.set_attribute("task.request_id", request_id)
@@ -587,7 +600,7 @@ async def generate_ai_note_task(
 
 def _build_fact_check_prompt(
     original_message: str,
-    fact_check_item: FactCheckItem,
+    fact_check_item: "FactCheckItem",
     similarity_score: float,
 ) -> str:
     """Build prompt for fact-check note generation."""
@@ -639,6 +652,9 @@ async def process_vision_description_task(
     Returns:
         dict with status and description_length if generated
     """
+    from src.notes.message_archive_models import MessageArchive
+    from src.services.vision_service import VisionService
+
     with _tracer.start_as_current_span("content.vision_description") as span:
         span.set_attribute("task.message_archive_id", message_archive_id)
         span.set_attribute("task.community_server_id", community_server_id)
@@ -742,6 +758,8 @@ async def persist_audit_log_task(
     Returns:
         dict with status and audit_log_id
     """
+    from src.users.models import AuditLog
+
     with _tracer.start_as_current_span("content.audit_log") as span:
         span.set_attribute("task.action", action)
         span.set_attribute("task.resource", resource)

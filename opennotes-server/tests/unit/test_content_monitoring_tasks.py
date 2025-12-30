@@ -11,6 +11,10 @@ Tests cover:
 - Rate limiting preservation (AC #8)
 - Distributed lock preservation (AC #7)
 - OpenTelemetry tracing (AC #6)
+
+Note: Because tasks use lazy imports to avoid import-time settings validation,
+patches must target the SOURCE modules (where classes are defined) rather than
+the task module itself.
 """
 
 from datetime import UTC, datetime
@@ -71,32 +75,32 @@ class TestBulkScanBatchTask:
 
         mock_llm_service = MagicMock()
 
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
                 "src.tasks.content_monitoring_tasks.async_sessionmaker",
                 return_value=mock_session_maker,
             ),
-            patch("src.tasks.content_monitoring_tasks.RedisClient", return_value=mock_redis),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
             patch(
-                "src.tasks.content_monitoring_tasks.BulkContentScanService",
+                "src.bulk_content_scan.service.BulkContentScanService",
                 return_value=mock_service,
             ),
-            patch("src.tasks.content_monitoring_tasks.EmbeddingService"),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
             patch(
                 "src.tasks.content_monitoring_tasks._get_llm_service", return_value=mock_llm_service
             ),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.config.get_settings", return_value=settings),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
-            mock_settings.return_value = settings
 
             from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
 
@@ -144,33 +148,33 @@ class TestBulkScanBatchTask:
 
         mock_llm_service = MagicMock()
 
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
                 "src.tasks.content_monitoring_tasks.async_sessionmaker",
                 return_value=mock_session_maker,
             ),
-            patch("src.tasks.content_monitoring_tasks.RedisClient", return_value=mock_redis),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
             patch(
-                "src.tasks.content_monitoring_tasks.BulkContentScanService",
+                "src.bulk_content_scan.service.BulkContentScanService",
                 return_value=mock_service,
             ),
-            patch("src.tasks.content_monitoring_tasks.EmbeddingService"),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
             patch(
                 "src.tasks.content_monitoring_tasks._get_llm_service", return_value=mock_llm_service
             ),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.config.get_settings", return_value=settings),
             patch("src.tasks.content_monitoring_tasks.finalize_bulk_scan_task") as mock_finalize,
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
-            mock_settings.return_value = settings
             mock_finalize.kiq = AsyncMock()
 
             from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
@@ -223,37 +227,37 @@ class TestFinalizeBulkScanTask:
 
         mock_llm_service = MagicMock()
 
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.NATS_STREAM_NAME = "opennotes"
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
                 "src.tasks.content_monitoring_tasks.async_sessionmaker",
                 return_value=mock_session_maker,
             ),
-            patch("src.tasks.content_monitoring_tasks.RedisClient", return_value=mock_redis),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
             patch(
-                "src.tasks.content_monitoring_tasks.BulkContentScanService",
+                "src.bulk_content_scan.service.BulkContentScanService",
                 return_value=mock_service,
             ),
-            patch("src.tasks.content_monitoring_tasks.EmbeddingService"),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
             patch(
                 "src.tasks.content_monitoring_tasks._get_llm_service", return_value=mock_llm_service
             ),
             patch(
-                "src.tasks.content_monitoring_tasks.BulkScanResultsPublisher",
+                "src.bulk_content_scan.nats_handler.BulkScanResultsPublisher",
                 return_value=mock_publisher,
             ),
-            patch("src.tasks.content_monitoring_tasks.event_publisher", mock_event_publisher),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.events.publisher.event_publisher", mock_event_publisher),
+            patch("src.config.get_settings", return_value=settings),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            settings.NATS_STREAM_NAME = "opennotes"
-            mock_settings.return_value = settings
 
             from src.tasks.content_monitoring_tasks import finalize_bulk_scan_task
 
@@ -312,6 +316,15 @@ class TestGenerateAINoteTask:
         mock_rate_limiter = MagicMock()
         mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, None))
 
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.AI_NOTE_WRITING_ENABLED = True
+        settings.AI_NOTE_WRITER_MODEL = "openai/gpt-4"
+        settings.AI_NOTE_WRITER_SYSTEM_PROMPT = "You are a fact-checker."
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
@@ -321,20 +334,11 @@ class TestGenerateAINoteTask:
             patch(
                 "src.tasks.content_monitoring_tasks._get_llm_service", return_value=mock_llm_service
             ),
-            patch("src.tasks.content_monitoring_tasks.rate_limiter", mock_rate_limiter),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.webhooks.rate_limit.rate_limiter", mock_rate_limiter),
+            patch("src.config.get_settings", return_value=settings),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            settings.AI_NOTE_WRITING_ENABLED = True
-            settings.AI_NOTE_WRITER_MODEL = "openai/gpt-4"
-            settings.AI_NOTE_WRITER_SYSTEM_PROMPT = "You are a fact-checker."
-            mock_settings.return_value = settings
 
             from src.tasks.content_monitoring_tasks import generate_ai_note_task
 
@@ -357,14 +361,13 @@ class TestGenerateAINoteTask:
         mock_rate_limiter = MagicMock()
         mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(False, 60))
 
-        with (
-            patch("src.tasks.content_monitoring_tasks.rate_limiter", mock_rate_limiter),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
-        ):
-            settings = MagicMock()
-            settings.AI_NOTE_WRITING_ENABLED = True
-            mock_settings.return_value = settings
+        settings = MagicMock()
+        settings.AI_NOTE_WRITING_ENABLED = True
 
+        with (
+            patch("src.webhooks.rate_limit.rate_limiter", mock_rate_limiter),
+            patch("src.config.get_settings", return_value=settings),
+        ):
             from src.tasks.content_monitoring_tasks import generate_ai_note_task
 
             result = await generate_ai_note_task(
@@ -403,26 +406,24 @@ class TestVisionDescriptionTask:
         mock_vision_service = MagicMock()
         mock_vision_service.describe_image = AsyncMock(return_value="A detailed image description")
 
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
                 "src.tasks.content_monitoring_tasks.async_sessionmaker",
                 return_value=mock_session_maker,
             ),
-            patch(
-                "src.tasks.content_monitoring_tasks.VisionService", return_value=mock_vision_service
-            ),
+            patch("src.services.vision_service.VisionService", return_value=mock_vision_service),
             patch("src.tasks.content_monitoring_tasks._get_llm_service"),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.config.get_settings", return_value=settings),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
 
             from src.tasks.content_monitoring_tasks import process_vision_description_task
 
@@ -451,22 +452,22 @@ class TestVisionDescriptionTask:
         mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
 
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
                 "src.tasks.content_monitoring_tasks.async_sessionmaker",
                 return_value=mock_session_maker,
             ),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.config.get_settings", return_value=settings),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
 
             from src.tasks.content_monitoring_tasks import process_vision_description_task
 
@@ -494,10 +495,17 @@ class TestAuditLogTask:
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
 
         mock_session_maker = MagicMock()
         mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
 
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
@@ -505,16 +513,10 @@ class TestAuditLogTask:
                 "src.tasks.content_monitoring_tasks.async_sessionmaker",
                 return_value=mock_session_maker,
             ),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.config.get_settings", return_value=settings),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
 
             from src.tasks.content_monitoring_tasks import persist_audit_log_task
 
@@ -628,33 +630,33 @@ class TestOpenTelemetryTracing:
 
         mock_llm_service = MagicMock()
 
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
                 "src.tasks.content_monitoring_tasks.async_sessionmaker",
                 return_value=mock_session_maker,
             ),
-            patch("src.tasks.content_monitoring_tasks.RedisClient", return_value=mock_redis),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
             patch(
-                "src.tasks.content_monitoring_tasks.BulkContentScanService",
+                "src.bulk_content_scan.service.BulkContentScanService",
                 return_value=mock_service,
             ),
-            patch("src.tasks.content_monitoring_tasks.EmbeddingService"),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
             patch(
                 "src.tasks.content_monitoring_tasks._get_llm_service", return_value=mock_llm_service
             ),
-            patch("src.tasks.content_monitoring_tasks.get_settings") as mock_settings,
+            patch("src.config.get_settings", return_value=settings),
             patch("src.tasks.content_monitoring_tasks._tracer", mock_tracer),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
-            mock_settings.return_value = settings
 
             from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
 
