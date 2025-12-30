@@ -7,6 +7,7 @@ This module configures the taskiq broker for distributed task processing using:
 - SimpleRetryMiddleware: Automatic retry for failed tasks
 - SafeOpenTelemetryMiddleware: Distributed tracing with W3C Trace Context propagation
   (wraps OpenTelemetryMiddleware with safe context detach for async tasks)
+- TaskIQMetricsMiddleware: Prometheus metrics for task execution duration
 
 The broker is lazily initialized to support dynamic configuration in tests.
 
@@ -41,6 +42,7 @@ from taskiq_redis import RedisAsyncResultBackend
 
 from src.cache.redis_client import create_redis_connection, get_redis_connection_kwargs
 from src.config import get_settings
+from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,10 @@ def _create_broker() -> PullBasedJetStreamBroker:
 
     tracing_middleware = SafeOpenTelemetryMiddleware()
 
+    metrics_middleware = TaskIQMetricsMiddleware(
+        instance_id=settings.INSTANCE_ID,
+    )
+
     connection_kwargs: dict[str, Any] = {}
     if settings.NATS_USERNAME and settings.NATS_PASSWORD:
         connection_kwargs["user"] = settings.NATS_USERNAME
@@ -162,10 +168,12 @@ def _create_broker() -> PullBasedJetStreamBroker:
             **connection_kwargs,
         )
         .with_result_backend(result_backend)
-        .with_middlewares(tracing_middleware, retry_middleware)
+        .with_middlewares(tracing_middleware, metrics_middleware, retry_middleware)
     )
 
-    logger.info("Taskiq broker configured with SafeOpenTelemetryMiddleware")
+    logger.info(
+        "Taskiq broker configured with SafeOpenTelemetryMiddleware and Prometheus metrics"
+    )
 
     return new_broker
 
