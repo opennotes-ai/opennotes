@@ -25,8 +25,9 @@ from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import (
-    Counter,
-    Histogram,
+    ai_note_generation_duration_seconds,
+    ai_notes_failed_total,
+    ai_notes_generated_total,
 )
 from src.notes import loaders as note_loaders
 from src.notes.message_archive_models import ContentType
@@ -45,26 +46,6 @@ class NoteGenerationStrategy(str, Enum):
     GENERAL_EXPLANATION = (
         "general_explanation"  # General explanation (default, no fact-check required)
     )
-
-
-# Metrics for AI note generation
-ai_notes_generated_total = Counter(
-    "ai_notes_generated_total",
-    "Total number of AI-generated notes",
-    ["community_server_id", "dataset_name", "instance_id"],
-)
-
-ai_notes_failed_total = Counter(
-    "ai_notes_failed_total",
-    "Total number of failed AI note generation attempts",
-    ["community_server_id", "error_type", "instance_id"],
-)
-
-ai_note_generation_duration_seconds = Histogram(
-    "ai_note_generation_duration_seconds",
-    "Duration of AI note generation in seconds",
-    ["community_server_id", "instance_id"],
-)
 
 
 class AINoteWriter:

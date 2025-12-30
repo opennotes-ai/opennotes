@@ -76,7 +76,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.monitoring.instance import InstanceMetadata
-from src.services.ai_note_writer import (
+from src.monitoring.metrics import (
     ai_note_generation_duration_seconds,
     ai_notes_generated_total,
 )
