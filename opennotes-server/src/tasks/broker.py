@@ -171,9 +171,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
         .with_middlewares(tracing_middleware, metrics_middleware, retry_middleware)
     )
 
-    logger.info(
-        "Taskiq broker configured with SafeOpenTelemetryMiddleware and Prometheus metrics"
-    )
+    logger.info("Taskiq broker configured with SafeOpenTelemetryMiddleware and Prometheus metrics")
 
     return new_broker
 
