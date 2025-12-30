@@ -140,6 +140,7 @@ class TestBulkScanBatchTask:
         mock_service.get_processed_count = AsyncMock(return_value=100)
         mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, 100))
         mock_service.append_flagged_result = AsyncMock()
+        mock_service.try_set_finalize_dispatched = AsyncMock(return_value=True)
 
         mock_redis = AsyncMock()
         mock_redis.connect = AsyncMock()
@@ -188,7 +189,84 @@ class TestBulkScanBatchTask:
                 redis_url="redis://localhost:6379",
             )
 
+            mock_service.try_set_finalize_dispatched.assert_called_once()
             mock_finalize.kiq.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skips_finalization_when_already_dispatched(self):
+        """Task skips finalization dispatch when idempotency flag already set."""
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        batch_number = 3
+        messages = [make_test_message("msg1", "ch1", "test")]
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: "platform123")
+        )
+        mock_session.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service.process_messages = AsyncMock(return_value=[])
+        mock_service.increment_processed_count = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=100)
+        mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, 100))
+        mock_service.append_flagged_result = AsyncMock()
+        mock_service.try_set_finalize_dispatched = AsyncMock(return_value=False)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+        mock_redis.client = MagicMock()
+
+        mock_llm_service = MagicMock()
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service,
+            ),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service", return_value=mock_llm_service
+            ),
+            patch("src.config.get_settings", return_value=settings),
+            patch("src.tasks.content_monitoring_tasks.finalize_bulk_scan_task") as mock_finalize,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_finalize.kiq = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
+
+            await process_bulk_scan_batch_task(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=batch_number,
+                messages=messages,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            mock_service.try_set_finalize_dispatched.assert_called_once()
+            mock_finalize.kiq.assert_not_called()
 
 
 class TestFinalizeBulkScanTask:
@@ -534,6 +612,112 @@ class TestAuditLogTask:
 
             assert result["status"] == "completed"
             mock_session.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_details_field_serialized_to_json_string(self):
+        """Task serializes details dict to JSON string for Text column (task-910.04).
+
+        The AuditLog.details column is Text (string), so the task must call
+        json.dumps() on the dict before storing. This test verifies the
+        serialization is correct and can be parsed back.
+        """
+        import json
+
+        user_id = str(uuid4())
+        details = {"note_id": "note123", "nested": {"key": "value"}, "count": 42}
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import persist_audit_log_task
+
+            await persist_audit_log_task(
+                user_id=user_id,
+                community_server_id=None,
+                action="test.action",
+                resource="test",
+                resource_id="test123",
+                details=details,
+                ip_address="127.0.0.1",
+                user_agent="TestAgent/1.0",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+            )
+
+            added_audit_log = mock_session.add.call_args[0][0]
+            assert isinstance(added_audit_log.details, str), "details must be JSON string, not dict"
+            parsed_details = json.loads(added_audit_log.details)
+            assert parsed_details == details, "JSON string must round-trip to original dict"
+
+    @pytest.mark.asyncio
+    async def test_details_field_none_when_not_provided(self):
+        """Task stores None for details when not provided (task-910.04)."""
+        user_id = str(uuid4())
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import persist_audit_log_task
+
+            await persist_audit_log_task(
+                user_id=user_id,
+                community_server_id=None,
+                action="test.action",
+                resource="test",
+                resource_id="test123",
+                details=None,
+                ip_address="127.0.0.1",
+                user_agent="TestAgent/1.0",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+            )
+
+            added_audit_log = mock_session.add.call_args[0][0]
+            assert added_audit_log.details is None, "details must be None when not provided"
 
 
 class TestTaskIQLabels:
@@ -964,3 +1148,498 @@ class TestOpenTelemetryTracing:
             mock_tracer.start_as_current_span.assert_called_once_with("content.batch_scan")
             mock_span.set_attribute.assert_any_call("task.scan_id", scan_id)
             mock_span.set_attribute.assert_any_call("task.component", "content_monitoring")
+
+
+class TestFinalizeDispatchIdempotency:
+    """Test idempotency for finalize dispatch race condition (task-910.05).
+
+    Tests that the Redis SETNX-based idempotency mechanism prevents
+    double dispatch of finalize_bulk_scan_task when both handlers
+    (batch and transmitted) attempt to trigger it simultaneously.
+    """
+
+    @pytest.mark.asyncio
+    async def test_try_set_finalize_dispatched_returns_true_on_first_call(self):
+        """First call to try_set_finalize_dispatched returns True."""
+        from uuid import uuid4
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock(return_value=True)
+
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=MagicMock(),
+            embedding_service=MagicMock(),
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        result = await service.try_set_finalize_dispatched(scan_id)
+
+        assert result is True
+        mock_redis.set.assert_called_once()
+        call_kwargs = mock_redis.set.call_args
+        assert call_kwargs.kwargs.get("nx") is True
+
+    @pytest.mark.asyncio
+    async def test_try_set_finalize_dispatched_returns_false_on_second_call(self):
+        """Second call to try_set_finalize_dispatched returns False."""
+        from uuid import uuid4
+
+        mock_redis = MagicMock()
+        mock_redis.set = AsyncMock(return_value=None)
+
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=MagicMock(),
+            embedding_service=MagicMock(),
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        result = await service.try_set_finalize_dispatched(scan_id)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_concurrent_handlers_only_one_dispatches(self):
+        """Simulate concurrent batch and transmitted handlers - only one dispatches."""
+        import asyncio
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        dispatch_calls = []
+
+        def create_mock_service(first_caller_wins: bool):
+            mock_service = MagicMock()
+            mock_service.process_messages = AsyncMock(return_value=[])
+            mock_service.increment_processed_count = AsyncMock()
+            mock_service.get_processed_count = AsyncMock(return_value=100)
+            mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, 100))
+            mock_service.append_flagged_result = AsyncMock()
+            mock_service.try_set_finalize_dispatched = AsyncMock(return_value=first_caller_wins)
+            return mock_service
+
+        async def simulate_batch_handler(should_win: bool):
+            mock_session = AsyncMock()
+            mock_session.execute = AsyncMock(
+                return_value=MagicMock(scalar_one_or_none=lambda: "platform123")
+            )
+            mock_session.commit = AsyncMock()
+
+            mock_session_maker = MagicMock()
+            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            mock_service = create_mock_service(should_win)
+            mock_redis = AsyncMock()
+            mock_redis.connect = AsyncMock()
+            mock_redis.disconnect = AsyncMock()
+            mock_redis.client = MagicMock()
+
+            mock_finalize = MagicMock()
+            mock_finalize.kiq = AsyncMock()
+
+            settings = MagicMock()
+            settings.DB_POOL_SIZE = 5
+            settings.DB_POOL_MAX_OVERFLOW = 10
+            settings.DB_POOL_TIMEOUT = 30
+            settings.DB_POOL_RECYCLE = 1800
+            settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
+            with (
+                patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+                patch(
+                    "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                    return_value=mock_session_maker,
+                ),
+                patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
+                patch(
+                    "src.bulk_content_scan.service.BulkContentScanService",
+                    return_value=mock_service,
+                ),
+                patch("src.fact_checking.embedding_service.EmbeddingService"),
+                patch("src.tasks.content_monitoring_tasks._get_llm_service"),
+                patch("src.config.get_settings", return_value=settings),
+                patch(
+                    "src.tasks.content_monitoring_tasks.finalize_bulk_scan_task",
+                    mock_finalize,
+                ),
+            ):
+                mock_engine.return_value = MagicMock()
+                mock_engine.return_value.dispose = AsyncMock()
+
+                from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
+
+                await process_bulk_scan_batch_task(
+                    scan_id=scan_id,
+                    community_server_id=community_server_id,
+                    batch_number=1,
+                    messages=[make_test_message("msg1", "ch1", "test")],
+                    db_url="postgresql+asyncpg://test:test@localhost/test",
+                    redis_url="redis://localhost:6379",
+                )
+
+                if mock_finalize.kiq.called:
+                    dispatch_calls.append("batch")
+
+        await asyncio.gather(
+            simulate_batch_handler(should_win=True),
+            simulate_batch_handler(should_win=False),
+        )
+
+        assert len(dispatch_calls) == 1
+        assert dispatch_calls[0] == "batch"
+
+
+class TestDualCompletionTriggerPattern:
+    """Test dual-completion trigger pattern preservation (AC #7).
+
+    The dual-completion trigger pattern ensures that scan finalization is triggered
+    by whichever completes LAST - either the batch processing or the transmitted
+    signal. This prevents race conditions where batches might still be processing
+    when the "all batches transmitted" signal arrives.
+
+    Coordination is handled via atomic Redis operations:
+    - set_all_batches_transmitted(scan_id, messages_scanned) - sets transmitted flag
+    - get_all_batches_transmitted(scan_id) - reads transmitted flag
+    - get_processed_count(scan_id) - gets count of processed messages
+    - increment_processed_count(scan_id, count) - atomic increment
+
+    Finalization is triggered ONLY when BOTH conditions are true:
+    1. transmitted flag is set (all batches have been sent)
+    2. processed_count >= messages_scanned (all messages have been processed)
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_finalization_when_transmitted_not_set(self):
+        """Task does NOT trigger finalization when transmitted flag is not set.
+
+        This tests the first half of the dual-completion pattern: even if all
+        messages have been processed, we don't finalize until we know all
+        batches have been transmitted.
+        """
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        messages = [make_test_message("msg1", "ch1", "test content")]
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: "platform123")
+        )
+        mock_session.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service.process_messages = AsyncMock(return_value=[])
+        mock_service.increment_processed_count = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=100)
+        mock_service.get_all_batches_transmitted = AsyncMock(return_value=(False, None))
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+        mock_redis.client = MagicMock()
+
+        mock_llm_service = MagicMock()
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service,
+            ),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=mock_llm_service,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+            patch("src.tasks.content_monitoring_tasks.finalize_bulk_scan_task") as mock_finalize,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_finalize.kiq = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
+
+            await process_bulk_scan_batch_task(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                messages=messages,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            mock_service.get_all_batches_transmitted.assert_called()
+            mock_finalize.kiq.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_finalization_when_processed_count_insufficient(self):
+        """Task does NOT trigger finalization when processed count < messages_scanned.
+
+        This tests the second half of the dual-completion pattern: even if the
+        transmitted flag is set, we don't finalize until all messages have been
+        processed.
+        """
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        messages = [make_test_message("msg1", "ch1", "test content")]
+        messages_scanned = 100
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: "platform123")
+        )
+        mock_session.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service.process_messages = AsyncMock(return_value=[])
+        mock_service.increment_processed_count = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=50)
+        mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, messages_scanned))
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+        mock_redis.client = MagicMock()
+
+        mock_llm_service = MagicMock()
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service,
+            ),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=mock_llm_service,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+            patch("src.tasks.content_monitoring_tasks.finalize_bulk_scan_task") as mock_finalize,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_finalize.kiq = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
+
+            await process_bulk_scan_batch_task(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=5,
+                messages=messages,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            mock_service.get_all_batches_transmitted.assert_called()
+            mock_service.get_processed_count.assert_called()
+            mock_finalize.kiq.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_finalization_triggered_when_both_conditions_met(self):
+        """Task triggers finalization when BOTH transmitted=True AND processed >= scanned.
+
+        This tests the complete dual-completion pattern: finalization only occurs
+        when both conditions are satisfied. The last operation (either batch
+        processing or transmitted signal) triggers the finalization.
+        """
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        messages = [make_test_message("msg1", "ch1", "test content")]
+        messages_scanned = 100
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: "platform123")
+        )
+        mock_session.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service.process_messages = AsyncMock(return_value=[])
+        mock_service.increment_processed_count = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=messages_scanned)
+        mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, messages_scanned))
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+        mock_redis.client = MagicMock()
+
+        mock_llm_service = MagicMock()
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service,
+            ),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=mock_llm_service,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+            patch("src.tasks.content_monitoring_tasks.finalize_bulk_scan_task") as mock_finalize,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_finalize.kiq = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
+
+            await process_bulk_scan_batch_task(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=10,
+                messages=messages,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            mock_service.get_all_batches_transmitted.assert_called()
+            mock_service.get_processed_count.assert_called()
+            mock_finalize.kiq.assert_called_once()
+
+            call_kwargs = mock_finalize.kiq.call_args.kwargs
+            assert call_kwargs["scan_id"] == scan_id
+            assert call_kwargs["community_server_id"] == community_server_id
+            assert call_kwargs["messages_scanned"] == messages_scanned
+
+    @pytest.mark.asyncio
+    async def test_atomic_redis_operations_called_for_coordination(self):
+        """Verify that atomic Redis operations are used for dual-completion coordination.
+
+        The dual-completion pattern relies on atomic Redis operations to prevent
+        race conditions. This test verifies that:
+        1. increment_processed_count is called to atomically update count
+        2. get_processed_count is called to read current state
+        3. get_all_batches_transmitted is called to check transmitted flag
+        """
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        messages = [make_test_message("msg1", "ch1", "test content")]
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: "platform123")
+        )
+        mock_session.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_service = MagicMock()
+        mock_service.process_messages = AsyncMock(return_value=[])
+        mock_service.increment_processed_count = AsyncMock()
+        mock_service.get_processed_count = AsyncMock(return_value=1)
+        mock_service.get_all_batches_transmitted = AsyncMock(return_value=(False, None))
+        mock_service.append_flagged_result = AsyncMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+        mock_redis.client = MagicMock()
+
+        mock_llm_service = MagicMock()
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch("src.cache.redis_client.RedisClient", return_value=mock_redis),
+            patch(
+                "src.bulk_content_scan.service.BulkContentScanService",
+                return_value=mock_service,
+            ),
+            patch("src.fact_checking.embedding_service.EmbeddingService"),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=mock_llm_service,
+            ),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import process_bulk_scan_batch_task
+
+            await process_bulk_scan_batch_task(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                batch_number=1,
+                messages=messages,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            mock_service.increment_processed_count.assert_called_once()
+            mock_service.get_processed_count.assert_called_once()
+            mock_service.get_all_batches_transmitted.assert_called_once()
