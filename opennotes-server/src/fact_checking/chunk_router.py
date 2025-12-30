@@ -28,7 +28,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.community_dependencies import verify_community_admin_by_uuid
+from src.auth.community_dependencies import (
+    _get_profile_id_from_user,
+    verify_community_admin_by_uuid,
+)
 from src.auth.dependencies import get_current_user_or_api_key
 from src.cache.redis_client import redis_client
 from src.config import settings
@@ -55,6 +58,7 @@ from src.tasks.rechunk_tasks import (
     process_previously_seen_rechunk_task,
 )
 from src.users.models import User
+from src.users.profile_crud import get_profile_by_id
 
 logger = get_logger(__name__)
 
@@ -463,13 +467,16 @@ async def cancel_rechunk_task(
             db=db,
             request=request,
         )
-    elif not getattr(user, "is_service_account", False) and not getattr(
-        user, "is_opennotes_admin", False
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only OpenNotes admins or service accounts can cancel global tasks",
-        )
+    # Global tasks require service account or OpenNotes admin
+    elif not getattr(user, "is_service_account", False):
+        # Check if user is an OpenNotes admin via their profile
+        profile_id = await _get_profile_id_from_user(db, user)
+        profile = await get_profile_by_id(db, profile_id) if profile_id else None
+        if not profile or not profile.is_opennotes_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only OpenNotes admins or service accounts can cancel global tasks",
+            )
 
     task_type_value = (
         task.task_type.value if isinstance(task.task_type, RechunkTaskType) else task.task_type

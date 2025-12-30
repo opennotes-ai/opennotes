@@ -500,10 +500,66 @@ class TestCancelRechunkTaskEndpoint:
         finally:
             app.dependency_overrides.clear()
 
-    # NOTE: test_opennotes_admin_can_cancel_global_task is not included because
-    # the router checks getattr(user, "is_opennotes_admin", False) but
-    # is_opennotes_admin is on UserProfile, not User. This needs to be fixed
-    # in a follow-up task. Service accounts can still cancel global tasks.
+    @pytest.mark.asyncio
+    @patch("src.fact_checking.chunk_router.get_profile_by_id")
+    @patch("src.fact_checking.chunk_router._get_profile_id_from_user")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_opennotes_admin_can_cancel_global_task(
+        self,
+        mock_lock_manager,
+        mock_get_profile_id,
+        mock_get_profile,
+        admin_headers,
+    ):
+        """OpenNotes admin can cancel global fact_check task."""
+        from src.fact_checking.chunk_task_schemas import (
+            RechunkTaskResponse,
+            RechunkTaskStatus,
+            RechunkTaskType,
+        )
+
+        task_id = uuid4()
+        profile_id = uuid4()
+        task_response = RechunkTaskResponse(
+            task_id=task_id,
+            task_type=RechunkTaskType.FACT_CHECK,
+            community_server_id=None,
+            batch_size=100,
+            status=RechunkTaskStatus.IN_PROGRESS,
+            processed_count=25,
+            total_count=100,
+            error=None,
+            created_at="2024-01-01T00:00:00Z",
+            updated_at="2024-01-01T00:00:00Z",
+        )
+
+        mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=task_response)
+        mock_tracker.delete_task = AsyncMock(return_value=True)
+
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
+
+        # Mock profile lookup to return an OpenNotes admin profile
+        mock_get_profile_id.return_value = profile_id
+        mock_profile = MagicMock()
+        mock_profile.is_opennotes_admin = True
+        mock_get_profile.return_value = mock_profile
+
+        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.delete(
+                    f"/api/v1/chunks/tasks/{task_id}",
+                    headers=admin_headers,
+                )
+
+                assert response.status_code == 200
+                data = response.json()
+                assert data["task_id"] == str(task_id)
+                assert data["lock_released"] is True
+        finally:
+            app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
