@@ -2350,6 +2350,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chunks/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get rechunk task status
+         * @description Retrieve the current status and progress of a rechunk background task. If the task is associated with a community server, requires admin or moderator access. If the task was started without a community server (global credentials), only requires authentication.
+         */
+        get: operations["get_rechunk_task_status_api_v1_chunks_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chunks/fact-check/rechunk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-chunk and re-embed fact check items
+         * @description Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 409 if operation already in progress.
+         */
+        post: operations["rechunk_fact_check_items_api_v1_chunks_fact_check_rechunk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chunks/previously-seen/rechunk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-chunk and re-embed previously seen messages
+         * @description Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.
+         */
+        post: operations["rechunk_previously_seen_messages_api_v1_chunks_previously_seen_rechunk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2516,6 +2576,31 @@ export interface paths {
         };
         /** Nats Health */
         get: operations["nats_health_health_nats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/taskiq": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Taskiq Health
+         * @description Check taskiq broker health status.
+         *
+         *     Returns status information about the taskiq background task system:
+         *     - Whether the broker is initialized
+         *     - The configured stream name
+         *     - Number of registered tasks
+         */
+        get: operations["taskiq_health_health_taskiq_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5926,6 +6011,102 @@ export interface components {
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
+         * RechunkTaskResponse
+         * @description Response schema for rechunk task status with full details.
+         */
+        RechunkTaskResponse: {
+            /** @description Type of rechunk operation (fact_check or previously_seen) */
+            task_type: components["schemas"]["RechunkTaskType"];
+            /**
+             * Community Server Id
+             * @description Community server ID for LLM credentials (None uses global fallback)
+             */
+            community_server_id?: string | null;
+            /**
+             * Batch Size
+             * @description Batch size for processing
+             */
+            batch_size: number;
+            /**
+             * Task Id
+             * Format: uuid
+             * @description Unique task identifier
+             */
+            task_id: string;
+            /** @description Current task status */
+            status: components["schemas"]["RechunkTaskStatus"];
+            /**
+             * Processed Count
+             * @description Number of items processed
+             * @default 0
+             */
+            processed_count: number;
+            /**
+             * Total Count
+             * @description Total items to process
+             * @default 0
+             */
+            total_count: number;
+            /**
+             * Error
+             * @description Error message if task failed
+             */
+            error?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the task was created
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description When the task was last updated
+             */
+            updated_at: string;
+        };
+        /**
+         * RechunkTaskStartResponse
+         * @description Response schema for starting a rechunk task.
+         */
+        RechunkTaskStartResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             * @description Unique task identifier for status polling
+             */
+            task_id: string;
+            /** @description Initial task status (pending) */
+            status: components["schemas"]["RechunkTaskStatus"];
+            /**
+             * Total Items
+             * @description Total items to process
+             */
+            total_items: number;
+            /**
+             * Batch Size
+             * @description Batch size for processing
+             */
+            batch_size: number;
+            /**
+             * Message
+             * @description Human-readable status message
+             */
+            message: string;
+        };
+        /**
+         * RechunkTaskStatus
+         * @description Status states for a rechunk task.
+         * @enum {string}
+         */
+        RechunkTaskStatus: "pending" | "in_progress" | "completed" | "failed";
+        /**
+         * RechunkTaskType
+         * @description Type of rechunk operation.
+         * @enum {string}
+         */
+        RechunkTaskType: "fact_check" | "previously_seen";
+        /**
          * RefreshTokenRequest
          * @description Request body for refresh token endpoint.
          */
@@ -6471,10 +6652,9 @@ export interface components {
             matched_source: string;
             /**
              * Fact Check Item Id
-             * Format: uuid
              * @description UUID of the matched FactCheckItem
              */
-            fact_check_item_id: string;
+            fact_check_item_id?: string | null;
         };
         /**
          * SimilaritySearchCreateAttributes
@@ -10438,6 +10618,111 @@ export interface operations {
             };
         };
     };
+    get_rechunk_task_status_api_v1_chunks_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RechunkTaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rechunk_fact_check_items_api_v1_chunks_fact_check_rechunk_post: {
+        parameters: {
+            query?: {
+                /** @description Community server ID for LLM credentials (optional, uses global fallback if not provided) */
+                community_server_id?: string | null;
+                /** @description Number of items to process in each batch (1-1000) */
+                batch_size?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RechunkTaskStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rechunk_previously_seen_messages_api_v1_chunks_previously_seen_rechunk_post: {
+        parameters: {
+            query: {
+                /** @description Community server ID for filtering and LLM credentials */
+                community_server_id: string;
+                /** @description Number of items to process in each batch (1-1000) */
+                batch_size?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RechunkTaskStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_check_health_get: {
         parameters: {
             query?: never;
@@ -10620,6 +10905,26 @@ export interface operations {
         };
     };
     nats_health_health_nats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceStatus"];
+                };
+            };
+        };
+    };
+    taskiq_health_health_taskiq_get: {
         parameters: {
             query?: never;
             header?: never;

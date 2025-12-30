@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Open Notes Server",
-    "version": "1.0.0"
+    "title": "Open Notes Scoring API",
+    "version": "0.0.1"
   },
   "paths": {
     "/api/v1/auth/register": {
@@ -6699,6 +6699,240 @@
         }
       }
     },
+    "/api/v1/chunks/tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "chunks"
+        ],
+        "summary": "Get rechunk task status",
+        "description": "Retrieve the current status and progress of a rechunk background task. If the task is associated with a community server, requires admin or moderator access. If the task was started without a community server (global credentials), only requires authentication.",
+        "operationId": "get_rechunk_task_status_api_v1_chunks_tasks__task_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RechunkTaskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chunks/fact-check/rechunk": {
+      "post": {
+        "tags": [
+          "chunks"
+        ],
+        "summary": "Re-chunk and re-embed fact check items",
+        "description": "Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 409 if operation already in progress.",
+        "operationId": "rechunk_fact_check_items_api_v1_chunks_fact_check_rechunk_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Community server ID for LLM credentials (optional, uses global fallback if not provided)",
+              "title": "Community Server Id"
+            },
+            "description": "Community server ID for LLM credentials (optional, uses global fallback if not provided)"
+          },
+          {
+            "name": "batch_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "Number of items to process in each batch (1-1000)",
+              "default": 100,
+              "title": "Batch Size"
+            },
+            "description": "Number of items to process in each batch (1-1000)"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RechunkTaskStartResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chunks/previously-seen/rechunk": {
+      "post": {
+        "tags": [
+          "chunks"
+        ],
+        "summary": "Re-chunk and re-embed previously seen messages",
+        "description": "Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.",
+        "operationId": "rechunk_previously_seen_messages_api_v1_chunks_previously_seen_rechunk_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Community server ID for filtering and LLM credentials",
+              "title": "Community Server Id"
+            },
+            "description": "Community server ID for filtering and LLM credentials"
+          },
+          {
+            "name": "batch_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "Number of items to process in each batch (1-1000)",
+              "default": 100,
+              "title": "Batch Size"
+            },
+            "description": "Number of items to process in each batch (1-1000)"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RechunkTaskStartResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -6916,6 +7150,28 @@
         ],
         "summary": "Nats Health",
         "operationId": "nats_health_health_nats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/taskiq": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Taskiq Health",
+        "description": "Check taskiq broker health status.\n\nReturns status information about the taskiq background task system:\n- Whether the broker is initialized\n- The configured stream name\n- Number of registered tasks",
+        "operationId": "taskiq_health_health_taskiq_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -13646,6 +13902,155 @@
         "title": "RecentScanResponse",
         "description": "JSON:API response for recent scan check."
       },
+      "RechunkTaskResponse": {
+        "properties": {
+          "task_type": {
+            "$ref": "#/components/schemas/RechunkTaskType",
+            "description": "Type of rechunk operation (fact_check or previously_seen)"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id",
+            "description": "Community server ID for LLM credentials (None uses global fallback)"
+          },
+          "batch_size": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Batch size for processing"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id",
+            "description": "Unique task identifier"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RechunkTaskStatus",
+            "description": "Current task status"
+          },
+          "processed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Processed Count",
+            "description": "Number of items processed",
+            "default": 0
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Count",
+            "description": "Total items to process",
+            "default": 0
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message if task failed"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the task was created"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "When the task was last updated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_type",
+          "batch_size",
+          "task_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RechunkTaskResponse",
+        "description": "Response schema for rechunk task status with full details."
+      },
+      "RechunkTaskStartResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id",
+            "description": "Unique task identifier for status polling"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RechunkTaskStatus",
+            "description": "Initial task status (pending)"
+          },
+          "total_items": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Items",
+            "description": "Total items to process"
+          },
+          "batch_size": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Batch size for processing"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable status message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "total_items",
+          "batch_size",
+          "message"
+        ],
+        "title": "RechunkTaskStartResponse",
+        "description": "Response schema for starting a rechunk task."
+      },
+      "RechunkTaskStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed",
+          "failed"
+        ],
+        "title": "RechunkTaskStatus",
+        "description": "Status states for a rechunk task."
+      },
+      "RechunkTaskType": {
+        "type": "string",
+        "enum": [
+          "fact_check",
+          "previously_seen"
+        ],
+        "title": "RechunkTaskType",
+        "description": "Type of rechunk operation."
+      },
       "RefreshTokenRequest": {
         "properties": {
           "refresh_token": {
@@ -14619,8 +15024,15 @@
             "description": "URL to the fact-check source"
           },
           "fact_check_item_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Fact Check Item Id",
             "description": "UUID of the matched FactCheckItem"
           }
@@ -14630,8 +15042,7 @@
         "required": [
           "score",
           "matched_claim",
-          "matched_source",
-          "fact_check_item_id"
+          "matched_source"
         ],
         "title": "SimilarityMatch",
         "description": "Match result from similarity scan."
