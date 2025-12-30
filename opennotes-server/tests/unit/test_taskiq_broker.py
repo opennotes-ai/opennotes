@@ -22,7 +22,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
-            patch("src.tasks.broker.taskiq_fastapi"),
+            patch("src.tasks.broker.OpenTelemetryMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -200,7 +200,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.SimpleRetryMiddleware"),
-            patch("src.tasks.broker.taskiq_fastapi"),
+            patch("src.tasks.broker.OpenTelemetryMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
@@ -246,7 +246,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis_class,
             patch("src.tasks.broker.SimpleRetryMiddleware"),
-            patch("src.tasks.broker.taskiq_fastapi"),
+            patch("src.tasks.broker.OpenTelemetryMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
@@ -292,7 +292,7 @@ class TestRetryMiddlewareConfiguration:
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
-            patch("src.tasks.broker.taskiq_fastapi"),
+            patch("src.tasks.broker.OpenTelemetryMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://localhost:4222"
@@ -329,7 +329,7 @@ class TestBrokerAuthentication:
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.SimpleRetryMiddleware"),
-            patch("src.tasks.broker.taskiq_fastapi"),
+            patch("src.tasks.broker.OpenTelemetryMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
