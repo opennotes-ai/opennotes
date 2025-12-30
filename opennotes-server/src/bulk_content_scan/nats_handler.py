@@ -634,21 +634,32 @@ class BulkScanEventHandler:
 
             processed_count = await service.get_processed_count(event.scan_id)
             if processed_count >= event.messages_scanned:
-                logger.info(
-                    "Transmitted handler dispatching finalization to TaskIQ",
-                    extra={
-                        "scan_id": str(event.scan_id),
-                        "processed_count": processed_count,
-                        "messages_scanned": event.messages_scanned,
-                    },
-                )
-                await finalize_bulk_scan_task.kiq(
-                    scan_id=str(event.scan_id),
-                    community_server_id=str(event.community_server_id),
-                    messages_scanned=event.messages_scanned,
-                    db_url=settings.DATABASE_URL,
-                    redis_url=settings.REDIS_URL,
-                )
+                should_dispatch = await service.try_set_finalize_dispatched(event.scan_id)
+                if should_dispatch:
+                    logger.info(
+                        "Transmitted handler dispatching finalization to TaskIQ",
+                        extra={
+                            "scan_id": str(event.scan_id),
+                            "processed_count": processed_count,
+                            "messages_scanned": event.messages_scanned,
+                        },
+                    )
+                    await finalize_bulk_scan_task.kiq(
+                        scan_id=str(event.scan_id),
+                        community_server_id=str(event.community_server_id),
+                        messages_scanned=event.messages_scanned,
+                        db_url=settings.DATABASE_URL,
+                        redis_url=settings.REDIS_URL,
+                    )
+                else:
+                    logger.info(
+                        "Transmitted handler skipping finalization (already dispatched)",
+                        extra={
+                            "scan_id": str(event.scan_id),
+                            "processed_count": processed_count,
+                            "messages_scanned": event.messages_scanned,
+                        },
+                    )
             else:
                 logger.info(
                     "Transmitted handler not triggering completion (batches still pending)",

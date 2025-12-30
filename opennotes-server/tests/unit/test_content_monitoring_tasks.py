@@ -1422,6 +1422,7 @@ class TestDualCompletionTriggerPattern:
         mock_service.increment_processed_count = AsyncMock()
         mock_service.get_processed_count = AsyncMock(return_value=50)
         mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, messages_scanned))
+        mock_service.try_set_finalize_dispatched = AsyncMock(return_value=True)
         mock_service.append_flagged_result = AsyncMock()
 
         mock_redis = AsyncMock()
@@ -1504,6 +1505,7 @@ class TestDualCompletionTriggerPattern:
         mock_service.increment_processed_count = AsyncMock()
         mock_service.get_processed_count = AsyncMock(return_value=messages_scanned)
         mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, messages_scanned))
+        mock_service.try_set_finalize_dispatched = AsyncMock(return_value=True)
         mock_service.append_flagged_result = AsyncMock()
 
         mock_redis = AsyncMock()
@@ -1556,6 +1558,7 @@ class TestDualCompletionTriggerPattern:
 
             mock_service.get_all_batches_transmitted.assert_called()
             mock_service.get_processed_count.assert_called()
+            mock_service.try_set_finalize_dispatched.assert_called_once()
             mock_finalize.kiq.assert_called_once()
 
             call_kwargs = mock_finalize.kiq.call_args.kwargs
@@ -1572,6 +1575,7 @@ class TestDualCompletionTriggerPattern:
         1. increment_processed_count is called to atomically update count
         2. get_processed_count is called to read current state
         3. get_all_batches_transmitted is called to check transmitted flag
+        4. try_set_finalize_dispatched is used for idempotent dispatch
         """
         scan_id = str(uuid4())
         community_server_id = str(uuid4())
