@@ -2364,7 +2364,11 @@ export interface paths {
         get: operations["get_rechunk_task_status_api_v1_chunks_tasks__task_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Cancel a rechunk task
+         * @description Cancel a rechunk task and release its lock. By default, only allows canceling tasks in PENDING or IN_PROGRESS state. Use force=true to cancel tasks in any state (including COMPLETED/FAILED). Requires admin/moderator permission for the task's community, or OpenNotes admin for global tasks.
+         */
+        delete: operations["cancel_rechunk_task_api_v1_chunks_tasks__task_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2404,6 +2408,26 @@ export interface paths {
          * @description Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.
          */
         post: operations["rechunk_previously_seen_messages_api_v1_chunks_previously_seen_rechunk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chunks/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all rechunk tasks
+         * @description List all active rechunk tasks. Optionally filter by status. Requires authentication.
+         */
+        get: operations["list_rechunk_tasks_api_v1_chunks_tasks_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6009,6 +6033,28 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
+         * RechunkTaskCancelResponse
+         * @description Response schema for cancelling a rechunk task.
+         */
+        RechunkTaskCancelResponse: {
+            /**
+             * Task Id
+             * Format: uuid
+             * @description ID of the cancelled task
+             */
+            task_id: string;
+            /**
+             * Message
+             * @description Human-readable status message
+             */
+            message: string;
+            /**
+             * Lock Released
+             * @description Whether the lock was successfully released
+             */
+            lock_released: boolean;
         };
         /**
          * RechunkTaskResponse
@@ -10651,6 +10697,42 @@ export interface operations {
             };
         };
     };
+    cancel_rechunk_task_api_v1_chunks_tasks__task_id__delete: {
+        parameters: {
+            query?: {
+                /** @description Skip state validation and cancel task in any state */
+                force?: boolean;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RechunkTaskCancelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rechunk_fact_check_items_api_v1_chunks_fact_check_rechunk_post: {
         parameters: {
             query?: {
@@ -10710,6 +10792,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RechunkTaskStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rechunk_tasks_api_v1_chunks_tasks_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by task status (pending, in_progress, completed, failed) */
+                status?: components["schemas"]["RechunkTaskStatus"] | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RechunkTaskResponse"][];
                 };
             };
             /** @description Validation Error */

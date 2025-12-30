@@ -23,7 +23,7 @@ pnpm = "latest"
 yq = "latest"
 
 [env]
-IMAGE_TAG = "latest"
+IMAGE_TAG = "local"
 _.file = ".env.yaml"
 
 [vars]

@@ -6762,6 +6762,81 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "chunks"
+        ],
+        "summary": "Cancel a rechunk task",
+        "description": "Cancel a rechunk task and release its lock. By default, only allows canceling tasks in PENDING or IN_PROGRESS state. Use force=true to cancel tasks in any state (including COMPLETED/FAILED). Requires admin/moderator permission for the task's community, or OpenNotes admin for global tasks.",
+        "operationId": "cancel_rechunk_task_api_v1_chunks_tasks__task_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Skip state validation and cancel task in any state",
+              "default": false,
+              "title": "Force"
+            },
+            "description": "Skip state validation and cancel task in any state"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RechunkTaskCancelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/chunks/fact-check/rechunk": {
@@ -6916,6 +6991,83 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RechunkTaskStartResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chunks/tasks": {
+      "get": {
+        "tags": [
+          "chunks"
+        ],
+        "summary": "List all rechunk tasks",
+        "description": "List all active rechunk tasks. Optionally filter by status. Requires authentication.",
+        "operationId": "list_rechunk_tasks_api_v1_chunks_tasks_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RechunkTaskStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by task status (pending, in_progress, completed, failed)",
+              "title": "Status"
+            },
+            "description": "Filter by task status (pending, in_progress, completed, failed)"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RechunkTaskResponse"
+                  },
+                  "title": "Response List Rechunk Tasks Api V1 Chunks Tasks Get"
                 }
               }
             }
@@ -13901,6 +14053,34 @@
         ],
         "title": "RecentScanResponse",
         "description": "JSON:API response for recent scan check."
+      },
+      "RechunkTaskCancelResponse": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id",
+            "description": "ID of the cancelled task"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable status message"
+          },
+          "lock_released": {
+            "type": "boolean",
+            "title": "Lock Released",
+            "description": "Whether the lock was successfully released"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "message",
+          "lock_released"
+        ],
+        "title": "RechunkTaskCancelResponse",
+        "description": "Response schema for cancelling a rechunk task."
       },
       "RechunkTaskResponse": {
         "properties": {
