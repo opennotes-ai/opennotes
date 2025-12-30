@@ -27,7 +27,6 @@ import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-import taskiq_fastapi
 from taskiq import SimpleRetryMiddleware
 from taskiq.middlewares.opentelemetry_middleware import OpenTelemetryMiddleware
 from taskiq_nats import PullBasedJetStreamBroker
@@ -86,8 +85,6 @@ def _create_broker() -> PullBasedJetStreamBroker:
     )
 
     logger.info("Taskiq broker configured with OpenTelemetry tracing middleware")
-
-    taskiq_fastapi.init(new_broker, "src.main:app")
 
     return new_broker
 
