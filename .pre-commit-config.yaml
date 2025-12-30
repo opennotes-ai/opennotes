@@ -136,7 +136,7 @@ repos:
     hooks:
       - id: schema-consistency
         name: Schema Consistency Validation
-        entry: mise run schema:check
+        entry: mise run db:check
         language: system
         files: ^opennotes-server/src/.*(schemas?|models?)\.py$
         pass_filenames: false
