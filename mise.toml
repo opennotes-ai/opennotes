@@ -227,13 +227,11 @@ alias = "build"
 
 [tasks."build:containers:server"]
 description = "Build opennotes-server image"
-dir = "{{vars.server_dir}}"
-run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} ."
+run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} -f {{vars.server_dir}}/Dockerfile ."
 
 [tasks."build:containers:discord"]
 description = "Build opennotes-discord image"
-dir = "{{vars.discord_dir}}"
-run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} ."
+run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir}}/Dockerfile ."
 
 [tasks."build:types:openapi"]
 description = "Generate OpenAPI specification and TypeScript types"
