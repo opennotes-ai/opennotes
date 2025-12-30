@@ -64,6 +64,7 @@ Benefits:
 
 import json
 import logging
+import time
 import uuid as uuid_module
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -74,6 +75,11 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from src.monitoring.instance import InstanceMetadata
+from src.services.ai_note_writer import (
+    ai_note_generation_duration_seconds,
+    ai_notes_generated_total,
+)
 from src.tasks.broker import register_task
 
 if TYPE_CHECKING:
@@ -168,11 +174,11 @@ async def process_bulk_scan_batch_task(
 
         engine = _create_db_engine(db_url)
         async_session = async_sessionmaker(engine, expire_on_commit=False)
-
         redis_client = RedisClient()
-        await redis_client.connect(redis_url)
 
         try:
+            await redis_client.connect(redis_url)
+
             async with async_session() as session:
                 platform_id = await _get_platform_id(session, community_uuid)
                 if not platform_id:
@@ -242,21 +248,32 @@ async def process_bulk_scan_batch_task(
                     and transmitted_messages is not None
                     and processed_count >= transmitted_messages
                 ):
-                    logger.info(
-                        "Batch handler triggering completion",
-                        extra={
-                            "scan_id": scan_id,
-                            "processed_count": processed_count,
-                            "messages_scanned": transmitted_messages,
-                        },
-                    )
-                    await finalize_bulk_scan_task.kiq(
-                        scan_id=scan_id,
-                        community_server_id=community_server_id,
-                        messages_scanned=transmitted_messages,
-                        db_url=db_url,
-                        redis_url=redis_url,
-                    )
+                    should_dispatch = await service.try_set_finalize_dispatched(scan_uuid)
+                    if should_dispatch:
+                        logger.info(
+                            "Batch handler dispatching finalization",
+                            extra={
+                                "scan_id": scan_id,
+                                "processed_count": processed_count,
+                                "messages_scanned": transmitted_messages,
+                            },
+                        )
+                        await finalize_bulk_scan_task.kiq(
+                            scan_id=scan_id,
+                            community_server_id=community_server_id,
+                            messages_scanned=transmitted_messages,
+                            db_url=db_url,
+                            redis_url=redis_url,
+                        )
+                    else:
+                        logger.info(
+                            "Batch handler skipping finalization (already dispatched)",
+                            extra={
+                                "scan_id": scan_id,
+                                "processed_count": processed_count,
+                                "messages_scanned": transmitted_messages,
+                            },
+                        )
 
             span.set_attribute("task.messages_processed", len(typed_messages))
             span.set_attribute("task.messages_flagged", len(flagged))
@@ -334,11 +351,11 @@ async def finalize_bulk_scan_task(
 
         engine = _create_db_engine(db_url)
         async_session = async_sessionmaker(engine, expire_on_commit=False)
-
         redis_client = RedisClient()
-        await redis_client.connect(redis_url)
 
         try:
+            await redis_client.connect(redis_url)
+
             async with async_session() as session:
                 llm_service = _get_llm_service()
                 embedding_service = EmbeddingService(llm_service)
@@ -463,6 +480,22 @@ async def generate_ai_note_task(
     3. Generates note content using LLM
     4. Persists note to database
 
+    Rate Limit Placement Decision:
+        Rate limiting is checked inside this task rather than before dispatch.
+        This is intentional for several reasons:
+
+        1. The check runs BEFORE database connection is established, so no DB
+           resources are wasted when rate limited.
+
+        2. Centralizes rate limit logic with the task it protects, making the
+           code easier to maintain.
+
+        3. Keeps the NATS event handler thin ("lightweight, fast ack" pattern).
+
+        4. Worker slot overhead is minimal compared to actual LLM/DB work, and
+           rate limiting is typically rare (protection against abuse, not
+           regular flow control).
+
     Args:
         community_server_id: Platform ID of the community server
         request_id: Request ID to attach note to
@@ -480,6 +513,9 @@ async def generate_ai_note_task(
     from src.llm_config.providers.base import LLMMessage
     from src.notes.models import Note
     from src.webhooks.rate_limit import rate_limiter
+
+    start_time = time.time()
+    instance_id = InstanceMetadata.get_instance_id()
 
     with _tracer.start_as_current_span("content.ai_note") as span:
         span.set_attribute("task.community_server_id", community_server_id)
@@ -568,16 +604,30 @@ async def generate_ai_note_task(
                 await session.commit()
                 await session.refresh(note)
 
+                duration = time.time() - start_time
+                ai_note_generation_duration_seconds.labels(
+                    community_server_id=community_server_id,
+                    instance_id=instance_id,
+                ).observe(duration)
+
+                ai_notes_generated_total.labels(
+                    community_server_id=community_server_id,
+                    dataset_name=fact_check_item.dataset_name,
+                    instance_id=instance_id,
+                ).inc()
+
                 logger.info(
                     "Generated AI note",
                     extra={
                         "note_id": str(note.id),
                         "request_id": request_id,
                         "fact_check_item_id": fact_check_item_id,
+                        "duration_seconds": duration,
                     },
                 )
 
                 span.set_attribute("task.note_id", str(note.id))
+                span.set_attribute("task.duration_seconds", duration)
                 return {"status": "completed", "note_id": str(note.id)}
 
         except Exception as e:
