@@ -17,6 +17,18 @@ const { BotChannelService } = await import('../../src/services/BotChannelService
 const { GuildOnboardingService } = await import('../../src/services/GuildOnboardingService.js');
 const { buildWelcomeContainer, WELCOME_MESSAGE_REVISION } = await import('../../src/lib/welcome-content.js');
 
+// Helper to create FetchPinnedMessagesResponse format (Discord.js v14.25+)
+function createMockPinsResponse(messages: any[]) {
+  return {
+    hasMore: false,
+    items: messages.map((msg) => ({
+      message: msg,
+      pinnedAt: new Date(),
+      pinnedTimestamp: Date.now(),
+    })),
+  };
+}
+
 describe('Bot Channel Welcome Flow Integration', () => {
   let botChannelService: InstanceType<typeof BotChannelService>;
   let guildOnboardingService: InstanceType<typeof GuildOnboardingService>;
@@ -62,7 +74,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
         set: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue(undefined),
       },
       messages: {
-        fetchPinned: jest.fn<() => Promise<any>>().mockResolvedValue(new Collection()),
+        fetchPins: jest.fn<() => Promise<any>>().mockResolvedValue(createMockPinsResponse([])),
         fetch: jest.fn<() => Promise<any>>().mockResolvedValue(new Collection()),
       },
     };
@@ -377,8 +389,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
 
     it('should skip posting if revision matches existing pinned message', async () => {
       const existingMessage = createMockPinnedMessage(WELCOME_MESSAGE_REVISION);
-      const pinnedCollection = new Collection([['msg-123', existingMessage]]);
-      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedCollection);
+      mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([existingMessage]));
       mockChannel.messages.fetch.mockResolvedValue(new Collection());
 
       await guildOnboardingService.postWelcomeToChannel(mockChannel);
@@ -389,8 +400,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
 
     it('should replace message if revision differs', async () => {
       const existingMessage = createMockPinnedMessage('2024-01-01.1');
-      const pinnedCollection = new Collection([['msg-123', existingMessage]]);
-      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedCollection);
+      mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([existingMessage]));
       mockChannel.messages.fetch.mockResolvedValue(new Collection());
 
       const newMessage = {
@@ -413,11 +423,7 @@ describe('Bot Channel Welcome Flow Integration', () => {
       const newerMessage = createMockPinnedMessage(WELCOME_MESSAGE_REVISION, 'new-msg');
       newerMessage.createdTimestamp = Date.now();
 
-      const pinnedCollection = new Collection([
-        ['old-msg', olderMessage],
-        ['new-msg', newerMessage],
-      ]);
-      mockChannel.messages.fetchPinned.mockResolvedValue(pinnedCollection);
+      mockChannel.messages.fetchPins.mockResolvedValue(createMockPinsResponse([olderMessage, newerMessage]));
       mockChannel.messages.fetch.mockResolvedValue(new Collection());
 
       await guildOnboardingService.postWelcomeToChannel(mockChannel);
