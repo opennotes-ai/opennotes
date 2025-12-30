@@ -221,15 +221,16 @@ run = "docker exec -it opennotes-redis redis-cli"
 
 [tasks."build:containers:all"]
 description = "Build all Docker images"
-depends = ["_env:convert"]
-run = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
+depends = ["build:containers:server", "build:containers:discord"]
 alias = "build"
 
 [tasks."build:containers:server"]
+depends = ["_env:convert", "build:types:openapi"]
 description = "Build opennotes-server image"
 run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} -f {{vars.server_dir}}/Dockerfile ."
 
 [tasks."build:containers:discord"]
+depends = ["_env:convert", "build:types:openapi"]
 description = "Build opennotes-discord image"
 run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir}}/Dockerfile ."
 
