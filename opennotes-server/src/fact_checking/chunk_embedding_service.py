@@ -338,6 +338,12 @@ class ChunkEmbeddingService:
         This is more efficient than calling update_is_common_flag individually
         for each chunk, reducing queries from O(3N) to O(3) constant.
 
+        Deadlock Prevention:
+        Uses SELECT FOR UPDATE with ORDER BY id to acquire row locks in a
+        consistent order across all concurrent workers. This prevents deadlocks
+        where worker A locks row 1 then tries to lock row 2, while worker B
+        locks row 2 then tries to lock row 1.
+
         Args:
             db: Database session
             chunk_ids: List of chunk UUIDs to update
@@ -348,7 +354,14 @@ class ChunkEmbeddingService:
         if not chunk_ids:
             return {}
 
-        unique_ids = list(set(chunk_ids))
+        unique_ids = sorted(set(chunk_ids))
+
+        await db.execute(
+            select(ChunkEmbedding.id)
+            .where(ChunkEmbedding.id.in_(unique_ids))
+            .order_by(ChunkEmbedding.id)
+            .with_for_update()
+        )
 
         fact_check_counts = (
             select(
