@@ -28,27 +28,7 @@ if [ "${SEED_DEV_API_KEYS}" = "true" ]; then
     fi
 fi
 
-# Determine the run mode
-# RUN_MODE can be: server, worker, or both (default: server)
-RUN_MODE="${RUN_MODE:-server}"
-
-case "$RUN_MODE" in
-    "server")
-        echo "Starting API server only..."
-        exec python -m src.main
-        ;;
-    "worker")
-        echo "Starting taskiq worker only..."
-        TASKIQ_TASK_MODULES="${TASKIQ_TASK_MODULES:-src.tasks.example}"
-        echo "Task modules: $TASKIQ_TASK_MODULES"
-        exec python -m taskiq worker src.tasks.broker:get_broker $TASKIQ_TASK_MODULES
-        ;;
-    "both")
-        echo "Starting API server and taskiq worker..."
-        exec python scripts/run_with_worker.py
-        ;;
-    *)
-        echo "ERROR: Unknown RUN_MODE: $RUN_MODE (expected: server, worker, or both)"
-        exit 1
-        ;;
-esac
+# Start the API server
+# Note: Workers now run in a dedicated container/worker pool (see task-915)
+echo "Starting API server..."
+exec python -m src.main
