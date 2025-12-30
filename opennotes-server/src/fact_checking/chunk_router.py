@@ -477,7 +477,12 @@ async def cancel_rechunk_task(
     resource_id = str(task.community_server_id) if task.community_server_id else None
     lock_released = await rechunk_lock_manager.release_lock(task_type_value, resource_id)
 
-    await tracker.delete_task(task_id)
+    deleted = await tracker.delete_task(task_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete task {task_id} from Redis",
+        )
 
     logger.info(
         "Cancelled rechunk task",
