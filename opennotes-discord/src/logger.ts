@@ -1,3 +1,4 @@
+import { trace } from '@opentelemetry/api';
 import { config } from './config.js';
 
 enum LogLevel {
@@ -14,7 +15,30 @@ const LOG_LEVELS: Record<string, LogLevel> = {
   error: LogLevel.ERROR,
 };
 
+const SEVERITY_NUMBERS: Record<LogLevel, number> = {
+  [LogLevel.DEBUG]: 5,
+  [LogLevel.INFO]: 9,
+  [LogLevel.WARN]: 13,
+  [LogLevel.ERROR]: 17,
+};
+
+const SERVICE_NAME = 'opennotes-discord';
+
 type LogMeta = Record<string, unknown>;
+
+function getTraceContext(): Record<string, unknown> {
+  const span = trace.getActiveSpan();
+  if (span) {
+    const ctx = span.spanContext();
+    return {
+      otelTraceID: ctx.traceId,
+      otelSpanID: ctx.spanId,
+      otelTraceSampled: (ctx.traceFlags & 1) === 1,
+      otelServiceName: SERVICE_NAME,
+    };
+  }
+  return {};
+}
 
 class Logger {
   private level: LogLevel;
@@ -28,11 +52,15 @@ class Logger {
 
     const timestamp = new Date().toISOString();
     const levelName = LogLevel[level];
+    const traceContext = getTraceContext();
 
     const logEntry = {
       timestamp,
       level: levelName,
+      severity_text: levelName,
+      severity_number: SEVERITY_NUMBERS[level],
       message,
+      ...traceContext,
       ...meta,
     };
 

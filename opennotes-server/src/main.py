@@ -7,7 +7,10 @@ from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from slowapi.errors import RateLimitExceeded
+
+LoggingInstrumentor().instrument(set_logging_format=False)
 
 from src.bulk_content_scan.jsonapi_router import router as bulk_content_scan_jsonapi_router
 from src.bulk_content_scan.nats_handler import BulkScanEventHandler

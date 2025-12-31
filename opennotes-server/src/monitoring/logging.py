@@ -5,6 +5,14 @@ from typing import Any
 from opentelemetry import trace
 from pythonjsonlogger import jsonlogger
 
+LEVEL_TO_SEVERITY: dict[str, int] = {
+    "DEBUG": 5,
+    "INFO": 9,
+    "WARNING": 13,
+    "ERROR": 17,
+    "CRITICAL": 21,
+}
+
 
 class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-defined,misc]
     def add_fields(
@@ -15,11 +23,22 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
     ) -> None:
         super().add_fields(log_data, record, message_dict)
 
-        span = trace.get_current_span()
-        if span and span.get_span_context().is_valid:
-            span_context = span.get_span_context()
-            log_data["trace_id"] = format(span_context.trace_id, "032x")
-            log_data["span_id"] = format(span_context.span_id, "016x")
+        if hasattr(record, "otelTraceID") and record.otelTraceID != "0":
+            log_data["otelTraceID"] = record.otelTraceID
+            log_data["otelSpanID"] = record.otelSpanID
+            log_data["otelServiceName"] = record.otelServiceName
+            log_data["otelTraceSampled"] = record.otelTraceSampled
+            log_data["trace_id"] = record.otelTraceID
+            log_data["span_id"] = record.otelSpanID
+        else:
+            span = trace.get_current_span()
+            if span and span.get_span_context().is_valid:
+                span_context = span.get_span_context()
+                log_data["trace_id"] = format(span_context.trace_id, "032x")
+                log_data["span_id"] = format(span_context.span_id, "016x")
+
+        log_data["severity_text"] = record.levelname
+        log_data["severity_number"] = LEVEL_TO_SEVERITY.get(record.levelname, 9)
 
         try:
             from src.middleware.request_id import get_request_id
