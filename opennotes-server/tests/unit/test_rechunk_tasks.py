@@ -55,6 +55,7 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -122,6 +123,7 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -192,6 +194,7 @@ class TestRechunkTaskProgressTracking:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -264,6 +267,7 @@ class TestRechunkTaskProgressTracking:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -331,6 +335,7 @@ class TestRechunkTaskProgressTracking:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_failed = AsyncMock()
@@ -403,6 +408,7 @@ class TestRechunkTaskLockRelease:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
 
@@ -464,6 +470,7 @@ class TestRechunkTaskLockRelease:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.mark_failed = AsyncMock()
 
@@ -530,6 +537,7 @@ class TestRechunkTaskLockRelease:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
 

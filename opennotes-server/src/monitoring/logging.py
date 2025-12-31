@@ -23,13 +23,14 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
     ) -> None:
         super().add_fields(log_data, record, message_dict)
 
-        if hasattr(record, "otelTraceID") and record.otelTraceID != "0":
-            log_data["otelTraceID"] = record.otelTraceID
-            log_data["otelSpanID"] = record.otelSpanID
-            log_data["otelServiceName"] = record.otelServiceName
-            log_data["otelTraceSampled"] = record.otelTraceSampled
-            log_data["trace_id"] = record.otelTraceID
-            log_data["span_id"] = record.otelSpanID
+        otel_trace_id = getattr(record, "otelTraceID", None)
+        if otel_trace_id and otel_trace_id != "0":
+            log_data["otelTraceID"] = otel_trace_id
+            log_data["otelSpanID"] = getattr(record, "otelSpanID", None)
+            log_data["otelServiceName"] = getattr(record, "otelServiceName", None)
+            log_data["otelTraceSampled"] = getattr(record, "otelTraceSampled", None)
+            log_data["trace_id"] = otel_trace_id
+            log_data["span_id"] = getattr(record, "otelSpanID", None)
         else:
             span = trace.get_current_span()
             if span and span.get_span_context().is_valid:
