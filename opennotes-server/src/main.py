@@ -71,6 +71,7 @@ from src.notes.ratings_jsonapi_router import router as ratings_jsonapi_router
 from src.notes.requests_jsonapi_router import router as requests_jsonapi_router
 from src.notes.scoring_jsonapi_router import router as scoring_jsonapi_router
 from src.notes.stats_jsonapi_router import router as stats_jsonapi_router
+from src.search.fusion_weights_router import router as fusion_weights_router
 from src.services.ai_note_writer import AINoteWriter
 from src.services.vision_service import VisionService
 from src.startup_validation import run_startup_checks
@@ -424,6 +425,7 @@ app.add_middleware(InternalHeaderValidationMiddleware)
 app.include_router(auth_router)
 app.include_router(profile_auth_router)
 app.include_router(admin_router)
+app.include_router(fusion_weights_router)
 
 # JSON:API v2 routes
 app.include_router(jsonapi_notes_router, prefix=settings.API_V2_PREFIX, tags=["notes-jsonapi"])
