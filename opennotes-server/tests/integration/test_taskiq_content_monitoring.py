@@ -91,8 +91,8 @@ class TestTaskIQBrokerConfiguration:
         broker = get_broker()
         middleware_types = [type(m).__name__ for m in broker.middlewares]
 
-        assert "SimpleRetryMiddleware" in middleware_types, (
-            "SimpleRetryMiddleware not configured on broker"
+        assert "RetryWithFinalCallbackMiddleware" in middleware_types, (
+            "RetryWithFinalCallbackMiddleware not configured on broker"
         )
 
 
