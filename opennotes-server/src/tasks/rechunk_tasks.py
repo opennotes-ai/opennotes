@@ -27,6 +27,7 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from taskiq import TaskiqMessage, TaskiqResult
 
 from src.cache.redis_client import RedisClient
 from src.common.db_retry import is_deadlock_error
@@ -42,7 +43,7 @@ from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
-from src.tasks.broker import register_task
+from src.tasks.broker import register_task, retry_callback_registry
 
 logger = get_logger(__name__)
 _tracer = trace.get_tracer(__name__)
@@ -206,6 +207,94 @@ async def _process_previously_seen_item_with_retry(
         raise last_exception
 
 
+async def _handle_fact_check_rechunk_final_failure(
+    message: TaskiqMessage,
+    result: TaskiqResult,
+    exception: BaseException,
+) -> None:
+    """
+    Called by RetryWithFinalCallbackMiddleware when all retries are exhausted.
+    Marks the task as failed and releases the lock.
+    """
+    task_id = message.kwargs.get("task_id")
+    redis_url = message.kwargs.get("redis_url")
+
+    if not task_id or not redis_url:
+        logger.error("Missing task_id or redis_url in final failure handler")
+        return
+
+    redis_client = RedisClient()
+    try:
+        await redis_client.connect(redis_url)
+        tracker = RechunkTaskTracker(redis_client)
+        lock_manager = TaskRechunkLockManager(redis_client)
+
+        task = await tracker.get_task(UUID(task_id))
+        processed_count = task.processed_count if task else 0
+
+        await tracker.mark_failed(UUID(task_id), str(exception), processed_count)
+        await lock_manager.release_lock("fact_check")
+
+        logger.error(
+            "Fact check rechunk task failed after all retries exhausted",
+            extra={
+                "task_id": task_id,
+                "processed_count": processed_count,
+                "error": str(exception),
+            },
+        )
+    finally:
+        await redis_client.disconnect()
+
+
+async def _handle_previously_seen_rechunk_final_failure(
+    message: TaskiqMessage,
+    result: TaskiqResult,
+    exception: BaseException,
+) -> None:
+    """
+    Called by RetryWithFinalCallbackMiddleware when all retries are exhausted.
+    Marks the task as failed and releases the lock.
+    """
+    task_id = message.kwargs.get("task_id")
+    community_server_id = message.kwargs.get("community_server_id")
+    redis_url = message.kwargs.get("redis_url")
+
+    if not task_id or not redis_url or not community_server_id:
+        logger.error("Missing task_id, community_server_id, or redis_url in final failure handler")
+        return
+
+    redis_client = RedisClient()
+    try:
+        await redis_client.connect(redis_url)
+        tracker = RechunkTaskTracker(redis_client)
+        lock_manager = TaskRechunkLockManager(redis_client)
+
+        task = await tracker.get_task(UUID(task_id))
+        processed_count = task.processed_count if task else 0
+
+        await tracker.mark_failed(UUID(task_id), str(exception), processed_count)
+        await lock_manager.release_lock("previously_seen", community_server_id)
+
+        logger.error(
+            "Previously seen rechunk task failed after all retries exhausted",
+            extra={
+                "task_id": task_id,
+                "community_server_id": community_server_id,
+                "processed_count": processed_count,
+                "error": str(exception),
+            },
+        )
+    finally:
+        await redis_client.disconnect()
+
+
+retry_callback_registry.register("rechunk:fact_check", _handle_fact_check_rechunk_final_failure)
+retry_callback_registry.register(
+    "rechunk:previously_seen", _handle_previously_seen_rechunk_final_failure
+)
+
+
 @register_task(task_name="rechunk:fact_check", component="rechunk", task_type="batch")
 async def process_fact_check_rechunk_task(
     task_id: str,
@@ -340,6 +429,7 @@ async def process_fact_check_rechunk_task(
                     )
 
             await tracker.mark_completed(task_uuid, processed_count)
+            await lock_manager.release_lock("fact_check")
             span.set_attribute("task.processed_count", processed_count)
 
             logger.info(
@@ -356,23 +446,20 @@ async def process_fact_check_rechunk_task(
             error_msg = str(e)
             span.record_exception(e)
             span.set_status(StatusCode.ERROR, error_msg)
-            await tracker.mark_failed(task_uuid, error_msg, processed_count)
 
-            logger.error(
-                "Failed to process fact check rechunk batch",
+            logger.warning(
+                "Fact check rechunk batch failed, will retry if attempts remain",
                 extra={
                     "task_id": task_id,
                     "community_server_id": community_server_id,
                     "processed_count": processed_count,
                     "error": error_msg,
                 },
-                exc_info=True,
             )
             raise
         finally:
             await redis_client_bg.disconnect()
             await engine.dispose()
-            await lock_manager.release_lock("fact_check")
 
 
 @register_task(task_name="rechunk:previously_seen", component="rechunk", task_type="batch")
@@ -517,6 +604,7 @@ async def process_previously_seen_rechunk_task(
                     )
 
             await tracker.mark_completed(task_uuid, processed_count)
+            await lock_manager.release_lock("previously_seen", community_server_id)
             span.set_attribute("task.processed_count", processed_count)
 
             logger.info(
@@ -533,20 +621,17 @@ async def process_previously_seen_rechunk_task(
             error_msg = str(e)
             span.record_exception(e)
             span.set_status(StatusCode.ERROR, error_msg)
-            await tracker.mark_failed(task_uuid, error_msg, processed_count)
 
-            logger.error(
-                "Failed to process previously seen rechunk batch",
+            logger.warning(
+                "Previously seen rechunk batch failed, will retry if attempts remain",
                 extra={
                     "task_id": task_id,
                     "community_server_id": community_server_id,
                     "processed_count": processed_count,
                     "error": error_msg,
                 },
-                exc_info=True,
             )
             raise
         finally:
             await redis_client_bg.disconnect()
             await engine.dispose()
-            await lock_manager.release_lock("previously_seen", community_server_id)

@@ -4,7 +4,7 @@ Taskiq broker configuration with NATS JetStream and Redis result backend.
 This module configures the taskiq broker for distributed task processing using:
 - PullBasedJetStreamBroker: Pull-based NATS JetStream broker for reliable message delivery
 - RedisAsyncResultBackend: Redis for storing task results
-- SimpleRetryMiddleware: Automatic retry for failed tasks
+- RetryWithFinalCallbackMiddleware: Automatic retry for failed tasks with callback on final failure
 - SafeOpenTelemetryMiddleware: Distributed tracing with W3C Trace Context propagation
   (wraps OpenTelemetryMiddleware with safe context detach for async tasks)
 - TaskIQMetricsMiddleware: Prometheus metrics for task execution duration
@@ -31,7 +31,7 @@ from typing import Any, TypeVar
 
 import redis.asyncio as aioredis
 from opentelemetry import context as context_api
-from taskiq import SimpleRetryMiddleware, TaskiqMessage, TaskiqResult
+from taskiq import TaskiqMessage, TaskiqResult
 from taskiq.middlewares.opentelemetry_middleware import (
     OpenTelemetryMiddleware,
     detach_context,
@@ -43,6 +43,7 @@ from taskiq_redis import RedisAsyncResultBackend
 from src.cache.redis_client import create_redis_connection, get_redis_connection_kwargs
 from src.config import get_settings
 from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
+from src.tasks.middleware import RetryCallbackHandlerRegistry, RetryWithFinalCallbackMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,9 @@ _broker_instance: PullBasedJetStreamBroker | None = None
 _all_registered_tasks: dict[str, tuple[Callable[..., Any], dict[str, Any]]] = {}
 _registered_task_objects: dict[str, Any] = {}
 
+# Global registry for task-specific final-retry error handlers
+retry_callback_registry = RetryCallbackHandlerRegistry()
+
 
 def _create_broker() -> PullBasedJetStreamBroker:
     """Create and configure the taskiq broker with current settings."""
@@ -144,8 +148,9 @@ def _create_broker() -> PullBasedJetStreamBroker:
 
     result_backend: RedisAsyncResultBackend = RedisAsyncResultBackend(**result_backend_kwargs)
 
-    retry_middleware = SimpleRetryMiddleware(
+    retry_middleware = RetryWithFinalCallbackMiddleware(
         default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,
+        on_error_last_retry=retry_callback_registry.dispatch,
     )
 
     tracing_middleware = SafeOpenTelemetryMiddleware()
@@ -171,7 +176,10 @@ def _create_broker() -> PullBasedJetStreamBroker:
         .with_middlewares(tracing_middleware, metrics_middleware, retry_middleware)
     )
 
-    logger.info("Taskiq broker configured with SafeOpenTelemetryMiddleware and Prometheus metrics")
+    logger.info(
+        "Taskiq broker configured with RetryWithFinalCallbackMiddleware, "
+        "SafeOpenTelemetryMiddleware, and Prometheus metrics"
+    )
 
     return new_broker
 
@@ -424,4 +432,5 @@ __all__ = [
     "is_broker_initialized",
     "register_task",
     "reset_broker",
+    "retry_callback_registry",
 ]

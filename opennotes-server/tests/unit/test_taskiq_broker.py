@@ -26,7 +26,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
-            patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
+            patch("src.tasks.broker.RetryWithFinalCallbackMiddleware") as mock_retry,
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
             settings = MagicMock()
@@ -61,9 +61,10 @@ class TestBrokerConfiguration:
                 durable="opennotes-taskiq-worker",
             )
 
-            mock_retry.assert_called_once_with(
-                default_retry_count=5,
-            )
+            mock_retry.assert_called_once()
+            call_kwargs = mock_retry.call_args.kwargs
+            assert call_kwargs["default_retry_count"] == 5
+            assert "on_error_last_retry" in call_kwargs
 
     def test_broker_passes_ssl_cert_reqs_for_rediss_url(self) -> None:
         """Verify broker passes ssl_cert_reqs when using rediss:// URL."""
@@ -74,7 +75,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
-            patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -111,7 +112,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
-            patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -281,7 +282,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker._broker_instance", None),
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
-            patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
@@ -328,7 +329,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker._broker_instance", None),
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis_class,
-            patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
         ):
@@ -368,14 +369,14 @@ class TestRetryMiddlewareConfiguration:
     """Test retry middleware is properly configured."""
 
     def test_retry_middleware_uses_settings(self) -> None:
-        """Verify SimpleRetryMiddleware is configured with settings values."""
+        """Verify RetryWithFinalCallbackMiddleware is configured with settings values."""
         with (
             patch("src.tasks.broker._broker_instance", None),
             patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
-            patch("src.tasks.broker.SimpleRetryMiddleware") as mock_retry,
+            patch("src.tasks.broker.RetryWithFinalCallbackMiddleware") as mock_retry,
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
             settings = MagicMock()
@@ -398,7 +399,10 @@ class TestRetryMiddlewareConfiguration:
 
             _create_broker()
 
-            mock_retry.assert_called_once_with(default_retry_count=10)
+            mock_retry.assert_called_once()
+            call_kwargs = mock_retry.call_args.kwargs
+            assert call_kwargs["default_retry_count"] == 10
+            assert "on_error_last_retry" in call_kwargs
             mock_broker_instance.with_middlewares.assert_called_once()
 
 
@@ -413,7 +417,7 @@ class TestBrokerAuthentication:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
-            patch("src.tasks.broker.SimpleRetryMiddleware"),
+            patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
             settings = MagicMock()
