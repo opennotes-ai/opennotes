@@ -79,8 +79,9 @@ class TestTaskIQBrokerConfiguration:
         broker = get_broker()
         middleware_types = [type(m).__name__ for m in broker.middlewares]
 
-        assert "OpenTelemetryMiddleware" in middleware_types, (
-            "OpenTelemetryMiddleware not configured on broker"
+        # Check for SafeOpenTelemetryMiddleware (our wrapper around OpenTelemetryMiddleware)
+        assert "SafeOpenTelemetryMiddleware" in middleware_types, (
+            f"SafeOpenTelemetryMiddleware not configured on broker. Found: {middleware_types}"
         )
 
     def test_broker_has_retry_middleware(self):
@@ -117,6 +118,7 @@ class TestDualCompletionTrigger:
         mock_service.get_processed_count = AsyncMock(return_value=100)
         mock_service.get_all_batches_transmitted = AsyncMock(return_value=(True, 100))
         mock_service.append_flagged_result = AsyncMock()
+        mock_service.try_set_finalize_dispatched = AsyncMock(return_value=True)
 
         mock_redis = AsyncMock()
         mock_redis.connect = AsyncMock()

@@ -1,14 +1,22 @@
+"""
+Integration tests for audit log worker.
+
+Tests verify:
+- Audit middleware publishes events to NATS
+- Audit worker dispatches events to TaskIQ
+- NATS subscriber registration
+"""
+
+import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 from src.events.schemas import AuditLogCreatedEvent, EventType
 from src.main import app
-from src.users.models import AuditLog, User
 from src.workers.audit_worker import AuditWorker
 
 
@@ -84,33 +92,14 @@ class TestAuditMiddlewareAsync:
 
 
 class TestAuditWorker:
+    """Test AuditWorker dispatches events to TaskIQ."""
+
     @pytest.mark.asyncio
-    async def test_audit_worker_processes_event(self, db: object) -> None:
-        # Create test user
-        from src.auth.password import get_password_hash
-
-        user_id = uuid4()
-        user = User(
-            id=user_id,
-            username="testuser",
-            email="test@example.com",
-            hashed_password=get_password_hash("TestPassword123!"),
-            full_name="Test User",
-            role="user",
-            is_active=True,
-            is_superuser=False,
-        )
-        db.add(user)
-        await db.commit()
-
-        # Reset database engine to avoid event loop issues
-        import src.database
-
-        src.database._engine = None
-        src.database._async_session_maker = None
-
+    async def test_audit_worker_dispatches_to_taskiq(self) -> None:
+        """Verify audit worker dispatches events to TaskIQ task."""
         worker = AuditWorker()
 
+        user_id = uuid4()
         event = AuditLogCreatedEvent(
             event_id="test-event-123",
             user_id=user_id,
@@ -123,21 +112,23 @@ class TestAuditWorker:
             created_at=datetime.now(UTC),
         )
 
-        await worker.handle_audit_event(event)
+        with patch("src.workers.audit_worker.persist_audit_log_task") as mock_task:
+            mock_task.kiq = AsyncMock()
 
-        result = await db.execute(select(AuditLog).where(AuditLog.user_id == user_id))
-        audit_log = result.scalar_one_or_none()
+            await worker.handle_audit_event(event)
 
-        assert audit_log is not None
-        assert audit_log.action == "POST /api/v1/notes"
-        assert audit_log.resource == "notes"
-        assert audit_log.resource_id == "note-123"
-        assert audit_log.details == "Status: 201"
-        assert audit_log.ip_address == "127.0.0.1"
-        assert audit_log.user_agent == "test-client/1.0"
+            mock_task.kiq.assert_called_once()
+            call_kwargs = mock_task.kiq.call_args[1]
+            assert call_kwargs["user_id"] == str(user_id)
+            assert call_kwargs["action"] == "POST /api/v1/notes"
+            assert call_kwargs["resource"] == "notes"
+            assert call_kwargs["resource_id"] == "note-123"
+            assert call_kwargs["ip_address"] == "127.0.0.1"
+            assert call_kwargs["user_agent"] == "test-client/1.0"
 
     @pytest.mark.asyncio
-    async def test_audit_worker_handles_db_errors(self) -> None:
+    async def test_audit_worker_handles_dispatch_errors(self) -> None:
+        """Verify audit worker handles TaskIQ dispatch failures."""
         worker = AuditWorker()
 
         event = AuditLogCreatedEvent(
@@ -152,49 +143,21 @@ class TestAuditWorker:
             created_at=datetime.now(UTC),
         )
 
-        with patch("src.workers.audit_worker.get_session_maker") as mock_get_session_maker:
-            mock_session = AsyncMock()
-            mock_session.__aenter__.return_value = mock_session
-            mock_session.commit = AsyncMock(side_effect=Exception("DB connection lost"))
-            mock_session_maker = MagicMock(return_value=mock_session)
-            mock_get_session_maker.return_value = mock_session_maker
+        with patch("src.workers.audit_worker.persist_audit_log_task") as mock_task:
+            mock_task.kiq = AsyncMock(side_effect=Exception("TaskIQ dispatch failed"))
 
-            with pytest.raises(Exception, match="DB connection lost"):
+            with pytest.raises(Exception, match="TaskIQ dispatch failed"):
                 await worker.handle_audit_event(event)
 
     @pytest.mark.asyncio
-    async def test_audit_worker_records_processing_lag(self, db: object) -> None:
-        # Create test user
-        from src.auth.password import get_password_hash
-
-        user_id = uuid4()
-        user = User(
-            id=user_id,
-            username="testuser2",
-            email="test2@example.com",
-            hashed_password=get_password_hash("TestPassword123!"),
-            full_name="Test User",
-            role="user",
-            is_active=True,
-            is_superuser=False,
-        )
-        db.add(user)
-        await db.commit()
-
-        # Reset database engine to avoid event loop issues
-        import src.database
-
-        if src.database._engine is not None:
-            await src.database.close_db()
-        src.database._engine = None
-        src.database._async_session_maker = None
-
+    async def test_audit_worker_records_dispatch_lag(self) -> None:
+        """Verify audit worker records lag metric."""
         worker = AuditWorker()
 
         past_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         event = AuditLogCreatedEvent(
             event_id="test-event-789",
-            user_id=user_id,
+            user_id=uuid4(),
             action="POST /api/v1/notes",
             resource="notes",
             resource_id=None,
@@ -204,7 +167,11 @@ class TestAuditWorker:
             created_at=past_time,
         )
 
-        with patch("src.workers.audit_worker.audit_processing_lag_seconds") as mock_lag:
+        with (
+            patch("src.workers.audit_worker.persist_audit_log_task") as mock_task,
+            patch("src.workers.audit_worker.audit_dispatch_lag_seconds") as mock_lag,
+        ):
+            mock_task.kiq = AsyncMock()
             mock_lag.observe = MagicMock()
 
             await worker.handle_audit_event(event)
@@ -214,35 +181,13 @@ class TestAuditWorker:
             assert lag_value > 0
 
     @pytest.mark.asyncio
-    async def test_audit_worker_metrics_on_success(self, db: object) -> None:
-        # Create test user
-        from src.auth.password import get_password_hash
-
-        user_id = uuid4()
-        user = User(
-            id=user_id,
-            username="testuser3",
-            email="test3@example.com",
-            hashed_password=get_password_hash("TestPassword123!"),
-            full_name="Test User",
-            role="user",
-            is_active=True,
-            is_superuser=False,
-        )
-        db.add(user)
-        await db.commit()
-
-        # Reset database engine to avoid event loop issues
-        import src.database
-
-        src.database._engine = None
-        src.database._async_session_maker = None
-
+    async def test_audit_worker_metrics_on_success(self) -> None:
+        """Verify audit worker increments success metric."""
         worker = AuditWorker()
 
         event = AuditLogCreatedEvent(
             event_id="test-metrics-success",
-            user_id=user_id,
+            user_id=uuid4(),
             action="POST /api/v1/notes",
             resource="notes",
             resource_id=None,
@@ -252,19 +197,22 @@ class TestAuditWorker:
             created_at=datetime.now(UTC),
         )
 
-        with patch("src.workers.audit_worker.audit_events_processed_total") as mock_counter:
+        with (
+            patch("src.workers.audit_worker.persist_audit_log_task") as mock_task,
+            patch("src.workers.audit_worker.audit_events_dispatched_total") as mock_counter,
+        ):
+            mock_task.kiq = AsyncMock()
             mock_counter.labels = MagicMock(return_value=mock_counter)
             mock_counter.inc = MagicMock()
 
             await worker.handle_audit_event(event)
 
-            mock_counter.labels.assert_called_with(status="success")
+            mock_counter.labels.assert_called_with(status="dispatched")
             mock_counter.inc.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_nats_subscriber_registration(self) -> None:
-        import asyncio
-
+        """Verify worker registers handler with NATS subscriber."""
         worker = AuditWorker()
 
         with patch("src.events.subscriber.event_subscriber") as mock_subscriber:
