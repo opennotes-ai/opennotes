@@ -1,3 +1,18 @@
+# =============================================================================
+# Layer Caching Strategy for Python ML Dependencies
+# =============================================================================
+# This Dockerfile uses a multi-stage build optimized for Docker layer caching:
+#
+# 1. base:     Python + system deps + Rust (for cryptography) + uv
+# 2. ml-deps:  Heavy ML packages (torch, transformers, etc.) - ~3GB, rarely change
+# 3. dev/prod: App dependencies + source code - changes frequently
+#
+# Benefits:
+# - ML layer cached across builds when only app deps change
+# - BuildKit cache mounts for uv/pip caches
+# - Faster CI/CD builds (skip ~3GB layer most of the time)
+# =============================================================================
+
 FROM python:3.11-slim AS base
 
 WORKDIR /app
@@ -11,9 +26,17 @@ RUN pip install --no-cache-dir uv
 
 COPY opennotes-server/pyproject.toml opennotes-server/README.md opennotes-server/alembic.ini ./
 
-FROM base AS development
+FROM base AS ml-deps
 
-RUN uv pip install --system -e ".[scoring,dev]"
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    uv pip install --system --group ml
+
+FROM ml-deps AS development
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    uv pip install --system -e ".[scoring,dev]"
 
 COPY opennotes-server/src/ ./src/
 COPY opennotes-server/alembic/ ./alembic/
@@ -30,9 +53,11 @@ EXPOSE 8000
 
 CMD ["./docker-entrypoint.sh"]
 
-FROM base AS production
+FROM ml-deps AS production
 
-RUN uv pip install --system -e ".[scoring]"
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    uv pip install --system -e ".[scoring]"
 
 COPY opennotes-server/src/ ./src/
 COPY opennotes-server/alembic/ ./alembic/
