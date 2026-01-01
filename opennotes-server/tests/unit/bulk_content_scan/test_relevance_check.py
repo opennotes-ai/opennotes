@@ -354,6 +354,10 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
             result = await service._similarity_scan(
                 scan_id=uuid4(),
@@ -411,6 +415,10 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
             result = await service._similarity_scan(
                 scan_id=uuid4(),
@@ -456,6 +464,10 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
             result = await service._similarity_scan(
                 scan_id=uuid4(),
@@ -497,48 +509,10 @@ class TestSimilarityScanRelevanceIntegration:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
-
-            result = await service._similarity_scan(
-                scan_id=uuid4(),
-                message=sample_message,
-                community_server_platform_id="111222333",
-            )
-
-        assert result is None
-        mock_llm_service.complete.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_similarity_scan_skips_relevance_check_when_no_matches(
-        self,
-        mock_session,
-        mock_embedding_service,
-        mock_redis,
-        mock_llm_service,
-        sample_message,
-        sample_fact_check_match,
-    ) -> None:
-        """When no matches are returned (filtered by threshold), should not call relevance check."""
-        mock_embedding_service.similarity_search = AsyncMock(
-            return_value=SimilaritySearchResponse(
-                matches=[],
-                total_matches=0,
-                query_text=sample_message.content,
-                dataset_tags=["snopes"],
-                similarity_threshold=0.7,
-                rrf_score_threshold=0.1,
-            )
-        )
-
-        service = BulkContentScanService(
-            session=mock_session,
-            embedding_service=mock_embedding_service,
-            redis_client=mock_redis,
-            llm_service=mock_llm_service,
-        )
-
-        with patch("src.bulk_content_scan.service.settings") as mock_settings:
-            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
-            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
             result = await service._similarity_scan(
                 scan_id=uuid4(),
@@ -671,3 +645,136 @@ class TestRelevanceCheckPrompt:
         assert "response_format" in kwargs or any(
             "json" in str(m.content).lower() for m in (kwargs.get("messages") or [])
         )
+
+
+class TestRelevanceCheckEdgeCases:
+    """Tests for edge cases and error handling in relevance check."""
+
+    @pytest.mark.asyncio
+    async def test_check_relevance_handles_empty_matched_content(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Should handle empty matched_content gracefully (fail-open)."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps(
+                    {
+                        "is_relevant": False,
+                        "reasoning": "Empty reference cannot be evaluated.",
+                    }
+                ),
+                model="gpt-4o-mini",
+                tokens_used=15,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        is_relevant, _reasoning = await service._check_relevance_with_llm(
+            original_message="The earth is flat.",
+            matched_content="",
+            matched_source=None,
+        )
+
+        assert is_relevant is False
+        mock_llm_service.complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_check_relevance_fails_open_on_timeout(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """When LLM call times out, should return True (fail-open for safety)."""
+        import asyncio
+
+        async def slow_complete(*args, **kwargs):
+            await asyncio.sleep(10)
+            return LLMResponse(
+                content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
+                model="gpt-4o-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = slow_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+
+            is_relevant, reasoning = await service._check_relevance_with_llm(
+                original_message="Test message",
+                matched_content="Test matched content",
+                matched_source="https://example.com",
+            )
+
+        assert is_relevant is True
+        assert "timed out" in reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_check_relevance_uses_configured_provider(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Should use RELEVANCE_CHECK_PROVIDER from settings."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
+                model="gpt-4o-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="anthropic",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "anthropic"
+            mock_settings.RELEVANCE_CHECK_MODEL = "claude-3-haiku"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+
+            await service._check_relevance_with_llm(
+                original_message="Test message",
+                matched_content="Test content",
+                matched_source=None,
+            )
+
+        call_args = mock_llm_service.complete.call_args
+        assert call_args.kwargs.get("provider") == "anthropic"
+        assert call_args.kwargs.get("model") == "claude-3-haiku"

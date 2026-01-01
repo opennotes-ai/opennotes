@@ -1,5 +1,6 @@
 """Service layer for Bulk Content Scan operations."""
 
+import asyncio
 import json
 import time
 import uuid as uuid_module
@@ -8,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -606,14 +608,17 @@ Is this reference relevant to understanding or fact-checking the user's message?
                 LLMMessage(role="user", content=user_prompt),
             ]
 
-            response = await self.llm_service.complete(
-                db=self.session,
-                messages=messages,
-                community_server_id=None,
-                provider="openai",
-                model=settings.RELEVANCE_CHECK_MODEL,
-                max_tokens=settings.RELEVANCE_CHECK_MAX_TOKENS,
-                temperature=0.0,
+            response = await asyncio.wait_for(
+                self.llm_service.complete(
+                    db=self.session,
+                    messages=messages,
+                    community_server_id=None,
+                    provider=settings.RELEVANCE_CHECK_PROVIDER,
+                    model=settings.RELEVANCE_CHECK_MODEL,
+                    max_tokens=settings.RELEVANCE_CHECK_MAX_TOKENS,
+                    temperature=0.0,
+                ),
+                timeout=settings.RELEVANCE_CHECK_TIMEOUT,
             )
 
             result = RelevanceCheckResult.model_validate_json(response.content)
@@ -629,6 +634,28 @@ Is this reference relevant to understanding or fact-checking the user's message?
             )
 
             return (result.is_relevant, result.reasoning)
+
+        except TimeoutError:
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.warning(
+                "Relevance check timed out, failing open",
+                extra={
+                    "timeout_seconds": settings.RELEVANCE_CHECK_TIMEOUT,
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            return (True, f"Relevance check timed out after {settings.RELEVANCE_CHECK_TIMEOUT}s")
+
+        except ValidationError as e:
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.warning(
+                "Relevance check JSON validation failed, failing open",
+                extra={
+                    "validation_error": str(e),
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            return (True, f"Relevance check validation failed: {e}")
 
         except Exception as e:
             latency_ms = (time.monotonic() - start_time) * 1000

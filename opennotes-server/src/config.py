@@ -561,9 +561,18 @@ class Settings(BaseSettings):
         default="gpt-4o-mini",
         description="LLM model to use for relevance checking (should be fast and cheap)",
     )
+    RELEVANCE_CHECK_PROVIDER: str = Field(
+        default="openai",
+        description="LLM provider for relevance checking",
+    )
     RELEVANCE_CHECK_MAX_TOKENS: int = Field(
         default=150,
         description="Maximum tokens for relevance check responses",
+        gt=0,
+    )
+    RELEVANCE_CHECK_TIMEOUT: float = Field(
+        default=5.0,
+        description="Timeout in seconds for relevance check LLM calls",
         gt=0,
     )
 
