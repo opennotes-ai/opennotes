@@ -35,9 +35,14 @@ class TestFactCheckRechunkTaskBatchIteration:
 
         query_results = [mock_items_batch1, mock_items_batch2, mock_items_empty]
         query_call_count = [0]
+        is_count_query = [True]
 
         async def mock_execute(query):
             result = MagicMock()
+            if is_count_query[0]:
+                is_count_query[0] = False
+                result.scalar.return_value = 3  # Total items count
+                return result
             result.scalars.return_value.all.return_value = query_results[query_call_count[0]]
             query_call_count[0] += 1
             return result
@@ -55,6 +60,7 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -104,8 +110,14 @@ class TestFactCheckRechunkTaskBatchIteration:
         task_id = str(uuid4())
         batch_size = 10
 
+        is_count_query = [True]
+
         async def mock_execute(query):
             result = MagicMock()
+            if is_count_query[0]:
+                is_count_query[0] = False
+                result.scalar.return_value = 0  # Total items count
+                return result
             result.scalars.return_value.all.return_value = []
             return result
 
@@ -122,6 +134,7 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -174,8 +187,14 @@ class TestRechunkTaskProgressTracking:
         task_id = str(uuid4())
         task_uuid = uuid4()
 
+        is_count_query = [True]
+
         async def mock_execute(query):
             result = MagicMock()
+            if is_count_query[0]:
+                is_count_query[0] = False
+                result.scalar.return_value = 0  # Total items count
+                return result
             result.scalars.return_value.all.return_value = []
             return result
 
@@ -192,6 +211,7 @@ class TestRechunkTaskProgressTracking:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -241,11 +261,15 @@ class TestRechunkTaskProgressTracking:
             MagicMock(id=uuid4(), content="item1"),
             MagicMock(id=uuid4(), content="item2"),
         ]
+        call_count = [0]
 
         async def mock_execute(query):
             result = MagicMock()
-            if not hasattr(mock_execute, "called"):
-                mock_execute.called = True
+            call_count[0] += 1
+            if call_count[0] == 1:
+                result.scalar.return_value = 2  # COUNT query returns total items
+                return result
+            if call_count[0] == 2:
                 result.scalars.return_value.all.return_value = mock_items
             else:
                 result.scalars.return_value.all.return_value = []
@@ -264,6 +288,7 @@ class TestRechunkTaskProgressTracking:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
@@ -312,9 +337,14 @@ class TestRechunkTaskProgressTracking:
         task_id = str(uuid4())
 
         mock_items = [MagicMock(id=uuid4(), content="item1")]
+        is_count_query = [True]
 
         async def mock_execute(query):
             result = MagicMock()
+            if is_count_query[0]:
+                is_count_query[0] = False
+                result.scalar.return_value = 1  # Total items count
+                return result
             result.scalars.return_value.all.return_value = mock_items
             return result
 
@@ -331,6 +361,7 @@ class TestRechunkTaskProgressTracking:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.update_progress = AsyncMock()
         mock_tracker.mark_failed = AsyncMock()
@@ -385,8 +416,14 @@ class TestRechunkTaskLockRelease:
         """Lock is released when task completes successfully."""
         task_id = str(uuid4())
 
+        is_count_query = [True]
+
         async def mock_execute(query):
             result = MagicMock()
+            if is_count_query[0]:
+                is_count_query[0] = False
+                result.scalar.return_value = 0  # Total items count
+                return result
             result.scalars.return_value.all.return_value = []
             return result
 
@@ -403,6 +440,7 @@ class TestRechunkTaskLockRelease:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
 
@@ -445,9 +483,14 @@ class TestRechunkTaskLockRelease:
         task_id = str(uuid4())
 
         mock_items = [MagicMock(id=uuid4(), content="item1")]
+        is_count_query = [True]
 
         async def mock_execute(query):
             result = MagicMock()
+            if is_count_query[0]:
+                is_count_query[0] = False
+                result.scalar.return_value = 1  # Total items count
+                return result
             result.scalars.return_value.all.return_value = mock_items
             return result
 
@@ -464,6 +507,7 @@ class TestRechunkTaskLockRelease:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.mark_failed = AsyncMock()
 
@@ -512,8 +556,14 @@ class TestRechunkTaskLockRelease:
         task_id = str(uuid4())
         community_server_id = str(uuid4())
 
+        is_count_query = [True]
+
         async def mock_execute(query):
             result = MagicMock()
+            if is_count_query[0]:
+                is_count_query[0] = False
+                result.scalar.return_value = 0  # Total items count
+                return result
             result.scalars.return_value.all.return_value = []
             return result
 
@@ -530,6 +580,7 @@ class TestRechunkTaskLockRelease:
         mock_redis.disconnect = AsyncMock()
 
         mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
         mock_tracker.update_status = AsyncMock()
         mock_tracker.mark_completed = AsyncMock()
 

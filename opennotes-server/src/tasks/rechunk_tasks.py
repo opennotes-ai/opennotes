@@ -25,7 +25,7 @@ from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from src.cache.redis_client import RedisClient
@@ -261,13 +261,47 @@ async def process_fact_check_rechunk_task(
         lock_manager = TaskRechunkLockManager(redis_client_bg)
 
         service = get_chunk_embedding_service()
-        processed_count = 0
+
+        existing_task = await tracker.get_task(task_uuid)
+        if existing_task and existing_task.processed_count > 0:
+            processed_count = existing_task.processed_count
+            offset = processed_count
+            logger.info(
+                "Resuming fact check rechunk from previous progress",
+                extra={
+                    "task_id": task_id,
+                    "resumed_from_count": processed_count,
+                },
+            )
+            span.set_attribute("task.resumed", True)
+            span.set_attribute("task.resumed_from_count", processed_count)
+        else:
+            processed_count = 0
+            offset = 0
+            span.set_attribute("task.resumed", False)
 
         try:
             await tracker.update_status(task_uuid, RechunkTaskStatus.IN_PROGRESS)
 
             async with async_session() as db:
-                offset = 0
+                total_count_result = await db.execute(select(func.count(FactCheckItem.id)))
+                total_items = total_count_result.scalar() or 0
+
+                if offset > total_items:
+                    logger.warning(
+                        "Stored progress exceeds current item count, resetting offset",
+                        extra={
+                            "task_id": task_id,
+                            "stored_offset": offset,
+                            "total_items": total_items,
+                        },
+                    )
+                    offset = 0
+                    processed_count = 0
+                    span.add_event(
+                        "progress_reset",
+                        {"reason": "stored_offset_exceeds_total", "total_items": total_items},
+                    )
 
                 while True:
                     result = await db.execute(
@@ -395,13 +429,53 @@ async def process_previously_seen_rechunk_task(
         lock_manager = TaskRechunkLockManager(redis_client_bg)
 
         service = get_chunk_embedding_service()
-        processed_count = 0
+
+        existing_task = await tracker.get_task(task_uuid)
+        if existing_task and existing_task.processed_count > 0:
+            processed_count = existing_task.processed_count
+            offset = processed_count
+            logger.info(
+                "Resuming previously seen rechunk from previous progress",
+                extra={
+                    "task_id": task_id,
+                    "community_server_id": community_server_id,
+                    "resumed_from_count": processed_count,
+                },
+            )
+            span.set_attribute("task.resumed", True)
+            span.set_attribute("task.resumed_from_count", processed_count)
+        else:
+            processed_count = 0
+            offset = 0
+            span.set_attribute("task.resumed", False)
 
         try:
             await tracker.update_status(task_uuid, RechunkTaskStatus.IN_PROGRESS)
 
             async with async_session() as db:
-                offset = 0
+                total_count_result = await db.execute(
+                    select(func.count(PreviouslySeenMessage.id)).where(
+                        PreviouslySeenMessage.community_server_id == community_uuid
+                    )
+                )
+                total_items = total_count_result.scalar() or 0
+
+                if offset > total_items:
+                    logger.warning(
+                        "Stored progress exceeds current item count, resetting offset",
+                        extra={
+                            "task_id": task_id,
+                            "community_server_id": community_server_id,
+                            "stored_offset": offset,
+                            "total_items": total_items,
+                        },
+                    )
+                    offset = 0
+                    processed_count = 0
+                    span.add_event(
+                        "progress_reset",
+                        {"reason": "stored_offset_exceeds_total", "total_items": total_items},
+                    )
 
                 while True:
                     result = await db.execute(
