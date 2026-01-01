@@ -222,6 +222,7 @@ async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) ->
             embedding_service=embedding_service,
             redis_client=redis_client.client,
             nats_client=nats_client,
+            llm_service=llm_service,
         )
         bulk_scan_handler.register()
         try:

@@ -1,6 +1,7 @@
 """Service layer for Bulk Content Scan operations."""
 
 import json
+import time
 import uuid as uuid_module
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -18,11 +19,14 @@ from src.bulk_content_scan.schemas import (
     BulkScanStatus,
     FlaggedMessage,
     OpenAIModerationMatch,
+    RelevanceCheckResult,
     SimilarityMatch,
 )
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch
 from src.fact_checking.embedding_service import EmbeddingService
+from src.llm_config.providers.base import LLMMessage
+from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -98,6 +102,7 @@ class BulkContentScanService:
         embedding_service: EmbeddingService,
         redis_client: Redis,
         moderation_service: Any | None = None,
+        llm_service: LLMService | None = None,
     ) -> None:
         """Initialize the service.
 
@@ -106,11 +111,13 @@ class BulkContentScanService:
             embedding_service: Service for similarity search
             redis_client: Redis client for temporary message storage
             moderation_service: Optional OpenAI moderation service for content moderation
+            llm_service: Optional LLM service for relevance checking
         """
         self.session = session
         self.embedding_service = embedding_service
         self.redis_client = redis_client
         self.moderation_service = moderation_service
+        self.llm_service = llm_service
 
     async def initiate_scan(
         self,
@@ -313,23 +320,39 @@ class BulkContentScanService:
                 score_info["matched_claim"] = best_match.content or best_match.title or ""
 
                 if best_match.similarity_score >= threshold:
-                    # Build flagged_msg FIRST - only set is_flagged if building succeeds
-                    # This prevents is_flagged=True in progress events when flagged_msg is None
-                    try:
-                        flagged_msg = self._build_flagged_message(message, best_match)
-                        score_info["is_flagged"] = True
-                        return flagged_msg, score_info
-                    except Exception as build_error:
-                        logger.error(
-                            "Failed to build flagged message",
+                    is_relevant, reasoning = await self._check_relevance_with_llm(
+                        original_message=message.content,
+                        matched_content=best_match.content or best_match.title or "",
+                        matched_source=best_match.source_url,
+                    )
+
+                    if is_relevant:
+                        # Build flagged_msg FIRST - only set is_flagged if building succeeds
+                        # This prevents is_flagged=True in progress events when flagged_msg is None
+                        try:
+                            flagged_msg = self._build_flagged_message(message, best_match)
+                            score_info["is_flagged"] = True
+                            return flagged_msg, score_info
+                        except Exception as build_error:
+                            logger.error(
+                                "Failed to build flagged message",
+                                extra={
+                                    "scan_id": str(scan_id),
+                                    "message_id": message.message_id,
+                                    "error": str(build_error),
+                                    "similarity_score": best_match.similarity_score,
+                                },
+                            )
+                            # is_flagged remains False since we couldn't build the message
+                    else:
+                        logger.info(
+                            "Skipping flag due to relevance check",
                             extra={
-                                "scan_id": str(scan_id),
                                 "message_id": message.message_id,
-                                "error": str(build_error),
+                                "reasoning": reasoning,
                                 "similarity_score": best_match.similarity_score,
                             },
                         )
-                        # is_flagged remains False since we couldn't build the message
 
         except Exception as e:
             logger.warning(
@@ -376,7 +399,24 @@ class BulkContentScanService:
 
             if search_response.matches:
                 best_match = search_response.matches[0]
-                return self._build_flagged_message(message, best_match)
+
+                is_relevant, reasoning = await self._check_relevance_with_llm(
+                    original_message=message.content,
+                    matched_content=best_match.content or best_match.title or "",
+                    matched_source=best_match.source_url,
+                )
+
+                if is_relevant:
+                    return self._build_flagged_message(message, best_match)
+                logger.info(
+                    "Skipping flag due to relevance check",
+                    extra={
+                        "message_id": message.message_id,
+                        "reasoning": reasoning,
+                        "similarity_score": best_match.similarity_score,
+                    },
+                )
+                return None
 
         except Exception as e:
             logger.warning(
@@ -522,6 +562,84 @@ class BulkContentScanService:
             timestamp=message.timestamp,
             matches=[similarity_match],
         )
+
+    async def _check_relevance_with_llm(
+        self,
+        original_message: str,
+        matched_content: str,
+        matched_source: str | None,
+    ) -> tuple[bool, str]:
+        """Check if the matched content is relevant to the original message using LLM.
+
+        Args:
+            original_message: The user's original message
+            matched_content: The matched fact-check content
+            matched_source: Optional source URL
+
+        Returns:
+            Tuple of (is_relevant, reasoning). On error, returns (True, error_message) to fail-open.
+        """
+        if not settings.RELEVANCE_CHECK_ENABLED:
+            return (True, "Relevance check disabled")
+
+        if not self.llm_service:
+            logger.warning("LLM service not configured for relevance check")
+            return (True, "LLM service not configured")
+
+        start_time = time.monotonic()
+
+        try:
+            source_info = f"\nSource: {matched_source}" if matched_source else ""
+
+            system_prompt = """You are a relevance checker. Determine if a reference document is relevant to a user's message.
+The reference should help explain, provide background, fact-check, or give context to what the user is saying.
+Respond with JSON: {"is_relevant": true/false, "reasoning": "brief explanation"}"""
+
+            user_prompt = f"""User message: {original_message}
+
+Reference: {matched_content}{source_info}
+
+Is this reference relevant to understanding or fact-checking the user's message?"""
+
+            messages = [
+                LLMMessage(role="system", content=system_prompt),
+                LLMMessage(role="user", content=user_prompt),
+            ]
+
+            response = await self.llm_service.complete(
+                db=self.session,
+                messages=messages,
+                community_server_id=None,
+                provider="openai",
+                model=settings.RELEVANCE_CHECK_MODEL,
+                max_tokens=settings.RELEVANCE_CHECK_MAX_TOKENS,
+                temperature=0.0,
+            )
+
+            result = RelevanceCheckResult.model_validate_json(response.content)
+
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.info(
+                "Relevance check completed",
+                extra={
+                    "relevance_check_passed": result.is_relevant,
+                    "relevance_reasoning": result.reasoning,
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+
+            return (result.is_relevant, result.reasoning)
+
+        except Exception as e:
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.warning(
+                "Relevance check failed, failing open",
+                extra={
+                    "error": str(e),
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            return (True, f"Relevance check failed: {e}")
 
     async def append_flagged_result(
         self,

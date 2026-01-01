@@ -28,6 +28,7 @@ from src.events.schemas import (
 from src.events.subscriber import event_subscriber
 from src.fact_checking.embedding_service import EmbeddingService
 from src.llm_config.models import CommunityServer
+from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 from src.tasks.content_monitoring_tasks import (
     finalize_bulk_scan_task,
@@ -560,6 +561,7 @@ class BulkScanEventHandler:
         embedding_service: EmbeddingService,
         redis_client: Redis,
         nats_client: Any,
+        llm_service: LLMService | None = None,
     ) -> None:
         """Initialize the handler.
 
@@ -567,10 +569,12 @@ class BulkScanEventHandler:
             embedding_service: Service for similarity searches
             redis_client: Redis client for temporary storage
             nats_client: NATS client for publishing results
+            llm_service: Optional LLM service for relevance checking
         """
         self.embedding_service = embedding_service
         self.redis_client = redis_client
         self.nats_client = nats_client
+        self.llm_service = llm_service
         self.publisher = BulkScanResultsPublisher(nats_client)
         self.subscriber = event_subscriber
 
@@ -628,6 +632,7 @@ class BulkScanEventHandler:
                 session=session,
                 embedding_service=self.embedding_service,
                 redis_client=self.redis_client,
+                llm_service=self.llm_service,
             )
 
             await service.set_all_batches_transmitted(event.scan_id, event.messages_scanned)
