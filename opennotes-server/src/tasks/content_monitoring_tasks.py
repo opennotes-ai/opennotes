@@ -193,6 +193,7 @@ async def process_bulk_scan_batch_task(
                     session=session,
                     embedding_service=embedding_service,
                     redis_client=redis_client.client,  # type: ignore[arg-type]
+                    llm_service=llm_service,
                 )
 
                 typed_messages = [BulkScanMessage.model_validate(msg) for msg in messages]
@@ -363,6 +364,7 @@ async def finalize_bulk_scan_task(
                     session=session,
                     embedding_service=embedding_service,
                     redis_client=redis_client.client,  # type: ignore[arg-type]
+                    llm_service=llm_service,
                 )
 
                 flagged = await service.get_flagged_results(scan_uuid)

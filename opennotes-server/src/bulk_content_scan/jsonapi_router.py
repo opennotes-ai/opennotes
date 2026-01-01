@@ -48,7 +48,7 @@ from src.common.jsonapi import (
 from src.config import settings
 from src.database import get_db
 from src.fact_checking.embedding_service import EmbeddingService
-from src.fact_checking.embeddings_jsonapi_router import get_embedding_service
+from src.fact_checking.embeddings_jsonapi_router import get_embedding_service, get_llm_service
 from src.fact_checking.models import FactCheckItem
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
@@ -473,12 +473,14 @@ async def get_bulk_scan_service(
     session: Annotated[AsyncSession, Depends(get_db)],
     embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
     redis: Annotated[Redis, Depends(get_redis)],
+    llm_service: Annotated[LLMService, Depends(get_llm_service)],
 ) -> BulkContentScanService:
     """Get bulk scan service with dependencies."""
     return BulkContentScanService(
         session=session,
         embedding_service=embedding_service,
         redis_client=redis,
+        llm_service=llm_service,
     )
 
 

@@ -91,6 +91,13 @@ class OpenAIModerationMatch(StrictInputSchema):
     )
 
 
+class RelevanceCheckResult(StrictInputSchema):
+    """Result from LLM relevance check for hybrid search matches."""
+
+    is_relevant: bool = Field(..., description="Whether the match is semantically relevant")
+    reasoning: str = Field(..., description="LLM's reasoning for the relevance decision")
+
+
 MatchResult = Annotated[
     SimilarityMatch | OpenAIModerationMatch,
     Discriminator("scan_type"),

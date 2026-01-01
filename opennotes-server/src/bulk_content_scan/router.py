@@ -29,7 +29,8 @@ from src.bulk_content_scan.service import (
 from src.cache.redis_client import redis_client
 from src.database import get_db
 from src.fact_checking.embedding_service import EmbeddingService
-from src.fact_checking.embeddings_jsonapi_router import get_embedding_service
+from src.fact_checking.embeddings_jsonapi_router import get_embedding_service, get_llm_service
+from src.llm_config.service import LLMService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.users.models import User
@@ -53,12 +54,14 @@ async def get_bulk_scan_service(
     session: Annotated[AsyncSession, Depends(get_db)],
     embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],
     redis: Annotated[Redis, Depends(get_redis)],
+    llm_service: Annotated[LLMService, Depends(get_llm_service)],
 ) -> BulkContentScanService:
     """Get bulk scan service with dependencies."""
     return BulkContentScanService(
         session=session,
         embedding_service=embedding_service,
         redis_client=redis,
+        llm_service=llm_service,
     )
 
 
