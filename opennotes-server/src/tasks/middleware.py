@@ -105,9 +105,18 @@ class RetryWithFinalCallbackMiddleware(SimpleRetryMiddleware):
         is_last_retry = (retries >= max_retries) and (_retries > 0 or max_retries == 0)
 
         if is_last_retry and self._on_error_last_retry is not None:
-            callback_result = self._on_error_last_retry(message, result, exception)
-            if asyncio.iscoroutine(callback_result):
-                await callback_result
+            try:
+                callback_result = self._on_error_last_retry(message, result, exception)
+                if asyncio.iscoroutine(callback_result):
+                    await callback_result
+            except Exception as callback_error:
+                # Log callback failure but don't mask the original task exception
+                logger.error(
+                    "Final retry callback failed for task %s: %s",
+                    message.task_name,
+                    callback_error,
+                    exc_info=True,
+                )
 
 
 class RetryCallbackHandlerRegistry:

@@ -287,13 +287,12 @@ class TestRetryWithFinalCallbackMiddleware:
             mock_parent_on_error.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_callback_exception_does_not_break_middleware(self) -> None:
+    async def test_callback_exception_is_logged_not_propagated(self) -> None:
         """
-        If the callback raises an exception, it should propagate.
+        If the callback raises an exception, it should be logged, not propagated.
 
-        The callback is user-provided code, so if it raises an exception,
-        that exception should propagate up rather than being swallowed.
-        This allows proper error handling/logging by the caller.
+        Callback exceptions should not mask the original task error. The middleware
+        catches callback failures and logs them while allowing normal flow to continue.
         """
         from src.tasks.middleware import RetryWithFinalCallbackMiddleware
 
@@ -313,9 +312,19 @@ class TestRetryWithFinalCallbackMiddleware:
                 "on_error",
                 new_callable=AsyncMock,
             ),
-            pytest.raises(RuntimeError, match="Callback failed"),
+            patch("src.tasks.middleware.logger") as mock_logger,
         ):
+            # Should NOT raise - callback exception is caught and logged
             await middleware.on_error(message, result, exception)
+
+            # Verify callback was attempted
+            mock_callback.assert_called_once()
+
+            # Verify error was logged
+            mock_logger.error.assert_called_once()
+            call_args = mock_logger.error.call_args
+            assert "Final retry callback failed" in call_args[0][0]
+            assert message.task_name in call_args[0][1]
 
 
 class TestRetryCallbackHandlerRegistry:
@@ -540,7 +549,8 @@ class TestEdgeCases:
             default_retry_count=1,
         )
 
-        message = create_mock_message(retries=0, max_retries=1)
+        # _retries=1 means this is the second attempt (after first failure)
+        message = create_mock_message(retries=1, max_retries=1)
         result = create_mock_result()
         exception = RuntimeError("Last attempt failed")
 
@@ -550,6 +560,9 @@ class TestEdgeCases:
             new_callable=AsyncMock,
         ):
             await middleware.on_error(message, result, exception)
+
+        # Callback SHOULD be called on last retry
+        mock_callback.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_missing_retries_label_defaults_to_zero(self) -> None:

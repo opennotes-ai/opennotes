@@ -223,26 +223,53 @@ async def _handle_fact_check_rechunk_final_failure(
         logger.error("Missing task_id or redis_url in final failure handler")
         return
 
+    # Validate UUID format upfront to prevent lock leakage on malformed task_id
+    try:
+        task_uuid = UUID(task_id)
+    except ValueError:
+        logger.error(
+            "Invalid task_id format in final failure handler",
+            extra={"task_id": task_id},
+        )
+        return
+
     redis_client = RedisClient()
     try:
         await redis_client.connect(redis_url)
         tracker = RechunkTaskTracker(redis_client)
         lock_manager = TaskRechunkLockManager(redis_client)
 
-        task = await tracker.get_task(UUID(task_id))
+        task = await tracker.get_task(task_uuid)
         processed_count = task.processed_count if task else 0
 
-        await tracker.mark_failed(UUID(task_id), str(exception), processed_count)
-        await lock_manager.release_lock("fact_check")
+        mark_failed_error = None
+        try:
+            await tracker.mark_failed(task_uuid, str(exception), processed_count)
+        except Exception as e:
+            mark_failed_error = e
+            logger.error(
+                "Failed to mark task as failed",
+                extra={"task_id": task_id, "error": str(e)},
+            )
 
-        logger.error(
-            "Fact check rechunk task failed after all retries exhausted",
-            extra={
-                "task_id": task_id,
-                "processed_count": processed_count,
-                "error": str(exception),
-            },
-        )
+        # Always release lock, even if mark_failed fails
+        try:
+            await lock_manager.release_lock("fact_check")
+        except Exception as lock_error:
+            logger.error(
+                "Failed to release lock after task failure",
+                extra={"task_id": task_id, "error": str(lock_error)},
+            )
+
+        if mark_failed_error is None:
+            logger.error(
+                "Fact check rechunk task failed after all retries exhausted",
+                extra={
+                    "task_id": task_id,
+                    "processed_count": processed_count,
+                    "error": str(exception),
+                },
+            )
     finally:
         await redis_client.disconnect()
 
@@ -264,27 +291,62 @@ async def _handle_previously_seen_rechunk_final_failure(
         logger.error("Missing task_id, community_server_id, or redis_url in final failure handler")
         return
 
+    # Validate UUID format upfront to prevent lock leakage on malformed task_id
+    try:
+        task_uuid = UUID(task_id)
+    except ValueError:
+        logger.error(
+            "Invalid task_id format in final failure handler",
+            extra={"task_id": task_id},
+        )
+        return
+
     redis_client = RedisClient()
     try:
         await redis_client.connect(redis_url)
         tracker = RechunkTaskTracker(redis_client)
         lock_manager = TaskRechunkLockManager(redis_client)
 
-        task = await tracker.get_task(UUID(task_id))
+        task = await tracker.get_task(task_uuid)
         processed_count = task.processed_count if task else 0
 
-        await tracker.mark_failed(UUID(task_id), str(exception), processed_count)
-        await lock_manager.release_lock("previously_seen", community_server_id)
+        mark_failed_error = None
+        try:
+            await tracker.mark_failed(task_uuid, str(exception), processed_count)
+        except Exception as e:
+            mark_failed_error = e
+            logger.error(
+                "Failed to mark task as failed",
+                extra={
+                    "task_id": task_id,
+                    "community_server_id": community_server_id,
+                    "error": str(e),
+                },
+            )
 
-        logger.error(
-            "Previously seen rechunk task failed after all retries exhausted",
-            extra={
-                "task_id": task_id,
-                "community_server_id": community_server_id,
-                "processed_count": processed_count,
-                "error": str(exception),
-            },
-        )
+        # Always release lock, even if mark_failed fails
+        try:
+            await lock_manager.release_lock("previously_seen", community_server_id)
+        except Exception as lock_error:
+            logger.error(
+                "Failed to release lock after task failure",
+                extra={
+                    "task_id": task_id,
+                    "community_server_id": community_server_id,
+                    "error": str(lock_error),
+                },
+            )
+
+        if mark_failed_error is None:
+            logger.error(
+                "Previously seen rechunk task failed after all retries exhausted",
+                extra={
+                    "task_id": task_id,
+                    "community_server_id": community_server_id,
+                    "processed_count": processed_count,
+                    "error": str(exception),
+                },
+            )
     finally:
         await redis_client.disconnect()
 

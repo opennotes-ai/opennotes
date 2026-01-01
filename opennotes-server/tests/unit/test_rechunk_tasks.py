@@ -1045,3 +1045,142 @@ class TestFinalRetryCallbackHandlers:
             await _handle_previously_seen_rechunk_final_failure(message, result, error)
 
             mock_redis.connect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fact_check_callback_handles_invalid_uuid(self):
+        """Fact check callback handles invalid UUID format gracefully."""
+        from taskiq import TaskiqMessage, TaskiqResult
+
+        from src.tasks.rechunk_tasks import _handle_fact_check_rechunk_final_failure
+
+        message = MagicMock(spec=TaskiqMessage)
+        message.kwargs = {"task_id": "not-a-valid-uuid", "redis_url": "redis://localhost:6379"}
+
+        result = MagicMock(spec=TaskiqResult)
+        error = Exception("Error")
+
+        mock_redis = AsyncMock()
+
+        with patch("src.tasks.rechunk_tasks.RedisClient", return_value=mock_redis):
+            await _handle_fact_check_rechunk_final_failure(message, result, error)
+
+            # Should not attempt Redis connection if UUID is invalid
+            mock_redis.connect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fact_check_callback_releases_lock_even_if_mark_failed_fails(self):
+        """Lock is released even if mark_failed raises an exception."""
+        from taskiq import TaskiqMessage, TaskiqResult
+
+        from src.tasks.rechunk_tasks import _handle_fact_check_rechunk_final_failure
+
+        task_id = str(uuid4())
+        redis_url = "redis://localhost:6379"
+        error = Exception("Task error")
+
+        message = MagicMock(spec=TaskiqMessage)
+        message.kwargs = {"task_id": task_id, "redis_url": redis_url}
+
+        result = MagicMock(spec=TaskiqResult)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
+        mock_tracker.mark_failed = AsyncMock(side_effect=Exception("Redis connection lost"))
+
+        mock_lock_manager = MagicMock()
+        mock_lock_manager.release_lock = AsyncMock()
+
+        with (
+            patch("src.tasks.rechunk_tasks.RedisClient", return_value=mock_redis),
+            patch("src.tasks.rechunk_tasks.RechunkTaskTracker", return_value=mock_tracker),
+            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
+        ):
+            await _handle_fact_check_rechunk_final_failure(message, result, error)
+
+            # mark_failed was called and raised
+            mock_tracker.mark_failed.assert_called_once()
+
+            # Lock should STILL be released even though mark_failed failed
+            mock_lock_manager.release_lock.assert_called_once_with("fact_check")
+
+            # Redis should be disconnected
+            mock_redis.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_previously_seen_callback_handles_invalid_uuid(self):
+        """Previously seen callback handles invalid UUID format gracefully."""
+        from taskiq import TaskiqMessage, TaskiqResult
+
+        from src.tasks.rechunk_tasks import _handle_previously_seen_rechunk_final_failure
+
+        message = MagicMock(spec=TaskiqMessage)
+        message.kwargs = {
+            "task_id": "not-a-valid-uuid",
+            "community_server_id": str(uuid4()),
+            "redis_url": "redis://localhost:6379",
+        }
+
+        result = MagicMock(spec=TaskiqResult)
+        error = Exception("Error")
+
+        mock_redis = AsyncMock()
+
+        with patch("src.tasks.rechunk_tasks.RedisClient", return_value=mock_redis):
+            await _handle_previously_seen_rechunk_final_failure(message, result, error)
+
+            # Should not attempt Redis connection if UUID is invalid
+            mock_redis.connect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_previously_seen_callback_releases_lock_even_if_mark_failed_fails(self):
+        """Lock is released even if mark_failed raises an exception."""
+        from taskiq import TaskiqMessage, TaskiqResult
+
+        from src.tasks.rechunk_tasks import _handle_previously_seen_rechunk_final_failure
+
+        task_id = str(uuid4())
+        community_server_id = str(uuid4())
+        redis_url = "redis://localhost:6379"
+        error = Exception("Task error")
+
+        message = MagicMock(spec=TaskiqMessage)
+        message.kwargs = {
+            "task_id": task_id,
+            "community_server_id": community_server_id,
+            "redis_url": redis_url,
+        }
+
+        result = MagicMock(spec=TaskiqResult)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_tracker = MagicMock()
+        mock_tracker.get_task = AsyncMock(return_value=None)
+        mock_tracker.mark_failed = AsyncMock(side_effect=Exception("Redis connection lost"))
+
+        mock_lock_manager = MagicMock()
+        mock_lock_manager.release_lock = AsyncMock()
+
+        with (
+            patch("src.tasks.rechunk_tasks.RedisClient", return_value=mock_redis),
+            patch("src.tasks.rechunk_tasks.RechunkTaskTracker", return_value=mock_tracker),
+            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
+        ):
+            await _handle_previously_seen_rechunk_final_failure(message, result, error)
+
+            # mark_failed was called and raised
+            mock_tracker.mark_failed.assert_called_once()
+
+            # Lock should STILL be released even though mark_failed failed
+            mock_lock_manager.release_lock.assert_called_once_with(
+                "previously_seen", community_server_id
+            )
+
+            # Redis should be disconnected
+            mock_redis.disconnect.assert_called_once()
