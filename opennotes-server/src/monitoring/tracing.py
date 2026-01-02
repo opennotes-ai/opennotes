@@ -74,17 +74,17 @@ class TracingManager:
         self._tracer_provider: TracerProvider | None = None
         self._instrumented_components: set[str] = set()
 
-    def _parse_headers(self) -> tuple[tuple[str, str], ...] | None:
-        """Parse OTLP headers from 'key=value,key2=value2' format to tuple of tuples."""
+    def _parse_headers(self) -> dict[str, str] | None:
+        """Parse OTLP headers from 'key=value,key2=value2' format to dict."""
         if not self.otlp_headers:
             return None
-        headers = []
+        headers: dict[str, str] = {}
         for raw_pair in self.otlp_headers.split(","):
             pair = raw_pair.strip()
             if "=" in pair:
                 key, value = pair.split("=", 1)
-                headers.append((key.strip(), value.strip()))
-        return tuple(headers) if headers else None
+                headers[key.strip()] = value.strip()
+        return headers if headers else None
 
     def setup(self) -> None:
         if self._tracer_provider is not None:
