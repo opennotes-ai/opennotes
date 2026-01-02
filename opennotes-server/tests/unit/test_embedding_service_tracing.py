@@ -165,7 +165,7 @@ class TestEmbeddingServiceSpanAttributes:
 
         mock_hybrid_result = MagicMock()
         mock_hybrid_result.item = mock_item
-        mock_hybrid_result.rrf_score = 0.02
+        mock_hybrid_result.rrf_score = 0.5
 
         with (
             patch("src.fact_checking.embedding_service._tracer", mock_tracer),
