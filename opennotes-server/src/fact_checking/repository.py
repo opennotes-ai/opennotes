@@ -299,7 +299,7 @@ async def hybrid_search_with_chunks(
     limit: int = 10,
     dataset_tags: list[str] | None = None,
     semantic_similarity_threshold: float = 0.0,
-    keyword_relevance_threshold: float = 0.0,
+    keyword_relevance_threshold: float = 0.05,
     common_chunk_weight_factor: float = DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR,
     alpha: float = DEFAULT_ALPHA,
 ) -> list[HybridSearchResult]:
@@ -334,7 +334,7 @@ async def hybrid_search_with_chunks(
         semantic_similarity_threshold: Minimum cosine similarity (0.0-1.0) for
             semantic search results. Default 0.0 (no filtering).
         keyword_relevance_threshold: Minimum ts_rank_cd score for keyword search
-            results. Default 0.0 (no filtering).
+            results. Default 0.05 (filters low-quality keyword matches).
         common_chunk_weight_factor: Weight multiplier for common chunks (0.0-1.0).
             Default 0.5 means common chunks contribute 50% of their normal score.
             Set to 1.0 to disable weight reduction, 0.0 to ignore common chunks.
