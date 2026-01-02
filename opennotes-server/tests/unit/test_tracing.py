@@ -91,7 +91,7 @@ class TestTracingManagerHeaders:
             otlp_headers="authorization=my-api-key",
         )
         assert tm.otlp_headers == "authorization=my-api-key"
-        assert tm._parse_headers() == (("authorization", "my-api-key"),)
+        assert tm._parse_headers() == {"authorization": "my-api-key"}
 
     def test_otlp_headers_multiple_headers(self):
         tm = TracingManager(
@@ -102,7 +102,7 @@ class TestTracingManagerHeaders:
             otlp_headers="authorization=key123,x-custom=value",
         )
         headers = tm._parse_headers()
-        assert headers == (("authorization", "key123"), ("x-custom", "value"))
+        assert headers == {"authorization": "key123", "x-custom": "value"}
 
     def test_otlp_headers_with_spaces(self):
         tm = TracingManager(
@@ -113,7 +113,7 @@ class TestTracingManagerHeaders:
             otlp_headers=" authorization = my-api-key , x-header = value ",
         )
         headers = tm._parse_headers()
-        assert headers == (("authorization", "my-api-key"), ("x-header", "value"))
+        assert headers == {"authorization": "my-api-key", "x-header": "value"}
 
     def test_otlp_headers_empty_string(self):
         tm = TracingManager(
@@ -134,4 +134,4 @@ class TestTracingManagerHeaders:
             otlp_headers="authorization=key=with=equals",
         )
         headers = tm._parse_headers()
-        assert headers == (("authorization", "key=with=equals"),)
+        assert headers == {"authorization": "key=with=equals"}
