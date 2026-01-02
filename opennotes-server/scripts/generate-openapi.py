@@ -48,6 +48,7 @@ def generate_openapi(output: str) -> None:
 
     with output_path.open("w") as f:
         json.dump(openapi_schema, f, indent=2)
+        f.write("\n")
 
     click.echo(f"✓ OpenAPI specification generated: {output_path.absolute()}")
     click.echo(f"  Title: {openapi_schema.get('info', {}).get('title', 'N/A')}")
