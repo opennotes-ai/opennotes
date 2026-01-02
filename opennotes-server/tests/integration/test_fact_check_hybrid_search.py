@@ -1,11 +1,11 @@
 """Integration tests for fact check hybrid search functionality.
 
-Tests the RRF (Reciprocal Rank Fusion) hybrid search that combines:
+Tests the hybrid search that combines:
 - Full-text search (FTS) using PostgreSQL tsvector/ts_rank_cd
 - Semantic search using pgvector embeddings
 
-The hybrid search uses RRF formula: 1/(k + rank) to combine rankings from
-both search methods, where k=60 is the standard RRF constant.
+The hybrid search uses Convex Combination (CC) score fusion to combine
+results from both search methods with configurable alpha weighting.
 """
 
 import pytest
@@ -179,8 +179,8 @@ class TestHybridSearchRepository:
 
         assert len(results) >= 1, "Should find semantic matches even without keyword matches"
 
-    async def test_hybrid_search_combines_rankings_with_rrf(self, hybrid_search_test_items):
-        """Test that RRF correctly combines keyword and semantic rankings.
+    async def test_hybrid_search_combines_rankings_with_cc(self, hybrid_search_test_items):
+        """Test that CC correctly combines keyword and semantic rankings.
 
         Items that match both keyword and semantic criteria should rank
         higher than items that only match one criterion.
@@ -558,31 +558,33 @@ class TestHybridSearchDatasetTagsFiltering:
 
 
 class TestHybridSearchPreFilterConstant:
-    """Tests for the RRF CTE pre-filter limit constant."""
+    """Tests for the hybrid search CTE pre-filter limit constant."""
 
-    def test_rrf_cte_prelimit_constant_exists(self):
-        """Test that RRF_CTE_PRELIMIT constant is defined and exported."""
-        from src.fact_checking.repository import RRF_CTE_PRELIMIT
+    def test_hybrid_search_cte_prelimit_constant_exists(self):
+        """Test that HYBRID_SEARCH_CTE_PRELIMIT constant is defined and exported."""
+        from src.fact_checking.repository import HYBRID_SEARCH_CTE_PRELIMIT
 
-        assert RRF_CTE_PRELIMIT == 20, (
-            "RRF_CTE_PRELIMIT should be 20 (each CTE fetches 20 candidates)"
+        assert HYBRID_SEARCH_CTE_PRELIMIT == 20, (
+            "HYBRID_SEARCH_CTE_PRELIMIT should be 20 (each CTE fetches 20 candidates)"
         )
 
-    def test_rrf_cte_prelimit_is_positive_integer(self):
-        """Test that RRF_CTE_PRELIMIT is a valid positive integer."""
-        from src.fact_checking.repository import RRF_CTE_PRELIMIT
+    def test_hybrid_search_cte_prelimit_is_positive_integer(self):
+        """Test that HYBRID_SEARCH_CTE_PRELIMIT is a valid positive integer."""
+        from src.fact_checking.repository import HYBRID_SEARCH_CTE_PRELIMIT
 
-        assert isinstance(RRF_CTE_PRELIMIT, int), "RRF_CTE_PRELIMIT should be an integer"
-        assert RRF_CTE_PRELIMIT > 0, "RRF_CTE_PRELIMIT should be positive"
+        assert isinstance(HYBRID_SEARCH_CTE_PRELIMIT, int), (
+            "HYBRID_SEARCH_CTE_PRELIMIT should be an integer"
+        )
+        assert HYBRID_SEARCH_CTE_PRELIMIT > 0, "HYBRID_SEARCH_CTE_PRELIMIT should be positive"
 
     async def test_hybrid_search_max_results_bounded_by_prelimit(self, hybrid_search_test_items):
         """Test that hybrid search is bounded by CTE pre-filter limit.
 
-        Each CTE (semantic and keyword) fetches RRF_CTE_PRELIMIT results.
-        After RRF fusion, maximum unique results = 2 * RRF_CTE_PRELIMIT.
+        Each CTE (semantic and keyword) fetches HYBRID_SEARCH_CTE_PRELIMIT results.
+        After CC fusion, maximum unique results = 2 * HYBRID_SEARCH_CTE_PRELIMIT.
         When limit exceeds this, we still only get fused candidates.
         """
-        from src.fact_checking.repository import RRF_CTE_PRELIMIT, hybrid_search
+        from src.fact_checking.repository import HYBRID_SEARCH_CTE_PRELIMIT, hybrid_search
 
         query_text = "fact check"
         query_embedding = generate_test_embedding(seed=1)
@@ -595,9 +597,9 @@ class TestHybridSearchPreFilterConstant:
                 limit=100,
             )
 
-        max_possible = 2 * RRF_CTE_PRELIMIT
+        max_possible = 2 * HYBRID_SEARCH_CTE_PRELIMIT
         assert len(results) <= max_possible, (
-            f"Results should be bounded by 2 * RRF_CTE_PRELIMIT ({max_possible}), "
+            f"Results should be bounded by 2 * HYBRID_SEARCH_CTE_PRELIMIT ({max_possible}), "
             f"but got {len(results)}"
         )
 

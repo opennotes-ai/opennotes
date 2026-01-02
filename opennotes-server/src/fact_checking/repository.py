@@ -24,9 +24,7 @@ logger = get_logger(__name__)
 # Reference: ACM 2023 https://dl.acm.org/doi/10.1145/3596512
 DEFAULT_ALPHA = 0.7
 
-# RRF (Reciprocal Rank Fusion) constant 'k' - kept for backward compatibility.
-# No longer used in main fusion but still referenced in chunk weight reduction.
-RRF_K_CONSTANT = 60
+FUSION_K_CONSTANT = 60
 
 # Default weight factor for common chunks in TF-IDF-like scoring.
 # Common chunks (is_common=True) are reduced by this factor to decrease their
@@ -48,14 +46,14 @@ DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR = 0.5
 # If you need more results, increase this value, but be aware:
 # - Semantic search cost scales with this limit (pgvector distance computations)
 # - Keyword search is cheaper but still benefits from bounded results
-RRF_CTE_PRELIMIT = 20
+HYBRID_SEARCH_CTE_PRELIMIT = 20
 
 # Multiplier applied to CTE_PRELIMIT for chunk-level CTEs.
 # When searching chunks, multiple chunks can map to the same parent fact_check_item.
 # We fetch more chunk candidates (PRELIMIT * 3 = 60) to ensure enough unique
 # parent items remain after the GROUP BY aggregation step.
 # Higher values improve recall but increase query cost; 3x provides good balance.
-RRF_CHUNK_PRELIMIT_MULTIPLIER = 3
+CHUNK_PRELIMIT_MULTIPLIER = 3
 
 
 @dataclass
@@ -93,8 +91,8 @@ async def hybrid_search(
     discrimination and threshold-based filtering compared to RRF.
 
     Note: Each search method (semantic/keyword) pre-filters to top
-    RRF_CTE_PRELIMIT (20) results before CC fusion, so maximum
-    possible results is 2 * RRF_CTE_PRELIMIT (40) when no overlap.
+    HYBRID_SEARCH_CTE_PRELIMIT (20) results before CC fusion, so maximum
+    possible results is 2 * HYBRID_SEARCH_CTE_PRELIMIT (40) when no overlap.
 
     Args:
         session: Async database session
@@ -159,7 +157,7 @@ async def hybrid_search(
                 AND (embedding <=> CAST(:embedding AS vector)) <= :max_semantic_distance
                 {tags_filter}
             ORDER BY embedding <=> CAST(:embedding AS vector)
-            LIMIT {RRF_CTE_PRELIMIT}
+            LIMIT {HYBRID_SEARCH_CTE_PRELIMIT}
         ),
         keyword_raw AS (
             -- Get raw ts_rank_cd scores
@@ -171,7 +169,7 @@ async def hybrid_search(
                 AND ts_rank_cd(search_vector, query) >= :min_keyword_relevance
                 {tags_filter}
             ORDER BY ts_rank_cd(search_vector, query) DESC
-            LIMIT {RRF_CTE_PRELIMIT}
+            LIMIT {HYBRID_SEARCH_CTE_PRELIMIT}
         ),
         keyword_stats AS (
             -- Calculate min/max for normalization
@@ -399,7 +397,7 @@ async def hybrid_search_with_chunks(
                 AND (ce.embedding <=> CAST(:embedding AS vector)) <= :max_semantic_distance
                 {chunk_tags_filter}
             ORDER BY ce.embedding <=> CAST(:embedding AS vector)
-            LIMIT {RRF_CTE_PRELIMIT * RRF_CHUNK_PRELIMIT_MULTIPLIER}
+            LIMIT {HYBRID_SEARCH_CTE_PRELIMIT * CHUNK_PRELIMIT_MULTIPLIER}
         ),
         semantic_scores AS (
             -- Aggregate chunk semantic scores per fact_check_item using MAX()
@@ -413,7 +411,7 @@ async def hybrid_search_with_chunks(
             FROM chunk_semantic
             GROUP BY fact_check_id
             ORDER BY semantic_score DESC
-            LIMIT {RRF_CTE_PRELIMIT}
+            LIMIT {HYBRID_SEARCH_CTE_PRELIMIT}
         ),
         chunk_keyword_raw AS (
             -- Find keyword-matching chunks using GIN index on search_vector
@@ -430,7 +428,7 @@ async def hybrid_search_with_chunks(
                 AND ts_rank_cd(ce.search_vector, query) >= :min_keyword_relevance
                 {chunk_tags_filter}
             ORDER BY ts_rank_cd(ce.search_vector, query) DESC
-            LIMIT {RRF_CTE_PRELIMIT * RRF_CHUNK_PRELIMIT_MULTIPLIER}
+            LIMIT {HYBRID_SEARCH_CTE_PRELIMIT * CHUNK_PRELIMIT_MULTIPLIER}
         ),
         keyword_raw_scores AS (
             -- Aggregate chunk keyword scores per fact_check_item using MAX()
@@ -462,7 +460,7 @@ async def hybrid_search_with_chunks(
             FROM keyword_raw_scores krs
             CROSS JOIN keyword_stats ks
             ORDER BY krs.keyword_raw DESC
-            LIMIT {RRF_CTE_PRELIMIT}
+            LIMIT {HYBRID_SEARCH_CTE_PRELIMIT}
         )
         SELECT
             fci.id,

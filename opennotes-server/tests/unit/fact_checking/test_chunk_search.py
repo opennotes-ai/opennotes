@@ -4,7 +4,7 @@ Tests the hybrid_search_with_chunks function which:
 - Searches through chunk_embeddings instead of fact_check_items.embedding
 - Applies TF-IDF-like weight reduction for common chunks (is_common=True)
 - Aggregates chunk scores per fact_check_item using MAX()
-- Uses RRF (Reciprocal Rank Fusion) scoring
+- Uses Convex Combination (CC) score fusion
 """
 
 import pytest
@@ -21,12 +21,12 @@ class TestChunkSearchConstants:
             "Common chunks should be weighted at 50% by default"
         )
 
-    def test_rrf_constants_imported(self):
-        """Test RRF constants are accessible for chunk search."""
-        from src.fact_checking.repository import RRF_CTE_PRELIMIT, RRF_K_CONSTANT
+    def test_fusion_constants_imported(self):
+        """Test fusion constants are accessible for chunk search."""
+        from src.fact_checking.repository import FUSION_K_CONSTANT, HYBRID_SEARCH_CTE_PRELIMIT
 
-        assert RRF_K_CONSTANT == 60, "RRF k constant should be 60"
-        assert RRF_CTE_PRELIMIT == 20, "RRF CTE pre-limit should be 20"
+        assert FUSION_K_CONSTANT == 60, "Fusion k constant should be 60"
+        assert HYBRID_SEARCH_CTE_PRELIMIT == 20, "Hybrid search CTE pre-limit should be 20"
 
 
 class TestChunkSearchFunctionExists:
@@ -106,7 +106,7 @@ class TestWeightReductionLogic:
     def test_common_chunk_score_is_reduced(self):
         """Test that common chunk scores are reduced by the weight factor.
 
-        For a common chunk (is_common=True), the RRF score should be:
+        For a common chunk (is_common=True), the fusion score should be:
         score = (1/(k + rank)) * common_chunk_weight_factor
 
         Example: rank=1, k=60, weight_factor=0.5
@@ -126,7 +126,7 @@ class TestWeightReductionLogic:
         )
 
     def test_non_common_chunk_gets_full_score(self):
-        """Test that non-common chunks get full RRF score (weight factor = 1.0)."""
+        """Test that non-common chunks get full fusion score (weight factor = 1.0)."""
         k = 60
         rank = 1
         weight_factor_for_non_common = 1.0
