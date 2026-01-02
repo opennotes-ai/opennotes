@@ -424,9 +424,10 @@ class TestGenerateAINoteTask:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test claim content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=fact_check_item_id,
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "completed"
@@ -452,9 +453,10 @@ class TestGenerateAINoteTask:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=str(uuid4()),
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "rate_limited"
@@ -873,9 +875,10 @@ class TestErrorPaths:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=fact_check_item_id,
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "error"
@@ -913,6 +916,8 @@ class TestErrorPaths:
         settings.DB_POOL_RECYCLE = 1800
         settings.AI_NOTE_WRITING_ENABLED = True
 
+        mock_llm_service = MagicMock()
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
@@ -921,6 +926,10 @@ class TestErrorPaths:
             ),
             patch("src.webhooks.rate_limit.rate_limiter", mock_rate_limiter),
             patch("src.config.get_settings", return_value=settings),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=mock_llm_service,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -931,9 +940,10 @@ class TestErrorPaths:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=fact_check_item_id,
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "error"

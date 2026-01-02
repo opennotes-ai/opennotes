@@ -91,6 +91,7 @@ async def test_ai_note_writer_handles_request_auto_created_event(
         event_id="test_event_1",
         request_id="req_test_1",
         platform_message_id="12345",
+        scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
         community_server_id=str(community_server.platform_id),
         content="Test message that needs fact-checking",
@@ -111,6 +112,7 @@ async def test_ai_note_writer_handles_request_auto_created_event(
         assert call_kwargs["community_server_id"] == str(community_server.platform_id)
         assert call_kwargs["request_id"] == "req_test_1"
         assert call_kwargs["content"] == "Test message that needs fact-checking"
+        assert call_kwargs["scan_type"] == "similarity"
         assert call_kwargs["fact_check_item_id"] == str(fact_check_item.id)
         assert call_kwargs["similarity_score"] == 0.85
 
@@ -129,6 +131,7 @@ async def test_ai_note_writer_respects_enabled_setting(
         event_id="test_event_2",
         request_id="req_test_2",
         platform_message_id="12346",
+        scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
         community_server_id=str(community_server.platform_id),
         content="Test message",
@@ -163,6 +166,7 @@ async def test_ai_note_writer_handles_rate_limiting(
         event_id="test_event_3",
         request_id="req_test_3",
         platform_message_id="12347",
+        scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
         community_server_id=str(community_server.platform_id),
         content="Test message",
@@ -197,6 +201,7 @@ async def test_ai_note_writer_retries_on_failure(
         event_id="test_event_4",
         request_id="req_test_4",
         platform_message_id="12348",
+        scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
         community_server_id=str(community_server.platform_id),
         content="Test message",
@@ -230,6 +235,7 @@ async def test_ai_note_writer_handles_missing_fact_check_item(
         event_id="test_event_5",
         request_id="req_test_5",
         platform_message_id="12349",
+        scan_type="similarity",
         fact_check_item_id="00000000-0000-0000-0000-000000099999",  # Non-existent UUID
         community_server_id=str(community_server.platform_id),
         content="Test message",
@@ -263,6 +269,7 @@ async def test_ai_note_writer_handles_missing_community_server(
         event_id="test_event_6",
         request_id="req_test_6",
         platform_message_id="12350",
+        scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
         community_server_id="999999999",  # Non-existent server
         content="Test message",
@@ -330,6 +337,7 @@ async def test_ai_note_writer_metrics_tracking(
         event_id="test_event_7",
         request_id="req_test_7",
         platform_message_id="12351",
+        scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
         community_server_id=str(community_server.platform_id),
         content="Test message",

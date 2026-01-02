@@ -150,6 +150,7 @@ class AINoteWriter:
             f"Dispatching AI note generation to TaskIQ: {event.request_id}",
             extra={
                 "request_id": event.request_id,
+                "scan_type": event.scan_type,
                 "fact_check_item_id": event.fact_check_item_id,
                 "community_server_id": event.community_server_id,
                 "similarity_score": event.similarity_score,
@@ -161,6 +162,7 @@ class AINoteWriter:
                 community_server_id=event.community_server_id,
                 request_id=event.request_id,
                 content=event.content,
+                scan_type=event.scan_type,
                 fact_check_item_id=event.fact_check_item_id,
                 similarity_score=event.similarity_score,
                 db_url=settings.DATABASE_URL,
@@ -170,6 +172,7 @@ class AINoteWriter:
                 f"AI note generation dispatched to TaskIQ: {event.request_id}",
                 extra={
                     "request_id": event.request_id,
+                    "scan_type": event.scan_type,
                     "fact_check_item_id": event.fact_check_item_id,
                 },
             )

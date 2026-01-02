@@ -469,17 +469,18 @@ async def generate_ai_note_task(
     community_server_id: str,
     request_id: str,
     content: str,
-    fact_check_item_id: str,
-    similarity_score: float,
+    scan_type: str,
     db_url: str,
+    fact_check_item_id: str | None = None,
+    similarity_score: float | None = None,
 ) -> dict[str, Any]:
     """
-    TaskIQ task to generate AI note for a fact-check match.
+    TaskIQ task to generate AI note for a fact-check match or moderation flag.
 
     This task:
     1. Checks rate limits
-    2. Retrieves fact-check item
-    3. Generates note content using LLM
+    2. For similarity scans: retrieves fact-check item and generates note with context
+    3. For moderation scans: generates general explanation note
     4. Persists note to database
 
     Rate Limit Placement Decision:
@@ -502,9 +503,10 @@ async def generate_ai_note_task(
         community_server_id: Platform ID of the community server
         request_id: Request ID to attach note to
         content: Original message content
-        fact_check_item_id: UUID string of matched fact-check item
-        similarity_score: Similarity score of the match
+        scan_type: Type of scan ("similarity" or "openai_moderation")
         db_url: Database connection URL
+        fact_check_item_id: UUID string of matched fact-check item (for similarity scans)
+        similarity_score: Similarity score of the match (for similarity scans)
 
     Returns:
         dict with status and note_id if created
@@ -522,8 +524,11 @@ async def generate_ai_note_task(
     with _tracer.start_as_current_span("content.ai_note") as span:
         span.set_attribute("task.community_server_id", community_server_id)
         span.set_attribute("task.request_id", request_id)
-        span.set_attribute("task.fact_check_item_id", fact_check_item_id)
-        span.set_attribute("task.similarity_score", similarity_score)
+        span.set_attribute("task.scan_type", scan_type)
+        if fact_check_item_id:
+            span.set_attribute("task.fact_check_item_id", fact_check_item_id)
+        if similarity_score is not None:
+            span.set_attribute("task.similarity_score", similarity_score)
         span.set_attribute("task.component", "content_monitoring")
 
         settings = get_settings()
@@ -561,18 +566,27 @@ async def generate_ai_note_task(
                     span.set_status(StatusCode.ERROR, error_msg)
                     return {"status": "error", "error": error_msg}
 
-                result = await session.execute(
-                    select(FactCheckItem).where(FactCheckItem.id == UUID(fact_check_item_id))
-                )
-                fact_check_item = result.scalar_one_or_none()
-
-                if not fact_check_item:
-                    error_msg = f"Fact-check item not found: {fact_check_item_id}"
-                    span.set_status(StatusCode.ERROR, error_msg)
-                    return {"status": "error", "error": error_msg}
-
                 llm_service = _get_llm_service()
-                prompt = _build_fact_check_prompt(content, fact_check_item, similarity_score)
+                fact_check_item: FactCheckItem | None = None
+                dataset_name = "bulk_scan"
+
+                if scan_type == "similarity" and fact_check_item_id:
+                    result = await session.execute(
+                        select(FactCheckItem).where(FactCheckItem.id == UUID(fact_check_item_id))
+                    )
+                    fact_check_item = result.scalar_one_or_none()
+
+                    if not fact_check_item:
+                        error_msg = f"Fact-check item not found: {fact_check_item_id}"
+                        span.set_status(StatusCode.ERROR, error_msg)
+                        return {"status": "error", "error": error_msg}
+
+                    dataset_name = fact_check_item.dataset_name or "bulk_scan"
+                    prompt = _build_fact_check_prompt(
+                        content, fact_check_item, similarity_score or 0.0
+                    )
+                else:
+                    prompt = _build_general_explanation_prompt(content)
 
                 messages = [
                     LLMMessage(role="system", content=settings.AI_NOTE_WRITER_SYSTEM_PROMPT),
@@ -614,7 +628,7 @@ async def generate_ai_note_task(
 
                 ai_notes_generated_total.labels(
                     community_server_id=community_server_id,
-                    dataset_name=fact_check_item.dataset_name,
+                    dataset_name=dataset_name,
                     instance_id=instance_id,
                 ).inc()
 
@@ -623,6 +637,7 @@ async def generate_ai_note_task(
                     extra={
                         "note_id": str(note.id),
                         "request_id": request_id,
+                        "scan_type": scan_type,
                         "fact_check_item_id": fact_check_item_id,
                         "duration_seconds": duration,
                     },
@@ -640,6 +655,7 @@ async def generate_ai_note_task(
                 "Failed to generate AI note",
                 extra={
                     "request_id": request_id,
+                    "scan_type": scan_type,
                     "fact_check_item_id": fact_check_item_id,
                     "error": error_msg,
                 },
@@ -674,6 +690,24 @@ Please write a concise, informative community note that:
 3. Maintains a neutral, factual tone
 4. Is clear and easy to understand
 5. Is no more than 280 characters if possible
+
+Community Note:"""
+
+
+def _build_general_explanation_prompt(original_message: str) -> str:
+    """Build prompt for general explanation note generation (no fact-check context)."""
+    return f"""Original Message:
+{original_message}
+
+Please analyze this content and write a concise, informative community note that:
+1. Explains the message content
+2. Provides helpful context and clarification
+3. Addresses any potential misunderstandings
+4. Maintains a neutral, factual tone
+5. Is clear and easy to understand
+6. Is no more than 280 characters if possible
+
+Focus on helping readers understand what the content is about, what context might be important, and any relevant information that would be helpful to know.
 
 Community Note:"""
 

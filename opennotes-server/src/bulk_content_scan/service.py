@@ -955,6 +955,8 @@ async def create_note_requests_from_flagged_messages(
     Returns:
         List of created request IDs (string request_id values)
     """
+    from src.events.publisher import event_publisher  # noqa: PLC0415
+    from src.llm_config.models import CommunityServer  # noqa: PLC0415
     from src.notes.request_service import RequestService  # noqa: PLC0415
 
     logger.info(
@@ -967,6 +969,19 @@ async def create_note_requests_from_flagged_messages(
             "generate_ai_notes": generate_ai_notes,
         },
     )
+
+    platform_id: str | None = None
+    if generate_ai_notes:
+        result = await session.execute(
+            select(CommunityServer.platform_id).where(CommunityServer.id == community_server_id)
+        )
+        platform_id = result.scalar_one_or_none()
+        if not platform_id:
+            logger.warning(
+                "Community server platform_id not found, AI note generation will be skipped",
+                extra={"community_server_id": str(community_server_id)},
+            )
+            generate_ai_notes = False
 
     flagged_by_message_id = {msg.message_id: msg for msg in flagged_messages}
 
@@ -985,10 +1000,10 @@ async def create_note_requests_from_flagged_messages(
 
         request_id = f"bulkscan_{scan_id.hex[:8]}_{uuid_module.uuid4().hex[:8]}"
 
-        # Extract match info from matches list
         match_score = 0.0
         matched_claim = ""
         matched_source = ""
+        first_match = None
         if flagged_msg.matches:
             first_match = flagged_msg.matches[0]
             if first_match.scan_type == "similarity":
@@ -1036,6 +1051,50 @@ async def create_note_requests_from_flagged_messages(
                     "match_score": match_score,
                 },
             )
+
+            if generate_ai_notes and first_match and platform_id:
+                try:
+                    if first_match.scan_type == "similarity":
+                        await event_publisher.publish_request_auto_created(
+                            request_id=request.request_id,
+                            platform_message_id=flagged_msg.message_id,
+                            community_server_id=platform_id,
+                            content=flagged_msg.content,
+                            scan_type="similarity",
+                            fact_check_item_id=str(first_match.fact_check_item_id)
+                            if first_match.fact_check_item_id
+                            else None,
+                            similarity_score=first_match.score,
+                            dataset_name=first_match.matched_source or "bulk_scan",
+                        )
+                    elif first_match.scan_type == "openai_moderation":
+                        await event_publisher.publish_request_auto_created(
+                            request_id=request.request_id,
+                            platform_message_id=flagged_msg.message_id,
+                            community_server_id=platform_id,
+                            content=flagged_msg.content,
+                            scan_type="openai_moderation",
+                            moderation_metadata={
+                                "categories": first_match.categories,
+                                "scores": first_match.scores,
+                                "flagged_categories": first_match.flagged_categories,
+                            },
+                        )
+                    logger.info(
+                        "Published REQUEST_AUTO_CREATED event for AI note generation",
+                        extra={
+                            "request_id": request.request_id,
+                            "scan_type": first_match.scan_type,
+                        },
+                    )
+                except Exception as pub_error:
+                    logger.error(
+                        "Failed to publish REQUEST_AUTO_CREATED event",
+                        extra={
+                            "request_id": request.request_id,
+                            "error": str(pub_error),
+                        },
+                    )
 
         except Exception as e:
             logger.error(
