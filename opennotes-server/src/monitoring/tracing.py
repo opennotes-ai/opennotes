@@ -3,7 +3,7 @@ from typing import Any
 
 from opentelemetry import baggage, context, propagate, trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
@@ -119,17 +119,16 @@ class TracingManager:
 
         if self.otlp_endpoint:
             headers = self._parse_headers()
+            endpoint_url = self.otlp_endpoint
+            if not endpoint_url.endswith("/v1/traces"):
+                endpoint_url = endpoint_url.rstrip("/") + "/v1/traces"
             otlp_exporter = OTLPSpanExporter(
-                endpoint=self.otlp_endpoint,
-                insecure=self.otlp_insecure,
+                endpoint=endpoint_url,
                 headers=headers,
             )
             self._tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
             headers_status = "with auth" if headers else "no auth"
-            logger.info(
-                f"OTLP tracing enabled: {self.otlp_endpoint} "
-                f"(insecure={self.otlp_insecure}, {headers_status})"
-            )
+            logger.info(f"OTLP HTTP tracing enabled: {endpoint_url} ({headers_status})")
 
         if self.enable_console_export:
             console_exporter = ConsoleSpanExporter()
