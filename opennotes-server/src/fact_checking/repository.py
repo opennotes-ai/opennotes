@@ -1,7 +1,8 @@
 """Repository functions for fact-checking data access.
 
 Provides database access patterns for fact-checking features, including
-hybrid search combining full-text search (FTS) and vector similarity.
+hybrid search combining full-text search (FTS) and vector similarity
+using Convex Combination (CC) score fusion.
 """
 
 import time
@@ -16,25 +17,30 @@ from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 
-# RRF (Reciprocal Rank Fusion) constant 'k'.
-# Standard value (60) that balances contribution of high and low ranked results.
-# Used in formula: score = 1/(k + rank)
-# Higher k values reduce the impact of rank differences; k=60 is the de facto standard.
+# Default fusion weight (alpha) for Convex Combination.
+# Used when Redis is unavailable or no alpha is specified.
+# alpha = 0.7 is semantic-weighted, based on research showing semantic search
+# generally outperforms keyword search for fact-checking queries.
+# Reference: ACM 2023 https://dl.acm.org/doi/10.1145/3596512
+DEFAULT_ALPHA = 0.7
+
+# RRF (Reciprocal Rank Fusion) constant 'k' - kept for backward compatibility.
+# No longer used in main fusion but still referenced in chunk weight reduction.
 RRF_K_CONSTANT = 60
 
 # Default weight factor for common chunks in TF-IDF-like scoring.
 # Common chunks (is_common=True) are reduced by this factor to decrease their
-# contribution to RRF scores, similar to inverse document frequency in TF-IDF.
+# contribution to scores, similar to inverse document frequency in TF-IDF.
 # Value of 0.5 means common chunks contribute 50% of their normal score.
 DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR = 0.5
 
 # Pre-filter limit for each CTE (Common Table Expression) in hybrid search.
 # Each search method (semantic and keyword) retrieves this many candidates
-# before RRF fusion combines them into final rankings.
+# before fusion combines them into final rankings.
 #
 # Why 20?
 # - Balances performance vs. recall for typical fact-checking queries
-# - Maximum unique results after RRF = 2 * RRF_CTE_PRELIMIT (40) when
+# - Maximum unique results after fusion = 2 * CTE_PRELIMIT (40) when
 #   semantic and keyword results have zero overlap
 # - In practice, good queries have overlap, so final results < 40
 # - Higher values increase recall but slow down vector distance calculations
@@ -44,7 +50,7 @@ DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR = 0.5
 # - Keyword search is cheaper but still benefits from bounded results
 RRF_CTE_PRELIMIT = 20
 
-# Multiplier applied to RRF_CTE_PRELIMIT for chunk-level CTEs.
+# Multiplier applied to CTE_PRELIMIT for chunk-level CTEs.
 # When searching chunks, multiple chunks can map to the same parent fact_check_item.
 # We fetch more chunk candidates (PRELIMIT * 3 = 60) to ensure enough unique
 # parent items remain after the GROUP BY aggregation step.
@@ -54,10 +60,10 @@ RRF_CHUNK_PRELIMIT_MULTIPLIER = 3
 
 @dataclass
 class HybridSearchResult:
-    """Result from hybrid search including RRF score."""
+    """Result from hybrid search including Convex Combination fusion score."""
 
     item: FactCheckItem
-    rrf_score: float
+    cc_score: float  # Convex Combination score in [0, 1] range
 
 
 async def hybrid_search(
@@ -68,20 +74,26 @@ async def hybrid_search(
     dataset_tags: list[str] | None = None,
     semantic_similarity_threshold: float = 0.0,
     keyword_relevance_threshold: float = 0.0,
+    alpha: float = DEFAULT_ALPHA,
 ) -> list[HybridSearchResult]:
     """
-    Perform hybrid search combining FTS and vector similarity using RRF.
+    Perform hybrid search combining FTS and vector similarity using Convex Combination.
 
-    Uses Reciprocal Rank Fusion (RRF) to combine rankings from:
+    Uses Convex Combination (CC) to fuse scores from:
     - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
-    - pgvector embedding similarity (cosine distance)
+    - pgvector embedding similarity (cosine similarity)
 
-    The RRF formula: score = 1/(k + rank_semantic) + 1/(k + rank_keyword)
-    where k=60 (RRF_K_CONSTANT) is the standard RRF constant that balances
-    the contribution of high and low ranked results.
+    The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
+    where:
+    - semantic_similarity = 1 - cosine_distance (already in 0-1 range)
+    - keyword_norm = min-max normalized ts_rank_cd within result set
+    - alpha ∈ [0, 1] controls the balance (default 0.7, semantic-weighted)
+
+    CC preserves score magnitude information, enabling better relevance
+    discrimination and threshold-based filtering compared to RRF.
 
     Note: Each search method (semantic/keyword) pre-filters to top
-    RRF_CTE_PRELIMIT (20) results before RRF combination, so maximum
+    RRF_CTE_PRELIMIT (20) results before CC fusion, so maximum
     possible results is 2 * RRF_CTE_PRELIMIT (40) when no overlap.
 
     Args:
@@ -99,18 +111,25 @@ async def hybrid_search(
         keyword_relevance_threshold: Minimum ts_rank_cd score for keyword search
             results. Results below this threshold are excluded from the keyword
             ranking. Default 0.0 (no filtering).
+        alpha: Fusion weight alpha ∈ [0, 1] for Convex Combination.
+            alpha = 1.0 means pure semantic search
+            alpha = 0.0 means pure keyword search
+            Default 0.7 (semantic-weighted, based on research)
 
     Returns:
-        List of HybridSearchResult containing FactCheckItem and RRF score,
-        ranked by combined RRF score (highest first)
+        List of HybridSearchResult containing FactCheckItem and CC score,
+        ranked by combined CC score (highest first)
 
     Raises:
-        ValueError: If embedding has wrong dimensions
+        ValueError: If embedding has wrong dimensions or alpha out of range
     """
     if len(query_embedding) != settings.EMBEDDING_DIMENSIONS:
         raise ValueError(
             f"Embedding must have {settings.EMBEDDING_DIMENSIONS} dimensions, got {len(query_embedding)}"
         )
+
+    if not (0.0 <= alpha <= 1.0):
+        raise ValueError(f"Alpha must be between 0.0 and 1.0, got {alpha}")
 
     query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
 
@@ -121,9 +140,20 @@ async def hybrid_search(
     # Convert similarity threshold to max distance (cosine distance = 1 - similarity)
     max_semantic_distance = 1.0 - semantic_similarity_threshold
 
-    rrf_query = text(f"""
+    # Convex Combination query with min-max normalization for keyword scores.
+    #
+    # The query uses CTEs to:
+    # 1. semantic: Get semantic similarity scores (1 - cosine_distance)
+    # 2. keyword_raw: Get raw ts_rank_cd scores
+    # 3. keyword_stats: Calculate min/max for normalization
+    # 4. keyword: Apply min-max normalization to keyword scores
+    # 5. Final SELECT: Apply CC formula: alpha * semantic + (1-alpha) * keyword_norm
+    cc_query = text(f"""
         WITH semantic AS (
-            SELECT id, RANK() OVER (ORDER BY embedding <=> CAST(:embedding AS vector)) AS rank
+            -- Get semantic similarity scores (1 - cosine_distance, range 0-1)
+            SELECT
+                id,
+                1.0 - (embedding <=> CAST(:embedding AS vector)) AS similarity
             FROM fact_check_items
             WHERE embedding IS NOT NULL
                 AND (embedding <=> CAST(:embedding AS vector)) <= :max_semantic_distance
@@ -131,14 +161,36 @@ async def hybrid_search(
             ORDER BY embedding <=> CAST(:embedding AS vector)
             LIMIT {RRF_CTE_PRELIMIT}
         ),
-        keyword AS (
-            SELECT id, RANK() OVER (ORDER BY ts_rank_cd(search_vector, query) DESC) AS rank
+        keyword_raw AS (
+            -- Get raw ts_rank_cd scores
+            SELECT
+                id,
+                ts_rank_cd(search_vector, query) AS relevance
             FROM fact_check_items, plainto_tsquery('english', :query_text) query
             WHERE search_vector @@ query
                 AND ts_rank_cd(search_vector, query) >= :min_keyword_relevance
                 {tags_filter}
             ORDER BY ts_rank_cd(search_vector, query) DESC
             LIMIT {RRF_CTE_PRELIMIT}
+        ),
+        keyword_stats AS (
+            -- Calculate min/max for normalization
+            SELECT
+                MIN(relevance) AS min_rel,
+                MAX(relevance) AS max_rel
+            FROM keyword_raw
+        ),
+        keyword AS (
+            -- Apply min-max normalization: (x - min) / (max - min)
+            -- Handle edge case where min == max (returns 1.0 for single result)
+            SELECT
+                kr.id,
+                CASE
+                    WHEN ks.max_rel = ks.min_rel THEN 1.0
+                    ELSE (kr.relevance - ks.min_rel) / (ks.max_rel - ks.min_rel)
+                END AS keyword_norm
+            FROM keyword_raw kr
+            CROSS JOIN keyword_stats ks
         )
         SELECT
             fci.id,
@@ -159,12 +211,13 @@ async def hybrid_search(
             fci.search_vector,
             fci.created_at,
             fci.updated_at,
-            COALESCE(1.0/({RRF_K_CONSTANT}+s.rank), 0.0) + COALESCE(1.0/({RRF_K_CONSTANT}+k.rank), 0.0) AS rrf_score
+            -- Convex Combination: alpha * semantic + (1-alpha) * keyword
+            :alpha * COALESCE(s.similarity, 0.0) + (1.0 - :alpha) * COALESCE(k.keyword_norm, 0.0) AS cc_score
         FROM fact_check_items fci
         LEFT JOIN semantic s ON fci.id = s.id
         LEFT JOIN keyword k ON fci.id = k.id
         WHERE s.id IS NOT NULL OR k.id IS NOT NULL
-        ORDER BY rrf_score DESC
+        ORDER BY cc_score DESC
         LIMIT :limit
     """)
 
@@ -174,13 +227,14 @@ async def hybrid_search(
         "limit": limit,
         "max_semantic_distance": max_semantic_distance,
         "min_keyword_relevance": keyword_relevance_threshold,
+        "alpha": alpha,
     }
     if dataset_tags:
         params["dataset_tags"] = dataset_tags
 
     query_start = time.perf_counter()
     try:
-        result = await session.execute(rrf_query, params)
+        result = await session.execute(cc_query, params)
         rows = result.fetchall()
         query_duration_ms = (time.perf_counter() - query_start) * 1000
     except Exception as e:
@@ -192,6 +246,7 @@ async def hybrid_search(
                 "embedding_dimensions": len(query_embedding),
                 "limit": limit,
                 "dataset_tags": dataset_tags,
+                "alpha": alpha,
                 "query_duration_ms": round(query_duration_ms, 2),
                 "error": str(e),
             },
@@ -220,7 +275,7 @@ async def hybrid_search(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        results.append(HybridSearchResult(item=item, rrf_score=float(row.rrf_score)))
+        results.append(HybridSearchResult(item=item, cc_score=float(row.cc_score)))
 
     logger.info(
         "Hybrid search completed",
@@ -229,6 +284,7 @@ async def hybrid_search(
             "results_count": len(results),
             "limit": limit,
             "dataset_tags": dataset_tags,
+            "alpha": alpha,
             "query_duration_ms": round(query_duration_ms, 2),
         },
     )
@@ -245,22 +301,25 @@ async def hybrid_search_with_chunks(
     semantic_similarity_threshold: float = 0.0,
     keyword_relevance_threshold: float = 0.0,
     common_chunk_weight_factor: float = DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR,
+    alpha: float = DEFAULT_ALPHA,
 ) -> list[HybridSearchResult]:
     """
-    Perform hybrid search using chunk embeddings with TF-IDF-like weight reduction.
+    Perform hybrid search using chunk embeddings with Convex Combination fusion.
 
     This function searches through chunk_embeddings for both semantic and keyword
     searches, providing true chunk-level hybrid search. It applies weight reduction
     to common chunks (is_common=True) similar to inverse document frequency in TF-IDF,
     reducing the contribution of frequently occurring text patterns.
 
-    Uses Reciprocal Rank Fusion (RRF) to combine rankings from:
+    Uses Convex Combination (CC) to fuse scores from:
     - Chunk-based semantic search via chunk_embeddings.embedding (pgvector HNSW index)
     - Chunk-based full-text search via chunk_embeddings.search_vector (GIN index)
 
-    The RRF formula with weight reduction for both semantic and keyword chunks:
-    - Non-common chunks: score = 1/(k + rank)
-    - Common chunks: score = (1/(k + rank)) * common_chunk_weight_factor
+    The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
+    where:
+    - semantic_similarity = 1 - cosine_distance (already in 0-1 range)
+    - keyword_norm = min-max normalized ts_rank_cd within result set
+    - alpha ∈ [0, 1] controls the balance (default 0.7, semantic-weighted)
 
     Multiple chunks per fact_check_item are aggregated using MAX() to select
     the best-matching chunk's score from each search method.
@@ -279,13 +338,17 @@ async def hybrid_search_with_chunks(
         common_chunk_weight_factor: Weight multiplier for common chunks (0.0-1.0).
             Default 0.5 means common chunks contribute 50% of their normal score.
             Set to 1.0 to disable weight reduction, 0.0 to ignore common chunks.
+        alpha: Fusion weight alpha ∈ [0, 1] for Convex Combination.
+            alpha = 1.0 means pure semantic search
+            alpha = 0.0 means pure keyword search
+            Default 0.7 (semantic-weighted, based on research)
 
     Returns:
-        List of HybridSearchResult containing FactCheckItem and RRF score,
-        ranked by combined RRF score (highest first)
+        List of HybridSearchResult containing FactCheckItem and CC score,
+        ranked by combined CC score (highest first)
 
     Raises:
-        ValueError: If embedding has wrong dimensions
+        ValueError: If embedding has wrong dimensions or parameters out of range
     """
     if len(query_embedding) != settings.EMBEDDING_DIMENSIONS:
         raise ValueError(
@@ -297,31 +360,38 @@ async def hybrid_search_with_chunks(
             f"common_chunk_weight_factor must be between 0.0 and 1.0, got {common_chunk_weight_factor}"
         )
 
+    if not (0.0 <= alpha <= 1.0):
+        raise ValueError(f"Alpha must be between 0.0 and 1.0, got {alpha}")
+
     query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
 
     # Convert similarity threshold to max distance (cosine distance = 1 - similarity)
     max_semantic_distance = 1.0 - semantic_similarity_threshold
 
-    # SQL query using chunk_embeddings with HNSW index
-    # Key differences from hybrid_search:
-    # 1. Search chunk_embeddings instead of fact_check_items.embedding
-    # 2. Join through fact_check_chunks to get parent fact_check_item
-    # 3. Apply weight reduction for is_common=True chunks
-    # 4. Use MAX() to aggregate chunk scores per fact_check_item
-    # Build tags filter for chunk_semantic CTE (joins fact_check_items as fci_chunk)
+    # Build tags filter for chunk CTEs (joins fact_check_items as fci_chunk)
     chunk_tags_filter = ""
     if dataset_tags:
         chunk_tags_filter = "AND fci_chunk.dataset_tags && CAST(:dataset_tags AS text[])"
 
-    rrf_query = text(f"""
+    # Convex Combination query for chunk-based search.
+    #
+    # The query uses CTEs to:
+    # 1. chunk_semantic: Get semantic similarity scores from chunks
+    # 2. semantic_scores: Aggregate per fact_check_item using MAX()
+    # 3. chunk_keyword_raw: Get raw ts_rank_cd scores from chunks
+    # 4. keyword_raw_scores: Aggregate per fact_check_item using MAX()
+    # 5. keyword_stats: Calculate min/max for normalization
+    # 6. keyword_scores: Apply min-max normalization
+    # 7. Final SELECT: Apply CC formula: alpha * semantic + (1-alpha) * keyword_norm
+    cc_query = text(f"""
         WITH chunk_semantic AS (
             -- Find semantically similar chunks using HNSW index
-            -- Join fact_check_items early to apply tags filter before LIMIT
+            -- Calculate similarity score: 1 - cosine_distance
             SELECT
                 ce.id AS chunk_id,
                 fcc.fact_check_id,
                 ce.is_common,
-                RANK() OVER (ORDER BY ce.embedding <=> CAST(:embedding AS vector)) AS rank
+                1.0 - (ce.embedding <=> CAST(:embedding AS vector)) AS similarity
             FROM chunk_embeddings ce
             JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
             JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
@@ -337,30 +407,21 @@ async def hybrid_search_with_chunks(
             SELECT
                 fact_check_id,
                 MAX(
-                    (1.0 / ({RRF_K_CONSTANT} + rank)) *
+                    similarity *
                     CASE WHEN is_common THEN :common_weight ELSE 1.0 END
                 ) AS semantic_score
             FROM chunk_semantic
             GROUP BY fact_check_id
-        ),
-        semantic AS (
-            -- Re-rank by aggregated chunk semantic scores
-            SELECT
-                fact_check_id AS id,
-                RANK() OVER (ORDER BY semantic_score DESC) AS rank
-            FROM semantic_scores
             ORDER BY semantic_score DESC
             LIMIT {RRF_CTE_PRELIMIT}
         ),
-        chunk_keyword AS (
+        chunk_keyword_raw AS (
             -- Find keyword-matching chunks using GIN index on search_vector
-            -- Join fact_check_items early to apply tags filter before LIMIT
             SELECT
                 ce.id AS chunk_id,
                 fcc.fact_check_id,
                 ce.is_common,
-                ts_rank_cd(ce.search_vector, query) AS relevance,
-                RANK() OVER (ORDER BY ts_rank_cd(ce.search_vector, query) DESC) AS rank
+                ts_rank_cd(ce.search_vector, query) AS relevance
             FROM chunk_embeddings ce
             CROSS JOIN LATERAL plainto_tsquery('english', :query_text) AS query
             JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
@@ -371,25 +432,36 @@ async def hybrid_search_with_chunks(
             ORDER BY ts_rank_cd(ce.search_vector, query) DESC
             LIMIT {RRF_CTE_PRELIMIT * RRF_CHUNK_PRELIMIT_MULTIPLIER}
         ),
-        keyword_scores AS (
+        keyword_raw_scores AS (
             -- Aggregate chunk keyword scores per fact_check_item using MAX()
             -- Apply weight reduction for common chunks (TF-IDF-like IDF)
             SELECT
                 fact_check_id,
                 MAX(
-                    (1.0 / ({RRF_K_CONSTANT} + rank)) *
+                    relevance *
                     CASE WHEN is_common THEN :common_weight ELSE 1.0 END
-                ) AS keyword_score
-            FROM chunk_keyword
+                ) AS keyword_raw
+            FROM chunk_keyword_raw
             GROUP BY fact_check_id
         ),
-        keyword AS (
-            -- Re-rank by aggregated chunk keyword scores
+        keyword_stats AS (
+            -- Calculate min/max for normalization across aggregated scores
             SELECT
-                fact_check_id AS id,
-                RANK() OVER (ORDER BY keyword_score DESC) AS rank
-            FROM keyword_scores
-            ORDER BY keyword_score DESC
+                MIN(keyword_raw) AS min_rel,
+                MAX(keyword_raw) AS max_rel
+            FROM keyword_raw_scores
+        ),
+        keyword_scores AS (
+            -- Apply min-max normalization and limit to top results
+            SELECT
+                krs.fact_check_id,
+                CASE
+                    WHEN ks.max_rel = ks.min_rel THEN 1.0
+                    ELSE (krs.keyword_raw - ks.min_rel) / (ks.max_rel - ks.min_rel)
+                END AS keyword_norm
+            FROM keyword_raw_scores krs
+            CROSS JOIN keyword_stats ks
+            ORDER BY krs.keyword_raw DESC
             LIMIT {RRF_CTE_PRELIMIT}
         )
         SELECT
@@ -411,12 +483,13 @@ async def hybrid_search_with_chunks(
             fci.search_vector,
             fci.created_at,
             fci.updated_at,
-            COALESCE(1.0/({RRF_K_CONSTANT}+s.rank), 0.0) + COALESCE(1.0/({RRF_K_CONSTANT}+k.rank), 0.0) AS rrf_score
+            -- Convex Combination: alpha * semantic + (1-alpha) * keyword
+            :alpha * COALESCE(ss.semantic_score, 0.0) + (1.0 - :alpha) * COALESCE(ks.keyword_norm, 0.0) AS cc_score
         FROM fact_check_items fci
-        LEFT JOIN semantic s ON fci.id = s.id
-        LEFT JOIN keyword k ON fci.id = k.id
-        WHERE s.id IS NOT NULL OR k.id IS NOT NULL
-        ORDER BY rrf_score DESC
+        LEFT JOIN semantic_scores ss ON fci.id = ss.fact_check_id
+        LEFT JOIN keyword_scores ks ON fci.id = ks.fact_check_id
+        WHERE ss.fact_check_id IS NOT NULL OR ks.fact_check_id IS NOT NULL
+        ORDER BY cc_score DESC
         LIMIT :limit
     """)
 
@@ -427,13 +500,14 @@ async def hybrid_search_with_chunks(
         "max_semantic_distance": max_semantic_distance,
         "min_keyword_relevance": keyword_relevance_threshold,
         "common_weight": common_chunk_weight_factor,
+        "alpha": alpha,
     }
     if dataset_tags:
         params["dataset_tags"] = dataset_tags
 
     query_start = time.perf_counter()
     try:
-        result = await session.execute(rrf_query, params)
+        result = await session.execute(cc_query, params)
         rows = result.fetchall()
         query_duration_ms = (time.perf_counter() - query_start) * 1000
     except Exception as e:
@@ -446,6 +520,7 @@ async def hybrid_search_with_chunks(
                 "limit": limit,
                 "dataset_tags": dataset_tags,
                 "common_chunk_weight_factor": common_chunk_weight_factor,
+                "alpha": alpha,
                 "query_duration_ms": round(query_duration_ms, 2),
                 "error": str(e),
             },
@@ -474,7 +549,7 @@ async def hybrid_search_with_chunks(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        results.append(HybridSearchResult(item=item, rrf_score=float(row.rrf_score)))
+        results.append(HybridSearchResult(item=item, cc_score=float(row.cc_score)))
 
     logger.info(
         "Chunk-based hybrid search completed",
@@ -484,6 +559,7 @@ async def hybrid_search_with_chunks(
             "limit": limit,
             "dataset_tags": dataset_tags,
             "common_chunk_weight_factor": common_chunk_weight_factor,
+            "alpha": alpha,
             "query_duration_ms": round(query_duration_ms, 2),
         },
     )

@@ -401,7 +401,7 @@ export const apiClientFactory = Factory.define<MockApiClient, ApiClientTransient
             query_text: '',
             dataset_tags: [],
             similarity_threshold: 0.8,
-            rrf_score_threshold: 0.0,
+            score_threshold: 0.0,
             total_matches: 0,
           },
         },

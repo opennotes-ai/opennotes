@@ -521,6 +521,104 @@ export interface paths {
         patch: operations["set_opennotes_admin_status_api_v1_admin_profiles__profile_id__opennotes_admin_patch"];
         trace?: never;
     };
+    "/api/v1/admin/fusion-weights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get All Fusion Weights
+         * @description Get all configured fusion weights.
+         *
+         *     Returns the global default weight and any dataset-specific overrides.
+         *
+         *     Returns:
+         *         AllFusionWeightsResponse: All configured fusion weights
+         */
+        get: operations["get_all_fusion_weights_api_v1_admin_fusion_weights_get"];
+        /**
+         * Update Fusion Weight
+         * @description Update a fusion weight (global or dataset-specific).
+         *
+         *     Args:
+         *         request: FusionWeightUpdate with alpha and optional dataset
+         *
+         *     Returns:
+         *         FusionWeightResponse: Updated fusion weight
+         *
+         *     Raises:
+         *         HTTPException 400: If alpha is out of range
+         *         HTTPException 500: If Redis update fails
+         */
+        put: operations["update_fusion_weight_api_v1_admin_fusion_weights_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/fusion-weights/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Fusion Weight
+         * @description Get the global default fusion weight.
+         *
+         *     Returns:
+         *         FusionWeightResponse: Current default fusion weight
+         */
+        get: operations["get_default_fusion_weight_api_v1_admin_fusion_weights_default_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/fusion-weights/{dataset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dataset Fusion Weight
+         * @description Get the fusion weight for a specific dataset.
+         *
+         *     Args:
+         *         dataset: Dataset name (e.g., 'snopes', 'politifact')
+         *
+         *     Returns:
+         *         FusionWeightResponse: Fusion weight for the dataset
+         */
+        get: operations["get_dataset_fusion_weight_api_v1_admin_fusion_weights__dataset__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Dataset Fusion Weight
+         * @description Delete a dataset-specific fusion weight (revert to default).
+         *
+         *     Args:
+         *         dataset: Dataset name to remove override for
+         *
+         *     Returns:
+         *         dict: Confirmation message
+         */
+        delete: operations["delete_dataset_fusion_weight_api_v1_admin_fusion_weights__dataset__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/notes": {
         parameters: {
             query?: never;
@@ -2818,6 +2916,24 @@ export interface components {
         AdminStatusUpdateRequest: {
             data: components["schemas"]["AdminStatusUpdateData"];
         };
+        /**
+         * AllFusionWeightsResponse
+         * @description Response model for all fusion weights.
+         */
+        AllFusionWeightsResponse: {
+            /**
+             * Default
+             * @description Global default fusion weight
+             */
+            default: number;
+            /**
+             * Datasets
+             * @description Dataset-specific fusion weights
+             */
+            datasets?: {
+                [key: string]: number;
+            };
+        };
         /** AuditLogResponse */
         AuditLogResponse: {
             /**
@@ -3684,6 +3800,43 @@ export interface components {
             id: string;
             attributes: components["schemas"]["FlaggedMessageAttributes"];
         };
+        /**
+         * FusionWeightResponse
+         * @description Response model for fusion weight.
+         */
+        FusionWeightResponse: {
+            /**
+             * Alpha
+             * @description Current fusion weight alpha ∈ [0, 1]
+             */
+            alpha: number;
+            /**
+             * Dataset
+             * @description Dataset name or None for global default
+             */
+            dataset?: string | null;
+            /**
+             * Source
+             * @description Source of the value: 'redis' or 'fallback'
+             */
+            source: string;
+        };
+        /**
+         * FusionWeightUpdate
+         * @description Request model for updating fusion weight.
+         */
+        FusionWeightUpdate: {
+            /**
+             * Alpha
+             * @description Fusion weight alpha ∈ [0, 1]. alpha=1.0 is pure semantic, alpha=0.0 is pure keyword.
+             */
+            alpha: number;
+            /**
+             * Dataset
+             * @description Optional dataset name for dataset-specific override. None for global default.
+             */
+            dataset?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3822,10 +3975,10 @@ export interface components {
              */
             author?: string | null;
             /**
-             * Rrf Score
-             * @description Reciprocal Rank Fusion score combining FTS and semantic rankings
+             * Cc Score
+             * @description Convex Combination score fusing semantic and keyword rankings
              */
-            rrf_score: number;
+            cc_score: number;
         };
         /**
          * HybridSearchRequest
@@ -3841,7 +3994,7 @@ export interface components {
         HybridSearchResultAttributes: {
             /**
              * Matches
-             * @description Matching fact-check items ranked by RRF score
+             * @description Matching fact-check items ranked by CC score
              */
             matches: components["schemas"]["HybridSearchMatchResource"][];
             /**
@@ -6728,11 +6881,11 @@ export interface components {
              */
             similarity_threshold?: number;
             /**
-             * Rrf Score Threshold
-             * @description Minimum scaled RRF score (0.0-1.0) for post-fusion filtering
+             * Score Threshold
+             * @description Minimum CC score (0.0-1.0) for post-fusion filtering
              * @default 0.1
              */
-            rrf_score_threshold: number;
+            score_threshold: number;
             /**
              * Limit
              * @description Maximum number of results to return
@@ -6786,10 +6939,10 @@ export interface components {
              */
             similarity_threshold: number;
             /**
-             * Rrf Score Threshold
-             * @description Scaled RRF score threshold applied
+             * Score Threshold
+             * @description CC score threshold applied
              */
-            rrf_score_threshold: number;
+            score_threshold: number;
             /**
              * Total Matches
              * @description Number of matches found
@@ -7916,6 +8069,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_all_fusion_weights_api_v1_admin_fusion_weights_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllFusionWeightsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_fusion_weight_api_v1_admin_fusion_weights_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FusionWeightUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FusionWeightResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_default_fusion_weight_api_v1_admin_fusion_weights_default_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FusionWeightResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dataset_fusion_weight_api_v1_admin_fusion_weights__dataset__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                dataset: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FusionWeightResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_dataset_fusion_weight_api_v1_admin_fusion_weights__dataset__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                dataset: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

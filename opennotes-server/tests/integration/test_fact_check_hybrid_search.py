@@ -291,13 +291,13 @@ class TestHybridSearchRepository:
         if len(results) > 0:
             result = results[0]
             assert hasattr(result, "item"), "Result should have item (FactCheckItem)"
-            assert hasattr(result, "rrf_score"), "Result should have rrf_score"
+            assert hasattr(result, "cc_score"), "Result should have cc_score"
             assert hasattr(result.item, "id"), "FactCheckItem should have id"
             assert hasattr(result.item, "title"), "FactCheckItem should have title"
             assert hasattr(result.item, "content"), "FactCheckItem should have content"
             assert hasattr(result.item, "dataset_name"), "FactCheckItem should have dataset_name"
             assert hasattr(result.item, "rating"), "FactCheckItem should have rating"
-            assert float(result.rrf_score) >= 0.0, "rrf_score should be non-negative"
+            assert float(result.cc_score) >= 0.0, "cc_score should be non-negative"
 
     async def test_hybrid_search_with_default_limit(self, hybrid_search_test_items):
         """Test that default limit of 10 is applied when not specified."""

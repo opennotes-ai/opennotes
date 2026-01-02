@@ -67,7 +67,7 @@ describe('ApiClient.similaritySearch', () => {
             query_text: 'test query',
             dataset_tags: ['snopes'],
             similarity_threshold: 0.7,
-            rrf_score_threshold: 0.5,
+            score_threshold: 0.5,
             total_matches: 2,
           },
         },
@@ -95,7 +95,7 @@ describe('ApiClient.similaritySearch', () => {
       expect(result.data.attributes.query_text).toBe('test query');
       expect(result.data.attributes.dataset_tags).toEqual(['snopes']);
       expect(result.data.attributes.similarity_threshold).toBe(0.7);
-      expect(result.data.attributes.rrf_score_threshold).toBe(0.5);
+      expect(result.data.attributes.score_threshold).toBe(0.5);
       expect(result.data.attributes.total_matches).toBe(2);
     });
 
@@ -126,7 +126,7 @@ describe('ApiClient.similaritySearch', () => {
             query_text: 'political claim query',
             dataset_tags: ['politifact'],
             similarity_threshold: 0.8,
-            rrf_score_threshold: 0.6,
+            score_threshold: 0.6,
             total_matches: 1,
           },
         },
@@ -161,7 +161,7 @@ describe('ApiClient.similaritySearch', () => {
             query_text: 'no results query',
             dataset_tags: ['snopes'],
             similarity_threshold: 0.9,
-            rrf_score_threshold: 0.7,
+            score_threshold: 0.7,
             total_matches: 0,
           },
         },
@@ -192,7 +192,7 @@ describe('ApiClient.similaritySearch', () => {
             query_text: 'request body test',
             dataset_tags: ['snopes', 'politifact'],
             similarity_threshold: 0.75,
-            rrf_score_threshold: 0.5,
+            score_threshold: 0.5,
             total_matches: 0,
           },
         },

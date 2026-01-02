@@ -447,7 +447,7 @@ export interface SimilaritySearchResultAttributes {
   query_text: string;
   dataset_tags: string[];
   similarity_threshold: number;
-  rrf_score_threshold: number;
+  score_threshold: number;
   total_matches: number;
 }
 

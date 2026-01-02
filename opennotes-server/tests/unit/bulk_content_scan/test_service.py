@@ -186,7 +186,7 @@ class TestProcessMessages:
                 query_text="Test message content",
                 dataset_tags=["snopes"],
                 similarity_threshold=0.6,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
                 total_matches=1,
             )
         )
@@ -246,7 +246,7 @@ class TestProcessMessages:
                 query_text="Test message",
                 dataset_tags=["snopes"],
                 similarity_threshold=0.6,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
                 total_matches=1,
             )
         )
@@ -348,7 +348,7 @@ class TestProcessMessages:
                 query_text="Test message content",
                 dataset_tags=["snopes"],
                 similarity_threshold=0.6,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
                 total_matches=1,
             )
         )
@@ -1441,7 +1441,7 @@ class TestEmbeddingServiceErrorHandling:
                 query_text="Test message",
                 dataset_tags=["snopes"],
                 similarity_threshold=0.6,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
                 total_matches=1,
             )
 
@@ -1622,7 +1622,7 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
             content="This is a fake claim",
             source_url="https://snopes.com/fake",
             similarity_score=0.85,
-            rrf_score=0.5,
+            cc_score=0.5,
         )
 
         mock_embedding_service.similarity_search = AsyncMock(
@@ -1631,7 +1631,7 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
                 matches=[high_score_match],
                 dataset_tags=["misinformation"],
                 similarity_threshold=0.35,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
                 total_matches=1,
             )
         )
@@ -1688,7 +1688,7 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
             content="This is a fake claim",
             source_url="https://snopes.com/fake",
             similarity_score=0.85,
-            rrf_score=0.5,
+            cc_score=0.5,
         )
 
         mock_embedding_service.similarity_search = AsyncMock(
@@ -1697,7 +1697,7 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
                 matches=[high_score_match],
                 dataset_tags=["misinformation"],
                 similarity_threshold=0.35,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
                 total_matches=1,
             )
         )

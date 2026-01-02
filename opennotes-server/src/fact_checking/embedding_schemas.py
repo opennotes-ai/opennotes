@@ -38,9 +38,9 @@ class SimilaritySearchRequest(StrictInputSchema):
         ge=0.0,
         le=1.0,
     )
-    rrf_score_threshold: float = Field(
+    score_threshold: float = Field(
         0.1,
-        description="Minimum scaled RRF score (0.0-1.0) for post-fusion filtering",
+        description="Minimum CC score (0.0-1.0) for post-fusion filtering",
         ge=0.0,
         le=1.0,
     )
@@ -80,5 +80,5 @@ class SimilaritySearchResponse(BaseModel):
     query_text: str = Field(..., description="Original query text")
     dataset_tags: list[str] = Field(..., description="Dataset tags used for filtering")
     similarity_threshold: float = Field(..., description="Cosine similarity threshold applied")
-    rrf_score_threshold: float = Field(..., description="Scaled RRF score threshold applied")
+    score_threshold: float = Field(..., description="CC score threshold applied")
     total_matches: int = Field(..., description="Number of matches found")

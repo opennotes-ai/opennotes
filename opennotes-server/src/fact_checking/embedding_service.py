@@ -9,105 +9,79 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.cache.redis_client import redis_client
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.fact_checking.previously_seen_schemas import PreviouslySeenMessageMatch
-from src.fact_checking.repository import RRF_K_CONSTANT, hybrid_search_with_chunks
+from src.fact_checking.repository import DEFAULT_ALPHA, RRF_K_CONSTANT, hybrid_search_with_chunks
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
+from src.search.search_analytics import hash_query, log_search_results
 
 logger = get_logger(__name__)
 _tracer = trace.get_tracer(__name__)
 
 # =============================================================================
-# Hybrid Search Thresholds and RRF Score Scaling Documentation
+# Hybrid Search Thresholds and Convex Combination Score Documentation
 # =============================================================================
 #
 # OVERVIEW
 # --------
 # Hybrid search uses TWO separate thresholds for quality filtering:
 #
-# 1. similarity_threshold (SQL-level, pre-RRF):
-#    - Filters semantic search results by cosine similarity BEFORE RRF fusion
+# 1. similarity_threshold (SQL-level, pre-fusion):
+#    - Filters semantic search results by cosine similarity BEFORE CC fusion
 #    - Ensures only semantically relevant results enter the ranking
-#    - Prevents poor-quality results from getting high RRF scores just by
+#    - Prevents poor-quality results from getting high CC scores just by
 #      being "least bad" in the corpus
 #    - Default: settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD (0.6)
 #
-# 2. rrf_score_threshold (post-RRF):
-#    - Filters scaled RRF scores AFTER fusion
+# 2. score_threshold (post-fusion):
+#    - Filters CC scores AFTER fusion
 #    - Controls the minimum combined ranking quality
 #    - Default: 0.1 (permissive, filters only very poor matches)
 #
-# RRF SCORE CALCULATION
-# ---------------------
-# For each search method (semantic/keyword), RRF score = 1/(k + rank)
-# where k = RRF_K_CONSTANT (60, the de facto standard).
+# CONVEX COMBINATION (CC) SCORE CALCULATION
+# -----------------------------------------
+# The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
 #
-# For hybrid search, we sum scores from both methods:
-#   total_rrf = 1/(k + semantic_rank) + 1/(k + keyword_rank)  # noqa: ERA001
+# Where:
+# - semantic_similarity = 1 - cosine_distance (already in 0-1 range)
+# - keyword_norm = min-max normalized ts_rank_cd within result set (0-1)
+# - alpha ∈ [0, 1] controls the balance (default 0.7, semantic-weighted)
 #
-# If a result appears in only one ranking (semantic OR keyword), the other
-# term contributes 0.
+# CC SCORE RANGES
+# ---------------
+# CC scores are ALREADY in the 0.0-1.0 range (no scaling needed):
 #
-# EXPECTED RRF SCORE RANGES
-# -------------------------
 # Single-source results (appears in semantic OR keyword only):
-#   - Rank 1:  1/61 ≈ 0.0164
-#   - Rank 5:  1/65 ≈ 0.0154
-#   - Rank 10: 1/70 ≈ 0.0143
-#   - Rank 20: 1/80 = 0.0125
+#   - High semantic only: alpha * similarity (e.g., 0.7 * 0.9 = 0.63)
+#   - High keyword only: (1-alpha) * 1.0 (e.g., 0.3 * 1.0 = 0.30)
 #
 # Dual-source results (appears in BOTH rankings):
-#   - Both rank 1:  2/61 ≈ 0.0328 (maximum possible)
-#   - Both rank 10: 2/70 ≈ 0.0286
-#   - Both rank 20: 2/80 = 0.0250
+#   - High both: alpha * 0.9 + (1-alpha) * 1.0 = 0.7 * 0.9 + 0.3 = 0.93 (maximum)
+#   - Medium both: alpha * 0.7 + (1-alpha) * 0.8 = 0.7 * 0.7 + 0.3 * 0.8 = 0.73
 #
-# WHY SCALE FACTOR = 15.0?
-# ------------------------
-# We scale by 15.0 to map RRF scores to a 0.0-1.0 range:
-#
-#   scaled_score = min(rrf_score * 15.0, 1.0)  # noqa: ERA001
-#
-# Approximate mapping (RRF Rank → Raw RRF Score → Scaled Score):
-#
-#   Single-source results:
-#   | Rank |  RRF Score | Scaled |
-#   |------|------------|--------|
-#   |    1 |    0.0164  |  0.246 |
-#   |    5 |    0.0154  |  0.231 |
-#   |   10 |    0.0143  |  0.214 |
-#   |   20 |    0.0125  |  0.187 |
-#
-#   Dual-source results (same rank in both):
-#   | Rank |  RRF Score | Scaled |
-#   |------|------------|--------|
-#   |    1 |    0.0328  |  0.492 |
-#   |    5 |    0.0308  |  0.462 |
-#   |   10 |    0.0286  |  0.429 |
-#   |   20 |    0.0250  |  0.375 |
-#
-# With 15.0, top dual-source results map to ~0.5, and top single-source
-# results map to ~0.25. Recommended rrf_score_threshold values:
-#   - >= 0.4: Only top dual-source matches (very strict)
-#   - >= 0.2: Top results from either method
+# Recommended score_threshold values:
+#   - >= 0.5: Only strong dual-source matches (very strict)
+#   - >= 0.3: Good results from either method
 #   - >= 0.1: Broader results including lower ranks (default)
 #
-# ⚠️  IMPORTANT WARNING
-# ---------------------
-# These scaled RRF scores are NOT cosine similarity scores! They are derived
-# from ranking positions, not vector distances. A scaled score of 0.3 does
-# NOT mean "30% similar" - it indicates relative ranking position in the
-# combined FTS + vector search results.
+# ✅ KEY BENEFIT: CC PRESERVES SCORE MAGNITUDE
+# --------------------------------------------
+# Unlike RRF which discards score magnitude (only uses ranks), CC preserves
+# the actual similarity/relevance values. This enables:
+# - Better relevance discrimination between similar-ranked results
+# - More meaningful threshold-based filtering
+# - Score values that represent actual relevance, not just relative ranking
 #
-# The similarity_threshold parameter IS true cosine similarity (0.0-1.0).
-#
-# For direct vector distance searches without RRF, use search_previously_seen()
-# which performs pure cosine similarity calculations.
+# Reference: ACM 2023 https://dl.acm.org/doi/10.1145/3596512
+# Research shows CC outperforms RRF in both in-domain and out-of-domain settings.
 #
 # =============================================================================
-RRF_TO_SIMILARITY_SCALE_FACTOR = 15.0
+# Legacy constant kept for backward compatibility (no longer used in scoring)
+RRF_TO_SIMILARITY_SCALE_FACTOR = 1.0  # CC scores are already 0-1, no scaling needed
 
 # Re-export RRF_K_CONSTANT for documentation purposes and to avoid unused import warnings.
 # The actual value is used in repository.py SQL; we import it here for documentation coherence.
@@ -205,7 +179,7 @@ class EmbeddingService:
         community_server_id: str,
         dataset_tags: list[str],
         similarity_threshold: float | None = None,
-        rrf_score_threshold: float = 0.1,
+        score_threshold: float = 0.1,
         limit: int = 5,
     ) -> SimilaritySearchResponse:
         """
@@ -222,8 +196,8 @@ class EmbeddingService:
         Note on thresholds:
             - similarity_threshold: Applied at SQL level to filter semantic search
               results by cosine similarity before RRF fusion.
-            - rrf_score_threshold: Applied after RRF fusion to filter the scaled
-              RRF scores (0.0-1.0 range). Default 0.1 filters out poor matches
+            - score_threshold: Applied after CC fusion to filter the
+              CC scores (0.0-1.0 range). Default 0.1 filters out poor matches
               while being permissive enough for reasonable results.
 
         Args:
@@ -233,7 +207,7 @@ class EmbeddingService:
             dataset_tags: Dataset tags to filter by (e.g., ['snopes'])
             similarity_threshold: Minimum cosine similarity (0.0-1.0) for semantic
                 search pre-filtering. Defaults to SIMILARITY_SEARCH_DEFAULT_THRESHOLD.
-            rrf_score_threshold: Minimum scaled RRF score (0.0-1.0) for post-fusion
+            score_threshold: Minimum CC score (0.0-1.0) for post-fusion
                 filtering. Default 0.1 filters weak matches while remaining permissive.
             limit: Maximum number of results
 
@@ -252,7 +226,7 @@ class EmbeddingService:
                 "search.dataset_tags", ",".join(dataset_tags) if dataset_tags else ""
             )
             span.set_attribute("search.similarity_threshold", threshold)
-            span.set_attribute("search.rrf_score_threshold", rrf_score_threshold)
+            span.set_attribute("search.score_threshold", score_threshold)
             span.set_attribute("search.limit", limit)
 
             try:
@@ -263,7 +237,7 @@ class EmbeddingService:
                         "community_server_id": community_server_id,
                         "dataset_tags": dataset_tags,
                         "similarity_threshold": threshold,
-                        "rrf_score_threshold": rrf_score_threshold,
+                        "score_threshold": score_threshold,
                         "limit": limit,
                     },
                 )
@@ -293,14 +267,12 @@ class EmbeddingService:
                         author=result.item.author,
                         embedding_provider=result.item.embedding_provider,
                         embedding_model=result.item.embedding_model,
-                        similarity_score=min(
-                            result.rrf_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0
-                        ),
+                        similarity_score=min(result.cc_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0),
                     )
                     for result in hybrid_results
                 ]
 
-                matches = [m for m in matches if m.similarity_score >= rrf_score_threshold]
+                matches = [m for m in matches if m.similarity_score >= score_threshold]
 
                 matches = matches[:limit]
 
@@ -316,11 +288,20 @@ class EmbeddingService:
                         "community_server_id": community_server_id,
                         "dataset_tags": dataset_tags,
                         "similarity_threshold": threshold,
-                        "rrf_score_threshold": rrf_score_threshold,
+                        "score_threshold": score_threshold,
                         "matches_found": len(matches),
                         "top_score": matches[0].similarity_score if matches else None,
                         "hybrid_search_count": len(hybrid_results),
+                        "alpha": DEFAULT_ALPHA,
                     },
+                )
+
+                await log_search_results(
+                    redis=redis_client,
+                    query_hash=hash_query(query_text),
+                    alpha=DEFAULT_ALPHA,
+                    dataset_tags=dataset_tags,
+                    results=hybrid_results,
                 )
 
                 return SimilaritySearchResponse(
@@ -328,7 +309,7 @@ class EmbeddingService:
                     query_text=query_text,
                     dataset_tags=dataset_tags,
                     similarity_threshold=threshold,
-                    rrf_score_threshold=rrf_score_threshold,
+                    score_threshold=score_threshold,
                     total_matches=len(matches),
                 )
             except Exception as e:

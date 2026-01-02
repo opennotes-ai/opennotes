@@ -325,7 +325,7 @@ class TestSimilarityScanRelevanceIntegration:
                 query_text=sample_message.content,
                 dataset_tags=["snopes"],
                 similarity_threshold=0.7,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
             )
         )
 
@@ -386,7 +386,7 @@ class TestSimilarityScanRelevanceIntegration:
                 query_text=sample_message.content,
                 dataset_tags=["snopes"],
                 similarity_threshold=0.7,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
             )
         )
 
@@ -448,7 +448,7 @@ class TestSimilarityScanRelevanceIntegration:
                 query_text=sample_message.content,
                 dataset_tags=["snopes"],
                 similarity_threshold=0.7,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
             )
         )
 
@@ -495,7 +495,7 @@ class TestSimilarityScanRelevanceIntegration:
                 query_text=sample_message.content,
                 dataset_tags=["snopes"],
                 similarity_threshold=0.7,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
             )
         )
 

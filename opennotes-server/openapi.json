@@ -1028,6 +1028,314 @@
         }
       }
     },
+    "/api/v1/admin/fusion-weights": {
+      "get": {
+        "tags": [
+          "admin",
+          "search"
+        ],
+        "summary": "Get All Fusion Weights",
+        "description": "Get all configured fusion weights.\n\nReturns the global default weight and any dataset-specific overrides.\n\nReturns:\n    AllFusionWeightsResponse: All configured fusion weights",
+        "operationId": "get_all_fusion_weights_api_v1_admin_fusion_weights_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllFusionWeightsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin",
+          "search"
+        ],
+        "summary": "Update Fusion Weight",
+        "description": "Update a fusion weight (global or dataset-specific).\n\nArgs:\n    request: FusionWeightUpdate with alpha and optional dataset\n\nReturns:\n    FusionWeightResponse: Updated fusion weight\n\nRaises:\n    HTTPException 400: If alpha is out of range\n    HTTPException 500: If Redis update fails",
+        "operationId": "update_fusion_weight_api_v1_admin_fusion_weights_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FusionWeightUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FusionWeightResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/fusion-weights/default": {
+      "get": {
+        "tags": [
+          "admin",
+          "search"
+        ],
+        "summary": "Get Default Fusion Weight",
+        "description": "Get the global default fusion weight.\n\nReturns:\n    FusionWeightResponse: Current default fusion weight",
+        "operationId": "get_default_fusion_weight_api_v1_admin_fusion_weights_default_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FusionWeightResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/fusion-weights/{dataset}": {
+      "get": {
+        "tags": [
+          "admin",
+          "search"
+        ],
+        "summary": "Get Dataset Fusion Weight",
+        "description": "Get the fusion weight for a specific dataset.\n\nArgs:\n    dataset: Dataset name (e.g., 'snopes', 'politifact')\n\nReturns:\n    FusionWeightResponse: Fusion weight for the dataset",
+        "operationId": "get_dataset_fusion_weight_api_v1_admin_fusion_weights__dataset__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dataset",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dataset"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FusionWeightResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin",
+          "search"
+        ],
+        "summary": "Delete Dataset Fusion Weight",
+        "description": "Delete a dataset-specific fusion weight (revert to default).\n\nArgs:\n    dataset: Dataset name to remove override for\n\nReturns:\n    dict: Confirmation message",
+        "operationId": "delete_dataset_fusion_weight_api_v1_admin_fusion_weights__dataset__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dataset",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dataset"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Delete Dataset Fusion Weight Api V1 Admin Fusion Weights  Dataset  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/notes": {
       "get": {
         "tags": [
@@ -7676,6 +7984,29 @@
         "title": "AdminStatusUpdateRequest",
         "description": "JSON:API request for updating admin status."
       },
+      "AllFusionWeightsResponse": {
+        "properties": {
+          "default": {
+            "type": "number",
+            "title": "Default",
+            "description": "Global default fusion weight"
+          },
+          "datasets": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Datasets",
+            "description": "Dataset-specific fusion weights"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default"
+        ],
+        "title": "AllFusionWeightsResponse",
+        "description": "Response model for all fusion weights."
+      },
       "AuditLogResponse": {
         "properties": {
           "id": {
@@ -9259,6 +9590,68 @@
         "title": "FlaggedMessageResource",
         "description": "JSON:API resource object for a flagged message."
       },
+      "FusionWeightResponse": {
+        "properties": {
+          "alpha": {
+            "type": "number",
+            "title": "Alpha",
+            "description": "Current fusion weight alpha \u2208 [0, 1]"
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset",
+            "description": "Dataset name or None for global default"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "Source of the value: 'redis' or 'fallback'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alpha",
+          "source"
+        ],
+        "title": "FusionWeightResponse",
+        "description": "Response model for fusion weight."
+      },
+      "FusionWeightUpdate": {
+        "properties": {
+          "alpha": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Alpha",
+            "description": "Fusion weight alpha \u2208 [0, 1]. alpha=1.0 is pure semantic, alpha=0.0 is pure keyword."
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset",
+            "description": "Optional dataset name for dataset-specific override. None for global default."
+          }
+        },
+        "type": "object",
+        "required": [
+          "alpha"
+        ],
+        "title": "FusionWeightUpdate",
+        "description": "Request model for updating fusion weight."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -9485,11 +9878,11 @@
             "title": "Author",
             "description": "Author name"
           },
-          "rrf_score": {
+          "cc_score": {
             "type": "number",
             "minimum": 0.0,
-            "title": "Rrf Score",
-            "description": "Reciprocal Rank Fusion score combining FTS and semantic rankings"
+            "title": "Cc Score",
+            "description": "Convex Combination score fusing semantic and keyword rankings"
           }
         },
         "type": "object",
@@ -9499,7 +9892,7 @@
           "dataset_tags",
           "title",
           "content",
-          "rrf_score"
+          "cc_score"
         ],
         "title": "HybridSearchMatchResource",
         "description": "JSON:API-compatible fact-check match in hybrid search results."
@@ -9525,7 +9918,7 @@
             },
             "type": "array",
             "title": "Matches",
-            "description": "Matching fact-check items ranked by RRF score"
+            "description": "Matching fact-check items ranked by CC score"
           },
           "query_text": {
             "type": "string",
@@ -15257,12 +15650,12 @@
             "title": "Similarity Threshold",
             "description": "Minimum cosine similarity (0.0-1.0) for semantic search pre-filtering"
           },
-          "rrf_score_threshold": {
+          "score_threshold": {
             "type": "number",
             "maximum": 1.0,
             "minimum": 0.0,
-            "title": "Rrf Score Threshold",
-            "description": "Minimum scaled RRF score (0.0-1.0) for post-fusion filtering",
+            "title": "Score Threshold",
+            "description": "Minimum CC score (0.0-1.0) for post-fusion filtering",
             "default": 0.1
           },
           "limit": {
@@ -15344,10 +15737,10 @@
             "title": "Similarity Threshold",
             "description": "Cosine similarity threshold applied"
           },
-          "rrf_score_threshold": {
+          "score_threshold": {
             "type": "number",
-            "title": "Rrf Score Threshold",
-            "description": "Scaled RRF score threshold applied"
+            "title": "Score Threshold",
+            "description": "CC score threshold applied"
           },
           "total_matches": {
             "type": "integer",
@@ -15361,7 +15754,7 @@
           "query_text",
           "dataset_tags",
           "similarity_threshold",
-          "rrf_score_threshold",
+          "score_threshold",
           "total_matches"
         ],
         "title": "SimilaritySearchResultAttributes",

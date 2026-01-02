@@ -157,9 +157,9 @@ class HybridSearchMatchResource(BaseModel):
     source_url: str | None = Field(None, description="URL to original article")
     published_date: datetime | None = Field(None, description="Publication date")
     author: str | None = Field(None, description="Author name")
-    rrf_score: float = Field(
+    cc_score: float = Field(
         ...,
-        description="Reciprocal Rank Fusion score combining FTS and semantic rankings",
+        description="Convex Combination score fusing semantic and keyword rankings",
         ge=0.0,
     )
 
@@ -170,7 +170,7 @@ class HybridSearchResultAttributes(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     matches: list[HybridSearchMatchResource] = Field(
-        ..., description="Matching fact-check items ranked by RRF score"
+        ..., description="Matching fact-check items ranked by CC score"
     )
     query_text: str = Field(..., description="Original query text")
     total_matches: int = Field(..., description="Number of matches found")
@@ -324,7 +324,7 @@ async def hybrid_search_jsonapi(
                 source_url=result.item.source_url,
                 published_date=result.item.published_date,
                 author=result.item.author,
-                rrf_score=result.rrf_score,
+                cc_score=result.cc_score,
             )
             for result in search_results
         ]

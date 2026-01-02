@@ -121,7 +121,7 @@ class TestEmbeddingServiceSpanAttributes:
                 community_server_id="123456789",
                 dataset_tags=["snopes", "politifact"],
                 similarity_threshold=0.7,
-                rrf_score_threshold=0.15,
+                score_threshold=0.15,
                 limit=10,
             )
 
@@ -136,7 +136,7 @@ class TestEmbeddingServiceSpanAttributes:
             assert set_attribute_calls["search.community_server_id"] == "123456789"
             assert set_attribute_calls["search.dataset_tags"] == "snopes,politifact"
             assert set_attribute_calls["search.similarity_threshold"] == 0.7
-            assert set_attribute_calls["search.rrf_score_threshold"] == 0.15
+            assert set_attribute_calls["search.score_threshold"] == 0.15
             assert set_attribute_calls["search.limit"] == 10
 
     @pytest.mark.asyncio
@@ -165,7 +165,7 @@ class TestEmbeddingServiceSpanAttributes:
 
         mock_hybrid_result = MagicMock()
         mock_hybrid_result.item = mock_item
-        mock_hybrid_result.rrf_score = 0.02
+        mock_hybrid_result.cc_score = 0.5
 
         with (
             patch("src.fact_checking.embedding_service._tracer", mock_tracer),
@@ -342,7 +342,7 @@ class TestEmptyResultsHandling:
 
     @pytest.mark.asyncio
     async def test_similarity_search_results_filtered_by_rrf_threshold(self):
-        """Verify results below rrf_score_threshold are filtered out."""
+        """Verify results below score_threshold are filtered out."""
         mock_span = MagicMock()
         mock_span.__enter__ = MagicMock(return_value=mock_span)
         mock_span.__exit__ = MagicMock(return_value=None)
@@ -366,7 +366,7 @@ class TestEmptyResultsHandling:
 
         mock_hybrid_result = MagicMock()
         mock_hybrid_result.item = mock_item
-        mock_hybrid_result.rrf_score = 0.001
+        mock_hybrid_result.cc_score = 0.001
 
         with (
             patch("src.fact_checking.embedding_service._tracer", mock_tracer),
@@ -394,7 +394,7 @@ class TestEmptyResultsHandling:
                 query_text="test query",
                 community_server_id="123456789",
                 dataset_tags=["snopes"],
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
             )
 
             assert result.total_matches == 0
