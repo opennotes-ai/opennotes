@@ -98,6 +98,13 @@ function parseOtlpHeaders(headersStr: string | undefined): Record<string, string
   return headers;
 }
 
+function ensureTracesPath(endpoint: string): string {
+  if (endpoint.endsWith('/v1/traces')) {
+    return endpoint;
+  }
+  return endpoint.replace(/\/$/, '') + '/v1/traces';
+}
+
 export function initTelemetry(config?: TelemetryConfig): void {
   if (isInitialized) {
     console.log('[Telemetry] Already initialized, skipping');
@@ -134,12 +141,13 @@ export function initTelemetry(config?: TelemetryConfig): void {
   console.log('[Telemetry] Baggage span processor enabled');
 
   if (otlpEndpoint) {
+    const tracesUrl = ensureTracesPath(otlpEndpoint);
     const exporter = new OTLPTraceExporter({
-      url: otlpEndpoint,
+      url: tracesUrl,
       headers: otlpHeaders,
     });
     spanProcessors.push(new BatchSpanProcessor(exporter));
-    console.log(`[Telemetry] OTLP exporter configured: ${otlpEndpoint}`);
+    console.log(`[Telemetry] OTLP exporter configured: ${tracesUrl}`);
   }
 
   if (enableConsoleExport) {
