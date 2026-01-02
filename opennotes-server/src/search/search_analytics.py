@@ -87,7 +87,7 @@ def compute_score_stats(results: list["HybridSearchResult"]) -> dict[str, float 
             "score_spread": None,
         }
 
-    scores = [r.rrf_score for r in results]
+    scores = [r.cc_score for r in results]
     min_score = min(scores)
     max_score = max(scores)
 

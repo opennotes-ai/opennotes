@@ -136,8 +136,8 @@ class TestConvexCombinationScoreRange:
             )
 
         for result in results:
-            assert 0.0 <= result.rrf_score <= 1.0, (
-                f"CC score should be in [0, 1], got {result.rrf_score}"
+            assert 0.0 <= result.cc_score <= 1.0, (
+                f"CC score should be in [0, 1], got {result.cc_score}"
             )
 
     async def test_cc_scores_are_sorted_descending(self, cc_test_items):
@@ -156,7 +156,7 @@ class TestConvexCombinationScoreRange:
             )
 
         if len(results) >= 2:
-            scores = [r.rrf_score for r in results]
+            scores = [r.cc_score for r in results]
             assert scores == sorted(scores, reverse=True), (
                 "Results should be sorted by score descending"
             )
@@ -193,7 +193,7 @@ class TestConvexCombinationFormula:
             if dual_match:
                 single_matches = [r for r in results if r != dual_match]
                 if single_matches:
-                    assert dual_match.rrf_score >= single_matches[0].rrf_score * 0.8, (
+                    assert dual_match.cc_score >= single_matches[0].cc_score * 0.8, (
                         "Dual match should score at least 80% of top single match"
                     )
 
@@ -322,7 +322,7 @@ class TestMinMaxNormalization:
             )
 
         for result in results:
-            assert 0.0 <= result.rrf_score <= 1.0, (
+            assert 0.0 <= result.cc_score <= 1.0, (
                 "With alpha=0.0, score should be normalized keyword score in [0, 1]"
             )
 
@@ -346,7 +346,7 @@ class TestScoreSpreadImprovement:
             )
 
         if len(results) >= 2:
-            scores = [r.rrf_score for r in results]
+            scores = [r.cc_score for r in results]
             score_spread = max(scores) - min(scores)
 
             assert score_spread >= 0.1, (

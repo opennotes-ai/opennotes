@@ -5,7 +5,7 @@ that follows the JSON:API 1.1 specification. These tests verify:
 - POST /api/v2/hybrid-searches performs hybrid search (FTS + semantic)
 - Proper JSON:API response envelope structure
 - Correct content-type headers (application/vnd.api+json)
-- Response includes rrf_score for ranking results
+- Response includes cc_score for ranking results
 
 Reference: https://jsonapi.org/format/
 """
@@ -545,10 +545,10 @@ class TestHybridSearchJSONAPIWithMockedService:
         hybrid_search_jsonapi_auth_client,
         hybrid_search_jsonapi_community_server,
     ):
-        """Test POST /api/v2/hybrid-searches returns matches with rrf_score when found.
+        """Test POST /api/v2/hybrid-searches returns matches with cc_score when found.
 
         This test mocks the embedding service and repository to verify the complete
-        response structure including matches with rrf_score field.
+        response structure including matches with cc_score field.
         """
         from dataclasses import dataclass
         from datetime import datetime
@@ -570,7 +570,7 @@ class TestHybridSearchJSONAPIWithMockedService:
         @dataclass
         class MockHybridSearchResult:
             item: MockFactCheckItem
-            rrf_score: float
+            cc_score: float
 
         mock_item_1 = MockFactCheckItem(
             id=uuid4(),
@@ -599,8 +599,8 @@ class TestHybridSearchJSONAPIWithMockedService:
         )
 
         mock_results = [
-            MockHybridSearchResult(item=mock_item_1, rrf_score=0.0325),
-            MockHybridSearchResult(item=mock_item_2, rrf_score=0.0287),
+            MockHybridSearchResult(item=mock_item_1, cc_score=0.0325),
+            MockHybridSearchResult(item=mock_item_2, cc_score=0.0287),
         ]
 
         mock_embedding = [0.1] * 1536
@@ -672,14 +672,14 @@ class TestHybridSearchJSONAPIWithMockedService:
             assert match_1["rating"] == "True"
             assert match_1["source_url"] == "https://snopes.com/fact-check/covid-vaccine-safe"
             assert match_1["author"] == "Dr. Smith"
-            assert "rrf_score" in match_1
-            assert match_1["rrf_score"] == pytest.approx(0.0325, rel=1e-4)
-            assert match_1["rrf_score"] >= 0.0
+            assert "cc_score" in match_1
+            assert match_1["cc_score"] == pytest.approx(0.0325, rel=1e-4)
+            assert match_1["cc_score"] >= 0.0
 
             match_2 = attrs["matches"][1]
             assert match_2["id"] == str(mock_item_2.id)
-            assert "rrf_score" in match_2
-            assert match_2["rrf_score"] == pytest.approx(0.0287, rel=1e-4)
+            assert "cc_score" in match_2
+            assert match_2["cc_score"] == pytest.approx(0.0287, rel=1e-4)
 
             content_type = response.headers.get("content-type", "")
             assert "application/vnd.api+json" in content_type

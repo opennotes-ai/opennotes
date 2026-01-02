@@ -179,7 +179,7 @@ class EmbeddingService:
         community_server_id: str,
         dataset_tags: list[str],
         similarity_threshold: float | None = None,
-        rrf_score_threshold: float = 0.1,
+        score_threshold: float = 0.1,
         limit: int = 5,
     ) -> SimilaritySearchResponse:
         """
@@ -196,8 +196,8 @@ class EmbeddingService:
         Note on thresholds:
             - similarity_threshold: Applied at SQL level to filter semantic search
               results by cosine similarity before RRF fusion.
-            - rrf_score_threshold: Applied after RRF fusion to filter the scaled
-              RRF scores (0.0-1.0 range). Default 0.1 filters out poor matches
+            - score_threshold: Applied after CC fusion to filter the
+              CC scores (0.0-1.0 range). Default 0.1 filters out poor matches
               while being permissive enough for reasonable results.
 
         Args:
@@ -207,7 +207,7 @@ class EmbeddingService:
             dataset_tags: Dataset tags to filter by (e.g., ['snopes'])
             similarity_threshold: Minimum cosine similarity (0.0-1.0) for semantic
                 search pre-filtering. Defaults to SIMILARITY_SEARCH_DEFAULT_THRESHOLD.
-            rrf_score_threshold: Minimum scaled RRF score (0.0-1.0) for post-fusion
+            score_threshold: Minimum CC score (0.0-1.0) for post-fusion
                 filtering. Default 0.1 filters weak matches while remaining permissive.
             limit: Maximum number of results
 
@@ -226,7 +226,7 @@ class EmbeddingService:
                 "search.dataset_tags", ",".join(dataset_tags) if dataset_tags else ""
             )
             span.set_attribute("search.similarity_threshold", threshold)
-            span.set_attribute("search.rrf_score_threshold", rrf_score_threshold)
+            span.set_attribute("search.score_threshold", score_threshold)
             span.set_attribute("search.limit", limit)
 
             try:
@@ -237,7 +237,7 @@ class EmbeddingService:
                         "community_server_id": community_server_id,
                         "dataset_tags": dataset_tags,
                         "similarity_threshold": threshold,
-                        "rrf_score_threshold": rrf_score_threshold,
+                        "score_threshold": score_threshold,
                         "limit": limit,
                     },
                 )
@@ -267,14 +267,12 @@ class EmbeddingService:
                         author=result.item.author,
                         embedding_provider=result.item.embedding_provider,
                         embedding_model=result.item.embedding_model,
-                        similarity_score=min(
-                            result.rrf_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0
-                        ),
+                        similarity_score=min(result.cc_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0),
                     )
                     for result in hybrid_results
                 ]
 
-                matches = [m for m in matches if m.similarity_score >= rrf_score_threshold]
+                matches = [m for m in matches if m.similarity_score >= score_threshold]
 
                 matches = matches[:limit]
 
@@ -290,7 +288,7 @@ class EmbeddingService:
                         "community_server_id": community_server_id,
                         "dataset_tags": dataset_tags,
                         "similarity_threshold": threshold,
-                        "score_threshold": rrf_score_threshold,
+                        "score_threshold": score_threshold,
                         "matches_found": len(matches),
                         "top_score": matches[0].similarity_score if matches else None,
                         "hybrid_search_count": len(hybrid_results),
@@ -311,7 +309,7 @@ class EmbeddingService:
                     query_text=query_text,
                     dataset_tags=dataset_tags,
                     similarity_threshold=threshold,
-                    rrf_score_threshold=rrf_score_threshold,
+                    score_threshold=score_threshold,
                     total_matches=len(matches),
                 )
             except Exception as e:

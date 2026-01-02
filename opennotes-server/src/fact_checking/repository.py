@@ -60,14 +60,10 @@ RRF_CHUNK_PRELIMIT_MULTIPLIER = 3
 
 @dataclass
 class HybridSearchResult:
-    """Result from hybrid search including fusion score.
-
-    Note: The field is named rrf_score for backward compatibility,
-    but it now contains the Convex Combination (CC) score.
-    """
+    """Result from hybrid search including Convex Combination fusion score."""
 
     item: FactCheckItem
-    rrf_score: float  # CC score, kept as rrf_score for backward compatibility
+    cc_score: float  # Convex Combination score in [0, 1] range
 
 
 async def hybrid_search(
@@ -216,12 +212,12 @@ async def hybrid_search(
             fci.created_at,
             fci.updated_at,
             -- Convex Combination: alpha * semantic + (1-alpha) * keyword
-            :alpha * COALESCE(s.similarity, 0.0) + (1.0 - :alpha) * COALESCE(k.keyword_norm, 0.0) AS rrf_score
+            :alpha * COALESCE(s.similarity, 0.0) + (1.0 - :alpha) * COALESCE(k.keyword_norm, 0.0) AS cc_score
         FROM fact_check_items fci
         LEFT JOIN semantic s ON fci.id = s.id
         LEFT JOIN keyword k ON fci.id = k.id
         WHERE s.id IS NOT NULL OR k.id IS NOT NULL
-        ORDER BY rrf_score DESC
+        ORDER BY cc_score DESC
         LIMIT :limit
     """)
 
@@ -279,7 +275,7 @@ async def hybrid_search(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        results.append(HybridSearchResult(item=item, rrf_score=float(row.rrf_score)))
+        results.append(HybridSearchResult(item=item, cc_score=float(row.cc_score)))
 
     logger.info(
         "Hybrid search completed",
@@ -488,12 +484,12 @@ async def hybrid_search_with_chunks(
             fci.created_at,
             fci.updated_at,
             -- Convex Combination: alpha * semantic + (1-alpha) * keyword
-            :alpha * COALESCE(ss.semantic_score, 0.0) + (1.0 - :alpha) * COALESCE(ks.keyword_norm, 0.0) AS rrf_score
+            :alpha * COALESCE(ss.semantic_score, 0.0) + (1.0 - :alpha) * COALESCE(ks.keyword_norm, 0.0) AS cc_score
         FROM fact_check_items fci
         LEFT JOIN semantic_scores ss ON fci.id = ss.fact_check_id
         LEFT JOIN keyword_scores ks ON fci.id = ks.fact_check_id
         WHERE ss.fact_check_id IS NOT NULL OR ks.fact_check_id IS NOT NULL
-        ORDER BY rrf_score DESC
+        ORDER BY cc_score DESC
         LIMIT :limit
     """)
 
@@ -553,7 +549,7 @@ async def hybrid_search_with_chunks(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        results.append(HybridSearchResult(item=item, rrf_score=float(row.rrf_score)))
+        results.append(HybridSearchResult(item=item, cc_score=float(row.cc_score)))
 
     logger.info(
         "Chunk-based hybrid search completed",

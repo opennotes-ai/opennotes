@@ -263,10 +263,10 @@ class TestTFIDFWeightReduction:
             common_result = next(r for r in results if r.item.id == common_only_id)
             non_common_result = next(r for r in results if r.item.id == non_common_only_id)
 
-            assert non_common_result.rrf_score > common_result.rrf_score, (
+            assert non_common_result.cc_score > common_result.cc_score, (
                 "Non-common item should have higher RRF score when weight=0.0 "
-                f"(non-common: {non_common_result.rrf_score}, "
-                f"common: {common_result.rrf_score})"
+                f"(non-common: {non_common_result.cc_score}, "
+                f"common: {common_result.cc_score})"
             )
         elif non_common_only_id in result_ids and common_only_id not in result_ids:
             pass
@@ -299,7 +299,7 @@ class TestTFIDFWeightReduction:
 
         assert len(results) >= 2, "Should find at least two items"
 
-        result_scores = {r.item.id: r.rrf_score for r in results}
+        result_scores = {r.item.id: r.cc_score for r in results}
         common_only_id = tfidf_weight_test_items["item_common_only"].id
         non_common_only_id = tfidf_weight_test_items["item_non_common_only"].id
 
@@ -349,8 +349,8 @@ class TestTFIDFWeightReduction:
 
         common_only_id = tfidf_weight_test_items["item_common_only"].id
 
-        reduced_scores = {r.item.id: r.rrf_score for r in results_reduced}
-        equal_scores = {r.item.id: r.rrf_score for r in results_equal}
+        reduced_scores = {r.item.id: r.cc_score for r in results_reduced}
+        equal_scores = {r.item.id: r.cc_score for r in results_equal}
 
         if common_only_id in reduced_scores and common_only_id in equal_scores:
             common_reduced = reduced_scores[common_only_id]

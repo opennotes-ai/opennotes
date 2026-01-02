@@ -312,7 +312,7 @@ class BulkContentScanService:
                 community_server_id=community_server_platform_id,
                 dataset_tags=[],
                 similarity_threshold=0.0,
-                rrf_score_threshold=0.0,
+                score_threshold=0.0,
                 limit=1,
             )
 
@@ -395,7 +395,7 @@ class BulkContentScanService:
                 community_server_id=community_server_platform_id,
                 dataset_tags=[],
                 similarity_threshold=settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
-                rrf_score_threshold=0.1,
+                score_threshold=0.1,
                 limit=1,
             )
 
