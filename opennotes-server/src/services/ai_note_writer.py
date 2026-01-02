@@ -409,7 +409,11 @@ class AINoteWriter:
 
         Raises:
             Exception: If note generation or submission fails
+            ValueError: If fact_check_item_id is None (required for this method)
         """
+        if event.fact_check_item_id is None:
+            raise ValueError("fact_check_item_id is required for fact-check note generation")
+
         # Retrieve fact-check item
         fact_check_item = await self._get_fact_check_item(db, event.fact_check_item_id)
 
@@ -425,7 +429,7 @@ class AINoteWriter:
             community_server_uuid,
             event.content,
             fact_check_item,
-            event.similarity_score,
+            event.similarity_score or 0.0,
         )
 
         # Submit note
