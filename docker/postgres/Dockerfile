@@ -1,12 +1,13 @@
-# PostgreSQL with pgvector and pgroonga extensions
-# This image combines both extensions for hybrid search capabilities:
+# PostgreSQL with pgvector, pgroonga, and pg_cron extensions
+# This image combines extensions for hybrid search and maintenance:
 # - pgvector: Vector similarity search using HNSW indexes
 # - pgroonga: Full-text search with TF-IDF scoring via Groonga
+# - pg_cron: Job scheduler for maintenance tasks (e.g., materialized view refresh)
 #
 # Build: docker build -t opennotes/postgres:18-pgvector-pgroonga docker/postgres
 # Usage: Replace pgvector/pgvector:pg18 with opennotes/postgres:18-pgvector-pgroonga
 #
-# Based on PGroonga's official Debian image and adds pgvector on top.
+# Based on PGroonga's official Debian image and adds pgvector + pg_cron on top.
 # PGroonga Debian images include the Groonga C library and PostgreSQL integration.
 
 ARG PGROONGA_VERSION=4.0.5
@@ -39,7 +40,13 @@ RUN apt-get purge -y build-essential git postgresql-server-dev-${PG_MAJOR} \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+# Install pg_cron for scheduled job support
+# pg_cron requires shared_preload_libraries configuration (done at runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-${PG_MAJOR}-cron \
+    && rm -rf /var/lib/apt/lists/*
+
 # Verify extensions are available
-RUN pg_config --version && ls -la $(pg_config --sharedir)/extension/ | grep -E "(pgroonga|vector)"
+RUN pg_config --version && ls -la $(pg_config --sharedir)/extension/ | grep -E "(pgroonga|vector|pg_cron)"
 
 # Default entrypoint from base image handles PostgreSQL startup

@@ -7,8 +7,8 @@ Enable PGroonga extension and set up infrastructure for TF-IDF scoring:
 - Create trigger to auto-compute word_count on INSERT/UPDATE
 - Create chunk_stats materialized view for global corpus statistics
 
-The chunk_stats materialized view should be refreshed nightly via scheduled job.
-See docs/chunk-stats-refresh.md for refresh strategy.
+The chunk_stats materialized view is refreshed nightly via pg_cron.
+See task_942_07_pg_cron_chunk_stats_refresh.py for the scheduled job setup.
 
 Revision ID: 94201a1b2c3d
 Revises: 87146a1b2c3d
