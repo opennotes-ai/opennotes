@@ -9,12 +9,44 @@ results from both search methods with configurable alpha weighting.
 """
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from src.database import get_session_maker
 from src.fact_checking.models import FactCheckItem
 
 pytestmark = pytest.mark.asyncio
+
+
+async def recreate_pgroonga_index_if_available():
+    """Recreate PGroonga index to fix internal Groonga structures after template cloning.
+
+    After CREATE DATABASE WITH TEMPLATE, PGroonga's internal Groonga "Sources" objects
+    become invalid (PostgreSQL 15+ issue, see pgroonga/pgroonga#335). REINDEX alone
+    doesn't fully restore these structures - we must DROP and CREATE the index.
+
+    This function checks if PGroonga is available before attempting to recreate.
+    If PGroonga is not installed, this is a no-op.
+    """
+    async with get_session_maker()() as session:
+        result = await session.execute(
+            text("SELECT 1 FROM pg_extension WHERE extname = 'pgroonga'")
+        )
+        pgroonga_available = result.scalar_one_or_none() is not None
+
+        if not pgroonga_available:
+            return
+
+        await session.execute(text("SELECT pgroonga_command('io_flush')"))
+        await session.execute(text("DROP INDEX IF EXISTS idx_chunk_embeddings_pgroonga"))
+        await session.execute(
+            text(
+                """
+                CREATE INDEX idx_chunk_embeddings_pgroonga
+                ON chunk_embeddings USING pgroonga (chunk_text pgroonga_text_full_text_search_ops_v2)
+                """
+            )
+        )
+        await session.commit()
 
 
 def generate_test_embedding(seed: int = 0) -> list[float]:
@@ -613,8 +645,13 @@ async def chunk_search_test_items():
     - FactCheckItem records
     - ChunkEmbedding records (unique chunks)
     - FactCheckChunk join records (linking chunks to items)
+
+    IMPORTANT: Recreates PGroonga index before inserting ChunkEmbeddings to fix
+    internal Groonga structures that become invalid after CREATE DATABASE WITH TEMPLATE.
     """
     from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk
+
+    await recreate_pgroonga_index_if_available()
 
     item_ids = []
     chunk_ids = []

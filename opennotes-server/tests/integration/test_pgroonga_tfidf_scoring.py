@@ -67,6 +67,27 @@ async def check_chunk_stats_view_exists() -> bool:
         return False
 
 
+async def recreate_pgroonga_index():
+    """Recreate PGroonga index to fix internal Groonga structures after template cloning.
+
+    After CREATE DATABASE WITH TEMPLATE, PGroonga's internal Groonga "Sources" objects
+    become invalid (PostgreSQL 15+ issue, see pgroonga/pgroonga#335). REINDEX alone
+    doesn't fully restore these structures - we must DROP and CREATE the index.
+    """
+    async with get_session_maker()() as session:
+        await session.execute(text("SELECT pgroonga_command('io_flush')"))
+        await session.execute(text("DROP INDEX IF EXISTS idx_chunk_embeddings_pgroonga"))
+        await session.execute(
+            text(
+                """
+                CREATE INDEX idx_chunk_embeddings_pgroonga
+                ON chunk_embeddings USING pgroonga (chunk_text pgroonga_text_full_text_search_ops_v2)
+                """
+            )
+        )
+        await session.commit()
+
+
 @pytest.fixture
 async def require_pgroonga():
     """Skip tests if PGroonga extension is not available.
@@ -74,9 +95,9 @@ async def require_pgroonga():
     This fixture checks for PGroonga availability and skips tests if
     PGroonga is not installed.
 
-    IMPORTANT: This fixture also REINDEXes the PGroonga index to repair
-    Groonga sources that become invalid after CREATE DATABASE WITH TEMPLATE
-    (PostgreSQL 15+ issue, see pgroonga/pgroonga#335).
+    IMPORTANT: This fixture recreates the PGroonga index (DROP + CREATE) to fully
+    restore Groonga internal structures after CREATE DATABASE WITH TEMPLATE
+    (PostgreSQL 15+ issue, see pgroonga/pgroonga#335). REINDEX alone is not sufficient.
     """
     pgroonga_available = await check_pgroonga_available()
     if not pgroonga_available:
@@ -92,10 +113,7 @@ async def require_pgroonga():
             "Run migrations to create the PGroonga infrastructure."
         )
 
-    async with get_session_maker()() as session:
-        await session.execute(text("SELECT pgroonga_command('io_flush')"))
-        await session.execute(text("REINDEX INDEX idx_chunk_embeddings_pgroonga"))
-        await session.commit()
+    await recreate_pgroonga_index()
 
 
 def generate_test_embedding(seed: int = 0) -> list[float]:
