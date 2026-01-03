@@ -6,7 +6,7 @@ BM25-style length normalization to PGroonga TF-IDF scores:
     normalized_score = raw_score / (1 - b + b * (doc_len / avgdl))
 
 Where:
-- b = 0.75 (standard BM25 length normalization parameter)
+- b = 0.75 (standard BM25 length normalization parameter, see BM25_LENGTH_NORMALIZATION_B)
 - doc_len = word_count of the chunk
 - avgdl = average chunk length from chunk_stats materialized view
 
@@ -14,6 +14,13 @@ The effect of this normalization:
 - Short chunks (word_count < avgdl) get boosted scores
 - Long chunks (word_count > avgdl) get reduced scores
 - This prevents long documents from dominating results just by having more terms
+
+TEST ISOLATION:
+These tests are marked with pytest.mark.serial to ensure they run sequentially
+rather than in parallel with pytest-xdist. This is required because:
+1. Tests modify the chunk_stats materialized view (shared state)
+2. Multiple workers refreshing chunk_stats simultaneously could cause race conditions
+3. The fixture cleanup relies on predictable view state between setup and teardown
 
 INFRASTRUCTURE REQUIREMENT:
 These tests require a PostgreSQL image with PGroonga installed.
@@ -33,7 +40,7 @@ from src.database import get_session_maker
 from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk
 from src.fact_checking.models import FactCheckItem
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.pgroonga]
+pytestmark = [pytest.mark.asyncio, pytest.mark.pgroonga, pytest.mark.serial]
 
 
 async def check_pgroonga_available() -> bool:
@@ -100,6 +107,14 @@ def count_words(text: str) -> int:
 
     Matches the PostgreSQL word counting logic:
     array_length(regexp_split_to_array(chunk_text, E'\\s+'), 1)
+
+    Note on tokenization strategy:
+    This uses simple whitespace splitting rather than language-aware tokenization
+    (like tsvector/english). This is intentional for BM25 length normalization:
+    - BM25 needs a rough document length measure, not linguistic precision
+    - Whitespace splitting counts all tokens including stop words
+    - tsvector would stem words and remove stop words (changing counts)
+    - The relative ratio (doc_len / avgdl) is what matters, not absolute counts
     """
     return len(text.split())
 
@@ -118,6 +133,14 @@ async def pgroonga_tfidf_test_items(require_pgroonga):
 
     All chunks contain the same search terms but with different lengths,
     allowing tests to verify length normalization affects ranking.
+
+    Note on REFRESH MATERIALIZED VIEW:
+    Tests use non-concurrent refresh (REFRESH MATERIALIZED VIEW chunk_stats)
+    rather than CONCURRENTLY because:
+    1. Tests run serially within this module (see pytestmark)
+    2. Non-concurrent is faster for small test datasets
+    3. No other queries run during test setup/teardown
+    Production should use CONCURRENTLY - see docs/chunk-stats-refresh.md
     """
     item_ids = []
     chunk_ids = []

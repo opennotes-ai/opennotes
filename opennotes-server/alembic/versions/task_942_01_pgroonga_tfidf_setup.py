@@ -29,7 +29,25 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Add PGroonga TF-IDF infrastructure to chunk_embeddings."""
+    """Add PGroonga TF-IDF infrastructure to chunk_embeddings.
+
+    Word Count Tokenization Strategy:
+    ---------------------------------
+    The word_count column uses simple whitespace splitting (regexp_split_to_array)
+    rather than language-aware tokenization (like PostgreSQL's tsvector/english).
+
+    This is intentional for BM25 length normalization:
+    - BM25 needs a rough measure of document length, not linguistic precision
+    - Whitespace splitting counts all tokens including stop words
+    - tsvector applies stemming and removes stop words (e.g., "the quick brown fox"
+      becomes 3 lexemes: 'quick', 'brown', 'fox')
+    - PGroonga uses its own ICU-based tokenization for scoring, separate from word_count
+
+    The simple approach is sufficient because:
+    1. Length normalization is relative (doc_len / avgdl ratio matters, not absolute count)
+    2. Consistent tokenization across all chunks maintains relative proportions
+    3. Performance is better without language processing overhead
+    """
     op.execute("CREATE EXTENSION IF NOT EXISTS pgroonga")
 
     op.add_column(

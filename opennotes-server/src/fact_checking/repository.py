@@ -32,6 +32,15 @@ FUSION_K_CONSTANT = 60
 # Value of 0.5 means common chunks contribute 50% of their normal score.
 DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR = 0.5
 
+# BM25 length normalization parameter (b).
+# Controls how much document length affects scoring:
+# - b=0.0: No length normalization (all documents treated equally regardless of length)
+# - b=1.0: Full length normalization (longer docs heavily penalized)
+# - b=0.75: Standard BM25 value, balanced normalization
+# The formula: score / (1 - b + b * (doc_len / avgdl))
+# Reference: Robertson & Zaragoza, "The Probabilistic Relevance Framework: BM25 and Beyond"
+BM25_LENGTH_NORMALIZATION_B = 0.75
+
 # Pre-filter limit for each CTE (Common Table Expression) in hybrid search.
 # Each search method (semantic and keyword) retrieves this many candidates
 # before fusion combines them into final rankings.
@@ -421,14 +430,14 @@ async def hybrid_search_with_chunks(
         chunk_keyword_with_bm25 AS (
             -- Find keyword-matching chunks using PGroonga TF-IDF index
             -- BM25-lite length normalization: score / (1 - b + b * (doc_len / avgdl))
-            -- where b=0.75 is standard BM25 length normalization parameter
+            -- where b is BM25_LENGTH_NORMALIZATION_B (passed as :bm25_b parameter)
             -- COALESCE handles NULL word_count (returns 1 as fallback)
             SELECT
                 ce.id AS chunk_id,
                 fcc.fact_check_id,
                 ce.is_common,
                 pgroonga_score(ce.tableoid, ce.ctid) / (
-                    1.0 - 0.75 + 0.75 * (
+                    1.0 - :bm25_b + :bm25_b * (
                         COALESCE(ce.word_count, 1)::float /
                         NULLIF((SELECT avg_chunk_length FROM chunk_stats_cte), 0)
                     )
@@ -516,6 +525,7 @@ async def hybrid_search_with_chunks(
         "min_keyword_relevance": keyword_relevance_threshold,
         "common_weight": common_chunk_weight_factor,
         "alpha": alpha,
+        "bm25_b": BM25_LENGTH_NORMALIZATION_B,
     }
     if dataset_tags:
         params["dataset_tags"] = dataset_tags
