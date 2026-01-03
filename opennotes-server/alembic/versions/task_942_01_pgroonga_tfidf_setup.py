@@ -57,7 +57,7 @@ def upgrade() -> None:
             sa.Integer(),
             nullable=False,
             server_default="0",
-            comment="Word count of chunk_text for TF-IDF calculations",
+            comment="Word count of chunk_text for TF-IDF length normalization",
         ),
     )
 
