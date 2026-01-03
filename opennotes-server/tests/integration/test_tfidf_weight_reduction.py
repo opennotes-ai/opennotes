@@ -188,6 +188,13 @@ async def tfidf_weight_test_items():
 
         await session.commit()
 
+        pgroonga_result = await session.execute(
+            text("SELECT 1 FROM pg_extension WHERE extname = 'pgroonga'")
+        )
+        if pgroonga_result.scalar_one_or_none():
+            await session.execute(text("SELECT pgroonga_command('io_flush')"))
+            await session.commit()
+
         await session.refresh(item_common_only)
         await session.refresh(item_non_common_only)
         await session.refresh(item_mixed)

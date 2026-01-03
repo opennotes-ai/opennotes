@@ -741,6 +741,13 @@ async def chunk_search_test_items():
 
         await session.commit()
 
+        pgroonga_result = await session.execute(
+            text("SELECT 1 FROM pg_extension WHERE extname = 'pgroonga'")
+        )
+        if pgroonga_result.scalar_one_or_none():
+            await session.execute(text("SELECT pgroonga_command('io_flush')"))
+            await session.commit()
+
         await session.refresh(item_snopes)
         await session.refresh(item_politifact)
         await session.refresh(item_reuters)

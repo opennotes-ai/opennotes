@@ -277,6 +277,7 @@ async def pgroonga_tfidf_test_items(require_pgroonga):
 
         await session.commit()
 
+        await session.execute(text("SELECT pgroonga_command('io_flush')"))
         await session.execute(text("REFRESH MATERIALIZED VIEW chunk_stats"))
         await session.commit()
 
