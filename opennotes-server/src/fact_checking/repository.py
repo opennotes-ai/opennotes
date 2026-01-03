@@ -413,21 +413,37 @@ async def hybrid_search_with_chunks(
             ORDER BY semantic_score DESC
             LIMIT {HYBRID_SEARCH_CTE_PRELIMIT}
         ),
+        chunk_stats_cte AS (
+            -- Get corpus statistics for BM25-style length normalization
+            SELECT COALESCE(avg_chunk_length, 1.0) AS avg_chunk_length
+            FROM chunk_stats
+        ),
         chunk_keyword_raw AS (
-            -- Find keyword-matching chunks using GIN index on search_vector
+            -- Find keyword-matching chunks using PGroonga TF-IDF index
+            -- BM25-lite length normalization: score / (1 - b + b * (doc_len / avgdl))
+            -- where b=0.75 is standard BM25 length normalization parameter
             SELECT
                 ce.id AS chunk_id,
                 fcc.fact_check_id,
                 ce.is_common,
-                ts_rank_cd(ce.search_vector, query) AS relevance
+                pgroonga_score(ce.tableoid, ce.ctid) / (
+                    1.0 - 0.75 + 0.75 * (
+                        GREATEST(ce.word_count, 1)::float /
+                        NULLIF((SELECT avg_chunk_length FROM chunk_stats_cte), 0)
+                    )
+                ) AS relevance
             FROM chunk_embeddings ce
-            CROSS JOIN LATERAL plainto_tsquery('english', :query_text) AS query
             JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
             JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
-            WHERE ce.search_vector @@ query
-                AND ts_rank_cd(ce.search_vector, query) >= :min_keyword_relevance
+            WHERE ce.chunk_text &@~ :query_text
+                AND pgroonga_score(ce.tableoid, ce.ctid) / (
+                    1.0 - 0.75 + 0.75 * (
+                        GREATEST(ce.word_count, 1)::float /
+                        NULLIF((SELECT avg_chunk_length FROM chunk_stats_cte), 0)
+                    )
+                ) >= :min_keyword_relevance
                 {chunk_tags_filter}
-            ORDER BY ts_rank_cd(ce.search_vector, query) DESC
+            ORDER BY relevance DESC
             LIMIT {HYBRID_SEARCH_CTE_PRELIMIT * CHUNK_PRELIMIT_MULTIPLIER}
         ),
         keyword_raw_scores AS (
