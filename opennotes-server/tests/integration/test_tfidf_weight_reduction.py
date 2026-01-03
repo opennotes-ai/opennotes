@@ -9,13 +9,29 @@ The TF-IDF-like weight reduction formula:
 """
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from src.database import get_session_maker
 from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk
 from src.fact_checking.models import FactCheckItem
 
 pytestmark = pytest.mark.asyncio
+
+
+async def reindex_pgroonga_if_available():
+    """REINDEX PGroonga index to repair Groonga sources after template DB copy.
+
+    PostgreSQL 15+ CREATE DATABASE WITH TEMPLATE doesn't properly copy PGroonga's
+    internal Groonga sources, causing "object isn't found" errors on INSERT.
+    See pgroonga/pgroonga#335 for details.
+    """
+    async with get_session_maker()() as session:
+        try:
+            await session.execute(text("SELECT pgroonga_command('io_flush')"))
+            await session.execute(text("REINDEX INDEX idx_chunk_embeddings_pgroonga"))
+            await session.commit()
+        except Exception:
+            pass
 
 
 def generate_test_embedding(seed: int = 0) -> list[float]:
@@ -47,6 +63,8 @@ async def tfidf_weight_test_items():
     All chunks have similar embeddings (seed=100) to ensure semantic search
     would normally rank them equally, making weight reduction the differentiator.
     """
+    await reindex_pgroonga_if_available()
+
     item_ids = []
     chunk_ids = []
 

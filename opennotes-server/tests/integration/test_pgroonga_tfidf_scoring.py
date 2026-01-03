@@ -73,6 +73,10 @@ async def require_pgroonga():
 
     This fixture checks for PGroonga availability and skips tests if
     PGroonga is not installed.
+
+    IMPORTANT: This fixture also REINDEXes the PGroonga index to repair
+    Groonga sources that become invalid after CREATE DATABASE WITH TEMPLATE
+    (PostgreSQL 15+ issue, see pgroonga/pgroonga#335).
     """
     pgroonga_available = await check_pgroonga_available()
     if not pgroonga_available:
@@ -87,6 +91,11 @@ async def require_pgroonga():
             "chunk_stats materialized view not found. "
             "Run migrations to create the PGroonga infrastructure."
         )
+
+    async with get_session_maker()() as session:
+        await session.execute(text("SELECT pgroonga_command('io_flush')"))
+        await session.execute(text("REINDEX INDEX idx_chunk_embeddings_pgroonga"))
+        await session.commit()
 
 
 def generate_test_embedding(seed: int = 0) -> list[float]:
