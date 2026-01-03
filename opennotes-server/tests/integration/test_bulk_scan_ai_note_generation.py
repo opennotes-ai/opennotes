@@ -330,7 +330,7 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                         assert "request_id" in kwargs
                         assert kwargs["scan_type"] == "similarity"
                         assert kwargs["fact_check_item_id"] == str(fact_check_item.id)
-                        assert kwargs["community_server_id"] == community_server.platform_id
+                        assert kwargs["community_server_id"] == str(community_server.id)
                         assert kwargs["similarity_score"] >= 0.85
 
     @pytest.mark.asyncio
@@ -609,7 +609,7 @@ class TestPartialMatches(TestBulkScanAINoteGenerationFixtures):
         return item
 
     @pytest.mark.asyncio
-    async def test_similarity_matches_with_or_without_fact_check_item_trigger_events(
+    async def test_only_similarity_matches_with_fact_check_item_trigger_events(
         self,
         db,
         admin_headers_for_ai_tests,
@@ -618,10 +618,11 @@ class TestPartialMatches(TestBulkScanAINoteGenerationFixtures):
         fact_check_item_for_partial_tests,
     ):
         """
-        Both similarity matches (with and without fact_check_item_id) should trigger events.
+        Only similarity matches WITH fact_check_item_id should trigger events.
 
-        Matches with fact_check_item_id use FACT_CHECK strategy for note generation.
-        Matches without fact_check_item_id (legacy scans) use GENERAL_EXPLANATION strategy.
+        Matches with fact_check_item_id trigger REQUEST_AUTO_CREATED events.
+        Matches without fact_check_item_id (legacy scans) do NOT trigger events
+        because the AI note generation handler requires a fact_check_item.
         """
         from src.bulk_content_scan.models import BulkContentScanLog
 
@@ -709,14 +710,13 @@ class TestPartialMatches(TestBulkScanAINoteGenerationFixtures):
 
                 assert response.status_code == 201
 
-                assert mock_publish.call_count == 2, (
-                    f"Expected 2 calls (both messages trigger AI note generation) but got {mock_publish.call_count}"
+                assert mock_publish.call_count == 1, (
+                    f"Expected 1 call (only message with fact_check_item_id triggers event) "
+                    f"but got {mock_publish.call_count}"
                 )
 
-                call_list = mock_publish.call_args_list
-                assert call_list[0].kwargs["platform_message_id"] == "msg_with_fact_check"
-                assert call_list[0].kwargs["fact_check_item_id"] == str(
+                call_kwargs = mock_publish.call_args.kwargs
+                assert call_kwargs["platform_message_id"] == "msg_with_fact_check"
+                assert call_kwargs["fact_check_item_id"] == str(
                     fact_check_item_for_partial_tests.id
                 )
-                assert call_list[1].kwargs["platform_message_id"] == "msg_without_fact_check"
-                assert call_list[1].kwargs.get("fact_check_item_id") is None

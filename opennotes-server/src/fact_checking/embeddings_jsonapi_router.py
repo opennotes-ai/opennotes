@@ -280,7 +280,7 @@ async def similarity_search_jsonapi(
         community_server_uuid = await get_community_server_uuid(db, attrs.community_server_id)
 
         if community_server_uuid:
-            allowed, reason = await usage_tracker.check_limits(
+            allowed, reason = await usage_tracker.check_and_reserve_limits(
                 community_server_id=community_server_uuid,
                 provider="openai",
                 estimated_tokens=estimated_tokens,
@@ -420,5 +420,5 @@ async def similarity_search_jsonapi(
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
-            f"Similarity search failed: {e!s}",
+            "Similarity search failed. Please try again later.",
         )

@@ -29,7 +29,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from src.cache.redis_client import RedisClient
+from src.config import get_settings
 from src.monitoring import get_logger
+from src.monitoring.metrics import search_analytics_failures_total
 
 if TYPE_CHECKING:
     from src.fact_checking.repository import HybridSearchResult
@@ -171,6 +173,10 @@ async def log_search_results(
             await _update_aggregate_stats(redis, entry)
 
         except Exception as e:
+            settings = get_settings()
+            search_analytics_failures_total.labels(
+                operation="log_entry", instance_id=settings.INSTANCE_ID
+            ).inc()
             logger.warning(
                 "Failed to log search analytics to Redis",
                 extra={"error": str(e)},
@@ -211,6 +217,10 @@ async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntr
         await redis.set(SEARCH_STATS_KEY, json.dumps(stats))
 
     except Exception as e:
+        settings = get_settings()
+        search_analytics_failures_total.labels(
+            operation="update_stats", instance_id=settings.INSTANCE_ID
+        ).inc()
         logger.warning(
             "Failed to update aggregate search stats",
             extra={"error": str(e)},
@@ -233,6 +243,10 @@ async def get_search_stats(redis: RedisClient) -> dict | None:
             return json.loads(stats_raw)
         return None
     except Exception as e:
+        settings = get_settings()
+        search_analytics_failures_total.labels(
+            operation="get_stats", instance_id=settings.INSTANCE_ID
+        ).inc()
         logger.warning(
             "Failed to get search stats",
             extra={"error": str(e)},

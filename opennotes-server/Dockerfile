@@ -1,5 +1,9 @@
+# syntax=docker/dockerfile:1.4
 # =============================================================================
 # Layer Caching Strategy for Python ML Dependencies
+# =============================================================================
+# REQUIRES: Docker BuildKit (enabled by default in Docker 23.0+)
+# For older Docker versions, set: DOCKER_BUILDKIT=1
 # =============================================================================
 # This Dockerfile uses a multi-stage build optimized for Docker layer caching:
 #

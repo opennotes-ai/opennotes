@@ -544,43 +544,40 @@ export const apiClientFactory = Factory.define<MockApiClient, ApiClientTransient
           },
         },
         jsonapi: { version: '1.1' },
-      } as unknown as BulkScanSingleResponse),
+      }),
       getBulkScanResults: jest.fn<() => Promise<BulkScanResultsResponse>>().mockResolvedValue({
         data: {
           type: 'bulk-scans',
           id: `scan-${sequence}`,
           attributes: {
             status: 'completed',
-            initiated_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
             messages_scanned: 100,
             messages_flagged: 5,
           },
         },
         jsonapi: { version: '1.1' },
-      } as unknown as BulkScanResultsResponse),
+      }),
       createNoteRequestsFromScan: jest.fn<() => Promise<NoteRequestsResultResponse>>().mockResolvedValue({
         data: {
-          type: 'note-requests-results',
+          type: 'note-request-batches',
           id: `result-${sequence}`,
           attributes: {
-            requests_created: 0,
-            notes_generated: 0,
-            errors: [],
+            created_count: 0,
+            request_ids: [],
           },
         },
         jsonapi: { version: '1.1' },
-      } as unknown as NoteRequestsResultResponse),
+      }),
       checkRecentScan: jest.fn<() => Promise<RecentScanResponse>>().mockResolvedValue({
         data: {
-          type: 'recent-scan-check',
+          type: 'bulk-scan-status',
           id: `check-${sequence}`,
           attributes: {
             has_recent_scan: false,
           },
         },
         jsonapi: { version: '1.1' },
-      } as unknown as RecentScanResponse),
+      }),
       getLatestScan: jest.fn<() => Promise<LatestScanResponse>>().mockResolvedValue({
         data: {
           type: 'bulk-scans',
@@ -593,18 +590,17 @@ export const apiClientFactory = Factory.define<MockApiClient, ApiClientTransient
           },
         },
         jsonapi: { version: '1.1' },
-      } as unknown as LatestScanResponse),
+      }),
       generateScanExplanation: jest.fn<() => Promise<ExplanationResultResponse>>().mockResolvedValue({
         data: {
           type: 'scan-explanations',
           id: `explanation-${sequence}`,
           attributes: {
             explanation: 'Test explanation',
-            confidence: 0.8,
           },
         },
         jsonapi: { version: '1.1' },
-      } as ExplanationResultResponse),
+      }),
     };
   }
 );
