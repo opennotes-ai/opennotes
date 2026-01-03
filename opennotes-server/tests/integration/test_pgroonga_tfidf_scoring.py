@@ -351,24 +351,27 @@ class TestPGroongaTFIDFLengthNormalization:
         medium_id = pgroonga_tfidf_test_items["item_medium"].id
         long_id = pgroonga_tfidf_test_items["item_long"].id
 
-        if all(id_ in result_ids for id_ in [short_id, medium_id, long_id]):
-            short_idx = result_ids.index(short_id)
-            medium_idx = result_ids.index(medium_id)
-            long_idx = result_ids.index(long_id)
+        assert short_id in result_ids, "Short chunk item should be in results"
+        assert medium_id in result_ids, "Medium chunk item should be in results"
+        assert long_id in result_ids, "Long chunk item should be in results"
 
-            short_score = results[short_idx].cc_score
-            medium_score = results[medium_idx].cc_score
-            long_score = results[long_idx].cc_score
+        short_idx = result_ids.index(short_id)
+        medium_idx = result_ids.index(medium_id)
+        long_idx = result_ids.index(long_id)
 
-            assert short_score >= medium_score >= long_score, (
-                f"Scores should decrease as chunk length increases. "
-                f"Short: {short_score:.4f}, Medium: {medium_score:.4f}, Long: {long_score:.4f}"
-            )
+        short_score = results[short_idx].cc_score
+        medium_score = results[medium_idx].cc_score
+        long_score = results[long_idx].cc_score
 
-            assert short_idx <= medium_idx <= long_idx, (
-                f"Rankings should reflect length normalization: short <= medium <= long. "
-                f"Short: {short_idx}, Medium: {medium_idx}, Long: {long_idx}"
-            )
+        assert short_score >= medium_score >= long_score, (
+            f"Scores should decrease as chunk length increases. "
+            f"Short: {short_score:.4f}, Medium: {medium_score:.4f}, Long: {long_score:.4f}"
+        )
+
+        assert short_idx <= medium_idx <= long_idx, (
+            f"Rankings should reflect length normalization: short <= medium <= long. "
+            f"Short: {short_idx}, Medium: {medium_idx}, Long: {long_idx}"
+        )
 
     async def test_length_normalization_uses_avg_chunk_length(self, pgroonga_tfidf_test_items):
         """Test that length normalization uses the avg_chunk_length from chunk_stats.

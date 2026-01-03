@@ -418,17 +418,18 @@ async def hybrid_search_with_chunks(
             SELECT COALESCE(avg_chunk_length, 1.0) AS avg_chunk_length
             FROM chunk_stats
         ),
-        chunk_keyword_raw AS (
+        chunk_keyword_with_bm25 AS (
             -- Find keyword-matching chunks using PGroonga TF-IDF index
             -- BM25-lite length normalization: score / (1 - b + b * (doc_len / avgdl))
             -- where b=0.75 is standard BM25 length normalization parameter
+            -- COALESCE handles NULL word_count (returns 1 as fallback)
             SELECT
                 ce.id AS chunk_id,
                 fcc.fact_check_id,
                 ce.is_common,
                 pgroonga_score(ce.tableoid, ce.ctid) / (
                     1.0 - 0.75 + 0.75 * (
-                        GREATEST(ce.word_count, 1)::float /
+                        COALESCE(ce.word_count, 1)::float /
                         NULLIF((SELECT avg_chunk_length FROM chunk_stats_cte), 0)
                     )
                 ) AS relevance
@@ -436,13 +437,13 @@ async def hybrid_search_with_chunks(
             JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
             JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
             WHERE ce.chunk_text &@~ :query_text
-                AND pgroonga_score(ce.tableoid, ce.ctid) / (
-                    1.0 - 0.75 + 0.75 * (
-                        GREATEST(ce.word_count, 1)::float /
-                        NULLIF((SELECT avg_chunk_length FROM chunk_stats_cte), 0)
-                    )
-                ) >= :min_keyword_relevance
                 {chunk_tags_filter}
+        ),
+        chunk_keyword_raw AS (
+            -- Filter by minimum relevance threshold and limit results
+            SELECT chunk_id, fact_check_id, is_common, relevance
+            FROM chunk_keyword_with_bm25
+            WHERE relevance >= :min_keyword_relevance
             ORDER BY relevance DESC
             LIMIT {HYBRID_SEARCH_CTE_PRELIMIT * CHUNK_PRELIMIT_MULTIPLIER}
         ),
