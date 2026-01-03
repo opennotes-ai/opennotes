@@ -7,8 +7,8 @@ Where:
 - keyword_norm = min-max normalized ts_rank_cd within result set
 - alpha ∈ [0, 1] controls the balance (default 0.7, semantic-weighted)
 
-The CC formula replaces RRF (Reciprocal Rank Fusion) to preserve score magnitude
-information, enabling better relevance discrimination and threshold-based filtering.
+The CC formula preserves score magnitude information, enabling better relevance
+discrimination and threshold-based filtering compared to rank-based fusion approaches.
 """
 
 import pytest
@@ -328,10 +328,10 @@ class TestMinMaxNormalization:
 
 
 class TestScoreSpreadImprovement:
-    """Tests verifying CC provides better score discrimination than RRF."""
+    """Tests verifying CC provides better score discrimination than rank-based fusion."""
 
     async def test_cc_provides_wider_score_spread(self, cc_test_items):
-        """CC should provide wider score spread than the narrow RRF range (0.2-0.5)."""
+        """CC should provide wider score spread than rank-based fusion approaches."""
         from src.fact_checking.repository import hybrid_search
 
         query_text = "vaccine quantum research study"

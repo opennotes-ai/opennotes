@@ -7,7 +7,7 @@ It provides:
 - Proper content-type headers (application/vnd.api+json)
 
 Hybrid search combines PostgreSQL full-text search with pgvector semantic
-similarity using Reciprocal Rank Fusion (RRF) for result ranking.
+similarity using Convex Combination (CC) for result ranking.
 
 Reference: https://jsonapi.org/format/
 """
@@ -235,11 +235,11 @@ async def hybrid_search_jsonapi(
     4. Executes hybrid search combining:
        - PostgreSQL full-text search (ts_rank_cd with weighted tsvector)
        - pgvector embedding similarity (cosine distance)
-    5. Uses Reciprocal Rank Fusion (RRF) to combine rankings
-    6. Returns top matches ranked by combined RRF score
+    5. Uses Convex Combination (CC) to fuse semantic and keyword scores
+    6. Returns top matches ranked by combined CC score
 
-    The RRF formula: score = 1/(k + rank_semantic) + 1/(k + rank_keyword)
-    where k=60 is the standard RRF constant.
+    The CC formula: score = alpha * semantic_similarity + (1-alpha) * keyword_norm
+    where alpha=0.7 by default (semantic-weighted).
 
     JSON:API 1.1 action endpoint that returns search results.
 

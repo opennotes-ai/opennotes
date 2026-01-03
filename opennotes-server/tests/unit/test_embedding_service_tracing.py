@@ -341,7 +341,7 @@ class TestEmptyResultsHandling:
             assert "search.top_score" not in set_attribute_calls
 
     @pytest.mark.asyncio
-    async def test_similarity_search_results_filtered_by_rrf_threshold(self):
+    async def test_similarity_search_results_filtered_by_score_threshold(self):
         """Verify results below score_threshold are filtered out."""
         mock_span = MagicMock()
         mock_span.__enter__ = MagicMock(return_value=mock_span)

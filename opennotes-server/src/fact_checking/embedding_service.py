@@ -13,7 +13,7 @@ from src.cache.redis_client import redis_client
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.fact_checking.previously_seen_schemas import PreviouslySeenMessageMatch
-from src.fact_checking.repository import DEFAULT_ALPHA, RRF_K_CONSTANT, hybrid_search_with_chunks
+from src.fact_checking.repository import DEFAULT_ALPHA, FUSION_K_CONSTANT, hybrid_search_with_chunks
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
@@ -80,13 +80,11 @@ _tracer = trace.get_tracer(__name__)
 # Research shows CC outperforms RRF in both in-domain and out-of-domain settings.
 #
 # =============================================================================
-# Legacy constant kept for backward compatibility (no longer used in scoring)
-RRF_TO_SIMILARITY_SCALE_FACTOR = 1.0  # CC scores are already 0-1, no scaling needed
+# Scale factor for CC scores (CC scores are already 0-1, no scaling needed)
+CC_SCORE_SCALE_FACTOR = 1.0
 
-# Re-export RRF_K_CONSTANT for documentation purposes and to avoid unused import warnings.
-# The actual value is used in repository.py SQL; we import it here for documentation coherence.
-__all__ = ["RRF_K_CONSTANT", "RRF_TO_SIMILARITY_SCALE_FACTOR", "EmbeddingService"]
-_RRF_K = RRF_K_CONSTANT  # Reference to suppress F401; value is 60
+__all__ = ["CC_SCORE_SCALE_FACTOR", "FUSION_K_CONSTANT", "EmbeddingService"]
+_FUSION_K = FUSION_K_CONSTANT
 
 
 class EmbeddingService:
@@ -185,7 +183,7 @@ class EmbeddingService:
         """
         Search for similar fact-check items using hybrid search (FTS + vector similarity).
 
-        Uses Reciprocal Rank Fusion (RRF) to combine full-text search and
+        Uses hybrid search to combine full-text search and
         vector similarity for improved retrieval quality.
 
         Note on dataset_tags filtering:
@@ -195,7 +193,7 @@ class EmbeddingService:
 
         Note on thresholds:
             - similarity_threshold: Applied at SQL level to filter semantic search
-              results by cosine similarity before RRF fusion.
+              results by cosine similarity before CC fusion.
             - score_threshold: Applied after CC fusion to filter the
               CC scores (0.0-1.0 range). Default 0.1 filters out poor matches
               while being permissive enough for reasonable results.
@@ -267,7 +265,7 @@ class EmbeddingService:
                         author=result.item.author,
                         embedding_provider=result.item.embedding_provider,
                         embedding_model=result.item.embedding_model,
-                        similarity_score=min(result.cc_score * RRF_TO_SIMILARITY_SCALE_FACTOR, 1.0),
+                        similarity_score=min(result.cc_score * CC_SCORE_SCALE_FACTOR, 1.0),
                     )
                     for result in hybrid_results
                 ]

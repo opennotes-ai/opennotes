@@ -1,7 +1,7 @@
 """Integration tests for TF-IDF weight reduction in hybrid_search_with_chunks.
 
 These tests verify that the common_chunk_weight_factor parameter correctly
-affects search ranking by down-weighting common chunks in RRF scoring.
+affects search ranking by down-weighting common chunks in fusion scoring.
 
 The TF-IDF-like weight reduction formula:
 - Non-common chunks: score = 1/(k + rank)
@@ -37,7 +37,7 @@ async def tfidf_weight_test_items():
 
     Creates fact_check_items with chunks that have is_common set to True or False,
     allowing tests to verify that the common_chunk_weight_factor parameter
-    correctly reduces the contribution of common chunks in RRF scoring.
+    correctly reduces the contribution of common chunks in fusion scoring.
 
     Test data structure:
     - item_common_only: Has only common chunks (is_common=True)
@@ -192,7 +192,7 @@ class TestTFIDFWeightReduction:
     """Integration tests for TF-IDF weight reduction in hybrid_search_with_chunks.
 
     These tests verify that the common_chunk_weight_factor parameter correctly
-    affects search ranking by down-weighting common chunks in RRF scoring.
+    affects search ranking by down-weighting common chunks in fusion scoring.
     """
 
     async def test_common_chunk_weight_reduction_applied(self, tfidf_weight_test_items):
@@ -264,7 +264,7 @@ class TestTFIDFWeightReduction:
             non_common_result = next(r for r in results if r.item.id == non_common_only_id)
 
             assert non_common_result.cc_score > common_result.cc_score, (
-                "Non-common item should have higher RRF score when weight=0.0 "
+                "Non-common item should have higher CC score when weight=0.0 "
                 f"(non-common: {non_common_result.cc_score}, "
                 f"common: {common_result.cc_score})"
             )
@@ -280,7 +280,7 @@ class TestTFIDFWeightReduction:
 
         When weight factor is 1.0, common chunks get the same score as
         non-common chunks. Items with identical embeddings should have
-        similar RRF scores regardless of is_common flag.
+        similar CC scores regardless of is_common flag.
         """
         from src.fact_checking.repository import hybrid_search_with_chunks
 
