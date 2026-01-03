@@ -24,8 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone and build pgvector from source
-# Using v0.8.0 which is compatible with PostgreSQL 18
-ARG PGVECTOR_VERSION=0.8.0
+# Using v0.8.1 which includes PostgreSQL 18 support (vacuum_delay_point API change)
+ARG PGVECTOR_VERSION=0.8.1
 RUN cd /tmp \
     && git clone --branch v${PGVECTOR_VERSION} https://github.com/pgvector/pgvector.git \
     && cd pgvector \
