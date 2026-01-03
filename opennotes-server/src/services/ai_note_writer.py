@@ -166,6 +166,7 @@ class AINoteWriter:
                 fact_check_item_id=event.fact_check_item_id,
                 similarity_score=event.similarity_score,
                 db_url=settings.DATABASE_URL,
+                moderation_metadata=event.moderation_metadata,
             )
 
             logger.debug(

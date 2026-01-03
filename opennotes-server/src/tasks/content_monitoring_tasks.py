@@ -473,6 +473,7 @@ async def generate_ai_note_task(
     db_url: str,
     fact_check_item_id: str | None = None,
     similarity_score: float | None = None,
+    moderation_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     TaskIQ task to generate AI note for a fact-check match or moderation flag.
@@ -507,6 +508,8 @@ async def generate_ai_note_task(
         db_url: Database connection URL
         fact_check_item_id: UUID string of matched fact-check item (for similarity scans)
         similarity_score: Similarity score of the match (for similarity scans)
+        moderation_metadata: OpenAI moderation results (for moderation scans), containing
+            categories, scores, and flagged_categories
 
     Returns:
         dict with status and note_id if created
@@ -529,6 +532,8 @@ async def generate_ai_note_task(
             span.set_attribute("task.fact_check_item_id", fact_check_item_id)
         if similarity_score is not None:
             span.set_attribute("task.similarity_score", similarity_score)
+        if moderation_metadata:
+            span.set_attribute("task.has_moderation_metadata", True)
         span.set_attribute("task.component", "content_monitoring")
 
         settings = get_settings()
@@ -586,7 +591,7 @@ async def generate_ai_note_task(
                         content, fact_check_item, similarity_score or 0.0
                     )
                 else:
-                    prompt = _build_general_explanation_prompt(content)
+                    prompt = _build_general_explanation_prompt(content, moderation_metadata)
 
                 messages = [
                     LLMMessage(role="system", content=settings.AI_NOTE_WRITER_SYSTEM_PROMPT),
@@ -694,11 +699,40 @@ Please write a concise, informative community note that:
 Community Note:"""
 
 
-def _build_general_explanation_prompt(original_message: str) -> str:
-    """Build prompt for general explanation note generation (no fact-check context)."""
-    return f"""Original Message:
-{original_message}
+def _build_general_explanation_prompt(
+    original_message: str,
+    moderation_metadata: dict[str, Any] | None = None,
+) -> str:
+    """Build prompt for general explanation note generation.
 
+    Args:
+        original_message: Original message content
+        moderation_metadata: Optional OpenAI moderation results containing:
+            - categories: dict of category name to bool (whether flagged)
+            - scores: dict of category name to float (confidence score 0-1)
+            - flagged_categories: list of category names that were flagged
+
+    Returns:
+        Formatted prompt for LLM
+    """
+    prompt_parts = [f"Original Message:\n{original_message}"]
+
+    if moderation_metadata:
+        moderation_context = "\nContent Moderation Analysis:"
+        flagged_categories = moderation_metadata.get("flagged_categories", [])
+        scores = moderation_metadata.get("scores", {})
+
+        if flagged_categories:
+            moderation_context += f"\nFlagged Categories: {', '.join(flagged_categories)}"
+            relevant_scores = {
+                cat: f"{score:.2%}" for cat, score in scores.items() if cat in flagged_categories
+            }
+            if relevant_scores:
+                moderation_context += f"\nConfidence Scores: {relevant_scores}"
+
+        prompt_parts.append(moderation_context)
+
+    prompt_parts.append("""
 Please analyze this content and write a concise, informative community note that:
 1. Explains the message content
 2. Provides helpful context and clarification
@@ -709,7 +743,9 @@ Please analyze this content and write a concise, informative community note that
 
 Focus on helping readers understand what the content is about, what context might be important, and any relevant information that would be helpful to know.
 
-Community Note:"""
+Community Note:""")
+
+    return "\n".join(prompt_parts)
 
 
 @register_task(
