@@ -533,3 +533,181 @@ class TestPGroongaTFIDFEdgeCases:
         assert len(results_high_threshold) <= len(results_no_threshold), (
             "Higher threshold should return equal or fewer results"
         )
+
+
+class TestWordCountTrigger:
+    """Tests for the word_count auto-population trigger."""
+
+    async def test_word_count_auto_populated_on_insert(self, require_pgroonga):
+        """Test that word_count is automatically computed on INSERT via trigger.
+
+        The trigger should compute word_count = number of whitespace-separated words.
+        """
+        test_text = "The quick brown fox jumps over lazy dog"
+        expected_word_count = 8
+
+        async with get_session_maker()() as session:
+            chunk = ChunkEmbedding(
+                chunk_text=test_text,
+                embedding=generate_test_embedding(seed=200),
+                embedding_provider="test",
+                embedding_model="test-model",
+                is_common=False,
+            )
+            session.add(chunk)
+            await session.commit()
+
+            await session.refresh(chunk)
+            chunk_id = chunk.id
+
+        try:
+            async with get_session_maker()() as session:
+                result = await session.execute(
+                    text("SELECT word_count FROM chunk_embeddings WHERE id = :id"),
+                    {"id": str(chunk_id)},
+                )
+                actual_word_count = result.scalar_one()
+
+            assert actual_word_count == expected_word_count, (
+                f"word_count should be {expected_word_count}, got {actual_word_count}"
+            )
+        finally:
+            async with get_session_maker()() as session:
+                await session.execute(delete(ChunkEmbedding).where(ChunkEmbedding.id == chunk_id))
+                await session.commit()
+
+    async def test_word_count_zero_for_empty_text(self, require_pgroonga):
+        """Test that word_count is 0 for empty chunk_text.
+
+        The trigger should handle empty strings gracefully using COALESCE.
+        """
+        async with get_session_maker()() as session:
+            chunk = ChunkEmbedding(
+                chunk_text="",
+                embedding=generate_test_embedding(seed=201),
+                embedding_provider="test",
+                embedding_model="test-model",
+                is_common=False,
+            )
+            session.add(chunk)
+            await session.commit()
+
+            await session.refresh(chunk)
+            chunk_id = chunk.id
+
+        try:
+            async with get_session_maker()() as session:
+                result = await session.execute(
+                    text("SELECT word_count FROM chunk_embeddings WHERE id = :id"),
+                    {"id": str(chunk_id)},
+                )
+                actual_word_count = result.scalar_one()
+
+            assert actual_word_count == 0, (
+                f"word_count should be 0 for empty text, got {actual_word_count}"
+            )
+        finally:
+            async with get_session_maker()() as session:
+                await session.execute(delete(ChunkEmbedding).where(ChunkEmbedding.id == chunk_id))
+                await session.commit()
+
+    async def test_word_count_zero_for_whitespace_only_text(self, require_pgroonga):
+        """Test that word_count is 0 for whitespace-only chunk_text.
+
+        The trigger should handle whitespace-only strings using NULLIF(TRIM(...), '').
+        """
+        async with get_session_maker()() as session:
+            chunk = ChunkEmbedding(
+                chunk_text="   \t\n   ",
+                embedding=generate_test_embedding(seed=202),
+                embedding_provider="test",
+                embedding_model="test-model",
+                is_common=False,
+            )
+            session.add(chunk)
+            await session.commit()
+
+            await session.refresh(chunk)
+            chunk_id = chunk.id
+
+        try:
+            async with get_session_maker()() as session:
+                result = await session.execute(
+                    text("SELECT word_count FROM chunk_embeddings WHERE id = :id"),
+                    {"id": str(chunk_id)},
+                )
+                actual_word_count = result.scalar_one()
+
+            assert actual_word_count == 0, (
+                f"word_count should be 0 for whitespace-only text, got {actual_word_count}"
+            )
+        finally:
+            async with get_session_maker()() as session:
+                await session.execute(delete(ChunkEmbedding).where(ChunkEmbedding.id == chunk_id))
+                await session.commit()
+
+    async def test_word_count_updated_on_chunk_text_change(self, require_pgroonga):
+        """Test that word_count is recomputed when chunk_text is updated.
+
+        The trigger fires on UPDATE OF chunk_text, so changing the text should
+        update the word_count.
+        """
+        original_text = "hello world"
+        updated_text = "one two three four five"
+        expected_original_count = 2
+        expected_updated_count = 5
+
+        async with get_session_maker()() as session:
+            chunk = ChunkEmbedding(
+                chunk_text=original_text,
+                embedding=generate_test_embedding(seed=203),
+                embedding_provider="test",
+                embedding_model="test-model",
+                is_common=False,
+            )
+            session.add(chunk)
+            await session.commit()
+            await session.refresh(chunk)
+            chunk_id = chunk.id
+
+        try:
+            async with get_session_maker()() as session:
+                result = await session.execute(
+                    text("SELECT word_count FROM chunk_embeddings WHERE id = :id"),
+                    {"id": str(chunk_id)},
+                )
+                original_word_count = result.scalar_one()
+
+            assert original_word_count == expected_original_count, (
+                f"Original word_count should be {expected_original_count}, got {original_word_count}"
+            )
+
+            async with get_session_maker()() as session:
+                from src.fact_checking.chunk_models import compute_chunk_text_hash
+
+                await session.execute(
+                    text(
+                        "UPDATE chunk_embeddings SET chunk_text = :text, chunk_text_hash = :hash WHERE id = :id"
+                    ),
+                    {
+                        "text": updated_text,
+                        "hash": compute_chunk_text_hash(updated_text),
+                        "id": str(chunk_id),
+                    },
+                )
+                await session.commit()
+
+            async with get_session_maker()() as session:
+                result = await session.execute(
+                    text("SELECT word_count FROM chunk_embeddings WHERE id = :id"),
+                    {"id": str(chunk_id)},
+                )
+                updated_word_count = result.scalar_one()
+
+            assert updated_word_count == expected_updated_count, (
+                f"Updated word_count should be {expected_updated_count}, got {updated_word_count}"
+            )
+        finally:
+            async with get_session_maker()() as session:
+                await session.execute(delete(ChunkEmbedding).where(ChunkEmbedding.id == chunk_id))
+                await session.commit()

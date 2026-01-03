@@ -4,7 +4,11 @@ Enable PGroonga extension and set up infrastructure for TF-IDF scoring:
 - Enable PGroonga extension for full-text search with Japanese/CJK support
 - Create PGroonga index on chunk_embeddings.chunk_text for efficient FTS
 - Add word_count column to chunk_embeddings for TF-IDF calculations
+- Create trigger to auto-compute word_count on INSERT/UPDATE
 - Create chunk_stats materialized view for global corpus statistics
+
+The chunk_stats materialized view should be refreshed nightly via scheduled job.
+See docs/chunk-stats-refresh.md for refresh strategy.
 
 Revision ID: 94201a1b2c3d
 Revises: 87146a1b2c3d
@@ -41,8 +45,41 @@ def upgrade() -> None:
 
     op.execute(
         """
+        CREATE OR REPLACE FUNCTION chunk_embeddings_word_count_trigger()
+        RETURNS trigger AS $$
+        BEGIN
+            NEW.word_count := COALESCE(
+                array_length(
+                    regexp_split_to_array(NULLIF(TRIM(NEW.chunk_text), ''), E'\\s+'),
+                    1
+                ),
+                0
+            );
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+
+    op.execute(
+        """
+        CREATE TRIGGER chunk_embeddings_word_count_update
+        BEFORE INSERT OR UPDATE OF chunk_text ON chunk_embeddings
+        FOR EACH ROW
+        EXECUTE FUNCTION chunk_embeddings_word_count_trigger();
+        """
+    )
+
+    op.execute(
+        """
         UPDATE chunk_embeddings
-        SET word_count = array_length(regexp_split_to_array(chunk_text, E'\\s+'), 1)
+        SET word_count = COALESCE(
+            array_length(
+                regexp_split_to_array(NULLIF(TRIM(chunk_text), ''), E'\\s+'),
+                1
+            ),
+            0
+        )
         WHERE word_count = 0
         """
     )
@@ -65,7 +102,7 @@ def upgrade() -> None:
         """
     )
 
-    op.execute("CREATE UNIQUE INDEX ON chunk_stats ((1))")
+    op.execute("CREATE UNIQUE INDEX idx_chunk_stats_unique ON chunk_stats ((1))")
 
 
 def downgrade() -> None:
@@ -73,6 +110,9 @@ def downgrade() -> None:
     op.execute("DROP MATERIALIZED VIEW IF EXISTS chunk_stats")
 
     op.execute("DROP INDEX IF EXISTS idx_chunk_embeddings_pgroonga")
+
+    op.execute("DROP TRIGGER IF EXISTS chunk_embeddings_word_count_update ON chunk_embeddings")
+    op.execute("DROP FUNCTION IF EXISTS chunk_embeddings_word_count_trigger()")
 
     op.drop_column("chunk_embeddings", "word_count")
 
