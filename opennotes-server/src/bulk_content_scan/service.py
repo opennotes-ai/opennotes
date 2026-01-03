@@ -30,6 +30,7 @@ from src.fact_checking.embedding_service import EmbeddingService
 from src.llm_config.providers.base import LLMMessage
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
+from src.monitoring.metrics import relevance_check_total
 
 logger = get_logger(__name__)
 
@@ -582,10 +583,16 @@ class BulkContentScanService:
             Tuple of (is_relevant, reasoning). On error, returns (True, error_message) to fail-open.
         """
         if not settings.RELEVANCE_CHECK_ENABLED:
+            relevance_check_total.labels(
+                outcome="disabled", decision="skipped", instance_id=settings.INSTANCE_ID
+            ).inc()
             return (True, "Relevance check disabled")
 
         if not self.llm_service:
             logger.warning("LLM service not configured for relevance check")
+            relevance_check_total.labels(
+                outcome="not_configured", decision="fail_open", instance_id=settings.INSTANCE_ID
+            ).inc()
             return (True, "LLM service not configured")
 
         start_time = time.monotonic()
@@ -633,6 +640,11 @@ Is this reference relevant to understanding or fact-checking the user's message?
                 },
             )
 
+            decision = "relevant" if result.is_relevant else "not_relevant"
+            relevance_check_total.labels(
+                outcome="success", decision=decision, instance_id=settings.INSTANCE_ID
+            ).inc()
+
             return (result.is_relevant, result.reasoning)
 
         except TimeoutError:
@@ -644,6 +656,9 @@ Is this reference relevant to understanding or fact-checking the user's message?
                     "latency_ms": round(latency_ms, 2),
                 },
             )
+            relevance_check_total.labels(
+                outcome="timeout", decision="fail_open", instance_id=settings.INSTANCE_ID
+            ).inc()
             return (True, f"Relevance check timed out after {settings.RELEVANCE_CHECK_TIMEOUT}s")
 
         except ValidationError as e:
@@ -655,6 +670,9 @@ Is this reference relevant to understanding or fact-checking the user's message?
                     "latency_ms": round(latency_ms, 2),
                 },
             )
+            relevance_check_total.labels(
+                outcome="validation_error", decision="fail_open", instance_id=settings.INSTANCE_ID
+            ).inc()
             return (True, f"Relevance check validation failed: {e}")
 
         except Exception as e:
@@ -666,6 +684,9 @@ Is this reference relevant to understanding or fact-checking the user's message?
                     "latency_ms": round(latency_ms, 2),
                 },
             )
+            relevance_check_total.labels(
+                outcome="error", decision="fail_open", instance_id=settings.INSTANCE_ID
+            ).inc()
             return (True, f"Relevance check failed: {e}")
 
     async def append_flagged_result(

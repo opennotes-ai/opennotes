@@ -420,5 +420,5 @@ async def similarity_search_jsonapi(
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
-            f"Similarity search failed: {e!s}",
+            "Similarity search failed. Please try again later.",
         )

@@ -8,12 +8,6 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from src.config import settings
 from src.events.schemas import EventType, RequestAutoCreatedEvent
@@ -391,63 +385,6 @@ class AINoteWriter:
         # For now, use a simple settings flag
         # In the future, this will check per-server configuration in the database
         return bool(settings.AI_NOTE_WRITING_ENABLED)
-
-    @retry(
-        retry=retry_if_exception_type((Exception,)),
-        wait=wait_exponential(multiplier=1, min=1, max=30),
-        stop=stop_after_attempt(3),
-        reraise=True,
-    )
-    async def _generate_and_submit_note(
-        self, db: AsyncSession, event: RequestAutoCreatedEvent
-    ) -> None:
-        """
-        Generate AI note and submit it.
-
-        Args:
-            db: Database session
-            event: Request auto-created event
-
-        Raises:
-            Exception: If note generation or submission fails
-            ValueError: If fact_check_item_id is None (required for this method)
-        """
-        if event.fact_check_item_id is None:
-            raise ValueError("fact_check_item_id is required for fact-check note generation")
-
-        # Retrieve fact-check item
-        fact_check_item = await self._get_fact_check_item(db, event.fact_check_item_id)
-
-        if not fact_check_item:
-            raise ValueError(f"Fact-check item not found: {event.fact_check_item_id}")
-
-        # Get community server UUID
-        community_server_uuid = await self._get_community_server_uuid(db, event.community_server_id)
-
-        # Generate note content using LLM (fact-check strategy for auto-created events)
-        note_content = await self._generate_fact_check_note(
-            db,
-            community_server_uuid,
-            event.content,
-            fact_check_item,
-            event.similarity_score or 0.0,
-        )
-
-        # Submit note
-        await self._submit_note(
-            db,
-            event.request_id,
-            note_content,
-            community_server_uuid,
-        )
-
-        logger.info(
-            f"Successfully generated and submitted AI note for request {event.request_id}",
-            extra={
-                "request_id": event.request_id,
-                "fact_check_item_id": event.fact_check_item_id,
-            },
-        )
 
     async def _get_image_description(
         self, db: AsyncSession, request: Request, request_id: str

@@ -437,6 +437,20 @@ bulk_scan_finalization_dispatch_total = Counter(
     registry=registry,
 )
 
+relevance_check_total = Counter(
+    "relevance_check_total",
+    "Total LLM relevance check outcomes",
+    ["outcome", "decision", "instance_id"],
+    registry=registry,
+)
+
+search_analytics_failures_total = Counter(
+    "search_analytics_failures_total",
+    "Total failures when logging search analytics to Redis",
+    ["operation", "instance_id"],
+    registry=registry,
+)
+
 
 def get_metrics() -> bytes:
     return generate_latest(registry)
