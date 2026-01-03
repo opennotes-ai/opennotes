@@ -24,7 +24,6 @@ Create Date: 2026-01-03 02:00:00.000000
 from collections.abc import Sequence
 
 from sqlalchemy import text
-from sqlalchemy.exc import ProgrammingError
 
 from alembic import op
 
@@ -34,16 +33,23 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _pg_cron_available(connection) -> bool:
-    """Check if pg_cron extension is available and can be used."""
+def _pg_cron_installed(connection) -> bool:
+    """Check if pg_cron extension is already installed."""
     result = connection.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
-            )
-            """
-        )
+        text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron')")
+    )
+    return result.scalar()
+
+
+def _pg_cron_available_in_system(connection) -> bool:
+    """Check if pg_cron extension is available to install.
+
+    This checks pg_available_extensions to see if pg_cron can be created.
+    Returns False if pg_cron is not available (e.g., not configured in
+    shared_preload_libraries or package not installed).
+    """
+    result = connection.execute(
+        text("SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron')")
     )
     return result.scalar()
 
@@ -51,43 +57,34 @@ def _pg_cron_available(connection) -> bool:
 def upgrade() -> None:
     connection = op.get_bind()
 
-    try:
+    if _pg_cron_installed(connection):
+        print("pg_cron: Extension already installed.")
+    elif _pg_cron_available_in_system(connection):
         op.execute("CREATE EXTENSION IF NOT EXISTS pg_cron")
-    except ProgrammingError as e:
-        error_msg = str(e).lower()
-        if "can only create extension in database" in error_msg:
-            print(
-                "pg_cron: Skipping extension creation (not allowed on this database). "
-                "This is expected in test/CI environments."
-            )
-            return
-        if "cron.database_name" in error_msg or "unrecognized configuration parameter" in error_msg:
-            print(
-                "pg_cron: Skipping - pg_cron not configured on this PostgreSQL server. "
-                "This is expected in test/CI environments."
-            )
-            return
-        raise
-
-    if _pg_cron_available(connection):
-        connection.execute(
-            text(
-                """
-                SELECT cron.schedule(
-                    'refresh-chunk-stats',
-                    '0 3 * * *',
-                    'REFRESH MATERIALIZED VIEW CONCURRENTLY chunk_stats'
-                )
-                """
-            )
-        )
+        print("pg_cron: Extension created successfully.")
     else:
-        print("pg_cron: Extension not available, skipping job scheduling.")
+        print(
+            "pg_cron: Extension not available on this PostgreSQL server. "
+            "Skipping. This is expected in test/CI environments."
+        )
+        return
+
+    connection.execute(
+        text(
+            """
+            SELECT cron.schedule(
+                'refresh-chunk-stats',
+                '0 3 * * *',
+                'REFRESH MATERIALIZED VIEW CONCURRENTLY chunk_stats'
+            )
+            """
+        )
+    )
 
 
 def downgrade() -> None:
     connection = op.get_bind()
 
-    if _pg_cron_available(connection):
+    if _pg_cron_installed(connection):
         connection.execute(text("SELECT cron.unschedule('refresh-chunk-stats')"))
         op.execute("DROP EXTENSION IF EXISTS pg_cron")
