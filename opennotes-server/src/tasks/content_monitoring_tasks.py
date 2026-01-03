@@ -79,6 +79,7 @@ from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import (
     ai_note_generation_duration_seconds,
     ai_notes_generated_total,
+    bulk_scan_finalization_dispatch_total,
 )
 from src.tasks.broker import register_task
 
@@ -250,7 +251,11 @@ async def process_bulk_scan_batch_task(
                     and processed_count >= transmitted_messages
                 ):
                     should_dispatch = await service.try_set_finalize_dispatched(scan_uuid)
+                    instance_id = InstanceMetadata.get_instance_id()
                     if should_dispatch:
+                        bulk_scan_finalization_dispatch_total.labels(
+                            outcome="dispatched", instance_id=instance_id
+                        ).inc()
                         logger.info(
                             "Batch handler dispatching finalization",
                             extra={
@@ -267,6 +272,9 @@ async def process_bulk_scan_batch_task(
                             redis_url=redis_url,
                         )
                     else:
+                        bulk_scan_finalization_dispatch_total.labels(
+                            outcome="already_dispatched", instance_id=instance_id
+                        ).inc()
                         logger.info(
                             "Batch handler skipping finalization (already dispatched)",
                             extra={

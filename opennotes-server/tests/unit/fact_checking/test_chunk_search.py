@@ -9,6 +9,8 @@ Tests the hybrid_search_with_chunks function which:
 
 import pytest
 
+from src.config import settings
+
 
 class TestChunkSearchConstants:
     """Test that chunk search constants are properly defined."""
@@ -203,9 +205,9 @@ class TestInputValidation:
         from src.fact_checking.repository import hybrid_search_with_chunks
 
         mock_session = AsyncMock()
-        wrong_dimensions_embedding = [0.1] * 512  # Wrong: should be 1536
+        wrong_dimensions_embedding = [0.1] * 512  # Wrong dimensions
 
-        with pytest.raises(ValueError, match="1536"):
+        with pytest.raises(ValueError, match=str(settings.EMBEDDING_DIMENSIONS)):
             await hybrid_search_with_chunks(
                 session=mock_session,
                 query_text="test query",
@@ -214,7 +216,7 @@ class TestInputValidation:
 
     @pytest.mark.asyncio
     async def test_valid_embedding_dimensions_accepted(self):
-        """Test that correct embedding dimensions are accepted (1536)."""
+        """Test that correct embedding dimensions are accepted."""
         from unittest.mock import AsyncMock, MagicMock
 
         from src.fact_checking.repository import hybrid_search_with_chunks
@@ -225,7 +227,7 @@ class TestInputValidation:
         mock_session = AsyncMock()
         mock_session.execute.return_value = mock_result
 
-        valid_embedding = [0.1] * 1536
+        valid_embedding = [0.1] * settings.EMBEDDING_DIMENSIONS
 
         # Should not raise
         results = await hybrid_search_with_chunks(
@@ -252,7 +254,7 @@ class TestWeightFactorBoundaries:
         mock_session = AsyncMock()
         mock_session.execute.return_value = mock_result
 
-        valid_embedding = [0.1] * 1536
+        valid_embedding = [0.1] * settings.EMBEDDING_DIMENSIONS
 
         # Should not raise
         results = await hybrid_search_with_chunks(
@@ -276,7 +278,7 @@ class TestWeightFactorBoundaries:
         mock_session = AsyncMock()
         mock_session.execute.return_value = mock_result
 
-        valid_embedding = [0.1] * 1536
+        valid_embedding = [0.1] * settings.EMBEDDING_DIMENSIONS
 
         # Should not raise
         results = await hybrid_search_with_chunks(
