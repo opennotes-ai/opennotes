@@ -338,6 +338,9 @@ class TestPGroongaTFIDFLengthNormalization:
         query_embedding = generate_test_embedding(seed=999)
 
         async with get_session_maker()() as session:
+            # Flush PGroonga before querying to ensure scores are available
+            await session.execute(text("SELECT pgroonga_command('io_flush')"))
+
             results = await hybrid_search_with_chunks(
                 session=session,
                 query_text=query_text,
@@ -347,7 +350,9 @@ class TestPGroongaTFIDFLengthNormalization:
                 alpha=0.0,
             )
 
-        assert len(results) >= 2, "Should find at least two matching items"
+        assert len(results) >= 2, (
+            f"Should find at least two matching items, but found {len(results)}"
+        )
 
         result_ids = [r.item.id for r in results]
         short_id = pgroonga_tfidf_test_items["item_short"].id

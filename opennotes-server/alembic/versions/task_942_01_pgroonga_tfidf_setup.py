@@ -66,9 +66,14 @@ def upgrade() -> None:
         CREATE OR REPLACE FUNCTION chunk_embeddings_word_count_trigger()
         RETURNS trigger AS $$
         BEGIN
+            -- Split on whitespace, remove empty strings, count remaining words
+            -- array_remove handles edge cases like whitespace-only text
             NEW.word_count := COALESCE(
                 array_length(
-                    regexp_split_to_array(NULLIF(TRIM(NEW.chunk_text), ''), '[[:space:]]+'),
+                    array_remove(
+                        regexp_split_to_array(NEW.chunk_text, '[[:space:]]+'),
+                        ''
+                    ),
                     1
                 ),
                 0
@@ -93,7 +98,10 @@ def upgrade() -> None:
         UPDATE chunk_embeddings
         SET word_count = COALESCE(
             array_length(
-                regexp_split_to_array(NULLIF(TRIM(chunk_text), ''), '[[:space:]]+'),
+                array_remove(
+                    regexp_split_to_array(chunk_text, '[[:space:]]+'),
+                    ''
+                ),
                 1
             ),
             0

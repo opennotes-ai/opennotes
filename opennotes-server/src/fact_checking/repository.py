@@ -427,25 +427,39 @@ async def hybrid_search_with_chunks(
             SELECT COALESCE(avg_chunk_length, 1.0) AS avg_chunk_length
             FROM chunk_stats
         ),
+        pgroonga_scores AS (
+            -- CRITICAL: Get PGroonga scores WITHOUT JOINs first!
+            -- pgroonga_score() stores scores in an internal hash table keyed by (tableoid, ctid).
+            -- When JOINs are present in the same query, PostgreSQL's planner may execute
+            -- the scan differently, causing the score lookup to return 0.
+            -- Solution: Get scores in isolation, then JOIN the results.
+            SELECT
+                id AS chunk_id,
+                word_count,
+                is_common,
+                pgroonga_score(tableoid, ctid) AS raw_score
+            FROM chunk_embeddings
+            WHERE chunk_text &@~ :query_text
+        ),
         chunk_keyword_with_bm25 AS (
-            -- Find keyword-matching chunks using PGroonga TF-IDF index
-            -- BM25-lite length normalization: score / (1 - b + b * (doc_len / avgdl))
+            -- Apply BM25-lite length normalization and JOIN with fact_check relationships
+            -- BM25 formula: score / (1 - b + b * (doc_len / avgdl))
             -- where b is BM25_LENGTH_NORMALIZATION_B (passed as :bm25_b parameter)
             -- COALESCE handles NULL word_count (returns 1 as fallback)
             SELECT
-                ce.id AS chunk_id,
+                ps.chunk_id,
                 fcc.fact_check_id,
-                ce.is_common,
-                pgroonga_score(ce.tableoid, ce.ctid) / (
+                ps.is_common,
+                ps.raw_score / (
                     1.0 - :bm25_b + :bm25_b * (
-                        COALESCE(ce.word_count, 1)::float /
+                        COALESCE(ps.word_count, 1)::float /
                         NULLIF((SELECT avg_chunk_length FROM chunk_stats_cte), 0)
                     )
                 ) AS relevance
-            FROM chunk_embeddings ce
-            JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
+            FROM pgroonga_scores ps
+            JOIN fact_check_chunks fcc ON fcc.chunk_id = ps.chunk_id
             JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
-            WHERE ce.chunk_text &@~ :query_text
+            WHERE ps.raw_score > 0
                 {chunk_tags_filter}
         ),
         chunk_keyword_raw AS (
