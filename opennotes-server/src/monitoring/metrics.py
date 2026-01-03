@@ -430,6 +430,13 @@ ai_note_generation_duration_seconds = Histogram(
     buckets=(0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
 )
 
+bulk_scan_finalization_dispatch_total = Counter(
+    "bulk_scan_finalization_dispatch_total",
+    "Total bulk scan finalization dispatch attempts by outcome",
+    ["outcome", "instance_id"],
+    registry=registry,
+)
+
 
 def get_metrics() -> bytes:
     return generate_latest(registry)

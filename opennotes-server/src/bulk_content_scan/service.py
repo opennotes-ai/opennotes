@@ -873,19 +873,38 @@ Is this reference relevant to understanding or fact-checking the user's message?
         return (True, messages_scanned)
 
     async def try_set_finalize_dispatched(self, scan_id: UUID) -> bool:
-        """Atomically attempt to set the finalize_dispatched flag.
+        """Atomically attempt to claim the finalization dispatch responsibility.
 
-        Uses Redis SETNX (SET if Not eXists) to ensure only one handler
-        can dispatch finalization. This prevents the race condition where
-        both the batch handler and transmitted handler attempt to dispatch
-        finalize_bulk_scan_task simultaneously.
+        Uses Redis SETNX (SET if Not eXists) for distributed coordination.
+        This is the standard "claim this work" pattern for distributed systems:
+
+        1. Multiple batch handlers may complete around the same time
+        2. Each checks if all batches are processed and transmission is complete
+        3. All eligible handlers atomically attempt to claim finalization
+        4. SETNX guarantees exactly ONE handler wins (gets True)
+        5. Others get False and skip dispatch (finalization already claimed)
+
+        Why SETNX is correct (not a race condition):
+        - Redis SETNX is atomic at the server level
+        - If N handlers call simultaneously, exactly 1 gets True, N-1 get False
+        - This is the textbook distributed locking pattern
+
+        Why database SELECT FOR UPDATE is unnecessary here:
+        - The batch handler doesn't have a database session (Redis-only path)
+        - Adding DB access would complicate the code significantly
+        - The scan TTL (REDIS_TTL_SECONDS) bounds any failure scenarios
+        - The finalize task updates the database as its final step
+
+        Edge case: If the winner crashes before dispatching the task, the key
+        expires after REDIS_TTL_SECONDS and a retry/cleanup could re-attempt.
+        For bulk scans, this best-effort behavior is acceptable.
 
         Args:
             scan_id: UUID of the scan
 
         Returns:
-            True if this call set the flag (caller should dispatch finalization)
-            False if flag was already set (another handler already dispatched)
+            True if this call claimed finalization (caller should dispatch)
+            False if already claimed (another handler will dispatch)
         """
         key = _get_redis_finalize_dispatched_key(scan_id)
         result = await self.redis_client.set(key, "1", nx=True, ex=REDIS_TTL_SECONDS)  # type: ignore[misc]
@@ -1054,11 +1073,11 @@ async def create_note_requests_from_flagged_messages(
 
             if generate_ai_notes and first_match and platform_id:
                 try:
-                    if first_match.scan_type == "similarity":
+                    if first_match.scan_type == "similarity" and first_match.fact_check_item_id:
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
-                            community_server_id=platform_id,
+                            community_server_id=str(community_server_id),
                             content=flagged_msg.content,
                             scan_type="similarity",
                             fact_check_item_id=str(first_match.fact_check_item_id)
@@ -1071,7 +1090,7 @@ async def create_note_requests_from_flagged_messages(
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
-                            community_server_id=platform_id,
+                            community_server_id=str(community_server_id),
                             content=flagged_msg.content,
                             scan_type="openai_moderation",
                             moderation_metadata={
