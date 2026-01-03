@@ -150,6 +150,7 @@ class AINoteWriter:
             f"Dispatching AI note generation to TaskIQ: {event.request_id}",
             extra={
                 "request_id": event.request_id,
+                "scan_type": event.scan_type,
                 "fact_check_item_id": event.fact_check_item_id,
                 "community_server_id": event.community_server_id,
                 "similarity_score": event.similarity_score,
@@ -161,15 +162,18 @@ class AINoteWriter:
                 community_server_id=event.community_server_id,
                 request_id=event.request_id,
                 content=event.content,
+                scan_type=event.scan_type,
                 fact_check_item_id=event.fact_check_item_id,
                 similarity_score=event.similarity_score,
                 db_url=settings.DATABASE_URL,
+                moderation_metadata=event.moderation_metadata,
             )
 
             logger.debug(
                 f"AI note generation dispatched to TaskIQ: {event.request_id}",
                 extra={
                     "request_id": event.request_id,
+                    "scan_type": event.scan_type,
                     "fact_check_item_id": event.fact_check_item_id,
                 },
             )
@@ -406,7 +410,11 @@ class AINoteWriter:
 
         Raises:
             Exception: If note generation or submission fails
+            ValueError: If fact_check_item_id is None (required for this method)
         """
+        if event.fact_check_item_id is None:
+            raise ValueError("fact_check_item_id is required for fact-check note generation")
+
         # Retrieve fact-check item
         fact_check_item = await self._get_fact_check_item(db, event.fact_check_item_id)
 
@@ -422,7 +430,7 @@ class AINoteWriter:
             community_server_uuid,
             event.content,
             fact_check_item,
-            event.similarity_score,
+            event.similarity_score or 0.0,
         )
 
         # Submit note

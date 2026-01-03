@@ -301,22 +301,26 @@ class EventPublisher:
         self,
         request_id: str,
         platform_message_id: str | None,
-        fact_check_item_id: str,
         community_server_id: str,
         content: str,
-        similarity_score: float,
-        dataset_name: str,
+        scan_type: str,
+        fact_check_item_id: str | None = None,
+        similarity_score: float | None = None,
+        dataset_name: str | None = None,
+        moderation_metadata: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
         event = RequestAutoCreatedEvent(
             event_id=secrets.token_urlsafe(16),
             request_id=request_id,
             platform_message_id=platform_message_id,
+            scan_type=scan_type,  # type: ignore[arg-type]
             fact_check_item_id=fact_check_item_id,
             community_server_id=community_server_id,
             content=content,
             similarity_score=similarity_score,
             dataset_name=dataset_name,
+            moderation_metadata=moderation_metadata,
             metadata=metadata or {},
         )
         return await self.publish_event(event)

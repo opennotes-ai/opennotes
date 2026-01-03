@@ -424,9 +424,10 @@ class TestGenerateAINoteTask:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test claim content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=fact_check_item_id,
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "completed"
@@ -452,12 +453,137 @@ class TestGenerateAINoteTask:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=str(uuid4()),
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "rate_limited"
+
+    @pytest.mark.asyncio
+    async def test_moderation_scan_passes_metadata_to_prompt(self):
+        """Task passes moderation_metadata to prompt for openai_moderation scans (task-941.01)."""
+        community_server_id = "platform123"
+        community_server_uuid = uuid4()
+        moderation_metadata = {
+            "categories": {"harassment": True, "violence": False},
+            "scores": {"harassment": 0.92, "violence": 0.1},
+            "flagged_categories": ["harassment"],
+        }
+
+        mock_result_community = MagicMock()
+        mock_result_community.scalar_one_or_none.return_value = community_server_uuid
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result_community)
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_llm_service = MagicMock()
+        mock_llm_service.complete = AsyncMock(
+            return_value=MagicMock(content="Generated note content", model="gpt-4", tokens_used=100)
+        )
+
+        mock_rate_limiter = MagicMock()
+        mock_rate_limiter.check_rate_limit = AsyncMock(return_value=(True, None))
+
+        settings = MagicMock()
+        settings.DB_POOL_SIZE = 5
+        settings.DB_POOL_MAX_OVERFLOW = 10
+        settings.DB_POOL_TIMEOUT = 30
+        settings.DB_POOL_RECYCLE = 1800
+        settings.AI_NOTE_WRITING_ENABLED = True
+        settings.AI_NOTE_WRITER_MODEL = "openai/gpt-4"
+        settings.AI_NOTE_WRITER_SYSTEM_PROMPT = "You are a fact-checker."
+
+        with (
+            patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.content_monitoring_tasks.async_sessionmaker",
+                return_value=mock_session_maker,
+            ),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service", return_value=mock_llm_service
+            ),
+            patch("src.webhooks.rate_limit.rate_limiter", mock_rate_limiter),
+            patch("src.config.get_settings", return_value=settings),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+
+            from src.tasks.content_monitoring_tasks import generate_ai_note_task
+
+            result = await generate_ai_note_task(
+                community_server_id=community_server_id,
+                request_id="req123",
+                content="test content flagged by moderation",
+                scan_type="openai_moderation",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                moderation_metadata=moderation_metadata,
+            )
+
+            assert result["status"] == "completed"
+
+            call_args = mock_llm_service.complete.call_args
+            messages = call_args.kwargs["messages"]
+            user_message = messages[1].content
+
+            assert "harassment" in user_message.lower()
+            assert "Content Moderation Analysis" in user_message
+
+
+class TestBuildGeneralExplanationPrompt:
+    """Tests for _build_general_explanation_prompt function (task-941.01)."""
+
+    def test_prompt_without_moderation_metadata(self):
+        """Prompt should work without moderation metadata."""
+        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+
+        prompt = _build_general_explanation_prompt("Test message content")
+
+        assert "Test message content" in prompt
+        assert "Content Moderation Analysis" not in prompt
+
+    def test_prompt_includes_moderation_metadata(self):
+        """Prompt should include moderation context when metadata is provided."""
+        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+
+        moderation_metadata = {
+            "categories": {"harassment": True, "violence": False, "hate": True},
+            "scores": {"harassment": 0.92, "violence": 0.1, "hate": 0.75},
+            "flagged_categories": ["harassment", "hate"],
+        }
+
+        prompt = _build_general_explanation_prompt("Test message", moderation_metadata)
+
+        assert "Test message" in prompt
+        assert "Content Moderation Analysis" in prompt
+        assert "harassment" in prompt
+        assert "hate" in prompt
+        assert "92.00%" in prompt
+        assert "75.00%" in prompt
+
+    def test_prompt_with_empty_flagged_categories(self):
+        """Prompt should handle empty flagged_categories gracefully."""
+        from src.tasks.content_monitoring_tasks import _build_general_explanation_prompt
+
+        moderation_metadata = {
+            "categories": {},
+            "scores": {},
+            "flagged_categories": [],
+        }
+
+        prompt = _build_general_explanation_prompt("Test message", moderation_metadata)
+
+        assert "Test message" in prompt
+        assert "Content Moderation Analysis" in prompt
+        assert "Flagged Categories" not in prompt
 
 
 class TestVisionDescriptionTask:
@@ -873,9 +999,10 @@ class TestErrorPaths:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=fact_check_item_id,
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "error"
@@ -913,6 +1040,8 @@ class TestErrorPaths:
         settings.DB_POOL_RECYCLE = 1800
         settings.AI_NOTE_WRITING_ENABLED = True
 
+        mock_llm_service = MagicMock()
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
@@ -921,6 +1050,10 @@ class TestErrorPaths:
             ),
             patch("src.webhooks.rate_limit.rate_limiter", mock_rate_limiter),
             patch("src.config.get_settings", return_value=settings),
+            patch(
+                "src.tasks.content_monitoring_tasks._get_llm_service",
+                return_value=mock_llm_service,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -931,9 +1064,10 @@ class TestErrorPaths:
                 community_server_id=community_server_id,
                 request_id="req123",
                 content="test content",
+                scan_type="similarity",
+                db_url="postgresql+asyncpg://test:test@localhost/test",
                 fact_check_item_id=fact_check_item_id,
                 similarity_score=0.85,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
             )
 
             assert result["status"] == "error"

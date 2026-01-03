@@ -198,8 +198,11 @@ class RequestAutoCreatedEvent(BaseEvent):
     platform_message_id: str | None = Field(
         None, max_length=255, description="Platform message ID from message archive"
     )
-    fact_check_item_id: str = Field(
-        ..., min_length=1, max_length=36, description="Matched fact-check item ID (UUID)"
+    scan_type: Literal["similarity", "openai_moderation"] = Field(
+        ..., description="Type of scan that triggered this event"
+    )
+    fact_check_item_id: str | None = Field(
+        None, min_length=1, max_length=36, description="Matched fact-check item ID (UUID)"
     )
     community_server_id: str = Field(
         ..., min_length=1, max_length=255, description="Community server ID"
@@ -207,8 +210,15 @@ class RequestAutoCreatedEvent(BaseEvent):
     content: str = Field(
         ..., min_length=1, max_length=10000, description="Message content from archive"
     )
-    similarity_score: float = Field(..., ge=0.0, le=1.0, description="Match similarity score")
-    dataset_name: str = Field(..., min_length=1, max_length=100, description="Dataset name")
+    similarity_score: float | None = Field(
+        None, ge=0.0, le=1.0, description="Match similarity score (for similarity scans)"
+    )
+    dataset_name: str | None = Field(
+        None, min_length=1, max_length=100, description="Dataset name (for similarity scans)"
+    )
+    moderation_metadata: dict[str, Any] | None = Field(
+        None, description="OpenAI moderation results (for moderation scans)"
+    )
 
 
 class VisionDescriptionRequestedEvent(BaseEvent):
