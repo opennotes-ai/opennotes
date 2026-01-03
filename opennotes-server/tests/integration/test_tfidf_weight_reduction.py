@@ -9,13 +9,48 @@ The TF-IDF-like weight reduction formula:
 """
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from src.database import get_session_maker
 from src.fact_checking.chunk_models import ChunkEmbedding, FactCheckChunk
 from src.fact_checking.models import FactCheckItem
 
 pytestmark = pytest.mark.asyncio
+
+
+async def recreate_pgroonga_index_if_available():
+    """Recreate PGroonga index to fix internal Groonga structures after template cloning.
+
+    After CREATE DATABASE WITH TEMPLATE, PGroonga's internal Groonga "Sources" objects
+    become invalid (PostgreSQL 15+ issue, see pgroonga/pgroonga#335). REINDEX alone
+    doesn't fully restore these structures - we must DROP and CREATE the index.
+
+    This function checks if PGroonga is available before attempting to recreate.
+    If PGroonga is not installed, this is a no-op.
+    """
+    async with get_session_maker()() as session:
+        try:
+            result = await session.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'pgroonga'")
+            )
+            pgroonga_available = result.scalar_one_or_none() is not None
+
+            if not pgroonga_available:
+                return
+
+            await session.execute(text("SELECT pgroonga_command('io_flush')"))
+            await session.execute(text("DROP INDEX IF EXISTS idx_chunk_embeddings_pgroonga"))
+            await session.execute(
+                text(
+                    """
+                    CREATE INDEX idx_chunk_embeddings_pgroonga
+                    ON chunk_embeddings USING pgroonga (chunk_text pgroonga_text_full_text_search_ops_v2)
+                    """
+                )
+            )
+            await session.commit()
+        except Exception:
+            pass
 
 
 def generate_test_embedding(seed: int = 0) -> list[float]:
@@ -47,6 +82,8 @@ async def tfidf_weight_test_items():
     All chunks have similar embeddings (seed=100) to ensure semantic search
     would normally rank them equally, making weight reduction the differentiator.
     """
+    await recreate_pgroonga_index_if_available()
+
     item_ids = []
     chunk_ids = []
 
@@ -150,6 +187,13 @@ async def tfidf_weight_test_items():
         session.add(link_mixed_non_common)
 
         await session.commit()
+
+        pgroonga_result = await session.execute(
+            text("SELECT 1 FROM pg_extension WHERE extname = 'pgroonga'")
+        )
+        if pgroonga_result.scalar_one_or_none():
+            await session.execute(text("SELECT pgroonga_command('io_flush')"))
+            await session.commit()
 
         await session.refresh(item_common_only)
         await session.refresh(item_non_common_only)

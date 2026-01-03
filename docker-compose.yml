@@ -44,15 +44,18 @@
 
 services:
   # PostgreSQL - Relational database with pgvector extension
+  # Use POSTGRES_IMAGE env var to override (e.g., for PGroonga support)
   postgres:
-    image: pgvector/pgvector:pg18
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg18}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-opennotes}
       POSTGRES_USER: ${POSTGRES_USER:-opennotes}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-testpass}
       POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+    # PostgreSQL 18+ uses /var/lib/postgresql with subdirectory for data
+    # See: https://github.com/docker-library/postgres/pull/1259
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opennotes}"]
       interval: 5s

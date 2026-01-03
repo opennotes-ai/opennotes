@@ -129,6 +129,14 @@ class ChunkEmbedding(Base):
         comment="Full-text search vector for chunk text (auto-populated by trigger)",
     )
 
+    word_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Word count of chunk_text for TF-IDF length normalization",
+    )
+
     def __init__(self, **kwargs: Any) -> None:
         """Initialize ChunkEmbedding with default values and auto-compute hash."""
         if "is_common" not in kwargs:

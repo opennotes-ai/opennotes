@@ -41,6 +41,18 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def include_object(obj, name, type_, reflected, compare_to):
+    """Filter objects for alembic autogenerate comparison.
+
+    Excludes PGroonga indexes which are created via raw SQL and not through
+    SQLAlchemy's Index() class. Alembic can't track these indexes through
+    the ORM, so we exclude them from autogenerate to prevent false "removed index"
+    detections.
+    """
+    del obj, reflected, compare_to
+    return not (type_ == "index" and name and "pgroonga" in name.lower())
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -61,6 +73,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -73,6 +86,7 @@ def do_run_migrations(connection):
         target_metadata=target_metadata,
         compare_type=True,
         compare_server_default=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():

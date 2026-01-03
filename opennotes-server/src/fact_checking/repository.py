@@ -32,6 +32,15 @@ FUSION_K_CONSTANT = 60
 # Value of 0.5 means common chunks contribute 50% of their normal score.
 DEFAULT_COMMON_CHUNK_WEIGHT_FACTOR = 0.5
 
+# BM25 length normalization parameter (b).
+# Controls how much document length affects scoring:
+# - b=0.0: No length normalization (all documents treated equally regardless of length)
+# - b=1.0: Full length normalization (longer docs heavily penalized)
+# - b=0.75: Standard BM25 value, balanced normalization
+# The formula: score / (1 - b + b * (doc_len / avgdl))
+# Reference: Robertson & Zaragoza, "The Probabilistic Relevance Framework: BM25 and Beyond"
+BM25_LENGTH_NORMALIZATION_B = 0.75
+
 # Pre-filter limit for each CTE (Common Table Expression) in hybrid search.
 # Each search method (semantic and keyword) retrieves this many candidates
 # before fusion combines them into final rankings.
@@ -413,21 +422,52 @@ async def hybrid_search_with_chunks(
             ORDER BY semantic_score DESC
             LIMIT {HYBRID_SEARCH_CTE_PRELIMIT}
         ),
-        chunk_keyword_raw AS (
-            -- Find keyword-matching chunks using GIN index on search_vector
+        chunk_stats_cte AS (
+            -- Get corpus statistics for BM25-style length normalization
+            SELECT COALESCE(avg_chunk_length, 1.0) AS avg_chunk_length
+            FROM chunk_stats
+        ),
+        pgroonga_scores AS (
+            -- CRITICAL: Get PGroonga scores WITHOUT JOINs first!
+            -- pgroonga_score() stores scores in an internal hash table keyed by (tableoid, ctid).
+            -- When JOINs are present in the same query, PostgreSQL's planner may execute
+            -- the scan differently, causing the score lookup to return 0.
+            -- Solution: Get scores in isolation, then JOIN the results.
             SELECT
-                ce.id AS chunk_id,
+                id AS chunk_id,
+                word_count,
+                is_common,
+                pgroonga_score(tableoid, ctid) AS raw_score
+            FROM chunk_embeddings
+            WHERE chunk_text &@~ :query_text
+        ),
+        chunk_keyword_with_bm25 AS (
+            -- Apply BM25-lite length normalization and JOIN with fact_check relationships
+            -- BM25 formula: score / (1 - b + b * (doc_len / avgdl))
+            -- where b is BM25_LENGTH_NORMALIZATION_B (passed as :bm25_b parameter)
+            -- COALESCE handles NULL word_count (returns 1 as fallback)
+            SELECT
+                ps.chunk_id,
                 fcc.fact_check_id,
-                ce.is_common,
-                ts_rank_cd(ce.search_vector, query) AS relevance
-            FROM chunk_embeddings ce
-            CROSS JOIN LATERAL plainto_tsquery('english', :query_text) AS query
-            JOIN fact_check_chunks fcc ON fcc.chunk_id = ce.id
+                ps.is_common,
+                ps.raw_score / (
+                    1.0 - :bm25_b + :bm25_b * (
+                        COALESCE(ps.word_count, 1)::float /
+                        NULLIF((SELECT avg_chunk_length FROM chunk_stats_cte), 0)
+                    )
+                ) AS relevance
+            FROM pgroonga_scores ps
+            JOIN fact_check_chunks fcc ON fcc.chunk_id = ps.chunk_id
             JOIN fact_check_items fci_chunk ON fci_chunk.id = fcc.fact_check_id
-            WHERE ce.search_vector @@ query
-                AND ts_rank_cd(ce.search_vector, query) >= :min_keyword_relevance
+            WHERE ps.raw_score > 0
                 {chunk_tags_filter}
-            ORDER BY ts_rank_cd(ce.search_vector, query) DESC
+        ),
+        chunk_keyword_raw AS (
+            -- Filter by minimum relevance threshold and limit results
+            SELECT chunk_id, fact_check_id, is_common, relevance
+            FROM chunk_keyword_with_bm25
+            WHERE relevance >= :min_keyword_relevance
+            ORDER BY relevance DESC
             LIMIT {HYBRID_SEARCH_CTE_PRELIMIT * CHUNK_PRELIMIT_MULTIPLIER}
         ),
         keyword_raw_scores AS (
@@ -499,6 +539,7 @@ async def hybrid_search_with_chunks(
         "min_keyword_relevance": keyword_relevance_threshold,
         "common_weight": common_chunk_weight_factor,
         "alpha": alpha,
+        "bm25_b": BM25_LENGTH_NORMALIZATION_B,
     }
     if dataset_tags:
         params["dataset_tags"] = dataset_tags
