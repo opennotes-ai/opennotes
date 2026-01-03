@@ -133,7 +133,7 @@ def count_words(text: str) -> int:
     """Count words in text using whitespace splitting.
 
     Matches the PostgreSQL word counting logic:
-    array_length(regexp_split_to_array(chunk_text, E'\\s+'), 1)
+    array_length(regexp_split_to_array(chunk_text, '[[:space:]]+'), 1)
 
     Note on tokenization strategy:
     This uses simple whitespace splitting rather than language-aware tokenization
@@ -247,7 +247,7 @@ async def pgroonga_tfidf_test_items(require_pgroonga):
             text(
                 """
                 UPDATE chunk_embeddings
-                SET word_count = array_length(regexp_split_to_array(chunk_text, E'\\s+'), 1)
+                SET word_count = array_length(regexp_split_to_array(chunk_text, '[[:space:]]+'), 1)
                 WHERE id IN (:id1, :id2, :id3)
                 """
             ),

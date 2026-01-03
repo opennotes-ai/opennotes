@@ -68,7 +68,7 @@ def upgrade() -> None:
         BEGIN
             NEW.word_count := COALESCE(
                 array_length(
-                    regexp_split_to_array(NULLIF(TRIM(NEW.chunk_text), ''), E'\\s+'),
+                    regexp_split_to_array(NULLIF(TRIM(NEW.chunk_text), ''), '[[:space:]]+'),
                     1
                 ),
                 0
@@ -93,7 +93,7 @@ def upgrade() -> None:
         UPDATE chunk_embeddings
         SET word_count = COALESCE(
             array_length(
-                regexp_split_to_array(NULLIF(TRIM(chunk_text), ''), E'\\s+'),
+                regexp_split_to_array(NULLIF(TRIM(chunk_text), ''), '[[:space:]]+'),
                 1
             ),
             0
