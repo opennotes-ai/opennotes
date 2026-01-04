@@ -456,6 +456,121 @@ class TestSettingsSingleton:
                 assert id1 != id2
 
 
+class TestSkipStartupChecksValidation:
+    """Test SKIP_STARTUP_CHECKS config parsing (task-922)."""
+
+    def test_skip_startup_checks_empty_default(self):
+        """Empty default should return empty list."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.SKIP_STARTUP_CHECKS == []
+
+    def test_skip_startup_checks_comma_separated(self):
+        """Comma-separated format should be parsed correctly."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "SKIP_STARTUP_CHECKS": "database_schema,postgresql,redis",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "postgresql", "redis"]
+
+    def test_skip_startup_checks_json_array(self):
+        """Valid JSON array format should be parsed correctly."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "SKIP_STARTUP_CHECKS": '["database_schema", "postgresql"]',
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "postgresql"]
+
+    def test_skip_startup_checks_bracket_notation_unquoted(self):
+        """Bracket notation with unquoted values like '[all]' should work."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "SKIP_STARTUP_CHECKS": "[all]",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.SKIP_STARTUP_CHECKS == ["all"]
+
+    def test_skip_startup_checks_bracket_notation_multiple_unquoted(self):
+        """Bracket notation with multiple unquoted values like '[a, b, c]'."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "SKIP_STARTUP_CHECKS": "[database_schema, redis, nats]",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "redis", "nats"]
+
+    def test_skip_startup_checks_single_value(self):
+        """Single value without brackets or commas should work."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "SKIP_STARTUP_CHECKS": "database_schema",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.SKIP_STARTUP_CHECKS == ["database_schema"]
+
+    def test_skip_startup_checks_strips_whitespace(self):
+        """Whitespace should be stripped from values."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "SKIP_STARTUP_CHECKS": "  database_schema , postgresql  ",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.SKIP_STARTUP_CHECKS == ["database_schema", "postgresql"]
+
+
 class TestBulkContentScanRepromptDaysValidation:
     """Test BULK_CONTENT_SCAN_REPROMPT_DAYS config validation (task-849.18)."""
 
