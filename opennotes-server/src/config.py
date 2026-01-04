@@ -1,10 +1,11 @@
 import base64
+import json
 import math
 from collections import Counter
 from typing import Any, Literal, cast
 
 from cryptography.fernet import Fernet
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Module-level singleton tracking variables
@@ -39,20 +40,37 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "staging", "production", "test"] = "development"
     DEBUG: bool = Field(default=False)
     TESTING: bool = Field(default=False)
-    SKIP_STARTUP_CHECKS: list[str] = Field(
-        default_factory=list,
-        description="Comma-separated list of startup validation checks to skip (for development). "
-        "Options: database_schema,environment_variables,postgresql,redis,nats,llm_configuration,fact_check_dataset",
+    skip_startup_checks_raw: str = Field(
+        default="",
+        validation_alias="SKIP_STARTUP_CHECKS",
+        exclude=True,
+        description="Raw value for SKIP_STARTUP_CHECKS (use SKIP_STARTUP_CHECKS property for parsed list). "
+        "Accepts: comma-separated string, JSON array, or bracket notation with unquoted values.",
     )
 
-    @field_validator("SKIP_STARTUP_CHECKS", mode="before")
-    @classmethod
-    def parse_skip_startup_checks(cls, v: str | list[str]) -> list[str]:
-        if isinstance(v, str):
-            if not v.strip():
-                return []
-            return [check.strip() for check in v.split(",")]
-        return v
+    @computed_field
+    @property
+    def SKIP_STARTUP_CHECKS(self) -> list[str]:  # noqa: N802 - uppercase for backward compatibility
+        """Parse SKIP_STARTUP_CHECKS into a list.
+
+        Supports multiple formats:
+        - Comma-separated: "database_schema,postgresql"
+        - JSON array: '["database_schema", "postgresql"]'
+        - Bracket notation (unquoted): "[all]" or "[a, b, c]"
+        """
+        v = self.skip_startup_checks_raw
+        if not v or not v.strip():
+            return []
+        v = v.strip()
+        if v.startswith("[") and v.endswith("]"):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed]
+            except json.JSONDecodeError:
+                inner = v[1:-1]
+                return [item.strip() for item in inner.split(",") if item.strip()]
+        return [check.strip() for check in v.split(",") if check.strip()]
 
     PROJECT_NAME: str = "Open Notes Server"
     VERSION: str = Field(
