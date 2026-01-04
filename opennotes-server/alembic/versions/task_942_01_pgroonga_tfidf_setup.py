@@ -28,6 +28,64 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _batch_update_word_count(batch_size: int = 5000) -> None:
+    """Update word_count in batches to avoid statement timeout.
+
+    Uses ID-based pagination with explicit LIMIT to process rows incrementally.
+    Each batch is a separate statement, avoiding long-running transactions.
+    """
+    conn = op.get_bind()
+
+    # Get total count for progress logging
+    result = conn.execute(sa.text("SELECT COUNT(*) FROM chunk_embeddings WHERE word_count = 0"))
+    total_rows = result.scalar() or 0
+
+    if total_rows == 0:
+        print("word_count: No rows to update")
+        return
+
+    print(f"word_count: Starting update of {total_rows} rows in batches of {batch_size}")
+
+    batch_num = 0
+    total_updated = 0
+
+    while True:
+        # Update a batch using subquery with LIMIT
+        result = conn.execute(
+            sa.text("""
+                UPDATE chunk_embeddings
+                SET word_count = COALESCE(
+                    array_length(
+                        array_remove(
+                            regexp_split_to_array(chunk_text, '[[:space:]]+'),
+                            ''
+                        ),
+                        1
+                    ),
+                    0
+                )
+                WHERE id IN (
+                    SELECT id FROM chunk_embeddings
+                    WHERE word_count = 0
+                    LIMIT :batch_size
+                )
+            """),
+            {"batch_size": batch_size},
+        )
+        rows_updated = result.rowcount
+
+        if rows_updated == 0:
+            break
+
+        batch_num += 1
+        total_updated += rows_updated
+        print(
+            f"word_count: Batch {batch_num} complete ({rows_updated} rows, {total_updated}/{total_rows} total)"
+        )
+
+    print(f"word_count: Migration complete ({batch_num} batches, {total_updated} rows)")
+
+
 def upgrade() -> None:
     """Add PGroonga TF-IDF infrastructure to chunk_embeddings.
 
@@ -93,22 +151,8 @@ def upgrade() -> None:
         """
     )
 
-    op.execute(
-        """
-        UPDATE chunk_embeddings
-        SET word_count = COALESCE(
-            array_length(
-                array_remove(
-                    regexp_split_to_array(chunk_text, '[[:space:]]+'),
-                    ''
-                ),
-                1
-            ),
-            0
-        )
-        WHERE word_count = 0
-        """
-    )
+    # Batch UPDATE to avoid statement timeout on large tables
+    _batch_update_word_count(batch_size=5000)
 
     op.execute(
         """
