@@ -264,9 +264,11 @@ jobs:
         run: mise run test:server -- tests/unit/
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: opennotes-server/coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: opennotes-ai/opennotes
+          files: opennotes-server/coverage.xml
           flags: server-unit
           name: opennotes-server-unit
 
@@ -366,9 +368,11 @@ jobs:
         run: mise run test:server -- tests/integration/ -n 0
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: opennotes-server/coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: opennotes-ai/opennotes
+          files: opennotes-server/coverage.xml
           flags: server-integration
           name: opennotes-server-integration
 
@@ -580,9 +584,11 @@ jobs:
         run: pnpm run test:ci
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: opennotes-discord/coverage/coverage-final.json
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: opennotes-ai/opennotes
+          files: opennotes-discord/coverage/coverage-final.json
           flags: discord
           name: opennotes-discord
 
