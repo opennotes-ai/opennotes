@@ -22,6 +22,7 @@ from src.bulk_content_scan.schemas import (
     FlaggedMessage,
     OpenAIModerationMatch,
     RelevanceCheckResult,
+    ScanCandidate,
     SimilarityMatch,
 )
 from src.config import settings
@@ -566,6 +567,212 @@ class BulkContentScanService:
             matches=[similarity_match],
         )
 
+    async def _similarity_scan_candidate(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        community_server_platform_id: str,
+    ) -> ScanCandidate | None:
+        """Run similarity search and return a ScanCandidate without relevance filtering.
+
+        This method produces candidates for the unified relevance filter.
+        It does NOT run the LLM relevance check inline.
+
+        Args:
+            scan_id: UUID of the scan
+            message: The message to scan
+            community_server_platform_id: CommunityServer.platform_id
+
+        Returns:
+            ScanCandidate if a match was found, None otherwise
+        """
+        try:
+            search_response = await self.embedding_service.similarity_search(
+                db=self.session,
+                query_text=message.content,
+                community_server_id=community_server_platform_id,
+                dataset_tags=[],
+                similarity_threshold=settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
+                score_threshold=0.1,
+                limit=1,
+            )
+
+            if search_response.matches:
+                best_match = search_response.matches[0]
+                matched_content = best_match.content or best_match.title or ""
+
+                similarity_match = SimilarityMatch(
+                    score=best_match.similarity_score,
+                    matched_claim=matched_content,
+                    matched_source=best_match.source_url or "",
+                    fact_check_item_id=best_match.id,
+                )
+
+                return ScanCandidate(
+                    message=message,
+                    scan_type=ScanType.SIMILARITY.value,
+                    match_data=similarity_match,
+                    score=best_match.similarity_score,
+                    matched_content=matched_content,
+                    matched_source=best_match.source_url,
+                )
+
+        except Exception as e:
+            logger.warning(
+                "Error in similarity scan candidate",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None
+
+    async def _moderation_scan_candidate(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+    ) -> ScanCandidate | None:
+        """Run OpenAI moderation and return a ScanCandidate without relevance filtering.
+
+        This method produces candidates for the unified relevance filter.
+
+        Args:
+            scan_id: UUID of the scan
+            message: The message to scan
+
+        Returns:
+            ScanCandidate if content was flagged, None otherwise
+        """
+        if not self.moderation_service:
+            logger.warning(
+                "Moderation service not configured",
+                extra={"scan_id": str(scan_id)},
+            )
+            return None
+
+        try:
+            if message.attachment_urls:
+                moderation_result = await self.moderation_service.moderate_multimodal(
+                    text=message.content,
+                    image_urls=message.attachment_urls,
+                )
+            else:
+                moderation_result = await self.moderation_service.moderate_text(message.content)
+
+            if moderation_result.flagged:
+                moderation_match = OpenAIModerationMatch(
+                    max_score=moderation_result.max_score,
+                    categories=moderation_result.categories,
+                    scores=moderation_result.scores,
+                    flagged_categories=moderation_result.flagged_categories,
+                )
+
+                matched_content = ", ".join(moderation_result.flagged_categories)
+
+                return ScanCandidate(
+                    message=message,
+                    scan_type=ScanType.OPENAI_MODERATION.value,
+                    match_data=moderation_match,
+                    score=moderation_result.max_score,
+                    matched_content=matched_content,
+                    matched_source=None,
+                )
+
+        except Exception as e:
+            logger.warning(
+                "Error in moderation scan candidate",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None
+
+    async def _filter_candidates_with_relevance(
+        self,
+        candidates: list[ScanCandidate],
+        scan_id: UUID,
+    ) -> list[FlaggedMessage]:
+        """Filter ALL candidates through the unified LLM relevance check.
+
+        This is the unified post-processing step that runs relevance checking
+        on ALL candidates regardless of scan type.
+
+        Args:
+            candidates: List of ScanCandidate from all scan types
+            scan_id: UUID of the scan for logging
+
+        Returns:
+            List of FlaggedMessage for candidates that pass relevance check
+        """
+        flagged: list[FlaggedMessage] = []
+
+        for candidate in candidates:
+            logger.info(
+                "Scan produced candidate",
+                extra={
+                    "scan_id": str(scan_id),
+                    "message_id": candidate.message.message_id,
+                    "scan_type": candidate.scan_type,
+                    "score": candidate.score,
+                },
+            )
+
+            is_relevant, reasoning = await self._check_relevance_with_llm(
+                original_message=candidate.message.content,
+                matched_content=candidate.matched_content,
+                matched_source=candidate.matched_source,
+            )
+
+            if is_relevant:
+                try:
+                    if candidate.scan_type == ScanType.SIMILARITY.value:
+                        flagged_msg = FlaggedMessage(
+                            message_id=candidate.message.message_id,
+                            channel_id=candidate.message.channel_id,
+                            content=candidate.message.content,
+                            author_id=candidate.message.author_id,
+                            timestamp=candidate.message.timestamp,
+                            matches=[candidate.match_data],
+                        )
+                    else:
+                        flagged_msg = FlaggedMessage(
+                            message_id=candidate.message.message_id,
+                            channel_id=candidate.message.channel_id,
+                            content=candidate.message.content,
+                            author_id=candidate.message.author_id,
+                            timestamp=candidate.message.timestamp,
+                            matches=[candidate.match_data],
+                        )
+                    flagged.append(flagged_msg)
+                except Exception as build_error:
+                    logger.error(
+                        "Failed to build flagged message from candidate",
+                        extra={
+                            "scan_id": str(scan_id),
+                            "message_id": candidate.message.message_id,
+                            "error": str(build_error),
+                        },
+                    )
+            else:
+                logger.info(
+                    "Candidate filtered by relevance check",
+                    extra={
+                        "scan_id": str(scan_id),
+                        "message_id": candidate.message.message_id,
+                        "reasoning": reasoning,
+                        "score": candidate.score,
+                    },
+                )
+
+        logger.info(
+            "Relevance filtering complete",
+            extra={
+                "scan_id": str(scan_id),
+                "candidates_count": len(candidates),
+                "flagged_count": len(flagged),
+                "filter_ratio": len(flagged) / len(candidates) if candidates else 0,
+            },
+        )
+
+        return flagged
+
     async def _check_relevance_with_llm(
         self,
         original_message: str,
@@ -600,15 +807,25 @@ class BulkContentScanService:
         try:
             source_info = f"\nSource: {matched_source}" if matched_source else ""
 
-            system_prompt = """You are a relevance checker. Determine if a reference document is relevant to a user's message.
-The reference should help explain, provide background, fact-check, or give context to what the user is saying.
+            system_prompt = """You are a relevance checker. Determine if a reference can meaningfully fact-check or provide context for a SPECIFIC CLAIM in the user's message.
+
+IMPORTANT: The message must contain a verifiable claim or assertion. Simple mentions of people, topics, or questions are NOT claims.
+
+Examples:
+- "how about biden" → No claim, just a name mention → NOT RELEVANT
+- "or donald trump" → No claim, just a name → NOT RELEVANT
+- "Biden was a Confederate soldier" → Specific false claim → RELEVANT
+- "Trump's sons shot endangered animals" → Verifiable claim → RELEVANT
+- "What about the vaccine?" → Question, not a claim → NOT RELEVANT
+- "The vaccine causes autism" → Specific claim that can be fact-checked → RELEVANT
+
 Respond with JSON: {"is_relevant": true/false, "reasoning": "brief explanation"}"""
 
             user_prompt = f"""User message: {original_message}
 
 Reference: {matched_content}{source_info}
 
-Is this reference relevant to understanding or fact-checking the user's message?"""
+Does the user message contain a claim or assertion that this reference can fact-check, extend, or provide context for?"""
 
             messages = [
                 LLMMessage(role="system", content=system_prompt),
