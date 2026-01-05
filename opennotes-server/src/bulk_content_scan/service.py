@@ -6,7 +6,7 @@ import time
 import uuid as uuid_module
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, overload
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -176,6 +176,26 @@ class BulkContentScanService:
         )
 
         return scan_log
+
+    @overload
+    async def process_messages(
+        self,
+        scan_id: UUID,
+        messages: BulkScanMessage | Sequence[BulkScanMessage],
+        community_server_platform_id: str,
+        scan_types: Sequence[ScanType] = ...,
+        collect_scores: Literal[False] = ...,
+    ) -> list[FlaggedMessage]: ...
+
+    @overload
+    async def process_messages(
+        self,
+        scan_id: UUID,
+        messages: BulkScanMessage | Sequence[BulkScanMessage],
+        community_server_platform_id: str,
+        scan_types: Sequence[ScanType] = ...,
+        collect_scores: Literal[True] = ...,
+    ) -> tuple[list[FlaggedMessage], list[dict]]: ...
 
     async def process_messages(
         self,
