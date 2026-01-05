@@ -484,6 +484,55 @@ class Settings(BaseSettings):
         description="OTLP exporter headers in 'key=value,key2=value2' format for authentication",
     )
 
+    PYROSCOPE_ENABLED: bool = Field(
+        default=False,
+        description="Enable continuous profiling via Pyroscope. "
+        "Requires PYROSCOPE_SERVER_ADDRESS to be set.",
+    )
+    PYROSCOPE_SERVER_ADDRESS: str | None = Field(
+        default=None,
+        description="Pyroscope server address (e.g., 'http://pyroscope:4040' for self-hosted, "
+        "'https://profiles-prod-001.grafana.net' for Grafana Cloud). "
+        "Required when PYROSCOPE_ENABLED is True.",
+    )
+    PYROSCOPE_TENANT_ID: str | None = Field(
+        default=None,
+        description="Tenant ID for multi-tenant Pyroscope backends (e.g., Middleware.io account ID). "
+        "Used for backends that require tenant identification instead of basic auth.",
+    )
+    PYROSCOPE_AUTH_TOKEN: str | None = Field(
+        default=None,
+        description="Auth token for Pyroscope backends that use token-based authentication. "
+        "Optional for self-hosted Pyroscope without auth.",
+    )
+    PYROSCOPE_APPLICATION_NAME: str | None = Field(
+        default=None,
+        description="Application name for Pyroscope profiles. "
+        "Defaults to PROJECT_NAME if not set.",
+    )
+    PYROSCOPE_SAMPLE_RATE: int = Field(
+        default=100,
+        description="Profiling sample rate in Hz. Default is 100 samples per second.",
+        ge=1,
+        le=1000,
+    )
+    PYROSCOPE_DETECT_SUBPROCESSES: bool = Field(
+        default=False,
+        description="Detect and profile subprocesses started by the main process.",
+    )
+    PYROSCOPE_ONCPU: bool = Field(
+        default=True,
+        description="Report CPU time only (excludes wall-clock time during I/O waits).",
+    )
+    PYROSCOPE_GIL_ONLY: bool = Field(
+        default=True,
+        description="Only include traces for threads holding the Global Interpreter Lock.",
+    )
+    PYROSCOPE_ENABLE_LOGGING: bool = Field(
+        default=False,
+        description="Enable Pyroscope SDK logging for debugging.",
+    )
+
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")
     SMTP_USERNAME: str | None = Field(default=None, description="SMTP authentication username")
