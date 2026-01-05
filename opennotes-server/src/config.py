@@ -467,6 +467,12 @@ class Settings(BaseSettings):
     ENABLE_CONSOLE_TRACING: bool = Field(
         default=False, description="Enable console span export for debugging"
     )
+    OTEL_LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] | None = Field(
+        default=None,
+        description="OpenTelemetry SDK log level for debugging export issues. "
+        "Valid values: DEBUG, INFO, WARNING, ERROR, or None to use default. "
+        "When set to DEBUG, enables verbose logging for exporters and SDK internals.",
+    )
     TRACING_SAMPLE_RATE: float = Field(
         default=0.1,
         description="Trace sampling rate (0.0-1.0). 0.1 = 10% of traces sampled. Use 1.0 for development.",

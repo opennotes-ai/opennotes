@@ -1,3 +1,5 @@
+import logging
+
 from src.monitoring.tracing import TracingManager
 
 
@@ -135,3 +137,110 @@ class TestTracingManagerHeaders:
         )
         headers = tm._parse_headers()
         assert headers == {"authorization": "key=with=equals"}
+
+
+class TestOtelLogLevel:
+    def test_otel_log_level_defaults_to_none(self):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="production",
+        )
+        assert tm.otel_log_level is None
+
+    def test_otel_log_level_can_be_set(self):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level="DEBUG",
+        )
+        assert tm.otel_log_level == "DEBUG"
+
+    def test_configure_otel_logging_sets_debug_level(self):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level="DEBUG",
+        )
+        tm._configure_otel_logging()
+
+        otel_logger = logging.getLogger("opentelemetry")
+        assert otel_logger.level == logging.DEBUG
+
+    def test_configure_otel_logging_sets_info_level(self):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level="INFO",
+        )
+        tm._configure_otel_logging()
+
+        otel_logger = logging.getLogger("opentelemetry")
+        assert otel_logger.level == logging.INFO
+
+    def test_configure_otel_logging_sets_warning_level(self):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level="WARNING",
+        )
+        tm._configure_otel_logging()
+
+        otel_logger = logging.getLogger("opentelemetry")
+        assert otel_logger.level == logging.WARNING
+
+    def test_configure_otel_logging_sets_error_level(self):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level="ERROR",
+        )
+        tm._configure_otel_logging()
+
+        otel_logger = logging.getLogger("opentelemetry")
+        assert otel_logger.level == logging.ERROR
+
+    def test_configure_otel_logging_case_insensitive(self):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level="debug",
+        )
+        tm._configure_otel_logging()
+
+        otel_logger = logging.getLogger("opentelemetry")
+        assert otel_logger.level == logging.DEBUG
+
+    def test_configure_otel_logging_skips_when_none(self):
+        original_level = logging.getLogger("opentelemetry").level
+
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level=None,
+        )
+        tm._configure_otel_logging()
+
+        otel_logger = logging.getLogger("opentelemetry")
+        assert otel_logger.level == original_level
+
+    def test_configure_otel_logging_invalid_level_warns(self, caplog):
+        tm = TracingManager(
+            service_name="test",
+            service_version="1.0.0",
+            environment="development",
+            otel_log_level="INVALID",
+        )
+
+        with caplog.at_level(logging.WARNING):
+            tm._configure_otel_logging()
+
+        assert "Invalid OTEL_LOG_LEVEL" in caplog.text
+        assert "INVALID" in caplog.text
