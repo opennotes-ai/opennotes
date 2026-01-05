@@ -115,7 +115,7 @@ async def clear_requests(
 
     # Add time condition if mode is days
     if mode_type == "days" and days is not None:
-        cutoff_date = datetime.now(UTC) - timedelta(days=days)
+        cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
         conditions.append(NoteRequest.requested_at < cutoff_date)
 
     # Delete matching requests
@@ -171,7 +171,7 @@ async def preview_clear_requests(
 
     # Add time condition if mode is days
     if mode_type == "days" and days is not None:
-        cutoff_date = datetime.now(UTC) - timedelta(days=days)
+        cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
         conditions.append(NoteRequest.requested_at < cutoff_date)
 
     # Count matching requests
@@ -234,7 +234,7 @@ async def clear_notes(
 
     # Add time condition if mode is days
     if mode_type == "days" and days is not None:
-        cutoff_date = datetime.now(UTC) - timedelta(days=days)
+        cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
         conditions.append(Note.created_at < cutoff_date)
 
     # Delete matching notes
@@ -295,7 +295,7 @@ async def preview_clear_notes(
 
     # Add time condition if mode is days
     if mode_type == "days" and days is not None:
-        cutoff_date = datetime.now(UTC) - timedelta(days=days)
+        cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
         conditions.append(Note.created_at < cutoff_date)
 
     # Count matching notes
