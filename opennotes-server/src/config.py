@@ -502,6 +502,7 @@ class Settings(BaseSettings):
     )
     PYROSCOPE_AUTH_TOKEN: str | None = Field(
         default=None,
+        repr=False,
         description="Auth token for Pyroscope backends that use token-based authentication. "
         "Optional for self-hosted Pyroscope without auth.",
     )
