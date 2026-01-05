@@ -8,6 +8,10 @@ from uuid import UUID
 
 from nats.errors import Error as NATSError
 from opentelemetry import propagate, trace
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import (
+    MESSAGING_OPERATION_TYPE,
+)
+from opentelemetry.semconv.trace import SpanAttributes
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -140,10 +144,10 @@ class EventPublisher:
             # Inject trace context INSIDE the span so traceparent includes producer span ID
             default_headers = self._inject_trace_context(default_headers)
 
-            span.set_attribute("messaging.system", "nats")
-            span.set_attribute("messaging.destination.name", subject)
-            span.set_attribute("messaging.message.id", event.event_id)
-            span.set_attribute("messaging.operation.type", "publish")
+            span.set_attribute(SpanAttributes.MESSAGING_SYSTEM, "nats")
+            span.set_attribute(SpanAttributes.MESSAGING_DESTINATION_NAME, subject)
+            span.set_attribute(SpanAttributes.MESSAGING_MESSAGE_ID, event.event_id)
+            span.set_attribute(MESSAGING_OPERATION_TYPE, "send")
 
             try:
                 result = await self._publish_with_retries(subject, data, default_headers, event)

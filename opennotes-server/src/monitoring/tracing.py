@@ -13,6 +13,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
+from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 logger = logging.getLogger(__name__)
@@ -130,9 +131,9 @@ class TracingManager:
 
         resource = Resource.create(
             {
-                "service.name": self.service_name,
-                "service.version": self.service_version,
-                "deployment.environment": self.environment,
+                ResourceAttributes.SERVICE_NAME: self.service_name,
+                ResourceAttributes.SERVICE_VERSION: self.service_version,
+                ResourceAttributes.DEPLOYMENT_ENVIRONMENT: self.environment,
             }
         )
 

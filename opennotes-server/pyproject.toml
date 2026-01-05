@@ -56,6 +56,7 @@ dependencies = [
     "taskiq-redis>=1.0.0,<2.0.0",
     "taskiq-fastapi>=0.3.0,<1.0.0",
     "opentelemetry-instrumentation-logging>=0.59b0",
+    "opentelemetry-semantic-conventions>=0.59b0",
 ]
 
 [project.optional-dependencies]
