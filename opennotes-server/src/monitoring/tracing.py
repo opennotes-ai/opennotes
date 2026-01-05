@@ -114,9 +114,7 @@ class TracingManager:
         if not otel_logger.handlers:
             handler = logging.StreamHandler()
             handler.setLevel(level)
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             handler.setFormatter(formatter)
             otel_logger.addHandler(handler)
 

@@ -508,8 +508,7 @@ class Settings(BaseSettings):
     )
     PYROSCOPE_APPLICATION_NAME: str | None = Field(
         default=None,
-        description="Application name for Pyroscope profiles. "
-        "Defaults to PROJECT_NAME if not set.",
+        description="Application name for Pyroscope profiles. Defaults to PROJECT_NAME if not set.",
     )
     PYROSCOPE_SAMPLE_RATE: int = Field(
         default=100,

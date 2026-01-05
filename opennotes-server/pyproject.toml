@@ -142,7 +142,7 @@ ignore = [
 "src/middleware/profile_tracking.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/database.py" = ["ARG002"]  # TypeDecorator methods require dialect param for base class compatibility
 "src/fact_checking/chunking_service.py" = ["PLC0415"]  # Lazy import for NeuralChunker to defer model loading
-"src/main.py" = ["E402"]  # LoggingInstrumentor must be called before imports to inject trace context
+"src/main.py" = ["E402", "PLC0415"]  # LoggingInstrumentor must be called before imports; lazy pyroscope import for optional profiling
 
 [tool.ruff.format]
 quote-style = "double"
