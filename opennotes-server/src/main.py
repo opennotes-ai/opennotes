@@ -108,10 +108,74 @@ tracing_manager = TracingManager(
     otlp_insecure=settings.OTLP_INSECURE,
     otlp_headers=settings.OTLP_HEADERS,
     enable_console_export=settings.ENABLE_CONSOLE_TRACING,
+    otel_log_level=settings.OTEL_LOG_LEVEL,
 )
 
 if settings.ENABLE_TRACING and not settings.TESTING:
     tracing_manager.setup()
+
+
+def _setup_pyroscope() -> bool:
+    """Initialize Pyroscope continuous profiling if enabled.
+
+    Returns:
+        True if Pyroscope was successfully configured, False otherwise.
+    """
+    if not settings.PYROSCOPE_ENABLED:
+        logger.debug("Pyroscope profiling disabled (PYROSCOPE_ENABLED=False)")
+        return False
+
+    if not settings.PYROSCOPE_SERVER_ADDRESS:
+        logger.warning(
+            "Pyroscope enabled but PYROSCOPE_SERVER_ADDRESS not set - profiling disabled"
+        )
+        return False
+
+    try:
+        import pyroscope
+
+        app_name = settings.PYROSCOPE_APPLICATION_NAME or settings.PROJECT_NAME
+        app_name = app_name.replace(" ", "-").lower()
+
+        config_kwargs: dict[str, str | int | bool | dict[str, str]] = {
+            "application_name": app_name,
+            "server_address": settings.PYROSCOPE_SERVER_ADDRESS,
+            "sample_rate": settings.PYROSCOPE_SAMPLE_RATE,
+            "detect_subprocesses": settings.PYROSCOPE_DETECT_SUBPROCESSES,
+            "oncpu": settings.PYROSCOPE_ONCPU,
+            "gil_only": settings.PYROSCOPE_GIL_ONLY,
+            "enable_logging": settings.PYROSCOPE_ENABLE_LOGGING,
+            "tags": {
+                "environment": settings.ENVIRONMENT,
+                "version": settings.VERSION,
+                "instance_id": settings.INSTANCE_ID,
+            },
+        }
+
+        if settings.PYROSCOPE_TENANT_ID:
+            config_kwargs["tenant_id"] = settings.PYROSCOPE_TENANT_ID
+        if settings.PYROSCOPE_AUTH_TOKEN:
+            config_kwargs["auth_token"] = settings.PYROSCOPE_AUTH_TOKEN
+
+        pyroscope.configure(**config_kwargs)  # type: ignore[arg-type]
+
+        logger.info(
+            f"Pyroscope profiling enabled: app={app_name}, "
+            f"server={settings.PYROSCOPE_SERVER_ADDRESS}, "
+            f"sample_rate={settings.PYROSCOPE_SAMPLE_RATE}Hz"
+        )
+        return True
+
+    except ImportError:
+        logger.warning("pyroscope-io package not installed - profiling disabled")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to configure Pyroscope: {e}")
+        return False
+
+
+if settings.PYROSCOPE_ENABLED and not settings.TESTING:
+    _setup_pyroscope()
 
 health_checker = HealthChecker(
     version=settings.VERSION,

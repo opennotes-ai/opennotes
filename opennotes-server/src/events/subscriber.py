@@ -5,6 +5,10 @@ from typing import Any
 
 from nats.aio.msg import Msg
 from opentelemetry import context, propagate, trace
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import (
+    MESSAGING_OPERATION_TYPE,
+)
+from opentelemetry.semconv.trace import SpanAttributes
 
 from src.config import settings
 from src.events.nats_client import Subscription, nats_client
@@ -97,14 +101,14 @@ class EventSubscriber:
             context=parent_ctx,
             kind=trace.SpanKind.CONSUMER,
         ) as span:
-            span.set_attribute("messaging.system", "nats")
-            span.set_attribute("messaging.operation.type", "receive")
+            span.set_attribute(SpanAttributes.MESSAGING_SYSTEM, "nats")
+            span.set_attribute(MESSAGING_OPERATION_TYPE, "process")
 
             try:
                 event_class = self._get_event_class(event_type)
                 event = event_class.model_validate_json(msg.data)  # type: ignore[attr-defined]
 
-                span.set_attribute("messaging.message.id", event.event_id)
+                span.set_attribute(SpanAttributes.MESSAGING_MESSAGE_ID, event.event_id)
 
                 metadata = msg.metadata
                 delivery_count = metadata.num_delivered if metadata else 1

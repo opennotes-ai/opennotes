@@ -13,6 +13,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
+from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class TracingManager:
         otlp_headers: str | None = None,
         enable_console_export: bool = False,
         sample_rate: float = 0.1,
+        otel_log_level: str | None = None,
     ) -> None:
         self.service_name = service_name
         self.service_version = service_version
@@ -71,6 +73,7 @@ class TracingManager:
         self.otlp_headers = otlp_headers
         self.enable_console_export = enable_console_export
         self.sample_rate = sample_rate
+        self.otel_log_level = otel_log_level
         self._tracer_provider: TracerProvider | None = None
         self._instrumented_components: set[str] = set()
 
@@ -86,16 +89,49 @@ class TracingManager:
                 headers[key.strip()] = value.strip()
         return headers if headers else None
 
+    def _configure_otel_logging(self) -> None:
+        """Configure OpenTelemetry SDK logging level for debugging export issues."""
+        if not self.otel_log_level:
+            return
+
+        level_map = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+        }
+        level = level_map.get(self.otel_log_level.upper())
+        if level is None:
+            logger.warning(
+                f"Invalid OTEL_LOG_LEVEL: {self.otel_log_level}. "
+                f"Valid values: DEBUG, INFO, WARNING, ERROR"
+            )
+            return
+
+        otel_logger = logging.getLogger("opentelemetry")
+        otel_logger.setLevel(level)
+
+        if not otel_logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setLevel(level)
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            handler.setFormatter(formatter)
+            otel_logger.addHandler(handler)
+
+        logger.info(f"OpenTelemetry SDK logging set to {self.otel_log_level}")
+
     def setup(self) -> None:
         if self._tracer_provider is not None:
             logger.warning("Tracing already initialized, skipping setup")
             return
 
+        self._configure_otel_logging()
+
         resource = Resource.create(
             {
-                "service.name": self.service_name,
-                "service.version": self.service_version,
-                "deployment.environment": self.environment,
+                ResourceAttributes.SERVICE_NAME: self.service_name,
+                ResourceAttributes.SERVICE_VERSION: self.service_version,
+                ResourceAttributes.DEPLOYMENT_ENVIRONMENT: self.environment,
             }
         )
 
