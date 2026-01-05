@@ -2341,6 +2341,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/community-servers/{community_server_id}/clear-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Clear Requests
+         * @description Clear note requests for a community server.
+         *
+         *     Deletes requests based on the mode:
+         *     - "all": Delete all requests
+         *     - "<days>": Delete requests older than specified days
+         *
+         *     Requires admin privileges for the community server.
+         *
+         *     Args:
+         *         community_server_id: Community server UUID
+         *         mode: Either "all" or number of days
+         *         db: Database session
+         *         current_user: Current authenticated user
+         *         http_request: FastAPI Request object
+         *         membership: Verified admin membership
+         *
+         *     Returns:
+         *         ClearResponse with deleted count and message
+         */
+        delete: operations["clear_requests_api_v2_community_servers__community_server_id__clear_requests_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/community-servers/{community_server_id}/clear-requests/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Clear Requests
+         * @description Preview clear requests operation (dry run).
+         *
+         *     Returns the count of requests that would be deleted without actually deleting them.
+         *
+         *     Args:
+         *         community_server_id: Community server UUID
+         *         mode: Either "all" or number of days
+         *         db: Database session
+         *         current_user: Current authenticated user
+         *         http_request: FastAPI Request object
+         *         membership: Verified admin membership
+         *
+         *     Returns:
+         *         ClearPreviewResponse with count of items that would be deleted
+         */
+        get: operations["preview_clear_requests_api_v2_community_servers__community_server_id__clear_requests_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/community-servers/{community_server_id}/clear-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Clear Notes
+         * @description Clear unpublished notes for a community server.
+         *
+         *     Only deletes notes that are:
+         *     - Status is "NEEDS_MORE_RATINGS" (unpublished)
+         *     - NOT force-published (force_published=False)
+         *
+         *     Published notes (CURRENTLY_RATED_HELPFUL, CURRENTLY_RATED_NOT_HELPFUL)
+         *     and force-published notes are preserved.
+         *
+         *     Deletes based on the mode:
+         *     - "all": Delete all unpublished notes
+         *     - "<days>": Delete unpublished notes older than specified days
+         *
+         *     Requires admin privileges for the community server.
+         *
+         *     Args:
+         *         community_server_id: Community server UUID
+         *         mode: Either "all" or number of days
+         *         db: Database session
+         *         current_user: Current authenticated user
+         *         http_request: FastAPI Request object
+         *         membership: Verified admin membership
+         *
+         *     Returns:
+         *         ClearResponse with deleted count and message
+         */
+        delete: operations["clear_notes_api_v2_community_servers__community_server_id__clear_notes_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/community-servers/{community_server_id}/clear-notes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Clear Notes
+         * @description Preview clear notes operation (dry run).
+         *
+         *     Returns the count of unpublished notes that would be deleted without
+         *     actually deleting them.
+         *
+         *     Args:
+         *         community_server_id: Community server UUID
+         *         mode: Either "all" or number of days
+         *         db: Database session
+         *         current_user: Current authenticated user
+         *         http_request: FastAPI Request object
+         *         membership: Verified admin membership
+         *
+         *     Returns:
+         *         ClearPreviewResponse with count of items that would be deleted
+         */
+        get: operations["preview_clear_notes_api_v2_community_servers__community_server_id__clear_notes_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/community-servers/{community_server_id}/llm-config": {
         parameters: {
             query?: never;
@@ -3217,6 +3365,26 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
+         * ClearPreviewResponse
+         * @description Response for clear preview (dry run) operations.
+         */
+        ClearPreviewResponse: {
+            /** Would Delete Count */
+            would_delete_count: number;
+            /** Message */
+            message: string;
+        };
+        /**
+         * ClearResponse
+         * @description Response for clear operations.
+         */
+        ClearResponse: {
+            /** Deleted Count */
+            deleted_count: number;
+            /** Message */
+            message: string;
         };
         /**
          * CommunityAdminResponse
@@ -10724,6 +10892,150 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemoveCommunityAdminResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_requests_api_v2_community_servers__community_server_id__clear_requests_delete: {
+        parameters: {
+            query: {
+                /** @description 'all' or number of days (e.g., '30') */
+                mode: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_clear_requests_api_v2_community_servers__community_server_id__clear_requests_preview_get: {
+        parameters: {
+            query: {
+                /** @description 'all' or number of days (e.g., '30') */
+                mode: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_notes_api_v2_community_servers__community_server_id__clear_notes_delete: {
+        parameters: {
+            query: {
+                /** @description 'all' or number of days (e.g., '30') */
+                mode: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_clear_notes_api_v2_community_servers__community_server_id__clear_notes_preview_get: {
+        parameters: {
+            query: {
+                /** @description 'all' or number of days (e.g., '30') */
+                mode: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearPreviewResponse"];
                 };
             };
             /** @description Validation Error */
