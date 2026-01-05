@@ -31,6 +31,7 @@ import * as listCommand from './commands/list.js';
 import * as aboutOpenNotesCommand from './commands/about-opennotes.js';
 import * as statusBotCommand from './commands/status-bot.js';
 import * as vibecheckCommand from './commands/vibecheck.js';
+import * as clearCommand from './commands/clear.js';
 
 // Context menu command imports
 import * as noteRequestContextCommand from './commands/note-request-context.js';
@@ -101,6 +102,7 @@ export class Bot {
       aboutOpenNotesCommand,
       statusBotCommand,
       vibecheckCommand,
+      clearCommand,
       // Context menu commands
       noteRequestContextCommand,
     ];

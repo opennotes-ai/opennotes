@@ -36,6 +36,16 @@ export type RemoveCommunityAdminResponse = components['schemas']['RemoveCommunit
 export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
 export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
 
+export interface ClearPreviewResult {
+  wouldDeleteCount: number;
+  message: string;
+}
+
+export interface ClearResult {
+  deletedCount: number;
+  message: string;
+}
+
 // Local type definitions for API responses (flattened from JSON:API)
 // These are used by services that expect flattened structures
 
@@ -1754,5 +1764,41 @@ export class ApiClient {
         },
       }),
     });
+  }
+
+  async getClearPreview(
+    endpoint: string,
+    context?: UserContext
+  ): Promise<ClearPreviewResult> {
+    const response = await this.fetchWithRetry<{ would_delete_count: number; message: string }>(
+      endpoint,
+      {},
+      1,
+      context
+    );
+
+    return {
+      wouldDeleteCount: response.would_delete_count,
+      message: response.message,
+    };
+  }
+
+  async executeClear(
+    endpoint: string,
+    context?: UserContext
+  ): Promise<ClearResult> {
+    const response = await this.fetchWithRetry<{ deleted_count: number; message: string }>(
+      endpoint,
+      {
+        method: 'DELETE',
+      },
+      1,
+      context
+    );
+
+    return {
+      deletedCount: response.deleted_count,
+      message: response.message,
+    };
   }
 }

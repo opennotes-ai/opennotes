@@ -73,7 +73,7 @@ describe('Bot', () => {
     it('should have loaded all commands', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Commands loaded',
-        expect.objectContaining({ count: 7 })
+        expect.objectContaining({ count: 8 })
       );
     });
 

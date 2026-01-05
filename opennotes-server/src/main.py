@@ -18,6 +18,7 @@ from src.cache.cache import cache_manager
 from src.cache.redis_client import redis_client
 from src.community_config.router import router as community_config_router
 from src.community_servers.admin_router import router as community_admin_router
+from src.community_servers.clear_router import router as community_clear_router
 from src.community_servers.router import router as community_servers_router
 from src.config import settings
 from src.config_router import router as config_router
@@ -536,6 +537,7 @@ app.include_router(config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_servers_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_admin_router, prefix=settings.API_V1_PREFIX)
+app.include_router(community_clear_router, prefix=settings.API_V2_PREFIX)
 app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 
