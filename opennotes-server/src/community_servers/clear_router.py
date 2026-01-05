@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,12 +33,16 @@ logger = logging.getLogger(__name__)
 class ClearResponse(BaseModel):
     """Response for clear operations."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     deleted_count: int
     message: str
 
 
 class ClearPreviewResponse(BaseModel):
     """Response for clear preview (dry run) operations."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     would_delete_count: int
     message: str
