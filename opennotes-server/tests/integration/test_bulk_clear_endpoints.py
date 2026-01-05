@@ -42,9 +42,11 @@ async def clear_test_community_server():
 async def clear_test_admin_user(clear_test_community_server):
     """Create an admin user for the test community."""
     async with get_session_maker()() as db:
+        discord_id = f"discord_{uuid4().hex[:8]}"
         user = User(
             email=f"admin_{uuid4().hex[:8]}@example.com",
             username=f"clearadmin_{uuid4().hex[:8]}",
+            discord_id=discord_id,
             hashed_password="hashed_password",
             is_active=True,
             role="user",
@@ -65,7 +67,7 @@ async def clear_test_admin_user(clear_test_community_server):
         identity = UserIdentity(
             profile_id=profile.id,
             provider="discord",
-            provider_user_id=f"discord_{uuid4().hex[:8]}",
+            provider_user_id=discord_id,
         )
         db.add(identity)
 
@@ -86,9 +88,11 @@ async def clear_test_admin_user(clear_test_community_server):
 async def clear_test_regular_user(clear_test_community_server):
     """Create a regular (non-admin) user for the test community."""
     async with get_session_maker()() as db:
+        discord_id = f"discord_{uuid4().hex[:8]}"
         user = User(
             email=f"regular_{uuid4().hex[:8]}@example.com",
             username=f"clearregular_{uuid4().hex[:8]}",
+            discord_id=discord_id,
             hashed_password="hashed_password",
             is_active=True,
             role="user",
@@ -109,7 +113,7 @@ async def clear_test_regular_user(clear_test_community_server):
         identity = UserIdentity(
             profile_id=profile.id,
             provider="discord",
-            provider_user_id=f"discord_{uuid4().hex[:8]}",
+            provider_user_id=discord_id,
         )
         db.add(identity)
 
@@ -158,7 +162,8 @@ def regular_auth_headers(clear_test_regular_user):
 async def sample_requests(clear_test_community_server, clear_test_admin_user):
     """Create sample requests with various ages."""
     async with get_session_maker()() as db:
-        now = datetime.now(UTC)
+        # Use naive datetime to match column type (timestamp without timezone)
+        now = datetime.now(UTC).replace(tzinfo=None)
         requests = []
 
         # Recent request (1 day old)
@@ -205,7 +210,8 @@ async def sample_requests(clear_test_community_server, clear_test_admin_user):
 async def sample_notes(clear_test_community_server, clear_test_admin_user):
     """Create sample notes with various statuses and ages."""
     async with get_session_maker()() as db:
-        now = datetime.now(UTC)
+        # Use naive datetime to match column type (timestamp without timezone)
+        now = datetime.now(UTC).replace(tzinfo=None)
         notes = []
 
         # Recent unpublished note (1 day old)
