@@ -104,6 +104,24 @@ MatchResult = Annotated[
 ]
 
 
+class ScanCandidate(StrictInputSchema):
+    """Internal schema for a scan candidate before relevance filtering.
+
+    This is an internal-only schema (not API-facing) used to collect candidates
+    from all scan types before applying the unified LLM relevance check.
+
+    Task-953: All scan paths produce candidates, then ALL candidates pass through
+    the LLM relevance check as a unified final filter before being marked as flagged.
+    """
+
+    message: "BulkScanMessage" = Field(..., description="The original message being scanned")
+    scan_type: str = Field(..., description="Type of scan that produced this candidate")
+    match_data: MatchResult = Field(..., description="Match result from the scan")
+    score: float = Field(..., ge=0.0, le=1.0, description="Match score")
+    matched_content: str = Field(..., description="Content to use for relevance check")
+    matched_source: str | None = Field(None, description="Source URL if available")
+
+
 class FlaggedMessage(SQLAlchemySchema):
     """Schema for a single flagged message in scan results."""
 
