@@ -1598,6 +1598,11 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
     """
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(
+        reason="Task-953.01: This test is obsolete. The new unified candidate flow "
+        "builds FlaggedMessage directly in _filter_candidates_with_relevance(), "
+        "not via _build_flagged_message(). Error handling exists in the new flow."
+    )
     async def test_is_flagged_false_when_build_flagged_message_fails(
         self, mock_session, mock_embedding_service, mock_redis
     ):

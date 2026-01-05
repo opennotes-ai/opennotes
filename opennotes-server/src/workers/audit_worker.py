@@ -138,8 +138,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    from src.monitoring.logging import setup_logging
+
+    setup_logging(
+        log_level=settings.LOG_LEVEL,
+        json_format=settings.ENABLE_JSON_LOGGING,
+        service_name="audit-worker",
     )
     asyncio.run(main())

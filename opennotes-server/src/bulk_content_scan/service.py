@@ -183,34 +183,79 @@ class BulkContentScanService:
         messages: BulkScanMessage | Sequence[BulkScanMessage],
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
-    ) -> list[FlaggedMessage]:
+        collect_scores: bool = False,
+    ) -> list[FlaggedMessage] | tuple[list[FlaggedMessage], list[dict]]:
         """Process one or more messages through specified scan types.
+
+        Uses the candidate-based flow:
+        1. Generate candidates via _similarity_scan_candidate() / _moderation_scan_candidate()
+        2. Pass ALL candidates through _filter_candidates_with_relevance()
+        3. Return filtered FlaggedMessage list (and optionally score info)
+
+        The filtering logic is IDENTICAL regardless of collect_scores setting.
+        Debug mode only affects whether score information is collected and returned.
 
         Args:
             scan_id: UUID of the scan
             messages: Single BulkScanMessage OR sequence of messages
             community_server_platform_id: CommunityServer.platform_id (e.g., Discord guild ID)
             scan_types: Sequence of ScanType to run (default: all)
+            collect_scores: If True, also collect and return score info for debug mode
 
         Returns:
-            List of FlaggedMessage for messages that matched any scanner
+            If collect_scores=False: List of FlaggedMessage
+            If collect_scores=True: Tuple of (flagged_messages, all_scores)
         """
         if isinstance(messages, BulkScanMessage):
             messages = [messages]
 
-        flagged: list[FlaggedMessage] = []
+        candidates: list[ScanCandidate] = []
+        all_scores: list[dict] = []
 
         for msg in messages:
             if not msg.content or len(msg.content.strip()) < 10:
+                if collect_scores:
+                    all_scores.append(
+                        {
+                            "message_id": msg.message_id,
+                            "channel_id": msg.channel_id,
+                            "similarity_score": 0.0,
+                            "is_flagged": False,
+                            "matched_claim": None,
+                        }
+                    )
                 continue
 
+            candidate_found = False
             for scan_type in scan_types:
-                result = await self._run_scanner(
+                candidate = await self._generate_candidate(
                     scan_id, msg, community_server_platform_id, scan_type
                 )
-                if result:
-                    flagged.append(result)
+                if candidate:
+                    candidates.append(candidate)
+                    if collect_scores:
+                        all_scores.append(self._build_score_info_from_candidate(candidate))
+                    candidate_found = True
                     break
+
+            if not candidate_found and collect_scores:
+                all_scores.append(
+                    {
+                        "message_id": msg.message_id,
+                        "channel_id": msg.channel_id,
+                        "similarity_score": 0.0,
+                        "is_flagged": False,
+                        "matched_claim": None,
+                    }
+                )
+
+        flagged = await self._filter_candidates_with_relevance(candidates, scan_id)
+
+        if collect_scores:
+            flagged_message_ids = {fm.message_id for fm in flagged}
+            for score_info in all_scores:
+                score_info["is_flagged"] = score_info["message_id"] in flagged_message_ids
+            return flagged, all_scores
 
         return flagged
 
@@ -223,8 +268,8 @@ class BulkContentScanService:
     ) -> tuple[list[FlaggedMessage], list[dict]]:
         """Process messages and return both flagged results and all scores.
 
-        This method is used when vibecheck_debug_mode is enabled to provide
-        similarity scores for ALL messages, not just flagged ones.
+        DEPRECATED: Use process_messages(..., collect_scores=True) instead.
+        This method exists for backward compatibility.
 
         Args:
             scan_id: UUID of the scan
@@ -234,37 +279,72 @@ class BulkContentScanService:
 
         Returns:
             Tuple of (flagged_messages, all_scores)
-            all_scores contains score info for every message processed
         """
-        if isinstance(messages, BulkScanMessage):
-            messages = [messages]
+        return await self.process_messages(  # type: ignore[return-value]
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id=community_server_platform_id,
+            scan_types=scan_types,
+            collect_scores=True,
+        )
 
-        flagged: list[FlaggedMessage] = []
-        all_scores: list[dict] = []
+    async def _generate_candidate(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        community_server_platform_id: str,
+        scan_type: ScanType,
+    ) -> ScanCandidate | None:
+        """Generate a ScanCandidate using the appropriate scanner.
 
-        for msg in messages:
-            if not msg.content or len(msg.content.strip()) < 10:
-                all_scores.append(
-                    {
-                        "message_id": msg.message_id,
-                        "channel_id": msg.channel_id,
-                        "similarity_score": 0.0,
-                        "is_flagged": False,
-                        "matched_claim": None,
-                    }
+        This dispatches to _similarity_scan_candidate() or _moderation_scan_candidate()
+        based on scan_type.
+
+        Args:
+            scan_id: UUID of the scan
+            message: The message to scan
+            community_server_platform_id: CommunityServer.platform_id
+            scan_type: Type of scan to run
+
+        Returns:
+            ScanCandidate if match found, None otherwise
+        """
+        match scan_type:
+            case ScanType.SIMILARITY:
+                return await self._similarity_scan_candidate(
+                    scan_id, message, community_server_platform_id
                 )
-                continue
+            case ScanType.OPENAI_MODERATION:
+                return await self._moderation_scan_candidate(scan_id, message)
+            case _:
+                logger.warning(f"Unknown scan type: {scan_type}")
+                return None
 
-            for scan_type in scan_types:
-                result, score_info = await self._run_scanner_with_score(
-                    scan_id, msg, community_server_platform_id, scan_type
-                )
-                all_scores.append(score_info)
-                if result:
-                    flagged.append(result)
-                break
+    def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict:
+        """Build score_info dict from a ScanCandidate for debug mode.
 
-        return flagged, all_scores
+        Args:
+            candidate: The ScanCandidate to extract score info from
+
+        Returns:
+            Dictionary with score info for debug output
+        """
+        score_info: dict = {
+            "message_id": candidate.message.message_id,
+            "channel_id": candidate.message.channel_id,
+            "similarity_score": candidate.score,
+            "is_flagged": False,
+            "matched_claim": candidate.matched_content,
+        }
+
+        if candidate.scan_type == ScanType.OPENAI_MODERATION.value and isinstance(
+            candidate.match_data, OpenAIModerationMatch
+        ):
+            score_info["moderation_flagged"] = True
+            score_info["moderation_categories"] = candidate.match_data.categories
+            score_info["moderation_scores"] = candidate.match_data.scores
+
+        return score_info
 
     async def _run_scanner_with_score(
         self,
