@@ -28,13 +28,15 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _batch_update_word_count(batch_size: int = 5000) -> None:
+def _batch_update_word_count(batch_size: int = 50) -> None:
     """Update word_count in batches to avoid statement timeout.
 
     Uses ID-based pagination with explicit LIMIT to process rows incrementally.
     Each batch is a separate statement, avoiding long-running transactions.
     """
     conn = op.get_bind()
+
+    conn.execute(sa.text("SET statement_timeout = '300s'"))
 
     # Get total count for progress logging
     result = conn.execute(sa.text("SELECT COUNT(*) FROM chunk_embeddings WHERE word_count = 0"))
@@ -84,6 +86,8 @@ def _batch_update_word_count(batch_size: int = 5000) -> None:
         )
 
     print(f"word_count: Migration complete ({batch_num} batches, {total_updated} rows)")
+
+    conn.execute(sa.text("RESET statement_timeout"))
 
 
 def upgrade() -> None:
@@ -152,7 +156,7 @@ def upgrade() -> None:
     )
 
     # Batch UPDATE to avoid statement timeout on large tables
-    _batch_update_word_count(batch_size=5000)
+    _batch_update_word_count(batch_size=50)
 
     op.execute(
         """
