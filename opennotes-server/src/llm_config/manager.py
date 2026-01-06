@@ -275,14 +275,18 @@ class LLMClientManager:
         """
         Get the default model for a provider.
 
+        Uses settings.DEFAULT_FULL_MODEL for OpenAI (extracts model name from provider/model format).
+
         Args:
             provider: Provider name
 
         Returns:
             Default model identifier
         """
+        if provider == "openai":
+            full_model = settings.DEFAULT_FULL_MODEL
+            return full_model.split("/")[-1] if "/" in full_model else full_model
         defaults = {
-            "openai": "gpt-5.1",
             "anthropic": "claude-3-opus-20240229",
         }
         return defaults.get(provider, "unknown")

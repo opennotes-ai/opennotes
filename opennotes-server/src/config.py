@@ -587,6 +587,16 @@ class Settings(BaseSettings):
         default=None,
         description="Global Anthropic API key for fallback when community servers don't have their own key configured",
     )
+
+    DEFAULT_MINI_MODEL: str = Field(
+        default="openai/gpt-5-mini",
+        description="Default mini/fast model for quick tasks (provider/model format for LiteLLM compatibility)",
+    )
+    DEFAULT_FULL_MODEL: str = Field(
+        default="openai/gpt-5.1",
+        description="Default full-capability model for complex tasks (provider/model format for LiteLLM compatibility)",
+    )
+
     INTERNAL_SERVICE_SECRET: str = Field(
         default="",
         description="Shared secret for internal service-to-service authentication. "
@@ -644,7 +654,7 @@ class Settings(BaseSettings):
         description="Enable LLM-based relevance filtering for hybrid search results",
     )
     RELEVANCE_CHECK_MODEL: str = Field(
-        default="o4-mini",
+        default="gpt-5-mini",
         description="LLM model to use for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_PROVIDER: str = Field(

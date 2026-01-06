@@ -41,6 +41,18 @@ SAFE_ERROR_MESSAGES = {
 }
 
 
+def _get_default_model_for_provider(provider: str) -> str:
+    """Get the default model for a provider from settings.
+
+    Extracts the model name from DEFAULT_FULL_MODEL for OpenAI,
+    otherwise returns provider-specific defaults.
+    """
+    if provider == "openai":
+        full_model = settings.DEFAULT_FULL_MODEL
+        return full_model.split("/")[-1] if "/" in full_model else full_model
+    return "claude-3-opus-20240229" if provider == "anthropic" else "unknown"
+
+
 @lru_cache
 def get_encryption_service() -> EncryptionService:
     """Get thread-safe encryption service singleton dependency."""
@@ -96,10 +108,13 @@ async def create_llm_config(
 
     provider = None
     try:
+        default_model = config.settings.get(
+            "default_model", _get_default_model_for_provider(config.provider)
+        )
         provider = LLMProviderFactory.create(
             config.provider,
             config.api_key,
-            config.settings.get("default_model", "gpt-5.1"),
+            default_model,
             config.settings,
         )
         is_valid = await provider.validate_api_key()
@@ -297,10 +312,13 @@ async def test_llm_config(
     """
     provider = None
     try:
+        default_model = test_request.settings.get(
+            "default_model", _get_default_model_for_provider(test_request.provider)
+        )
         provider = LLMProviderFactory.create(
             test_request.provider,
             test_request.api_key,
-            test_request.settings.get("default_model", "gpt-5.1"),
+            default_model,
             test_request.settings,
         )
         is_valid = await provider.validate_api_key()

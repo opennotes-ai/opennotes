@@ -15,7 +15,7 @@ from src.claim_relevance_check.prompt_optimization.optimize import (
 
 def evaluate_current_prompts(
     testset: list[dspy.Example],
-    model: str = "openai/o4-mini",
+    model: str = "openai/gpt-5-mini",
 ) -> dict:
     """Evaluate the current prompts.py approach on test data.
 
@@ -32,7 +32,7 @@ def evaluate_current_prompts(
 def evaluate_optimized_module(
     testset: list[dspy.Example],
     module_path: Path,
-    model: str = "openai/o4-mini",
+    model: str = "openai/gpt-5-mini",
 ) -> dict:
     """Evaluate the optimized module on test data."""
     api_key = setup_openai_environment()
@@ -55,7 +55,7 @@ def format_metrics(results: dict) -> str:
 
 def generate_prompts_py(module_path: Path, output_path: Path) -> None:
     """Generate a new prompts.py from the optimized module."""
-    with open(module_path) as f:
+    with module_path.open() as f:
         data = json.load(f)
 
     demos = data.get("predict", {}).get("demos", [])
@@ -136,7 +136,7 @@ def get_optimized_prompts(
     return OPTIMIZED_SYSTEM_PROMPT, user_prompt
 '''
 
-    with open(output_path, "w") as f:
+    with output_path.open("w") as f:
         f.write(content)
 
     print(f"Generated new prompts at {output_path}")
@@ -145,7 +145,7 @@ def get_optimized_prompts(
 def compare_and_update(
     module_path: Path = Path("optimized_relevance_module.json"),
     prompts_path: Path = Path("src/claim_relevance_check/prompt_optimization/prompts.py"),
-    model: str = "openai/o4-mini",
+    model: str = "openai/gpt-5-mini",
     force: bool = False,
     test_ratio: float = 0.3,
 ) -> bool:
@@ -186,23 +186,22 @@ def compare_and_update(
     optimized_f1 = optimized_results["f1"]
     improvement = optimized_f1 - current_f1
 
-    print(f"\n3. Comparison:")
+    print("\n3. Comparison:")
     print(f"   F1 improvement: {improvement:+.1%}")
 
     if improvement > 0 or force:
         if improvement > 0:
             print(f"\n✓ Optimized prompts are BETTER by {improvement:.1%}")
         else:
-            print(f"\n! Force updating despite no improvement")
+            print("\n! Force updating despite no improvement")
 
         generate_prompts_py(module_path, prompts_path)
         return True
-    elif improvement == 0:
+    if improvement == 0:
         print("\n= No difference in F1 score. Keeping current prompts.")
         return False
-    else:
-        print(f"\n✗ Current prompts are BETTER by {-improvement:.1%}. Keeping current.")
-        return False
+    print(f"\n✗ Current prompts are BETTER by {-improvement:.1%}. Keeping current.")
+    return False
 
 
 if __name__ == "__main__":
@@ -225,7 +224,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        default="openai/o4-mini",
+        default="openai/gpt-5-mini",
         help="LLM model to use for evaluation",
     )
     parser.add_argument(
