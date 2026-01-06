@@ -24,7 +24,7 @@ from src.claim_relevance_check.prompt_optimization.optimize import (
 
 def evaluate_current_prompts(
     testset: list[dspy.Example],
-    model: str = "openai/gpt-4o-mini",
+    model: str = "openai/o4-mini",
 ) -> dict:
     """Evaluate the current prompts.py approach on test data.
 
@@ -41,7 +41,7 @@ def evaluate_current_prompts(
 def evaluate_optimized_module(
     testset: list[dspy.Example],
     module_path: Path,
-    model: str = "openai/gpt-4o-mini",
+    model: str = "openai/o4-mini",
 ) -> dict:
     """Evaluate the optimized module on test data."""
     api_key = setup_openai_environment()
@@ -154,7 +154,7 @@ def get_optimized_prompts(
 def compare_and_update(
     module_path: Path = Path("optimized_relevance_module.json"),
     prompts_path: Path = Path("src/claim_relevance_check/prompt_optimization/prompts.py"),
-    model: str = "openai/gpt-4o-mini",
+    model: str = "openai/o4-mini",
     force: bool = False,
     test_ratio: float = 0.3,
 ) -> bool:
@@ -234,7 +234,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        default="openai/gpt-4o-mini",
+        default="openai/o4-mini",
         help="LLM model to use for evaluation",
     )
     parser.add_argument(
