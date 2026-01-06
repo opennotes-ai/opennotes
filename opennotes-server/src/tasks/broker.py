@@ -188,6 +188,29 @@ def get_broker() -> PullBasedJetStreamBroker:
     """Get or create the singleton broker instance."""
     global _broker_instance  # noqa: PLW0603
     if _broker_instance is None:
+        from src.config import get_settings
+        from src.monitoring.logging import setup_logging
+        from src.monitoring.traceloop import setup_traceloop
+
+        settings = get_settings()
+        setup_logging(
+            log_level=settings.LOG_LEVEL,
+            json_format=True,
+            service_name="opennotes-taskiq-worker",
+        )
+
+        if settings.TRACELOOP_ENABLED:
+            setup_traceloop(
+                app_name=settings.PROJECT_NAME,
+                service_name="opennotes-taskiq-worker",
+                version=settings.VERSION,
+                environment=settings.ENVIRONMENT,
+                instance_id=settings.INSTANCE_ID,
+                otlp_endpoint=settings.OTLP_ENDPOINT,
+                otlp_headers=settings.OTLP_HEADERS,
+                trace_content=settings.TRACELOOP_TRACE_CONTENT,
+            )
+
         _broker_instance = _create_broker()
         _register_all_tasks(_broker_instance)
     return _broker_instance
