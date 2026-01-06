@@ -77,10 +77,10 @@ def generate_prompts_py(module_path: Path, output_path: Path) -> None:
         label = "RELEVANT" if is_relevant else "NOT RELEVANT"
         examples_text.append(f"""
 Example {i} - {label}:
-Message: "{demo.get('message', '')}"
-Fact-check: "{demo.get('fact_check_title', '')}"
-Reasoning: {demo.get('reasoning', '')}
-Result: {{"is_relevant": {str(is_relevant).lower()}, "reasoning": "{demo.get('reasoning', '')[:100]}..."}}""")
+Message: "{demo.get("message", "")}"
+Fact-check: "{demo.get("fact_check_title", "")}"
+Reasoning: {demo.get("reasoning", "")}
+Result: {{"is_relevant": {str(is_relevant).lower()}, "reasoning": "{demo.get("reasoning", "")[:100]}..."}}""")
 
     examples_section = "\n".join(examples_text)
 
