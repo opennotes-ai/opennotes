@@ -1,0 +1,73 @@
+{
+  "predict": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "message": "some things about kamala harris",
+        "fact_check_title": "Did Trump Donate to Kamala Harris' Past Election Campaigns?",
+        "fact_check_content": "U.S. President Donald Trump donated $6,000 to Kamala Harris' 2014 campaign for reelection as California attorney general. Records show Trump made contributions in 2011 and 2013.",
+        "reasoning": "The message does not contain a specific claim; it simply mentions 'some things about Kamala Harris' without asserting anything verifiable. The fact-check content regarding Trump's donations to her campaign cannot be linked to a specific claim in the message.",
+        "is_relevant": false
+      },
+      {
+        "augmented": true,
+        "message": "how about biden",
+        "fact_check_title": "Did Biden Say He Would Ban Fracking?",
+        "fact_check_content": "Joe Biden's position on fracking has been complex. During debates he stated he would not ban fracking, though he supports transitioning away from fossil fuels.",
+        "reasoning": "The message 'how about biden' is a vague inquiry without a specific claim. It asks about 'Biden' generally but does not assert anything about fracking or any specific verifiable fact addressed by the fact-check.",
+        "is_relevant": false
+      },
+      {
+        "augmented": true,
+        "message": "or donald trump",
+        "fact_check_title": "Did Trump Say Injecting Disinfectant Could Treat COVID-19?",
+        "fact_check_content": "During a White House briefing, Trump suggested research into whether disinfectants could be used to treat COVID-19 internally.",
+        "reasoning": "The message 'or donald trump' is a simple mention of a name without making a specific, verifiable claim. It does not assert anything about Trump's statements or actions related to the fact-check content about disinfectants.",
+        "is_relevant": false
+      },
+      {
+        "augmented": true,
+        "message": "What about the vaccine?",
+        "fact_check_title": "Do COVID-19 Vaccines Contain Microchips?",
+        "fact_check_content": "Claims that COVID-19 vaccines contain microchips are false. Vaccines contain mRNA or viral proteins but no tracking devices.",
+        "reasoning": "The message 'What about the vaccine?' is a question and does not contain a specific, verifiable claim. It doesn't make any assertion about vaccines containing microchips or any other aspect that could be fact-checked. Thus, the fact-check about microchips in COVID-19 vaccines does not address a claim in the message.",
+        "is_relevant": false
+      }
+    ],
+    "signature": {
+      "instructions": "Determine if a fact-check can verify a SPECIFIC CLAIM in the user's message.\n\nA claim is a verifiable assertion of fact, NOT:\n- A topic mention (\"some things about X\")\n- A question (\"what about X?\")\n- A name drop (\"or donald trump\")\n- An opinion without factual content\n\nOnly return is_relevant=True if the message contains a specific, verifiable claim\nAND the fact-check directly addresses that claim.",
+      "fields": [
+        {
+          "prefix": "Message:",
+          "description": "The user's original message to evaluate"
+        },
+        {
+          "prefix": "Fact Check Title:",
+          "description": "Title of the matched fact-check article"
+        },
+        {
+          "prefix": "Fact Check Content:",
+          "description": "Summary/content of the fact-check article"
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "Explain: 1) What specific claim exists in the message (if any), 2) Whether the fact-check addresses it"
+        },
+        {
+          "prefix": "Is Relevant:",
+          "description": "True ONLY if: (1) message contains a specific verifiable claim, AND (2) this fact-check addresses that exact claim"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.11",
+      "dspy": "3.0.4",
+      "cloudpickle": "3.1"
+    }
+  }
+}

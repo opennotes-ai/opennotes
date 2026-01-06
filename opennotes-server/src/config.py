@@ -644,7 +644,7 @@ class Settings(BaseSettings):
         description="Enable LLM-based relevance filtering for hybrid search results",
     )
     RELEVANCE_CHECK_MODEL: str = Field(
-        default="gpt-5-mini",
+        default="o4-mini",
         description="LLM model to use for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_PROVIDER: str = Field(
@@ -660,6 +660,10 @@ class Settings(BaseSettings):
         default=5.0,
         description="Timeout in seconds for relevance check LLM calls",
         gt=0,
+    )
+    RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT: bool = Field(
+        default=True,
+        description="Use DSPy-optimized prompts for relevance checking (task-966)",
     )
 
     # AI Note Writing Settings
