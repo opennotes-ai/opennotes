@@ -353,7 +353,7 @@ class TestUnifiedRelevanceFilter:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -422,7 +422,7 @@ class TestUpdatedRelevancePrompt:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -484,7 +484,7 @@ class TestUpdatedRelevancePrompt:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -556,7 +556,7 @@ class TestDebugModeUnification:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"
@@ -633,7 +633,7 @@ class TestCandidateFlaggedLogging:
         ):
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 100
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 10
             mock_settings.INSTANCE_ID = "test"

@@ -925,7 +925,10 @@ Respond with JSON: {"is_relevant": true/false, "reasoning": "brief explanation"}
 
 Reference: {matched_content}{source_info}
 
-Does the user message contain a claim or assertion that this reference can fact-check, extend, or provide context for?"""
+Step 1: Does the user message contain a specific claim or assertion (not just a topic mention or question)?
+Step 2: If YES to step 1, can this reference fact-check or verify that specific claim?
+
+Only answer RELEVANT if BOTH steps are YES."""
 
             messages = [
                 LLMMessage(role="system", content=system_prompt),
