@@ -2194,6 +2194,50 @@ describe('vibecheck command', () => {
         })
       );
     });
+
+    it('should show generic error message for non-404 errors', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('scan-error'),
+          getSubcommand: jest.fn().mockReturnValue('create-requests'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockApiClient.getBulkScanResults.mockRejectedValueOnce(new Error('Server error'));
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/failed to create note requests/i),
+        })
+      );
+    });
   });
 
   describe('session expiration graceful degradation', () => {
@@ -2281,6 +2325,8 @@ describe('vibecheck command', () => {
 
       const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
 
+      expect(lastEditCall.content).toContain('**Scan Complete**');
+      expect(lastEditCall.content).toContain('Flagged content summary');
       expect(lastEditCall.content).toContain('scan-123');
       expect(lastEditCall.content).toMatch(/vibecheck create-requests/i);
       expect(lastEditCall.content).toMatch(/session expired/i);

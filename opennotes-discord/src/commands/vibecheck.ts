@@ -398,8 +398,10 @@ async function displayFlaggedResults(
 
   collector.on('end', (_collected, reason) => {
     if (reason === 'time') {
+      const preservedContent = `${paginatedResult.header}\n${TextPaginator.getPage(paginatedResult.pages, 1)}`;
       interaction.editReply({
-        content: `⏰ **Session Expired** - Interactive buttons have been disabled.\n\n` +
+        content: `${preservedContent}\n\n---\n` +
+          `⏰ **Session Expired** - Interactive buttons have been disabled.\n\n` +
           `**Scan ID:** \`${scanId}\`\n\n` +
           `To continue, use one of these commands:\n` +
           `• \`/vibecheck create-requests ${scanId}\` - Create note requests from this scan\n` +
