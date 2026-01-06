@@ -178,6 +178,72 @@ def _setup_pyroscope() -> bool:
 if settings.PYROSCOPE_ENABLED and not settings.TESTING:
     _setup_pyroscope()
 
+
+def _setup_traceloop() -> bool:
+    """Initialize Traceloop SDK for LLM observability.
+
+    Traceloop provides automatic instrumentation for LiteLLM, OpenAI, and Anthropic
+    with GenAI semantic conventions (gen_ai.*, llm.*) for token usage, model info,
+    and request/response tracing.
+
+    Returns:
+        True if Traceloop was successfully configured, False otherwise.
+    """
+    import os
+
+    if not settings.TRACELOOP_ENABLED:
+        logger.debug("Traceloop LLM observability disabled (TRACELOOP_ENABLED=False)")
+        return False
+
+    if not settings.OTLP_ENDPOINT:
+        logger.warning("Traceloop enabled but OTLP_ENDPOINT not set - LLM observability disabled")
+        return False
+
+    try:
+        from traceloop.sdk import Traceloop
+
+        os.environ["TRACELOOP_TRACE_CONTENT"] = str(settings.TRACELOOP_TRACE_CONTENT).lower()
+
+        headers: dict[str, str] = {}
+        if settings.OTLP_HEADERS:
+            for raw_pair in settings.OTLP_HEADERS.split(","):
+                pair = raw_pair.strip()
+                if "=" in pair:
+                    key, value = pair.split("=", 1)
+                    headers[key.strip()] = value.strip()
+
+        Traceloop.init(
+            app_name=settings.PROJECT_NAME.replace(" ", "-").lower(),
+            api_endpoint=settings.OTLP_ENDPOINT,
+            headers=headers if headers else {},
+            disable_batch=False,
+            resource_attributes={
+                "service.name": settings.PROJECT_NAME,
+                "service.version": settings.VERSION,
+                "deployment.environment": settings.ENVIRONMENT,
+                "service.instance.id": settings.INSTANCE_ID,
+            },
+            enabled=True,
+            telemetry_enabled=False,
+        )
+
+        logger.info(
+            f"Traceloop LLM observability enabled: endpoint={settings.OTLP_ENDPOINT}, "
+            f"trace_content={settings.TRACELOOP_TRACE_CONTENT}"
+        )
+        return True
+
+    except ImportError:
+        logger.warning("traceloop-sdk package not installed - LLM observability disabled")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to configure Traceloop: {e}")
+        return False
+
+
+if settings.TRACELOOP_ENABLED and not settings.TESTING:
+    _setup_traceloop()
+
 health_checker = HealthChecker(
     version=settings.VERSION,
     environment=settings.ENVIRONMENT,
