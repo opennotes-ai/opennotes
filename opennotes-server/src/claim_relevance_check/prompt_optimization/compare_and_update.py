@@ -1,21 +1,12 @@
 """Compare current prompts with optimized module and update if better."""
 
 import json
-import os
 from pathlib import Path
 
 import dspy
 
-from src.claim_relevance_check.prompt_optimization.dataset import (
-    TRAINING_EXAMPLES,
-    get_train_test_split,
-)
-from src.claim_relevance_check.prompt_optimization.evaluate import (
-    evaluate_model,
-    f1_score,
-    precision_at_k,
-    recall_at_k,
-)
+from src.claim_relevance_check.prompt_optimization.dataset import get_train_test_split
+from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model
 from src.claim_relevance_check.prompt_optimization.optimize import (
     create_relevance_module,
     setup_openai_environment,
