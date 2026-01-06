@@ -32,6 +32,7 @@ from src.llm_config.providers.base import LLMMessage
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 from src.monitoring.metrics import relevance_check_total
+from src.vibecheck.prompt_optimization.prompts import get_optimized_prompts
 
 logger = get_logger(__name__)
 
@@ -905,9 +906,17 @@ class BulkContentScanService:
         start_time = time.monotonic()
 
         try:
-            source_info = f"\nSource: {matched_source}" if matched_source else ""
+            if settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT:
+                system_prompt, user_prompt = get_optimized_prompts(
+                    message=original_message,
+                    fact_check_title=matched_content[:100],
+                    fact_check_content=matched_content,
+                    source_url=matched_source,
+                )
+            else:
+                source_info = f"\nSource: {matched_source}" if matched_source else ""
 
-            system_prompt = """You are a relevance checker. Determine if a reference can meaningfully fact-check or provide context for a SPECIFIC CLAIM in the user's message.
+                system_prompt = """You are a relevance checker. Determine if a reference can meaningfully fact-check or provide context for a SPECIFIC CLAIM in the user's message.
 
 IMPORTANT: The message must contain a verifiable claim or assertion. Simple mentions of people, topics, or questions are NOT claims.
 
@@ -921,7 +930,7 @@ Examples:
 
 Respond with JSON: {"is_relevant": true/false, "reasoning": "brief explanation"}"""
 
-            user_prompt = f"""User message: {original_message}
+                user_prompt = f"""User message: {original_message}
 
 Reference: {matched_content}{source_info}
 

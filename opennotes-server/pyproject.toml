@@ -59,6 +59,7 @@ dependencies = [
     "opentelemetry-semantic-conventions>=0.59b0",
     "pyroscope-io>=0.8.0",
     "traceloop-sdk>=0.35.0",
+    "dspy>=2.6.0",
 ]
 
 [project.optional-dependencies]

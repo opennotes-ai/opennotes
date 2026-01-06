@@ -661,6 +661,10 @@ class Settings(BaseSettings):
         description="Timeout in seconds for relevance check LLM calls",
         gt=0,
     )
+    RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT: bool = Field(
+        default=True,
+        description="Use DSPy-optimized prompts for relevance checking (task-966)",
+    )
 
     # AI Note Writing Settings
     AI_NOTE_WRITING_ENABLED: bool = Field(
