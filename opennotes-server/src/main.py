@@ -224,7 +224,7 @@ def _setup_traceloop() -> bool:
                 "service.instance.id": settings.INSTANCE_ID,
             },
             enabled=True,
-            telemetry_enabled=True,
+            telemetry_enabled=False,
         )
 
         logger.info(
