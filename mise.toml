@@ -300,6 +300,16 @@ echo "OpenAPI spec and TypeScript types updated!"
 '''
 
 # ========================================
+# Optimization Tasks
+# ========================================
+
+[tasks."optimize:prompts:claim_relevance_check"]
+description = "Run DSPy prompt optimization for claim relevance checking"
+dir = "{{vars.server_dir}}"
+run = 'uv run python -m src.claim_relevance_check.prompt_optimization.optimize "$@"'
+env = { PYTHONPATH = "." }
+
+# ========================================
 # Validation Tasks
 # ========================================
 
