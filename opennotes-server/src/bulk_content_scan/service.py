@@ -1001,6 +1001,7 @@ Only answer RELEVANT if BOTH steps are YES."""
                 "Relevance check failed, failing open",
                 extra={
                     "error": str(e),
+                    "error_type": type(e).__name__,
                     "latency_ms": round(latency_ms, 2),
                 },
             )

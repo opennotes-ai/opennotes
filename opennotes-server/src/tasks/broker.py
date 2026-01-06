@@ -188,6 +188,16 @@ def get_broker() -> PullBasedJetStreamBroker:
     """Get or create the singleton broker instance."""
     global _broker_instance  # noqa: PLW0603
     if _broker_instance is None:
+        from src.config import get_settings
+        from src.monitoring.logging import setup_logging
+
+        settings = get_settings()
+        setup_logging(
+            log_level=settings.LOG_LEVEL,
+            json_format=True,
+            service_name="opennotes-taskiq-worker",
+        )
+
         _broker_instance = _create_broker()
         _register_all_tasks(_broker_instance)
     return _broker_instance
