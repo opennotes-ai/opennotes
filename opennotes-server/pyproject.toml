@@ -58,6 +58,7 @@ dependencies = [
     "opentelemetry-instrumentation-logging>=0.59b0",
     "opentelemetry-semantic-conventions>=0.59b0",
     "pyroscope-io>=0.8.0",
+    "traceloop-sdk>=0.35.0",
 ]
 
 [project.optional-dependencies]

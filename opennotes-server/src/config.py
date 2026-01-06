@@ -533,6 +533,19 @@ class Settings(BaseSettings):
         description="Enable Pyroscope SDK logging for debugging.",
     )
 
+    TRACELOOP_ENABLED: bool = Field(
+        default=True,
+        description="Enable Traceloop SDK for LLM observability. "
+        "Provides automatic instrumentation of LiteLLM, OpenAI, and Anthropic calls "
+        "with GenAI semantic conventions (gen_ai.*, llm.*).",
+    )
+    TRACELOOP_TRACE_CONTENT: bool = Field(
+        default=False,
+        description="Enable logging of prompts and completions in traces. "
+        "Set to False (default) for production to avoid logging sensitive data. "
+        "Set to True for development/debugging to see full prompt/completion content.",
+    )
+
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")
     SMTP_USERNAME: str | None = Field(default=None, description="SMTP authentication username")
