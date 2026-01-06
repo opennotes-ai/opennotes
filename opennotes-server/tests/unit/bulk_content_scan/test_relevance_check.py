@@ -106,7 +106,7 @@ class TestCheckRelevanceWithLLM:
                         "reasoning": "The fact check directly addresses the flat earth claim in the message.",
                     }
                 ),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=50,
                 finish_reason="stop",
                 provider="openai",
@@ -147,7 +147,7 @@ class TestCheckRelevanceWithLLM:
                         "reasoning": "The fact check is about vaccine safety, not related to the weather discussion.",
                     }
                 ),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=45,
                 finish_reason="stop",
                 provider="openai",
@@ -210,7 +210,7 @@ class TestCheckRelevanceWithLLM:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="This is not valid JSON",
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=10,
                 finish_reason="stop",
                 provider="openai",
@@ -280,7 +280,7 @@ class TestCheckRelevanceWithLLM:
                         "reasoning": "Content is relevant.",
                     }
                 ),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -337,7 +337,7 @@ class TestSimilarityScanRelevanceIntegration:
                         "reasoning": "The fact check is not related to the message.",
                     }
                 ),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=30,
                 finish_reason="stop",
                 provider="openai",
@@ -355,7 +355,7 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -398,7 +398,7 @@ class TestSimilarityScanRelevanceIntegration:
                         "reasoning": "The fact check directly addresses the claim.",
                     }
                 ),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=30,
                 finish_reason="stop",
                 provider="openai",
@@ -416,7 +416,7 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -465,7 +465,7 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -510,7 +510,7 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
 
@@ -539,7 +539,7 @@ class TestRelevanceCheckPrompt:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -579,7 +579,7 @@ class TestRelevanceCheckPrompt:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -619,7 +619,7 @@ class TestRelevanceCheckPrompt:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -667,7 +667,7 @@ class TestRelevanceCheckEdgeCases:
                         "reasoning": "Empty reference cannot be evaluated.",
                     }
                 ),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=15,
                 finish_reason="stop",
                 provider="openai",
@@ -705,7 +705,7 @@ class TestRelevanceCheckEdgeCases:
             await asyncio.sleep(10)
             return LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="openai",
@@ -723,7 +723,7 @@ class TestRelevanceCheckEdgeCases:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = True
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
-            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-4o-mini"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
 
@@ -748,7 +748,7 @@ class TestRelevanceCheckEdgeCases:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=20,
                 finish_reason="stop",
                 provider="anthropic",
@@ -778,3 +778,247 @@ class TestRelevanceCheckEdgeCases:
         call_args = mock_llm_service.complete.call_args
         assert call_args.kwargs.get("provider") == "anthropic"
         assert call_args.kwargs.get("model") == "claude-3-haiku"
+
+
+class TestTopicMentionFiltering:
+    """Tests for filtering topic mentions without claims (task-959)."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_short_topic_mention_how_about_biden(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """'how about biden' should be rejected - no claim, just a name mention."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps(
+                    {
+                        "is_relevant": False,
+                        "reasoning": "No claim present - just a topic mention.",
+                    }
+                ),
+                model="gpt-5-mini",
+                tokens_used=25,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        is_relevant, _ = await service._check_relevance_with_llm(
+            original_message="how about biden",
+            matched_content="Joe Biden's policy positions on various issues.",
+            matched_source="https://factcheck.org/biden",
+        )
+
+        assert is_relevant is False
+        mock_llm_service.complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rejects_topic_mention_some_things_about_person(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """'some things about kamala harris' should be rejected - vague topic, no claim."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps(
+                    {
+                        "is_relevant": False,
+                        "reasoning": "No specific claim - just mentions wanting information about a person.",
+                    }
+                ),
+                model="gpt-5-mini",
+                tokens_used=30,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        is_relevant, _ = await service._check_relevance_with_llm(
+            original_message="some things about kamala harris",
+            matched_content="Kamala Harris background and political career.",
+            matched_source="https://factcheck.org/harris",
+        )
+
+        assert is_relevant is False
+        mock_llm_service.complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rejects_or_name_pattern(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """'or donald trump' should be rejected - fragment with no claim."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps(
+                    {
+                        "is_relevant": False,
+                        "reasoning": "Just a name fragment, no verifiable claim.",
+                    }
+                ),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        is_relevant, _ = await service._check_relevance_with_llm(
+            original_message="or donald trump",
+            matched_content="Donald Trump's statements about various topics.",
+            matched_source="https://politifact.com/trump",
+        )
+
+        assert is_relevant is False
+        mock_llm_service.complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_accepts_actual_claim_about_person(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """'Biden was a Confederate soldier' should be accepted - specific false claim."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps(
+                    {
+                        "is_relevant": True,
+                        "reasoning": "Contains a specific verifiable claim about Biden being a Confederate soldier.",
+                    }
+                ),
+                model="gpt-5-mini",
+                tokens_used=35,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        is_relevant, _ = await service._check_relevance_with_llm(
+            original_message="Biden was a Confederate soldier",
+            matched_content="Fact check: Joe Biden was not a Confederate soldier.",
+            matched_source="https://factcheck.org/biden-confederate",
+        )
+
+        assert is_relevant is True
+        mock_llm_service.complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rejects_question_about_topic(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """'What about the vaccine?' should be rejected - question, not a claim."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps(
+                    {
+                        "is_relevant": False,
+                        "reasoning": "This is a question, not a claim that can be fact-checked.",
+                    }
+                ),
+                model="gpt-5-mini",
+                tokens_used=25,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        is_relevant, _ = await service._check_relevance_with_llm(
+            original_message="What about the vaccine?",
+            matched_content="COVID-19 vaccine safety and efficacy information.",
+            matched_source="https://factcheck.org/vaccines",
+        )
+
+        assert is_relevant is False
+        mock_llm_service.complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_prompt_includes_step_by_step_instructions(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """The prompt should include step-by-step claim-first instructions."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps({"is_relevant": False, "reasoning": "No claim"}),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        await service._check_relevance_with_llm(
+            original_message="how about biden",
+            matched_content="Biden fact check content",
+            matched_source=None,
+        )
+
+        call_args = mock_llm_service.complete.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        user_prompt = next(m.content for m in messages if m.role == "user")
+
+        assert "Step 1" in user_prompt
+        assert "Step 2" in user_prompt
+        assert "BOTH" in user_prompt

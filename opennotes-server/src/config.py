@@ -631,7 +631,7 @@ class Settings(BaseSettings):
         description="Enable LLM-based relevance filtering for hybrid search results",
     )
     RELEVANCE_CHECK_MODEL: str = Field(
-        default="gpt-4o-mini",
+        default="gpt-5-mini",
         description="LLM model to use for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_PROVIDER: str = Field(
