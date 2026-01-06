@@ -25,6 +25,7 @@ from src.bulk_content_scan.schemas import (
     ScanCandidate,
     SimilarityMatch,
 )
+from src.claim_relevance_check.prompt_optimization.prompts import get_optimized_prompts
 from src.config import settings
 from src.fact_checking.embedding_schemas import FactCheckMatch
 from src.fact_checking.embedding_service import EmbeddingService
@@ -32,7 +33,6 @@ from src.llm_config.providers.base import LLMMessage
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 from src.monitoring.metrics import relevance_check_total
-from src.vibecheck.prompt_optimization.prompts import get_optimized_prompts
 
 logger = get_logger(__name__)
 

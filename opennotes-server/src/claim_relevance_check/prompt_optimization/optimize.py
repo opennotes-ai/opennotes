@@ -6,9 +6,9 @@ from pathlib import Path
 import dspy
 from dspy.teleprompt import BootstrapFewShot, LabeledFewShot
 
-from src.vibecheck.prompt_optimization.dataset import get_train_test_split
-from src.vibecheck.prompt_optimization.evaluate import evaluate_model, relevance_metric
-from src.vibecheck.prompt_optimization.signature import RelevanceCheck
+from src.claim_relevance_check.prompt_optimization.dataset import get_train_test_split
+from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model, relevance_metric
+from src.claim_relevance_check.prompt_optimization.signature import RelevanceCheck
 
 
 def create_relevance_module() -> dspy.ChainOfThought:

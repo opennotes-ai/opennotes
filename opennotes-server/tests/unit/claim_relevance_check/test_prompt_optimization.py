@@ -1,23 +1,22 @@
 """Tests for prompt optimization module."""
 
-
-from src.vibecheck.prompt_optimization.dataset import (
+from src.claim_relevance_check.prompt_optimization.dataset import (
     TRAINING_EXAMPLES,
     RelevanceExample,
     get_train_test_split,
     load_training_examples,
 )
-from src.vibecheck.prompt_optimization.evaluate import (
+from src.claim_relevance_check.prompt_optimization.evaluate import (
     precision_at_k,
     recall_at_k,
     relevance_metric,
 )
-from src.vibecheck.prompt_optimization.prompts import (
+from src.claim_relevance_check.prompt_optimization.prompts import (
     OPTIMIZED_SYSTEM_PROMPT,
     OPTIMIZED_USER_PROMPT_TEMPLATE,
     get_optimized_prompts,
 )
-from src.vibecheck.prompt_optimization.signature import RelevanceCheck
+from src.claim_relevance_check.prompt_optimization.signature import RelevanceCheck
 
 
 class TestDataset:

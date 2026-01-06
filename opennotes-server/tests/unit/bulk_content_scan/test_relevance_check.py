@@ -1019,6 +1019,6 @@ class TestTopicMentionFiltering:
         messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
         user_prompt = next(m.content for m in messages if m.role == "user")
 
-        assert "Step 1" in user_prompt
-        assert "Step 2" in user_prompt
-        assert "BOTH" in user_prompt
+        assert "CLAIM DETECTION" in user_prompt
+        assert "RELEVANCE CHECK" in user_prompt
+        assert "Step 1 is NO" in user_prompt

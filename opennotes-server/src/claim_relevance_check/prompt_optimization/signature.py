@@ -18,9 +18,7 @@ class RelevanceCheck(dspy.Signature):
 
     message: str = dspy.InputField(desc="The user's original message to evaluate")
     fact_check_title: str = dspy.InputField(desc="Title of the matched fact-check article")
-    fact_check_content: str = dspy.InputField(
-        desc="Summary/content of the fact-check article"
-    )
+    fact_check_content: str = dspy.InputField(desc="Summary/content of the fact-check article")
 
     is_relevant: bool = dspy.OutputField(
         desc="True ONLY if: (1) message contains a specific verifiable claim, AND (2) this fact-check addresses that exact claim"
