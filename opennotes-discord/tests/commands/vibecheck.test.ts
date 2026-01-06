@@ -323,14 +323,26 @@ describe('vibecheck command', () => {
       expect(data.description.length).toBeGreaterThan(0);
     });
 
-    it('should have scan and status subcommands', () => {
+    it('should have scan, status, and create-requests subcommands', () => {
       const options = data.options;
       expect(options).toBeDefined();
-      expect(options.length).toBe(2);
+      expect(options.length).toBe(3);
 
       const subcommandNames = options.map((opt: any) => opt.name);
       expect(subcommandNames).toContain('scan');
       expect(subcommandNames).toContain('status');
+      expect(subcommandNames).toContain('create-requests');
+    });
+
+    it('should have scan_id parameter on create-requests subcommand', () => {
+      const options = data.options;
+      const createRequestsSubcommand = options.find((opt: any) => opt.name === 'create-requests') as any;
+
+      expect(createRequestsSubcommand).toBeDefined();
+
+      const scanIdOption = createRequestsSubcommand.options?.find((opt: any) => opt.name === 'scan_id') as any;
+      expect(scanIdOption).toBeDefined();
+      expect(scanIdOption.required).toBe(true);
     });
 
     it('should have days parameter on scan subcommand with correct choices', () => {
@@ -2002,6 +2014,423 @@ describe('vibecheck command', () => {
       await execute(mockInteraction as any);
 
       expect(mockFormatScanStatusPaginated).toHaveBeenCalled();
+    });
+  });
+
+  describe('create-requests subcommand', () => {
+    it('should fetch scan results and create note requests with generate_ai_notes=false', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('scan-123'),
+          getSubcommand: jest.fn().mockReturnValue('create-requests'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Misinformation content', 0.85, 'False claim'),
+        createFlaggedMessageResource('msg-2', 'ch-2', 'Another misinformation', 0.90, 'Another false claim'),
+      ];
+
+      mockApiClient.getBulkScanResults.mockResolvedValueOnce({
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-123',
+          attributes: {
+            status: 'completed',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 100,
+            messages_flagged: 2,
+            community_server_id: 'community-server-uuid-123',
+          },
+        },
+        included: flaggedMessages,
+        jsonapi: { version: '1.1' },
+      });
+
+      mockApiClient.createNoteRequestsFromScan.mockResolvedValueOnce(
+        createNoteRequestsResultResponse(2)
+      );
+
+      await execute(mockInteraction as any);
+
+      expect(mockApiClient.getBulkScanResults).toHaveBeenCalledWith('scan-123');
+      expect(mockApiClient.createNoteRequestsFromScan).toHaveBeenCalledWith(
+        'scan-123',
+        ['msg-1', 'msg-2'],
+        false
+      );
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/created 2 note request/i),
+        })
+      );
+    });
+
+    it('should show error when scan is not found', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('nonexistent-scan'),
+          getSubcommand: jest.fn().mockReturnValue('create-requests'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      const { ApiError } = await import('../../src/lib/errors.js') as any;
+      mockApiClient.getBulkScanResults.mockRejectedValueOnce(new ApiError('Not found', '/api/v2/bulk-scans/nonexistent-scan', 404));
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/scan.*not found|invalid scan/i),
+        })
+      );
+    });
+
+    it('should show error when scan has no flagged messages', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('scan-empty'),
+          getSubcommand: jest.fn().mockReturnValue('create-requests'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockApiClient.getBulkScanResults.mockResolvedValueOnce({
+        data: {
+          type: 'bulk-scans',
+          id: 'scan-empty',
+          attributes: {
+            status: 'completed',
+            initiated_at: new Date().toISOString(),
+            messages_scanned: 100,
+            messages_flagged: 0,
+            community_server_id: 'community-server-uuid-123',
+          },
+        },
+        included: [],
+        jsonapi: { version: '1.1' },
+      });
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/no flagged messages/i),
+        })
+      );
+    });
+
+    it('should show generic error message for non-404 errors', async () => {
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getString: jest.fn<(name: string, required: boolean) => string>().mockReturnValue('scan-error'),
+          getSubcommand: jest.fn().mockReturnValue('create-requests'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+      };
+
+      mockApiClient.getBulkScanResults.mockRejectedValueOnce(new Error('Server error'));
+
+      await execute(mockInteraction as any);
+
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringMatching(/failed to create note requests/i),
+        })
+      );
+    });
+  });
+
+  describe('session expiration graceful degradation', () => {
+    const createMockInteractionWithExpiration = () => {
+      const collectHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockCollector = {
+        on: jest.fn<(event: string, handler: (...args: any[]) => void) => any>((event, handler) => {
+          collectHandlers.set(event, handler);
+          return mockCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockFetchReply = jest.fn<() => Promise<any>>().mockResolvedValue({
+        createMessageComponentCollector: jest.fn().mockReturnValue(mockCollector),
+      });
+
+      const mockMember = {
+        permissions: {
+          has: jest.fn<(permission: bigint) => boolean>().mockReturnValue(true),
+        },
+      };
+
+      const channelsCache = new Map();
+      (channelsCache as any).filter = () => new Map();
+
+      const mockGuild = {
+        id: 'guild789',
+        name: 'Test Guild',
+        channels: { cache: channelsCache },
+      };
+
+      const mockInteraction = {
+        user: { id: 'admin123', username: 'adminuser' },
+        member: mockMember,
+        guildId: 'guild789',
+        guild: mockGuild,
+        options: {
+          getInteger: jest.fn<(name: string, required: boolean) => number>().mockReturnValue(7),
+          getSubcommand: jest.fn().mockReturnValue('scan'),
+          getSubcommandGroup: jest.fn().mockReturnValue(null),
+          getChannel: jest.fn().mockReturnValue(null),
+        },
+        reply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        fetchReply: mockFetchReply,
+      };
+
+      return { mockInteraction, mockCollector, collectHandlers };
+    };
+
+    it('should preserve scan content and show command instructions when main collector expires', async () => {
+      const { mockInteraction, collectHandlers } = createMockInteractionWithExpiration();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Misinformation content', 0.85, 'False claim'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      mockFormatScanStatusPaginated.mockReturnValueOnce({
+        pages: { pages: ['Flagged content summary'], totalPages: 1 },
+        header: '**Scan Complete**\n\n**Scan ID:** `scan-123`\n**Messages scanned:** 100\n**Flagged:** 1\n',
+        actionButtons: undefined,
+        scanId: 'scan-123',
+      });
+
+      await execute(mockInteraction as any);
+
+      const endHandler = collectHandlers.get('end');
+      if (endHandler) {
+        endHandler([], 'time');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
+
+      expect(lastEditCall.content).toContain('**Scan Complete**');
+      expect(lastEditCall.content).toContain('Flagged content summary');
+      expect(lastEditCall.content).toContain('scan-123');
+      expect(lastEditCall.content).toMatch(/vibecheck create-requests/i);
+      expect(lastEditCall.content).toMatch(/session expired/i);
+      expect(lastEditCall.components).toEqual([]);
+    });
+
+    it('should show scan ID clearly in expiration message for easy copy/paste', async () => {
+      const { mockInteraction, collectHandlers } = createMockInteractionWithExpiration();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Misinformation content', 0.85, 'False claim'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-abc-xyz-123',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      mockFormatScanStatusPaginated.mockReturnValueOnce({
+        pages: { pages: ['Flagged content summary'], totalPages: 1 },
+        header: '**Scan Complete**\n\n**Scan ID:** `scan-abc-xyz-123`\n**Messages scanned:** 100\n**Flagged:** 1\n',
+        actionButtons: undefined,
+        scanId: 'scan-abc-xyz-123',
+      });
+
+      await execute(mockInteraction as any);
+
+      const endHandler = collectHandlers.get('end');
+      if (endHandler) {
+        endHandler([], 'time');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const lastEditCall = mockInteraction.editReply.mock.calls[mockInteraction.editReply.mock.calls.length - 1][0];
+
+      expect(lastEditCall.content).toContain('`scan-abc-xyz-123`');
+      expect(lastEditCall.content).toMatch(/\/vibecheck create-requests scan-abc-xyz-123/);
+    });
+
+    it('should preserve AI prompt context and show scan ID when AI collector expires', async () => {
+      const { mockInteraction, collectHandlers } = createMockInteractionWithExpiration();
+
+      const flaggedMessages: FlaggedMessageResource[] = [
+        createFlaggedMessageResource('msg-1', 'ch-1', 'Misinformation content', 0.85, 'False claim'),
+      ];
+
+      mockExecuteBulkScan.mockResolvedValueOnce({
+        scanId: 'scan-456',
+        messagesScanned: 100,
+        channelsScanned: 5,
+        batchesPublished: 2,
+        failedBatches: 0,
+        status: 'completed',
+        flaggedMessages: flaggedMessages,
+      });
+
+      await execute(mockInteraction as any);
+
+      let capturedAiEndHandler: ((...args: any[]) => void) | undefined;
+      const aiCollectorHandlers: Map<string, (...args: any[]) => void> = new Map();
+      const mockAiCollector = {
+        on: jest.fn((event: string, handler: (...args: any[]) => void) => {
+          aiCollectorHandlers.set(event, handler);
+          if (event === 'end') {
+            capturedAiEndHandler = handler;
+          }
+          return mockAiCollector;
+        }),
+        stop: jest.fn(),
+      };
+
+      const mockCreateButtonInteraction = {
+        customId: 'vibecheck_create:scan-456',
+        user: { id: 'admin123' },
+        update: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        editReply: jest.fn<(opts: any) => Promise<any>>().mockResolvedValue({}),
+        message: {
+          createMessageComponentCollector: jest.fn().mockReturnValue(mockAiCollector),
+        },
+      };
+
+      const collectHandler = collectHandlers.get('collect');
+      if (collectHandler) {
+        await collectHandler(mockCreateButtonInteraction);
+      }
+
+      if (capturedAiEndHandler) {
+        capturedAiEndHandler([], 'time');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const lastEditReplyCall = mockCreateButtonInteraction.editReply.mock.calls[mockCreateButtonInteraction.editReply.mock.calls.length - 1]?.[0];
+
+      expect(lastEditReplyCall).toBeDefined();
+      expect(lastEditReplyCall.content).toContain('scan-456');
+      expect(lastEditReplyCall.content).toMatch(/vibecheck create-requests/i);
+      expect(lastEditReplyCall.components).toEqual([]);
     });
   });
 });

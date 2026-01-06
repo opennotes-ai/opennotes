@@ -113,6 +113,17 @@ export const data = new SlashCommandBuilder()
       .setName('status')
       .setDescription('View the status of the most recent scan')
   )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('create-requests')
+      .setDescription('Create note requests from a previous scan')
+      .addStringOption(option =>
+        option
+          .setName('scan_id')
+          .setDescription('The scan ID to create note requests from')
+          .setRequired(true)
+      )
+  )
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .setDMPermission(false);
 
@@ -143,6 +154,11 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   if (subcommand === 'status') {
     await handleStatusSubcommand(interaction, guildId, errorId);
+    return;
+  }
+
+  if (subcommand === 'create-requests') {
+    await handleCreateRequestsSubcommand(interaction, guildId, errorId);
     return;
   }
 
@@ -382,9 +398,14 @@ async function displayFlaggedResults(
 
   collector.on('end', (_collected, reason) => {
     if (reason === 'time') {
+      const preservedContent = `${paginatedResult.header}\n${TextPaginator.getPage(paginatedResult.pages, 1)}`;
       interaction.editReply({
-        content: `Session expired. Please run /vibecheck again if needed.\n\n` +
-          `**Scan ID:** \`${scanId}\``,
+        content: `${preservedContent}\n\n---\n` +
+          `⏰ **Session Expired** - Interactive buttons have been disabled.\n\n` +
+          `**Scan ID:** \`${scanId}\`\n\n` +
+          `To continue, use one of these commands:\n` +
+          `• \`/vibecheck create-requests ${scanId}\` - Create note requests from this scan\n` +
+          `• \`/vibecheck status\` - View the latest scan status`,
         components: [],
       }).catch(() => {
         /* Silently ignore - interaction may have expired */
@@ -528,7 +549,10 @@ async function showAiGenerationPrompt(
   aiCollector.on('end', (_collected, reason) => {
     if (reason === 'time') {
       buttonInteraction.editReply({
-        content: 'Selection timed out. Please run /vibecheck again if needed.',
+        content: `⏰ **Selection Timed Out**\n\n` +
+          `**Scan ID:** \`${scanId}\`\n\n` +
+          `You can still create requests using:\n` +
+          `\`/vibecheck create-requests ${scanId}\``,
         components: [],
       }).catch(() => {
         /* Silently ignore - interaction may have expired */
@@ -695,4 +719,72 @@ async function handleStatusPaginationButton(
     content: fullContent,
     components,
   });
+}
+
+async function handleCreateRequestsSubcommand(
+  interaction: ChatInputCommandInteraction,
+  guildId: string,
+  errorId: string
+): Promise<void> {
+  await interaction.deferReply({
+    flags: MessageFlags.Ephemeral,
+  });
+
+  const scanId = interaction.options.getString('scan_id', true);
+
+  logger.info('Creating note requests from scan', {
+    error_id: errorId,
+    command: 'vibecheck create-requests',
+    user_id: interaction.user.id,
+    guild_id: guildId,
+    scan_id: scanId,
+  });
+
+  try {
+    const scanResults = await apiClient.getBulkScanResults(scanId);
+    const flaggedMessages = scanResults.included || [];
+
+    if (flaggedMessages.length === 0) {
+      await interaction.editReply({
+        content: 'This scan has no flagged messages to create note requests from.',
+      });
+      return;
+    }
+
+    const messageIds = flaggedMessages.map(msg => msg.id);
+    const result = await apiClient.createNoteRequestsFromScan(
+      scanId,
+      messageIds,
+      false
+    );
+
+    const createdCount = result.data.attributes.created_count;
+    await interaction.editReply({
+      content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.\n\nUse \`/list requests\` to view and manage them.`,
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.statusCode === 404) {
+      await interaction.editReply({
+        content: `Scan not found. Please check the scan ID and try again.\n\n**Scan ID provided:** \`${scanId}\``,
+      });
+      return;
+    }
+
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Failed to create note requests from scan', {
+      error_id: errorId,
+      command: 'vibecheck create-requests',
+      user_id: interaction.user.id,
+      guild_id: guildId,
+      scan_id: scanId,
+      error: errorDetails.message,
+      error_type: errorDetails.type,
+      stack: errorDetails.stack,
+    });
+
+    await interaction.editReply({
+      content: formatErrorForUser(errorId, 'Failed to create note requests. Please try again later.'),
+    });
+  }
 }
