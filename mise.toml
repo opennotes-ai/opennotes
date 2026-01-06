@@ -221,7 +221,7 @@ run = "docker exec -it opennotes-redis redis-cli"
 
 [tasks."build:containers:all"]
 description = "Build all Docker images"
-depends = ["build:containers:server", "build:containers:discord"]
+depends = ["build:containers:server", "build:containers:discord", "build:containers:postgres"]
 alias = "build"
 
 [tasks."build:containers:server"]
@@ -233,6 +233,44 @@ run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} -f {{vars.server_dir}}
 depends = ["_env:convert", "build:types:openapi"]
 description = "Build opennotes-discord image"
 run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir}}/Dockerfile ."
+
+[tasks."build:containers:postgres"]
+description = "Build PostgreSQL image with pgvector, pgroonga, and pg_cron (smart rebuild)"
+run = '''
+IMAGE_NAME="opennotes/postgres:18-pgvector-pgroonga"
+DOCKERFILE="docker/postgres/Dockerfile"
+
+# Check if image exists
+if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+    echo "Image $IMAGE_NAME not found, building..."
+    docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" docker/postgres
+    exit 0
+fi
+
+# Get Dockerfile modification time (works on both macOS and Linux)
+if [[ "$(uname)" == "Darwin" ]]; then
+    DOCKERFILE_MTIME=$(stat -f %m "$DOCKERFILE")
+else
+    DOCKERFILE_MTIME=$(stat -c %Y "$DOCKERFILE")
+fi
+
+# Get image creation time as Unix timestamp
+IMAGE_CREATED=$(docker inspect --format '{% raw %}{{.Created}}{% endraw %}' "$IMAGE_NAME")
+# Convert ISO 8601 to Unix timestamp (works on both macOS and Linux)
+if [[ "$(uname)" == "Darwin" ]]; then
+    IMAGE_TIMESTAMP=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${IMAGE_CREATED%%.*}" +%s 2>/dev/null || echo 0)
+else
+    IMAGE_TIMESTAMP=$(date -d "${IMAGE_CREATED}" +%s 2>/dev/null || echo 0)
+fi
+
+# Compare times and rebuild if Dockerfile is newer
+if [ "$DOCKERFILE_MTIME" -gt "$IMAGE_TIMESTAMP" ]; then
+    echo "Dockerfile is newer than image, rebuilding..."
+    docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" docker/postgres
+else
+    echo "Image $IMAGE_NAME is up to date (skipping build)"
+fi
+'''
 
 [tasks."build:types:openapi"]
 description = "Generate OpenAPI specification and TypeScript types"
