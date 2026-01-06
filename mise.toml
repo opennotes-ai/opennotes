@@ -310,6 +310,12 @@ run = 'uv run python -m src.claim_relevance_check.prompt_optimization.optimize "
 # Clear OPENAI_API_BASE to avoid VSCode/GitHub Copilot override
 env = { PYTHONPATH = ".", OPENAI_API_BASE = "" }
 
+[tasks."optimize:prompts:claim_relevance_check:compare"]
+description = "Compare optimized prompts with current and update if better"
+dir = "{{vars.server_dir}}"
+run = 'uv run python -m src.claim_relevance_check.prompt_optimization.compare_and_update "$@"'
+env = { PYTHONPATH = ".", OPENAI_API_BASE = "" }
+
 # ========================================
 # Validation Tasks
 # ========================================

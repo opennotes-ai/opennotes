@@ -1,56 +1,69 @@
 """Optimized prompts for relevance checking.
 
-These prompts were derived from DSPy optimization on labeled examples.
-The key improvements over the original prompts are:
-1. More explicit signature docstring emphasizing claim detection
-2. Concrete few-shot examples showing both positive and negative cases
-3. Structured reasoning format that forces claim identification first
+AUTO-GENERATED from optimized_relevance_module.json
+Do not edit manually - run compare_and_update.py to regenerate.
 """
 
-OPTIMIZED_SYSTEM_PROMPT = """You are a precision relevance checker. Your task is to determine if a fact-check article can verify a SPECIFIC CLAIM made in the user's message.
+OPTIMIZED_SYSTEM_PROMPT = """Determine if a fact-check can verify a SPECIFIC CLAIM in the user's message.
 
-CRITICAL DISTINCTION - A claim is a verifiable factual assertion. These are NOT claims:
-- Topic mentions: "some things about X", "how about X"
-- Questions: "what about X?", "is it true that X?"
-- Name drops: "or donald trump", "biden too"
-- Vague references: "I heard something about X"
+A claim is a verifiable assertion of fact, NOT:
+- A topic mention ("some things about X")
+- A question ("what about X?")
+- A name drop ("or donald trump")
+- An opinion without factual content
 
-A claim IS a specific, verifiable statement like:
-- "Biden was a Confederate soldier" (verifiable historical claim)
-- "Trump donated to Harris's campaign" (verifiable financial claim)
-- "The vaccine causes autism" (verifiable causal claim)
+Only return is_relevant=True if the message contains a specific, verifiable claim
+AND the fact-check directly addresses that claim.
 
 FEW-SHOT EXAMPLES:
 
-Example 1 - NOT RELEVANT (vague topic mention):
-Message: "some things about kamala harris"
-Fact-check: "Did Trump Donate to Kamala Harris' Past Election Campaigns?"
-Analysis: The message "some things about kamala harris" is a vague topic mention with no specific claim. It does not assert anything about campaign donations or any verifiable fact.
-Result: {"is_relevant": false, "reasoning": "Message contains only a vague topic mention, no specific verifiable claim about donations or any fact."}
-
-Example 2 - NOT RELEVANT (bare name mention):
-Message: "or donald trump"
-Fact-check: "Did Trump Say Injecting Disinfectant Could Treat COVID-19?"
-Analysis: The message "or donald trump" is a bare name mention, not a claim. It provides no assertion about disinfectants, COVID-19, or any topic.
-Result: {"is_relevant": false, "reasoning": "Bare name mention with no assertion or claim."}
-
-Example 3 - NOT RELEVANT (question, not claim):
-Message: "What about the vaccine?"
-Fact-check: "Do COVID-19 Vaccines Contain Microchips?"
-Analysis: The message is a question, not a claim. It asks about vaccines generally but makes no assertion.
-Result: {"is_relevant": false, "reasoning": "Question without any factual assertion."}
-
-Example 4 - RELEVANT (specific verifiable claim):
+Example 1 - RELEVANT:
 Message: "Trump donated to Kamala Harris's campaign"
 Fact-check: "Did Trump Donate to Kamala Harris' Past Election Campaigns?"
-Analysis: The message makes a specific claim: "Trump donated to Kamala Harris's campaign." This is a verifiable assertion about campaign donations. The fact-check directly addresses this claim.
-Result: {"is_relevant": true, "reasoning": "Specific claim about Trump's campaign donations that the fact-check directly addresses."}
+Reasoning: The message makes a specific claim: 'Trump donated to Kamala Harris's campaign.' This is a verifiable assertion. The fact-check directly addresses this claim and confirms Trump made donations totaling $6,000.
+Result: {"is_relevant": true, "reasoning": "The message makes a specific claim: 'Trump donated to Kamala Harris's campaign.' This is a verifiabl..."}
 
-Example 5 - RELEVANT (specific historical claim):
+Example 2 - RELEVANT:
+Message: "The vaccine causes autism"
+Fact-check: "Do Vaccines Cause Autism?"
+Reasoning: The message makes a specific causal claim: 'The vaccine causes autism.' This is a verifiable factual assertion. The fact-check directly addresses whether vaccines cause autism.
+Result: {"is_relevant": true, "reasoning": "The message makes a specific causal claim: 'The vaccine causes autism.' This is a verifiable factual..."}
+
+Example 3 - NOT RELEVANT:
+Message: "What about the vaccine?"
+Fact-check: "Do COVID-19 Vaccines Contain Microchips?"
+Reasoning: The message is a question, not a claim. It asks about 'the vaccine' generally but makes no assertion about microchips or any specific claim that could be verified.
+Result: {"is_relevant": false, "reasoning": "The message is a question, not a claim. It asks about 'the vaccine' generally but makes no assertion..."}
+
+Example 4 - NOT RELEVANT:
+Message: "some things about kamala harris"
+Fact-check: "Did Trump Donate to Kamala Harris' Past Election Campaigns?"
+Reasoning: The message 'some things about kamala harris' is a vague topic mention with no specific claim. It does not assert anything about campaign donations or any verifiable fact. The fact-check about Trump's donations is completely unrelated to anything stated in the message.
+Result: {"is_relevant": false, "reasoning": "The message 'some things about kamala harris' is a vague topic mention with no specific claim. It do..."}
+
+Example 5 - NOT RELEVANT:
+Message: "or donald trump"
+Fact-check: "Did Trump Say Injecting Disinfectant Could Treat COVID-19?"
+Reasoning: The message 'or donald trump' is a bare name mention, not a claim. It provides no assertion about disinfectants, COVID-19, or any other topic. Cannot be fact-checked.
+Result: {"is_relevant": false, "reasoning": "The message 'or donald trump' is a bare name mention, not a claim. It provides no assertion about di..."}
+
+Example 6 - RELEVANT:
 Message: "Biden was a Confederate soldier"
 Fact-check: "Was Joe Biden Ever a Confederate Soldier?"
-Analysis: The message makes a specific, verifiable historical claim. The fact-check directly addresses whether Biden could have been a Confederate soldier.
-Result: {"is_relevant": true, "reasoning": "Specific historical claim that the fact-check directly verifies."}
+Reasoning: The message makes a specific, verifiable claim: 'Biden was a Confederate soldier.' This is a factual assertion that can be checked. The fact-check directly addresses this exact claim by examining Biden's birth date vs the Civil War timeline.
+Result: {"is_relevant": true, "reasoning": "The message makes a specific, verifiable claim: 'Biden was a Confederate soldier.' This is a factual..."}
+
+Example 7 - NOT RELEVANT:
+Message: "how about biden"
+Fact-check: "Did Biden Say He Would Ban Fracking?"
+Reasoning: The message 'how about biden' is a question/topic shift with no specific claim. It mentions Biden's name but makes no assertion about fracking or any other topic that could be fact-checked.
+Result: {"is_relevant": false, "reasoning": "The message 'how about biden' is a question/topic shift with no specific claim. It mentions Biden's ..."}
+
+Example 8 - NOT RELEVANT:
+Message: "I heard something about immigrants"
+Fact-check: "Are Immigrants Eating Pets in Springfield, Ohio?"
+Reasoning: The message is a vague reference ('heard something') with no specific claim. It doesn't mention pets, Springfield, or Haitian immigrants - topics central to the fact-check.
+Result: {"is_relevant": false, "reasoning": "The message is a vague reference ('heard something') with no specific claim. It doesn't mention pets..."}
 
 Respond ONLY with JSON: {"is_relevant": true/false, "reasoning": "brief explanation"}"""
 
