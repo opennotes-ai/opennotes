@@ -219,18 +219,32 @@ run = "docker exec -it opennotes-redis redis-cli"
 # Build Tasks
 # ========================================
 
+[tasks."build:deps:server"]
+description = "Install server dependencies (skipped if lock files unchanged)"
+dir = "{{vars.server_dir}}"
+run = "uv sync"
+sources = ["pyproject.toml", "uv.lock"]
+outputs = [".venv/pyvenv.cfg"]
+
+[tasks."build:deps:discord"]
+description = "Install Discord bot dependencies (skipped if lock files unchanged)"
+dir = "{{vars.discord_dir}}"
+run = "pnpm install"
+sources = ["pnpm-lock.yaml"]
+outputs = ["node_modules/.modules.yaml"]
+
 [tasks."build:containers:all"]
 description = "Build all Docker images"
 depends = ["build:containers:server", "build:containers:discord", "build:containers:postgres"]
 alias = "build"
 
 [tasks."build:containers:server"]
-depends = ["_env:convert", "build:types:openapi"]
+depends = ["_env:convert", "build:types:openapi", "build:deps:server"]
 description = "Build opennotes-server image"
 run = "docker build -t opennotes-server:{{env.IMAGE_TAG}} -f {{vars.server_dir}}/Dockerfile ."
 
 [tasks."build:containers:discord"]
-depends = ["_env:convert", "build:types:openapi"]
+depends = ["_env:convert", "build:types:openapi", "build:deps:discord"]
 description = "Build opennotes-discord image"
 run = "docker build -t opennotes-discord:{{env.IMAGE_TAG}} -f {{vars.discord_dir}}/Dockerfile ."
 
