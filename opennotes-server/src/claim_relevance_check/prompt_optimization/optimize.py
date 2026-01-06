@@ -1,6 +1,7 @@
 """Optimization script for relevance check prompts using DSPy."""
 
 import json
+import os
 from pathlib import Path
 
 import dspy
@@ -9,6 +10,16 @@ from dspy.teleprompt import BootstrapFewShot, LabeledFewShot
 from src.claim_relevance_check.prompt_optimization.dataset import get_train_test_split
 from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model, relevance_metric
 from src.claim_relevance_check.prompt_optimization.signature import RelevanceCheck
+
+
+def get_openai_api_key() -> str:
+    """Get OpenAI API key from environment, stripped of whitespace."""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    # Strip whitespace and any quotes that might have been included
+    api_key = api_key.strip().strip("'\"")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY environment variable is not set")
+    return api_key
 
 
 def create_relevance_module() -> dspy.ChainOfThought:
@@ -74,7 +85,8 @@ def optimize_relevance_module(
     Returns:
         Tuple of (optimized_module, evaluation_results)
     """
-    dspy.configure(lm=dspy.LM(model))
+    api_key = get_openai_api_key()
+    dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
     trainset, testset = get_train_test_split(test_ratio=0.2)
 
