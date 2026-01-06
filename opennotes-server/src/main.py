@@ -109,6 +109,7 @@ tracing_manager = TracingManager(
     otlp_insecure=settings.OTLP_INSECURE,
     otlp_headers=settings.OTLP_HEADERS,
     enable_console_export=settings.ENABLE_CONSOLE_TRACING,
+    sample_rate=settings.TRACING_SAMPLE_RATE,
     otel_log_level=settings.OTEL_LOG_LEVEL,
 )
 
