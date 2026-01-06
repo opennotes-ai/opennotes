@@ -63,7 +63,7 @@ def optimize_with_bootstrap(
 
 def optimize_relevance_module(
     method: str = "bootstrap",
-    model: str = "openai/gpt-4o-mini",
+    model: str = "openai/gpt-5-mini",
 ) -> tuple[dspy.Module, dict]:
     """Main optimization function.
 
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        default="openai/gpt-4o-mini",
+        default="openai/gpt-5-mini",
         help="LLM model to use",
     )
     parser.add_argument(
