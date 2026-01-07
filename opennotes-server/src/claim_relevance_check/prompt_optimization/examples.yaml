@@ -1,0 +1,206 @@
+# Training examples for claim relevance check optimization
+#
+# Format:
+#   - example_id: Unique identifier (fp-XXX for false positives, tp-XXX for true positives)
+#   - message: The user's original message
+#   - fact_check_title: Title of the fact-check article
+#   - fact_check_content: Summary content of the fact-check
+#   - is_relevant: true if the fact-check is relevant to the message's claim
+#   - reasoning: Explanation of why the example is labeled this way
+#
+# Guidelines for adding examples:
+#   - False positives (fp-): Vague mentions, questions, name drops - NOT specific claims
+#   - True positives (tp-): Specific, verifiable claims that the fact-check addresses
+#   - Maintain balance between TP and FP examples
+#   - Each example should teach the model something distinct
+
+examples:
+  # ========================================
+  # FALSE POSITIVES - Vague mentions, not claims
+  # ========================================
+
+  - example_id: fp-001
+    message: "some things about kamala harris"
+    fact_check_title: "Did Trump Donate to Kamala Harris' Past Election Campaigns?"
+    fact_check_content: "U.S. President Donald Trump donated $6,000 to Kamala Harris' 2014 campaign for reelection as California attorney general. Records show Trump made contributions in 2011 and 2013."
+    is_relevant: false
+    reasoning: "The message 'some things about kamala harris' is a vague topic mention with no specific claim. It does not assert anything about campaign donations or any verifiable fact. The fact-check about Trump's donations is completely unrelated to anything stated in the message."
+
+  - example_id: fp-002
+    message: "how about biden"
+    fact_check_title: "Did Biden Say He Would Ban Fracking?"
+    fact_check_content: "Joe Biden's position on fracking has been complex. During debates he stated he would not ban fracking, though he supports transitioning away from fossil fuels."
+    is_relevant: false
+    reasoning: "The message 'how about biden' is a question/topic shift with no specific claim. It mentions Biden's name but makes no assertion about fracking or any other topic that could be fact-checked."
+
+  - example_id: fp-003
+    message: "or donald trump"
+    fact_check_title: "Did Trump Say Injecting Disinfectant Could Treat COVID-19?"
+    fact_check_content: "During a White House briefing, Trump suggested research into whether disinfectants could be used to treat COVID-19 internally."
+    is_relevant: false
+    reasoning: "The message 'or donald trump' is a bare name mention, not a claim. It provides no assertion about disinfectants, COVID-19, or any other topic. Cannot be fact-checked."
+
+  - example_id: fp-004
+    message: "What about the vaccine?"
+    fact_check_title: "Do COVID-19 Vaccines Contain Microchips?"
+    fact_check_content: "Claims that COVID-19 vaccines contain microchips are false. Vaccines contain mRNA or viral proteins but no tracking devices."
+    is_relevant: false
+    reasoning: "The message is a question, not a claim. It asks about 'the vaccine' generally but makes no assertion about microchips or any specific claim that could be verified."
+
+  - example_id: fp-005
+    message: "I heard something about immigrants"
+    fact_check_title: "Are Immigrants Eating Pets in Springfield, Ohio?"
+    fact_check_content: "Claims that Haitian immigrants in Springfield, Ohio are eating pets have been debunked by local officials and police."
+    is_relevant: false
+    reasoning: "The message is a vague reference ('heard something') with no specific claim. It doesn't mention pets, Springfield, or Haitian immigrants - topics central to the fact-check."
+
+  # Multi-sentence discussion without claim
+  - example_id: fp-006
+    message: "I've been following the news about climate change lately. It's really concerning how much debate there is. What do you think about renewable energy?"
+    fact_check_title: "Did Scientists Predict an Ice Age in the 1970s?"
+    fact_check_content: "While a few studies in the 1970s discussed potential cooling, the scientific consensus even then leaned toward warming. The 'ice age prediction' claim is largely a myth."
+    is_relevant: false
+    reasoning: "The message discusses climate change in general terms and asks for opinions about renewable energy. It makes no specific factual claim about ice age predictions or any verifiable assertion that the fact-check addresses."
+
+  # Question phrased as wondering/speculation
+  - example_id: fp-007
+    message: "I wonder if there's any truth to what people say about 5G towers"
+    fact_check_title: "Do 5G Towers Cause COVID-19?"
+    fact_check_content: "Claims linking 5G technology to COVID-19 are false. Viruses cannot travel on radio waves, and COVID-19 has spread in countries without 5G networks."
+    is_relevant: false
+    reasoning: "The message expresses curiosity ('I wonder if') about vague things 'people say' regarding 5G towers. It does not assert that 5G causes COVID-19 or any specific claim. Wondering about rumors is not making a claim."
+
+  # Hypothetical statement
+  - example_id: fp-008
+    message: "If the election was really stolen, wouldn't there be more evidence by now? I'm just trying to understand both sides."
+    fact_check_title: "Was the 2020 Election Stolen from Donald Trump?"
+    fact_check_content: "Claims of widespread fraud in the 2020 election have been rejected by courts, election officials, and the Department of Justice. Over 60 lawsuits were dismissed for lack of evidence."
+    is_relevant: false
+    reasoning: "The message poses a hypothetical question ('If the election was really stolen') and expresses desire to understand perspectives. It does not assert the election was stolen - it's questioning the premise. Hypotheticals and questions are not claims."
+
+  # Opinion statement
+  - example_id: fp-009
+    message: "I don't trust pharmaceutical companies. They only care about profits, not people's health."
+    fact_check_title: "Are COVID-19 Vaccines Unsafe Due to Rushed Development?"
+    fact_check_content: "COVID-19 vaccines underwent rigorous testing. The accelerated timeline was due to unprecedented funding and parallel (not skipped) trial phases, not reduced safety standards."
+    is_relevant: false
+    reasoning: "The message expresses distrust and opinion about pharmaceutical company motivations. It makes no factual claim about vaccine safety or development timelines. Opinions and value judgments are not verifiable claims."
+
+  # Message with URL reference but no claim
+  - example_id: fp-010
+    message: "Did you see this video going around on Twitter? It's about politicians. Pretty wild stuff happening these days."
+    fact_check_title: "Did Nancy Pelosi Tear Up Her Copy of Trump's State of the Union Address?"
+    fact_check_content: "Yes, Speaker Nancy Pelosi tore her copy of President Trump's State of the Union address on February 4, 2020, immediately after he finished speaking."
+    is_relevant: false
+    reasoning: "The message references a video vaguely ('about politicians') without making any specific claim. It doesn't mention Pelosi, Trump, or the State of the Union. Vague references to content are not claims."
+
+  # Comparative/relative statement without factual assertion
+  - example_id: fp-011
+    message: "Politicians these days seem worse than they used to be. Everything is so polarized now."
+    fact_check_title: "Has Political Polarization in the US Reached Historic Levels?"
+    fact_check_content: "Studies show political polarization has increased significantly since the 1990s, with partisan antipathy at record highs according to Pew Research Center data."
+    is_relevant: false
+    reasoning: "The message expresses a subjective impression ('seem worse') and general observation about polarization. These are opinions, not specific factual claims. 'Seem' indicates perception, not assertion of fact."
+
+  # Request for information
+  - example_id: fp-012
+    message: "Can someone explain the whole situation with Hunter Biden's laptop? I keep seeing it mentioned but I'm confused about what actually happened."
+    fact_check_title: "Was Hunter Biden's Laptop Story Suppressed by Social Media?"
+    fact_check_content: "Twitter and Facebook initially limited sharing of the NY Post story in October 2020, citing concerns about hacked materials. Twitter later acknowledged this was a mistake."
+    is_relevant: false
+    reasoning: "The message is a request for information and admission of confusion. The person is not claiming anything about the laptop or social media suppression - they're asking others to explain. Requests for clarification are not claims."
+
+  # ========================================
+  # TRUE POSITIVES - Specific, verifiable claims
+  # ========================================
+
+  - example_id: tp-001
+    message: "Biden was a Confederate soldier"
+    fact_check_title: "Was Joe Biden Ever a Confederate Soldier?"
+    fact_check_content: "Joe Biden was born in 1942, decades after the Civil War ended in 1865. It is impossible for him to have been a Confederate soldier."
+    is_relevant: true
+    reasoning: "The message makes a specific, verifiable claim: 'Biden was a Confederate soldier.' This is a factual assertion that can be checked. The fact-check directly addresses this exact claim by examining Biden's birth date vs the Civil War timeline."
+
+  - example_id: tp-002
+    message: "Trump donated to Kamala Harris's campaign"
+    fact_check_title: "Did Trump Donate to Kamala Harris' Past Election Campaigns?"
+    fact_check_content: "U.S. President Donald Trump donated $6,000 to Kamala Harris' 2014 campaign for reelection as California attorney general."
+    is_relevant: true
+    reasoning: "The message makes a specific claim: 'Trump donated to Kamala Harris's campaign.' This is a verifiable assertion. The fact-check directly addresses this claim and confirms Trump made donations totaling $6,000."
+
+  - example_id: tp-003
+    message: "The vaccine causes autism"
+    fact_check_title: "Do Vaccines Cause Autism?"
+    fact_check_content: "Multiple large-scale studies have found no link between vaccines and autism. The original study claiming a link was retracted and its author lost his medical license."
+    is_relevant: true
+    reasoning: "The message makes a specific causal claim: 'The vaccine causes autism.' This is a verifiable factual assertion. The fact-check directly addresses whether vaccines cause autism."
+
+  - example_id: tp-004
+    message: "Haitian immigrants are eating cats and dogs in Ohio"
+    fact_check_title: "Are Immigrants Eating Pets in Springfield, Ohio?"
+    fact_check_content: "Claims that Haitian immigrants in Springfield, Ohio are eating pets have been debunked by local officials and police who found no evidence."
+    is_relevant: true
+    reasoning: "The message makes a specific claim about Haitian immigrants eating pets in Ohio. The fact-check directly addresses this exact claim about Springfield, Ohio."
+
+  - example_id: tp-005
+    message: "Trump said we should inject bleach to cure COVID"
+    fact_check_title: "Did Trump Say Injecting Disinfectant Could Treat COVID-19?"
+    fact_check_content: "During a White House briefing, Trump suggested research into whether disinfectants could be used internally. He did not use the word 'bleach' but referenced disinfectant."
+    is_relevant: true
+    reasoning: "The message makes a specific claim about something Trump said regarding injecting substances to treat COVID. The fact-check addresses Trump's comments about disinfectants during the briefing."
+
+  # Claim with hedging language
+  - example_id: tp-006
+    message: "Apparently scientists in the 70s all predicted we'd have an ice age by now"
+    fact_check_title: "Did Scientists Predict an Ice Age in the 1970s?"
+    fact_check_content: "While a few studies in the 1970s discussed potential cooling, the scientific consensus even then leaned toward warming. The 'ice age prediction' claim is largely a myth."
+    is_relevant: true
+    reasoning: "Despite the hedging word 'apparently', the message makes a specific claim: that scientists in the 1970s predicted an ice age. The fact-check directly addresses whether this scientific consensus existed. Hedging doesn't negate the underlying claim."
+
+  # Claim embedded in longer message
+  - example_id: tp-007
+    message: "I was talking to my uncle at Thanksgiving and he kept insisting that the COVID vaccines have killed more people than COVID itself. Is that even possible?"
+    fact_check_title: "Have COVID-19 Vaccines Killed More People Than COVID-19?"
+    fact_check_content: "This claim is false. COVID-19 has killed over 1 million Americans, while vaccine-related deaths reported to VAERS are in the thousands and most are unverified coincidental deaths."
+    is_relevant: true
+    reasoning: "The message contains a specific embedded claim: 'COVID vaccines have killed more people than COVID itself.' Even though it's attributed to someone else and followed by a question, the claim is stated. The fact-check directly addresses this mortality comparison."
+
+  # Paraphrased/semantically equivalent claim
+  - example_id: tp-008
+    message: "Bill Gates is using vaccines to put tracking chips in everyone"
+    fact_check_title: "Do COVID-19 Vaccines Contain Microchips?"
+    fact_check_content: "Claims that COVID-19 vaccines contain microchips are false. Vaccines contain mRNA or viral proteins but no tracking devices. Bill Gates has not implanted chips in vaccines."
+    is_relevant: true
+    reasoning: "The message claims Gates is using vaccines for tracking via chips. Though worded differently than 'vaccines contain microchips', it's semantically equivalent. The fact-check addresses both the microchip claim and Gates' involvement."
+
+  # Claim with slight variation from fact-check
+  - example_id: tp-009
+    message: "I read that over 3 million illegal immigrants voted in the 2020 election"
+    fact_check_title: "Did Millions of Illegal Immigrants Vote in the 2020 Election?"
+    fact_check_content: "Claims of millions of non-citizen votes are false. Multiple studies and audits found no evidence of widespread non-citizen voting. Isolated cases number in the dozens, not millions."
+    is_relevant: true
+    reasoning: "The message makes a specific numerical claim about illegal immigrant voting. The '3 million' figure is a variation of the 'millions' claim addressed by the fact-check. The core claim about mass non-citizen voting is directly addressed."
+
+  # Strong assertion with emotional language
+  - example_id: tp-010
+    message: "Wake up people! The government admitted chemtrails are real and they're spraying us with chemicals!"
+    fact_check_title: "Has the Government Admitted to Chemtrails?"
+    fact_check_content: "No government has admitted to 'chemtrails.' Contrails are water vapor from aircraft engines. Cloud seeding programs exist but are different from chemtrail conspiracy claims."
+    is_relevant: true
+    reasoning: "Despite the emotional framing ('Wake up people!'), the message makes specific claims: that the government admitted chemtrails are real and that spraying is occurring. The fact-check directly addresses government acknowledgment of chemtrails."
+
+  # Claim presented as established fact
+  - example_id: tp-011
+    message: "Everyone knows that wind turbines cause cancer. Trump even said so."
+    fact_check_title: "Do Wind Turbines Cause Cancer?"
+    fact_check_content: "There is no scientific evidence that wind turbines cause cancer. Trump made this claim in 2019, but health organizations worldwide have found no causal link between wind turbines and cancer."
+    is_relevant: true
+    reasoning: "The message asserts as fact that wind turbines cause cancer and attributes confirmation to Trump. Both are verifiable claims. The fact-check addresses whether wind turbines cause cancer and Trump's statement."
+
+  # Recent/timely claim
+  - example_id: tp-012
+    message: "Did you hear? They found proof that the moon landing was faked"
+    fact_check_title: "Was the Apollo 11 Moon Landing Faked?"
+    fact_check_content: "The Apollo 11 moon landing in 1969 was real. Evidence includes moon rocks, retroreflectors still used today, and independent verification from multiple countries including the Soviet Union."
+    is_relevant: true
+    reasoning: "Although phrased as a question, 'Did you hear? They found proof that X' is a common way to assert a claim. The message claims proof was found that the moon landing was faked. The fact-check addresses moon landing authenticity."

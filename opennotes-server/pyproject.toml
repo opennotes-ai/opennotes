@@ -60,6 +60,7 @@ dependencies = [
     "pyroscope-io>=0.8.0",
     "traceloop-sdk>=0.35.0",
     "dspy>=2.6.0",
+    "ruamel.yaml>=0.18.0",
     "middleware-io[profiling]>=2.4.1",
     "setuptools>=80.9.0",
 ]
@@ -148,6 +149,7 @@ ignore = [
 "src/database.py" = ["ARG002"]  # TypeDecorator methods require dialect param for base class compatibility
 "src/fact_checking/chunking_service.py" = ["PLC0415"]  # Lazy import for NeuralChunker to defer model loading
 "src/main.py" = ["E402", "PLC0415"]  # LoggingInstrumentor must be called before imports; lazy pyroscope import for optional profiling
+"src/claim_relevance_check/prompt_optimization/augment_dataset.py" = ["PLR0912"]  # augment_dataset() has clear branch structure for interactive/non-interactive modes
 
 [tool.ruff.format]
 quote-style = "double"

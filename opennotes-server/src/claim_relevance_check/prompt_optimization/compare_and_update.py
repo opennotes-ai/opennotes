@@ -1,6 +1,7 @@
 """Compare current prompts with optimized module and update if better."""
 
 import json
+import logging
 from pathlib import Path
 
 import dspy
@@ -8,20 +9,30 @@ import dspy
 from src.claim_relevance_check.prompt_optimization.dataset import get_train_test_split
 from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model
 from src.claim_relevance_check.prompt_optimization.optimize import (
+    DEFAULT_TEST_RATIO,
     create_relevance_module,
     setup_openai_environment,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def evaluate_current_prompts(
     testset: list[dspy.Example],
     model: str = "openai/gpt-5-mini",
+    dataset_path: Path | None = None,
 ) -> dict:
     """Evaluate the current prompts.py approach on test data.
 
     This uses the DSPy module without any demos to simulate
     the baseline behavior.
+
+    Args:
+        testset: Test examples to evaluate on
+        model: LLM model to use for evaluation
+        dataset_path: Optional path to dataset file (for consistency with API)
     """
+    _ = dataset_path
     api_key = setup_openai_environment()
     dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
@@ -33,8 +44,17 @@ def evaluate_optimized_module(
     testset: list[dspy.Example],
     module_path: Path,
     model: str = "openai/gpt-5-mini",
+    dataset_path: Path | None = None,
 ) -> dict:
-    """Evaluate the optimized module on test data."""
+    """Evaluate the optimized module on test data.
+
+    Args:
+        testset: Test examples to evaluate on
+        module_path: Path to the optimized module JSON
+        model: LLM model to use for evaluation
+        dataset_path: Optional path to dataset file (for consistency with API)
+    """
+    _ = dataset_path
     api_key = setup_openai_environment()
     dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
@@ -58,20 +78,33 @@ def generate_prompts_py(module_path: Path, output_path: Path) -> None:
     with module_path.open() as f:
         data = json.load(f)
 
-    demos = data.get("predict", {}).get("demos", [])
-    instructions = data.get("predict", {}).get("signature", {}).get("instructions", "")
+    if "predict" not in data:
+        logger.warning(
+            "Module JSON missing 'predict' key at %s. "
+            "Expected structure: {predict: {demos: [...], signature: {instructions: ...}}}",
+            module_path,
+        )
+    predict_data = data.get("predict", {})
+    if predict_data and "demos" not in predict_data:
+        logger.warning("Module JSON missing 'demos' key in 'predict' section")
+    if predict_data and "signature" not in predict_data:
+        logger.warning("Module JSON missing 'signature' key in 'predict' section")
+
+    demos = predict_data.get("demos", [])
+    instructions = predict_data.get("signature", {}).get("instructions", "")
 
     # Build the few-shot examples section
     examples_text = []
     for i, demo in enumerate(demos, 1):
         is_relevant = demo.get("is_relevant", False)
         label = "RELEVANT" if is_relevant else "NOT RELEVANT"
+        reasoning = demo.get("reasoning", "")
+        truncated_reasoning = reasoning[:100] + "..." if len(reasoning) > 100 else reasoning
         examples_text.append(f"""
 Example {i} - {label}:
 Message: "{demo.get("message", "")}"
 Fact-check: "{demo.get("fact_check_title", "")}"
-Reasoning: {demo.get("reasoning", "")}
-Result: {{"is_relevant": {str(is_relevant).lower()}, "reasoning": "{demo.get("reasoning", "")[:100]}..."}}""")
+Result: {{"is_relevant": {str(is_relevant).lower()}, "reasoning": "{truncated_reasoning}"}}""")
 
     examples_section = "\n".join(examples_text)
 
@@ -125,7 +158,7 @@ def get_optimized_prompts(
     """
     content_with_source = fact_check_content
     if source_url:
-        content_with_source = f"{{fact_check_content}}\\nSource: {{source_url}}"
+        content_with_source = fact_check_content + "\\nSource: " + source_url
 
     user_prompt = OPTIMIZED_USER_PROMPT_TEMPLATE.format(
         message=message,
@@ -147,7 +180,9 @@ def compare_and_update(
     prompts_path: Path = Path("src/claim_relevance_check/prompt_optimization/prompts.py"),
     model: str = "openai/gpt-5-mini",
     force: bool = False,
-    test_ratio: float = 0.3,
+    test_ratio: float = DEFAULT_TEST_RATIO,
+    dry_run: bool = False,
+    dataset_path: Path | None = None,
 ) -> bool:
     """Compare current prompts with optimized module and update if better.
 
@@ -157,16 +192,21 @@ def compare_and_update(
         model: LLM model to use for evaluation
         force: If True, update even if not better
         test_ratio: Ratio of data to use for testing
+        dry_run: If True, show what would change without modifying files
+        dataset_path: Optional path to dataset file (YAML or JSON)
 
     Returns:
-        True if prompts were updated, False otherwise
+        True if prompts were updated (or would be in dry-run mode), False otherwise
     """
+    if dry_run:
+        print("🔍 DRY RUN MODE - No files will be modified\n")
+
     if not module_path.exists():
         print(f"Error: {module_path} not found. Run optimization first.")
         return False
 
     print(f"Using {test_ratio:.0%} of data for testing...")
-    _, testset = get_train_test_split(test_ratio=test_ratio)
+    _, testset = get_train_test_split(test_ratio=test_ratio, dataset_path=dataset_path)
 
     if len(testset) < 2:
         print("Warning: Very small test set. Results may not be reliable.")
@@ -174,11 +214,13 @@ def compare_and_update(
     print(f"\nEvaluating on {len(testset)} test examples...")
 
     print("\n1. Evaluating CURRENT prompts (no demos)...")
-    current_results = evaluate_current_prompts(testset, model)
+    current_results = evaluate_current_prompts(testset, model, dataset_path=dataset_path)
     print(f"   Current: {format_metrics(current_results)}")
 
     print("\n2. Evaluating OPTIMIZED module...")
-    optimized_results = evaluate_optimized_module(testset, module_path, model)
+    optimized_results = evaluate_optimized_module(
+        testset, module_path, model, dataset_path=dataset_path
+    )
     print(f"   Optimized: {format_metrics(optimized_results)}")
 
     # Compare using F1 as primary metric
@@ -194,6 +236,11 @@ def compare_and_update(
             print(f"\n✓ Optimized prompts are BETTER by {improvement:.1%}")
         else:
             print("\n! Force updating despite no improvement")
+
+        if dry_run:
+            print(f"\n📋 Would update: {prompts_path}")
+            print("   Run without --dry-run to apply changes.")
+            return True
 
         generate_prompts_py(module_path, prompts_path)
         return True
@@ -235,8 +282,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test-ratio",
         type=float,
-        default=0.3,
-        help="Ratio of data to use for testing (default: 0.3)",
+        default=DEFAULT_TEST_RATIO,
+        help=f"Ratio of data to use for testing (default: {DEFAULT_TEST_RATIO})",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would change without modifying files",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=None,
+        help="Path to dataset file (YAML or JSON). Defaults to examples.yaml",
     )
 
     args = parser.parse_args()
@@ -246,4 +304,6 @@ if __name__ == "__main__":
         model=args.model,
         force=args.force,
         test_ratio=args.test_ratio,
+        dry_run=args.dry_run,
+        dataset_path=args.dataset,
     )

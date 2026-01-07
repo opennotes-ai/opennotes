@@ -7,6 +7,10 @@ from src.claim_relevance_check.prompt_optimization.dataset import (
 from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model, relevance_metric
 from src.claim_relevance_check.prompt_optimization.optimize import optimize_relevance_module
 from src.claim_relevance_check.prompt_optimization.signature import RelevanceCheck
+from src.claim_relevance_check.prompt_optimization.utils import (
+    setup_openai_environment,
+    truncate_utf8_safe,
+)
 
 __all__ = [
     "RelevanceCheck",
@@ -15,4 +19,6 @@ __all__ = [
     "load_training_examples",
     "optimize_relevance_module",
     "relevance_metric",
+    "setup_openai_environment",
+    "truncate_utf8_safe",
 ]

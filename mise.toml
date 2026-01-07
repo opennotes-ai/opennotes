@@ -304,16 +304,29 @@ echo "OpenAPI spec and TypeScript types updated!"
 # ========================================
 
 [tasks."optimize:prompts:claim_relevance_check"]
-description = "Run DSPy prompt optimization for claim relevance checking"
+description = "Run full prompt optimization workflow (generate candidates → update prompts)"
+run = '''
+mise run optimize:prompts:claim_relevance_check:generate_prompt_candidates "$@" && \
+mise run optimize:prompts:claim_relevance_check:update_prompts "$@" && \
+echo "✓ Prompt optimization workflow complete"
+'''
+
+[tasks."optimize:prompts:claim_relevance_check:generate_prompt_candidates"]
+description = "Generate optimized prompt candidates using DSPy (step 1)"
 dir = "{{vars.server_dir}}"
 run = 'uv run python -m src.claim_relevance_check.prompt_optimization.optimize "$@"'
-# Clear OPENAI_API_BASE to avoid VSCode/GitHub Copilot override
 env = { PYTHONPATH = ".", OPENAI_API_BASE = "" }
 
-[tasks."optimize:prompts:claim_relevance_check:compare"]
-description = "Compare optimized prompts with current and update if better"
+[tasks."optimize:prompts:claim_relevance_check:update_prompts"]
+description = "Compare candidates with current prompts and update if better (step 2)"
 dir = "{{vars.server_dir}}"
 run = 'uv run python -m src.claim_relevance_check.prompt_optimization.compare_and_update "$@"'
+env = { PYTHONPATH = ".", OPENAI_API_BASE = "" }
+
+[tasks."optimize:prompts:claim_relevance_check:augment_dataset"]
+description = "Generate candidate examples for the training dataset using LLM"
+dir = "{{vars.server_dir}}"
+run = 'uv run python -m src.claim_relevance_check.prompt_optimization.augment_dataset "$@"'
 env = { PYTHONPATH = ".", OPENAI_API_BASE = "" }
 
 # ========================================

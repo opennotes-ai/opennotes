@@ -1,7 +1,6 @@
 """Optimization script for relevance check prompts using DSPy."""
 
 import json
-import os
 from pathlib import Path
 
 import dspy
@@ -10,32 +9,9 @@ from dspy.teleprompt import BootstrapFewShot, LabeledFewShot
 from src.claim_relevance_check.prompt_optimization.dataset import get_train_test_split
 from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model, relevance_metric
 from src.claim_relevance_check.prompt_optimization.signature import RelevanceCheck
+from src.claim_relevance_check.prompt_optimization.utils import setup_openai_environment
 
-
-def setup_openai_environment() -> str:
-    """Set up OpenAI environment for litellm.
-
-    Cleans the API key and removes any OPENAI_API_BASE override
-    (e.g., from VSCode/GitHub Copilot) to ensure requests go to OpenAI.
-
-    Returns:
-        The cleaned API key
-    """
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    # Strip whitespace and any quotes that might have been included
-    api_key = api_key.strip().strip("'\"")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is not set")
-
-    # Set cleaned key back into environment for litellm's internal use
-    os.environ["OPENAI_API_KEY"] = api_key
-
-    # Remove OPENAI_API_BASE if set (e.g., from VSCode/GitHub Copilot)
-    # to ensure requests go to the actual OpenAI API
-    if "OPENAI_API_BASE" in os.environ:
-        del os.environ["OPENAI_API_BASE"]
-
-    return api_key
+DEFAULT_TEST_RATIO = 0.3
 
 
 def create_relevance_module() -> dspy.ChainOfThought:
@@ -57,7 +33,7 @@ def optimize_with_labeled_fewshot(
         Optimized module with few-shot examples
     """
     module = create_relevance_module()
-    optimizer = LabeledFewShot(k=k or len(trainset))
+    optimizer = LabeledFewShot(k=len(trainset) if k is None else k)
     return optimizer.compile(module, trainset=trainset)
 
 
@@ -91,12 +67,14 @@ def optimize_with_bootstrap(
 def optimize_relevance_module(
     method: str = "bootstrap",
     model: str = "openai/gpt-5-mini",
+    dataset_path: Path | None = None,
 ) -> tuple[dspy.Module, dict]:
     """Main optimization function.
 
     Args:
         method: Optimization method ('labeled' or 'bootstrap')
         model: LLM model to use
+        dataset_path: Optional path to dataset file (YAML or JSON)
 
     Returns:
         Tuple of (optimized_module, evaluation_results)
@@ -104,7 +82,9 @@ def optimize_relevance_module(
     api_key = setup_openai_environment()
     dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
-    trainset, testset = get_train_test_split(test_ratio=0.2)
+    trainset, testset = get_train_test_split(
+        test_ratio=DEFAULT_TEST_RATIO, dataset_path=dataset_path
+    )
 
     print(f"Training set: {len(trainset)} examples")
     print(f"Test set: {len(testset)} examples")
@@ -153,13 +133,19 @@ def extract_prompts_from_module(module: dspy.Module) -> dict:
     demos = getattr(module, "demos", None)
     if demos is not None and isinstance(demos, list):
         for demo in demos:
+            fact_check_content = demo.fact_check_content or ""
+            truncated_content = (
+                fact_check_content[:200] + "..."
+                if len(fact_check_content) > 200
+                else fact_check_content
+            )
             result["demos"].append(
                 {
-                    "message": demo.message,
-                    "fact_check_title": demo.fact_check_title,
-                    "fact_check_content": demo.fact_check_content[:200] + "...",
+                    "message": demo.message or "",
+                    "fact_check_title": demo.fact_check_title or "",
+                    "fact_check_content": truncated_content,
                     "is_relevant": demo.is_relevant,
-                    "reasoning": demo.reasoning,
+                    "reasoning": demo.reasoning or "",
                 }
             )
 
@@ -187,10 +173,20 @@ if __name__ == "__main__":
         default=Path("optimized_relevance_module.json"),
         help="Output path for optimized module",
     )
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=None,
+        help="Path to dataset file (YAML or JSON). Defaults to examples.yaml",
+    )
 
     args = parser.parse_args()
 
-    optimized, results = optimize_relevance_module(method=args.method, model=args.model)
+    optimized, results = optimize_relevance_module(
+        method=args.method,
+        model=args.model,
+        dataset_path=args.dataset,
+    )
     save_optimized_module(optimized, args.output)
 
     prompts = extract_prompts_from_module(optimized)

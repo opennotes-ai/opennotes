@@ -1,10 +1,25 @@
 """Dataset loading utilities for relevance check training."""
 
 import json
+import logging
+import random
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import dspy
+import yaml
+
+logger = logging.getLogger(__name__)
+
+FACT_CHECK_CONTENT_MAX_LENGTH = 500
+REQUIRED_YAML_FIELDS = [
+    "message",
+    "fact_check_title",
+    "fact_check_content",
+    "is_relevant",
+    "reasoning",
+]
 
 
 @dataclass
@@ -29,121 +44,237 @@ class RelevanceExample:
         ).with_inputs("message", "fact_check_title", "fact_check_content")
 
 
-TRAINING_EXAMPLES = [
-    RelevanceExample(
-        example_id="fp-001",
-        message="some things about kamala harris",
-        fact_check_title="Did Trump Donate to Kamala Harris' Past Election Campaigns?",
-        fact_check_content="U.S. President Donald Trump donated $6,000 to Kamala Harris' 2014 campaign for reelection as California attorney general. Records show Trump made contributions in 2011 and 2013.",
-        is_relevant=False,
-        reasoning="The message 'some things about kamala harris' is a vague topic mention with no specific claim. It does not assert anything about campaign donations or any verifiable fact. The fact-check about Trump's donations is completely unrelated to anything stated in the message.",
-    ),
-    RelevanceExample(
-        example_id="fp-002",
-        message="how about biden",
-        fact_check_title="Did Biden Say He Would Ban Fracking?",
-        fact_check_content="Joe Biden's position on fracking has been complex. During debates he stated he would not ban fracking, though he supports transitioning away from fossil fuels.",
-        is_relevant=False,
-        reasoning="The message 'how about biden' is a question/topic shift with no specific claim. It mentions Biden's name but makes no assertion about fracking or any other topic that could be fact-checked.",
-    ),
-    RelevanceExample(
-        example_id="fp-003",
-        message="or donald trump",
-        fact_check_title="Did Trump Say Injecting Disinfectant Could Treat COVID-19?",
-        fact_check_content="During a White House briefing, Trump suggested research into whether disinfectants could be used to treat COVID-19 internally.",
-        is_relevant=False,
-        reasoning="The message 'or donald trump' is a bare name mention, not a claim. It provides no assertion about disinfectants, COVID-19, or any other topic. Cannot be fact-checked.",
-    ),
-    RelevanceExample(
-        example_id="fp-004",
-        message="What about the vaccine?",
-        fact_check_title="Do COVID-19 Vaccines Contain Microchips?",
-        fact_check_content="Claims that COVID-19 vaccines contain microchips are false. Vaccines contain mRNA or viral proteins but no tracking devices.",
-        is_relevant=False,
-        reasoning="The message is a question, not a claim. It asks about 'the vaccine' generally but makes no assertion about microchips or any specific claim that could be verified.",
-    ),
-    RelevanceExample(
-        example_id="fp-005",
-        message="I heard something about immigrants",
-        fact_check_title="Are Immigrants Eating Pets in Springfield, Ohio?",
-        fact_check_content="Claims that Haitian immigrants in Springfield, Ohio are eating pets have been debunked by local officials and police.",
-        is_relevant=False,
-        reasoning="The message is a vague reference ('heard something') with no specific claim. It doesn't mention pets, Springfield, or Haitian immigrants - topics central to the fact-check.",
-    ),
-    RelevanceExample(
-        example_id="tp-001",
-        message="Biden was a Confederate soldier",
-        fact_check_title="Was Joe Biden Ever a Confederate Soldier?",
-        fact_check_content="Joe Biden was born in 1942, decades after the Civil War ended in 1865. It is impossible for him to have been a Confederate soldier.",
-        is_relevant=True,
-        reasoning="The message makes a specific, verifiable claim: 'Biden was a Confederate soldier.' This is a factual assertion that can be checked. The fact-check directly addresses this exact claim by examining Biden's birth date vs the Civil War timeline.",
-    ),
-    RelevanceExample(
-        example_id="tp-002",
-        message="Trump donated to Kamala Harris's campaign",
-        fact_check_title="Did Trump Donate to Kamala Harris' Past Election Campaigns?",
-        fact_check_content="U.S. President Donald Trump donated $6,000 to Kamala Harris' 2014 campaign for reelection as California attorney general.",
-        is_relevant=True,
-        reasoning="The message makes a specific claim: 'Trump donated to Kamala Harris's campaign.' This is a verifiable assertion. The fact-check directly addresses this claim and confirms Trump made donations totaling $6,000.",
-    ),
-    RelevanceExample(
-        example_id="tp-003",
-        message="The vaccine causes autism",
-        fact_check_title="Do Vaccines Cause Autism?",
-        fact_check_content="Multiple large-scale studies have found no link between vaccines and autism. The original study claiming a link was retracted and its author lost his medical license.",
-        is_relevant=True,
-        reasoning="The message makes a specific causal claim: 'The vaccine causes autism.' This is a verifiable factual assertion. The fact-check directly addresses whether vaccines cause autism.",
-    ),
-    RelevanceExample(
-        example_id="tp-004",
-        message="Haitian immigrants are eating cats and dogs in Ohio",
-        fact_check_title="Are Immigrants Eating Pets in Springfield, Ohio?",
-        fact_check_content="Claims that Haitian immigrants in Springfield, Ohio are eating pets have been debunked by local officials and police who found no evidence.",
-        is_relevant=True,
-        reasoning="The message makes a specific claim about Haitian immigrants eating pets in Ohio. The fact-check directly addresses this exact claim about Springfield, Ohio.",
-    ),
-    RelevanceExample(
-        example_id="tp-005",
-        message="Trump said we should inject bleach to cure COVID",
-        fact_check_title="Did Trump Say Injecting Disinfectant Could Treat COVID-19?",
-        fact_check_content="During a White House briefing, Trump suggested research into whether disinfectants could be used internally. He did not use the word 'bleach' but referenced disinfectant.",
-        is_relevant=True,
-        reasoning="The message makes a specific claim about something Trump said regarding injecting substances to treat COVID. The fact-check addresses Trump's comments about disinfectants during the briefing.",
-    ),
-]
+DEFAULT_DATASET_PATH = Path(__file__).parent / "examples.yaml"
 
 
-def load_training_examples() -> list[dspy.Example]:
-    """Load all training examples as DSPy Examples."""
-    return [ex.to_dspy_example() for ex in TRAINING_EXAMPLES]
+def load_examples_from_yaml(yaml_path: Path | None = None) -> list[RelevanceExample]:
+    """Load examples from a YAML file.
+
+    Args:
+        yaml_path: Path to YAML file. Defaults to examples.yaml in this directory.
+
+    Returns:
+        List of RelevanceExample objects
+    """
+    path = yaml_path or DEFAULT_DATASET_PATH
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {path}")
+
+    with path.open() as f:
+        data = yaml.safe_load(f)
+
+    examples_data = data.get("examples", [])
+    if not examples_data:
+        raise ValueError(f"No examples found in {path}")
+
+    examples = []
+    for item in examples_data:
+        example_id = item.get("example_id", "unknown")
+
+        missing_fields = [field for field in REQUIRED_YAML_FIELDS if field not in item]
+        if missing_fields:
+            raise ValueError(
+                f"Example '{example_id}' missing required field(s): {', '.join(missing_fields)}"
+            )
+
+        fact_check_content = item["fact_check_content"]
+        if len(fact_check_content) > FACT_CHECK_CONTENT_MAX_LENGTH:
+            logger.warning(
+                f"Truncating fact_check_content from {len(fact_check_content)} to "
+                f"{FACT_CHECK_CONTENT_MAX_LENGTH} chars for example '{example_id}'"
+            )
+            fact_check_content = fact_check_content[:FACT_CHECK_CONTENT_MAX_LENGTH]
+
+        ex = RelevanceExample(
+            example_id=example_id,
+            message=item["message"],
+            fact_check_title=item["fact_check_title"],
+            fact_check_content=fact_check_content,
+            is_relevant=item["is_relevant"],
+            reasoning=item["reasoning"],
+        )
+        examples.append(ex)
+
+    return examples
 
 
-def load_examples_from_json(json_path: Path) -> list[dspy.Example]:
-    """Load examples from a JSON file."""
+def load_examples_from_json(json_path: Path) -> list[RelevanceExample]:
+    """Load examples from a JSON file.
+
+    Args:
+        json_path: Path to JSON file
+
+    Returns:
+        List of RelevanceExample objects
+    """
     with json_path.open() as f:
         data = json.load(f)
 
-    examples = data if isinstance(data, list) else [data]
+    examples_data = data if isinstance(data, list) else data.get("examples", [data])
 
-    result = []
-    for item in examples:
-        ex = RelevanceExample(
-            example_id=item.get("example_id", "unknown"),
-            message=item["original_message"],
-            fact_check_title=item["fact_check"]["title"],
-            fact_check_content=item["fact_check"]["content"][:500],
-            is_relevant=item["expected_is_relevant"],
-            reasoning=item["expected_reasoning"],
+    examples = []
+    for item in examples_data:
+        example_id = item.get("example_id", "unknown")
+
+        if "original_message" in item:
+            required_fields = [
+                "original_message",
+                "fact_check",
+                "expected_is_relevant",
+                "expected_reasoning",
+            ]
+            missing = [f for f in required_fields if f not in item]
+            if missing:
+                raise ValueError(
+                    f"Example '{example_id}' missing required field(s): {', '.join(missing)}"
+                )
+            if "fact_check" in item:
+                fc_missing = [f for f in ["title", "content"] if f not in item["fact_check"]]
+                if fc_missing:
+                    raise ValueError(
+                        f"Example '{example_id}' missing required fact_check field(s): {', '.join(fc_missing)}"
+                    )
+
+            fact_check_content = item["fact_check"]["content"]
+            if len(fact_check_content) > FACT_CHECK_CONTENT_MAX_LENGTH:
+                logger.warning(
+                    f"Truncating fact_check_content from {len(fact_check_content)} to "
+                    f"{FACT_CHECK_CONTENT_MAX_LENGTH} chars for example '{example_id}'"
+                )
+                fact_check_content = fact_check_content[:FACT_CHECK_CONTENT_MAX_LENGTH]
+
+            ex = RelevanceExample(
+                example_id=example_id,
+                message=item["original_message"],
+                fact_check_title=item["fact_check"]["title"],
+                fact_check_content=fact_check_content,
+                is_relevant=item["expected_is_relevant"],
+                reasoning=item["expected_reasoning"],
+            )
+        else:
+            missing_fields = [field for field in REQUIRED_YAML_FIELDS if field not in item]
+            if missing_fields:
+                raise ValueError(
+                    f"Example '{example_id}' missing required field(s): {', '.join(missing_fields)}"
+                )
+
+            fact_check_content = item["fact_check_content"]
+            if len(fact_check_content) > FACT_CHECK_CONTENT_MAX_LENGTH:
+                logger.warning(
+                    f"Truncating fact_check_content from {len(fact_check_content)} to "
+                    f"{FACT_CHECK_CONTENT_MAX_LENGTH} chars for example '{example_id}'"
+                )
+                fact_check_content = fact_check_content[:FACT_CHECK_CONTENT_MAX_LENGTH]
+
+            ex = RelevanceExample(
+                example_id=example_id,
+                message=item["message"],
+                fact_check_title=item["fact_check_title"],
+                fact_check_content=fact_check_content,
+                is_relevant=item["is_relevant"],
+                reasoning=item["reasoning"],
+            )
+        examples.append(ex)
+
+    return examples
+
+
+def validate_dataset(examples: list[RelevanceExample]) -> dict:
+    """Validate dataset balance and quality.
+
+    Args:
+        examples: List of examples to validate
+
+    Returns:
+        Validation results dict with counts and warnings
+    """
+    n_total = len(examples)
+    n_positive = sum(1 for ex in examples if ex.is_relevant)
+    n_negative = n_total - n_positive
+
+    results = {
+        "total": n_total,
+        "true_positives": n_positive,
+        "false_positives": n_negative,
+        "ratio": n_positive / n_total if n_total > 0 else 0,
+        "warnings": [],
+    }
+
+    if n_total < 6:
+        results["warnings"].append(
+            f"Very small dataset ({n_total} examples). Recommend at least 10."
         )
-        result.append(ex.to_dspy_example())
 
-    return result
+    if n_positive == 0 or n_negative == 0:
+        results["warnings"].append("Dataset has no examples for one class. Both TP and FP needed.")
+    elif abs(n_positive - n_negative) / n_total > 0.4:
+        results["warnings"].append(
+            f"Dataset is imbalanced: {n_positive} TP vs {n_negative} FP. Consider adding more examples."
+        )
+
+    return results
+
+
+def load_training_examples(
+    dataset_path: Path | None = None,
+    validate: bool = True,
+) -> list[dspy.Example]:
+    """Load all training examples as DSPy Examples.
+
+    Args:
+        dataset_path: Optional path to YAML/JSON file. Defaults to examples.yaml.
+        validate: If True, validate and warn about dataset issues.
+
+    Returns:
+        List of DSPy Example objects
+    """
+    path = DEFAULT_DATASET_PATH if dataset_path is None else dataset_path
+
+    if path.suffix in (".yaml", ".yml"):
+        examples = load_examples_from_yaml(path)
+    elif path.suffix == ".json":
+        examples = load_examples_from_json(path)
+    else:
+        raise ValueError(f"Unsupported file format: {path.suffix}. Use .yaml or .json")
+
+    if validate:
+        validation = validate_dataset(examples)
+        for warning in validation["warnings"]:
+            warnings.warn(warning, stacklevel=2)
+        print(
+            f"Dataset: {validation['total']} examples ({validation['true_positives']} TP, {validation['false_positives']} FP)"
+        )
+
+    return [ex.to_dspy_example() for ex in examples]
 
 
 def get_train_test_split(
     test_ratio: float = 0.2,
+    dataset_path: Path | None = None,
+    seed: int = 42,
 ) -> tuple[list[dspy.Example], list[dspy.Example]]:
-    """Split examples into train and test sets."""
-    examples = load_training_examples()
+    """Split examples into train and test sets.
+
+    Args:
+        test_ratio: Ratio of examples to use for testing
+        dataset_path: Optional path to dataset file
+        seed: Random seed for reproducible shuffling (default: 42)
+
+    Returns:
+        Tuple of (train_examples, test_examples)
+    """
+    examples = load_training_examples(dataset_path)
+
+    rng = random.Random(seed)
+    rng.shuffle(examples)
+
     n_test = max(1, int(len(examples) * test_ratio))
     return examples[:-n_test], examples[-n_test:]
+
+
+def _load_training_examples_list() -> list[RelevanceExample]:
+    """Load training examples as RelevanceExample objects (for backwards compat)."""
+    return load_examples_from_yaml(DEFAULT_DATASET_PATH)
+
+
+TRAINING_EXAMPLES = _load_training_examples_list()
