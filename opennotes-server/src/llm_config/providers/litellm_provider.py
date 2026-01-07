@@ -33,6 +33,7 @@ class LiteLLMCompletionParams(BaseModel):
     top_p: float | None = None
     frequency_penalty: float | None = None
     presence_penalty: float | None = None
+    response_format: type[BaseModel] | dict[str, Any] | None = None
 
 
 class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionParams]):
@@ -63,6 +64,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         super().__init__(api_key, default_model, settings)
         self._provider_name = provider_name
         litellm.drop_params = True
+        litellm.enable_json_schema_validation = True
 
     def _filter_none_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """
@@ -111,6 +113,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
                 "top_p": params.top_p,
                 "frequency_penalty": params.frequency_penalty,
                 "presence_penalty": params.presence_penalty,
+                "response_format": params.response_format,
                 "api_key": self.api_key,
                 "timeout": self.settings.timeout,
             }
