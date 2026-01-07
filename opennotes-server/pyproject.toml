@@ -55,11 +55,13 @@ dependencies = [
     "taskiq-nats>=0.4.0,<1.0.0",
     "taskiq-redis>=1.0.0,<2.0.0",
     "taskiq-fastapi>=0.3.0,<1.0.0",
-    "opentelemetry-instrumentation-logging>=0.59b0",
-    "opentelemetry-semantic-conventions>=0.59b0",
+    "opentelemetry-instrumentation-logging>=0.43b0",
+    "opentelemetry-semantic-conventions>=0.43b0",
     "pyroscope-io>=0.8.0",
     "traceloop-sdk>=0.35.0",
     "dspy>=2.6.0",
+    "middleware-io>=2.4.1",
+    "setuptools>=80.9.0",
 ]
 
 [project.optional-dependencies]

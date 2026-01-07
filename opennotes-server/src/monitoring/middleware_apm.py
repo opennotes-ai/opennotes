@@ -7,28 +7,14 @@ OpenTelemetry/Pyroscope setup with a unified solution for:
 - Log aggregation
 - Continuous profiling
 
-IMPORTANT: Due to OpenTelemetry version constraints, the recommended approach
-is to use the `middleware-run` wrapper for zero-code instrumentation rather
-than the in-code SDK initialization.
+Usage:
+    Set MIDDLEWARE_APM_ENABLED=true and provide MW_API_KEY, MW_TARGET
+    environment variables. The APM is automatically initialized early
+    in main.py before other imports for automatic instrumentation.
 
-Wrapper Approach (Recommended):
-    Instead of running:
-        uvicorn src.main:app --host 0.0.0.0 --port 8000
-
-    Run with middleware-run wrapper:
+Alternative - Wrapper Approach:
+    Instead of in-code init, run with middleware-run wrapper:
         middleware-run uvicorn src.main:app --host 0.0.0.0 --port 8000
-
-    Required environment variables:
-        MW_API_KEY: Middleware.io API key
-        MW_TARGET: OTLP endpoint (e.g., https://myaccount.middleware.io:443)
-        MW_SERVICE_NAME: Service name (optional, defaults to app name)
-
-In-Code Approach (requires middleware-io package):
-    If you need in-code initialization, install middleware-io package and call
-    setup_middleware_apm() BEFORE importing any instrumented libraries.
-
-    Note: This may require downgrading OTel packages to match middleware-io
-    requirements (0.57b0 instrumentation packages with 1.36.0 core).
 
 Reference: https://docs.middleware.io/apm-configuration/python
 
@@ -58,10 +44,6 @@ def setup_middleware_apm(
     instrumentation (FastAPI, SQLAlchemy, Redis, etc.) for automatic
     instrumentation to work correctly.
 
-    Note: The middleware-io package has strict OpenTelemetry version requirements
-    (0.57b0 instrumentation, 1.36.0 core). If there are version conflicts with
-    existing OTel packages, use the middleware-run wrapper approach instead.
-
     Args:
         api_key: Middleware.io API key
         target: Middleware.io OTLP endpoint
@@ -78,7 +60,7 @@ def setup_middleware_apm(
         return True
 
     try:
-        from middleware import MWOptions, mw_tracker  # type: ignore[import-not-found]
+        from middleware import MWOptions, mw_tracker
 
         mw_options = MWOptions(
             access_token=api_key,
@@ -96,11 +78,7 @@ def setup_middleware_apm(
         return True
 
     except ImportError:
-        logger.warning(
-            "middleware-io package not installed. Using middleware-run wrapper approach. "
-            "If in-code init is needed, install with: uv add middleware-io "
-            "(may require OTel version downgrades)"
-        )
+        logger.error("middleware-io package not installed. Install with: uv add middleware-io")
         return False
     except Exception as e:
         logger.error(f"Failed to initialize Middleware.io APM: {e}")
