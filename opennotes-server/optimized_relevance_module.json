@@ -5,34 +5,34 @@
     "demos": [
       {
         "augmented": true,
-        "message": "Haitian immigrants are eating cats and dogs in Ohio",
-        "fact_check_title": "Are Immigrants Eating Pets in Springfield, Ohio?",
-        "fact_check_content": "Claims that Haitian immigrants in Springfield, Ohio are eating pets have been debunked by local officials and police who found no evidence.",
-        "reasoning": "The message asserts a specific, verifiable factual claim: that Haitian immigrants in Ohio are eating cats and dogs. The fact-check directly addresses that allegation for Springfield, Ohio, reporting that local officials and police investigated and found no evidence to support the claim, thereby debunking it.",
+        "message": "I was talking to my uncle at Thanksgiving and he kept insisting that the COVID vaccines have killed more people than COVID itself. Is that even possible?",
+        "fact_check_title": "Have COVID-19 Vaccines Killed More People Than COVID-19?",
+        "fact_check_content": "This claim is false. COVID-19 has killed over 1 million Americans, while vaccine-related deaths reported to VAERS are in the thousands and most are unverified coincidental deaths.",
+        "reasoning": "The message reports a specific verifiable claim: that COVID-19 vaccines have killed more people than COVID-19 itself. The fact-check directly addresses that exact claim and refutes it, citing death totals from COVID-19 versus far smaller, largely unverified counts reported to VAERS and explaining that the vaccine-death claim is false.",
         "is_relevant": true
       },
       {
         "augmented": true,
-        "message": "I've been following the news about climate change lately. It's really concerning how much debate there is. What do you think about renewable energy?",
-        "fact_check_title": "Did Scientists Predict an Ice Age in the 1970s?",
-        "fact_check_content": "While a few studies in the 1970s discussed potential cooling, the scientific consensus even then leaned toward warming. The 'ice age prediction' claim is largely a myth.",
-        "reasoning": "The user message is a general comment and question about climate change and renewable energy, not a specific factual claim. The fact-check addresses whether scientists predicted an ice age in the 1970s — a different, specific historical claim. Because the user's message does not assert that claim, the fact-check does not directly apply.",
+        "message": "The vaccine causes autism",
+        "fact_check_title": "Do Vaccines Cause Autism?",
+        "fact_check_content": "Multiple large-scale studies have found no link between vaccines and autism. The original study claiming a link was retracted and its author lost his medical license.",
+        "reasoning": "The message asserts the specific, verifiable claim that \"the vaccine causes autism.\" The fact-check directly addresses that claim, stating multiple large-scale studies found no link between vaccines and autism and that the original study claiming a link was retracted and its author lost his medical license — a direct refutation.",
+        "is_relevant": true
+      },
+      {
+        "augmented": true,
+        "message": "Politicians these days seem worse than they used to be. Everything is so polarized now.",
+        "fact_check_title": "Has Political Polarization in the US Reached Historic Levels?",
+        "fact_check_content": "Studies show political polarization has increased significantly since the 1990s, with partisan antipathy at record highs according to Pew Research Center data.",
+        "reasoning": "The message is primarily an expression of opinion and a vague observation (\"seem worse,\" \"so polarized now\") rather than a specific, verifiable factual claim. While the fact-check addresses the measurable claim that political polarization has increased and provides data, the user's statement does not assert that specific, testable fact in a clear way. Therefore the fact-check does not directly verify a specific claim made in the message.",
         "is_relevant": false
       },
       {
         "augmented": true,
-        "message": "I was talking to my uncle at Thanksgiving and he kept insisting that the COVID vaccines have killed more people than COVID itself. Is that even possible?",
-        "fact_check_title": "Have COVID-19 Vaccines Killed More People Than COVID-19?",
-        "fact_check_content": "This claim is false. COVID-19 has killed over 1 million Americans, while vaccine-related deaths reported to VAERS are in the thousands and most are unverified coincidental deaths.",
-        "reasoning": "The message relays a specific, verifiable claim: that COVID-19 vaccines have killed more people than COVID-19 itself. The fact-check directly addresses that exact claim and debunks it, noting COVID-19 has caused over 1 million U.S. deaths while vaccine-related death reports to VAERS number in the thousands and are largely unverified coincidental reports.",
-        "is_relevant": true
-      },
-      {
-        "augmented": true,
-        "message": "Did you hear? They found proof that the moon landing was faked",
-        "fact_check_title": "Was the Apollo 11 Moon Landing Faked?",
-        "fact_check_content": "The Apollo 11 moon landing in 1969 was real. Evidence includes moon rocks, retroreflectors still used today, and independent verification from multiple countries including the Soviet Union.",
-        "reasoning": "The message asserts (albeit via hearsay) a specific verifiable claim: that “they found proof that the moon landing was faked.” The fact-check directly addresses that claim by evaluating whether the Apollo 11 moon landing was faked and concluding it was real, citing moon rocks, retroreflectors, and independent verification.",
+        "message": "Everyone knows that wind turbines cause cancer. Trump even said so.",
+        "fact_check_title": "Do Wind Turbines Cause Cancer?",
+        "fact_check_content": "There is no scientific evidence that wind turbines cause cancer. Trump made this claim in 2019, but health organizations worldwide have found no causal link between wind turbines and cancer.",
+        "reasoning": "The message asserts a factual causal claim (\"wind turbines cause cancer\") and also states that \"Trump even said so.\" The fact-check directly addresses the causal claim by saying there is no scientific evidence linking wind turbines to cancer, and it also notes that Trump made that claim in 2019. Therefore the fact-check matches and refutes the specific claims in the message.",
         "is_relevant": true
       }
     ],

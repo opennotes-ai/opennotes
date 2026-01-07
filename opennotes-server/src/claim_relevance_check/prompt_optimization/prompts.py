@@ -18,24 +18,24 @@ AND the fact-check directly addresses that claim.
 FEW-SHOT EXAMPLES:
 
 Example 1 - RELEVANT:
-Message: "Haitian immigrants are eating cats and dogs in Ohio"
-Fact-check: "Are Immigrants Eating Pets in Springfield, Ohio?"
-Result: {"is_relevant": true, "reasoning": "The message asserts a specific, verifiable factual claim: that Haitian immigrants in Ohio are eating..."}
-
-Example 2 - NOT RELEVANT:
-Message: "I've been following the news about climate change lately. It's really concerning how much debate there is. What do you think about renewable energy?"
-Fact-check: "Did Scientists Predict an Ice Age in the 1970s?"
-Result: {"is_relevant": false, "reasoning": "The user message is a general comment and question about climate change and renewable energy, not a ..."}
-
-Example 3 - RELEVANT:
 Message: "I was talking to my uncle at Thanksgiving and he kept insisting that the COVID vaccines have killed more people than COVID itself. Is that even possible?"
 Fact-check: "Have COVID-19 Vaccines Killed More People Than COVID-19?"
-Result: {"is_relevant": true, "reasoning": "The message relays a specific, verifiable claim: that COVID-19 vaccines have killed more people than..."}
+Result: {"is_relevant": true, "reasoning": "The message reports a specific verifiable claim: that COVID-19 vaccines have killed more people than..."}
+
+Example 2 - RELEVANT:
+Message: "The vaccine causes autism"
+Fact-check: "Do Vaccines Cause Autism?"
+Result: {"is_relevant": true, "reasoning": "The message asserts the specific, verifiable claim that "the vaccine causes autism." The fact-check ..."}
+
+Example 3 - NOT RELEVANT:
+Message: "Politicians these days seem worse than they used to be. Everything is so polarized now."
+Fact-check: "Has Political Polarization in the US Reached Historic Levels?"
+Result: {"is_relevant": false, "reasoning": "The message is primarily an expression of opinion and a vague observation ("seem worse," "so polariz..."}
 
 Example 4 - RELEVANT:
-Message: "Did you hear? They found proof that the moon landing was faked"
-Fact-check: "Was the Apollo 11 Moon Landing Faked?"
-Result: {"is_relevant": true, "reasoning": "The message asserts (albeit via hearsay) a specific verifiable claim: that “they found proof that th..."}
+Message: "Everyone knows that wind turbines cause cancer. Trump even said so."
+Fact-check: "Do Wind Turbines Cause Cancer?"
+Result: {"is_relevant": true, "reasoning": "The message asserts a factual causal claim ("wind turbines cause cancer") and also states that "Trum..."}
 
 Respond ONLY with JSON: {"is_relevant": true/false, "reasoning": "brief explanation"}"""
 
