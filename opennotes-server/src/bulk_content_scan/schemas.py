@@ -96,6 +96,12 @@ class RelevanceCheckResult(StrictInputSchema):
 
     is_relevant: bool = Field(..., description="Whether the match is semantically relevant")
     reasoning: str = Field(..., description="LLM's reasoning for the relevance decision")
+    confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Model's confidence in the relevance decision (0.0-1.0)",
+    )
 
 
 MatchResult = Annotated[
