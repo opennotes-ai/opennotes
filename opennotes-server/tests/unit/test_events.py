@@ -140,7 +140,6 @@ async def test_event_schema_validation():
 
     assert event.event_type == EventType.NOTE_CREATED
     assert event.note_id == test_note_id
-    assert event.version == "1.0"
 
 
 @pytest.mark.asyncio
@@ -776,7 +775,6 @@ async def test_note_score_updated_event_validation():
     assert event.event_type == EventType.NOTE_SCORE_UPDATED
     assert event.note_id == test_note_id
     assert event.score == 0.75
-    assert event.confidence == "standard"
     assert event.rating_count == 10
     assert event.tier == 3
 

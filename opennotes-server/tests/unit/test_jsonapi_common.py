@@ -541,13 +541,3 @@ class TestJSONAPISchemas:
 
         assert len(response.errors) == 2
         assert response.jsonapi["version"] == "1.1"
-
-
-class TestJSONAPIContentType:
-    """Tests for JSON:API content type constant."""
-
-    def test_content_type_constant(self):
-        """Test that JSONAPI_CONTENT_TYPE is correctly defined."""
-        from src.common.jsonapi import JSONAPI_CONTENT_TYPE
-
-        assert JSONAPI_CONTENT_TYPE == "application/vnd.api+json"

@@ -85,54 +85,6 @@ describe('list command - Force Publish button confirmation', () => {
       expect(cancelCustomId).toMatch(/^fp_cancel:[a-zA-Z0-9]{8}$/);
     });
 
-    it('should create Confirm and Cancel buttons with correct styles', () => {
-      const shortId = 'test1234';
-
-      const confirmButton = new ButtonBuilder()
-        .setCustomId(`fp_confirm:${shortId}`)
-        .setLabel('Confirm')
-        .setStyle(ButtonStyle.Danger);
-
-      const cancelButton = new ButtonBuilder()
-        .setCustomId(`fp_cancel:${shortId}`)
-        .setLabel('Cancel')
-        .setStyle(ButtonStyle.Secondary);
-
-      const confirmJson = confirmButton.toJSON() as any;
-      const cancelJson = cancelButton.toJSON() as any;
-
-      expect(confirmJson.custom_id).toBe(`fp_confirm:${shortId}`);
-      expect(confirmJson.label).toBe('Confirm');
-      expect(confirmJson.style).toBe(ButtonStyle.Danger);
-
-      expect(cancelJson.custom_id).toBe(`fp_cancel:${shortId}`);
-      expect(cancelJson.label).toBe('Cancel');
-      expect(cancelJson.style).toBe(ButtonStyle.Secondary);
-    });
-
-    it('should create action row with both buttons', () => {
-      const shortId = 'test1234';
-
-      const confirmButton = new ButtonBuilder()
-        .setCustomId(`fp_confirm:${shortId}`)
-        .setLabel('Confirm')
-        .setStyle(ButtonStyle.Danger);
-
-      const cancelButton = new ButtonBuilder()
-        .setCustomId(`fp_cancel:${shortId}`)
-        .setLabel('Cancel')
-        .setStyle(ButtonStyle.Secondary);
-
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        confirmButton,
-        cancelButton
-      );
-
-      expect(row.components).toHaveLength(2);
-      expect((row.components[0].toJSON() as any).custom_id).toBe(`fp_confirm:${shortId}`);
-      expect((row.components[1].toJSON() as any).custom_id).toBe(`fp_cancel:${shortId}`);
-    });
-
     it('should NOT use text-based message collector for confirmation', () => {
       const oldConfirmationPattern = 'Reply with "confirm" to proceed';
       const newConfirmationPrompt =
