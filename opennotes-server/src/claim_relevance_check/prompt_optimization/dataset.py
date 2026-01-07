@@ -193,3 +193,11 @@ def get_train_test_split(
     examples = load_training_examples(dataset_path)
     n_test = max(1, int(len(examples) * test_ratio))
     return examples[:-n_test], examples[-n_test:]
+
+
+def _load_training_examples_list() -> list[RelevanceExample]:
+    """Load training examples as RelevanceExample objects (for backwards compat)."""
+    return load_examples_from_yaml(DEFAULT_DATASET_PATH)
+
+
+TRAINING_EXAMPLES = _load_training_examples_list()
