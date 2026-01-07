@@ -927,65 +927,15 @@ class BulkContentScanService:
                 matched_source=candidate.matched_source,
             )
 
-            should_flag = False
-
-            if outcome == RelevanceOutcome.RELEVANT:
-                should_flag = True
-                relevance_check_total.labels(
-                    outcome="candidate_relevant",
-                    decision="flagged",
-                    instance_id=settings.INSTANCE_ID,
-                ).inc()
-            elif outcome == RelevanceOutcome.INDETERMINATE:
-                if candidate.score >= indeterminate_threshold:
-                    should_flag = True
-                    logger.info(
-                        "Relevance check indeterminate, applying tighter threshold",
-                        extra={
-                            "original_threshold": base_threshold,
-                            "adjusted_threshold": indeterminate_threshold,
-                            "reason": "content_filter_on_fact_check",
-                            "message_id": candidate.message.message_id,
-                            "scan_id": str(scan_id),
-                            "score": candidate.score,
-                            "reasoning": reasoning,
-                        },
-                    )
-                    relevance_check_total.labels(
-                        outcome="indeterminate",
-                        decision="tighter_threshold_passed",
-                        instance_id=settings.INSTANCE_ID,
-                    ).inc()
-                else:
-                    logger.info(
-                        "Relevance check indeterminate, filtered by tighter threshold",
-                        extra={
-                            "original_threshold": base_threshold,
-                            "adjusted_threshold": indeterminate_threshold,
-                            "reason": "content_filter_on_fact_check",
-                            "message_id": candidate.message.message_id,
-                            "scan_id": str(scan_id),
-                            "score": candidate.score,
-                            "reasoning": reasoning,
-                        },
-                    )
-                    relevance_check_total.labels(
-                        outcome="indeterminate",
-                        decision="tighter_threshold_filtered",
-                        instance_id=settings.INSTANCE_ID,
-                    ).inc()
-            elif outcome == RelevanceOutcome.CONTENT_FILTERED:
-                relevance_check_total.labels(
-                    outcome="content_filter",
-                    decision="user_message_flagged",
-                    instance_id=settings.INSTANCE_ID,
-                ).inc()
-            elif outcome == RelevanceOutcome.NOT_RELEVANT:
-                relevance_check_total.labels(
-                    outcome="candidate_not_relevant",
-                    decision="filtered",
-                    instance_id=settings.INSTANCE_ID,
-                ).inc()
+            should_flag = self._evaluate_relevance_outcome(
+                outcome=outcome,
+                reasoning=reasoning,
+                similarity_score=candidate.score,
+                threshold=base_threshold,
+                indeterminate_threshold=indeterminate_threshold,
+                message_id=candidate.message.message_id,
+                scan_id=scan_id,
+            )
 
             if should_flag:
                 try:
