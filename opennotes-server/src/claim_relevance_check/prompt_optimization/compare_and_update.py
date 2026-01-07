@@ -44,8 +44,17 @@ def evaluate_optimized_module(
     testset: list[dspy.Example],
     module_path: Path,
     model: str = "openai/gpt-5-mini",
+    dataset_path: Path | None = None,
 ) -> dict:
-    """Evaluate the optimized module on test data."""
+    """Evaluate the optimized module on test data.
+
+    Args:
+        testset: Test examples to evaluate on
+        module_path: Path to the optimized module JSON
+        model: LLM model to use for evaluation
+        dataset_path: Optional path to dataset file (for consistency with API)
+    """
+    _ = dataset_path
     api_key = setup_openai_environment()
     dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
@@ -69,20 +78,33 @@ def generate_prompts_py(module_path: Path, output_path: Path) -> None:
     with module_path.open() as f:
         data = json.load(f)
 
-    demos = data.get("predict", {}).get("demos", [])
-    instructions = data.get("predict", {}).get("signature", {}).get("instructions", "")
+    if "predict" not in data:
+        logger.warning(
+            "Module JSON missing 'predict' key at %s. "
+            "Expected structure: {predict: {demos: [...], signature: {instructions: ...}}}",
+            module_path,
+        )
+    predict_data = data.get("predict", {})
+    if predict_data and "demos" not in predict_data:
+        logger.warning("Module JSON missing 'demos' key in 'predict' section")
+    if predict_data and "signature" not in predict_data:
+        logger.warning("Module JSON missing 'signature' key in 'predict' section")
+
+    demos = predict_data.get("demos", [])
+    instructions = predict_data.get("signature", {}).get("instructions", "")
 
     # Build the few-shot examples section
     examples_text = []
     for i, demo in enumerate(demos, 1):
         is_relevant = demo.get("is_relevant", False)
         label = "RELEVANT" if is_relevant else "NOT RELEVANT"
+        reasoning = demo.get("reasoning", "")
+        truncated_reasoning = reasoning[:100] + "..." if len(reasoning) > 100 else reasoning
         examples_text.append(f"""
 Example {i} - {label}:
 Message: "{demo.get("message", "")}"
 Fact-check: "{demo.get("fact_check_title", "")}"
-Reasoning: {demo.get("reasoning", "")}
-Result: {{"is_relevant": {str(is_relevant).lower()}, "reasoning": "{demo.get("reasoning", "")[:100]}..."}}""")
+Result: {{"is_relevant": {str(is_relevant).lower()}, "reasoning": "{truncated_reasoning}"}}""")
 
     examples_section = "\n".join(examples_text)
 
@@ -136,7 +158,7 @@ def get_optimized_prompts(
     """
     content_with_source = fact_check_content
     if source_url:
-        content_with_source = f"{{fact_check_content}}\\nSource: {{source_url}}"
+        content_with_source = fact_check_content + "\\nSource: " + source_url
 
     user_prompt = OPTIMIZED_USER_PROMPT_TEMPLATE.format(
         message=message,
@@ -192,11 +214,13 @@ def compare_and_update(
     print(f"\nEvaluating on {len(testset)} test examples...")
 
     print("\n1. Evaluating CURRENT prompts (no demos)...")
-    current_results = evaluate_current_prompts(testset, model)
+    current_results = evaluate_current_prompts(testset, model, dataset_path=dataset_path)
     print(f"   Current: {format_metrics(current_results)}")
 
     print("\n2. Evaluating OPTIMIZED module...")
-    optimized_results = evaluate_optimized_module(testset, module_path, model)
+    optimized_results = evaluate_optimized_module(
+        testset, module_path, model, dataset_path=dataset_path
+    )
     print(f"   Optimized: {format_metrics(optimized_results)}")
 
     # Compare using F1 as primary metric
