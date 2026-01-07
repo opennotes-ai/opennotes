@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,6 +10,32 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from slowapi.errors import RateLimitExceeded
+
+_mw_apm_enabled = os.getenv("MIDDLEWARE_APM_ENABLED", "false").lower() == "true"
+_testing = os.getenv("TESTING", "false").lower() == "true"
+
+if _mw_apm_enabled and not _testing:
+    from src.monitoring.middleware_apm import setup_middleware_apm
+
+    _mw_api_key = os.getenv("MW_API_KEY")
+    _mw_target = os.getenv("MW_TARGET")
+    _mw_service_name = os.getenv("MW_SERVICE_NAME", "opennotes-server")
+    _mw_sample_rate = float(os.getenv("MW_SAMPLE_RATE", "1.0"))
+
+    if _mw_api_key and _mw_target:
+        setup_middleware_apm(
+            api_key=_mw_api_key,
+            target=_mw_target,
+            service_name=_mw_service_name,
+            sample_rate=_mw_sample_rate,
+        )
+    else:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "MIDDLEWARE_APM_ENABLED=true but MW_API_KEY or MW_TARGET not set. "
+            "Middleware.io APM not initialized. Using middleware-run wrapper is recommended."
+        )
 
 LoggingInstrumentor().instrument(set_logging_format=False)
 
@@ -113,12 +140,18 @@ tracing_manager = TracingManager(
     otel_log_level=settings.OTEL_LOG_LEVEL,
 )
 
-if settings.ENABLE_TRACING and not settings.TESTING:
+if settings.ENABLE_TRACING and not settings.TESTING and not settings.MIDDLEWARE_APM_ENABLED:
     tracing_manager.setup()
+elif settings.MIDDLEWARE_APM_ENABLED and not settings.TESTING:
+    logger.info("Using Middleware.io APM - legacy OTel tracing disabled")
 
 
 def _setup_pyroscope() -> bool:
     """Initialize Pyroscope continuous profiling if enabled.
+
+    DEPRECATED (task-969): This function is deprecated in favor of Middleware.io APM
+    which provides built-in continuous profiling. Set MIDDLEWARE_APM_ENABLED=true to use MW.
+    This code is retained for backward compatibility during migration.
 
     Returns:
         True if Pyroscope was successfully configured, False otherwise.
@@ -176,8 +209,10 @@ def _setup_pyroscope() -> bool:
         return False
 
 
-if settings.PYROSCOPE_ENABLED and not settings.TESTING:
+if settings.PYROSCOPE_ENABLED and not settings.TESTING and not settings.MIDDLEWARE_APM_ENABLED:
     _setup_pyroscope()
+elif settings.MIDDLEWARE_APM_ENABLED and settings.PYROSCOPE_ENABLED:
+    logger.info("Using Middleware.io profiling - legacy Pyroscope disabled")
 
 
 if settings.TRACELOOP_ENABLED and not settings.TESTING:
@@ -461,9 +496,11 @@ app = FastAPI(
     separate_input_output_schemas=False,
 )
 
-if settings.ENABLE_TRACING and not settings.TESTING:
+if settings.ENABLE_TRACING and not settings.TESTING and not settings.MIDDLEWARE_APM_ENABLED:
     tracing_manager.instrument_fastapi(app)
     tracing_manager.instrument_sqlalchemy(get_engine().sync_engine)
+    app.add_middleware(DiscordContextMiddleware)
+elif settings.MIDDLEWARE_APM_ENABLED and not settings.TESTING:
     app.add_middleware(DiscordContextMiddleware)
 
 app.state.limiter = limiter

@@ -140,6 +140,7 @@ ignore = [
 "scripts/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in scripts
 "src/tasks/**/*.py" = ["PLC0415"]  # Lazy imports required for TaskIQ tasks to avoid import-time settings validation
 "src/monitoring/logging.py" = ["PLC0415"]  # Circular dependency: imports handled in try-except blocks
+"src/monitoring/middleware_apm.py" = ["PLC0415", "PLW0603"]  # Lazy import for optional middleware-io pkg; global state for init tracking
 "src/llm_config/manager.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/middleware/profile_tracking.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/database.py" = ["ARG002"]  # TypeDecorator methods require dialect param for base class compatibility
