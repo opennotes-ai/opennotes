@@ -305,8 +305,11 @@ echo "OpenAPI spec and TypeScript types updated!"
 
 [tasks."optimize:prompts:claim_relevance_check"]
 description = "Run full prompt optimization workflow (generate candidates → update prompts)"
-depends = ["optimize:prompts:claim_relevance_check:generate_prompt_candidates", "optimize:prompts:claim_relevance_check:update_prompts"]
-run = 'echo "✓ Prompt optimization workflow complete"'
+run = '''
+mise run optimize:prompts:claim_relevance_check:generate_prompt_candidates "$@" && \
+mise run optimize:prompts:claim_relevance_check:update_prompts "$@" && \
+echo "✓ Prompt optimization workflow complete"
+'''
 
 [tasks."optimize:prompts:claim_relevance_check:generate_prompt_candidates"]
 description = "Generate optimized prompt candidates using DSPy (step 1)"
