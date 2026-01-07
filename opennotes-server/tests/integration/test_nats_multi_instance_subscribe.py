@@ -107,6 +107,7 @@ class TestMultiInstanceSubscribe:
             subject,
             cb=handler2,
             durable=consumer_name,
+            queue=consumer_name,
             stream=STREAM_NAME,
         )
         logger.info("Instance 2 bound to existing consumer")
@@ -160,6 +161,7 @@ class TestMultiInstanceSubscribe:
                         subject,
                         cb=lambda msg: None,
                         durable=consumer_name,
+                        queue=consumer_name,
                         stream=STREAM_NAME,
                     )
                     return ("bound", instance_id, sub)
@@ -219,6 +221,7 @@ class TestMultiInstanceSubscribe:
             subject,
             cb=await make_handler(1),
             durable=consumer_name,
+            queue=consumer_name,
             stream=STREAM_NAME,
         )
 
@@ -226,6 +229,7 @@ class TestMultiInstanceSubscribe:
             subject,
             cb=await make_handler(2),
             durable=consumer_name,
+            queue=consumer_name,
             stream=STREAM_NAME,
         )
 

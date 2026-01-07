@@ -256,6 +256,7 @@ class NATSClientManager:
                         subject,
                         cb=callback,
                         durable=consumer_name,
+                        queue=consumer_name,
                         stream=settings.NATS_STREAM_NAME,
                     ),
                     timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
