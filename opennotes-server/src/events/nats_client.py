@@ -113,15 +113,25 @@ class NATSClientManager:
             f"Failed to connect to NATS at {url} after {max_startup_retries} attempts"
         ) from last_error
 
-    async def disconnect(self) -> None:
+    async def disconnect(self, timeout: float = 5.0) -> None:
+        """Disconnect from NATS, draining and closing the connection.
+
+        Args:
+            timeout: Maximum seconds to wait for drain/close operations.
+                     Prevents indefinite blocking if NATS server is unresponsive.
+        """
         if self.nc:
             try:
-                await self.nc.drain()
+                await asyncio.wait_for(self.nc.drain(), timeout=timeout)
+            except TimeoutError:
+                logger.warning(f"NATS drain timed out after {timeout}s, forcing close")
             except Exception as e:
                 logger.error(f"Error draining NATS connection: {e}")
             finally:
                 try:
-                    await self.nc.close()
+                    await asyncio.wait_for(self.nc.close(), timeout=timeout)
+                except TimeoutError:
+                    logger.warning(f"NATS close timed out after {timeout}s")
                 except Exception as e:
                     logger.error(f"Error closing NATS connection: {e}")
                 finally:

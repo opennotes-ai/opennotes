@@ -341,7 +341,7 @@ async def finalize_bulk_scan_task(
     from src.bulk_content_scan.schemas import BulkScanStatus
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import RedisClient
-    from src.events.publisher import event_publisher
+    from src.events.publisher import create_worker_event_publisher
     from src.events.schemas import (
         BulkScanProcessingFinishedEvent,
         ScanErrorInfo,
@@ -434,7 +434,8 @@ async def finalize_bulk_scan_task(
                     messages_scanned=messages_scanned,
                     messages_flagged=len(flagged),
                 )
-                await event_publisher.publish_event(processing_finished_event)
+                async with create_worker_event_publisher() as worker_publisher:
+                    await worker_publisher.publish_event(processing_finished_event)
 
                 logger.info(
                     "Scan finalized",
