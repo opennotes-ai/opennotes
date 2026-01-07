@@ -312,6 +312,10 @@ class TestFinalizeBulkScanTask:
         settings.DB_POOL_RECYCLE = 1800
         settings.NATS_STREAM_NAME = "opennotes"
 
+        mock_worker_publisher_ctx = AsyncMock()
+        mock_worker_publisher_ctx.__aenter__ = AsyncMock(return_value=mock_event_publisher)
+        mock_worker_publisher_ctx.__aexit__ = AsyncMock(return_value=None)
+
         with (
             patch("src.tasks.content_monitoring_tasks.create_async_engine") as mock_engine,
             patch(
@@ -331,7 +335,10 @@ class TestFinalizeBulkScanTask:
                 "src.bulk_content_scan.nats_handler.BulkScanResultsPublisher",
                 return_value=mock_publisher,
             ),
-            patch("src.events.publisher.event_publisher", mock_event_publisher),
+            patch(
+                "src.events.publisher.create_worker_event_publisher",
+                return_value=mock_worker_publisher_ctx,
+            ),
             patch("src.config.get_settings", return_value=settings),
         ):
             mock_engine.return_value = MagicMock()
@@ -349,6 +356,7 @@ class TestFinalizeBulkScanTask:
 
             assert result["status"] == "completed"
             mock_service.complete_scan.assert_called_once()
+            mock_event_publisher.publish_event.assert_called_once()
 
 
 class TestGenerateAINoteTask:
@@ -1781,3 +1789,62 @@ class TestDualCompletionTriggerPattern:
             mock_service.increment_processed_count.assert_called_once()
             mock_service.get_processed_count.assert_called_once()
             mock_service.get_all_batches_transmitted.assert_called_once()
+
+
+class TestWorkerEventPublisher:
+    """Test worker event publisher context manager (task-976)."""
+
+    @pytest.mark.asyncio
+    async def test_create_worker_event_publisher_connects_and_disconnects(self):
+        """Worker event publisher creates its own NATS connection and cleans up."""
+        mock_nats_client = MagicMock()
+        mock_nats_client.connect = AsyncMock()
+        mock_nats_client.disconnect = AsyncMock()
+
+        with patch("src.events.nats_client.NATSClientManager", return_value=mock_nats_client):
+            from src.events.publisher import create_worker_event_publisher
+
+            async with create_worker_event_publisher() as publisher:
+                mock_nats_client.connect.assert_called_once()
+                assert publisher.nats is mock_nats_client
+
+            mock_nats_client.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_worker_event_publisher_disconnects_on_error(self):
+        """Worker event publisher disconnects even if an error occurs."""
+        mock_nats_client = MagicMock()
+        mock_nats_client.connect = AsyncMock()
+        mock_nats_client.disconnect = AsyncMock()
+
+        with patch("src.events.nats_client.NATSClientManager", return_value=mock_nats_client):
+            from src.events.publisher import create_worker_event_publisher
+
+            with pytest.raises(ValueError, match="test error"):
+                async with create_worker_event_publisher():
+                    raise ValueError("test error")
+
+            # Verify connection lifecycle even after error
+            mock_nats_client.connect.assert_called_once()
+            mock_nats_client.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_event_publisher_accepts_custom_nats_client(self):
+        """EventPublisher can be initialized with a custom NATS client."""
+        mock_nats_client = MagicMock()
+
+        from src.events.publisher import EventPublisher
+
+        publisher = EventPublisher(nats=mock_nats_client)
+
+        assert publisher.nats is mock_nats_client
+
+    @pytest.mark.asyncio
+    async def test_event_publisher_uses_global_singleton_by_default(self):
+        """EventPublisher uses global nats_client singleton when no client provided."""
+        from src.events.nats_client import nats_client
+        from src.events.publisher import EventPublisher
+
+        publisher = EventPublisher()
+
+        assert publisher.nats is nats_client

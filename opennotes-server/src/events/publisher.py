@@ -1,10 +1,15 @@
 import logging
 import secrets
 import time
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import UTC as UTC_TZ
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from src.events.nats_client import NATSClientManager
 
 from nats.errors import Error as NATSError
 from opentelemetry import propagate, trace
@@ -46,8 +51,17 @@ logger = logging.getLogger(__name__)
 
 
 class EventPublisher:
-    def __init__(self) -> None:
-        self.nats = nats_client
+    def __init__(self, nats: "NATSClientManager | None" = None) -> None:
+        """Initialize EventPublisher with optional NATS client.
+
+        Args:
+            nats: Optional NATSClientManager instance. If not provided, uses the
+                  global nats_client singleton. Worker tasks should provide their
+                  own connected NATSClientManager via create_worker_event_publisher().
+        """
+        from src.events.nats_client import NATSClientManager  # noqa: PLC0415
+
+        self.nats: NATSClientManager = nats if nats is not None else nats_client
         self._tracer = trace.get_tracer(__name__)
 
     def _get_subject(self, event_type: EventType) -> str:
@@ -375,3 +389,28 @@ class EventPublisher:
 
 
 event_publisher = EventPublisher()
+
+
+@asynccontextmanager
+async def create_worker_event_publisher() -> AsyncGenerator[EventPublisher, None]:
+    """Create an EventPublisher with its own NATS connection for worker tasks.
+
+    This context manager creates a dedicated NATS client connection for use in
+    TaskIQ worker tasks. The global event_publisher singleton uses the nats_client
+    singleton which is connected during API server startup, but worker processes
+    don't run the API server's lifespan and therefore have an unconnected client.
+
+    Usage:
+        async with create_worker_event_publisher() as publisher:
+            await publisher.publish_event(my_event)
+
+    The NATS connection is automatically closed when the context manager exits.
+    """
+    from src.events.nats_client import NATSClientManager  # noqa: PLC0415
+
+    client = NATSClientManager()
+    await client.connect()
+    try:
+        yield EventPublisher(nats=client)
+    finally:
+        await client.disconnect()
