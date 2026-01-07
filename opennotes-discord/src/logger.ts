@@ -1,4 +1,3 @@
-import { trace } from '@opentelemetry/api';
 import { config } from './config.js';
 
 enum LogLevel {
@@ -27,15 +26,22 @@ const SERVICE_NAME = 'opennotes-discord';
 type LogMeta = Record<string, unknown>;
 
 function getTraceContext(): Record<string, unknown> {
-  const span = trace.getActiveSpan();
-  if (span) {
-    const ctx = span.spanContext();
-    return {
-      otelTraceID: ctx.traceId,
-      otelSpanID: ctx.spanId,
-      otelTraceSampled: (ctx.traceFlags & 1) === 1,
-      otelServiceName: SERVICE_NAME,
-    };
+  try {
+    // OpenTelemetry API is provided by @middleware.io/node-apm
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { trace } = require('@opentelemetry/api');
+    const span = trace.getActiveSpan();
+    if (span) {
+      const ctx = span.spanContext();
+      return {
+        otelTraceID: ctx.traceId,
+        otelSpanID: ctx.spanId,
+        otelTraceSampled: (ctx.traceFlags & 1) === 1,
+        otelServiceName: SERVICE_NAME,
+      };
+    }
+  } catch {
+    // OpenTelemetry not available
   }
   return {};
 }

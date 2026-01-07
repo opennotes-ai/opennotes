@@ -9,7 +9,6 @@ from src.monitoring.middleware_apm import (
     is_middleware_apm_configured,
     setup_middleware_apm,
 )
-from src.monitoring.tracing import TracingManager, get_tracer
 
 __all__ = [
     "DistributedHealthCoordinator",
@@ -18,11 +17,9 @@ __all__ = [
     "HealthStatus",
     "InstanceMetadata",
     "MetricsMiddleware",
-    "TracingManager",
     "get_logger",
     "get_metrics",
     "get_middleware_apm_config",
-    "get_tracer",
     "initialize_instance_metadata",
     "is_middleware_apm_configured",
     "setup_logging",

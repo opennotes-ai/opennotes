@@ -90,7 +90,6 @@ from src.monitoring import (
     DistributedHealthCoordinator,
     HealthChecker,
     MetricsMiddleware,
-    TracingManager,
     get_logger,
     get_metrics,
     initialize_instance_metadata,
@@ -133,93 +132,6 @@ initialize_instance_metadata(
     environment=settings.ENVIRONMENT,
 )
 logger.info(f"Instance metadata initialized: {settings.INSTANCE_ID}")
-
-tracing_manager = TracingManager(
-    service_name=settings.PROJECT_NAME,
-    service_version=settings.VERSION,
-    environment=settings.ENVIRONMENT,
-    otlp_endpoint=settings.OTLP_ENDPOINT,
-    otlp_insecure=settings.OTLP_INSECURE,
-    otlp_headers=settings.OTLP_HEADERS,
-    enable_console_export=settings.ENABLE_CONSOLE_TRACING,
-    sample_rate=settings.TRACING_SAMPLE_RATE,
-    otel_log_level=settings.OTEL_LOG_LEVEL,
-)
-
-if settings.ENABLE_TRACING and not settings.TESTING and not settings.MIDDLEWARE_APM_ENABLED:
-    tracing_manager.setup()
-elif settings.MIDDLEWARE_APM_ENABLED and not settings.TESTING:
-    logger.info("Using Middleware.io APM - legacy OTel tracing disabled")
-
-
-def _setup_pyroscope() -> bool:
-    """Initialize Pyroscope continuous profiling if enabled.
-
-    DEPRECATED (task-969): This function is deprecated in favor of Middleware.io APM
-    which provides built-in continuous profiling. Set MIDDLEWARE_APM_ENABLED=true to use MW.
-    This code is retained for backward compatibility during migration.
-
-    Returns:
-        True if Pyroscope was successfully configured, False otherwise.
-    """
-    if not settings.PYROSCOPE_ENABLED:
-        logger.debug("Pyroscope profiling disabled (PYROSCOPE_ENABLED=False)")
-        return False
-
-    if not settings.PYROSCOPE_SERVER_ADDRESS:
-        logger.warning(
-            "Pyroscope enabled but PYROSCOPE_SERVER_ADDRESS not set - profiling disabled"
-        )
-        return False
-
-    try:
-        import pyroscope
-
-        app_name = settings.PYROSCOPE_APPLICATION_NAME or settings.PROJECT_NAME
-        app_name = app_name.replace(" ", "-").lower()
-
-        config_kwargs: dict[str, str | int | bool | dict[str, str]] = {
-            "application_name": app_name,
-            "server_address": settings.PYROSCOPE_SERVER_ADDRESS,
-            "sample_rate": settings.PYROSCOPE_SAMPLE_RATE,
-            "detect_subprocesses": settings.PYROSCOPE_DETECT_SUBPROCESSES,
-            "oncpu": settings.PYROSCOPE_ONCPU,
-            "gil_only": settings.PYROSCOPE_GIL_ONLY,
-            "enable_logging": settings.PYROSCOPE_ENABLE_LOGGING,
-            "tags": {
-                "environment": settings.ENVIRONMENT,
-                "version": settings.VERSION,
-                "instance_id": settings.INSTANCE_ID,
-            },
-        }
-
-        if settings.PYROSCOPE_TENANT_ID:
-            config_kwargs["tenant_id"] = settings.PYROSCOPE_TENANT_ID
-        if settings.PYROSCOPE_AUTH_TOKEN:
-            config_kwargs["auth_token"] = settings.PYROSCOPE_AUTH_TOKEN
-
-        pyroscope.configure(**config_kwargs)  # type: ignore[arg-type]
-
-        logger.info(
-            f"Pyroscope profiling enabled: app={app_name}, "
-            f"server={settings.PYROSCOPE_SERVER_ADDRESS}, "
-            f"sample_rate={settings.PYROSCOPE_SAMPLE_RATE}Hz"
-        )
-        return True
-
-    except ImportError:
-        logger.warning("pyroscope-io package not installed - profiling disabled")
-        return False
-    except Exception as e:
-        logger.error(f"Failed to configure Pyroscope: {e}")
-        return False
-
-
-if settings.PYROSCOPE_ENABLED and not settings.TESTING and not settings.MIDDLEWARE_APM_ENABLED:
-    _setup_pyroscope()
-elif settings.MIDDLEWARE_APM_ENABLED and settings.PYROSCOPE_ENABLED:
-    logger.info("Using Middleware.io profiling - legacy Pyroscope disabled")
-
 
 if settings.TRACELOOP_ENABLED and not settings.TESTING:
     from src.monitoring.traceloop import setup_traceloop
@@ -488,7 +400,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Redis connections closed")
 
     await close_db()
-    tracing_manager.shutdown()
     logger.info(f"Shutting down {settings.PROJECT_NAME}")
 
 
@@ -502,11 +413,7 @@ app = FastAPI(
     separate_input_output_schemas=False,
 )
 
-if settings.ENABLE_TRACING and not settings.TESTING and not settings.MIDDLEWARE_APM_ENABLED:
-    tracing_manager.instrument_fastapi(app)
-    tracing_manager.instrument_sqlalchemy(get_engine().sync_engine)
-    app.add_middleware(DiscordContextMiddleware)
-elif settings.MIDDLEWARE_APM_ENABLED and not settings.TESTING:
+if settings.MIDDLEWARE_APM_ENABLED and not settings.TESTING:
     app.add_middleware(DiscordContextMiddleware)
 
 app.state.limiter = limiter

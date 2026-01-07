@@ -1,9 +1,17 @@
-import { initTelemetry, shutdownTelemetry } from './telemetry.js';
-
-initTelemetry();
-
 import { Bot } from './bot.js';
 import { logger } from './logger.js';
+
+async function shutdownTelemetry(): Promise<void> {
+  try {
+    const tracker = require('@middleware.io/node-apm');
+    if (tracker && typeof tracker.sdkShutdown === 'function') {
+      await tracker.sdkShutdown();
+      logger.info('Middleware.io APM shutdown complete');
+    }
+  } catch {
+    // APM not available or not initialized
+  }
+}
 
 const bot = new Bot();
 
