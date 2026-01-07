@@ -1,12 +1,25 @@
 """Dataset loading utilities for relevance check training."""
 
 import json
+import logging
+import random
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import dspy
 import yaml
+
+logger = logging.getLogger(__name__)
+
+FACT_CHECK_CONTENT_MAX_LENGTH = 500
+REQUIRED_YAML_FIELDS = [
+    "message",
+    "fact_check_title",
+    "fact_check_content",
+    "is_relevant",
+    "reasoning",
+]
 
 
 @dataclass
@@ -56,11 +69,27 @@ def load_examples_from_yaml(yaml_path: Path | None = None) -> list[RelevanceExam
 
     examples = []
     for item in examples_data:
+        example_id = item.get("example_id", "unknown")
+
+        missing_fields = [field for field in REQUIRED_YAML_FIELDS if field not in item]
+        if missing_fields:
+            raise ValueError(
+                f"Example '{example_id}' missing required field(s): {', '.join(missing_fields)}"
+            )
+
+        fact_check_content = item["fact_check_content"]
+        if len(fact_check_content) > FACT_CHECK_CONTENT_MAX_LENGTH:
+            logger.warning(
+                f"Truncating fact_check_content from {len(fact_check_content)} to "
+                f"{FACT_CHECK_CONTENT_MAX_LENGTH} chars for example '{example_id}'"
+            )
+            fact_check_content = fact_check_content[:FACT_CHECK_CONTENT_MAX_LENGTH]
+
         ex = RelevanceExample(
-            example_id=item.get("example_id", "unknown"),
+            example_id=example_id,
             message=item["message"],
             fact_check_title=item["fact_check_title"],
-            fact_check_content=item["fact_check_content"][:500],
+            fact_check_content=fact_check_content,
             is_relevant=item["is_relevant"],
             reasoning=item["reasoning"],
         )
@@ -85,21 +114,63 @@ def load_examples_from_json(json_path: Path) -> list[RelevanceExample]:
 
     examples = []
     for item in examples_data:
+        example_id = item.get("example_id", "unknown")
+
         if "original_message" in item:
+            required_fields = [
+                "original_message",
+                "fact_check",
+                "expected_is_relevant",
+                "expected_reasoning",
+            ]
+            missing = [f for f in required_fields if f not in item]
+            if missing:
+                raise ValueError(
+                    f"Example '{example_id}' missing required field(s): {', '.join(missing)}"
+                )
+            if "fact_check" in item:
+                fc_missing = [f for f in ["title", "content"] if f not in item["fact_check"]]
+                if fc_missing:
+                    raise ValueError(
+                        f"Example '{example_id}' missing required fact_check field(s): {', '.join(fc_missing)}"
+                    )
+
+            fact_check_content = item["fact_check"]["content"]
+            if len(fact_check_content) > FACT_CHECK_CONTENT_MAX_LENGTH:
+                logger.warning(
+                    f"Truncating fact_check_content from {len(fact_check_content)} to "
+                    f"{FACT_CHECK_CONTENT_MAX_LENGTH} chars for example '{example_id}'"
+                )
+                fact_check_content = fact_check_content[:FACT_CHECK_CONTENT_MAX_LENGTH]
+
             ex = RelevanceExample(
-                example_id=item.get("example_id", "unknown"),
+                example_id=example_id,
                 message=item["original_message"],
                 fact_check_title=item["fact_check"]["title"],
-                fact_check_content=item["fact_check"]["content"][:500],
+                fact_check_content=fact_check_content,
                 is_relevant=item["expected_is_relevant"],
                 reasoning=item["expected_reasoning"],
             )
         else:
+            missing_fields = [field for field in REQUIRED_YAML_FIELDS if field not in item]
+            if missing_fields:
+                raise ValueError(
+                    f"Example '{example_id}' missing required field(s): {', '.join(missing_fields)}"
+                )
+
+            fact_check_content = item["fact_check_content"]
+            if len(fact_check_content) > FACT_CHECK_CONTENT_MAX_LENGTH:
+                logger.warning(
+                    f"Truncating fact_check_content from {len(fact_check_content)} to "
+                    f"{FACT_CHECK_CONTENT_MAX_LENGTH} chars for example '{example_id}'"
+                )
+                fact_check_content = fact_check_content[:FACT_CHECK_CONTENT_MAX_LENGTH]
+
             ex = RelevanceExample(
-                example_id=item.get("example_id", "unknown"),
+                example_id=example_id,
                 message=item["message"],
                 fact_check_title=item["fact_check_title"],
-                fact_check_content=item["fact_check_content"][:500],
+                fact_check_content=fact_check_content,
                 is_relevant=item["is_relevant"],
                 reasoning=item["reasoning"],
             )
@@ -180,17 +251,23 @@ def load_training_examples(
 def get_train_test_split(
     test_ratio: float = 0.2,
     dataset_path: Path | None = None,
+    seed: int = 42,
 ) -> tuple[list[dspy.Example], list[dspy.Example]]:
     """Split examples into train and test sets.
 
     Args:
         test_ratio: Ratio of examples to use for testing
         dataset_path: Optional path to dataset file
+        seed: Random seed for reproducible shuffling (default: 42)
 
     Returns:
         Tuple of (train_examples, test_examples)
     """
     examples = load_training_examples(dataset_path)
+
+    rng = random.Random(seed)
+    rng.shuffle(examples)
+
     n_test = max(1, int(len(examples) * test_ratio))
     return examples[:-n_test], examples[-n_test:]
 

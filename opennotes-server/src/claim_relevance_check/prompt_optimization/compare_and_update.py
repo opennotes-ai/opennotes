@@ -1,6 +1,7 @@
 """Compare current prompts with optimized module and update if better."""
 
 import json
+import logging
 from pathlib import Path
 
 import dspy
@@ -8,20 +9,30 @@ import dspy
 from src.claim_relevance_check.prompt_optimization.dataset import get_train_test_split
 from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model
 from src.claim_relevance_check.prompt_optimization.optimize import (
+    DEFAULT_TEST_RATIO,
     create_relevance_module,
     setup_openai_environment,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def evaluate_current_prompts(
     testset: list[dspy.Example],
     model: str = "openai/gpt-5-mini",
+    dataset_path: Path | None = None,
 ) -> dict:
     """Evaluate the current prompts.py approach on test data.
 
     This uses the DSPy module without any demos to simulate
     the baseline behavior.
+
+    Args:
+        testset: Test examples to evaluate on
+        model: LLM model to use for evaluation
+        dataset_path: Optional path to dataset file (for consistency with API)
     """
+    _ = dataset_path
     api_key = setup_openai_environment()
     dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
@@ -147,7 +158,7 @@ def compare_and_update(
     prompts_path: Path = Path("src/claim_relevance_check/prompt_optimization/prompts.py"),
     model: str = "openai/gpt-5-mini",
     force: bool = False,
-    test_ratio: float = 0.3,
+    test_ratio: float = DEFAULT_TEST_RATIO,
     dry_run: bool = False,
     dataset_path: Path | None = None,
 ) -> bool:
@@ -247,8 +258,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test-ratio",
         type=float,
-        default=0.3,
-        help="Ratio of data to use for testing (default: 0.3)",
+        default=DEFAULT_TEST_RATIO,
+        help=f"Ratio of data to use for testing (default: {DEFAULT_TEST_RATIO})",
     )
     parser.add_argument(
         "--dry-run",

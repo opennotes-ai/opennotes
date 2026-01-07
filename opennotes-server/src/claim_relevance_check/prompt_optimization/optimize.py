@@ -11,6 +11,8 @@ from src.claim_relevance_check.prompt_optimization.dataset import get_train_test
 from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model, relevance_metric
 from src.claim_relevance_check.prompt_optimization.signature import RelevanceCheck
 
+DEFAULT_TEST_RATIO = 0.3
+
 
 def setup_openai_environment() -> str:
     """Set up OpenAI environment for litellm.
@@ -57,7 +59,7 @@ def optimize_with_labeled_fewshot(
         Optimized module with few-shot examples
     """
     module = create_relevance_module()
-    optimizer = LabeledFewShot(k=k or len(trainset))
+    optimizer = LabeledFewShot(k=len(trainset) if k is None else k)
     return optimizer.compile(module, trainset=trainset)
 
 
@@ -106,7 +108,9 @@ def optimize_relevance_module(
     api_key = setup_openai_environment()
     dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
-    trainset, testset = get_train_test_split(test_ratio=0.2, dataset_path=dataset_path)
+    trainset, testset = get_train_test_split(
+        test_ratio=DEFAULT_TEST_RATIO, dataset_path=dataset_path
+    )
 
     print(f"Training set: {len(trainset)} examples")
     print(f"Test set: {len(testset)} examples")
@@ -155,13 +159,19 @@ def extract_prompts_from_module(module: dspy.Module) -> dict:
     demos = getattr(module, "demos", None)
     if demos is not None and isinstance(demos, list):
         for demo in demos:
+            fact_check_content = demo.fact_check_content or ""
+            truncated_content = (
+                fact_check_content[:200] + "..."
+                if len(fact_check_content) > 200
+                else fact_check_content
+            )
             result["demos"].append(
                 {
-                    "message": demo.message,
-                    "fact_check_title": demo.fact_check_title,
-                    "fact_check_content": demo.fact_check_content[:200] + "...",
+                    "message": demo.message or "",
+                    "fact_check_title": demo.fact_check_title or "",
+                    "fact_check_content": truncated_content,
                     "is_relevant": demo.is_relevant,
-                    "reasoning": demo.reasoning,
+                    "reasoning": demo.reasoning or "",
                 }
             )
 
