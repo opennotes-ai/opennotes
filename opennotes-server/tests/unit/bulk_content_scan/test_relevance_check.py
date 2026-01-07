@@ -1267,16 +1267,19 @@ class TestContentFilterDetection:
         assert "failed" in reasoning.lower()
 
     @pytest.mark.asyncio
-    async def test_indeterminate_outcome_does_not_flag(
+    async def test_indeterminate_outcome_below_threshold_does_not_flag(
         self,
         mock_session,
         mock_embedding_service,
         mock_redis,
         mock_llm_service,
         sample_message,
-        sample_fact_check_match,
     ) -> None:
-        """When relevance check returns INDETERMINATE, should not flag the message."""
+        """When INDETERMINATE and score below tighter threshold, should not flag.
+
+        With base threshold 0.7, indeterminate threshold = 0.7 + (1-0.7)/2 = 0.85.
+        Score 0.80 < 0.85, so message should not be flagged.
+        """
         call_count = 0
 
         async def mock_complete(*args, **kwargs):
@@ -1299,9 +1302,26 @@ class TestContentFilterDetection:
             )
 
         mock_llm_service.complete = mock_complete
+
+        low_score_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["science"],
+            title="Flat Earth Claim Debunked",
+            content="The claim that the Earth is flat has been thoroughly debunked.",
+            summary="Earth is not flat",
+            rating="false",
+            source_url="https://snopes.com/fact-check/flat-earth",
+            published_date=datetime.now(UTC),
+            author="Fact Checker",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            similarity_score=0.80,
+        )
+
         mock_embedding_service.similarity_search = AsyncMock(
             return_value=SimilaritySearchResponse(
-                matches=[sample_fact_check_match],
+                matches=[low_score_match],
                 total_matches=1,
                 query_text=sample_message.content,
                 dataset_tags=["snopes"],
