@@ -70,6 +70,16 @@ COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
+# =============================================================================
+# Middleware.io APM (task-969)
+# Application telemetry (traces, metrics, logs, profiling) is handled by the
+# middleware-io Python SDK - no additional installation needed in the container.
+#
+# For host-level metrics (CPU, memory, disk), run the MW host agent as a
+# sidecar container: ghcr.io/middleware-labs/mw-host-agent:master
+# See: https://docs.middleware.io/agent-installation/docker
+# =============================================================================
+
 # RUN_MODE controls startup: server (default), worker, or both
 ENV RUN_MODE=server
 
@@ -95,6 +105,16 @@ COPY opennotes-server/docker-entrypoint.sh ./
 COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
+
+# =============================================================================
+# Middleware.io APM (task-969)
+# Application telemetry (traces, metrics, logs, profiling) is handled by the
+# middleware-io Python SDK - no additional installation needed in the container.
+#
+# For host-level metrics (CPU, memory, disk), run the MW host agent as a
+# sidecar container: ghcr.io/middleware-labs/mw-host-agent:master
+# See: https://docs.middleware.io/agent-installation/docker
+# =============================================================================
 
 # RUN_MODE controls startup: server (default), worker, or both
 ENV RUN_MODE=server

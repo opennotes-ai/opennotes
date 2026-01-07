@@ -28,6 +28,12 @@ if [ "${SEED_DEV_API_KEYS}" = "true" ]; then
     fi
 fi
 
+# =============================================================================
+# Middleware.io APM (task-969)
+# Application telemetry is handled by the middleware-io Python SDK.
+# For host metrics, deploy MW host agent as a sidecar container.
+# =============================================================================
+
 # Start the API server
 # Note: Workers now run in a dedicated container/worker pool (see task-915)
 echo "Starting API server..."

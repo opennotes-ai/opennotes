@@ -55,11 +55,13 @@ dependencies = [
     "taskiq-nats>=0.4.0,<1.0.0",
     "taskiq-redis>=1.0.0,<2.0.0",
     "taskiq-fastapi>=0.3.0,<1.0.0",
-    "opentelemetry-instrumentation-logging>=0.59b0",
-    "opentelemetry-semantic-conventions>=0.59b0",
+    "opentelemetry-instrumentation-logging>=0.43b0",
+    "opentelemetry-semantic-conventions>=0.43b0",
     "pyroscope-io>=0.8.0",
     "traceloop-sdk>=0.35.0",
     "dspy>=2.6.0",
+    "middleware-io[profiling]>=2.4.1",
+    "setuptools>=80.9.0",
 ]
 
 [project.optional-dependencies]
@@ -140,6 +142,7 @@ ignore = [
 "scripts/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in scripts
 "src/tasks/**/*.py" = ["PLC0415"]  # Lazy imports required for TaskIQ tasks to avoid import-time settings validation
 "src/monitoring/logging.py" = ["PLC0415"]  # Circular dependency: imports handled in try-except blocks
+"src/monitoring/middleware_apm.py" = ["PLC0415", "PLW0603"]  # Lazy import for optional middleware-io pkg; global state for init tracking
 "src/llm_config/manager.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/middleware/profile_tracking.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/database.py" = ["ARG002"]  # TypeDecorator methods require dialect param for base class compatibility

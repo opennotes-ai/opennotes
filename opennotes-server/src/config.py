@@ -546,6 +546,46 @@ class Settings(BaseSettings):
         "Set to True for development/debugging to see full prompt/completion content.",
     )
 
+    MIDDLEWARE_APM_ENABLED: bool = Field(
+        default=False,
+        description="Enable Middleware.io APM. When enabled, replaces legacy OTel/Pyroscope setup. "
+        "Provides unified traces, metrics, logs, and profiling through Middleware.io SDK. "
+        "Use with middleware-run wrapper for zero-code instrumentation.",
+    )
+    MW_API_KEY: str | None = Field(
+        default=None,
+        description="Middleware.io API key for APM authentication. "
+        "Required when MIDDLEWARE_APM_ENABLED is True.",
+    )
+    MW_TARGET: str | None = Field(
+        default=None,
+        description="Middleware.io OTLP endpoint (e.g., 'https://myaccount.middleware.io:443'). "
+        "Required when MIDDLEWARE_APM_ENABLED is True.",
+    )
+    MW_SERVICE_NAME: str | None = Field(
+        default=None,
+        description="Service name for Middleware.io. Defaults to PROJECT_NAME if not set.",
+    )
+    MW_SAMPLE_RATE: float = Field(
+        default=1.0,
+        description="Middleware.io trace sampling rate (0.0-1.0). 1.0 = 100% of traces.",
+        ge=0.0,
+        le=1.0,
+    )
+    MW_COLLECT_PROFILING: bool = Field(
+        default=True,
+        description="Enable continuous profiling via Middleware.io. "
+        "Requires middleware-io[profiling] extra. Replaces legacy Pyroscope.",
+    )
+    MW_COLLECT_METRICS: bool = Field(
+        default=True,
+        description="Enable metrics collection via Middleware.io.",
+    )
+    MW_COLLECT_LOGS: bool = Field(
+        default=True,
+        description="Enable log collection via Middleware.io.",
+    )
+
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")
     SMTP_USERNAME: str | None = Field(default=None, description="SMTP authentication username")

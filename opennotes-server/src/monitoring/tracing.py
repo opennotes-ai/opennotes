@@ -1,3 +1,21 @@
+# =============================================================================
+# DEPRECATED (task-969): Legacy OpenTelemetry Tracing
+# =============================================================================
+# This module is deprecated in favor of Middleware.io APM which provides
+# unified tracing, metrics, logs, and profiling through a single SDK.
+#
+# Migration:
+# - Set MIDDLEWARE_APM_ENABLED=true to use Middleware.io APM
+# - Set MW_API_KEY and MW_TARGET environment variables
+# - Legacy tracing will be automatically disabled when MW APM is enabled
+#
+# This code is retained for:
+# - Backward compatibility during migration period
+# - Environments where MW APM is not yet configured
+#
+# Reference: https://docs.middleware.io/apm-configuration/python
+# =============================================================================
+
 import logging
 from typing import Any
 
@@ -53,6 +71,14 @@ class BaggageSpanProcessor(SpanProcessor):
 
 
 class TracingManager:
+    """OpenTelemetry tracing manager for distributed tracing setup.
+
+    .. deprecated:: task-969
+        This class is deprecated in favor of Middleware.io APM.
+        Set MIDDLEWARE_APM_ENABLED=true to use the new unified APM solution.
+        This class will be removed in a future release.
+    """
+
     def __init__(
         self,
         service_name: str,
@@ -124,6 +150,11 @@ class TracingManager:
         if self._tracer_provider is not None:
             logger.warning("Tracing already initialized, skipping setup")
             return
+
+        logger.warning(
+            "DEPRECATION: TracingManager is deprecated. "
+            "Set MIDDLEWARE_APM_ENABLED=true to use Middleware.io APM instead."
+        )
 
         self._configure_otel_logging()
 
@@ -215,4 +246,9 @@ class TracingManager:
 
 
 def get_tracer(name: str) -> trace.Tracer:
+    """Get an OpenTelemetry tracer instance.
+
+    .. deprecated:: task-969
+        Use Middleware.io APM instead by setting MIDDLEWARE_APM_ENABLED=true.
+    """
     return trace.get_tracer(name)
