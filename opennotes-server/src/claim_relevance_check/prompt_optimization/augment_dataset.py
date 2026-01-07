@@ -4,13 +4,15 @@ This script helps generate candidate training examples using an LLM,
 with optional interactive review for human approval.
 """
 
+import fcntl
 import json
 import os
-import sys
+import tempfile
+import warnings
 from pathlib import Path
 
 import litellm
-import yaml
+from ruamel.yaml import YAML
 
 from src.claim_relevance_check.prompt_optimization.dataset import (
     DEFAULT_DATASET_PATH,
@@ -18,19 +20,14 @@ from src.claim_relevance_check.prompt_optimization.dataset import (
     load_examples_from_yaml,
     validate_dataset,
 )
+from src.claim_relevance_check.prompt_optimization.utils import (
+    setup_openai_environment,
+    truncate_utf8_safe,
+)
 
-
-def setup_openai_environment() -> str:
-    """Set up OpenAI environment for litellm."""
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    api_key = api_key.strip().strip("'\"")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is not set")
-    os.environ["OPENAI_API_KEY"] = api_key
-    if "OPENAI_API_BASE" in os.environ:
-        del os.environ["OPENAI_API_BASE"]
-    return api_key
-
+REQUIRED_EXAMPLE_FIELDS = frozenset(
+    {"example_id", "message", "fact_check_title", "fact_check_content", "is_relevant", "reasoning"}
+)
 
 AUGMENTATION_PROMPT = """You are helping create training data for a claim relevance classifier.
 
@@ -98,9 +95,40 @@ def generate_example_with_llm(
         if content is None:
             return None
         return json.loads(content)
-    except Exception as e:
-        print(f"Error generating example: {e}")
+    except json.JSONDecodeError as e:
+        print(f"Error parsing LLM response as JSON: {e}")
         return None
+    except litellm.exceptions.APIError as e:
+        print(f"LLM API error: {e}")
+        return None
+    except litellm.exceptions.AuthenticationError as e:
+        print(f"LLM authentication error: {e}")
+        return None
+
+
+def validate_example_fields(example: dict) -> tuple[bool, str]:
+    """Validate that an LLM-generated example has all required fields.
+
+    Args:
+        example: The example dict to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    missing_fields = REQUIRED_EXAMPLE_FIELDS - set(example.keys())
+    if missing_fields:
+        return False, f"Missing required fields: {', '.join(sorted(missing_fields))}"
+
+    if not isinstance(example.get("is_relevant"), bool):
+        return False, "Field 'is_relevant' must be a boolean"
+
+    for field in ("message", "fact_check_title", "fact_check_content", "reasoning", "example_id"):
+        if not isinstance(example.get(field), str):
+            return False, f"Field '{field}' must be a string"
+        if not example[field].strip():
+            return False, f"Field '{field}' cannot be empty"
+
+    return True, ""
 
 
 def interactive_review(example: dict) -> str:
@@ -118,7 +146,8 @@ def interactive_review(example: dict) -> str:
     print(f"\nID: {example.get('example_id', 'unknown')}")
     print(f'\nMessage: "{example.get("message", "")}"')
     print(f"\nFact-check: {example.get('fact_check_title', '')}")
-    print(f"Content: {example.get('fact_check_content', '')[:200]}...")
+    content = example.get("fact_check_content", "")
+    print(f"Content: {truncate_utf8_safe(content, 200)}")
     print(f"\nIs Relevant: {example.get('is_relevant', False)}")
     print(f"\nReasoning: {example.get('reasoning', '')}")
     print("\n" + "-" * 60)
@@ -148,9 +177,8 @@ def edit_example(example: dict) -> dict:
     if new_title:
         example["fact_check_title"] = new_title
 
-    new_content = input(
-        f"Fact-check content [{example.get('fact_check_content', '')[:50]}...]: "
-    ).strip()
+    content_preview = truncate_utf8_safe(example.get("fact_check_content", ""), 50)
+    new_content = input(f"Fact-check content [{content_preview}]: ").strip()
     if new_content:
         example["fact_check_content"] = new_content
 
@@ -160,7 +188,8 @@ def edit_example(example: dict) -> dict:
     if relevant_str in ("true", "false"):
         example["is_relevant"] = relevant_str == "true"
 
-    new_reasoning = input(f"Reasoning [{example.get('reasoning', '')[:50]}...]: ").strip()
+    reasoning_preview = truncate_utf8_safe(example.get("reasoning", ""), 50)
+    new_reasoning = input(f"Reasoning [{reasoning_preview}]: ").strip()
     if new_reasoning:
         example["reasoning"] = new_reasoning
 
@@ -168,27 +197,80 @@ def edit_example(example: dict) -> dict:
 
 
 def append_to_dataset(example: dict, dataset_path: Path) -> None:
-    """Append an example to the YAML dataset file."""
-    with dataset_path.open() as f:
-        data = yaml.safe_load(f)
+    """Append an example to the YAML dataset file with file locking and atomic write.
 
-    if "examples" not in data:
-        data["examples"] = []
+    Uses file locking to prevent concurrent corruption and writes to a temp file
+    first, then atomically renames to preserve data integrity.
+    """
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.default_flow_style = False
+    yaml.allow_unicode = True
 
-    data["examples"].append(example)
+    lock_path = dataset_path.with_suffix(".lock")
 
-    with dataset_path.open("w") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            with dataset_path.open() as f:
+                data = yaml.load(f)
 
-    print(f"✓ Added {example['example_id']} to {dataset_path}")
+            if data is None:
+                data = {}
+            if "examples" not in data:
+                data["examples"] = []
+
+            data["examples"].append(example)
+
+            fd, temp_path_str = tempfile.mkstemp(
+                dir=dataset_path.parent,
+                prefix=".tmp_dataset_",
+                suffix=".yaml",
+            )
+            temp_path = Path(temp_path_str)
+            try:
+                with os.fdopen(fd, "w") as temp_file:
+                    yaml.dump(data, temp_file)
+
+                temp_path.rename(dataset_path)
+            except Exception:
+                if temp_path.exists():
+                    temp_path.unlink()
+                raise
+
+            print(f"Added {example['example_id']} to {dataset_path}")
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def get_next_example_id(examples: list[RelevanceExample], is_positive: bool) -> str:
-    """Generate the next example ID based on existing examples."""
+    """Generate the next example ID based on existing examples.
+
+    Handles malformed IDs gracefully by skipping them with a warning.
+    """
     prefix = "tp" if is_positive else "fp"
-    existing_ids = [
-        int(ex.example_id.split("-")[1]) for ex in examples if ex.example_id.startswith(prefix)
-    ]
+    existing_ids: list[int] = []
+
+    for ex in examples:
+        if not ex.example_id.startswith(prefix):
+            continue
+        parts = ex.example_id.split("-")
+        if len(parts) != 2:
+            warnings.warn(
+                f"Skipping malformed example ID '{ex.example_id}': expected format '{prefix}-NNN'",
+                stacklevel=2,
+            )
+            continue
+        try:
+            existing_ids.append(int(parts[1]))
+        except ValueError:
+            warnings.warn(
+                f"Skipping malformed example ID '{ex.example_id}': "
+                f"'{parts[1]}' is not a valid integer",
+                stacklevel=2,
+            )
+            continue
+
     next_num = max(existing_ids, default=0) + 1
     return f"{prefix}-{next_num:03d}"
 
@@ -253,6 +335,11 @@ def augment_dataset(
             print("Failed to generate example, skipping.")
             continue
 
+        is_valid, error_msg = validate_example_fields(example)
+        if not is_valid:
+            print(f"Invalid example from LLM: {error_msg}. Skipping.")
+            continue
+
         if interactive:
             while True:
                 action = interactive_review(example)
@@ -273,9 +360,10 @@ def augment_dataset(
             append_to_dataset(example, path)
             existing.append(RelevanceExample(**example))
             added += 1
-            print(f'  Added: {example["example_id"]} - "{example["message"][:40]}..."')
+            message_preview = truncate_utf8_safe(example["message"], 40)
+            print(f'  Added: {example["example_id"]} - "{message_preview}"')
 
-    print(f"\n✓ Added {added} examples to dataset")
+    print(f"\nAdded {added} examples to dataset")
     return added
 
 
@@ -318,12 +406,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    if args.no_interactive:
-        print("⚠️  Running in non-interactive mode. All examples will be auto-accepted.")
-        confirm = input("Continue? [y/N] ").strip().lower()
-        if confirm != "y":
-            sys.exit(0)
 
     augment_dataset(
         count=args.count,

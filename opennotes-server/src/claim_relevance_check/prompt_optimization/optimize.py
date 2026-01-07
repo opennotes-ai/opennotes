@@ -1,7 +1,6 @@
 """Optimization script for relevance check prompts using DSPy."""
 
 import json
-import os
 from pathlib import Path
 
 import dspy
@@ -10,34 +9,9 @@ from dspy.teleprompt import BootstrapFewShot, LabeledFewShot
 from src.claim_relevance_check.prompt_optimization.dataset import get_train_test_split
 from src.claim_relevance_check.prompt_optimization.evaluate import evaluate_model, relevance_metric
 from src.claim_relevance_check.prompt_optimization.signature import RelevanceCheck
+from src.claim_relevance_check.prompt_optimization.utils import setup_openai_environment
 
 DEFAULT_TEST_RATIO = 0.3
-
-
-def setup_openai_environment() -> str:
-    """Set up OpenAI environment for litellm.
-
-    Cleans the API key and removes any OPENAI_API_BASE override
-    (e.g., from VSCode/GitHub Copilot) to ensure requests go to OpenAI.
-
-    Returns:
-        The cleaned API key
-    """
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    # Strip whitespace and any quotes that might have been included
-    api_key = api_key.strip().strip("'\"")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable is not set")
-
-    # Set cleaned key back into environment for litellm's internal use
-    os.environ["OPENAI_API_KEY"] = api_key
-
-    # Remove OPENAI_API_BASE if set (e.g., from VSCode/GitHub Copilot)
-    # to ensure requests go to the actual OpenAI API
-    if "OPENAI_API_BASE" in os.environ:
-        del os.environ["OPENAI_API_BASE"]
-
-    return api_key
 
 
 def create_relevance_module() -> dspy.ChainOfThought:
