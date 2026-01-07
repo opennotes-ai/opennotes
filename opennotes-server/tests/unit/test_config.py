@@ -724,3 +724,165 @@ class TestBulkContentScanRepromptDaysValidation:
         ):
             settings = create_settings_no_env_file()
             assert settings.BULK_CONTENT_SCAN_REPROMPT_DAYS == 180
+
+
+class TestLLMModelNameValidation:
+    """Test LLM model name validation to prevent empty strings (task-974)."""
+
+    def test_relevance_check_model_rejects_empty_string(self):
+        """RELEVANCE_CHECK_MODEL cannot be empty string."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "RELEVANCE_CHECK_MODEL": "",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("RELEVANCE_CHECK_MODEL",)
+                and "string_too_short" in str(error["type"]).lower()
+                for error in errors
+            ), f"Expected min_length validation error, got: {errors}"
+
+    def test_default_full_model_rejects_empty_string(self):
+        """DEFAULT_FULL_MODEL cannot be empty string."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_FULL_MODEL": "",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("DEFAULT_FULL_MODEL",)
+                and "string_too_short" in str(error["type"]).lower()
+                for error in errors
+            ), f"Expected min_length validation error, got: {errors}"
+
+    def test_default_mini_model_rejects_empty_string(self):
+        """DEFAULT_MINI_MODEL cannot be empty string."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_MINI_MODEL": "",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("DEFAULT_MINI_MODEL",)
+                and "string_too_short" in str(error["type"]).lower()
+                for error in errors
+            ), f"Expected min_length validation error, got: {errors}"
+
+    def test_embedding_model_rejects_empty_string(self):
+        """EMBEDDING_MODEL cannot be empty string."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "EMBEDDING_MODEL": "",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("EMBEDDING_MODEL",)
+                and "string_too_short" in str(error["type"]).lower()
+                for error in errors
+            ), f"Expected min_length validation error, got: {errors}"
+
+    def test_vision_model_rejects_empty_string(self):
+        """VISION_MODEL cannot be empty string."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "VISION_MODEL": "",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("VISION_MODEL",)
+                and "string_too_short" in str(error["type"]).lower()
+                for error in errors
+            ), f"Expected min_length validation error, got: {errors}"
+
+    def test_ai_note_writer_model_rejects_empty_string(self):
+        """AI_NOTE_WRITER_MODEL cannot be empty string."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "AI_NOTE_WRITER_MODEL": "",
+            },
+            clear=True,
+        ):
+            with pytest.raises(ValidationError) as exc_info:
+                create_settings_no_env_file()
+
+            errors = exc_info.value.errors()
+            assert any(
+                error["loc"] == ("AI_NOTE_WRITER_MODEL",)
+                and "string_too_short" in str(error["type"]).lower()
+                for error in errors
+            ), f"Expected min_length validation error, got: {errors}"
+
+    def test_model_names_have_valid_defaults(self):
+        """All model name fields should have valid non-empty defaults."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.RELEVANCE_CHECK_MODEL == "gpt-5-mini"
+            assert settings.DEFAULT_FULL_MODEL == "openai/gpt-5.1"
+            assert settings.DEFAULT_MINI_MODEL == "openai/gpt-5-mini"
+            assert settings.EMBEDDING_MODEL == "text-embedding-3-small"
+            assert settings.VISION_MODEL == "gpt-5.1"
+            assert settings.AI_NOTE_WRITER_MODEL == "gpt-5.1"

@@ -424,3 +424,83 @@ class TestLiteLLMProvider:
             result = await openai_provider.complete([LLMMessage(role="user", content="Hello")])
 
             assert result.provider == "openai"
+
+    @pytest.mark.asyncio
+    async def test_complete_raises_on_empty_model(self) -> None:
+        """complete() should raise ValueError when model is empty after fallback."""
+        provider = LiteLLMProvider(
+            api_key="test-key",
+            default_model="",
+            settings=LiteLLMProviderSettings(),
+        )
+
+        with pytest.raises(ValueError, match="Model name cannot be empty"):
+            await provider.complete(
+                [LLMMessage(role="user", content="Hello")],
+                LiteLLMCompletionParams(model=""),
+            )
+
+    @pytest.mark.asyncio
+    async def test_complete_uses_default_model_for_empty_param_model(
+        self, mock_response: MagicMock
+    ) -> None:
+        """complete() should fall back to default_model when params.model is empty."""
+        provider = LiteLLMProvider(
+            api_key="test-key",
+            default_model="gpt-5-mini",
+            settings=LiteLLMProviderSettings(),
+        )
+
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_response)
+
+            await provider.complete(
+                [LLMMessage(role="user", content="Hello")],
+                LiteLLMCompletionParams(model=""),
+            )
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert call_kwargs["model"] == "gpt-5-mini"
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_raises_on_empty_model(self) -> None:
+        """stream_complete() should raise ValueError when model is empty after fallback."""
+        provider = LiteLLMProvider(
+            api_key="test-key",
+            default_model="",
+            settings=LiteLLMProviderSettings(),
+        )
+
+        with pytest.raises(ValueError, match="Model name cannot be empty"):
+            async for _ in provider.stream_complete(
+                [LLMMessage(role="user", content="Hello")],
+                LiteLLMCompletionParams(model=""),
+            ):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_complete_uses_default_model_for_empty_param_model(self) -> None:
+        """stream_complete() should fall back to default_model when params.model is empty."""
+        provider = LiteLLMProvider(
+            api_key="test-key",
+            default_model="gpt-5-mini",
+            settings=LiteLLMProviderSettings(),
+        )
+
+        async def mock_stream():
+            chunk = MagicMock()
+            chunk.choices = [MagicMock(delta=MagicMock(content="Hi"))]
+            yield chunk
+
+        with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
+            mock_litellm.acompletion = AsyncMock(return_value=mock_stream())
+
+            chunks = []
+            async for chunk in provider.stream_complete(
+                [LLMMessage(role="user", content="Hello")],
+                LiteLLMCompletionParams(model=""),
+            ):
+                chunks.append(chunk)
+
+            call_kwargs = mock_litellm.acompletion.call_args.kwargs
+            assert call_kwargs["model"] == "gpt-5-mini"

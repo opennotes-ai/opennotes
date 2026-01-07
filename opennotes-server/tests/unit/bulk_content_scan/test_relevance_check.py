@@ -177,14 +177,14 @@ class TestCheckRelevanceWithLLM:
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_check_relevance_fails_open_on_llm_error(
+    async def test_check_relevance_fails_open_on_llm_error_returns_indeterminate(
         self,
         mock_session,
         mock_embedding_service,
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM call fails, should return RELEVANT (fail-open for safety)."""
+        """When LLM call fails, should return INDETERMINATE to apply tighter threshold."""
         mock_llm_service.complete = AsyncMock(side_effect=Exception("LLM service unavailable"))
 
         service = BulkContentScanService(
@@ -200,18 +200,18 @@ class TestCheckRelevanceWithLLM:
             matched_source="https://example.com",
         )
 
-        assert outcome == RelevanceOutcome.RELEVANT
+        assert outcome == RelevanceOutcome.INDETERMINATE
         assert "error" in reasoning.lower() or "failed" in reasoning.lower()
 
     @pytest.mark.asyncio
-    async def test_check_relevance_fails_open_on_malformed_json(
+    async def test_check_relevance_fails_open_on_malformed_json_returns_indeterminate(
         self,
         mock_session,
         mock_embedding_service,
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM returns malformed JSON, should return RELEVANT (fail-open)."""
+        """When LLM returns malformed JSON, should return INDETERMINATE (apply tighter threshold)."""
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="This is not valid JSON",
@@ -235,7 +235,7 @@ class TestCheckRelevanceWithLLM:
             matched_source=None,
         )
 
-        assert outcome == RelevanceOutcome.RELEVANT
+        assert outcome == RelevanceOutcome.INDETERMINATE
 
     @pytest.mark.asyncio
     async def test_check_relevance_disabled_by_feature_flag(
@@ -436,7 +436,7 @@ class TestSimilarityScanRelevanceIntegration:
         assert len(result.matches) == 1
 
     @pytest.mark.asyncio
-    async def test_similarity_scan_flags_on_llm_error_fail_open(
+    async def test_similarity_scan_flags_high_score_on_llm_error_with_tighter_threshold(
         self,
         mock_session,
         mock_embedding_service,
@@ -445,7 +445,11 @@ class TestSimilarityScanRelevanceIntegration:
         sample_message,
         sample_fact_check_match,
     ) -> None:
-        """When LLM errors during relevance check, should still flag (fail-open)."""
+        """When LLM errors, apply tighter threshold. Score 0.92 > 0.85 → flagged.
+
+        With base threshold 0.7, indeterminate threshold = 0.7 + (1-0.7)/2 = 0.85.
+        The sample_fact_check_match has similarity_score=0.92, which exceeds 0.85.
+        """
         mock_embedding_service.similarity_search = AsyncMock(
             return_value=SimilaritySearchResponse(
                 matches=[sample_fact_check_match],
@@ -473,6 +477,7 @@ class TestSimilarityScanRelevanceIntegration:
             mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
             mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.INSTANCE_ID = "test"
 
             result = await service._similarity_scan(
                 scan_id=uuid4(),
@@ -696,14 +701,14 @@ class TestRelevanceCheckEdgeCases:
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_check_relevance_fails_open_on_timeout(
+    async def test_check_relevance_fails_open_on_timeout_returns_indeterminate(
         self,
         mock_session,
         mock_embedding_service,
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM call times out, should return RELEVANT (fail-open for safety)."""
+        """When LLM call times out, should return INDETERMINATE to apply tighter threshold."""
         import asyncio
 
         async def slow_complete(*args, **kwargs):
@@ -738,7 +743,7 @@ class TestRelevanceCheckEdgeCases:
                 matched_source="https://example.com",
             )
 
-        assert outcome == RelevanceOutcome.RELEVANT
+        assert outcome == RelevanceOutcome.INDETERMINATE
         assert "timed out" in reasoning.lower()
 
     @pytest.mark.asyncio
@@ -1661,3 +1666,477 @@ class TestRetryWithoutFactCheckEdgeCases:
 
         assert outcome == RelevanceOutcome.INDETERMINATE
         assert "LLM service not configured" in reasoning
+
+
+class TestFailOpenWithTighterThreshold:
+    """Tests for fail-open behavior applying tighter threshold (task-973).
+
+    When LLM fails (timeout, validation error, general error), the system now returns
+    INDETERMINATE instead of RELEVANT. This ensures the tighter threshold formula
+    (base_threshold + (1-base_threshold)/2) is applied, filtering low-confidence matches.
+
+    For base threshold 0.6:
+    - Tighter threshold = 0.6 + (1-0.6)/2 = 0.6 + 0.2 = 0.8
+    - A 30% confidence message (0.3) is filtered (0.3 < 0.8)
+    - A 90% confidence message (0.9) is flagged (0.9 >= 0.8)
+    """
+
+    @pytest.mark.asyncio
+    async def test_fail_open_filters_low_confidence_message_on_timeout(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Timeout with 30% confidence → filtered (0.3 < 0.8 tighter threshold)."""
+        import asyncio
+
+        async def slow_complete(*args, **kwargs):
+            await asyncio.sleep(10)
+            return LLMResponse(
+                content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = slow_complete
+
+        low_score_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["science"],
+            title="Test Fact Check",
+            content="Test content",
+            summary="Test summary",
+            rating="false",
+            source_url="https://example.com",
+            published_date=datetime.now(UTC),
+            author="Tester",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            similarity_score=0.30,
+        )
+
+        message = BulkScanMessage(
+            message_id="low_confidence_msg",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Low confidence test message",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[low_score_match],
+                total_matches=1,
+                query_text=message.content,
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.INSTANCE_ID = "test"
+
+            result = await service._similarity_scan(
+                scan_id=uuid4(),
+                message=message,
+                community_server_platform_id="test_server",
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fail_open_filters_low_confidence_message_on_llm_error(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """LLM error with 30% confidence → filtered (0.3 < 0.8 tighter threshold)."""
+        mock_llm_service.complete = AsyncMock(side_effect=Exception("LLM service unavailable"))
+
+        low_score_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["science"],
+            title="Test Fact Check",
+            content="Test content",
+            summary="Test summary",
+            rating="false",
+            source_url="https://example.com",
+            published_date=datetime.now(UTC),
+            author="Tester",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            similarity_score=0.30,
+        )
+
+        message = BulkScanMessage(
+            message_id="low_confidence_msg",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Low confidence test message",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[low_score_match],
+                total_matches=1,
+                query_text=message.content,
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.INSTANCE_ID = "test"
+
+            result = await service._similarity_scan(
+                scan_id=uuid4(),
+                message=message,
+                community_server_platform_id="test_server",
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fail_open_filters_low_confidence_message_on_validation_error(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Validation error with 30% confidence → filtered (0.3 < 0.8 tighter threshold)."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content="This is not valid JSON",
+                model="gpt-5-mini",
+                tokens_used=10,
+                finish_reason="stop",
+                provider="openai",
+            )
+        )
+
+        low_score_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["science"],
+            title="Test Fact Check",
+            content="Test content",
+            summary="Test summary",
+            rating="false",
+            source_url="https://example.com",
+            published_date=datetime.now(UTC),
+            author="Tester",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            similarity_score=0.30,
+        )
+
+        message = BulkScanMessage(
+            message_id="low_confidence_msg",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Low confidence test message",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[low_score_match],
+                total_matches=1,
+                query_text=message.content,
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.INSTANCE_ID = "test"
+
+            result = await service._similarity_scan(
+                scan_id=uuid4(),
+                message=message,
+                community_server_platform_id="test_server",
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fail_open_flags_high_confidence_message_on_timeout(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Timeout with 90% confidence → flagged (0.9 >= 0.8 tighter threshold)."""
+        import asyncio
+
+        async def slow_complete(*args, **kwargs):
+            await asyncio.sleep(10)
+            return LLMResponse(
+                content=json.dumps({"is_relevant": True, "reasoning": "Test"}),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = slow_complete
+
+        high_score_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["science"],
+            title="Test Fact Check",
+            content="Test content",
+            summary="Test summary",
+            rating="false",
+            source_url="https://example.com",
+            published_date=datetime.now(UTC),
+            author="Tester",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            similarity_score=0.90,
+        )
+
+        message = BulkScanMessage(
+            message_id="high_confidence_msg",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="High confidence test message",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[high_score_match],
+                total_matches=1,
+                query_text=message.content,
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.INSTANCE_ID = "test"
+
+            result = await service._similarity_scan(
+                scan_id=uuid4(),
+                message=message,
+                community_server_platform_id="test_server",
+            )
+
+        assert result is not None
+        assert result.message_id == "high_confidence_msg"
+
+    @pytest.mark.asyncio
+    async def test_fail_open_uses_correct_tighter_threshold_formula(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Verify threshold math: 0.6 base → 0.8 tighter. Score 0.79 < 0.8 → filtered."""
+        mock_llm_service.complete = AsyncMock(side_effect=Exception("LLM unavailable"))
+
+        borderline_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["science"],
+            title="Test Fact Check",
+            content="Test content",
+            summary="Test summary",
+            rating="false",
+            source_url="https://example.com",
+            published_date=datetime.now(UTC),
+            author="Tester",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            similarity_score=0.79,
+        )
+
+        message = BulkScanMessage(
+            message_id="borderline_msg",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Borderline confidence test message",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[borderline_match],
+                total_matches=1,
+                query_text=message.content,
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.INSTANCE_ID = "test"
+
+            result = await service._similarity_scan(
+                scan_id=uuid4(),
+                message=message,
+                community_server_platform_id="test_server",
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fail_open_flags_at_exact_tighter_threshold(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Score exactly at tighter threshold (0.8) → flagged (>= comparison)."""
+        mock_llm_service.complete = AsyncMock(side_effect=Exception("LLM unavailable"))
+
+        exact_threshold_match = FactCheckMatch(
+            id=uuid4(),
+            dataset_name="snopes",
+            dataset_tags=["science"],
+            title="Test Fact Check",
+            content="Test content",
+            summary="Test summary",
+            rating="false",
+            source_url="https://example.com",
+            published_date=datetime.now(UTC),
+            author="Tester",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            similarity_score=0.80,
+        )
+
+        message = BulkScanMessage(
+            message_id="exact_threshold_msg",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Exact threshold test message",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[exact_threshold_match],
+                total_matches=1,
+                query_text=message.content,
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.6
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.INSTANCE_ID = "test"
+
+            result = await service._similarity_scan(
+                scan_id=uuid4(),
+                message=message,
+                community_server_platform_id="test_server",
+            )
+
+        assert result is not None
+        assert result.message_id == "exact_threshold_msg"
