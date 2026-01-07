@@ -707,8 +707,8 @@ class Settings(BaseSettings):
         description="LLM provider for relevance checking",
     )
     RELEVANCE_CHECK_MAX_TOKENS: int = Field(
-        default=150,
-        description="Maximum tokens for relevance check responses",
+        default=2000,
+        description="Maximum tokens for relevance check responses (needs headroom for reasoning models)",
         gt=0,
     )
     RELEVANCE_CHECK_TIMEOUT: float = Field(
