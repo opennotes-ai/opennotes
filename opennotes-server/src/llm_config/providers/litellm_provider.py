@@ -119,12 +119,31 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         response = await litellm.acompletion(**request_kwargs)
 
         tokens_used = response.usage.total_tokens if response.usage else 0  # type: ignore[union-attr]
+        finish_reason = response.choices[0].finish_reason or "stop"  # type: ignore[union-attr]
+        content = response.choices[0].message.content or ""  # type: ignore[union-attr]
+        content_length = len(content)
+
+        logger.info(
+            "LLM completion finished",
+            extra={
+                "model": model,
+                "finish_reason": finish_reason,
+                "content_length": content_length,
+                "tokens_used": tokens_used,
+            },
+        )
+
+        if not content:
+            logger.warning(
+                "LLM returned empty content",
+                extra={"finish_reason": finish_reason, "model": model},
+            )
 
         return LLMResponse(
-            content=response.choices[0].message.content or "",  # type: ignore[union-attr]
+            content=content,
             model=response.model or model,  # type: ignore[arg-type]
             tokens_used=tokens_used,
-            finish_reason=response.choices[0].finish_reason or "stop",  # type: ignore[union-attr]
+            finish_reason=finish_reason,
             provider=self._provider_name,
         )
 
