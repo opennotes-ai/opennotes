@@ -601,6 +601,7 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = Field(
         default="text-embedding-3-small",
+        min_length=1,
         description="OpenAI embedding model to use for generating embeddings",
     )
     EMBEDDING_DIMENSIONS: int = Field(
@@ -630,10 +631,12 @@ class Settings(BaseSettings):
 
     DEFAULT_MINI_MODEL: str = Field(
         default="openai/gpt-5-mini",
+        min_length=1,
         description="Default mini/fast model for quick tasks (provider/model format for LiteLLM compatibility)",
     )
     DEFAULT_FULL_MODEL: str = Field(
         default="openai/gpt-5.1",
+        min_length=1,
         description="Default full-capability model for complex tasks (provider/model format for LiteLLM compatibility)",
     )
 
@@ -669,6 +672,7 @@ class Settings(BaseSettings):
 
     VISION_MODEL: str = Field(
         default="gpt-5.1",
+        min_length=1,
         description="OpenAI vision model to use for image descriptions",
     )
     VISION_PROMPT: str = Field(
@@ -695,6 +699,7 @@ class Settings(BaseSettings):
     )
     RELEVANCE_CHECK_MODEL: str = Field(
         default="gpt-5-mini",
+        min_length=1,
         description="LLM model to use for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_PROVIDER: str = Field(
@@ -723,6 +728,7 @@ class Settings(BaseSettings):
     )
     AI_NOTE_WRITER_MODEL: str = Field(
         default="gpt-5.1",
+        min_length=1,
         description="OpenAI model to use for AI note generation",
     )
     AI_NOTE_WRITER_SYSTEM_PROMPT: str = Field(

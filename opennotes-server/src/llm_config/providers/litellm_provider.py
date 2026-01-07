@@ -97,10 +97,17 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             LLMResponse with generated content
 
         Raises:
+            ValueError: If model name is empty after fallback resolution
             Exception: If API call fails
         """
         params = params or LiteLLMCompletionParams()
         model = params.model or self.default_model
+
+        if not model:
+            raise ValueError(
+                "Model name cannot be empty. Check that RELEVANCE_CHECK_MODEL, "
+                "DEFAULT_FULL_MODEL, or other model configuration is set correctly."
+            )
 
         request_kwargs = self._filter_none_params(
             {
@@ -162,9 +169,17 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
 
         Yields:
             Content chunks as they are generated
+
+        Raises:
+            ValueError: If model name is empty after fallback resolution
         """
         params = params or LiteLLMCompletionParams()
         model = params.model or self.default_model
+
+        if not model:
+            raise ValueError(
+                "Model name cannot be empty. Check that model configuration is set correctly."
+            )
 
         request_kwargs = self._filter_none_params(
             {
