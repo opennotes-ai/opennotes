@@ -41,6 +41,32 @@ REDIS_KEY_PREFIX = "bulk_scan"
 REDIS_TTL_SECONDS = 86400  # 24 hours
 
 
+def calculate_indeterminate_threshold(base_threshold: float) -> float:
+    """Apply tighter threshold for indeterminate relevance check results.
+
+    When the LLM relevance check returns INDETERMINATE (typically because the
+    fact-check content triggered a content filter), we apply a stricter threshold
+    to the similarity score before flagging the message.
+
+    Formula: threshold + ((1 - threshold) / 2)
+
+    This moves the threshold halfway between the original value and 1.0,
+    requiring a higher similarity score to flag when relevance is uncertain.
+
+    Examples:
+        - 0.35 -> 0.675 (base threshold moves up significantly)
+        - 0.60 -> 0.80 (higher base threshold still increases)
+        - 0.80 -> 0.90 (diminishing increase near 1.0)
+
+    Args:
+        base_threshold: The original similarity threshold (0.0 to 1.0)
+
+    Returns:
+        The tighter threshold for indeterminate cases
+    """
+    return base_threshold + ((1.0 - base_threshold) / 2.0)
+
+
 def _get_redis_results_key(scan_id: UUID) -> str:
     """Get environment-prefixed Redis key for scan results.
 
@@ -797,6 +823,11 @@ class BulkContentScanService:
         This is the unified post-processing step that runs relevance checking
         on ALL candidates regardless of scan type.
 
+        For INDETERMINATE outcomes (when fact-check content triggers content filter),
+        applies a tighter threshold: new_threshold = threshold + ((1-threshold)/2).
+        This allows high-confidence matches to still be flagged even when the LLM
+        cannot definitively determine relevance.
+
         Args:
             candidates: List of ScanCandidate from all scan types
             scan_id: UUID of the scan for logging
@@ -805,6 +836,8 @@ class BulkContentScanService:
             List of FlaggedMessage for candidates that pass relevance check
         """
         flagged: list[FlaggedMessage] = []
+        base_threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
+        indeterminate_threshold = calculate_indeterminate_threshold(base_threshold)
 
         for candidate in candidates:
             logger.info(
@@ -823,26 +856,47 @@ class BulkContentScanService:
                 matched_source=candidate.matched_source,
             )
 
+            should_flag = False
+
             if outcome == RelevanceOutcome.RELEVANT:
+                should_flag = True
+            elif outcome == RelevanceOutcome.INDETERMINATE:
+                if candidate.score >= indeterminate_threshold:
+                    should_flag = True
+                    logger.info(
+                        "Indeterminate candidate passes tighter threshold",
+                        extra={
+                            "scan_id": str(scan_id),
+                            "message_id": candidate.message.message_id,
+                            "score": candidate.score,
+                            "base_threshold": base_threshold,
+                            "indeterminate_threshold": indeterminate_threshold,
+                            "reasoning": reasoning,
+                        },
+                    )
+                else:
+                    logger.info(
+                        "Indeterminate candidate filtered by tighter threshold",
+                        extra={
+                            "scan_id": str(scan_id),
+                            "message_id": candidate.message.message_id,
+                            "score": candidate.score,
+                            "base_threshold": base_threshold,
+                            "indeterminate_threshold": indeterminate_threshold,
+                            "reasoning": reasoning,
+                        },
+                    )
+
+            if should_flag:
                 try:
-                    if candidate.scan_type == ScanType.SIMILARITY.value:
-                        flagged_msg = FlaggedMessage(
-                            message_id=candidate.message.message_id,
-                            channel_id=candidate.message.channel_id,
-                            content=candidate.message.content,
-                            author_id=candidate.message.author_id,
-                            timestamp=candidate.message.timestamp,
-                            matches=[candidate.match_data],
-                        )
-                    else:
-                        flagged_msg = FlaggedMessage(
-                            message_id=candidate.message.message_id,
-                            channel_id=candidate.message.channel_id,
-                            content=candidate.message.content,
-                            author_id=candidate.message.author_id,
-                            timestamp=candidate.message.timestamp,
-                            matches=[candidate.match_data],
-                        )
+                    flagged_msg = FlaggedMessage(
+                        message_id=candidate.message.message_id,
+                        channel_id=candidate.message.channel_id,
+                        content=candidate.message.content,
+                        author_id=candidate.message.author_id,
+                        timestamp=candidate.message.timestamp,
+                        matches=[candidate.match_data],
+                    )
                     flagged.append(flagged_msg)
                 except Exception as build_error:
                     logger.error(
@@ -853,7 +907,7 @@ class BulkContentScanService:
                             "error": str(build_error),
                         },
                     )
-            else:
+            elif outcome not in (RelevanceOutcome.RELEVANT, RelevanceOutcome.INDETERMINATE):
                 logger.info(
                     "Candidate filtered by relevance check",
                     extra={
