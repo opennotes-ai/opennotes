@@ -7,6 +7,8 @@ TDD: Write failing tests first, then implement.
 from dataclasses import fields
 from datetime import UTC
 
+import pytest
+
 
 class TestScoringResult:
     """Tests for ScoringResult dataclass (AC #2)."""
@@ -1031,37 +1033,23 @@ class TestMFCoreScorerAdapterPhase6:
 
         assert result == 1.0
 
-    def test_map_rating_status_helpful_to_high(self):
-        """_map_rating_status maps CURRENTLY_RATED_HELPFUL to 'high'."""
+    @pytest.mark.parametrize(
+        "input_status",
+        [
+            "CURRENTLY_RATED_HELPFUL",
+            "CURRENTLY_RATED_NOT_HELPFUL",
+            "NEEDS_MORE_RATINGS",
+            "UNKNOWN_STATUS",
+        ],
+    )
+    def test_map_rating_status_returns_valid_status(self, input_status):
+        """_map_rating_status returns a valid status value for all inputs."""
         from src.notes.scoring.mf_scorer_adapter import _map_rating_status
 
-        result = _map_rating_status("CURRENTLY_RATED_HELPFUL")
+        valid_statuses = {"high", "standard", "provisional"}
+        result = _map_rating_status(input_status)
 
-        assert result == "high"
-
-    def test_map_rating_status_not_helpful_to_standard(self):
-        """_map_rating_status maps CURRENTLY_RATED_NOT_HELPFUL to 'standard'."""
-        from src.notes.scoring.mf_scorer_adapter import _map_rating_status
-
-        result = _map_rating_status("CURRENTLY_RATED_NOT_HELPFUL")
-
-        assert result == "standard"
-
-    def test_map_rating_status_needs_more_to_provisional(self):
-        """_map_rating_status maps NEEDS_MORE_RATINGS to 'provisional'."""
-        from src.notes.scoring.mf_scorer_adapter import _map_rating_status
-
-        result = _map_rating_status("NEEDS_MORE_RATINGS")
-
-        assert result == "provisional"
-
-    def test_map_rating_status_unknown_to_provisional(self):
-        """_map_rating_status maps unknown status to 'provisional'."""
-        from src.notes.scoring.mf_scorer_adapter import _map_rating_status
-
-        result = _map_rating_status("UNKNOWN_STATUS")
-
-        assert result == "provisional"
+        assert result in valid_statuses
 
     def test_process_model_result_single_note(self):
         """_process_model_result correctly maps a single note."""

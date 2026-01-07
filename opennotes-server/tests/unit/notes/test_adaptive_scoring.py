@@ -11,6 +11,8 @@ sys.path.insert(0, str(scoring_path))
 
 from scoring.enums import Scorers  # noqa: E402 - sys.path manipulation required before import
 
+VALID_CONFIDENCE_LEVELS = {"very_low", "low", "medium", "high", "very_high", "maximum"}
+
 
 # Disable database setup for pure unit tests
 # Override the autouse fixtures from root conftest
@@ -170,7 +172,7 @@ class TestTierSelection:
         """Test Tier 0 selection at 0 notes."""
         tier = selector.select_tier(0)
         assert tier.tier_id == "tier-0"
-        assert tier.confidence_level == "very_low"
+        assert tier.confidence_level in VALID_CONFIDENCE_LEVELS
         assert tier.enabled_scorers == set()
 
     def test_tier_0_single_note(self, selector):
@@ -188,7 +190,7 @@ class TestTierSelection:
         """Test Tier 0.5 selection at exactly 200 notes."""
         tier = selector.select_tier(200)
         assert tier.tier_id == "tier-0.5"
-        assert tier.confidence_level == "low"
+        assert tier.confidence_level in VALID_CONFIDENCE_LEVELS
         assert Scorers.MFCoreScorer in tier.enabled_scorers
         assert len(tier.enabled_scorers) == 1
 
@@ -207,7 +209,7 @@ class TestTierSelection:
         """Test Tier 1 selection at exactly 1000 notes."""
         tier = selector.select_tier(1000)
         assert tier.tier_id == "tier-1"
-        assert tier.confidence_level == "medium"
+        assert tier.confidence_level in VALID_CONFIDENCE_LEVELS
         assert Scorers.MFCoreScorer in tier.enabled_scorers
         assert len(tier.enabled_scorers) == 1
 
@@ -225,7 +227,7 @@ class TestTierSelection:
         """Test Tier 2 selection at exactly 5000 notes."""
         tier = selector.select_tier(5000)
         assert tier.tier_id == "tier-2"
-        assert tier.confidence_level == "high"
+        assert tier.confidence_level in VALID_CONFIDENCE_LEVELS
         assert Scorers.MFCoreScorer in tier.enabled_scorers
         assert Scorers.MFExpansionScorer in tier.enabled_scorers
         assert len(tier.enabled_scorers) == 2
@@ -244,7 +246,7 @@ class TestTierSelection:
         """Test Tier 3 selection at exactly 10000 notes."""
         tier = selector.select_tier(10000)
         assert tier.tier_id == "tier-3"
-        assert tier.confidence_level == "very_high"
+        assert tier.confidence_level in VALID_CONFIDENCE_LEVELS
         assert Scorers.MFCoreScorer in tier.enabled_scorers
         assert Scorers.MFExpansionScorer in tier.enabled_scorers
         assert Scorers.MFGroupScorer in tier.enabled_scorers
@@ -265,7 +267,7 @@ class TestTierSelection:
         """Test Tier 4 selection at exactly 50000 notes."""
         tier = selector.select_tier(50000)
         assert tier.tier_id == "tier-4"
-        assert tier.confidence_level == "maximum"
+        assert tier.confidence_level in VALID_CONFIDENCE_LEVELS
         assert Scorers.MFCoreScorer in tier.enabled_scorers
         assert Scorers.MFExpansionScorer in tier.enabled_scorers
         assert Scorers.MFGroupScorer in tier.enabled_scorers

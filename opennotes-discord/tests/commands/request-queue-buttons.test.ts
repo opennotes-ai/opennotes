@@ -109,25 +109,6 @@ describe('request-queue command - Write Note button', () => {
       expect(misinformedCustomId.length).toBeLessThan(100);
     });
 
-    it('should create two write note buttons with different classifications', () => {
-      const buttons = [
-        {
-          customId: 'write_note:NOT_MISLEADING:abc12345',
-          label: 'Not Misleading',
-          style: 'Success',
-        },
-        {
-          customId: 'write_note:MISINFORMED_OR_POTENTIALLY_MISLEADING:def67890',
-          label: 'Misinformed or Misleading',
-          style: 'Danger',
-        },
-      ];
-
-      expect(buttons).toHaveLength(2);
-      expect(buttons[0].label).toBe('Not Misleading');
-      expect(buttons[1].label).toBe('Misinformed or Misleading');
-    });
-
     it('should extract classification from button custom ID', () => {
       const parseCustomId = (customId: string) => {
         const parts = customId.split(':');
