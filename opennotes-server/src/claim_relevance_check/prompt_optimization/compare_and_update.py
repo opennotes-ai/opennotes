@@ -148,6 +148,8 @@ def compare_and_update(
     model: str = "openai/gpt-5-mini",
     force: bool = False,
     test_ratio: float = 0.3,
+    dry_run: bool = False,
+    dataset_path: Path | None = None,
 ) -> bool:
     """Compare current prompts with optimized module and update if better.
 
@@ -157,16 +159,21 @@ def compare_and_update(
         model: LLM model to use for evaluation
         force: If True, update even if not better
         test_ratio: Ratio of data to use for testing
+        dry_run: If True, show what would change without modifying files
+        dataset_path: Optional path to dataset file (YAML or JSON)
 
     Returns:
-        True if prompts were updated, False otherwise
+        True if prompts were updated (or would be in dry-run mode), False otherwise
     """
+    if dry_run:
+        print("🔍 DRY RUN MODE - No files will be modified\n")
+
     if not module_path.exists():
         print(f"Error: {module_path} not found. Run optimization first.")
         return False
 
     print(f"Using {test_ratio:.0%} of data for testing...")
-    _, testset = get_train_test_split(test_ratio=test_ratio)
+    _, testset = get_train_test_split(test_ratio=test_ratio, dataset_path=dataset_path)
 
     if len(testset) < 2:
         print("Warning: Very small test set. Results may not be reliable.")
@@ -194,6 +201,11 @@ def compare_and_update(
             print(f"\n✓ Optimized prompts are BETTER by {improvement:.1%}")
         else:
             print("\n! Force updating despite no improvement")
+
+        if dry_run:
+            print(f"\n📋 Would update: {prompts_path}")
+            print("   Run without --dry-run to apply changes.")
+            return True
 
         generate_prompts_py(module_path, prompts_path)
         return True
@@ -238,6 +250,17 @@ if __name__ == "__main__":
         default=0.3,
         help="Ratio of data to use for testing (default: 0.3)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would change without modifying files",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=None,
+        help="Path to dataset file (YAML or JSON). Defaults to examples.yaml",
+    )
 
     args = parser.parse_args()
     compare_and_update(
@@ -246,4 +269,6 @@ if __name__ == "__main__":
         model=args.model,
         force=args.force,
         test_ratio=args.test_ratio,
+        dry_run=args.dry_run,
+        dataset_path=args.dataset,
     )

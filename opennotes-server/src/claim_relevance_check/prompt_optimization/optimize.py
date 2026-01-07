@@ -91,12 +91,14 @@ def optimize_with_bootstrap(
 def optimize_relevance_module(
     method: str = "bootstrap",
     model: str = "openai/gpt-5-mini",
+    dataset_path: Path | None = None,
 ) -> tuple[dspy.Module, dict]:
     """Main optimization function.
 
     Args:
         method: Optimization method ('labeled' or 'bootstrap')
         model: LLM model to use
+        dataset_path: Optional path to dataset file (YAML or JSON)
 
     Returns:
         Tuple of (optimized_module, evaluation_results)
@@ -104,7 +106,7 @@ def optimize_relevance_module(
     api_key = setup_openai_environment()
     dspy.configure(lm=dspy.LM(model, api_key=api_key))
 
-    trainset, testset = get_train_test_split(test_ratio=0.2)
+    trainset, testset = get_train_test_split(test_ratio=0.2, dataset_path=dataset_path)
 
     print(f"Training set: {len(trainset)} examples")
     print(f"Test set: {len(testset)} examples")
@@ -187,10 +189,20 @@ if __name__ == "__main__":
         default=Path("optimized_relevance_module.json"),
         help="Output path for optimized module",
     )
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=None,
+        help="Path to dataset file (YAML or JSON). Defaults to examples.yaml",
+    )
 
     args = parser.parse_args()
 
-    optimized, results = optimize_relevance_module(method=args.method, model=args.model)
+    optimized, results = optimize_relevance_module(
+        method=args.method,
+        model=args.model,
+        dataset_path=args.dataset,
+    )
     save_optimized_module(optimized, args.output)
 
     prompts = extract_prompts_from_module(optimized)
