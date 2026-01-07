@@ -18,7 +18,6 @@ import { logger } from '../logger.js';
 import { getIdentityToken, isRunningOnGCP } from '../utils/gcp-auth.js';
 import { createDiscordClaimsToken } from '../utils/discord-claims.js';
 import { nanoid } from 'nanoid';
-import { injectTraceContext } from '../telemetry.js';
 
 // Types from generated OpenAPI schema
 export type NoteStatus = components['schemas']['NoteStatus'];
@@ -678,8 +677,6 @@ export class ApiClient {
     }
 
     headers = this.addProfileHeaders(headers, context);
-
-    headers = injectTraceContext(headers);
 
     const requestBody = options.body ? (JSON.parse(options.body as string) as unknown) : undefined;
 
