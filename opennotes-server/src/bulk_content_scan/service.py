@@ -426,132 +426,9 @@ class BulkContentScanService:
         community_server_platform_id: str,
     ) -> tuple[FlaggedMessage | None, dict]:
         """Run similarity search and return both flagged result and score info."""
-        threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
-        indeterminate_threshold = calculate_indeterminate_threshold(threshold)
-        score_info = {
-            "message_id": message.message_id,
-            "channel_id": message.channel_id,
-            "similarity_score": 0.0,
-            "is_flagged": False,
-            "matched_claim": None,
-        }
-
-        try:
-            search_response = await self.embedding_service.similarity_search(
-                db=self.session,
-                query_text=message.content,
-                community_server_id=community_server_platform_id,
-                dataset_tags=[],
-                similarity_threshold=0.0,
-                score_threshold=0.0,
-                limit=1,
-            )
-
-            if search_response.matches:
-                best_match = search_response.matches[0]
-                score_info["similarity_score"] = best_match.similarity_score
-                score_info["matched_claim"] = best_match.content or best_match.title or ""
-
-                if best_match.similarity_score >= threshold:
-                    outcome, reasoning = await self._check_relevance_with_llm(
-                        original_message=message.content,
-                        matched_content=best_match.content or best_match.title or "",
-                        matched_source=best_match.source_url,
-                    )
-
-                    should_flag = False
-
-                    if outcome == RelevanceOutcome.RELEVANT:
-                        should_flag = True
-                        relevance_check_total.labels(
-                            outcome="candidate_relevant",
-                            decision="flagged",
-                            instance_id=settings.INSTANCE_ID,
-                        ).inc()
-                    elif outcome == RelevanceOutcome.INDETERMINATE:
-                        if best_match.similarity_score >= indeterminate_threshold:
-                            should_flag = True
-                            logger.info(
-                                "Relevance check indeterminate, applying tighter threshold",
-                                extra={
-                                    "original_threshold": threshold,
-                                    "adjusted_threshold": indeterminate_threshold,
-                                    "reason": "content_filter_on_fact_check",
-                                    "message_id": message.message_id,
-                                    "scan_id": str(scan_id),
-                                    "score": best_match.similarity_score,
-                                    "reasoning": reasoning,
-                                },
-                            )
-                            relevance_check_total.labels(
-                                outcome="indeterminate",
-                                decision="tighter_threshold_passed",
-                                instance_id=settings.INSTANCE_ID,
-                            ).inc()
-                        else:
-                            logger.info(
-                                "Relevance check indeterminate, filtered by tighter threshold",
-                                extra={
-                                    "original_threshold": threshold,
-                                    "adjusted_threshold": indeterminate_threshold,
-                                    "reason": "content_filter_on_fact_check",
-                                    "message_id": message.message_id,
-                                    "scan_id": str(scan_id),
-                                    "score": best_match.similarity_score,
-                                    "reasoning": reasoning,
-                                },
-                            )
-                            relevance_check_total.labels(
-                                outcome="indeterminate",
-                                decision="tighter_threshold_filtered",
-                                instance_id=settings.INSTANCE_ID,
-                            ).inc()
-                    elif outcome == RelevanceOutcome.CONTENT_FILTERED:
-                        relevance_check_total.labels(
-                            outcome="content_filter",
-                            decision="user_message_flagged",
-                            instance_id=settings.INSTANCE_ID,
-                        ).inc()
-                    elif outcome == RelevanceOutcome.NOT_RELEVANT:
-                        relevance_check_total.labels(
-                            outcome="candidate_not_relevant",
-                            decision="filtered",
-                            instance_id=settings.INSTANCE_ID,
-                        ).inc()
-
-                    if should_flag:
-                        try:
-                            flagged_msg = self._build_flagged_message(message, best_match)
-                            score_info["is_flagged"] = True
-                            return flagged_msg, score_info
-                        except Exception as build_error:
-                            logger.error(
-                                "Failed to build flagged message",
-                                extra={
-                                    "scan_id": str(scan_id),
-                                    "message_id": message.message_id,
-                                    "error": str(build_error),
-                                    "similarity_score": best_match.similarity_score,
-                                },
-                            )
-                    else:
-                        logger.info(
-                            "Skipping flag due to relevance check",
-                            extra={
-                                "message_id": message.message_id,
-                                "reasoning": reasoning,
-                                "relevance_outcome": outcome.value,
-                                "similarity_score": best_match.similarity_score,
-                            },
-                        )
-
-        except Exception as e:
-            logger.warning(
-                "Error in similarity scan with score",
-                extra={"scan_id": str(scan_id), "error": str(e)},
-            )
-
-        return None, score_info
+        return await self._similarity_scan(  # type: ignore[return-value]
+            scan_id, message, community_server_platform_id, include_score=True
+        )
 
     async def _run_scanner(
         self,
@@ -563,7 +440,9 @@ class BulkContentScanService:
         """Run a specific scanner on a message."""
         match scan_type:
             case ScanType.SIMILARITY:
-                return await self._similarity_scan(scan_id, message, community_server_platform_id)
+                return await self._similarity_scan(  # type: ignore[return-value]
+                    scan_id, message, community_server_platform_id
+                )
             case ScanType.OPENAI_MODERATION:
                 return await self._openai_moderation_scan(scan_id, message)
             case _:
@@ -575,10 +454,32 @@ class BulkContentScanService:
         scan_id: UUID,
         message: BulkScanMessage,
         community_server_platform_id: str,
-    ) -> FlaggedMessage | None:
-        """Run similarity search on a message."""
+        include_score: bool = False,
+    ) -> FlaggedMessage | None | tuple[FlaggedMessage | None, dict]:
+        """Run similarity search on a message.
+
+        Args:
+            scan_id: The scan ID for logging
+            message: The message to scan
+            community_server_platform_id: The community server ID
+            include_score: If True, returns tuple of (flagged_msg, score_info)
+
+        Returns:
+            If include_score=False: FlaggedMessage | None
+            If include_score=True: tuple[FlaggedMessage | None, dict]
+        """
         threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
         indeterminate_threshold = calculate_indeterminate_threshold(threshold)
+
+        score_info: dict | None = None
+        if include_score:
+            score_info = {
+                "message_id": message.message_id,
+                "channel_id": message.channel_id,
+                "similarity_score": 0.0,
+                "is_flagged": False,
+                "matched_claim": None,
+            }
 
         try:
             search_response = await self.embedding_service.similarity_search(
@@ -586,93 +487,62 @@ class BulkContentScanService:
                 query_text=message.content,
                 community_server_id=community_server_platform_id,
                 dataset_tags=[],
-                similarity_threshold=threshold,
-                score_threshold=0.1,
+                similarity_threshold=0.0 if include_score else threshold,
+                score_threshold=0.0 if include_score else 0.1,
                 limit=1,
             )
 
             if search_response.matches:
                 best_match = search_response.matches[0]
 
-                outcome, reasoning = await self._check_relevance_with_llm(
-                    original_message=message.content,
-                    matched_content=best_match.content or best_match.title or "",
-                    matched_source=best_match.source_url,
-                )
+                if include_score and score_info is not None:
+                    score_info["similarity_score"] = best_match.similarity_score
+                    score_info["matched_claim"] = best_match.content or best_match.title or ""
 
-                should_flag = False
+                if not include_score or best_match.similarity_score >= threshold:
+                    outcome, reasoning = await self._check_relevance_with_llm(
+                        original_message=message.content,
+                        matched_content=best_match.content or best_match.title or "",
+                        matched_source=best_match.source_url,
+                    )
 
-                if outcome == RelevanceOutcome.RELEVANT:
-                    should_flag = True
-                    relevance_check_total.labels(
-                        outcome="candidate_relevant",
-                        decision="flagged",
-                        instance_id=settings.INSTANCE_ID,
-                    ).inc()
-                elif outcome == RelevanceOutcome.INDETERMINATE:
-                    if best_match.similarity_score >= indeterminate_threshold:
-                        should_flag = True
-                        logger.info(
-                            "Relevance check indeterminate, applying tighter threshold",
-                            extra={
-                                "original_threshold": threshold,
-                                "adjusted_threshold": indeterminate_threshold,
-                                "reason": "content_filter_on_fact_check",
-                                "message_id": message.message_id,
-                                "scan_id": str(scan_id),
-                                "score": best_match.similarity_score,
-                                "reasoning": reasoning,
-                            },
-                        )
-                        relevance_check_total.labels(
-                            outcome="indeterminate",
-                            decision="tighter_threshold_passed",
-                            instance_id=settings.INSTANCE_ID,
-                        ).inc()
-                    else:
-                        logger.info(
-                            "Relevance check indeterminate, filtered by tighter threshold",
-                            extra={
-                                "original_threshold": threshold,
-                                "adjusted_threshold": indeterminate_threshold,
-                                "reason": "content_filter_on_fact_check",
-                                "message_id": message.message_id,
-                                "scan_id": str(scan_id),
-                                "score": best_match.similarity_score,
-                                "reasoning": reasoning,
-                            },
-                        )
-                        relevance_check_total.labels(
-                            outcome="indeterminate",
-                            decision="tighter_threshold_filtered",
-                            instance_id=settings.INSTANCE_ID,
-                        ).inc()
-                elif outcome == RelevanceOutcome.CONTENT_FILTERED:
-                    relevance_check_total.labels(
-                        outcome="content_filter",
-                        decision="user_message_flagged",
-                        instance_id=settings.INSTANCE_ID,
-                    ).inc()
-                elif outcome == RelevanceOutcome.NOT_RELEVANT:
-                    relevance_check_total.labels(
-                        outcome="candidate_not_relevant",
-                        decision="filtered",
-                        instance_id=settings.INSTANCE_ID,
-                    ).inc()
+                    should_flag = self._evaluate_relevance_outcome(
+                        outcome=outcome,
+                        reasoning=reasoning,
+                        similarity_score=best_match.similarity_score,
+                        threshold=threshold,
+                        indeterminate_threshold=indeterminate_threshold,
+                        message_id=message.message_id,
+                        scan_id=scan_id,
+                    )
 
-                if should_flag:
-                    return self._build_flagged_message(message, best_match)
+                    if should_flag:
+                        try:
+                            flagged_msg = self._build_flagged_message(message, best_match)
+                            if include_score and score_info is not None:
+                                score_info["is_flagged"] = True
+                                return flagged_msg, score_info
+                            return flagged_msg
+                        except Exception as build_error:
+                            logger.error(
+                                "Failed to build flagged message",
+                                extra={
+                                    "scan_id": str(scan_id),
+                                    "message_id": message.message_id,
+                                    "error": str(build_error),
+                                    "similarity_score": best_match.similarity_score,
+                                },
+                            )
 
-                logger.info(
-                    "Skipping flag due to relevance check",
-                    extra={
-                        "message_id": message.message_id,
-                        "reasoning": reasoning,
-                        "relevance_outcome": outcome.value,
-                        "similarity_score": best_match.similarity_score,
-                    },
-                )
-                return None
+                    logger.info(
+                        "Skipping flag due to relevance check",
+                        extra={
+                            "message_id": message.message_id,
+                            "reasoning": reasoning,
+                            "relevance_outcome": outcome.value,
+                            "similarity_score": best_match.similarity_score,
+                        },
+                    )
 
         except Exception as e:
             logger.warning(
@@ -680,7 +550,85 @@ class BulkContentScanService:
                 extra={"scan_id": str(scan_id), "error": str(e)},
             )
 
+        if include_score and score_info is not None:
+            return None, score_info
         return None
+
+    def _evaluate_relevance_outcome(
+        self,
+        outcome: RelevanceOutcome,
+        reasoning: str,
+        similarity_score: float,
+        threshold: float,
+        indeterminate_threshold: float,
+        message_id: str,
+        scan_id: UUID,
+    ) -> bool:
+        """Evaluate relevance outcome and emit metrics. Returns True if should flag."""
+        if outcome == RelevanceOutcome.RELEVANT:
+            relevance_check_total.labels(
+                outcome="candidate_relevant",
+                decision="flagged",
+                instance_id=settings.INSTANCE_ID,
+            ).inc()
+            return True
+
+        if outcome == RelevanceOutcome.INDETERMINATE:
+            if similarity_score >= indeterminate_threshold:
+                logger.info(
+                    "Relevance check indeterminate, applying tighter threshold",
+                    extra={
+                        "original_threshold": threshold,
+                        "adjusted_threshold": indeterminate_threshold,
+                        "reason": "content_filter_on_fact_check",
+                        "message_id": message_id,
+                        "scan_id": str(scan_id),
+                        "score": similarity_score,
+                        "reasoning": reasoning,
+                    },
+                )
+                relevance_check_total.labels(
+                    outcome="indeterminate",
+                    decision="tighter_threshold_passed",
+                    instance_id=settings.INSTANCE_ID,
+                ).inc()
+                return True
+
+            logger.info(
+                "Relevance check indeterminate, filtered by tighter threshold",
+                extra={
+                    "original_threshold": threshold,
+                    "adjusted_threshold": indeterminate_threshold,
+                    "reason": "content_filter_on_fact_check",
+                    "message_id": message_id,
+                    "scan_id": str(scan_id),
+                    "score": similarity_score,
+                    "reasoning": reasoning,
+                },
+            )
+            relevance_check_total.labels(
+                outcome="indeterminate",
+                decision="tighter_threshold_filtered",
+                instance_id=settings.INSTANCE_ID,
+            ).inc()
+            return False
+
+        if outcome == RelevanceOutcome.CONTENT_FILTERED:
+            relevance_check_total.labels(
+                outcome="content_filter",
+                decision="user_message_flagged",
+                instance_id=settings.INSTANCE_ID,
+            ).inc()
+            return False
+
+        if outcome == RelevanceOutcome.NOT_RELEVANT:
+            relevance_check_total.labels(
+                outcome="candidate_not_relevant",
+                decision="filtered",
+                instance_id=settings.INSTANCE_ID,
+            ).inc()
+
+        return False
 
     async def _openai_moderation_scan(
         self,
