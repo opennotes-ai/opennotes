@@ -140,11 +140,13 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         try:
             response = await litellm.acompletion(**request_kwargs)
         except JSONSchemaValidationError as e:
-            logger.error(
+            logger.exception(
                 "LiteLLM JSON schema validation failed",
                 extra={
                     "model": model,
-                    "request_model": request_kwargs.get("model"),
+                    "response_format": str(params.response_format)
+                    if params.response_format
+                    else None,
                     "raw_response": getattr(e, "raw_response", None),
                     "error": str(e),
                 },
@@ -221,7 +223,18 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             }
         )
 
-        response = await litellm.acompletion(**request_kwargs)
+        try:
+            response = await litellm.acompletion(**request_kwargs)
+        except JSONSchemaValidationError as e:
+            logger.exception(
+                "LiteLLM JSON schema validation failed in stream_complete",
+                extra={
+                    "model": model,
+                    "raw_response": getattr(e, "raw_response", None),
+                    "error": str(e),
+                },
+            )
+            raise
 
         async for chunk in response:  # type: ignore[union-attr]
             if chunk.choices[0].delta.content:
