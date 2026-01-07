@@ -405,12 +405,24 @@ async def create_worker_event_publisher() -> AsyncGenerator[EventPublisher, None
             await publisher.publish_event(my_event)
 
     The NATS connection is automatically closed when the context manager exits.
+
+    Design Notes:
+        - Connection-per-task overhead: This creates a new NATS connection for each
+          task invocation. This is suitable for infrequent background tasks (e.g.,
+          bulk scan finalization) but NOT for high-frequency tasks. For high-frequency
+          event publishing, consider using a connection pool or persistent worker
+          connections.
+
+        - Circular import avoidance: The NATSClientManager import is done inside
+          the function to avoid circular imports at module load time. The publisher
+          module is imported by many other modules, and eager import of nats_client
+          would create import cycles.
     """
     from src.events.nats_client import NATSClientManager  # noqa: PLC0415
 
     client = NATSClientManager()
-    await client.connect()
     try:
+        await client.connect()
         yield EventPublisher(nats=client)
     finally:
         await client.disconnect()

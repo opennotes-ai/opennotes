@@ -1848,3 +1848,20 @@ class TestWorkerEventPublisher:
         publisher = EventPublisher()
 
         assert publisher.nats is nats_client
+
+    @pytest.mark.asyncio
+    async def test_create_worker_event_publisher_propagates_connect_error_and_disconnects(self):
+        """Worker event publisher propagates connect error and still calls disconnect."""
+        mock_nats_client = MagicMock()
+        mock_nats_client.connect = AsyncMock(side_effect=ConnectionError("NATS connection failed"))
+        mock_nats_client.disconnect = AsyncMock()
+
+        with patch("src.events.nats_client.NATSClientManager", return_value=mock_nats_client):
+            from src.events.publisher import create_worker_event_publisher
+
+            with pytest.raises(ConnectionError, match="NATS connection failed"):
+                async with create_worker_event_publisher():
+                    pass
+
+            mock_nats_client.connect.assert_called_once()
+            mock_nats_client.disconnect.assert_called_once()
