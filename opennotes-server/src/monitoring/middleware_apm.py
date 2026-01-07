@@ -37,6 +37,9 @@ def setup_middleware_apm(
     target: str,
     service_name: str,
     sample_rate: float = 1.0,
+    collect_profiling: bool = True,
+    collect_metrics: bool = True,
+    collect_logs: bool = True,
 ) -> bool:
     """Initialize Middleware.io APM using in-code SDK.
 
@@ -48,7 +51,10 @@ def setup_middleware_apm(
         api_key: Middleware.io API key
         target: Middleware.io OTLP endpoint
         service_name: Service name for identification
-        sample_rate: Trace sampling rate (0.0-1.0), currently unused by MW SDK
+        sample_rate: Trace sampling rate (0.0-1.0)
+        collect_profiling: Enable continuous profiling (requires middleware-io[profiling])
+        collect_metrics: Enable metrics collection
+        collect_logs: Enable log collection
 
     Returns:
         True if initialization succeeded, False otherwise
@@ -66,19 +72,34 @@ def setup_middleware_apm(
             access_token=api_key,
             target=target,
             service_name=service_name,
+            sample_rate=sample_rate,
+            collect_profiling=collect_profiling,
+            collect_metrics=collect_metrics,
+            collect_logs=collect_logs,
         )
 
         mw_tracker(mw_options)
         _mw_initialized = True
 
+        features = []
+        if collect_profiling:
+            features.append("profiling")
+        if collect_metrics:
+            features.append("metrics")
+        if collect_logs:
+            features.append("logs")
+        features_str = ", ".join(features) if features else "traces only"
+
         logger.info(
             f"Middleware.io APM initialized: service={service_name}, "
-            f"target={target}, sample_rate={sample_rate}"
+            f"target={target}, sample_rate={sample_rate}, features=[{features_str}]"
         )
         return True
 
     except ImportError:
-        logger.error("middleware-io package not installed. Install with: uv add middleware-io")
+        logger.error(
+            "middleware-io package not installed. Install with: uv add 'middleware-io[profiling]'"
+        )
         return False
     except Exception as e:
         logger.error(f"Failed to initialize Middleware.io APM: {e}")
@@ -101,7 +122,7 @@ def is_middleware_apm_configured() -> bool:
     return bool(api_key and target)
 
 
-def get_middleware_apm_config() -> dict[str, str | float | None]:
+def get_middleware_apm_config() -> dict[str, str | float | bool | None]:
     """Get Middleware.io APM configuration from environment variables.
 
     Returns:
@@ -115,4 +136,7 @@ def get_middleware_apm_config() -> dict[str, str | float | None]:
         "service_name": os.getenv("MW_SERVICE_NAME"),
         "sample_rate": float(os.getenv("MW_SAMPLE_RATE", "1.0")),
         "enabled": os.getenv("MIDDLEWARE_APM_ENABLED", "false").lower() == "true",
+        "collect_profiling": os.getenv("MW_COLLECT_PROFILING", "true").lower() == "true",
+        "collect_metrics": os.getenv("MW_COLLECT_METRICS", "true").lower() == "true",
+        "collect_logs": os.getenv("MW_COLLECT_LOGS", "true").lower() == "true",
     }

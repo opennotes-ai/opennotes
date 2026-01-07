@@ -21,6 +21,9 @@ if _mw_apm_enabled and not _testing:
     _mw_target = os.getenv("MW_TARGET")
     _mw_service_name = os.getenv("MW_SERVICE_NAME", "opennotes-server")
     _mw_sample_rate = float(os.getenv("MW_SAMPLE_RATE", "1.0"))
+    _mw_collect_profiling = os.getenv("MW_COLLECT_PROFILING", "true").lower() == "true"
+    _mw_collect_metrics = os.getenv("MW_COLLECT_METRICS", "true").lower() == "true"
+    _mw_collect_logs = os.getenv("MW_COLLECT_LOGS", "true").lower() == "true"
 
     if _mw_api_key and _mw_target:
         setup_middleware_apm(
@@ -28,6 +31,9 @@ if _mw_apm_enabled and not _testing:
             target=_mw_target,
             service_name=_mw_service_name,
             sample_rate=_mw_sample_rate,
+            collect_profiling=_mw_collect_profiling,
+            collect_metrics=_mw_collect_metrics,
+            collect_logs=_mw_collect_logs,
         )
     else:
         import logging

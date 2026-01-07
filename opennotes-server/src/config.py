@@ -572,6 +572,19 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    MW_COLLECT_PROFILING: bool = Field(
+        default=True,
+        description="Enable continuous profiling via Middleware.io. "
+        "Requires middleware-io[profiling] extra. Replaces legacy Pyroscope.",
+    )
+    MW_COLLECT_METRICS: bool = Field(
+        default=True,
+        description="Enable metrics collection via Middleware.io.",
+    )
+    MW_COLLECT_LOGS: bool = Field(
+        default=True,
+        description="Enable log collection via Middleware.io.",
+    )
 
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")
