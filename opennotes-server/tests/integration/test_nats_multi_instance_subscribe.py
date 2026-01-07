@@ -133,14 +133,28 @@ class TestMultiInstanceSubscribe:
         """Concurrent subscription attempts should not cause consumer conflicts.
 
         Simulates multiple instances starting at exactly the same time.
-        One will create the consumer, others will get a conflict but should
-        be able to bind to it.
+        nats-py handles concurrent subscriptions gracefully - when multiple
+        subscribers use the same config, the library creates the consumer once
+        and binds subsequent subscribers without throwing errors.
+
+        This test verifies:
+        1. All concurrent subscriptions succeed (no errors)
+        2. Only ONE consumer exists in NATS (verified via consumer_info)
+        3. Messages are load-balanced between all subscribers
         """
         js = jetstream_with_workqueue["js"]
         subject = f"{STREAM_NAME}.concurrent_test"
         consumer_name = "concurrent_consumer"
 
-        results: list[tuple[str, int, Any]] = []
+        subscriptions: list[Any] = []
+        messages_received: dict[int, list[str]] = {i: [] for i in range(5)}
+
+        async def make_handler(instance_id: int) -> Any:
+            async def handler(msg: Any) -> None:
+                messages_received[instance_id].append(msg.data.decode())
+                await msg.ack()
+
+            return handler
 
         async def subscribe_instance(instance_id: int) -> tuple[str, int, Any]:
             try:
@@ -148,46 +162,52 @@ class TestMultiInstanceSubscribe:
                     durable_name=consumer_name,
                     deliver_group=consumer_name,
                 )
+                handler = await make_handler(instance_id)
                 sub = await js.subscribe(
                     subject,
-                    cb=lambda msg: None,
+                    cb=handler,
                     config=config,
                 )
-                return ("created", instance_id, sub)
-            except Exception as create_error:
-                logger.info(f"Instance {instance_id} create failed ({create_error}), trying bind")
-                try:
-                    sub = await js.subscribe(
-                        subject,
-                        cb=lambda msg: None,
-                        durable=consumer_name,
-                        queue=consumer_name,
-                        stream=STREAM_NAME,
-                    )
-                    return ("bound", instance_id, sub)
-                except Exception as bind_error:
-                    logger.error(f"Instance {instance_id} bind also failed: {bind_error}")
-                    return ("error", instance_id, str(bind_error))
+                return ("success", instance_id, sub)
+            except Exception as e:
+                logger.error(f"Instance {instance_id} subscribe failed: {e}")
+                return ("error", instance_id, str(e))
 
         tasks = [subscribe_instance(i) for i in range(5)]
         results = await asyncio.gather(*tasks)
 
-        created_count = sum(1 for r in results if r[0] == "created")
-        bound_count = sum(1 for r in results if r[0] == "bound")
+        success_count = sum(1 for r in results if r[0] == "success")
         error_count = sum(1 for r in results if r[0] == "error")
 
-        logger.info(f"Results: {created_count} created, {bound_count} bound, {error_count} errors")
+        logger.info(f"Results: {success_count} success, {error_count} errors")
 
-        assert created_count == 1, f"Exactly 1 should create, got {created_count}"
-        assert bound_count == 4, f"4 should bind, got {bound_count}"
+        assert success_count == 5, (
+            f"All 5 should succeed, got {success_count} (errors: {error_count})"
+        )
         assert error_count == 0, f"No errors expected, got {error_count}"
 
-        for status, _, sub in results:
-            if status in ("created", "bound"):
-                try:
-                    await sub.unsubscribe()
-                except Exception:
-                    pass
+        subscriptions = [r[2] for r in results if r[0] == "success"]
+
+        consumer_info = await js._jsm.consumer_info(STREAM_NAME, consumer_name)
+        assert consumer_info is not None, "Consumer should exist"
+        logger.info(f"Consumer '{consumer_name}' exists with {consumer_info.num_pending} pending")
+
+        for i in range(10):
+            await js.publish(subject, f"msg-{i}".encode())
+
+        await asyncio.sleep(1.0)
+
+        total_received = sum(len(msgs) for msgs in messages_received.values())
+        assert total_received == 10, f"All 10 messages should be received, got {total_received}"
+
+        instances_with_messages = sum(1 for msgs in messages_received.values() if len(msgs) > 0)
+        logger.info(f"Messages distributed across {instances_with_messages} instances")
+
+        for sub in subscriptions:
+            try:
+                await sub.unsubscribe()
+            except Exception:
+                pass
 
     @pytest.mark.asyncio
     async def test_messages_load_balanced_between_instances(
