@@ -676,7 +676,7 @@ class Settings(BaseSettings):
         description="OpenAI vision model to use for image descriptions",
     )
     VISION_PROMPT: str = Field(
-        default="Describe this image in detail for fact-checking purposes. Focus on text, claims, or notable content.",
+        default="Describe this image concisely for fact-checking purposes. Focus on text, claims, or notable content. Be brief.",
         description="Prompt for image description generation",
     )
     VISION_CACHE_TTL_SECONDS: int = Field(
@@ -685,7 +685,9 @@ class Settings(BaseSettings):
         gt=0,
     )
     VISION_MAX_TOKENS: int = Field(
-        default=300, description="Default maximum tokens for vision descriptions", gt=0
+        default=2000,
+        description="Maximum tokens for vision descriptions (needs headroom for reasoning models)",
+        gt=0,
     )
     VISION_DETAIL_LEVEL: str = Field(
         default="auto",
