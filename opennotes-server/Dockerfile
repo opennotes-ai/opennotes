@@ -71,16 +71,14 @@ COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
 # =============================================================================
-# Middleware.io Host Agent (task-969)
-# Installed last to minimize layer invalidation
-# Agent binary only - API keys provided at runtime via environment variables
+# Middleware.io APM (task-969)
+# Application telemetry (traces, metrics, logs, profiling) is handled by the
+# middleware-io Python SDK - no additional installation needed in the container.
+#
+# For host-level metrics (CPU, memory, disk), run the MW host agent as a
+# sidecar container: ghcr.io/middleware-labs/mw-host-agent:master
+# See: https://docs.middleware.io/agent-installation/docker
 # =============================================================================
-# Note: Agent is optional and only starts if MW_API_KEY is provided at runtime
-RUN curl -sSL https://install.middleware.io/scripts/mw-agent-install.sh -o /tmp/mw-agent-install.sh && \
-    chmod +x /tmp/mw-agent-install.sh && \
-    MW_SKIP_START=true /tmp/mw-agent-install.sh && \
-    rm /tmp/mw-agent-install.sh || \
-    echo "WARNING: MW agent install failed, continuing without host agent"
 
 # RUN_MODE controls startup: server (default), worker, or both
 ENV RUN_MODE=server
@@ -109,16 +107,14 @@ COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
 # =============================================================================
-# Middleware.io Host Agent (task-969)
-# Installed last to minimize layer invalidation
-# Agent binary only - API keys provided at runtime via environment variables
+# Middleware.io APM (task-969)
+# Application telemetry (traces, metrics, logs, profiling) is handled by the
+# middleware-io Python SDK - no additional installation needed in the container.
+#
+# For host-level metrics (CPU, memory, disk), run the MW host agent as a
+# sidecar container: ghcr.io/middleware-labs/mw-host-agent:master
+# See: https://docs.middleware.io/agent-installation/docker
 # =============================================================================
-# Note: Agent is optional and only starts if MW_API_KEY is provided at runtime
-RUN curl -sSL https://install.middleware.io/scripts/mw-agent-install.sh -o /tmp/mw-agent-install.sh && \
-    chmod +x /tmp/mw-agent-install.sh && \
-    MW_SKIP_START=true /tmp/mw-agent-install.sh && \
-    rm /tmp/mw-agent-install.sh || \
-    echo "WARNING: MW agent install failed, continuing without host agent"
 
 # RUN_MODE controls startup: server (default), worker, or both
 ENV RUN_MODE=server

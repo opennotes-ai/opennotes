@@ -29,23 +29,10 @@ if [ "${SEED_DEV_API_KEYS}" = "true" ]; then
 fi
 
 # =============================================================================
-# Middleware.io Host Agent (task-969)
-# Start agent if MW_API_KEY is provided - collects host-level metrics
+# Middleware.io APM (task-969)
+# Application telemetry is handled by the middleware-io Python SDK.
+# For host metrics, deploy MW host agent as a sidecar container.
 # =============================================================================
-if [ -n "$MW_API_KEY" ] && [ -n "$MW_TARGET" ]; then
-    if command -v mw-agent &> /dev/null; then
-        echo "Starting Middleware.io host agent..."
-        # Start agent in background with environment variables
-        # Agent uses MW_API_KEY and MW_TARGET from environment
-        mw-agent start &
-        MW_AGENT_PID=$!
-        echo "Middleware.io host agent started (PID: $MW_AGENT_PID)"
-    else
-        echo "WARNING: mw-agent not found, skipping host agent startup"
-    fi
-else
-    echo "INFO: MW_API_KEY or MW_TARGET not set, skipping Middleware.io host agent"
-fi
 
 # Start the API server
 # Note: Workers now run in a dedicated container/worker pool (see task-915)
