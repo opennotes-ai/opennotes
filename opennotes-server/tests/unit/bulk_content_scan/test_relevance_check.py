@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.bulk_content_scan.schemas import BulkScanMessage
+from src.bulk_content_scan.schemas import BulkScanMessage, RelevanceOutcome
 from src.bulk_content_scan.service import BulkContentScanService
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.llm_config.providers.base import LLMResponse
@@ -90,14 +90,14 @@ class TestCheckRelevanceWithLLM:
     """Tests for _check_relevance_with_llm method."""
 
     @pytest.mark.asyncio
-    async def test_check_relevance_returns_true_for_relevant_match(
+    async def test_check_relevance_returns_relevant_for_relevant_match(
         self,
         mock_session,
         mock_embedding_service,
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM determines match is relevant, should return (True, reasoning)."""
+        """When LLM determines match is relevant, should return (RELEVANT, reasoning)."""
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps(
@@ -120,25 +120,25 @@ class TestCheckRelevanceWithLLM:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, reasoning = await service._check_relevance_with_llm(
+        outcome, reasoning = await service._check_relevance_with_llm(
             original_message="The earth is flat and NASA is hiding the truth.",
             matched_content="The claim that the Earth is flat has been thoroughly debunked.",
             matched_source="https://snopes.com/fact-check/flat-earth",
         )
 
-        assert is_relevant is True
+        assert outcome == RelevanceOutcome.RELEVANT
         assert "flat earth" in reasoning.lower()
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_check_relevance_returns_false_for_irrelevant_match(
+    async def test_check_relevance_returns_not_relevant_for_irrelevant_match(
         self,
         mock_session,
         mock_embedding_service,
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM determines match is NOT relevant, should return (False, reasoning)."""
+        """When LLM determines match is NOT relevant, should return (NOT_RELEVANT, reasoning)."""
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps(
@@ -161,13 +161,13 @@ class TestCheckRelevanceWithLLM:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, reasoning = await service._check_relevance_with_llm(
+        outcome, reasoning = await service._check_relevance_with_llm(
             original_message="It looks like it will rain tomorrow.",
             matched_content="COVID vaccines have been proven safe and effective.",
             matched_source="https://factcheck.org/vaccines",
         )
 
-        assert is_relevant is False
+        assert outcome == RelevanceOutcome.NOT_RELEVANT
         assert len(reasoning) > 0
         mock_llm_service.complete.assert_called_once()
 
@@ -179,7 +179,7 @@ class TestCheckRelevanceWithLLM:
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM call fails, should return True (fail-open for safety)."""
+        """When LLM call fails, should return RELEVANT (fail-open for safety)."""
         mock_llm_service.complete = AsyncMock(side_effect=Exception("LLM service unavailable"))
 
         service = BulkContentScanService(
@@ -189,13 +189,13 @@ class TestCheckRelevanceWithLLM:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, reasoning = await service._check_relevance_with_llm(
+        outcome, reasoning = await service._check_relevance_with_llm(
             original_message="Test message",
             matched_content="Test matched content",
             matched_source="https://example.com",
         )
 
-        assert is_relevant is True
+        assert outcome == RelevanceOutcome.RELEVANT
         assert "error" in reasoning.lower() or "failed" in reasoning.lower()
 
     @pytest.mark.asyncio
@@ -206,7 +206,7 @@ class TestCheckRelevanceWithLLM:
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM returns malformed JSON, should return True (fail-open)."""
+        """When LLM returns malformed JSON, should return RELEVANT (fail-open)."""
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="This is not valid JSON",
@@ -224,13 +224,13 @@ class TestCheckRelevanceWithLLM:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _reasoning = await service._check_relevance_with_llm(
+        outcome, _reasoning = await service._check_relevance_with_llm(
             original_message="Test message",
             matched_content="Test matched content",
             matched_source=None,
         )
 
-        assert is_relevant is True
+        assert outcome == RelevanceOutcome.RELEVANT
 
     @pytest.mark.asyncio
     async def test_check_relevance_disabled_by_feature_flag(
@@ -240,7 +240,7 @@ class TestCheckRelevanceWithLLM:
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When RELEVANCE_CHECK_ENABLED=False, skip check and return True without calling LLM."""
+        """When RELEVANCE_CHECK_ENABLED=False, skip check and return RELEVANT without calling LLM."""
         mock_llm_service.complete = AsyncMock()
 
         service = BulkContentScanService(
@@ -253,13 +253,13 @@ class TestCheckRelevanceWithLLM:
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
             mock_settings.RELEVANCE_CHECK_ENABLED = False
 
-            is_relevant, reasoning = await service._check_relevance_with_llm(
+            outcome, reasoning = await service._check_relevance_with_llm(
                 original_message="Test message",
                 matched_content="Test content",
                 matched_source="https://example.com",
             )
 
-        assert is_relevant is True
+        assert outcome == RelevanceOutcome.RELEVANT
         assert "disabled" in reasoning.lower()
         mock_llm_service.complete.assert_not_called()
 
@@ -294,13 +294,13 @@ class TestCheckRelevanceWithLLM:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _reasoning = await service._check_relevance_with_llm(
+        outcome, _reasoning = await service._check_relevance_with_llm(
             original_message="Test message",
             matched_content="Test content",
             matched_source=None,
         )
 
-        assert is_relevant is True
+        assert outcome == RelevanceOutcome.RELEVANT
         mock_llm_service.complete.assert_called_once()
 
 
@@ -658,7 +658,7 @@ class TestRelevanceCheckEdgeCases:
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """Should handle empty matched_content gracefully (fail-open)."""
+        """Should handle empty matched_content gracefully."""
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content=json.dumps(
@@ -681,13 +681,13 @@ class TestRelevanceCheckEdgeCases:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _reasoning = await service._check_relevance_with_llm(
+        outcome, _reasoning = await service._check_relevance_with_llm(
             original_message="The earth is flat.",
             matched_content="",
             matched_source=None,
         )
 
-        assert is_relevant is False
+        assert outcome == RelevanceOutcome.NOT_RELEVANT
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -698,7 +698,7 @@ class TestRelevanceCheckEdgeCases:
         mock_redis,
         mock_llm_service,
     ) -> None:
-        """When LLM call times out, should return True (fail-open for safety)."""
+        """When LLM call times out, should return RELEVANT (fail-open for safety)."""
         import asyncio
 
         async def slow_complete(*args, **kwargs):
@@ -727,13 +727,13 @@ class TestRelevanceCheckEdgeCases:
             mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
             mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
 
-            is_relevant, reasoning = await service._check_relevance_with_llm(
+            outcome, reasoning = await service._check_relevance_with_llm(
                 original_message="Test message",
                 matched_content="Test matched content",
                 matched_source="https://example.com",
             )
 
-        assert is_relevant is True
+        assert outcome == RelevanceOutcome.RELEVANT
         assert "timed out" in reasoning.lower()
 
     @pytest.mark.asyncio
@@ -814,13 +814,13 @@ class TestTopicMentionFiltering:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _ = await service._check_relevance_with_llm(
+        outcome, _ = await service._check_relevance_with_llm(
             original_message="how about biden",
             matched_content="Joe Biden's policy positions on various issues.",
             matched_source="https://factcheck.org/biden",
         )
 
-        assert is_relevant is False
+        assert outcome == RelevanceOutcome.NOT_RELEVANT
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -854,13 +854,13 @@ class TestTopicMentionFiltering:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _ = await service._check_relevance_with_llm(
+        outcome, _ = await service._check_relevance_with_llm(
             original_message="some things about kamala harris",
             matched_content="Kamala Harris background and political career.",
             matched_source="https://factcheck.org/harris",
         )
 
-        assert is_relevant is False
+        assert outcome == RelevanceOutcome.NOT_RELEVANT
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -894,13 +894,13 @@ class TestTopicMentionFiltering:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _ = await service._check_relevance_with_llm(
+        outcome, _ = await service._check_relevance_with_llm(
             original_message="or donald trump",
             matched_content="Donald Trump's statements about various topics.",
             matched_source="https://politifact.com/trump",
         )
 
-        assert is_relevant is False
+        assert outcome == RelevanceOutcome.NOT_RELEVANT
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -934,13 +934,13 @@ class TestTopicMentionFiltering:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _ = await service._check_relevance_with_llm(
+        outcome, _ = await service._check_relevance_with_llm(
             original_message="Biden was a Confederate soldier",
             matched_content="Fact check: Joe Biden was not a Confederate soldier.",
             matched_source="https://factcheck.org/biden-confederate",
         )
 
-        assert is_relevant is True
+        assert outcome == RelevanceOutcome.RELEVANT
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -974,13 +974,13 @@ class TestTopicMentionFiltering:
             llm_service=mock_llm_service,
         )
 
-        is_relevant, _ = await service._check_relevance_with_llm(
+        outcome, _ = await service._check_relevance_with_llm(
             original_message="What about the vaccine?",
             matched_content="COVID-19 vaccine safety and efficacy information.",
             matched_source="https://factcheck.org/vaccines",
         )
 
-        assert is_relevant is False
+        assert outcome == RelevanceOutcome.NOT_RELEVANT
         mock_llm_service.complete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1022,3 +1022,309 @@ class TestTopicMentionFiltering:
         assert "CLAIM DETECTION" in user_prompt
         assert "RELEVANCE CHECK" in user_prompt
         assert "Step 1 is NO" in user_prompt
+
+
+class TestContentFilterDetection:
+    """Tests for content filter detection and retry logic (task-968)."""
+
+    @pytest.mark.asyncio
+    async def test_content_filter_triggers_retry_without_fact_check(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """When content_filter is returned, should retry without fact-check content."""
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            return LLMResponse(
+                content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = mock_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        outcome, reasoning = await service._check_relevance_with_llm(
+            original_message="Potentially sensitive message",
+            matched_content="Fact check with sensitive content",
+            matched_source="https://example.com",
+        )
+
+        assert call_count == 2
+        assert outcome == RelevanceOutcome.INDETERMINATE
+        assert "fact-check" in reasoning.lower() or "indeterminate" in reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_retry_also_filtered_returns_content_filtered(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """When retry also triggers content_filter, should return CONTENT_FILTERED."""
+        mock_llm_service.complete = AsyncMock(
+            return_value=LLMResponse(
+                content="",
+                model="gpt-5-mini",
+                tokens_used=0,
+                finish_reason="content_filter",
+                provider="openai",
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        outcome, reasoning = await service._check_relevance_with_llm(
+            original_message="Problematic user message content",
+            matched_content="Normal fact check content",
+            matched_source="https://example.com",
+        )
+
+        assert outcome == RelevanceOutcome.CONTENT_FILTERED
+        assert "message" in reasoning.lower()
+        assert "filter" in reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_retry_succeeds_returns_indeterminate(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """When retry succeeds (no filter), should return INDETERMINATE."""
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            return LLMResponse(
+                content=json.dumps({"has_claims": False, "reasoning": "No claims"}),
+                model="gpt-5-mini",
+                tokens_used=15,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = mock_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        outcome, reasoning = await service._check_relevance_with_llm(
+            original_message="Normal user message",
+            matched_content="Fact check that triggers content filter",
+            matched_source="https://example.com",
+        )
+
+        assert outcome == RelevanceOutcome.INDETERMINATE
+        assert "fact-check" in reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_retry_timeout_returns_indeterminate(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """When retry times out, should return INDETERMINATE."""
+        import asyncio
+
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            await asyncio.sleep(10)
+            return LLMResponse(
+                content=json.dumps({"has_claims": True}),
+                model="gpt-5-mini",
+                tokens_used=15,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = mock_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 0.1
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
+
+            outcome, reasoning = await service._check_relevance_with_llm(
+                original_message="Test message",
+                matched_content="Fact check content",
+                matched_source="https://example.com",
+            )
+
+        assert outcome == RelevanceOutcome.INDETERMINATE
+        assert "timed out" in reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_retry_error_returns_indeterminate(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """When retry fails with an error, should return INDETERMINATE."""
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            raise Exception("Retry failed")
+
+        mock_llm_service.complete = mock_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        outcome, reasoning = await service._check_relevance_with_llm(
+            original_message="Test message",
+            matched_content="Fact check content",
+            matched_source="https://example.com",
+        )
+
+        assert outcome == RelevanceOutcome.INDETERMINATE
+        assert "failed" in reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_indeterminate_outcome_does_not_flag(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+        sample_message,
+        sample_fact_check_match,
+    ) -> None:
+        """When relevance check returns INDETERMINATE, should not flag the message."""
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            return LLMResponse(
+                content=json.dumps({"has_claims": True}),
+                model="gpt-5-mini",
+                tokens_used=15,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = mock_complete
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[sample_fact_check_match],
+                total_matches=1,
+                query_text=sample_message.content,
+                dataset_tags=["snopes"],
+                similarity_threshold=0.7,
+                score_threshold=0.1,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
+
+            result = await service._similarity_scan(
+                scan_id=uuid4(),
+                message=sample_message,
+                community_server_platform_id="111222333",
+            )
+
+        assert result is None

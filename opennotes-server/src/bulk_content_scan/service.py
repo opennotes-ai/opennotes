@@ -22,6 +22,7 @@ from src.bulk_content_scan.schemas import (
     FlaggedMessage,
     OpenAIModerationMatch,
     RelevanceCheckResult,
+    RelevanceOutcome,
     ScanCandidate,
     SimilarityMatch,
 )
@@ -425,13 +426,13 @@ class BulkContentScanService:
                 score_info["matched_claim"] = best_match.content or best_match.title or ""
 
                 if best_match.similarity_score >= threshold:
-                    is_relevant, reasoning = await self._check_relevance_with_llm(
+                    outcome, reasoning = await self._check_relevance_with_llm(
                         original_message=message.content,
                         matched_content=best_match.content or best_match.title or "",
                         matched_source=best_match.source_url,
                     )
 
-                    if is_relevant:
+                    if outcome == RelevanceOutcome.RELEVANT:
                         # Build flagged_msg FIRST - only set is_flagged if building succeeds
                         # This prevents is_flagged=True in progress events when flagged_msg is None
                         try:
@@ -505,19 +506,20 @@ class BulkContentScanService:
             if search_response.matches:
                 best_match = search_response.matches[0]
 
-                is_relevant, reasoning = await self._check_relevance_with_llm(
+                outcome, reasoning = await self._check_relevance_with_llm(
                     original_message=message.content,
                     matched_content=best_match.content or best_match.title or "",
                     matched_source=best_match.source_url,
                 )
 
-                if is_relevant:
+                if outcome == RelevanceOutcome.RELEVANT:
                     return self._build_flagged_message(message, best_match)
                 logger.info(
                     "Skipping flag due to relevance check",
                     extra={
                         "message_id": message.message_id,
                         "reasoning": reasoning,
+                        "relevance_outcome": outcome.value,
                         "similarity_score": best_match.similarity_score,
                     },
                 )
@@ -815,13 +817,13 @@ class BulkContentScanService:
                 },
             )
 
-            is_relevant, reasoning = await self._check_relevance_with_llm(
+            outcome, reasoning = await self._check_relevance_with_llm(
                 original_message=candidate.message.content,
                 matched_content=candidate.matched_content,
                 matched_source=candidate.matched_source,
             )
 
-            if is_relevant:
+            if outcome == RelevanceOutcome.RELEVANT:
                 try:
                     if candidate.scan_type == ScanType.SIMILARITY.value:
                         flagged_msg = FlaggedMessage(
@@ -858,6 +860,7 @@ class BulkContentScanService:
                         "scan_id": str(scan_id),
                         "message_id": candidate.message.message_id,
                         "reasoning": reasoning,
+                        "relevance_outcome": outcome.value,
                         "score": candidate.score,
                     },
                 )
@@ -874,13 +877,16 @@ class BulkContentScanService:
 
         return flagged
 
-    async def _check_relevance_with_llm(
+    async def _check_relevance_with_llm(  # noqa: PLR0911
         self,
         original_message: str,
         matched_content: str,
         matched_source: str | None,
-    ) -> tuple[bool, str]:
+    ) -> tuple[RelevanceOutcome, str]:
         """Check if the matched content is relevant to the original message using LLM.
+
+        Detects content filter responses and retries without fact-check content
+        to distinguish between problematic user messages and problematic fact-checks.
 
         Args:
             original_message: The user's original message
@@ -888,20 +894,26 @@ class BulkContentScanService:
             matched_source: Optional source URL
 
         Returns:
-            Tuple of (is_relevant, reasoning). On error, returns (True, error_message) to fail-open.
+            Tuple of (RelevanceOutcome, reasoning):
+            - RELEVANT: Match is relevant, should flag
+            - NOT_RELEVANT: Match not relevant, don't flag
+            - INDETERMINATE: Couldn't determine (fact-check triggered filter), don't flag
+            - CONTENT_FILTERED: User message itself triggered filter
+
+            On error, returns (RELEVANT, error_message) to fail-open.
         """
         if not settings.RELEVANCE_CHECK_ENABLED:
             relevance_check_total.labels(
                 outcome="disabled", decision="skipped", instance_id=settings.INSTANCE_ID
             ).inc()
-            return (True, "Relevance check disabled")
+            return (RelevanceOutcome.RELEVANT, "Relevance check disabled")
 
         if not self.llm_service:
             logger.warning("LLM service not configured for relevance check")
             relevance_check_total.labels(
                 outcome="not_configured", decision="fail_open", instance_id=settings.INSTANCE_ID
             ).inc()
-            return (True, "LLM service not configured")
+            return (RelevanceOutcome.RELEVANT, "LLM service not configured")
 
         start_time = time.monotonic()
 
@@ -957,6 +969,18 @@ Only answer RELEVANT if BOTH steps are YES."""
                 timeout=settings.RELEVANCE_CHECK_TIMEOUT,
             )
 
+            if response.finish_reason == "content_filter":
+                latency_ms = (time.monotonic() - start_time) * 1000
+                logger.warning(
+                    "Content filter triggered during relevance check, retrying without fact-check",
+                    extra={
+                        "original_message_length": len(original_message),
+                        "matched_content_length": len(matched_content),
+                        "latency_ms": round(latency_ms, 2),
+                    },
+                )
+                return await self._retry_without_fact_check(original_message, start_time)
+
             result = RelevanceCheckResult.model_validate_json(response.content)
 
             latency_ms = (time.monotonic() - start_time) * 1000
@@ -974,7 +998,10 @@ Only answer RELEVANT if BOTH steps are YES."""
                 outcome="success", decision=decision, instance_id=settings.INSTANCE_ID
             ).inc()
 
-            return (result.is_relevant, result.reasoning)
+            outcome = (
+                RelevanceOutcome.RELEVANT if result.is_relevant else RelevanceOutcome.NOT_RELEVANT
+            )
+            return (outcome, result.reasoning)
 
         except TimeoutError:
             latency_ms = (time.monotonic() - start_time) * 1000
@@ -988,7 +1015,10 @@ Only answer RELEVANT if BOTH steps are YES."""
             relevance_check_total.labels(
                 outcome="timeout", decision="fail_open", instance_id=settings.INSTANCE_ID
             ).inc()
-            return (True, f"Relevance check timed out after {settings.RELEVANCE_CHECK_TIMEOUT}s")
+            return (
+                RelevanceOutcome.RELEVANT,
+                f"Relevance check timed out after {settings.RELEVANCE_CHECK_TIMEOUT}s",
+            )
 
         except ValidationError as e:
             latency_ms = (time.monotonic() - start_time) * 1000
@@ -1002,7 +1032,7 @@ Only answer RELEVANT if BOTH steps are YES."""
             relevance_check_total.labels(
                 outcome="validation_error", decision="fail_open", instance_id=settings.INSTANCE_ID
             ).inc()
-            return (True, f"Relevance check validation failed: {e}")
+            return (RelevanceOutcome.RELEVANT, f"Relevance check validation failed: {e}")
 
         except Exception as e:
             latency_ms = (time.monotonic() - start_time) * 1000
@@ -1017,7 +1047,131 @@ Only answer RELEVANT if BOTH steps are YES."""
             relevance_check_total.labels(
                 outcome="error", decision="fail_open", instance_id=settings.INSTANCE_ID
             ).inc()
-            return (True, f"Relevance check failed: {e}")
+            return (RelevanceOutcome.RELEVANT, f"Relevance check failed: {e}")
+
+    async def _retry_without_fact_check(
+        self,
+        original_message: str,
+        start_time: float,
+    ) -> tuple[RelevanceOutcome, str]:
+        """Retry relevance check with only the user message to isolate content filter source.
+
+        Called when the initial relevance check triggers a content filter. By retrying
+        with only the user's message (no fact-check content), we can determine:
+        - If retry also triggers filter: user's message contains problematic content
+        - If retry succeeds: fact-check content was the problem, treat as indeterminate
+
+        Args:
+            original_message: The user's original message (without fact-check content)
+            start_time: Start time of the original check for latency tracking
+
+        Returns:
+            Tuple of (RelevanceOutcome, reasoning):
+            - CONTENT_FILTERED: User message itself triggers content filter
+            - INDETERMINATE: Fact-check content was the issue, can't determine relevance
+        """
+        if not self.llm_service:
+            return (
+                RelevanceOutcome.INDETERMINATE,
+                "LLM service not configured for retry",
+            )
+
+        simplified_system_prompt = """Analyze this message for factual claims.
+Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"""
+
+        messages = [
+            LLMMessage(role="system", content=simplified_system_prompt),
+            LLMMessage(role="user", content=original_message),
+        ]
+
+        try:
+            response = await asyncio.wait_for(
+                self.llm_service.complete(
+                    db=self.session,
+                    messages=messages,
+                    community_server_id=None,
+                    provider=settings.RELEVANCE_CHECK_PROVIDER,
+                    model=settings.RELEVANCE_CHECK_MODEL,
+                    max_tokens=settings.RELEVANCE_CHECK_MAX_TOKENS,
+                    temperature=0.0,
+                ),
+                timeout=settings.RELEVANCE_CHECK_TIMEOUT,
+            )
+
+            latency_ms = (time.monotonic() - start_time) * 1000
+
+            if response.finish_reason == "content_filter":
+                logger.warning(
+                    "Content filter triggered on user message alone",
+                    extra={
+                        "message_length": len(original_message),
+                        "latency_ms": round(latency_ms, 2),
+                    },
+                )
+                relevance_check_total.labels(
+                    outcome="content_filter",
+                    decision="message_filtered",
+                    instance_id=settings.INSTANCE_ID,
+                ).inc()
+                return (
+                    RelevanceOutcome.CONTENT_FILTERED,
+                    "Message content triggered safety filter",
+                )
+            logger.info(
+                "Retry succeeded - fact-check content triggered original filter",
+                extra={
+                    "message_length": len(original_message),
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            relevance_check_total.labels(
+                outcome="content_filter",
+                decision="factcheck_filtered",
+                instance_id=settings.INSTANCE_ID,
+            ).inc()
+            return (
+                RelevanceOutcome.INDETERMINATE,
+                "Fact-check content triggered safety filter; relevance indeterminate",
+            )
+
+        except TimeoutError:
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.warning(
+                "Retry timed out, treating as indeterminate",
+                extra={
+                    "timeout_seconds": settings.RELEVANCE_CHECK_TIMEOUT,
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            relevance_check_total.labels(
+                outcome="content_filter_retry_timeout",
+                decision="indeterminate",
+                instance_id=settings.INSTANCE_ID,
+            ).inc()
+            return (
+                RelevanceOutcome.INDETERMINATE,
+                f"Retry timed out after {settings.RELEVANCE_CHECK_TIMEOUT}s",
+            )
+
+        except Exception as e:
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.warning(
+                "Retry failed, treating as indeterminate",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "latency_ms": round(latency_ms, 2),
+                },
+            )
+            relevance_check_total.labels(
+                outcome="content_filter_retry_error",
+                decision="indeterminate",
+                instance_id=settings.INSTANCE_ID,
+            ).inc()
+            return (
+                RelevanceOutcome.INDETERMINATE,
+                f"Retry failed: {e}",
+            )
 
     async def append_flagged_result(
         self,

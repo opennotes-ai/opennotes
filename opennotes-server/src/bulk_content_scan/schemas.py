@@ -19,6 +19,19 @@ class BulkScanStatus(str, Enum):
     FAILED = "failed"
 
 
+class RelevanceOutcome(str, Enum):
+    """Outcome of LLM relevance check for content filtering.
+
+    Used to distinguish between different reasons why a relevance check
+    may succeed, fail, or be indeterminate due to content filtering.
+    """
+
+    RELEVANT = "relevant"
+    NOT_RELEVANT = "not_relevant"
+    INDETERMINATE = "indeterminate"
+    CONTENT_FILTERED = "content_filtered"
+
+
 class BulkScanMessage(StrictInputSchema):
     """Schema for a message to be scanned in bulk content scanning."""
 
