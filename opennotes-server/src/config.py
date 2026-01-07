@@ -712,7 +712,7 @@ class Settings(BaseSettings):
         gt=0,
     )
     RELEVANCE_CHECK_TIMEOUT: float = Field(
-        default=5.0,
+        default=30.0,
         description="Timeout in seconds for relevance check LLM calls",
         gt=0,
     )
