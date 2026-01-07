@@ -130,7 +130,6 @@ class APIKeyResponse(BaseModel):
     key: str
     created_at: datetime
     expires_at: datetime | None
-    last_used_at: datetime | None
 
     model_config = {"from_attributes": True}
 

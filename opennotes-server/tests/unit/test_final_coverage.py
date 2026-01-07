@@ -149,7 +149,6 @@ async def test_users_crud_verify_api_key():
     key, verified_user = result
     assert key == api_key
     assert verified_user == user
-    assert api_key.last_used_at is not None
 
     # Test with wrong key
     mock_db.reset_mock()

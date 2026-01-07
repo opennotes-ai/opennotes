@@ -8072,18 +8072,6 @@
               }
             ],
             "title": "Expires At"
-          },
-          "last_used_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Used At"
           }
         },
         "type": "object",
@@ -8092,8 +8080,7 @@
           "name",
           "key",
           "created_at",
-          "expires_at",
-          "last_used_at"
+          "expires_at"
         ],
         "title": "APIKeyResponse"
       },

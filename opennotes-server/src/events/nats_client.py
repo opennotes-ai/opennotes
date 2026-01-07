@@ -203,6 +203,33 @@ class NATSClientManager:
             logger.error(f"Failed to publish to subject '{subject}': {e}")
             raise
 
+    async def publish_fire_and_forget(
+        self,
+        subject: str,
+        data: bytes,
+    ) -> None:
+        """Publish a message to core NATS (not JetStream) without waiting for acknowledgment.
+
+        This is used for telemetry events where message loss is acceptable.
+        Messages are discarded if there are no subscribers (core NATS behavior).
+
+        Args:
+            subject: The NATS subject to publish to
+            data: The message payload as bytes
+
+        Note:
+            This method logs warnings on failure but never raises exceptions,
+            ensuring it never blocks the calling request.
+        """
+        if not self.nc:
+            logger.warning(f"NATS not connected, dropping message to '{subject}'")
+            return
+
+        try:
+            await self.nc.publish(subject, data)
+        except Exception as e:
+            logger.warning(f"Failed to publish fire-and-forget to '{subject}': {e}")
+
     async def _consumer_exists(self, consumer_name: str) -> bool:
         """Check if a consumer with the given name exists on the stream."""
         if not self.js:

@@ -531,7 +531,6 @@ async def create_user_api_key(
             key=raw_key,
             created_at=api_key.created_at,
             expires_at=api_key.expires_at,
-            last_used_at=api_key.last_used_at,
         )
     except Exception:
         await db.rollback()
@@ -552,7 +551,6 @@ async def list_user_api_keys(
             key="***",
             created_at=key.created_at,
             expires_at=key.expires_at,
-            last_used_at=key.last_used_at,
         )
         for key in api_keys
     ]

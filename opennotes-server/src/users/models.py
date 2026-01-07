@@ -111,7 +111,6 @@ class APIKey(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return f"<APIKey(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
