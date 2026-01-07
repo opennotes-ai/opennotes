@@ -5,35 +5,35 @@
     "demos": [
       {
         "augmented": true,
-        "message": "some things about kamala harris",
-        "fact_check_title": "Did Trump Donate to Kamala Harris' Past Election Campaigns?",
-        "fact_check_content": "U.S. President Donald Trump donated $6,000 to Kamala Harris' 2014 campaign for reelection as California attorney general. Records show Trump made contributions in 2011 and 2013.",
-        "reasoning": "The message does not contain a specific claim; it simply mentions 'some things about Kamala Harris' without asserting anything verifiable. The fact-check content regarding Trump's donations to her campaign cannot be linked to a specific claim in the message.",
+        "message": "Haitian immigrants are eating cats and dogs in Ohio",
+        "fact_check_title": "Are Immigrants Eating Pets in Springfield, Ohio?",
+        "fact_check_content": "Claims that Haitian immigrants in Springfield, Ohio are eating pets have been debunked by local officials and police who found no evidence.",
+        "reasoning": "The message asserts a specific, verifiable factual claim: that Haitian immigrants in Ohio are eating cats and dogs. The fact-check directly addresses that allegation for Springfield, Ohio, reporting that local officials and police investigated and found no evidence to support the claim, thereby debunking it.",
+        "is_relevant": true
+      },
+      {
+        "augmented": true,
+        "message": "I've been following the news about climate change lately. It's really concerning how much debate there is. What do you think about renewable energy?",
+        "fact_check_title": "Did Scientists Predict an Ice Age in the 1970s?",
+        "fact_check_content": "While a few studies in the 1970s discussed potential cooling, the scientific consensus even then leaned toward warming. The 'ice age prediction' claim is largely a myth.",
+        "reasoning": "The user message is a general comment and question about climate change and renewable energy, not a specific factual claim. The fact-check addresses whether scientists predicted an ice age in the 1970s — a different, specific historical claim. Because the user's message does not assert that claim, the fact-check does not directly apply.",
         "is_relevant": false
       },
       {
         "augmented": true,
-        "message": "how about biden",
-        "fact_check_title": "Did Biden Say He Would Ban Fracking?",
-        "fact_check_content": "Joe Biden's position on fracking has been complex. During debates he stated he would not ban fracking, though he supports transitioning away from fossil fuels.",
-        "reasoning": "The message 'how about biden' is a vague inquiry without a specific claim. It asks about 'Biden' generally but does not assert anything about fracking or any specific verifiable fact addressed by the fact-check.",
-        "is_relevant": false
+        "message": "I was talking to my uncle at Thanksgiving and he kept insisting that the COVID vaccines have killed more people than COVID itself. Is that even possible?",
+        "fact_check_title": "Have COVID-19 Vaccines Killed More People Than COVID-19?",
+        "fact_check_content": "This claim is false. COVID-19 has killed over 1 million Americans, while vaccine-related deaths reported to VAERS are in the thousands and most are unverified coincidental deaths.",
+        "reasoning": "The message relays a specific, verifiable claim: that COVID-19 vaccines have killed more people than COVID-19 itself. The fact-check directly addresses that exact claim and debunks it, noting COVID-19 has caused over 1 million U.S. deaths while vaccine-related death reports to VAERS number in the thousands and are largely unverified coincidental reports.",
+        "is_relevant": true
       },
       {
         "augmented": true,
-        "message": "or donald trump",
-        "fact_check_title": "Did Trump Say Injecting Disinfectant Could Treat COVID-19?",
-        "fact_check_content": "During a White House briefing, Trump suggested research into whether disinfectants could be used to treat COVID-19 internally.",
-        "reasoning": "The message 'or donald trump' is a simple mention of a name without making a specific, verifiable claim. It does not assert anything about Trump's statements or actions related to the fact-check content about disinfectants.",
-        "is_relevant": false
-      },
-      {
-        "augmented": true,
-        "message": "What about the vaccine?",
-        "fact_check_title": "Do COVID-19 Vaccines Contain Microchips?",
-        "fact_check_content": "Claims that COVID-19 vaccines contain microchips are false. Vaccines contain mRNA or viral proteins but no tracking devices.",
-        "reasoning": "The message 'What about the vaccine?' is a question and does not contain a specific, verifiable claim. It doesn't make any assertion about vaccines containing microchips or any other aspect that could be fact-checked. Thus, the fact-check about microchips in COVID-19 vaccines does not address a claim in the message.",
-        "is_relevant": false
+        "message": "Did you hear? They found proof that the moon landing was faked",
+        "fact_check_title": "Was the Apollo 11 Moon Landing Faked?",
+        "fact_check_content": "The Apollo 11 moon landing in 1969 was real. Evidence includes moon rocks, retroreflectors still used today, and independent verification from multiple countries including the Soviet Union.",
+        "reasoning": "The message asserts (albeit via hearsay) a specific verifiable claim: that “they found proof that the moon landing was faked.” The fact-check directly addresses that claim by evaluating whether the Apollo 11 moon landing was faked and concluding it was real, citing moon rocks, retroreflectors, and independent verification.",
+        "is_relevant": true
       }
     ],
     "signature": {
