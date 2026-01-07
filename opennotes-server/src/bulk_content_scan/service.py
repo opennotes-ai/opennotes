@@ -1001,10 +1001,10 @@ class BulkContentScanService:
             Tuple of (RelevanceOutcome, reasoning):
             - RELEVANT: Match is relevant, should flag
             - NOT_RELEVANT: Match not relevant, don't flag
-            - INDETERMINATE: Couldn't determine (fact-check triggered filter), don't flag
+            - INDETERMINATE: Couldn't determine relevance (timeout, validation error,
+              general error, or fact-check triggered filter). Returns INDETERMINATE
+              so the tighter threshold is applied, filtering low-confidence matches.
             - CONTENT_FILTERED: User message itself triggered filter
-
-            On error, returns (RELEVANT, error_message) to fail-open.
         """
         if not settings.RELEVANCE_CHECK_ENABLED:
             relevance_check_total.labels(
@@ -1124,38 +1124,45 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
         except TimeoutError:
             latency_ms = (time.monotonic() - start_time) * 1000
             logger.warning(
-                "Relevance check timed out, failing open",
+                "Relevance check timed out, returning indeterminate for tighter threshold",
                 extra={
                     "timeout_seconds": settings.RELEVANCE_CHECK_TIMEOUT,
                     "latency_ms": round(latency_ms, 2),
                 },
             )
             relevance_check_total.labels(
-                outcome="timeout", decision="fail_open", instance_id=settings.INSTANCE_ID
+                outcome="timeout",
+                decision="fail_open_indeterminate",
+                instance_id=settings.INSTANCE_ID,
             ).inc()
             return (
-                RelevanceOutcome.RELEVANT,
+                RelevanceOutcome.INDETERMINATE,
                 f"Relevance check timed out after {settings.RELEVANCE_CHECK_TIMEOUT}s",
             )
 
         except ValidationError as e:
             latency_ms = (time.monotonic() - start_time) * 1000
             logger.warning(
-                "Relevance check JSON validation failed, failing open",
+                "Relevance check JSON validation failed, returning indeterminate for tighter threshold",
                 extra={
                     "validation_error": str(e),
                     "latency_ms": round(latency_ms, 2),
                 },
             )
             relevance_check_total.labels(
-                outcome="validation_error", decision="fail_open", instance_id=settings.INSTANCE_ID
+                outcome="validation_error",
+                decision="fail_open_indeterminate",
+                instance_id=settings.INSTANCE_ID,
             ).inc()
-            return (RelevanceOutcome.RELEVANT, f"Relevance check validation failed: {e}")
+            return (
+                RelevanceOutcome.INDETERMINATE,
+                f"Relevance check validation failed: {e}",
+            )
 
         except Exception as e:
             latency_ms = (time.monotonic() - start_time) * 1000
             logger.warning(
-                "Relevance check failed, failing open",
+                "Relevance check failed, returning indeterminate for tighter threshold",
                 extra={
                     "error": str(e),
                     "error_type": type(e).__name__,
@@ -1163,9 +1170,14 @@ Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the
                 },
             )
             relevance_check_total.labels(
-                outcome="error", decision="fail_open", instance_id=settings.INSTANCE_ID
+                outcome="error",
+                decision="fail_open_indeterminate",
+                instance_id=settings.INSTANCE_ID,
             ).inc()
-            return (RelevanceOutcome.RELEVANT, f"Relevance check failed: {e}")
+            return (
+                RelevanceOutcome.INDETERMINATE,
+                f"Relevance check failed: {e}",
+            )
 
     async def _retry_without_fact_check(
         self,
