@@ -203,39 +203,27 @@ class NATSClientManager:
             logger.error(f"Failed to publish to subject '{subject}': {e}")
             raise
 
-    async def _cleanup_conflicting_consumers(self, subject: str, consumer_name: str) -> None:
-        """Delete any existing consumers that conflict with the new subscription.
-
-        On WorkQueue streams, only one consumer can filter on a given subject.
-        This method cleans up:
-        1. Any consumer with the target durable name (may have different config)
-        2. Any consumer filtering on the same subject (different names)
-        """
+    async def _consumer_exists(self, consumer_name: str) -> bool:
+        """Check if a consumer with the given name exists on the stream."""
         if not self.js:
-            return
-
+            return False
         try:
-            stream_name = settings.NATS_STREAM_NAME
             jsm = self.js._jsm
+            await jsm.consumer_info(settings.NATS_STREAM_NAME, consumer_name)
+            return True
+        except Exception:
+            return False
 
-            try:
-                await jsm.delete_consumer(stream_name, consumer_name)
-                logger.info(f"Deleted existing consumer '{consumer_name}'")
-            except Exception:
-                pass
+    async def _cleanup_conflicting_consumers(self, subject: str, _consumer_name: str) -> None:
+        """DEPRECATED: No longer deletes consumers.
 
-            consumers = await jsm.consumers_info(stream_name)
-            for consumer in consumers:
-                filter_subject = consumer.config.filter_subject
-                if filter_subject == subject and consumer.name != consumer_name:
-                    logger.warning(
-                        f"Deleting conflicting consumer '{consumer.name}' "
-                        f"with filter '{filter_subject}' on stream '{stream_name}'"
-                    )
-                    await jsm.delete_consumer(stream_name, consumer.name)
-                    logger.info(f"Successfully deleted consumer '{consumer.name}'")
-        except Exception as e:
-            logger.warning(f"Error cleaning up consumers for subject '{subject}': {e}")
+        Previous behavior deleted other instances' consumers which caused issues
+        with multi-instance deployments. Now we use bind-or-create pattern instead.
+        """
+        logger.warning(
+            f"_cleanup_conflicting_consumers called for '{subject}' but deletion "
+            f"is disabled. Using bind-or-create pattern instead."
+        )
 
     async def subscribe(
         self,
@@ -244,13 +232,12 @@ class NATSClientManager:
     ) -> Subscription:
         """Subscribe to a JetStream subject with a queue group.
 
-        Uses queue groups to allow multiple server instances to load balance
-        message processing. With WORK_QUEUE retention policy and queue groups,
-        each message is delivered to exactly one instance in the queue group.
+        Uses bind-or-create pattern:
+        1. If consumer exists, bind to it (join queue group)
+        2. If consumer doesn't exist, create it
 
-        IMPORTANT: This method does NOT delete existing consumers before subscribing.
-        Multiple instances can join the same consumer group. We only delete consumers
-        when there's an actual conflict (different config) indicated by BadRequestError.
+        IMPORTANT: Never deletes existing consumers. Multiple instances
+        share the same consumer via queue groups (deliver_group).
         """
         if not self.nc:
             raise RuntimeError("NATS client not connected")
@@ -259,37 +246,29 @@ class NATSClientManager:
             raise RuntimeError("JetStream context not initialized")
 
         consumer_name = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
-
-        consumer_config = ConsumerConfig(
-            durable_name=consumer_name,
-            deliver_group=consumer_name,
-            max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
-            ack_wait=settings.NATS_ACK_WAIT_SECONDS,
-        )
+        consumer_exists = await self._consumer_exists(consumer_name)
 
         try:
-            subscription = await asyncio.wait_for(
-                self.js.subscribe(
-                    subject,
-                    cb=callback,
-                    config=consumer_config,
-                ),
-                timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
-            )
-            self.active_subscriptions[subject] = SubscriptionInfo(
-                subject=subject,
-                consumer_name=consumer_name,
-                callback=callback,
-                subscription=subscription,
-            )
-            return subscription
-        except BadRequestError as e:
-            if "filtered consumer not unique" in str(e) or "consumer name already in use" in str(e):
-                logger.warning(
-                    f"Consumer conflict detected for subject '{subject}', "
-                    f"cleaning up existing consumers and retrying..."
+            if consumer_exists:
+                logger.debug(f"Consumer '{consumer_name}' exists, binding to queue group")
+                subscription = await asyncio.wait_for(
+                    self.js.subscribe(
+                        subject,
+                        cb=callback,
+                        durable=consumer_name,
+                        queue=consumer_name,
+                        stream=settings.NATS_STREAM_NAME,
+                    ),
+                    timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
                 )
-                await self._cleanup_conflicting_consumers(subject, consumer_name)
+            else:
+                logger.info(f"Creating new consumer '{consumer_name}'")
+                consumer_config = ConsumerConfig(
+                    durable_name=consumer_name,
+                    deliver_group=consumer_name,
+                    max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
+                    ack_wait=settings.NATS_ACK_WAIT_SECONDS,
+                )
                 subscription = await asyncio.wait_for(
                     self.js.subscribe(
                         subject,
@@ -298,14 +277,21 @@ class NATSClientManager:
                     ),
                     timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
                 )
-                self.active_subscriptions[subject] = SubscriptionInfo(
-                    subject=subject,
-                    consumer_name=consumer_name,
-                    callback=callback,
-                    subscription=subscription,
-                )
-                return subscription
-            logger.error(f"Failed to subscribe to subject '{subject}': {e}")
+
+            self.active_subscriptions[subject] = SubscriptionInfo(
+                subject=subject,
+                consumer_name=consumer_name,
+                callback=callback,
+                subscription=subscription,
+            )
+            logger.info(f"Subscribed to {subject} via consumer '{consumer_name}'")
+            return subscription
+
+        except BadRequestError as e:
+            logger.warning(
+                f"BadRequestError subscribing to '{subject}': {e}. "
+                f"This may resolve on retry if another instance just created the consumer."
+            )
             raise
         except Exception as e:
             logger.error(f"Failed to subscribe to subject '{subject}': {e}")

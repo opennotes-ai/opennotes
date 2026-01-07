@@ -54,32 +54,27 @@ async def test_subscribe_does_not_delete_existing_consumer_on_first_attempt(nats
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_subscribe_deletes_consumer_only_on_conflict_error(nats_client, mock_jsm):
-    """Only delete consumer when subscribe fails with a conflict error.
+async def test_subscribe_raises_on_conflict_without_deleting(nats_client, mock_jsm):
+    """When conflict occurs, should raise error without deleting consumers.
 
-    If the initial subscribe fails because of a config mismatch,
-    THEN we delete and retry.
+    With bind-or-create pattern, if we detect no consumer exists but then
+    get a conflict error, we raise it rather than deleting.
+    The caller can retry and eventually bind to the consumer.
     """
-    mock_subscription = MagicMock()
+    mock_jsm.consumer_info = AsyncMock(side_effect=Exception("not found"))
 
     conflict_error = BadRequestError(
         code=400, err_code=0, description="consumer name already in use"
     )
 
-    nats_client.js.subscribe = AsyncMock(
-        side_effect=[
-            conflict_error,
-            mock_subscription,
-        ]
-    )
+    nats_client.js.subscribe = AsyncMock(side_effect=conflict_error)
     mock_jsm.delete_consumer = AsyncMock()
-    mock_jsm.consumers_info = AsyncMock(return_value=[])
 
     callback = AsyncMock()
-    result = await nats_client.subscribe("OPENNOTES.test_subject", callback)
+    with pytest.raises(BadRequestError):
+        await nats_client.subscribe("OPENNOTES.test_subject", callback)
 
-    assert mock_jsm.delete_consumer.called
-    assert result == mock_subscription
+    mock_jsm.delete_consumer.assert_not_called()
 
 
 @pytest.mark.asyncio
