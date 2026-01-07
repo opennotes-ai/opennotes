@@ -55,7 +55,7 @@ from src.community_servers.clear_router import router as community_clear_router
 from src.community_servers.router import router as community_servers_router
 from src.config import settings
 from src.config_router import router as config_router
-from src.database import close_db, get_engine, get_session_maker, init_db
+from src.database import close_db, get_session_maker, init_db
 from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
