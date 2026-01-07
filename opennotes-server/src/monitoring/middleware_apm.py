@@ -68,11 +68,13 @@ def setup_middleware_apm(
     try:
         from middleware import MWOptions, mw_tracker
 
+        sample_rate_int = int(sample_rate * 100) if sample_rate <= 1.0 else int(sample_rate)
+
         mw_options = MWOptions(
             access_token=api_key,
             target=target,
             service_name=service_name,
-            sample_rate=sample_rate,
+            sample_rate=sample_rate_int,
             collect_profiling=collect_profiling,
             collect_metrics=collect_metrics,
             collect_logs=collect_logs,
