@@ -28,7 +28,7 @@ FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl build-essential && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl build-essential git && rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -56,11 +56,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # =============================================================================
 FROM ml-deps AS development
 
-COPY opennotes-server/pyproject.toml opennotes-server/README.md opennotes-server/alembic.ini ./
+COPY opennotes-server/pyproject.toml opennotes-server/uv.lock opennotes-server/README.md opennotes-server/alembic.ini ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/root/.cache/pip \
-    uv pip install --system -e ".[scoring,dev]"
+    uv export --format requirements-txt --locked --extra scoring --extra dev --no-hashes -o /tmp/requirements.txt && \
+    uv pip install --system -r /tmp/requirements.txt && \
+    uv pip install --system --no-deps -e .
 
 COPY opennotes-server/src/ ./src/
 COPY opennotes-server/alembic/ ./alembic/
@@ -92,11 +94,13 @@ CMD ["./docker-entrypoint.sh"]
 # =============================================================================
 FROM ml-deps AS production
 
-COPY opennotes-server/pyproject.toml opennotes-server/README.md opennotes-server/alembic.ini ./
+COPY opennotes-server/pyproject.toml opennotes-server/uv.lock opennotes-server/README.md opennotes-server/alembic.ini ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/root/.cache/pip \
-    uv pip install --system -e ".[scoring]"
+    uv export --format requirements-txt --locked --extra scoring --no-hashes -o /tmp/requirements.txt && \
+    uv pip install --system -r /tmp/requirements.txt && \
+    uv pip install --system --no-deps -e .
 
 COPY opennotes-server/src/ ./src/
 COPY opennotes-server/alembic/ ./alembic/
