@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import litellm
+from litellm.exceptions import JSONSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.llm_config.providers.base import LLMMessage, LLMProvider, LLMResponse, ProviderSettings
@@ -126,7 +127,29 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             }
         )
 
-        response = await litellm.acompletion(**request_kwargs)
+        logger.debug(
+            "LiteLLM completion request",
+            extra={
+                "model": model,
+                "has_response_format": params.response_format is not None,
+                "max_tokens": request_kwargs.get("max_tokens"),
+                "message_count": len(messages),
+            },
+        )
+
+        try:
+            response = await litellm.acompletion(**request_kwargs)
+        except JSONSchemaValidationError as e:
+            logger.error(
+                "LiteLLM JSON schema validation failed",
+                extra={
+                    "model": model,
+                    "request_model": request_kwargs.get("model"),
+                    "raw_response": getattr(e, "raw_response", None),
+                    "error": str(e),
+                },
+            )
+            raise
 
         tokens_used = response.usage.total_tokens if response.usage else 0  # type: ignore[union-attr]
         finish_reason = response.choices[0].finish_reason or "stop"  # type: ignore[union-attr]
