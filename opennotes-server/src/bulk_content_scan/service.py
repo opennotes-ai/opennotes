@@ -48,25 +48,23 @@ def calculate_indeterminate_threshold(base_threshold: float) -> float:
     fact-check content triggered a content filter), we apply a stricter threshold
     to the similarity score before flagging the message.
 
-    Formula: min(threshold + ((1 - threshold) / 2), 0.5)
+    Formula: threshold + ((1 - threshold) / 2)
 
     This moves the threshold halfway between the original value and 1.0,
     requiring a higher similarity score to flag when relevance is uncertain.
-    TEMPORARY: Capped at 0.5 to reduce false negatives during LLM issues.
 
-    Examples (with cap):
-        - 0.35 -> min(0.675, 0.5) = 0.5 (capped)
-        - 0.60 -> min(0.80, 0.5) = 0.5 (capped)
-        - 0.80 -> min(0.90, 0.5) = 0.5 (capped)
+    Examples:
+        - 0.35 -> 0.675
+        - 0.60 -> 0.80
+        - 0.80 -> 0.90
 
     Args:
         base_threshold: The original similarity threshold (0.0 to 1.0)
 
     Returns:
-        The tighter threshold for indeterminate cases (max 0.5)
+        The tighter threshold for indeterminate cases
     """
-    calculated = base_threshold + ((1.0 - base_threshold) / 2.0)
-    return min(calculated, 0.5)
+    return base_threshold + ((1.0 - base_threshold) / 2.0)
 
 
 def _get_redis_results_key(scan_id: UUID) -> str:
