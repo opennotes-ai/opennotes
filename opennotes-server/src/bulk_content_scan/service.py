@@ -427,6 +427,7 @@ class BulkContentScanService:
     ) -> tuple[FlaggedMessage | None, dict]:
         """Run similarity search and return both flagged result and score info."""
         threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
+        indeterminate_threshold = calculate_indeterminate_threshold(threshold)
         score_info = {
             "message_id": message.message_id,
             "channel_id": message.channel_id,
@@ -458,9 +459,67 @@ class BulkContentScanService:
                         matched_source=best_match.source_url,
                     )
 
+                    should_flag = False
+
                     if outcome == RelevanceOutcome.RELEVANT:
-                        # Build flagged_msg FIRST - only set is_flagged if building succeeds
-                        # This prevents is_flagged=True in progress events when flagged_msg is None
+                        should_flag = True
+                        relevance_check_total.labels(
+                            outcome="candidate_relevant",
+                            decision="flagged",
+                            instance_id=settings.INSTANCE_ID,
+                        ).inc()
+                    elif outcome == RelevanceOutcome.INDETERMINATE:
+                        if best_match.similarity_score >= indeterminate_threshold:
+                            should_flag = True
+                            logger.info(
+                                "Relevance check indeterminate, applying tighter threshold",
+                                extra={
+                                    "original_threshold": threshold,
+                                    "adjusted_threshold": indeterminate_threshold,
+                                    "reason": "content_filter_on_fact_check",
+                                    "message_id": message.message_id,
+                                    "scan_id": str(scan_id),
+                                    "score": best_match.similarity_score,
+                                    "reasoning": reasoning,
+                                },
+                            )
+                            relevance_check_total.labels(
+                                outcome="indeterminate",
+                                decision="tighter_threshold_passed",
+                                instance_id=settings.INSTANCE_ID,
+                            ).inc()
+                        else:
+                            logger.info(
+                                "Relevance check indeterminate, filtered by tighter threshold",
+                                extra={
+                                    "original_threshold": threshold,
+                                    "adjusted_threshold": indeterminate_threshold,
+                                    "reason": "content_filter_on_fact_check",
+                                    "message_id": message.message_id,
+                                    "scan_id": str(scan_id),
+                                    "score": best_match.similarity_score,
+                                    "reasoning": reasoning,
+                                },
+                            )
+                            relevance_check_total.labels(
+                                outcome="indeterminate",
+                                decision="tighter_threshold_filtered",
+                                instance_id=settings.INSTANCE_ID,
+                            ).inc()
+                    elif outcome == RelevanceOutcome.CONTENT_FILTERED:
+                        relevance_check_total.labels(
+                            outcome="content_filter",
+                            decision="user_message_flagged",
+                            instance_id=settings.INSTANCE_ID,
+                        ).inc()
+                    elif outcome == RelevanceOutcome.NOT_RELEVANT:
+                        relevance_check_total.labels(
+                            outcome="candidate_not_relevant",
+                            decision="filtered",
+                            instance_id=settings.INSTANCE_ID,
+                        ).inc()
+
+                    if should_flag:
                         try:
                             flagged_msg = self._build_flagged_message(message, best_match)
                             score_info["is_flagged"] = True
@@ -475,13 +534,13 @@ class BulkContentScanService:
                                     "similarity_score": best_match.similarity_score,
                                 },
                             )
-                            # is_flagged remains False since we couldn't build the message
                     else:
                         logger.info(
                             "Skipping flag due to relevance check",
                             extra={
                                 "message_id": message.message_id,
                                 "reasoning": reasoning,
+                                "relevance_outcome": outcome.value,
                                 "similarity_score": best_match.similarity_score,
                             },
                         )
@@ -518,13 +577,16 @@ class BulkContentScanService:
         community_server_platform_id: str,
     ) -> FlaggedMessage | None:
         """Run similarity search on a message."""
+        threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
+        indeterminate_threshold = calculate_indeterminate_threshold(threshold)
+
         try:
             search_response = await self.embedding_service.similarity_search(
                 db=self.session,
                 query_text=message.content,
                 community_server_id=community_server_platform_id,
                 dataset_tags=[],
-                similarity_threshold=settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
+                similarity_threshold=threshold,
                 score_threshold=0.1,
                 limit=1,
             )
@@ -538,8 +600,69 @@ class BulkContentScanService:
                     matched_source=best_match.source_url,
                 )
 
+                should_flag = False
+
                 if outcome == RelevanceOutcome.RELEVANT:
+                    should_flag = True
+                    relevance_check_total.labels(
+                        outcome="candidate_relevant",
+                        decision="flagged",
+                        instance_id=settings.INSTANCE_ID,
+                    ).inc()
+                elif outcome == RelevanceOutcome.INDETERMINATE:
+                    if best_match.similarity_score >= indeterminate_threshold:
+                        should_flag = True
+                        logger.info(
+                            "Relevance check indeterminate, applying tighter threshold",
+                            extra={
+                                "original_threshold": threshold,
+                                "adjusted_threshold": indeterminate_threshold,
+                                "reason": "content_filter_on_fact_check",
+                                "message_id": message.message_id,
+                                "scan_id": str(scan_id),
+                                "score": best_match.similarity_score,
+                                "reasoning": reasoning,
+                            },
+                        )
+                        relevance_check_total.labels(
+                            outcome="indeterminate",
+                            decision="tighter_threshold_passed",
+                            instance_id=settings.INSTANCE_ID,
+                        ).inc()
+                    else:
+                        logger.info(
+                            "Relevance check indeterminate, filtered by tighter threshold",
+                            extra={
+                                "original_threshold": threshold,
+                                "adjusted_threshold": indeterminate_threshold,
+                                "reason": "content_filter_on_fact_check",
+                                "message_id": message.message_id,
+                                "scan_id": str(scan_id),
+                                "score": best_match.similarity_score,
+                                "reasoning": reasoning,
+                            },
+                        )
+                        relevance_check_total.labels(
+                            outcome="indeterminate",
+                            decision="tighter_threshold_filtered",
+                            instance_id=settings.INSTANCE_ID,
+                        ).inc()
+                elif outcome == RelevanceOutcome.CONTENT_FILTERED:
+                    relevance_check_total.labels(
+                        outcome="content_filter",
+                        decision="user_message_flagged",
+                        instance_id=settings.INSTANCE_ID,
+                    ).inc()
+                elif outcome == RelevanceOutcome.NOT_RELEVANT:
+                    relevance_check_total.labels(
+                        outcome="candidate_not_relevant",
+                        decision="filtered",
+                        instance_id=settings.INSTANCE_ID,
+                    ).inc()
+
+                if should_flag:
                     return self._build_flagged_message(message, best_match)
+
                 logger.info(
                     "Skipping flag due to relevance check",
                     extra={
@@ -1016,14 +1139,14 @@ class BulkContentScanService:
 IMPORTANT: The message must contain a verifiable claim or assertion. Simple mentions of people, topics, or questions are NOT claims.
 
 Examples:
-- "how about biden" → No claim, just a name mention → NOT RELEVANT
-- "or donald trump" → No claim, just a name → NOT RELEVANT
-- "Biden was a Confederate soldier" → Specific false claim → RELEVANT
-- "Trump's sons shot endangered animals" → Verifiable claim → RELEVANT
-- "What about the vaccine?" → Question, not a claim → NOT RELEVANT
-- "The vaccine causes autism" → Specific claim that can be fact-checked → RELEVANT
+- "how about biden" → No claim, just a name mention → NOT RELEVANT (confidence: 0.99)
+- "or donald trump" → No claim, just a name → NOT RELEVANT (confidence: 0.99)
+- "Biden was a Confederate soldier" → Specific false claim → RELEVANT (confidence: 0.95)
+- "Trump's sons shot endangered animals" → Verifiable claim → RELEVANT (confidence: 0.90)
+- "What about the vaccine?" → Question, not a claim → NOT RELEVANT (confidence: 0.98)
+- "The vaccine causes autism" → Specific claim that can be fact-checked → RELEVANT (confidence: 0.92)
 
-Respond with JSON: {"is_relevant": true/false, "reasoning": "brief explanation"}"""
+Respond with JSON: {"is_relevant": true/false, "reasoning": "brief explanation", "confidence": 0.0-1.0}"""
 
                 user_prompt = f"""User message: {original_message}
 
@@ -1031,8 +1154,9 @@ Reference: {matched_content}{source_info}
 
 Step 1: Does the user message contain a specific claim or assertion (not just a topic mention or question)?
 Step 2: If YES to step 1, can this reference fact-check or verify that specific claim?
+Step 3: How confident are you in this assessment? (0.0 = uncertain, 1.0 = certain)
 
-Only answer RELEVANT if BOTH steps are YES."""
+Only answer RELEVANT if BOTH steps are YES. Include your confidence score in the response."""
 
             messages = [
                 LLMMessage(role="system", content=system_prompt),
@@ -1048,6 +1172,7 @@ Only answer RELEVANT if BOTH steps are YES."""
                     model=settings.RELEVANCE_CHECK_MODEL,
                     max_tokens=settings.RELEVANCE_CHECK_MAX_TOKENS,
                     temperature=0.0,
+                    response_format=RelevanceCheckResult,
                 ),
                 timeout=settings.RELEVANCE_CHECK_TIMEOUT,
             )
@@ -1072,11 +1197,23 @@ Only answer RELEVANT if BOTH steps are YES."""
                 extra={
                     "relevance_check_passed": result.is_relevant,
                     "relevance_reasoning": result.reasoning,
+                    "relevance_confidence": result.confidence,
                     "latency_ms": round(latency_ms, 2),
                 },
             )
 
-            decision = "relevant" if result.is_relevant else "not_relevant"
+            if not result.is_relevant:
+                logger.debug(
+                    "Content filtered by relevance check",
+                    extra={
+                        "outcome": "not_relevant",
+                        "reasoning": result.reasoning,
+                        "confidence": result.confidence,
+                        "latency_ms": round(latency_ms, 2),
+                    },
+                )
+
+            decision = "flagged" if result.is_relevant else "filtered"
             relevance_check_total.labels(
                 outcome="success", decision=decision, instance_id=settings.INSTANCE_ID
             ).inc()
@@ -1200,22 +1337,42 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                     RelevanceOutcome.CONTENT_FILTERED,
                     "Message content triggered safety filter",
                 )
-            logger.info(
-                "Retry succeeded - fact-check content triggered original filter",
+
+            if response.finish_reason == "stop":
+                log_level = "info"
+                log_message = "Retry succeeded - fact-check content triggered original filter"
+                metric_outcome = "content_filter"
+                reasoning = "Fact-check content triggered safety filter; relevance indeterminate"
+            elif response.finish_reason == "length":
+                log_level = "warning"
+                log_message = "Retry response truncated (max_tokens reached)"
+                metric_outcome = "content_filter_retry_truncated"
+                reasoning = "Retry response truncated; relevance indeterminate"
+            else:
+                log_level = "warning"
+                log_message = "Unexpected finish_reason in retry response"
+                metric_outcome = "content_filter_retry_unexpected"
+                reasoning = (
+                    f"Unexpected finish_reason: {response.finish_reason}; relevance indeterminate"
+                )
+
+            log_fn = logger.info if log_level == "info" else logger.warning
+            log_fn(
+                log_message,
                 extra={
                     "message_length": len(original_message),
                     "latency_ms": round(latency_ms, 2),
+                    "finish_reason": response.finish_reason,
                 },
             )
             relevance_check_total.labels(
-                outcome="content_filter",
-                decision="factcheck_filtered",
+                outcome=metric_outcome,
+                decision="factcheck_filtered"
+                if response.finish_reason == "stop"
+                else "indeterminate",
                 instance_id=settings.INSTANCE_ID,
             ).inc()
-            return (
-                RelevanceOutcome.INDETERMINATE,
-                "Fact-check content triggered safety filter; relevance indeterminate",
-            )
+            return (RelevanceOutcome.INDETERMINATE, reasoning)
 
         except TimeoutError:
             latency_ms = (time.monotonic() - start_time) * 1000

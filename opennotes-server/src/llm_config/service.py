@@ -105,7 +105,7 @@ class LLMService:
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
         )
 
-        logger.info(
+        logger.debug(
             f"Generating completion with {provider}",
             extra={
                 "community_server_id": str(community_server_id) if community_server_id else None,
@@ -158,7 +158,7 @@ class LLMService:
             model=model, max_tokens=max_tokens, temperature=temperature, **kwargs
         )
 
-        logger.info(
+        logger.debug(
             f"Starting streaming completion with {provider}",
             extra={
                 "community_server_id": str(community_server_id) if community_server_id else None,

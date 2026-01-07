@@ -11,7 +11,12 @@ from uuid import uuid4
 
 import pytest
 
-from src.bulk_content_scan.schemas import BulkScanMessage, RelevanceOutcome
+from src.bulk_content_scan.schemas import (
+    BulkScanMessage,
+    RelevanceOutcome,
+    ScanCandidate,
+    SimilarityMatch,
+)
 from src.bulk_content_scan.service import BulkContentScanService
 from src.fact_checking.embedding_schemas import FactCheckMatch, SimilaritySearchResponse
 from src.llm_config.providers.base import LLMResponse
@@ -1328,3 +1333,311 @@ class TestContentFilterDetection:
             )
 
         assert result is None
+
+
+class TestCalculateIndeterminateThreshold:
+    """Tests for calculate_indeterminate_threshold() pure function."""
+
+    def test_calculate_indeterminate_threshold_low_base_0_35_to_0_675(self) -> None:
+        """Input 0.35 → 0.675 using formula threshold + ((1-threshold)/2)."""
+        from src.bulk_content_scan.service import calculate_indeterminate_threshold
+
+        result = calculate_indeterminate_threshold(0.35)
+        assert result == pytest.approx(0.675)
+
+    def test_calculate_indeterminate_threshold_medium_base_0_60_to_0_80(self) -> None:
+        """Input 0.60 → 0.80 using formula threshold + ((1-threshold)/2)."""
+        from src.bulk_content_scan.service import calculate_indeterminate_threshold
+
+        result = calculate_indeterminate_threshold(0.60)
+        assert result == pytest.approx(0.80)
+
+    def test_calculate_indeterminate_threshold_high_base_0_80_to_0_90(self) -> None:
+        """Input 0.80 → 0.90 using formula threshold + ((1-threshold)/2)."""
+        from src.bulk_content_scan.service import calculate_indeterminate_threshold
+
+        result = calculate_indeterminate_threshold(0.80)
+        assert result == pytest.approx(0.90)
+
+    def test_calculate_indeterminate_threshold_boundary_zero_to_0_5(self) -> None:
+        """Input 0.0 → 0.5 (edge case: minimum threshold)."""
+        from src.bulk_content_scan.service import calculate_indeterminate_threshold
+
+        result = calculate_indeterminate_threshold(0.0)
+        assert result == pytest.approx(0.5)
+
+    def test_calculate_indeterminate_threshold_boundary_one_unchanged(self) -> None:
+        """Input 1.0 → 1.0 (edge case: maximum threshold stays at 1.0)."""
+        from src.bulk_content_scan.service import calculate_indeterminate_threshold
+
+        result = calculate_indeterminate_threshold(1.0)
+        assert result == pytest.approx(1.0)
+
+
+class TestFilterCandidatesWithRelevanceIndeterminate:
+    """Tests for INDETERMINATE handling in _filter_candidates_with_relevance()."""
+
+    @pytest.mark.asyncio
+    async def test_indeterminate_high_score_above_tighter_threshold_is_flagged(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Score 0.90 with threshold 0.7 (indeterminate threshold 0.85) → flagged."""
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            return LLMResponse(
+                content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = mock_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        message = BulkScanMessage(
+            message_id="test_msg_1",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Test message content",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        similarity_match = SimilarityMatch(
+            score=0.90,
+            matched_claim="Test fact check",
+            matched_source="https://example.com/fact-check",
+            fact_check_item_id=uuid4(),
+        )
+
+        candidate = ScanCandidate(
+            message=message,
+            scan_type="similarity",
+            match_data=similarity_match,
+            score=0.90,
+            matched_content="Test fact check content",
+            matched_source="https://example.com/fact-check",
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
+            mock_settings.INSTANCE_ID = "test"
+
+            flagged = await service._filter_candidates_with_relevance([candidate], uuid4())
+
+        assert len(flagged) == 1
+        assert flagged[0].message_id == "test_msg_1"
+
+    @pytest.mark.asyncio
+    async def test_indeterminate_low_score_below_tighter_threshold_not_flagged(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Score 0.75 with threshold 0.7 (indeterminate threshold 0.85) → not flagged."""
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            return LLMResponse(
+                content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = mock_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        message = BulkScanMessage(
+            message_id="test_msg_2",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Test message content",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        similarity_match = SimilarityMatch(
+            score=0.75,
+            matched_claim="Test fact check",
+            matched_source="https://example.com/fact-check",
+            fact_check_item_id=uuid4(),
+        )
+
+        candidate = ScanCandidate(
+            message=message,
+            scan_type="similarity",
+            match_data=similarity_match,
+            score=0.75,
+            matched_content="Test fact check content",
+            matched_source="https://example.com/fact-check",
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
+            mock_settings.INSTANCE_ID = "test"
+
+            flagged = await service._filter_candidates_with_relevance([candidate], uuid4())
+
+        assert len(flagged) == 0
+
+    @pytest.mark.asyncio
+    async def test_indeterminate_score_exactly_at_tighter_threshold_is_flagged(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+        mock_llm_service,
+    ) -> None:
+        """Score 0.85 exactly at tighter threshold → flagged (>= comparison)."""
+        call_count = 0
+
+        async def mock_complete(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(
+                    content="",
+                    model="gpt-5-mini",
+                    tokens_used=0,
+                    finish_reason="content_filter",
+                    provider="openai",
+                )
+            return LLMResponse(
+                content=json.dumps({"has_claims": True, "reasoning": "Contains claims"}),
+                model="gpt-5-mini",
+                tokens_used=20,
+                finish_reason="stop",
+                provider="openai",
+            )
+
+        mock_llm_service.complete = mock_complete
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm_service,
+        )
+
+        message = BulkScanMessage(
+            message_id="test_msg_3",
+            channel_id="test_channel",
+            community_server_id="test_server",
+            content="Test message content",
+            author_id="test_author",
+            timestamp=datetime.now(UTC),
+        )
+
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Test fact check",
+            matched_source="https://example.com/fact-check",
+            fact_check_item_id=uuid4(),
+        )
+
+        candidate = ScanCandidate(
+            message=message,
+            scan_type="similarity",
+            match_data=similarity_match,
+            score=0.85,
+            matched_content="Test fact check content",
+            matched_source="https://example.com/fact-check",
+        )
+
+        with patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD = 0.7
+            mock_settings.RELEVANCE_CHECK_ENABLED = True
+            mock_settings.RELEVANCE_CHECK_PROVIDER = "openai"
+            mock_settings.RELEVANCE_CHECK_MODEL = "gpt-5-mini"
+            mock_settings.RELEVANCE_CHECK_MAX_TOKENS = 150
+            mock_settings.RELEVANCE_CHECK_TIMEOUT = 5.0
+            mock_settings.RELEVANCE_CHECK_USE_OPTIMIZED_PROMPT = False
+            mock_settings.INSTANCE_ID = "test"
+
+            flagged = await service._filter_candidates_with_relevance([candidate], uuid4())
+
+        assert len(flagged) == 1
+        assert flagged[0].message_id == "test_msg_3"
+
+
+class TestRetryWithoutFactCheckEdgeCases:
+    """Tests for _retry_without_fact_check edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_retry_without_fact_check_returns_indeterminate_when_llm_service_none(
+        self,
+        mock_session,
+        mock_embedding_service,
+        mock_redis,
+    ) -> None:
+        """When llm_service is None, should return INDETERMINATE."""
+        import time
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=None,
+        )
+
+        outcome, reasoning = await service._retry_without_fact_check(
+            original_message="Test message",
+            start_time=time.monotonic(),
+        )
+
+        assert outcome == RelevanceOutcome.INDETERMINATE
+        assert "LLM service not configured" in reasoning
