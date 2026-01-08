@@ -1,0 +1,124 @@
+"""Candidate promotion logic for fact-check items.
+
+Promotes verified candidates from fact_checked_item_candidates
+to the main fact_check_items table.
+"""
+
+import logging
+from uuid import UUID
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
+from src.fact_checking.models import FactCheckItem
+
+logger = logging.getLogger(__name__)
+
+
+async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
+    """Promote a candidate to the fact_check_items table.
+
+    Creates a new FactCheckItem from the candidate data and marks
+    the candidate as promoted.
+
+    Requirements for promotion:
+    - Candidate must exist
+    - Candidate must have content
+    - Candidate status must be 'scraped'
+
+    Args:
+        session: Database session.
+        candidate_id: UUID of the candidate to promote.
+
+    Returns:
+        True if promotion succeeded, False otherwise.
+    """
+    result = await session.execute(
+        select(FactCheckedItemCandidate).where(FactCheckedItemCandidate.id == candidate_id)
+    )
+    candidate = result.scalar_one_or_none()
+
+    if not candidate:
+        logger.error(f"Candidate not found for promotion: {candidate_id}")
+        return False
+
+    if candidate.status == CandidateStatus.PROMOTED.value:
+        logger.info(f"Candidate already promoted: {candidate_id}")
+        return True
+
+    if not candidate.content:
+        logger.warning(f"Cannot promote candidate without content: {candidate_id}")
+        return False
+
+    if candidate.status != CandidateStatus.SCRAPED.value:
+        logger.warning(f"Cannot promote candidate with status {candidate.status}: {candidate_id}")
+        return False
+
+    try:
+        fact_check_item = FactCheckItem(
+            dataset_name=candidate.dataset_name,
+            dataset_tags=candidate.dataset_tags
+            if candidate.dataset_tags
+            else [candidate.dataset_name],
+            title=candidate.title,
+            content=candidate.content,
+            summary=candidate.summary,
+            source_url=candidate.source_url,
+            original_id=candidate.original_id,
+            published_date=candidate.published_date,
+            rating=candidate.rating,
+            extra_metadata=candidate.extracted_data,
+        )
+
+        session.add(fact_check_item)
+
+        await session.execute(
+            update(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.id == candidate_id)
+            .values(status=CandidateStatus.PROMOTED.value)
+        )
+
+        await session.commit()
+
+        logger.info(f"Promoted candidate {candidate_id} to fact_check_item {fact_check_item.id}")
+        return True
+
+    except Exception as e:
+        await session.rollback()
+        logger.exception(f"Failed to promote candidate {candidate_id}: {e}")
+        return False
+
+
+async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> int:
+    """Promote all scraped candidates to fact_check_items.
+
+    Finds candidates with status='scraped' and content,
+    then promotes each to the main table.
+
+    Args:
+        session: Database session.
+        batch_size: Maximum number of candidates to promote.
+
+    Returns:
+        Number of successfully promoted candidates.
+    """
+    result = await session.execute(
+        select(FactCheckedItemCandidate.id)
+        .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
+        .where(FactCheckedItemCandidate.content.isnot(None))
+        .limit(batch_size)
+    )
+    candidate_ids = [row[0] for row in result.fetchall()]
+
+    if not candidate_ids:
+        logger.info("No scraped candidates to promote")
+        return 0
+
+    promoted_count = 0
+    for cid in candidate_ids:
+        if await promote_candidate(session, cid):
+            promoted_count += 1
+
+    logger.info(f"Promoted {promoted_count}/{len(candidate_ids)} candidates")
+    return promoted_count
