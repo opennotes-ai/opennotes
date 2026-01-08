@@ -75,8 +75,8 @@ class FactCheckedItemCandidate(Base):
         index=True,
     )
 
-    # Source URL for deduplication
-    source_url: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    # Source URL for deduplication (indexed via __table_args__)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Core content
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -93,25 +93,24 @@ class FactCheckedItemCandidate(Base):
         JSONB, nullable=True, server_default=None
     )
 
-    # Provenance
+    # Provenance (indexed via __table_args__)
     published_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    dataset_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    dataset_name: Mapped[str] = mapped_column(String(100), nullable=False)
     dataset_tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default="{}"
     )
-    original_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    original_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Flexible storage for source-specific fields
     extracted_data: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"
     )
 
-    # Processing status
+    # Processing status (indexed via __table_args__)
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         server_default=CandidateStatus.PENDING.value,
-        index=True,
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -134,14 +133,15 @@ class FactCheckedItemCandidate(Base):
             "dataset_name",
             unique=True,
         ),
-        # Status filtering
+        # Single-column indexes for common queries
+        Index("idx_candidates_source_url", "source_url"),
+        Index("idx_candidates_dataset_name", "dataset_name"),
+        Index("idx_candidates_original_id", "original_id"),
         Index("idx_candidates_status", "status"),
-        # Dataset filtering with tags
-        Index("idx_candidates_dataset_tags", "dataset_tags", postgresql_using="gin"),
-        # GIN index for extracted_data queries
-        Index("idx_candidates_extracted_data", "extracted_data", postgresql_using="gin"),
-        # Published date for ordering
         Index("idx_candidates_published_date", "published_date"),
+        # GIN indexes for array/JSONB columns
+        Index("idx_candidates_dataset_tags", "dataset_tags", postgresql_using="gin"),
+        Index("idx_candidates_extracted_data", "extracted_data", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:
