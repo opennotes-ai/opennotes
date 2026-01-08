@@ -7,7 +7,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
@@ -28,7 +28,7 @@ class ImportFactCheckBureauRequest(BaseModel):
     """Request parameters for fact-check bureau import."""
 
     batch_size: int = Field(
-        default=1000,
+        default=100,
         ge=1,
         le=10000,
         description="Batch size for import operations",
@@ -46,6 +46,8 @@ class ImportFactCheckBureauRequest(BaseModel):
 class ImportFactCheckBureauResponse(BaseModel):
     """Response containing import statistics."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     total_rows: int = Field(description="Total rows in the dataset")
     valid_rows: int = Field(description="Rows that passed validation")
     invalid_rows: int = Field(description="Rows that failed validation")
@@ -60,6 +62,8 @@ class ImportFactCheckBureauResponse(BaseModel):
 
 class EnqueueScrapeResponse(BaseModel):
     """Response for enqueue scrapes operation."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     enqueued: int = Field(description="Number of scrape tasks enqueued")
 
