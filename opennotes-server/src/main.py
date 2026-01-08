@@ -67,6 +67,7 @@ from src.fact_checking.embeddings_jsonapi_router import (
 from src.fact_checking.hybrid_searches_jsonapi_router import (
     router as hybrid_searches_jsonapi_router,
 )
+from src.fact_checking.import_pipeline.router import router as fact_check_import_router
 from src.fact_checking.monitored_channels_jsonapi_router import (
     router as monitored_channels_jsonapi_router,
 )
@@ -506,6 +507,7 @@ app.include_router(community_admin_router, prefix=settings.API_V1_PREFIX)
 app.include_router(community_clear_router, prefix=settings.API_V2_PREFIX)
 app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
+app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes
 app.include_router(health_router)
