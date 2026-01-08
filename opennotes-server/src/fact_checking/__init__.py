@@ -1,3 +1,4 @@
+from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
 from src.fact_checking.chunk_models import (
     ChunkEmbedding,
     FactCheckChunk,
@@ -17,11 +18,13 @@ from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.fact_checking.previously_seen_service import PreviouslySeenService
 
 __all__ = [
+    "CandidateStatus",
     "ChunkEmbedding",
     "ChunkResult",
     "ChunkingService",
     "FactCheckChunk",
     "FactCheckItem",
+    "FactCheckedItemCandidate",
     "MonitoredChannel",
     "PreviouslySeenChunk",
     "PreviouslySeenMessage",

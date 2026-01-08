@@ -63,6 +63,7 @@ dependencies = [
     "ruamel.yaml>=0.18.0",
     "middleware-io[profiling]>=2.4.1",
     "setuptools>=80.9.0",
+    "trafilatura>=2.0.0",
 ]
 
 [project.optional-dependencies]
