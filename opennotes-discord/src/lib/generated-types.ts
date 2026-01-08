@@ -2959,8 +2959,6 @@ export interface components {
             created_at: string;
             /** Expires At */
             expires_at: string | null;
-            /** Last Used At */
-            last_used_at: string | null;
         };
         /**
          * AddCommunityAdminRequest

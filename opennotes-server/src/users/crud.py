@@ -1,4 +1,5 @@
 import asyncio
+import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.models import APIKeyCreate, UserCreate, UserUpdate
 from src.auth.password import get_password_hash, verify_password
+from src.events.nats_client import nats_client
 from src.users.audit_helper import create_audit_log
 from src.users.models import APIKey, AuditLog, RefreshToken, User
 
@@ -399,6 +401,22 @@ async def get_api_key_by_id(db: AsyncSession, api_key_id: UUID) -> APIKey | None
     return result.scalar_one_or_none()
 
 
+async def _publish_api_key_used_event(api_key_id: UUID) -> None:
+    """Publish a fire-and-forget event when an API key is used.
+
+    This telemetry event is published to core NATS (not JetStream) and will be
+    discarded if there are no subscribers. This is intentional - the event is
+    for optional telemetry/stats collection, not critical business logic.
+    """
+    event_data = json.dumps(
+        {
+            "api_key_id": str(api_key_id),
+            "used_at": datetime.now(UTC).isoformat(),
+        }
+    ).encode("utf-8")
+    await nats_client.publish_fire_and_forget("events.api_key.used", event_data)
+
+
 async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] | None:  # noqa: PLR0911
     """
     Verify an API key and return the associated APIKey and User.
@@ -437,9 +455,6 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
             if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
                 return None
 
-            api_key.last_used_at = datetime.now(UTC)
-            await db.flush()
-
             user = await get_user_by_id(db, api_key.user_id)
             if user is None:
                 return None
@@ -447,6 +462,7 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
             if not user.is_active:
                 return None
 
+            await _publish_api_key_used_event(api_key.id)
             return api_key, user
 
     result = await db.execute(
@@ -462,11 +478,9 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
             if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
                 continue
 
-            api_key.last_used_at = datetime.now(UTC)
-            await db.flush()
-
             user = await get_user_by_id(db, api_key.user_id)
             if user and user.is_active:
+                await _publish_api_key_used_event(api_key.id)
                 return api_key, user
 
     return None

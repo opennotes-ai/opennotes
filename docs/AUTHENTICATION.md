@@ -155,8 +155,7 @@ curl -X POST http://localhost:8000/api/v1/users/me/api-keys \
   "name": "discord-bot-2026",
   "key": "NEW_API_KEY_HERE",
   "created_at": "2025-10-24T...",
-  "expires_at": "2026-10-24T...",
-  "last_used_at": null
+  "expires_at": "2026-10-24T..."
 }
 ```
 
@@ -236,7 +235,7 @@ docker compose logs opennotes-server | grep "discord-bot-svc"
 1. **Rotate keys regularly** (every 6-12 months)
 2. **Use expiration dates** (365 days recommended)
 3. **Secure storage**: Use secrets management (Kubernetes secrets, AWS Secrets Manager)
-4. **Monitoring**: Track API key usage via `last_used_at` field
+4. **Monitoring**: Track API key usage via NATS events (subject: `events.api_key.used`)
 5. **Least privilege**: Create separate keys for each service
 6. **Audit logging**: Review API access logs regularly
 
@@ -267,7 +266,7 @@ curl -X GET http://localhost:8000/api/v1/users/me \
 
 # Check API key status in database
 docker exec -it opennotes-postgres psql -U opennotes -d opennotes \
-  -c "SELECT id, name, is_active, expires_at, last_used_at FROM api_keys WHERE user_id = (SELECT id FROM users WHERE username = 'discord-bot-svc');"
+  -c "SELECT id, name, is_active, expires_at FROM api_keys WHERE user_id = (SELECT id FROM users WHERE username = 'discord-bot-svc');"
 ```
 
 ### "Invalid authentication credentials"
