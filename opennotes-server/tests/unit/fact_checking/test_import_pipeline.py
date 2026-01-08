@@ -138,12 +138,30 @@ class TestNormalizedCandidate:
 
         assert candidate.source_url == "https://snopes.com/fact-check/test"
         assert candidate.title == "Fact Check: Test Claim"
-        assert candidate.rating == "false"
+        # Rating goes to predicted_ratings (trusted source at 1.0 probability)
+        assert candidate.predicted_ratings == {"false": 1.0}
         assert candidate.dataset_name == "snopes.com"
         assert candidate.dataset_tags == ["Snopes"]
         assert candidate.original_id == "200"
         assert candidate.extracted_data["claim"] == "This is a test claim"
         assert candidate.extracted_data["claimant"] == "John Doe"
+
+    def test_no_rating_yields_none_predicted_ratings(self) -> None:
+        """Test that missing rating results in None predicted_ratings."""
+        row = ClaimReviewRow(
+            id=1,
+            claim_id=100,
+            fact_check_id=200,
+            claim="Test",
+            url="https://example.com",
+            title="Test",
+            publisher_name="Test",
+            publisher_site="example.com",
+            rating=None,
+        )
+
+        candidate = NormalizedCandidate.from_claim_review_row(row)
+        assert candidate.predicted_ratings is None
 
     def test_date_parsing_iso(self) -> None:
         """Test ISO date format parsing."""

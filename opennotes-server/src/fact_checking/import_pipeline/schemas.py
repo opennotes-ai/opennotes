@@ -82,11 +82,18 @@ class NormalizedCandidate(BaseModel):
 
     Transforms raw CSV data into the schema expected by
     fact_checked_item_candidates table.
+
+    Note: The `rating` field is intentionally NOT set during import.
+    Imported ratings go to `predicted_ratings` with probability 1.0
+    for trusted sources. Human approval is required to set `rating`
+    before promotion to fact_check_items.
     """
 
     source_url: str
     title: str
-    rating: str | None = None
+    predicted_ratings: dict[str, float] | None = Field(
+        default=None, description="ML/AI predicted ratings as {rating: probability}"
+    )
     published_date: datetime | None = None
     dataset_name: str = Field(description="Source identifier from publisher_site")
     dataset_tags: list[str] = Field(default_factory=list, description="Tags from publisher_name")
@@ -107,10 +114,14 @@ class NormalizedCandidate(BaseModel):
         """Create a normalized candidate from a raw CSV row.
 
         Performs:
-        - Rating normalization
+        - Rating normalization (stored in predicted_ratings, not rating)
         - Date parsing
         - Field mapping to candidate schema
         - Extra data extraction to JSONB
+
+        Note: Ratings from fact-check-bureau are from trusted sources,
+        so they're stored in predicted_ratings with probability 1.0.
+        The rating field remains NULL until human approval.
 
         Args:
             row: Validated ClaimReviewRow from CSV.
@@ -127,10 +138,15 @@ class NormalizedCandidate(BaseModel):
 
         extracted_data = cls._build_extracted_data(row, languages, tweet_ids_parsed)
 
+        # Store normalized rating in predicted_ratings with probability 1.0
+        # (trusted source). The rating field stays NULL until human approval.
+        normalized_rating = normalize_rating(row.rating)
+        predicted_ratings = {normalized_rating: 1.0} if normalized_rating else None
+
         return cls(
             source_url=row.url,
             title=row.title,
-            rating=normalize_rating(row.rating),
+            predicted_ratings=predicted_ratings,
             published_date=published_date,
             dataset_name=dataset_name,
             dataset_tags=dataset_tags,

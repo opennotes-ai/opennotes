@@ -11,7 +11,7 @@ Candidates go through a pipeline:
 5. promoted - Successfully promoted to fact_check_items
 
 Revision ID: 98102a1b2c3d
-Revises: 94207a1b2c3d
+Revises: 8888a9c6b7c4
 Create Date: 2026-01-07 19:30:00.000000
 
 """
@@ -24,7 +24,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "98102a1b2c3d"
-down_revision: str | Sequence[str] | None = "94207a1b2c3d"
+down_revision: str | Sequence[str] | None = "8888a9c6b7c4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -43,6 +43,11 @@ def upgrade() -> None:
         sa.Column("content", sa.Text(), nullable=True),
         sa.Column("summary", sa.Text(), nullable=True),
         sa.Column("rating", sa.String(length=100), nullable=True),
+        sa.Column(
+            "predicted_ratings",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+        ),
         sa.Column("published_date", sa.DateTime(timezone=True), nullable=True),
         sa.Column("dataset_name", sa.String(length=100), nullable=False),
         sa.Column(

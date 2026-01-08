@@ -109,7 +109,7 @@ async def upsert_candidates(
         {
             "source_url": c.source_url,
             "title": c.title,
-            "rating": c.rating,
+            "predicted_ratings": c.predicted_ratings,
             "published_date": c.published_date,
             "dataset_name": c.dataset_name,
             "dataset_tags": c.dataset_tags,
@@ -121,11 +121,13 @@ async def upsert_candidates(
 
     stmt = insert(FactCheckedItemCandidate).values(values)
 
+    # Note: rating is NOT updated on conflict - it's set via human approval only.
+    # predicted_ratings IS updated on re-import with newer data.
     stmt = stmt.on_conflict_do_update(
         index_elements=["source_url", "dataset_name"],
         set_={
             "title": stmt.excluded.title,
-            "rating": stmt.excluded.rating,
+            "predicted_ratings": stmt.excluded.predicted_ratings,
             "published_date": stmt.excluded.published_date,
             "dataset_tags": stmt.excluded.dataset_tags,
             "extracted_data": stmt.excluded.extracted_data,

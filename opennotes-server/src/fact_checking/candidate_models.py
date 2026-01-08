@@ -40,13 +40,21 @@ class FactCheckedItemCandidate(Base):
     4. scrape_failed - Content scraping failed
     5. promoted - Successfully promoted to fact_check_items table
 
+    Rating Workflow:
+    - `rating` is the human-approved verdict (NULL until approved)
+    - `predicted_ratings` stores ML/AI predictions as {rating: probability}
+    - Sources with known reliable ratings may have predicted_ratings[rating]=1.0
+    - Promotion requires both content AND rating (human approval)
+    - Bulk approval workflows can set rating from predicted_ratings
+
     Attributes:
         id: Unique identifier (UUID v7)
         source_url: URL to the original article (used for deduplication)
         title: Article title from source
         content: Scraped article body (NULL until scraped)
         summary: Optional summary (typically generated later)
-        rating: Normalized fact-check verdict
+        rating: Human-approved fact-check verdict (NULL until approved)
+        predicted_ratings: JSONB mapping rating values to probability estimates
         published_date: Publication date from source
         dataset_name: Source identifier (e.g., publisher_site)
         dataset_tags: Tags for filtering (e.g., publisher_name)
@@ -76,7 +84,14 @@ class FactCheckedItemCandidate(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Rating/verdict
+    # Human-approved rating (NULL until approved)
     rating: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # ML/AI predicted ratings as {rating_value: probability}
+    # e.g., {"false": 0.85, "mostly_false": 0.10, "mixture": 0.05}
+    # For trusted sources, set the known rating to 1.0
+    predicted_ratings: Mapped[dict[str, float] | None] = mapped_column(
+        JSONB, nullable=True, server_default=None
+    )
 
     # Provenance
     published_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

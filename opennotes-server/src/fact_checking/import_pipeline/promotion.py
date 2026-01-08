@@ -16,6 +16,29 @@ from src.fact_checking.models import FactCheckItem
 logger = logging.getLogger(__name__)
 
 
+def _validate_candidate_for_promotion(
+    candidate: FactCheckedItemCandidate | None, candidate_id: UUID
+) -> str | None:
+    """Validate candidate is ready for promotion.
+
+    Returns:
+        None if valid, error message string if invalid.
+    """
+    if not candidate:
+        return f"Candidate not found for promotion: {candidate_id}"
+
+    if not candidate.content:
+        return f"Cannot promote candidate without content: {candidate_id}"
+
+    if not candidate.rating:
+        return f"Cannot promote candidate without human-approved rating: {candidate_id}"
+
+    if candidate.status != CandidateStatus.SCRAPED.value:
+        return f"Cannot promote candidate with status {candidate.status}: {candidate_id}"
+
+    return None
+
+
 async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
     """Promote a candidate to the fact_check_items table.
 
@@ -25,7 +48,12 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
     Requirements for promotion:
     - Candidate must exist
     - Candidate must have content
+    - Candidate must have a human-approved rating
     - Candidate status must be 'scraped'
+
+    Note: Rating must be set via human approval (possibly bulk approval)
+    before promotion. The predicted_ratings field can be used to suggest
+    ratings but doesn't allow automatic promotion.
 
     Args:
         session: Database session.
@@ -39,21 +67,16 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
     )
     candidate = result.scalar_one_or_none()
 
-    if not candidate:
-        logger.error(f"Candidate not found for promotion: {candidate_id}")
-        return False
-
-    if candidate.status == CandidateStatus.PROMOTED.value:
+    if candidate and candidate.status == CandidateStatus.PROMOTED.value:
         logger.info(f"Candidate already promoted: {candidate_id}")
         return True
 
-    if not candidate.content:
-        logger.warning(f"Cannot promote candidate without content: {candidate_id}")
+    error = _validate_candidate_for_promotion(candidate, candidate_id)
+    if error:
+        logger.warning(error)
         return False
 
-    if candidate.status != CandidateStatus.SCRAPED.value:
-        logger.warning(f"Cannot promote candidate with status {candidate.status}: {candidate_id}")
-        return False
+    assert candidate is not None  # Type narrowing: validation passed
 
     try:
         fact_check_item = FactCheckItem(
@@ -91,9 +114,9 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
 
 
 async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> int:
-    """Promote all scraped candidates to fact_check_items.
+    """Promote all scraped candidates with approved ratings to fact_check_items.
 
-    Finds candidates with status='scraped' and content,
+    Finds candidates with status='scraped', content, and human-approved rating,
     then promotes each to the main table.
 
     Args:
@@ -107,6 +130,7 @@ async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> 
         select(FactCheckedItemCandidate.id)
         .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
         .where(FactCheckedItemCandidate.content.isnot(None))
+        .where(FactCheckedItemCandidate.rating.isnot(None))
         .limit(batch_size)
     )
     candidate_ids = [row[0] for row in result.fetchall()]
