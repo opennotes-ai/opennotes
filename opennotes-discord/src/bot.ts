@@ -258,6 +258,12 @@ export class Bot {
         } catch (error) {
           logger.error('AI write note button failed', { error });
         }
+      } else if (interaction.customId.startsWith('rate:')) {
+        try {
+          await listCommand.handleRateNoteButton(interaction);
+        } catch (error) {
+          logger.error('Rate note button failed', { error });
+        }
       } else if (isVibecheckPromptInteraction(interaction.customId)) {
         try {
           await handleVibecheckPromptInteraction(interaction);

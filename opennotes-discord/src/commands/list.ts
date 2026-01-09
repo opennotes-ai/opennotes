@@ -901,6 +901,84 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
   }
 }
 
+export async function handleRateNoteButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+
+  try {
+    const parts = interaction.customId.split(':');
+    if (parts.length !== 3) {
+      logger.error('Invalid rate customId format', {
+        error_id: errorId,
+        customId: interaction.customId,
+      });
+      await interaction.reply({
+        content: 'Invalid button data. Please try again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const noteId = parts[1];
+    const ratingType = parts[2];
+    const isHelpful = ratingType === 'helpful';
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    logger.info('Rating note', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      note_id: noteId,
+      helpful: isHelpful,
+    });
+
+    const userContext = {
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      displayName: interaction.user.displayName || interaction.user.username,
+      avatarUrl: interaction.user.avatarURL() || undefined,
+      guildId: interaction.guildId || undefined,
+    };
+
+    await apiClient.rateNote({
+      noteId,
+      userId: interaction.user.id,
+      helpful: isHelpful,
+    }, userContext);
+
+    await interaction.editReply({
+      content: `✅ **Rating Submitted**\n\nYou rated this note as **${isHelpful ? 'Helpful' : 'Not Helpful'}**.\n\nThank you for your feedback!`,
+    });
+
+    logger.info('Note rated successfully', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      note_id: noteId,
+      helpful: isHelpful,
+    });
+  } catch (error) {
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Error rating note', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      error: errorDetails.message,
+      error_type: errorDetails.type,
+      stack: errorDetails.stack,
+    });
+
+    if (interaction.deferred) {
+      await interaction.editReply({
+        content: formatErrorForUser(errorId, 'Failed to submit rating. Please try again.'),
+      });
+    } else if (!interaction.replied) {
+      await interaction.reply({
+        content: formatErrorForUser(errorId, 'Failed to submit rating.'),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+}
+
 export async function handleRequestReplyButton(interaction: ButtonInteraction): Promise<void> {
   const errorId = generateErrorId();
   const userId = interaction.user.id;
