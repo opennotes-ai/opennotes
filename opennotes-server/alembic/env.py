@@ -14,6 +14,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 # Import all models so they're registered with Base.metadata
 from src.auth import models as auth_models  # noqa: F401
+from src.batch_jobs import models as batch_jobs_models  # noqa: F401
 from src.bulk_content_scan import models as bulk_content_scan_models  # noqa: F401
 from src.cache import models as cache_models  # noqa: F401
 from src.community_config import models as community_config_models  # noqa: F401

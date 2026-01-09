@@ -45,6 +45,7 @@ if _mw_apm_enabled and not _testing:
 
 LoggingInstrumentor().instrument(set_logging_format=False)
 
+from src.batch_jobs.router import router as batch_jobs_router
 from src.bulk_content_scan.jsonapi_router import router as bulk_content_scan_jsonapi_router
 from src.bulk_content_scan.nats_handler import BulkScanEventHandler
 from src.cache.cache import cache_manager
@@ -508,6 +509,7 @@ app.include_router(community_clear_router, prefix=settings.API_V2_PREFIX)
 app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
+app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes
 app.include_router(health_router)
