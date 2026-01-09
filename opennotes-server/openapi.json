@@ -3133,7 +3133,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RequestListJSONAPIResponse"
+                  "$ref": "#/components/schemas/RequestListResponse"
                 }
               }
             }
@@ -3451,7 +3451,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScoringStatusJSONAPIResponse"
+                  "$ref": "#/components/schemas/ScoringStatusResponse"
                 }
               }
             }
@@ -3922,7 +3922,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MonitoredChannelListJSONAPIResponse"
+                  "$ref": "#/components/schemas/MonitoredChannelListResponse"
                 }
               }
             }
@@ -5151,7 +5151,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SimilaritySearchJSONAPIRequest"
+                "$ref": "#/components/schemas/SimilaritySearchRequest"
               }
             }
           }
@@ -5281,7 +5281,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BulkScanCreateJSONAPIRequest"
+                "$ref": "#/components/schemas/BulkScanCreateRequest"
               }
             }
           }
@@ -5357,7 +5357,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BulkScanResultsJSONAPIResponse"
+                  "$ref": "#/components/schemas/BulkScanResultsResponse"
                 }
               }
             }
@@ -5487,7 +5487,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LatestScanJSONAPIResponse"
+                  "$ref": "#/components/schemas/LatestScanResponse"
                 }
               }
             }
@@ -7649,7 +7649,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/BatchJobStatus"
+                  "$ref": "#/components/schemas/src__batch_jobs__models__BatchJobStatus"
                 },
                 {
                   "type": "null"
@@ -7937,7 +7937,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/BatchJobStatus"
+                  "$ref": "#/components/schemas/src__batch_jobs__models__BatchJobStatus"
                 },
                 {
                   "type": "null"
@@ -9015,7 +9015,7 @@
             "description": "Unique job identifier"
           },
           "status": {
-            "$ref": "#/components/schemas/BatchJobStatus",
+            "$ref": "#/components/schemas/src__batch_jobs__models__BatchJobStatus",
             "description": "Current job status"
           },
           "total_tasks": {
@@ -9039,7 +9039,7 @@
             "description": "Tasks that failed",
             "default": 0
           },
-          "metadata_": {
+          "metadata": {
             "additionalProperties": true,
             "type": "object",
             "title": "Metadata",
@@ -9113,18 +9113,6 @@
         ],
         "title": "BatchJobResponse",
         "description": "Response schema for batch job with full details."
-      },
-      "BatchJobStatus": {
-        "type": "string",
-        "enum": [
-          "pending",
-          "in_progress",
-          "completed",
-          "failed",
-          "cancelled"
-        ],
-        "title": "BatchJobStatus",
-        "description": "Status states for a batch job."
       },
       "BatchScoreRequest": {
         "properties": {
@@ -9399,7 +9387,7 @@
         "title": "BulkScanCreateData",
         "description": "JSON:API data object for bulk scan creation."
       },
-      "BulkScanCreateJSONAPIRequest": {
+      "BulkScanCreateRequest": {
         "properties": {
           "data": {
             "$ref": "#/components/schemas/BulkScanCreateData"
@@ -9409,7 +9397,7 @@
         "required": [
           "data"
         ],
-        "title": "BulkScanCreateJSONAPIRequest",
+        "title": "BulkScanCreateRequest",
         "description": "JSON:API request body for creating a bulk scan."
       },
       "BulkScanResource": {
@@ -9473,7 +9461,42 @@
         "title": "BulkScanResultsAttributes",
         "description": "Attributes for bulk scan results."
       },
-      "BulkScanResultsJSONAPIResponse": {
+      "BulkScanResultsResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scans"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/BulkScanResultsAttributes"
+          },
+          "relationships": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "BulkScanResultsResource",
+        "description": "JSON:API resource object for bulk scan results."
+      },
+      "BulkScanResultsResponse": {
         "properties": {
           "data": {
             "$ref": "#/components/schemas/BulkScanResultsResource"
@@ -9510,43 +9533,8 @@
         "required": [
           "data"
         ],
-        "title": "BulkScanResultsJSONAPIResponse",
+        "title": "BulkScanResultsResponse",
         "description": "JSON:API response for bulk scan results with included flagged messages."
-      },
-      "BulkScanResultsResource": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": "bulk-scans"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "attributes": {
-            "$ref": "#/components/schemas/BulkScanResultsAttributes"
-          },
-          "relationships": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Relationships"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "attributes"
-        ],
-        "title": "BulkScanResultsResource",
-        "description": "JSON:API resource object for bulk scan results."
       },
       "BulkScanSingleResponse": {
         "properties": {
@@ -12064,7 +12052,42 @@
         "title": "LatestScanAttributes",
         "description": "Attributes for the latest scan resource."
       },
-      "LatestScanJSONAPIResponse": {
+      "LatestScanResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "bulk-scans"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/LatestScanAttributes"
+          },
+          "relationships": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "LatestScanResource",
+        "description": "JSON:API resource object for the latest scan."
+      },
+      "LatestScanResponse": {
         "properties": {
           "data": {
             "$ref": "#/components/schemas/LatestScanResource"
@@ -12101,43 +12124,8 @@
         "required": [
           "data"
         ],
-        "title": "LatestScanJSONAPIResponse",
+        "title": "LatestScanResponse",
         "description": "JSON:API response for the latest scan with included flagged messages."
-      },
-      "LatestScanResource": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": "bulk-scans"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "attributes": {
-            "$ref": "#/components/schemas/LatestScanAttributes"
-          },
-          "relationships": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Relationships"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "attributes"
-        ],
-        "title": "LatestScanResource",
-        "description": "JSON:API resource object for the latest scan."
       },
       "MonitoredChannelAttributes": {
         "properties": {
@@ -12351,7 +12339,7 @@
         "title": "MonitoredChannelCreateRequest",
         "description": "JSON:API request body for creating a monitored channel."
       },
-      "MonitoredChannelListJSONAPIResponse": {
+      "MonitoredChannelListResponse": {
         "properties": {
           "data": {
             "items": {
@@ -12395,7 +12383,7 @@
         "required": [
           "data"
         ],
-        "title": "MonitoredChannelListJSONAPIResponse",
+        "title": "MonitoredChannelListResponse",
         "description": "JSON:API response for a list of monitored channel resources."
       },
       "MonitoredChannelResource": {
@@ -15852,7 +15840,7 @@
         "title": "RequestCreateRequest",
         "description": "JSON:API request body for creating a request."
       },
-      "RequestListJSONAPIResponse": {
+      "RequestListResponse": {
         "properties": {
           "data": {
             "items": {
@@ -15896,7 +15884,7 @@
         "required": [
           "data"
         ],
-        "title": "RequestListJSONAPIResponse",
+        "title": "RequestListResponse",
         "description": "JSON:API response for a list of request resources."
       },
       "RequestResource": {
@@ -16367,7 +16355,30 @@
         "title": "ScoringStatusAttributes",
         "description": "Attributes for scoring status resource."
       },
-      "ScoringStatusJSONAPIResponse": {
+      "ScoringStatusResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "scoring-status"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": "current"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ScoringStatusAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attributes"
+        ],
+        "title": "ScoringStatusResource",
+        "description": "JSON:API resource object for scoring status."
+      },
+      "ScoringStatusResponse": {
         "properties": {
           "data": {
             "$ref": "#/components/schemas/ScoringStatusResource"
@@ -16397,31 +16408,8 @@
         "required": [
           "data"
         ],
-        "title": "ScoringStatusJSONAPIResponse",
+        "title": "ScoringStatusResponse",
         "description": "JSON:API response for scoring status."
-      },
-      "ScoringStatusResource": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": "scoring-status"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id",
-            "default": "current"
-          },
-          "attributes": {
-            "$ref": "#/components/schemas/ScoringStatusAttributes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "attributes"
-        ],
-        "title": "ScoringStatusResource",
-        "description": "JSON:API resource object for scoring status."
       },
       "ServiceStatus": {
         "properties": {
@@ -16616,7 +16604,7 @@
         "title": "SimilaritySearchCreateData",
         "description": "JSON:API data object for similarity search."
       },
-      "SimilaritySearchJSONAPIRequest": {
+      "SimilaritySearchRequest": {
         "properties": {
           "data": {
             "$ref": "#/components/schemas/SimilaritySearchCreateData"
@@ -16626,7 +16614,7 @@
         "required": [
           "data"
         ],
-        "title": "SimilaritySearchJSONAPIRequest",
+        "title": "SimilaritySearchRequest",
         "description": "JSON:API request body for performing a similarity search."
       },
       "SimilaritySearchResultAttributes": {
@@ -17493,6 +17481,18 @@
         ],
         "title": "WelcomeMessageUpdateResponse",
         "description": "Response model for welcome message update."
+      },
+      "src__batch_jobs__models__BatchJobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "BatchJobStatus",
+        "description": "Status states for a batch job."
       }
     },
     "securitySchemes": {

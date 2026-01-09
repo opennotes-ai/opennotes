@@ -306,7 +306,6 @@ class TestStreamHttpFailures:
 
         async def timeout_error(*args, **kwargs):
             raise httpx.TimeoutException("Connection timed out")
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -370,7 +369,6 @@ class TestStreamHttpFailures:
             response.status_code = 404
             request = MagicMock()
             raise httpx.HTTPStatusError("Not Found", request=request, response=response)
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -434,7 +432,6 @@ class TestStreamHttpFailures:
             response.status_code = 500
             request = MagicMock()
             raise httpx.HTTPStatusError("Internal Server Error", request=request, response=response)
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -495,7 +492,6 @@ class TestStreamHttpFailures:
 
         async def connection_reset(*args, **kwargs):
             raise httpx.RemoteProtocolError("Connection reset by peer")
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -1329,10 +1325,7 @@ class TestEndToEndFlow:
             patch("src.tasks.import_tasks.stream_csv_from_url", mock_stream_csv),
             patch("src.tasks.import_tasks.validate_and_normalize_batch") as mock_validate,
             patch("src.tasks.import_tasks.upsert_candidates") as mock_upsert,
-            patch(
-                "src.tasks.import_tasks.enqueue_scrape_batch",
-                new=AsyncMock(return_value={"enqueued": 10}),
-            ) as mock_enqueue,
+            patch("src.tasks.import_tasks.enqueue_scrape_batch") as mock_enqueue,
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
         ):
             mock_engine.return_value = MagicMock()
@@ -1346,6 +1339,7 @@ class TestEndToEndFlow:
 
             mock_validate.return_value = ([MagicMock()], [])
             mock_upsert.return_value = (1, 0)
+            mock_enqueue.return_value = {"enqueued": 10}
 
             from src.tasks.import_tasks import process_fact_check_import
 
@@ -1407,10 +1401,7 @@ class TestEndToEndFlow:
             patch("src.tasks.import_tasks.stream_csv_from_url", mock_stream_csv),
             patch("src.tasks.import_tasks.validate_and_normalize_batch") as mock_validate,
             patch("src.tasks.import_tasks.upsert_candidates") as mock_upsert,
-            patch(
-                "src.tasks.import_tasks.enqueue_scrape_batch",
-                new=AsyncMock(return_value={"enqueued": 0}),
-            ),
+            patch("src.tasks.import_tasks.enqueue_scrape_batch") as mock_enqueue,
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
         ):
             mock_engine.return_value = MagicMock()
@@ -1424,6 +1415,7 @@ class TestEndToEndFlow:
 
             mock_validate.return_value = ([MagicMock()], [])
             mock_upsert.return_value = (1, 0)
+            mock_enqueue.return_value = {"enqueued": 0}
 
             from src.tasks.import_tasks import process_fact_check_import
 

@@ -7,7 +7,6 @@ unique placeholder hashes using the row UUID, preventing collisions.
 import sys
 from pathlib import Path
 
-import pytest
 import xxhash
 
 alembic_versions_dir = Path(__file__).parents[2] / "alembic" / "versions"
@@ -17,7 +16,6 @@ if str(alembic_versions_dir) not in sys.path:
 from task_984_add_claim_hash_column import compute_claim_hash  # noqa: E402
 
 
-@pytest.mark.unit
 class TestClaimHashMigration:
     """Tests for the claim_hash migration compute function."""
 
