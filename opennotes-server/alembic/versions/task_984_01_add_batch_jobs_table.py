@@ -3,8 +3,8 @@
 Create batch_jobs table for tracking long-running batch operations.
 Provides persistent storage for job status, progress, and error information.
 
-Revision ID: b2c3d4e5f6g7
-Revises: 7f980a70cca1
+Revision ID: c5d6fa98fac1
+Revises: 8669929ca521
 Create Date: 2026-01-08 17:30:00.000000
 
 """
@@ -16,8 +16,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "b2c3d4e5f6g7"
-down_revision: str | Sequence[str] | None = "7f980a70cca1"
+revision: str = "c5d6fa98fac1"
+down_revision: str | Sequence[str] | None = "8669929ca521"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -64,23 +64,19 @@ def upgrade() -> None:
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
-            nullable=False,
+            nullable=True,
         ),
         sa.PrimaryKeyConstraint("id"),
     )
 
-    # Create indexes
+    # Create indexes - use SQLAlchemy naming convention (ix_tablename_column)
     op.create_index(op.f("ix_batch_jobs_id"), "batch_jobs", ["id"])
-    op.create_index("idx_batch_jobs_job_type", "batch_jobs", ["job_type"])
-    op.create_index("idx_batch_jobs_status", "batch_jobs", ["status"])
-    op.create_index(
-        "idx_batch_jobs_created_at", "batch_jobs", ["created_at"], postgresql_using="btree"
-    )
+    op.create_index(op.f("ix_batch_jobs_job_type"), "batch_jobs", ["job_type"])
+    op.create_index(op.f("ix_batch_jobs_status"), "batch_jobs", ["status"])
 
 
 def downgrade() -> None:
-    op.drop_index("idx_batch_jobs_created_at", table_name="batch_jobs")
-    op.drop_index("idx_batch_jobs_status", table_name="batch_jobs")
-    op.drop_index("idx_batch_jobs_job_type", table_name="batch_jobs")
+    op.drop_index(op.f("ix_batch_jobs_status"), table_name="batch_jobs")
+    op.drop_index(op.f("ix_batch_jobs_job_type"), table_name="batch_jobs")
     op.drop_index(op.f("ix_batch_jobs_id"), table_name="batch_jobs")
     op.drop_table("batch_jobs")

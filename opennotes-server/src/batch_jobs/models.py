@@ -55,33 +55,33 @@ class BatchJob(Base, TimestampMixin):
 
     status: Mapped[str] = mapped_column(
         String(20),
-        default=BatchJobStatus.PENDING.value,
+        server_default=text("'pending'"),
         nullable=False,
         index=True,
     )
 
     total_tasks: Mapped[int] = mapped_column(
         Integer,
-        default=0,
+        server_default=text("0"),
         nullable=False,
     )
 
     completed_tasks: Mapped[int] = mapped_column(
         Integer,
-        default=0,
+        server_default=text("0"),
         nullable=False,
     )
 
     failed_tasks: Mapped[int] = mapped_column(
         Integer,
-        default=0,
+        server_default=text("0"),
         nullable=False,
     )
 
     metadata_: Mapped[dict] = mapped_column(
         "metadata",
         JSONB,
-        default=dict,
+        server_default=text("'{}'::jsonb"),
         nullable=False,
     )
 

@@ -15,7 +15,7 @@ Migration steps:
 5. Create new unique index on (source_url, claim_hash, dataset_name)
 6. Create index on claim_hash for lookups
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 8669929ca521
 Revises: 98102a1b2c3d
 Create Date: 2026-01-08 17:00:00.000000
 
@@ -28,7 +28,7 @@ import xxhash
 
 from alembic import op
 
-revision: str = "7f980a70cca1"
+revision: str = "8669929ca521"
 down_revision: str | Sequence[str] | None = "98102a1b2c3d"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -88,8 +88,8 @@ def upgrade() -> None:
         nullable=False,
     )
 
-    # Step 4: Drop old unique index
-    op.drop_index("idx_candidates_source_url_dataset", table_name="fact_checked_item_candidates")
+    # Step 4: Drop old unique index if exists (may not exist in all environments)
+    conn.execute(sa.text("DROP INDEX IF EXISTS idx_candidates_source_url_dataset"))
 
     # Step 5: Create new unique index with claim_hash
     op.create_index(
