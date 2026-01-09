@@ -7770,6 +7770,364 @@
         }
       }
     },
+    "/api/v1/batch-jobs": {
+      "post": {
+        "tags": [
+          "batch-jobs"
+        ],
+        "summary": "Create a new batch job",
+        "description": "Create a new batch job entry. The job starts in PENDING status. Use this to register a job before dispatching tasks.",
+        "operationId": "create_batch_job_api_v1_batch_jobs_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchJobCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "batch-jobs"
+        ],
+        "summary": "List batch jobs",
+        "description": "List batch jobs with optional filters for job type and status.",
+        "operationId": "list_batch_jobs_api_v1_batch_jobs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by job type",
+              "title": "Job Type"
+            },
+            "description": "Filter by job type"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/src__batch_jobs__models__BatchJobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by job status",
+              "title": "Status"
+            },
+            "description": "Filter by job status"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of jobs to return",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Maximum number of jobs to return"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BatchJobResponse"
+                  },
+                  "title": "Response List Batch Jobs Api V1 Batch Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batch-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "batch-jobs"
+        ],
+        "summary": "Get batch job status",
+        "description": "Get the current status and progress of a batch job.",
+        "operationId": "get_batch_job_api_v1_batch_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "batch-jobs"
+        ],
+        "summary": "Cancel a batch job",
+        "description": "Cancel a running or pending batch job. Jobs in terminal states (completed, failed, cancelled) cannot be cancelled.",
+        "operationId": "cancel_batch_job_api_v1_batch_jobs__job_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batch-jobs/{job_id}/progress": {
+      "get": {
+        "tags": [
+          "batch-jobs"
+        ],
+        "summary": "Get real-time progress",
+        "description": "Get real-time progress information from Redis cache. Includes processing rate and ETA when available.",
+        "operationId": "get_batch_job_progress_api_v1_batch_jobs__job_id__progress_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobProgress"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -8472,6 +8830,212 @@
         ],
         "title": "AuthProvider",
         "description": "Supported authentication providers."
+      },
+      "BatchJobCreate": {
+        "properties": {
+          "job_type": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Job Type",
+            "description": "Type of batch job (e.g., 'fact_check_import')"
+          },
+          "total_tasks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Tasks",
+            "description": "Total number of tasks to process",
+            "default": 0
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Job-specific metadata (e.g., source file, options)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_type"
+        ],
+        "title": "BatchJobCreate",
+        "description": "Schema for creating a new batch job."
+      },
+      "BatchJobProgress": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "Job identifier"
+          },
+          "processed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Processed Count",
+            "description": "Items processed so far",
+            "default": 0
+          },
+          "error_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Error Count",
+            "description": "Errors encountered",
+            "default": 0
+          },
+          "current_item": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Item",
+            "description": "Currently processing item"
+          },
+          "rate": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Rate",
+            "description": "Processing rate (items/second)",
+            "default": 0.0
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds",
+            "description": "Estimated time to completion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "BatchJobProgress",
+        "description": "Real-time progress information from Redis cache."
+      },
+      "BatchJobResponse": {
+        "properties": {
+          "job_type": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Job Type",
+            "description": "Type of batch job (e.g., 'fact_check_import')"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Unique job identifier"
+          },
+          "status": {
+            "$ref": "#/components/schemas/src__batch_jobs__models__BatchJobStatus",
+            "description": "Current job status"
+          },
+          "total_tasks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Tasks",
+            "description": "Total tasks to process",
+            "default": 0
+          },
+          "completed_tasks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completed Tasks",
+            "description": "Tasks completed successfully",
+            "default": 0
+          },
+          "failed_tasks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Tasks",
+            "description": "Tasks that failed",
+            "default": 0
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Job-specific metadata"
+          },
+          "error_summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Summary",
+            "description": "Summary of errors if any"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "When the job started processing"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "When the job finished"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "When the job was created"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "When the job was last updated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_type",
+          "id",
+          "status",
+          "created_at"
+        ],
+        "title": "BatchJobResponse",
+        "description": "Response schema for batch job with full details."
       },
       "BatchScoreRequest": {
         "properties": {
@@ -17070,6 +17634,18 @@
         ],
         "title": "WelcomeMessageUpdateResponse",
         "description": "Response model for welcome message update."
+      },
+      "src__batch_jobs__models__BatchJobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "BatchJobStatus",
+        "description": "Status states for a batch job."
       }
     },
     "securitySchemes": {
