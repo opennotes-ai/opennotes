@@ -32,13 +32,13 @@ async def hybrid_search_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Hybrid Search JSONAPI",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -158,7 +158,7 @@ class TestHybridSearchJSONAPI:
         Note: This test verifies the endpoint exists and returns valid JSON:API format.
         The actual search may fail due to missing OpenAI configuration in tests.
         """
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -207,7 +207,7 @@ class TestHybridSearchJSONAPI:
         hybrid_search_jsonapi_community_server,
     ):
         """Test POST /api/v2/hybrid-searches rejects invalid resource type."""
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -234,7 +234,7 @@ class TestHybridSearchJSONAPI:
         hybrid_search_jsonapi_community_server,
     ):
         """Test POST /api/v2/hybrid-searches returns 422 for missing text field."""
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -313,7 +313,7 @@ class TestHybridSearchJSONAPI:
         hybrid_search_jsonapi_community_server,
     ):
         """Test POST /api/v2/hybrid-searches returns 422 for empty text."""
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -344,7 +344,7 @@ class TestHybridSearchJSONAPI:
         Single character queries like "a" waste API credits and return poor results.
         The minimum query length should be 3 characters.
         """
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -375,7 +375,7 @@ class TestHybridSearchJSONAPI:
         Two character queries like "ab" waste API credits and return poor results.
         The minimum query length should be 3 characters.
         """
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -407,7 +407,7 @@ class TestHybridSearchJSONAPI:
         Note: The request may fail for other reasons (e.g., no OpenAI config),
         but should NOT fail with 422 for text length validation.
         """
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -441,7 +441,7 @@ class TestHybridSearchJSONAPI:
         Note: This test may result in an error if OpenAI is not configured,
         but it verifies the endpoint exists and accepts minimal valid input.
         """
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -467,7 +467,7 @@ class TestHybridSearchJSONAPI:
         hybrid_search_jsonapi_community_server,
     ):
         """Test POST /api/v2/hybrid-searches rejects invalid limit values."""
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -495,7 +495,7 @@ class TestHybridSearchJSONAPI:
         hybrid_search_jsonapi_community_server,
     ):
         """Test POST /api/v2/hybrid-searches rejects limit of 0."""
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -605,7 +605,7 @@ class TestHybridSearchJSONAPIWithMockedService:
 
         mock_embedding = [0.1] * 1536
 
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         with (
             patch(
@@ -693,7 +693,7 @@ class TestHybridSearchJSONAPIWithMockedService:
         """Test POST /api/v2/hybrid-searches returns empty matches list when no results."""
         mock_embedding = [0.1] * 1536
 
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         with (
             patch(
@@ -749,7 +749,7 @@ class TestHybridSearchJSONAPIWithMockedService:
         """Test POST /api/v2/hybrid-searches includes links in response."""
         mock_embedding = [0.1] * 1536
 
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         with (
             patch(
@@ -800,7 +800,7 @@ class TestHybridSearchJSONAPIWithMockedService:
         import httpx
         from openai import RateLimitError
 
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         mock_request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
         mock_response = httpx.Response(429, request=mock_request)
@@ -854,7 +854,7 @@ class TestHybridSearchJSONAPIWithMockedService:
         hybrid_search_jsonapi_community_server,
     ):
         """Test POST /api/v2/hybrid-searches returns 429 when community rate limit exceeded."""
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         with patch(
             "src.llm_config.usage_tracker.LLMUsageTracker.check_limits",
@@ -907,7 +907,7 @@ class TestHybridSearchJSONAPIPerformanceMetrics:
         import logging
 
         mock_embedding = [0.1] * 1536
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         with (
             patch(
@@ -984,7 +984,7 @@ class TestHybridSearchJSONAPIPerformanceMetrics:
         import logging
 
         mock_embedding = [0.1] * 1536
-        platform_id = hybrid_search_jsonapi_community_server["platform_id"]
+        platform_id = hybrid_search_jsonapi_community_server["platform_community_server_id"]
 
         with (
             patch(

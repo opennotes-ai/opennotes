@@ -48,13 +48,13 @@ async def requests_test_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Request Serialization",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -484,7 +484,7 @@ class TestRequestSerializationBulkOperations:
                 request_id=f"req_bulk_{i}_{base_ts}",
                 platform_message_id=platform_message_id,
                 requested_by="test-requester",
-                community_server_id=requests_test_community_server["platform_id"],
+                community_server_id=requests_test_community_server["platform_community_server_id"],
             )
             create_response = await requests_auth_client.post("/api/v2/requests", json=request_data)
             assert create_response.status_code == 201

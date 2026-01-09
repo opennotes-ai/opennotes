@@ -92,7 +92,7 @@ async def test_setup():
         # Create community server
         community = CommunityServer(
             platform="discord",
-            platform_id="test_guild_publisher_123",
+            platform_community_server_id="test_guild_publisher_123",
             name="Publisher Test Guild",
             is_active=True,
         )
@@ -263,7 +263,7 @@ class TestNotePublisherEmbeddingStorage:
                 note_id=str(test_setup["note"].id),
                 original_message_id="msg_publisher_001",
                 channel_id="test_channel_123",
-                community_server_id=test_setup["community"].platform_id,
+                community_server_id=test_setup["community"].platform_community_server_id,
                 score_at_post=0.8,
                 confidence_at_post="0.9",
                 success=True,
@@ -320,7 +320,7 @@ class TestNotePublisherEmbeddingStorage:
                 note_id=str(test_setup["note"].id),
                 original_message_id="msg_publisher_failed",
                 channel_id="test_channel_123",
-                community_server_id=test_setup["community"].platform_id,
+                community_server_id=test_setup["community"].platform_community_server_id,
                 score_at_post=0.8,
                 confidence_at_post="0.9",
                 success=False,
@@ -353,7 +353,7 @@ class TestNotePublisherEmbeddingStorage:
                 note_id=str(test_setup["note"].id),
                 original_message_id="msg_no_embedding",
                 channel_id="test_channel_123",
-                community_server_id=test_setup["community"].platform_id,
+                community_server_id=test_setup["community"].platform_community_server_id,
                 score_at_post=0.8,
                 confidence_at_post="0.9",
                 success=True,

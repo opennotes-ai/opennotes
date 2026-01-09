@@ -241,7 +241,7 @@ export interface NoteListJSONAPIResponseWithPagination extends NoteListJSONAPIRe
 // Type for community server attributes in JSON:API response
 export interface CommunityServerAttributes {
   platform: string;
-  platform_id: string;
+  platform_community_server_id: string;
   name: string;
   description?: string | null;
   is_active: boolean;
@@ -253,7 +253,7 @@ export interface CommunityServerAttributes {
 
 export interface WelcomeMessageUpdateResponse {
   id: string;
-  platform_id: string;
+  platform_community_server_id: string;
   welcome_message_id: string | null;
 }
 
@@ -1133,7 +1133,7 @@ export class ApiClient {
   ): Promise<CommunityServerJSONAPIResponse> {
     const params = new URLSearchParams();
     params.append('platform', platform);
-    params.append('platform_id', platformId);
+    params.append('platform_community_server_id', platformId);
 
     const endpoint = `/api/v2/community-servers/lookup?${params.toString()}`;
     return this.fetchWithRetry<CommunityServerJSONAPIResponse>(endpoint);

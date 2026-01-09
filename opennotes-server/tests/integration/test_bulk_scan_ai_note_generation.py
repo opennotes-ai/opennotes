@@ -46,7 +46,7 @@ class TestBulkScanAINoteGenerationFixtures:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="ai_note_test_community",
+            platform_community_server_id="ai_note_test_community",
             name="AI Note Generation Test Community",
             is_active=True,
             is_public=True,
@@ -330,7 +330,10 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                         assert "request_id" in kwargs
                         assert kwargs["scan_type"] == "similarity"
                         assert kwargs["fact_check_item_id"] == str(fact_check_item.id)
-                        assert kwargs["community_server_id"] == community_server.platform_id
+                        assert (
+                            kwargs["community_server_id"]
+                            == community_server.platform_community_server_id
+                        )
                         assert kwargs["similarity_score"] >= 0.85
 
     @pytest.mark.asyncio

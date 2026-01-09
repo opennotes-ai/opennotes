@@ -37,7 +37,7 @@ async def stats_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name=f"Test Guild for Stats JSONAPI {unique_suffix}",
             description="A test community for stats JSON:API endpoint testing",
             is_public=True,
@@ -48,7 +48,7 @@ async def stats_jsonapi_community_server():
 
     return {
         "uuid": community_server_id,
-        "platform_id": platform_id,
+        "platform_community_server_id": platform_id,
         "platform": "discord",
         "name": f"Test Guild for Stats JSONAPI {unique_suffix}",
     }

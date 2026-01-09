@@ -28,7 +28,7 @@ async def clear_test_community_server():
     async with get_session_maker()() as db:
         community_server = CommunityServer(
             platform="discord",
-            platform_id=f"test_guild_clear_{uuid4().hex[:8]}",
+            platform_community_server_id=f"test_guild_clear_{uuid4().hex[:8]}",
             name="Test Guild for Clear Endpoints",
             is_active=True,
         )

@@ -108,7 +108,7 @@ async def community_server_with_data(db):
     server = CommunityServer(
         id=uuid4(),
         platform="discord",
-        platform_id=f"test-server-{uuid4().hex[:8]}",
+        platform_community_server_id=f"test-server-{uuid4().hex[:8]}",
         name="Test Server for Chunking",
         is_active=True,
     )
@@ -632,7 +632,7 @@ class TestRechunkConcurrencyControl:
         server2 = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id=f"test-server-2-{uuid4().hex[:8]}",
+            platform_community_server_id=f"test-server-2-{uuid4().hex[:8]}",
             name="Test Server 2 for Chunking",
             is_active=True,
         )

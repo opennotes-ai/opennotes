@@ -42,7 +42,7 @@ class TestVibecheckDebugModeFromCommunityConfig:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="test_vibecheck_config_community",
+            platform_community_server_id="test_vibecheck_config_community",
             name="Vibecheck Config Test Community",
             is_active=True,
             is_public=True,

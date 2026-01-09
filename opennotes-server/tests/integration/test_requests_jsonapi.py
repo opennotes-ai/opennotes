@@ -42,13 +42,13 @@ async def requests_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Requests JSONAPI",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -149,7 +149,7 @@ def requests_jsonapi_sample_request_data(
     return {
         "request_id": f"test_request_{int(datetime.now(tz=UTC).timestamp() * 1000000)}",
         "requested_by": requests_jsonapi_registered_user["discord_id"],
-        "community_server_id": requests_jsonapi_community_server["platform_id"],
+        "community_server_id": requests_jsonapi_community_server["platform_community_server_id"],
         "original_message_content": "This is a test message content for JSON:API tests",
         "platform_message_id": f"platform_msg_{uuid4().hex[:8]}",
         "platform_channel_id": f"platform_channel_{uuid4().hex[:8]}",

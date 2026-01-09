@@ -26,7 +26,7 @@ async def community_server(db_session):
     """Create a test community server."""
     server = CommunityServer(
         platform="discord",
-        platform_id="test_server_123",
+        platform_community_server_id="test_server_123",
         name="Test Server",
     )
     db_session.add(server)

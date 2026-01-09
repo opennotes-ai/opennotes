@@ -18,12 +18,12 @@ export class VibecheckProgressService {
   }
 
   async handleProgressEvent(event: BulkScanProgressEvent): Promise<void> {
-    const { platform_id, scan_id, batch_number, message_scores } = event;
+    const { platform_community_server_id, scan_id, batch_number, message_scores } = event;
 
-    const guild = this.client.guilds.cache.get(platform_id);
+    const guild = this.client.guilds.cache.get(platform_community_server_id);
     if (!guild) {
       logger.debug('Guild not found for progress event', {
-        platformId: platform_id,
+        platformId: platform_community_server_id,
         scanId: scan_id,
       });
       return;

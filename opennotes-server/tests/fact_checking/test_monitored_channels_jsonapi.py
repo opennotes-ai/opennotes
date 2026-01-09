@@ -33,13 +33,13 @@ async def monitored_channels_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Monitored Channels JSONAPI",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -159,7 +159,7 @@ class TestMonitoredChannelsJSONAPIList:
         - Each resource has 'type', 'id', and 'attributes'
         - Pagination via page[number] and page[size]
         """
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
 
         response = await monitored_channels_jsonapi_auth_client.get(
             f"/api/v2/monitored-channels?filter[community_server_id]={platform_id}"
@@ -185,7 +185,7 @@ class TestMonitoredChannelsJSONAPIList:
         monitored_channels_jsonapi_community_server,
     ):
         """Test GET /api/v2/monitored-channels supports JSON:API pagination."""
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
 
         response = await monitored_channels_jsonapi_auth_client.get(
             f"/api/v2/monitored-channels?filter[community_server_id]={platform_id}&page[number]=1&page[size]=10"
@@ -225,7 +225,7 @@ class TestMonitoredChannelsJSONAPIGet:
         - 'data' object containing single resource
         - Resource has 'type', 'id', and 'attributes'
         """
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_{uuid4().hex[:8]}"
 
         create_body = {
@@ -296,7 +296,7 @@ class TestMonitoredChannelsJSONAPICreate:
         - Response with 201 Created status
         - Response body with 'data' object containing created resource
         """
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_create_{uuid4().hex[:8]}"
 
         request_body = {
@@ -339,7 +339,7 @@ class TestMonitoredChannelsJSONAPICreate:
         monitored_channels_jsonapi_community_server,
     ):
         """Test POST /api/v2/monitored-channels rejects invalid resource type."""
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -364,7 +364,7 @@ class TestMonitoredChannelsJSONAPICreate:
         monitored_channels_jsonapi_community_server,
     ):
         """Test POST /api/v2/monitored-channels returns 409 for duplicate channel."""
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_conflict_{uuid4().hex[:8]}"
 
         request_body = {
@@ -407,7 +407,7 @@ class TestMonitoredChannelsJSONAPIUpdate:
         - Response with 200 OK status
         - Response body with 'data' object containing updated resource
         """
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_update_{uuid4().hex[:8]}"
 
         create_body = {
@@ -489,7 +489,7 @@ class TestMonitoredChannelsJSONAPIUpdate:
         monitored_channels_jsonapi_community_server,
     ):
         """Test PATCH /api/v2/monitored-channels/{id} returns 409 if ID in body doesn't match URL."""
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_mismatch_{uuid4().hex[:8]}"
 
         create_body = {
@@ -539,7 +539,7 @@ class TestMonitoredChannelsJSONAPIDelete:
         - Response with 204 No Content status
         - No response body
         """
-        platform_id = monitored_channels_jsonapi_community_server["platform_id"]
+        platform_id = monitored_channels_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_delete_{uuid4().hex[:8]}"
 
         create_body = {

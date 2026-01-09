@@ -32,7 +32,7 @@ class TestBulkScanAuthorizationFixtures:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="bulk_scan_auth_test_community_a",
+            platform_community_server_id="bulk_scan_auth_test_community_a",
             name="Bulk Scan Auth Test Community A",
             is_active=True,
             is_public=True,
@@ -50,7 +50,7 @@ class TestBulkScanAuthorizationFixtures:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="bulk_scan_auth_test_community_b",
+            platform_community_server_id="bulk_scan_auth_test_community_b",
             name="Bulk Scan Auth Test Community B",
             is_active=True,
             is_public=True,

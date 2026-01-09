@@ -49,7 +49,7 @@ async def test_community_server():
     async with src.database.async_session_maker() as session:
         community = CommunityServer(
             platform="discord",
-            platform_id=str(uuid4()),
+            platform_community_server_id=str(uuid4()),
             name="Test Community",
             is_active=True,
         )
@@ -215,7 +215,7 @@ class TestEmbeddingAuthorization:
         """Authorized members should be able to generate embeddings"""
         request_data = make_similarity_search_request(
             text="Test search query",
-            community_server_id=test_community_server.platform_id,
+            community_server_id=test_community_server.platform_community_server_id,
         )
 
         response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
@@ -227,7 +227,7 @@ class TestEmbeddingAuthorization:
         """Users who are not members should receive 403 Forbidden"""
         request_data = make_similarity_search_request(
             text="Test search query",
-            community_server_id=test_community_server.platform_id,
+            community_server_id=test_community_server.platform_community_server_id,
         )
 
         response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
@@ -243,7 +243,7 @@ class TestEmbeddingAuthorization:
         """Banned users should receive 403 Forbidden"""
         request_data = make_similarity_search_request(
             text="Test search query",
-            community_server_id=test_community_server.platform_id,
+            community_server_id=test_community_server.platform_community_server_id,
         )
 
         response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
@@ -259,7 +259,7 @@ class TestEmbeddingAuthorization:
         """Inactive members should receive 403 Forbidden"""
         request_data = make_similarity_search_request(
             text="Test search query",
-            community_server_id=test_community_server.platform_id,
+            community_server_id=test_community_server.platform_community_server_id,
         )
 
         response = await auth_client.post("/api/v2/similarity-searches", json=request_data)
@@ -298,7 +298,7 @@ class TestEmbeddingAuditLogging:
 
         request_data = make_similarity_search_request(
             text="Test search query",
-            community_server_id=test_community_server.platform_id,
+            community_server_id=test_community_server.platform_community_server_id,
         )
 
         await auth_client.post("/api/v2/similarity-searches", json=request_data)
@@ -316,7 +316,7 @@ class TestEmbeddingAuditLogging:
 
         request_data = make_similarity_search_request(
             text="Test search query",
-            community_server_id=test_community_server.platform_id,
+            community_server_id=test_community_server.platform_community_server_id,
         )
 
         response = await auth_client.post("/api/v2/similarity-searches", json=request_data)

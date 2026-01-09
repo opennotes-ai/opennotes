@@ -106,7 +106,7 @@ class TestDatabasePersistence:
             community_server = CommunityServer(
                 id=community_server_id,
                 platform="discord",
-                platform_id="test_server_123",
+                platform_community_server_id="test_server_123",
                 name="Test Server",
             )
             session.add(community_server)

@@ -69,7 +69,7 @@ async def community_server() -> CommunityServer:
     async with async_session_maker() as db:
         server = CommunityServer(
             platform="discord",
-            platform_id="123456789",
+            platform_community_server_id="123456789",
             name="Test Server",
             is_active=True,
             is_public=True,
@@ -213,7 +213,7 @@ async def test_add_community_admin_success(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins",
             json={"user_discord_id": regular_user["identity"].provider_user_id},
             headers=service_account_headers,
         )
@@ -245,7 +245,7 @@ async def test_add_community_admin_non_member(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.post(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins",
             json={"user_discord_id": non_member_user["identity"].provider_user_id},
             headers=service_account_headers,
         )
@@ -275,7 +275,7 @@ async def test_add_community_admin_user_not_found(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.post(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins",
             json={"user_discord_id": "nonexistent_user"},
             headers=service_account_headers,
         )
@@ -330,7 +330,7 @@ async def test_remove_community_admin_success(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.delete(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins/{admin_user['identity'].provider_user_id}",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins/{admin_user['identity'].provider_user_id}",
             headers=service_account_headers,
         )
 
@@ -360,7 +360,7 @@ async def test_remove_last_admin_fails(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.delete(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins/{admin_user['identity'].provider_user_id}",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins/{admin_user['identity'].provider_user_id}",
             headers=service_account_headers,
         )
 
@@ -380,7 +380,7 @@ async def test_remove_non_admin_fails(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.delete(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins/{regular_user['identity'].provider_user_id}",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins/{regular_user['identity'].provider_user_id}",
             headers=service_account_headers,
         )
 
@@ -400,7 +400,7 @@ async def test_list_community_admins(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.get(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins",
             headers=service_account_headers,
         )
 
@@ -445,7 +445,7 @@ async def test_list_community_admins_includes_opennotes_admins(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         response = await async_client.get(
-            f"/api/v1/community-servers/{community_server.platform_id}/admins",
+            f"/api/v1/community-servers/{community_server.platform_community_server_id}/admins",
             headers=service_account_headers,
         )
 

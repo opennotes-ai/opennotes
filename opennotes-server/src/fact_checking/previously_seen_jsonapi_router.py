@@ -354,7 +354,7 @@ async def list_previously_seen_messages_jsonapi(
 
         if not is_service_account(current_user):
             await verify_community_membership(
-                community_server.platform_id, current_user, db, request
+                community_server.platform_community_server_id, current_user, db, request
             )
 
         query = select(PreviouslySeenMessage).where(
@@ -434,7 +434,7 @@ async def get_previously_seen_message_jsonapi(
 
         if not is_service_account(current_user):
             await verify_community_membership(
-                community_server.platform_id, current_user, db, request
+                community_server.platform_community_server_id, current_user, db, request
             )
 
         message_resource = message_to_resource(message)
@@ -513,7 +513,7 @@ async def create_previously_seen_message_jsonapi(
 
         if not is_service_account(current_user):
             await verify_community_membership(
-                community_server.platform_id, current_user, db, request
+                community_server.platform_community_server_id, current_user, db, request
             )
 
         new_message = PreviouslySeenMessage(
@@ -582,7 +582,9 @@ async def check_previously_seen_jsonapi(
         attrs = body.data.attributes
 
         result = await db.execute(
-            select(CommunityServer.id).where(CommunityServer.platform_id == attrs.guild_id)
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == attrs.guild_id
+            )
         )
         community_server_uuid = result.scalar_one_or_none()
 

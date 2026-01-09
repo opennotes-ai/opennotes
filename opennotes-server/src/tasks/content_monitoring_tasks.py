@@ -124,7 +124,9 @@ async def _get_platform_id(session: Any, community_server_id: UUID) -> str | Non
     from src.llm_config.models import CommunityServer
 
     result = await session.execute(
-        select(CommunityServer.platform_id).where(CommunityServer.id == community_server_id)
+        select(CommunityServer.platform_community_server_id).where(
+            CommunityServer.id == community_server_id
+        )
     )
     return result.scalar_one_or_none()
 
@@ -570,7 +572,7 @@ async def generate_ai_note_task(
             async with async_session() as session:
                 result = await session.execute(
                     select(CommunityServer.id).where(
-                        CommunityServer.platform_id == community_server_id
+                        CommunityServer.platform_community_server_id == community_server_id
                     )
                 )
                 community_server_uuid = result.scalar_one_or_none()

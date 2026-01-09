@@ -45,7 +45,7 @@ class CommunityServer(Base):
     Attributes:
         id: Unique community server identifier (UUID)
         platform: Platform type ('discord', 'reddit', 'slack', 'matrix', etc.)
-        platform_id: Platform-specific identifier (e.g., Discord guild ID, subreddit name)
+        platform_community_server_id: Platform-specific identifier (e.g., Discord guild ID, subreddit name)
         name: Human-readable community server name
         description: Optional community description
         settings: JSON blob for community-specific settings
@@ -62,7 +62,9 @@ class CommunityServer(Base):
         PGUUID(as_uuid=True), primary_key=True, default=uuid4, index=True
     )
     platform: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    platform_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    platform_community_server_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     settings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -92,7 +94,12 @@ class CommunityServer(Base):
     )
 
     __table_args__ = (
-        Index("idx_community_servers_platform_id", "platform", "platform_id", unique=True),
+        Index(
+            "idx_community_servers_platform_community_server_id",
+            "platform",
+            "platform_community_server_id",
+            unique=True,
+        ),
         Index("idx_community_servers_is_active", "is_active"),
         Index("idx_community_servers_is_public", "is_public"),
         CheckConstraint(

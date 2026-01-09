@@ -20,7 +20,7 @@ async def test_community_server() -> CommunityServer:
     async with async_session_maker() as db:
         community = CommunityServer(
             platform="discord",
-            platform_id="123456789",
+            platform_community_server_id="123456789",
             name="Test Community",
             description="Test community for authorization tests",
             is_active=True,

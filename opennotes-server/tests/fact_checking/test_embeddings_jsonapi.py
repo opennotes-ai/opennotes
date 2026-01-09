@@ -30,13 +30,13 @@ async def embeddings_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Embeddings JSONAPI",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -156,7 +156,7 @@ class TestSimilaritySearchJSONAPI:
         Note: This test verifies the endpoint exists and returns valid JSON:API format.
         The actual search may fail due to missing OpenAI configuration in tests.
         """
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -209,7 +209,7 @@ class TestSimilaritySearchJSONAPI:
         embeddings_jsonapi_community_server,
     ):
         """Test POST /api/v2/similarity-searches rejects invalid resource type."""
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -236,7 +236,7 @@ class TestSimilaritySearchJSONAPI:
         embeddings_jsonapi_community_server,
     ):
         """Test POST /api/v2/similarity-searches returns 422 for missing text field."""
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -315,7 +315,7 @@ class TestSimilaritySearchJSONAPI:
         embeddings_jsonapi_community_server,
     ):
         """Test POST /api/v2/similarity-searches returns 422 for empty text."""
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -346,7 +346,7 @@ class TestSimilaritySearchJSONAPI:
         Note: This test may result in an error if OpenAI is not configured,
         but it verifies the endpoint exists and accepts minimal valid input.
         """
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -372,7 +372,7 @@ class TestSimilaritySearchJSONAPI:
         embeddings_jsonapi_community_server,
     ):
         """Test POST /api/v2/similarity-searches rejects invalid threshold values."""
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -400,7 +400,7 @@ class TestSimilaritySearchJSONAPI:
         embeddings_jsonapi_community_server,
     ):
         """Test POST /api/v2/similarity-searches rejects invalid limit values."""
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -461,7 +461,7 @@ class TestSimilaritySearchJSONAPIWithMockedService:
         Note: Requires LLM config for embedding generation.
         This would be fully tested in integration tests with mocked OpenAI.
         """
-        platform_id = embeddings_jsonapi_community_server["platform_id"]
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {

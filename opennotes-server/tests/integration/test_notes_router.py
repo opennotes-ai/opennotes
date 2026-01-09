@@ -124,8 +124,8 @@ async def auth_client(notes_auth_headers):
 async def test_community_server():
     """Create a test community server for use in tests.
 
-    Returns the platform_id (Discord guild ID) which is what the API expects.
-    The API uses platform_id to look up the CommunityServer.
+    Returns the platform_community_server_id (Discord guild ID) which is what the API expects.
+    The API uses platform_community_server_id to look up the CommunityServer.
     """
     from uuid import uuid4
 
@@ -138,13 +138,13 @@ async def test_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Notes",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -242,7 +242,7 @@ class TestNotesRouter:
             "request_id": "duplicate_test_request_1",
             "requested_by": "test_requester",
             "original_message_content": "Test message for duplicate note test",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
         request_body = _create_request_jsonapi_body(request_data)
         await auth_client.post("/api/v2/requests", json=request_body)
@@ -456,7 +456,7 @@ class TestRequestsRouter:
             "request_id": "req_123",
             "requested_by": "requester_456",
             "original_message_content": "Test message",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -474,7 +474,7 @@ class TestRequestsRouter:
             "request_id": "req_list_test",
             "requested_by": "requester_789",
             "original_message_content": "Test message",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
         body = _create_request_jsonapi_body(request_data)
         await auth_client.post("/api/v2/requests", json=body)
@@ -494,7 +494,7 @@ class TestRequestsRouter:
             "request_id": "req_get_test",
             "requested_by": "requester_get",
             "original_message_content": "Test message",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
@@ -512,7 +512,7 @@ class TestRequestsRouter:
             "request_id": "req_update_test",
             "requested_by": notes_registered_user["discord_id"],
             "original_message_content": "Test message",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
         body = _create_request_jsonapi_body(request_data)
         create_response = await auth_client.post("/api/v2/requests", json=body)
@@ -540,7 +540,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_archive_1",
             "requested_by": "archive_requester_1",
             "original_message_content": "This is a test message content",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -562,7 +562,7 @@ class TestRequestsWithMessageArchive:
             "platform_channel_id": "channel_67890",
             "platform_author_id": "author_11111",
             "platform_timestamp": "2025-01-15T10:00:00Z",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -580,7 +580,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_no_content_1",
             "requested_by": "archive_requester_3",
             "original_message_content": "",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -594,7 +594,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_get_content_1",
             "requested_by": "archive_requester_4",
             "original_message_content": "Content for get request test",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -615,7 +615,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_list_content_1",
             "requested_by": "archive_requester_5",
             "original_message_content": "Content for list request test",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -645,7 +645,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_update_preserve_1",
             "requested_by": notes_registered_user["discord_id"],
             "original_message_content": "Content that should be preserved",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -675,7 +675,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_empty_content_1",
             "requested_by": "archive_requester_7",
             "original_message_content": "",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -690,7 +690,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_long_content_1",
             "requested_by": "archive_requester_8",
             "original_message_content": long_content,
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -709,7 +709,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_special_chars_1",
             "requested_by": "archive_requester_9",
             "original_message_content": special_content,
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -730,7 +730,7 @@ class TestRequestsWithMessageArchive:
             "platform_channel_id": None,
             "platform_author_id": None,
             "platform_timestamp": None,
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -756,7 +756,7 @@ class TestRequestsWithMessageArchive:
                 },
                 "source": "automated_monitor",
             },
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -788,7 +788,7 @@ class TestRequestsWithMessageArchive:
                     "rating": "MOSTLY_FALSE",
                 },
             },
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -820,7 +820,7 @@ class TestRequestsWithMessageArchive:
                     "rating": "TRUE",
                 },
             },
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -849,7 +849,7 @@ class TestRequestsWithMessageArchive:
             "request_id": "req_no_metadata_1",
             "requested_by": "manual-requester",
             "original_message_content": "Manual request without metadata",
-            "community_server_id": test_community_server["platform_id"],
+            "community_server_id": test_community_server["platform_community_server_id"],
         }
 
         body = _create_request_jsonapi_body(request_data)
@@ -875,7 +875,7 @@ class TestRequestsViaAPI:
                 "request_id": "api_req_1",
                 "requested_by": "api_requester",
                 "original_message_content": "API created content",
-                "community_server_id": test_community_server["platform_id"],
+                "community_server_id": test_community_server["platform_community_server_id"],
             }
         )
 
@@ -897,7 +897,7 @@ class TestRequestsViaAPI:
                 "request_id": "list_content_req_1",
                 "requested_by": "list_requester",
                 "original_message_content": "Content for list test",
-                "community_server_id": test_community_server["platform_id"],
+                "community_server_id": test_community_server["platform_community_server_id"],
             }
         )
         await auth_client.post("/api/v2/requests", json=request_body)
@@ -935,7 +935,7 @@ class TestMessageArchiveRelationship:
                 "request_id": "req_archive_link_1",
                 "requested_by": "archive_link_requester",
                 "original_message_content": "Content with archive link",
-                "community_server_id": test_community_server["platform_id"],
+                "community_server_id": test_community_server["platform_community_server_id"],
             }
         )
 
@@ -969,7 +969,7 @@ class TestMessageArchiveRelationship:
                 "platform_message_id": "msg_meta_123",
                 "platform_channel_id": "channel_meta_456",
                 "platform_author_id": "author_meta_789",
-                "community_server_id": test_community_server["platform_id"],
+                "community_server_id": test_community_server["platform_community_server_id"],
             }
         )
 
@@ -1000,7 +1000,7 @@ class TestMessageArchiveRelationship:
                 "request_id": "req_content_property_1",
                 "requested_by": "content_property_requester",
                 "original_message_content": "Content via property test",
-                "community_server_id": test_community_server["platform_id"],
+                "community_server_id": test_community_server["platform_community_server_id"],
             }
         )
 
@@ -1074,7 +1074,7 @@ class TestDataIntegrity:
             community_server = CommunityServer(
                 id=community_server_id,
                 platform="discord",
-                platform_id="test_guild_555",
+                platform_community_server_id="test_guild_555",
                 name="Test Guild 555",
             )
             db.add(community_server)
@@ -1126,13 +1126,13 @@ class TestDataIntegrity:
             community_server_1 = CommunityServer(
                 id=community_server_id_1,
                 platform="discord",
-                platform_id="test_guild_555_1",
+                platform_community_server_id="test_guild_555_1",
                 name="Test Guild 555 1",
             )
             community_server_2 = CommunityServer(
                 id=community_server_id_2,
                 platform="discord",
-                platform_id="test_guild_555_2",
+                platform_community_server_id="test_guild_555_2",
                 name="Test Guild 555 2",
             )
             db.add(community_server_1)

@@ -68,14 +68,14 @@ def create_mock_membership(
     return membership
 
 
-def create_mock_community(community_id=None, platform_id: str = "123456789"):
+def create_mock_community(community_id=None, platform_community_server_id: str = "123456789"):
     """Create a mock CommunityServer object."""
     from src.llm_config.models import CommunityServer
 
     community = MagicMock(spec=CommunityServer)
     community.id = community_id or uuid4()
     community.platform = "discord"
-    community.platform_id = platform_id
+    community.platform_community_server_id = platform_community_server_id
     community.name = "Test Server"
     community.is_active = True
     community.is_public = True

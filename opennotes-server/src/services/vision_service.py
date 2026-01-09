@@ -74,7 +74,9 @@ class VisionService:
         # Convert guild ID string to UUID for LLMService
         # Get CommunityServer UUID from platform_id (Discord guild ID)
         result = await db.execute(
-            select(CommunityServer.id).where(CommunityServer.platform_id == community_server_id)
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == community_server_id
+            )
         )
         community_server_uuid = result.scalar_one_or_none()
 

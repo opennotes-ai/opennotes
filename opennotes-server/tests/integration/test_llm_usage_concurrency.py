@@ -34,7 +34,7 @@ async def community_server() -> CommunityServer:
     async with async_session_maker() as db:
         server = CommunityServer(
             platform="discord",
-            platform_id="test-guild-123",
+            platform_community_server_id="test-guild-123",
             name="Test Server",
             is_active=True,
         )

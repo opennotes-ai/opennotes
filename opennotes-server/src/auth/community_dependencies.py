@@ -104,7 +104,7 @@ async def get_community_server_by_platform_id(
     db: AsyncSession, community_server_id: str, platform: str = "discord", auto_create: bool = True
 ) -> CommunityServer | None:
     """
-    Look up CommunityServer by platform_id (e.g., Discord guild ID).
+    Look up CommunityServer by platform_community_server_id (e.g., Discord guild ID).
 
     Args:
         db: Database session
@@ -117,7 +117,8 @@ async def get_community_server_by_platform_id(
     """
     result = await db.execute(
         select(CommunityServer).where(
-            CommunityServer.platform_id == community_server_id, CommunityServer.platform == platform
+            CommunityServer.platform_community_server_id == community_server_id,
+            CommunityServer.platform == platform,
         )
     )
     server = result.scalar_one_or_none()
@@ -126,7 +127,7 @@ async def get_community_server_by_platform_id(
         # Auto-create community server with default values
         server = CommunityServer(
             platform=platform,
-            platform_id=community_server_id,
+            platform_community_server_id=community_server_id,
             name=f"{platform.capitalize()} Server {community_server_id}",
             is_active=True,
             is_public=True,

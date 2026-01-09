@@ -19,7 +19,7 @@ async def community_server(db_session):
     """Create a test community server."""
     server = CommunityServer(
         platform="discord",
-        platform_id="123456789",
+        platform_community_server_id="123456789",
         name="Test Server",
     )
     db_session.add(server)
@@ -93,7 +93,7 @@ async def test_ai_note_writer_handles_request_auto_created_event(
         platform_message_id="12345",
         scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
-        community_server_id=str(community_server.platform_id),
+        community_server_id=str(community_server.platform_community_server_id),
         content="Test message that needs fact-checking",
         similarity_score=0.85,
         dataset_name="snopes",
@@ -109,7 +109,9 @@ async def test_ai_note_writer_handles_request_auto_created_event(
         # Verify TaskIQ task was dispatched with correct parameters
         mock_task.kiq.assert_called_once()
         call_kwargs = mock_task.kiq.call_args[1]
-        assert call_kwargs["community_server_id"] == str(community_server.platform_id)
+        assert call_kwargs["community_server_id"] == str(
+            community_server.platform_community_server_id
+        )
         assert call_kwargs["request_id"] == "req_test_1"
         assert call_kwargs["content"] == "Test message that needs fact-checking"
         assert call_kwargs["scan_type"] == "similarity"
@@ -133,7 +135,7 @@ async def test_ai_note_writer_respects_enabled_setting(
         platform_message_id="12346",
         scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
-        community_server_id=str(community_server.platform_id),
+        community_server_id=str(community_server.platform_community_server_id),
         content="Test message",
         similarity_score=0.85,
         dataset_name="snopes",
@@ -168,7 +170,7 @@ async def test_ai_note_writer_handles_rate_limiting(
         platform_message_id="12347",
         scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
-        community_server_id=str(community_server.platform_id),
+        community_server_id=str(community_server.platform_community_server_id),
         content="Test message",
         similarity_score=0.85,
         dataset_name="snopes",
@@ -203,7 +205,7 @@ async def test_ai_note_writer_retries_on_failure(
         platform_message_id="12348",
         scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
-        community_server_id=str(community_server.platform_id),
+        community_server_id=str(community_server.platform_community_server_id),
         content="Test message",
         similarity_score=0.85,
         dataset_name="snopes",
@@ -237,7 +239,7 @@ async def test_ai_note_writer_handles_missing_fact_check_item(
         platform_message_id="12349",
         scan_type="similarity",
         fact_check_item_id="00000000-0000-0000-0000-000000099999",  # Non-existent UUID
-        community_server_id=str(community_server.platform_id),
+        community_server_id=str(community_server.platform_community_server_id),
         content="Test message",
         similarity_score=0.85,
         dataset_name="snopes",
@@ -339,7 +341,7 @@ async def test_ai_note_writer_metrics_tracking(
         platform_message_id="12351",
         scan_type="similarity",
         fact_check_item_id=str(fact_check_item.id),
-        community_server_id=str(community_server.platform_id),
+        community_server_id=str(community_server.platform_community_server_id),
         content="Test message",
         similarity_score=0.85,
         dataset_name="snopes",

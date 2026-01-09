@@ -32,13 +32,13 @@ async def previously_seen_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Previously Seen JSONAPI",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -465,7 +465,7 @@ class TestPreviouslySeenJSONAPICheck:
         JSON:API action endpoint that returns check results.
         Note: Requires LLM config for embedding generation.
         """
-        platform_id = previously_seen_jsonapi_community_server["platform_id"]
+        platform_id = previously_seen_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -507,7 +507,7 @@ class TestPreviouslySeenJSONAPICheck:
         previously_seen_jsonapi_community_server,
     ):
         """Test POST /api/v2/previously-seen-messages/check rejects invalid resource type."""
-        platform_id = previously_seen_jsonapi_community_server["platform_id"]
+        platform_id = previously_seen_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {

@@ -50,7 +50,7 @@ async def test_community_server():
     async with get_session_maker()() as session:
         community = CommunityServer(
             platform="discord",
-            platform_id="test_guild_prev_seen_123",
+            platform_community_server_id="test_guild_prev_seen_123",
             name="Previously Seen Test Guild",
             is_active=True,
         )
@@ -330,7 +330,7 @@ class TestPreviouslySeenCheckEndpoint:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             request_body = _create_previously_seen_check_request(
                 message_text="completely unique message xyz789",
-                guild_id=test_user_with_auth["community"].platform_id,
+                guild_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="123",
             )
             response = await client.post(
@@ -355,7 +355,7 @@ class TestPreviouslySeenCheckEndpoint:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             request_body = _create_previously_seen_check_request(
                 message_text="test message",
-                guild_id=test_user_with_auth["community"].platform_id,
+                guild_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="123",
             )
             response = await client.post(
@@ -381,7 +381,7 @@ class TestPreviouslySeenThresholdConfiguration:
         channel_id = None
         async with get_session_maker()() as session:
             monitored_channel = MonitoredChannel(
-                community_server_id=test_user_with_auth["community"].platform_id,
+                community_server_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="test_channel_override_123",
                 similarity_threshold=0.75,
                 previously_seen_autopublish_threshold=0.95,
@@ -396,7 +396,7 @@ class TestPreviouslySeenThresholdConfiguration:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             request_body = _create_previously_seen_check_request(
                 message_text="test message",
-                guild_id=test_user_with_auth["community"].platform_id,
+                guild_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="test_channel_override_123",
             )
             response = await client.post(
@@ -428,7 +428,7 @@ class TestPreviouslySeenThresholdConfiguration:
         channel_id = None
         async with get_session_maker()() as session:
             monitored_channel = MonitoredChannel(
-                community_server_id=test_user_with_auth["community"].platform_id,
+                community_server_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="test_channel_autoreq_456",
                 similarity_threshold=0.75,
                 previously_seen_autopublish_threshold=None,
@@ -443,7 +443,7 @@ class TestPreviouslySeenThresholdConfiguration:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             request_body = _create_previously_seen_check_request(
                 message_text="test message",
-                guild_id=test_user_with_auth["community"].platform_id,
+                guild_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="test_channel_autoreq_456",
             )
             response = await client.post(
@@ -475,7 +475,7 @@ class TestPreviouslySeenThresholdConfiguration:
         channel_id = None
         async with get_session_maker()() as session:
             monitored_channel = MonitoredChannel(
-                community_server_id=test_user_with_auth["community"].platform_id,
+                community_server_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="test_channel_both_789",
                 similarity_threshold=0.75,
                 previously_seen_autopublish_threshold=0.88,
@@ -490,7 +490,7 @@ class TestPreviouslySeenThresholdConfiguration:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             request_body = _create_previously_seen_check_request(
                 message_text="test message",
-                guild_id=test_user_with_auth["community"].platform_id,
+                guild_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="test_channel_both_789",
             )
             response = await client.post(
@@ -529,7 +529,7 @@ class TestCommunityServerScoping:
         async with get_session_maker()() as session:
             other_community = CommunityServer(
                 platform="discord",
-                platform_id="other_guild_999",
+                platform_community_server_id="other_guild_999",
                 name="Other Guild",
                 is_active=True,
             )
@@ -571,7 +571,7 @@ class TestCommunityServerScoping:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             request_body = _create_previously_seen_check_request(
                 message_text="similar message",
-                guild_id=test_user_with_auth["community"].platform_id,
+                guild_id=test_user_with_auth["community"].platform_community_server_id,
                 channel_id="123",
             )
             response = await client.post(

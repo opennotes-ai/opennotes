@@ -19,7 +19,7 @@ async def test_create_request_with_large_tweet_id(db_session, registered_user, a
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id="test_guild_large_tweet",
+            platform_community_server_id="test_guild_large_tweet",
             name="Test Guild for Large Tweet ID",
         )
         db.add(community_server)

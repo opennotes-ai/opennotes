@@ -137,7 +137,7 @@ class TestParameterNaming:
         """Verify process_messages uses community_server_platform_id, not platform_id.
 
         The parameter should be named community_server_platform_id to clarify it
-        corresponds to CommunityServer.platform_id (the Discord guild ID).
+        corresponds to CommunityServer.platform_community_server_id (the Discord guild ID).
         """
         import inspect
 

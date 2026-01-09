@@ -22,7 +22,7 @@ async def test_community_server() -> CommunityServer:
     async with async_session_maker() as db:
         community = CommunityServer(
             platform="discord",
-            platform_id="999888777666",
+            platform_community_server_id="999888777666",
             name="Test Bot Community",
             description="Community for testing bot access",
             is_active=True,
@@ -198,7 +198,7 @@ class TestServiceAccountAdminAccess:
     ) -> None:
         """Test that service accounts with role='member' can access admin endpoints."""
         result = await verify_community_admin(
-            test_community_server.platform_id,
+            test_community_server.platform_community_server_id,
             service_account_user,
             db_session,
             mock_request,
@@ -243,7 +243,7 @@ class TestServiceAccountAdminAccess:
 
         with pytest.raises(HTTPException) as exc_info:
             await verify_community_admin(
-                test_community_server.platform_id,
+                test_community_server.platform_community_server_id,
                 regular_user,
                 db_session,
                 mock_request,
@@ -298,7 +298,7 @@ class TestServiceAccountAdminAccess:
         await db_session.refresh(admin_membership)
 
         result = await verify_community_admin(
-            test_community_server.platform_id,
+            test_community_server.platform_community_server_id,
             regular_user,
             db_session,
             mock_request,
@@ -331,7 +331,7 @@ class TestServiceAccountAdminAccess:
         await db_session.refresh(mod_membership)
 
         result = await verify_community_admin(
-            test_community_server.platform_id,
+            test_community_server.platform_community_server_id,
             regular_user,
             db_session,
             mock_request,
