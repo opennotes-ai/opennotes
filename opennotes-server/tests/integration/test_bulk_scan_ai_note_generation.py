@@ -330,7 +330,7 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                         assert "request_id" in kwargs
                         assert kwargs["scan_type"] == "similarity"
                         assert kwargs["fact_check_item_id"] == str(fact_check_item.id)
-                        assert kwargs["community_server_id"] == str(community_server.id)
+                        assert kwargs["community_server_id"] == community_server.platform_id
                         assert kwargs["similarity_score"] >= 0.85
 
     @pytest.mark.asyncio
