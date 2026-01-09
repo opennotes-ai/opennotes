@@ -11,11 +11,6 @@ jest.unstable_mockModule('../../src/logger.js', () => ({
   },
 }));
 
-const mockResolveCommunityServerId = jest.fn<(guildId: string) => Promise<string>>();
-jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
-  resolveCommunityServerId: mockResolveCommunityServerId,
-}));
-
 const { RequestNoteService } = await import('../../src/services/RequestNoteService.js');
 
 describe('RequestNoteService', () => {
@@ -40,8 +35,6 @@ describe('RequestNoteService', () => {
 
     mockApiClient = apiClientFactory.build();
     mockRateLimiter = rateLimiterFactory.build();
-
-    mockResolveCommunityServerId.mockResolvedValue('f47ac10b-58cc-4372-a567-0e02b2c3d479');
 
     service = new RequestNoteService(mockApiClient as any, mockRateLimiter);
   });
@@ -100,52 +93,23 @@ describe('RequestNoteService', () => {
     });
   });
 
-  describe('Community Server ID Resolution', () => {
-    it('should call resolveCommunityServerId with the guild ID', async () => {
-      mockApiClient.requestNote.mockResolvedValue(undefined);
-
-      await service.execute(validInput);
-
-      expect(mockResolveCommunityServerId).toHaveBeenCalledWith('1234567890123456789');
-    });
-
-    it('should pass the resolved UUID to apiClient.requestNote', async () => {
-      mockResolveCommunityServerId.mockResolvedValue('f47ac10b-58cc-4372-a567-0e02b2c3d479');
+  describe('Platform ID handling', () => {
+    it('should pass platform ID (Discord guild ID) directly to API', async () => {
       mockApiClient.requestNote.mockResolvedValue(undefined);
 
       await service.execute(validInput);
 
       expect(mockApiClient.requestNote).toHaveBeenCalledWith(
         expect.objectContaining({
-          community_server_id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+          community_server_id: '1234567890123456789',
         }),
         expect.any(Object)
       );
     });
-
-    it('should handle resolver errors gracefully', async () => {
-      mockResolveCommunityServerId.mockRejectedValue(new Error('Community server not found'));
-
-      const result = await service.execute(validInput);
-
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe(ErrorCode.API_ERROR);
-    });
-
-    it('should handle 404 resolver errors as NOT_FOUND', async () => {
-      mockResolveCommunityServerId.mockRejectedValue(new Error('404 Not Found'));
-
-      const result = await service.execute(validInput);
-
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe(ErrorCode.NOT_FOUND);
-      expect(result.error?.message).toContain('not found');
-    });
   });
 
   describe('Successful request', () => {
-    it('should request note successfully with resolved UUID', async () => {
-      mockResolveCommunityServerId.mockResolvedValue('resolved-uuid-123');
+    it('should request note successfully with platform ID', async () => {
       mockApiClient.requestNote.mockResolvedValue(undefined);
 
       const result = await service.execute(validInput);
@@ -155,7 +119,7 @@ describe('RequestNoteService', () => {
         {
           messageId: 'msg-123',
           userId: 'user-123',
-          community_server_id: 'resolved-uuid-123',
+          community_server_id: '1234567890123456789',
           discord_channel_id: 'channel-123',
           reason: 'Test reason',
           originalMessageContent: 'Test content',
