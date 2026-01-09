@@ -365,16 +365,20 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           NATS_URL: nats://localhost:4222
           SKIP_TESTCONTAINERS: "1"
-        run: mise run test:server -- tests/integration/ -n 0 --cov-report=xml --cov-report=term
+        run: mise run test:server -- tests/integration/ -n 0 --cov=src --cov-report=xml --cov-report=term
 
       - name: Display coverage summary
         working-directory: opennotes-server
         run: |
           echo "📊 Integration Test Coverage Summary"
           echo "===================================="
-          uv run coverage report --format=markdown || uv run coverage report
-          echo ""
-          echo "Full HTML report available in artifacts"
+          if [ -f .coverage ]; then
+            uv run coverage report --format=markdown || uv run coverage report
+            echo ""
+            echo "Full HTML report available in artifacts"
+          else
+            echo "No coverage data found"
+          fi
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
@@ -385,6 +389,7 @@ jobs:
             opennotes-server/coverage.xml
             opennotes-server/htmlcov/
           retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
