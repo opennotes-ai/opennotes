@@ -1732,7 +1732,7 @@ async def create_note_requests_from_flagged_messages(
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
-                            community_server_id=str(community_server_id),
+                            community_server_id=platform_id,
                             content=flagged_msg.content,
                             scan_type="similarity",
                             fact_check_item_id=str(first_match.fact_check_item_id)
@@ -1745,7 +1745,7 @@ async def create_note_requests_from_flagged_messages(
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
-                            community_server_id=str(community_server_id),
+                            community_server_id=platform_id,
                             content=flagged_msg.content,
                             scan_type="openai_moderation",
                             moderation_metadata={

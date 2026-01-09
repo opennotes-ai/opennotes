@@ -237,6 +237,45 @@ export class Bot {
         } catch (error) {
           logger.error('Request reply button failed', { error });
         }
+      } else if (
+        interaction.customId.startsWith('queue:previous:') ||
+        interaction.customId.startsWith('queue:next:')
+      ) {
+        try {
+          await listCommand.handlePaginationButton(interaction);
+        } catch (error) {
+          logger.error('Pagination button failed', { error });
+        }
+      } else if (interaction.customId.startsWith('write_note:')) {
+        try {
+          await listCommand.handleWriteNoteButton(interaction);
+        } catch (error) {
+          logger.error('Write note button failed', { error });
+        }
+      } else if (interaction.customId.startsWith('ai_write_note:')) {
+        try {
+          await listCommand.handleAiWriteNoteButton(interaction);
+        } catch (error) {
+          logger.error('AI write note button failed', { error });
+        }
+      } else if (interaction.customId.startsWith('rate:')) {
+        try {
+          await listCommand.handleRateNoteButton(interaction);
+        } catch (error) {
+          logger.error('Rate note button failed', { error });
+        }
+      } else if (interaction.customId.startsWith('force_publish:')) {
+        try {
+          await listCommand.handleForcePublishButton(interaction);
+        } catch (error) {
+          logger.error('Force publish button failed', { error });
+        }
+      } else if (interaction.customId.startsWith('request_queue_page:')) {
+        try {
+          await listCommand.handleRequestQueuePageButton(interaction);
+        } catch (error) {
+          logger.error('Request queue page button failed', { error });
+        }
       } else if (isVibecheckPromptInteraction(interaction.customId)) {
         try {
           await handleVibecheckPromptInteraction(interaction);

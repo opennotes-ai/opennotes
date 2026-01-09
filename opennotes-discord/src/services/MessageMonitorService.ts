@@ -9,7 +9,6 @@ import type {
   PreviouslySeenCheckJSONAPIResponse,
 } from '../lib/api-client.js';
 import { CONTENT_LIMITS } from '../lib/constants.js';
-import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 import type Redis from 'ioredis';
 
 export interface MessageContent {
@@ -301,8 +300,6 @@ export class MessageMonitorService {
       const matches = similarityResponse.data.attributes.matches;
       const topMatch = matches[0];
 
-      const communityServerUuid = await resolveCommunityServerId(messageContent.guildId);
-
       const noteRequestContext = [
         `**Fact-Check Match Found** (Confidence: ${(topMatch.similarity_score * 100).toFixed(1)}%)`,
         '',
@@ -322,10 +319,11 @@ export class MessageMonitorService {
         `- Dataset Tags: ${topMatch.dataset_tags.join(', ')}`,
       ].join('\n');
 
+      // Pass platform ID (Discord guild ID) directly - server handles lookup/auto-creation
       await apiClient.requestNote({
         messageId: messageContent.messageId,
         userId: 'system-factcheck',
-        community_server_id: communityServerUuid,
+        community_server_id: messageContent.guildId,
         originalMessageContent: noteRequestContext,
         discord_channel_id: messageContent.channelId,
         discord_author_id: messageContent.authorId,
@@ -532,8 +530,6 @@ export class MessageMonitorService {
         return;
       }
 
-      const communityServerUuid = await resolveCommunityServerId(messageContent.guildId);
-
       const noteRequestContext = [
         `**Similar Previously Seen Message** (Similarity: ${(topMatch.similarity_score * 100).toFixed(1)}%)`,
         '',
@@ -549,10 +545,11 @@ export class MessageMonitorService {
         `- Auto-Request Threshold: ${attrs.autorequest_threshold}`,
       ].join('\n');
 
+      // Pass platform ID (Discord guild ID) directly - server handles lookup/auto-creation
       await apiClient.requestNote({
         messageId: messageContent.messageId,
         userId: 'system-previously-seen',
-        community_server_id: communityServerUuid,
+        community_server_id: messageContent.guildId,
         originalMessageContent: noteRequestContext,
         discord_channel_id: messageContent.channelId,
         discord_author_id: messageContent.authorId,

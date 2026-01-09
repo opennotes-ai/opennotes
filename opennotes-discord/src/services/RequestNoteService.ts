@@ -8,7 +8,6 @@ import {
 } from './types.js';
 import type { RateLimiterInterface } from './RateLimitFactory.js';
 import { getErrorMessage, getErrorStack, hasMessage } from '../utils/error-handlers.js';
-import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
 
 export class RequestNoteService {
   constructor(
@@ -31,8 +30,6 @@ export class RequestNoteService {
     }
 
     try {
-      const communityServerUuid = await resolveCommunityServerId(input.community_server_id);
-
       const userContext: UserContext = {
         userId: input.userId,
         username: input.username,
@@ -41,10 +38,11 @@ export class RequestNoteService {
         guildId: input.community_server_id,
       };
 
+      // Pass the platform ID (Discord guild ID) directly - server handles lookup/auto-creation
       await this.apiClient.requestNote({
         messageId: input.messageId,
         userId: input.userId,
-        community_server_id: communityServerUuid,
+        community_server_id: input.community_server_id,
         discord_channel_id: input.channelId,
         reason: input.reason,
         originalMessageContent: input.originalMessageContent,

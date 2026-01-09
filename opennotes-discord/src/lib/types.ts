@@ -27,7 +27,7 @@ export interface Note {
 export interface NoteRequest {
   messageId: string;
   userId: string;
-  community_server_id: string; // Required: Community server UUID (NOT Discord guild ID - use resolveCommunityServerId() to convert)
+  community_server_id: string; // Required: Platform ID (e.g., Discord guild ID) - server handles lookup/auto-creation
   reason?: string;
   originalMessageContent?: string;
   discord_channel_id?: string;

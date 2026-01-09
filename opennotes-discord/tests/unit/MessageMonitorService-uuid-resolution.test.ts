@@ -14,8 +14,6 @@ const mockApiClient = {
   getCommunityServerByPlatformId: jest.fn<() => Promise<any>>(),
 };
 
-const mockResolveCommunityServerId = jest.fn<() => Promise<string>>();
-
 const mockClient = {
   channels: {
     cache: {
@@ -111,22 +109,17 @@ jest.unstable_mockModule('../../src/api-client.js', () => ({
   apiClient: mockApiClient,
 }));
 
-jest.unstable_mockModule('../../src/lib/community-server-resolver.js', () => ({
-  resolveCommunityServerId: mockResolveCommunityServerId,
-}));
-
 jest.unstable_mockModule('../../src/logger.js', () => ({
   logger: mockLogger,
 }));
 
 const { MessageMonitorService } = await import('../../src/services/MessageMonitorService.js');
 
-describe('MessageMonitorService - UUID Resolution', () => {
+describe('MessageMonitorService - Platform ID Handling', () => {
   let service: InstanceType<typeof MessageMonitorService>;
   const mockRedis = {} as any;
 
   const testGuildId = 'guild-123456789';
-  const resolvedUuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 
   const testMessageContent = {
     messageId: 'msg-123',
@@ -137,7 +130,7 @@ describe('MessageMonitorService - UUID Resolution', () => {
     timestamp: Date.now(),
     channelConfig: {
       id: 'config-123',
-      community_server_id: resolvedUuid,
+      community_server_id: 'some-uuid',
       channel_id: 'channel-456',
       enabled: true,
       dataset_tags: ['snopes'],
@@ -161,7 +154,6 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockResolveCommunityServerId.mockResolvedValue(resolvedUuid);
     mockApiClient.requestNote.mockResolvedValue(undefined);
     mockApiClient.similaritySearch.mockResolvedValue({
       jsonapi: { version: '1.1' },
@@ -200,8 +192,8 @@ describe('MessageMonitorService - UUID Resolution', () => {
     service.shutdown();
   });
 
-  describe('createNoteRequestForMatch - UUID resolution', () => {
-    it('should resolve guild ID to UUID before calling requestNote', async () => {
+  describe('createNoteRequestForMatch - Platform ID handling', () => {
+    it('should pass platform ID (guild ID) directly to requestNote', async () => {
       const similarityResponse = {
         jsonapi: { version: '1.1' },
         data: {
@@ -220,45 +212,16 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
       await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
 
-      expect(mockResolveCommunityServerId).toHaveBeenCalledWith(testGuildId);
-      expect(mockResolveCommunityServerId).toHaveBeenCalledTimes(1);
-
       expect(mockApiClient.requestNote).toHaveBeenCalledWith(
         expect.objectContaining({
-          community_server_id: resolvedUuid,
+          community_server_id: testGuildId,
           messageId: testMessageContent.messageId,
         })
       );
     });
 
-    it('should NOT use guildId directly in requestNote', async () => {
-      const similarityResponse = {
-        jsonapi: { version: '1.1' },
-        data: {
-          type: 'similarity-search-results',
-          id: 'search-124',
-          attributes: {
-            matches: [testSimilarityMatch],
-            query_text: 'test',
-            dataset_tags: ['snopes'],
-            similarity_threshold: 0.7,
-            score_threshold: 0,
-            total_matches: 1,
-          },
-        },
-      };
-
-      await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
-
-      expect(mockApiClient.requestNote).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          community_server_id: testGuildId,
-        })
-      );
-    });
-
-    it('should handle UUID resolution errors gracefully', async () => {
-      mockResolveCommunityServerId.mockRejectedValue(new Error('Community server not found'));
+    it('should handle API errors gracefully', async () => {
+      mockApiClient.requestNote.mockRejectedValue(new Error('API error'));
 
       const similarityResponse = {
         jsonapi: { version: '1.1' },
@@ -278,8 +241,6 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
       await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
 
-      expect(mockResolveCommunityServerId).toHaveBeenCalledWith(testGuildId);
-      expect(mockApiClient.requestNote).not.toHaveBeenCalled();
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Failed to create note request for similarity match',
         expect.objectContaining({
@@ -289,8 +250,8 @@ describe('MessageMonitorService - UUID Resolution', () => {
     });
   });
 
-  describe('createAutoRequestForSimilarContent - UUID resolution', () => {
-    it('should resolve guild ID to UUID before calling requestNote', async () => {
+  describe('createAutoRequestForSimilarContent - Platform ID handling', () => {
+    it('should pass platform ID (guild ID) directly to requestNote', async () => {
       const previouslySeenResult = {
         data: {
           type: 'previously-seen-check-results',
@@ -325,61 +286,16 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
       await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
 
-      expect(mockResolveCommunityServerId).toHaveBeenCalledWith(testGuildId);
-      expect(mockResolveCommunityServerId).toHaveBeenCalledTimes(1);
-
       expect(mockApiClient.requestNote).toHaveBeenCalledWith(
         expect.objectContaining({
-          community_server_id: resolvedUuid,
+          community_server_id: testGuildId,
           messageId: testMessageContent.messageId,
         })
       );
     });
 
-    it('should NOT use guildId directly in requestNote', async () => {
-      const previouslySeenResult = {
-        data: {
-          type: 'previously-seen-check-results',
-          id: 'check-123',
-          attributes: {
-            should_auto_publish: false,
-            should_auto_request: true,
-            autopublish_threshold: 0.9,
-            autorequest_threshold: 0.75,
-            matches: [
-              {
-                id: 'prev-1',
-                community_server_id: 'some-uuid',
-                original_message_id: 'orig-msg-1',
-                published_note_id: 'note-1',
-                created_at: new Date().toISOString(),
-                similarity_score: 0.8,
-              },
-            ],
-            top_match: {
-              id: 'prev-1',
-              community_server_id: 'some-uuid',
-              original_message_id: 'orig-msg-1',
-              published_note_id: 'note-1',
-              created_at: new Date().toISOString(),
-              similarity_score: 0.8,
-            },
-          },
-        },
-        jsonapi: { version: '1.1' },
-      };
-
-      await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
-
-      expect(mockApiClient.requestNote).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          community_server_id: testGuildId,
-        })
-      );
-    });
-
-    it('should handle UUID resolution errors gracefully', async () => {
-      mockResolveCommunityServerId.mockRejectedValue(new Error('Community server not found'));
+    it('should handle API errors gracefully', async () => {
+      mockApiClient.requestNote.mockRejectedValue(new Error('API error'));
 
       const previouslySeenResult = {
         data: {
@@ -415,8 +331,6 @@ describe('MessageMonitorService - UUID Resolution', () => {
 
       await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
 
-      expect(mockResolveCommunityServerId).toHaveBeenCalledWith(testGuildId);
-      expect(mockApiClient.requestNote).not.toHaveBeenCalled();
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Failed to create note request for similar content',
         expect.objectContaining({
@@ -426,8 +340,8 @@ describe('MessageMonitorService - UUID Resolution', () => {
     });
   });
 
-  describe('Both code paths use the same resolution pattern', () => {
-    it('should use the same resolveCommunityServerId function in both paths', async () => {
+  describe('Both code paths use consistent platform ID handling', () => {
+    it('should use platform ID directly in both paths', async () => {
       const similarityResponse = {
         jsonapi: { version: '1.1' },
         data: {
@@ -479,17 +393,13 @@ describe('MessageMonitorService - UUID Resolution', () => {
       await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
       await (service as any).createAutoRequestForSimilarContent(testMessageContent, previouslySeenResult);
 
-      expect(mockResolveCommunityServerId).toHaveBeenCalledTimes(2);
-      expect(mockResolveCommunityServerId).toHaveBeenNthCalledWith(1, testGuildId);
-      expect(mockResolveCommunityServerId).toHaveBeenNthCalledWith(2, testGuildId);
-
       expect(mockApiClient.requestNote).toHaveBeenCalledTimes(2);
       const calls = mockApiClient.requestNote.mock.calls as unknown[][];
       const firstCall = calls[0]?.[0] as { community_server_id: string } | undefined;
       const secondCall = calls[1]?.[0] as { community_server_id: string } | undefined;
 
-      expect(firstCall?.community_server_id).toBe(resolvedUuid);
-      expect(secondCall?.community_server_id).toBe(resolvedUuid);
+      expect(firstCall?.community_server_id).toBe(testGuildId);
+      expect(secondCall?.community_server_id).toBe(testGuildId);
     });
   });
 });
