@@ -264,6 +264,18 @@ export class Bot {
         } catch (error) {
           logger.error('Rate note button failed', { error });
         }
+      } else if (interaction.customId.startsWith('force_publish:')) {
+        try {
+          await listCommand.handleForcePublishButton(interaction);
+        } catch (error) {
+          logger.error('Force publish button failed', { error });
+        }
+      } else if (interaction.customId.startsWith('request_queue_page:')) {
+        try {
+          await listCommand.handleRequestQueuePageButton(interaction);
+        } catch (error) {
+          logger.error('Request queue page button failed', { error });
+        }
       } else if (isVibecheckPromptInteraction(interaction.customId)) {
         try {
           await handleVibecheckPromptInteraction(interaction);

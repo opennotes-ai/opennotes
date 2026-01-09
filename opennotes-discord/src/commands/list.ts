@@ -1300,3 +1300,211 @@ export async function handlePaginationButton(interaction: ButtonInteraction): Pr
     }
   }
 }
+
+interface RequestQueueFilterState {
+  status?: RequestStatus;
+  myRequestsOnly?: boolean;
+  communityServerId?: string;
+}
+
+export async function handleForcePublishButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+
+  try {
+    const parts = interaction.customId.split(':');
+    if (parts.length !== 2) {
+      logger.error('Invalid force_publish customId format', {
+        error_id: errorId,
+        customId: interaction.customId,
+      });
+      await interaction.reply({
+        content: 'Invalid button data. Please try again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const noteId = parts[1];
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    logger.info('Force publishing note', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      note_id: noteId,
+    });
+
+    const userContext = {
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      displayName: interaction.user.displayName || interaction.user.username,
+      avatarUrl: interaction.user.avatarURL() || undefined,
+      guildId: interaction.guildId || undefined,
+    };
+
+    await apiClient.forcePublishNote(noteId, userContext);
+
+    await interaction.editReply({
+      content: `✅ **Note Force Published**\n\nNote \`${noteId}\` has been force published successfully.`,
+    });
+
+    logger.info('Note force published successfully', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      note_id: noteId,
+    });
+  } catch (error) {
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Failed to force publish note', {
+      error_id: errorId,
+      customId: interaction.customId,
+      user_id: interaction.user.id,
+      error: errorDetails.message,
+      stack: errorDetails.stack,
+    });
+
+    const userMessage = formatErrorForUser(
+      'Failed to force publish note. Please try again later.',
+      errorId
+    );
+
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: userMessage });
+      } else {
+        await interaction.reply({
+          content: userMessage,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    } catch {
+      logger.debug('Failed to send error response for force publish button', {
+        error_id: errorId,
+      });
+    }
+  }
+}
+
+export async function handleRequestQueuePageButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+  const customId = interaction.customId;
+
+  try {
+    const parts = customId.split(':');
+    if (parts.length !== 3) {
+      logger.error('Invalid request_queue_page customId format', {
+        error_id: errorId,
+        customId,
+      });
+      await interaction.reply({
+        content: 'Invalid button data. Please run `/list requests` again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const page = parseInt(parts[1], 10);
+    const stateId = parts[2];
+
+    if (isNaN(page) || page < 1) {
+      logger.error('Invalid page number in request_queue_page customId', {
+        error_id: errorId,
+        customId,
+        page: parts[1],
+      });
+      await interaction.reply({
+        content: 'Invalid page number. Please run `/list requests` again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const cacheKey = `pagination:${stateId}`;
+    const filterState = await cache.get<RequestQueueFilterState>(cacheKey);
+
+    if (!filterState) {
+      logger.debug('Request queue pagination state not found - may have expired', {
+        error_id: errorId,
+        stateId,
+        user_id: interaction.user.id,
+      });
+      await interaction.update({
+        content: 'Session expired. Please run `/list requests` again.',
+        components: [],
+      });
+      return;
+    }
+
+    await interaction.deferUpdate();
+
+    const listRequestsService = serviceProvider.getListRequestsService();
+    const result = await listRequestsService.execute({
+      userId: interaction.user.id,
+      page,
+      size: LIST_COMMAND_LIMITS.REQUESTS_PER_PAGE,
+      status: filterState.status,
+      myRequestsOnly: filterState.myRequestsOnly,
+      communityServerId: filterState.communityServerId,
+    });
+
+    if (!result.success || !result.data) {
+      const errorResponse = DiscordFormatter.formatErrorV2(result);
+      await interaction.editReply({
+        components: errorResponse.components,
+        flags: errorResponse.flags,
+      });
+      return;
+    }
+
+    const formatted = await DiscordFormatter.formatListRequestsSuccessV2(result.data, {
+      status: filterState.status,
+      myRequestsOnly: filterState.myRequestsOnly,
+      communityServerId: filterState.communityServerId,
+    });
+
+    await interaction.editReply({
+      components: formatted.components,
+      flags: formatted.flags,
+    });
+
+    logger.info('Request queue page button handled successfully', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      page,
+      stateId,
+    });
+  } catch (error) {
+    const errorType = classifyApiError(error);
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Error handling request queue page button', {
+      error_id: errorId,
+      customId,
+      user_id: interaction.user.id,
+      error_type: errorType,
+      error: errorDetails.message,
+      stack: errorDetails.stack,
+    });
+
+    const userMessage = `${getQueueErrorMessage(errorType)}\n\nError ID: \`${errorId}\``;
+
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({
+          content: userMessage,
+          flags: MessageFlags.Ephemeral,
+        });
+      } else {
+        await interaction.reply({
+          content: userMessage,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    } catch {
+      logger.debug('Failed to send error response for request queue page button', {
+        error_id: errorId,
+      });
+    }
+  }
+}
