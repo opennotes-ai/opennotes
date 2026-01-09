@@ -229,7 +229,7 @@ def create_error_response(
     response_class=JSONResponse,
     response_model=SimilaritySearchResultResponse,
 )
-@limiter.limit("100/hour")
+@limiter.limit("100/minute")
 async def similarity_search_jsonapi(
     request: HTTPRequest,
     body: SimilaritySearchRequest,
