@@ -524,11 +524,32 @@ async function showAiGenerationPrompt(
         );
         const createdCount = result.data.attributes.created_count;
 
+        const listRequestsButton = new ButtonBuilder()
+          .setCustomId('request_reply:list_requests')
+          .setLabel('List Requests')
+          .setStyle(ButtonStyle.Primary);
+
+        const listNotesButton = new ButtonBuilder()
+          .setCustomId('request_reply:list_notes')
+          .setLabel('List Notes')
+          .setStyle(ButtonStyle.Secondary);
+
+        const buttons: ButtonBuilder[] = [];
+        if (createdCount > 0) {
+          buttons.push(listRequestsButton);
+        }
+        if (generateAiNotes && createdCount > 0) {
+          buttons.push(listNotesButton);
+        }
+
+        const actionRow = buttons.length > 0
+          ? new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)
+          : undefined;
+
         await aiButtonInteraction.update({
           content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}` +
-            (generateAiNotes ? ' with AI-generated drafts.' : '.') +
-            `\n\nUse \`/list requests\` to view and manage them.`,
-          components: [],
+            (generateAiNotes ? ' with AI-generated drafts.' : '.'),
+          components: actionRow ? [actionRow] : [],
         });
       } catch (error) {
         logger.error('Failed to create note requests', {
@@ -759,8 +780,19 @@ async function handleCreateRequestsSubcommand(
     );
 
     const createdCount = result.data.attributes.created_count;
+
+    const listRequestsButton = new ButtonBuilder()
+      .setCustomId('request_reply:list_requests')
+      .setLabel('List Requests')
+      .setStyle(ButtonStyle.Primary);
+
+    const components = createdCount > 0
+      ? [new ActionRowBuilder<ButtonBuilder>().addComponents(listRequestsButton)]
+      : [];
+
     await interaction.editReply({
-      content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.\n\nUse \`/list requests\` to view and manage them.`,
+      content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.`,
+      components,
     });
   } catch (error) {
     if (error instanceof ApiError && error.statusCode === 404) {
