@@ -2680,6 +2680,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fact-checking/import/fact-check-bureau": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import fact-check-bureau dataset
+         * @description Import the fact-check-bureau dataset from HuggingFace. Supports dry-run mode for validation and enqueue-scrapes mode for triggering content scraping of pending candidates.
+         */
+        post: operations["import_fact_check_bureau_endpoint_api_v1_fact_checking_import_fact_check_bureau_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batch-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List batch jobs
+         * @description List batch jobs with optional filters for job type and status.
+         */
+        get: operations["list_batch_jobs_api_v1_batch_jobs_get"];
+        put?: never;
+        /**
+         * Create a new batch job
+         * @description Create a new batch job entry. The job starts in PENDING status. Use this to register a job before dispatching tasks.
+         */
+        post: operations["create_batch_job_api_v1_batch_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batch-jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get batch job status
+         * @description Get the current status and progress of a batch job.
+         */
+        get: operations["get_batch_job_api_v1_batch_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Cancel a batch job
+         * @description Cancel a running or pending batch job. Jobs in terminal states (completed, failed, cancelled) cannot be cancelled.
+         */
+        delete: operations["cancel_batch_job_api_v1_batch_jobs__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batch-jobs/{job_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get real-time progress
+         * @description Get real-time progress information from Redis cache. Includes processing rate and ETA when available.
+         */
+        get: operations["get_batch_job_progress_api_v1_batch_jobs__job_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3115,6 +3203,142 @@ export interface components {
          * @enum {string}
          */
         AuthProvider: "discord" | "github" | "email";
+        /**
+         * BatchJobCreate
+         * @description Schema for creating a new batch job.
+         */
+        BatchJobCreate: {
+            /**
+             * Job Type
+             * @description Type of batch job (e.g., 'fact_check_import')
+             */
+            job_type: string;
+            /**
+             * Total Tasks
+             * @description Total number of tasks to process
+             * @default 0
+             */
+            total_tasks: number;
+            /**
+             * Metadata
+             * @description Job-specific metadata (e.g., source file, options)
+             */
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * BatchJobProgress
+         * @description Real-time progress information from Redis cache.
+         */
+        BatchJobProgress: {
+            /**
+             * Job Id
+             * Format: uuid
+             * @description Job identifier
+             */
+            job_id: string;
+            /**
+             * Processed Count
+             * @description Items processed so far
+             * @default 0
+             */
+            processed_count: number;
+            /**
+             * Error Count
+             * @description Errors encountered
+             * @default 0
+             */
+            error_count: number;
+            /**
+             * Current Item
+             * @description Currently processing item
+             */
+            current_item?: string | null;
+            /**
+             * Rate
+             * @description Processing rate (items/second)
+             * @default 0
+             */
+            rate: number;
+            /**
+             * Eta Seconds
+             * @description Estimated time to completion
+             */
+            eta_seconds?: number | null;
+        };
+        /**
+         * BatchJobResponse
+         * @description Response schema for batch job with full details.
+         */
+        BatchJobResponse: {
+            /**
+             * Job Type
+             * @description Type of batch job (e.g., 'fact_check_import')
+             */
+            job_type: string;
+            /**
+             * Id
+             * Format: uuid
+             * @description Unique job identifier
+             */
+            id: string;
+            /** @description Current job status */
+            status: components["schemas"]["src__batch_jobs__models__BatchJobStatus"];
+            /**
+             * Total Tasks
+             * @description Total tasks to process
+             * @default 0
+             */
+            total_tasks: number;
+            /**
+             * Completed Tasks
+             * @description Tasks completed successfully
+             * @default 0
+             */
+            completed_tasks: number;
+            /**
+             * Failed Tasks
+             * @description Tasks that failed
+             * @default 0
+             */
+            failed_tasks: number;
+            /**
+             * Metadata
+             * @description Job-specific metadata
+             */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Error Summary
+             * @description Summary of errors if any
+             */
+            error_summary?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Started At
+             * @description When the job started processing
+             */
+            started_at?: string | null;
+            /**
+             * Completed At
+             * @description When the job finished
+             */
+            completed_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When the job was created
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @description When the job was last updated
+             */
+            updated_at?: string | null;
+        };
         /**
          * BatchScoreRequest
          * @description JSON:API request body for batch scores.
@@ -3753,6 +3977,17 @@ export interface components {
              */
             avatar_url?: string | null;
         };
+        /**
+         * EnqueueScrapeResponse
+         * @description Response for enqueue scrapes operation.
+         */
+        EnqueueScrapeResponse: {
+            /**
+             * Enqueued
+             * @description Number of scrape tasks enqueued
+             */
+            enqueued: number;
+        };
         /** EnrollmentData */
         EnrollmentData: {
             /** Participantid */
@@ -4308,6 +4543,71 @@ export interface components {
                 [key: string]: string;
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
+         * ImportFactCheckBureauRequest
+         * @description Request parameters for fact-check bureau import.
+         */
+        ImportFactCheckBureauRequest: {
+            /**
+             * Batch Size
+             * @description Batch size for import operations
+             * @default 100
+             */
+            batch_size: number;
+            /**
+             * Dry Run
+             * @description Validate only, do not insert into database
+             * @default false
+             */
+            dry_run: boolean;
+            /**
+             * Enqueue Scrapes
+             * @description Enqueue scrape tasks for pending candidates instead of importing
+             * @default false
+             */
+            enqueue_scrapes: boolean;
+        };
+        /**
+         * ImportFactCheckBureauResponse
+         * @description Response containing import statistics.
+         */
+        ImportFactCheckBureauResponse: {
+            /**
+             * Total Rows
+             * @description Total rows in the dataset
+             */
+            total_rows: number;
+            /**
+             * Valid Rows
+             * @description Rows that passed validation
+             */
+            valid_rows: number;
+            /**
+             * Invalid Rows
+             * @description Rows that failed validation
+             */
+            invalid_rows: number;
+            /**
+             * Inserted
+             * @description Rows inserted into database
+             */
+            inserted: number;
+            /**
+             * Updated
+             * @description Rows updated in database
+             */
+            updated: number;
+            /**
+             * Errors
+             * @description First 10 validation/import errors
+             */
+            errors?: string[];
+            /**
+             * Dry Run
+             * @description Whether this was a dry run
+             */
+            dry_run: boolean;
         };
         /**
          * JSONAPILinks
@@ -7513,6 +7813,12 @@ export interface components {
              */
             welcome_message_id: string | null;
         };
+        /**
+         * BatchJobStatus
+         * @description Status states for a batch job.
+         * @enum {string}
+         */
+        src__batch_jobs__models__BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
     };
     responses: never;
     parameters: never;
@@ -11454,6 +11760,211 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RechunkTaskResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_fact_check_bureau_endpoint_api_v1_fact_checking_import_fact_check_bureau_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportFactCheckBureauRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportFactCheckBureauResponse"] | components["schemas"]["EnqueueScrapeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_batch_jobs_api_v1_batch_jobs_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by job type */
+                job_type?: string | null;
+                /** @description Filter by job status */
+                status?: components["schemas"]["src__batch_jobs__models__BatchJobStatus"] | null;
+                /** @description Maximum number of jobs to return */
+                limit?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_batch_job_api_v1_batch_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchJobCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_job_api_v1_batch_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_batch_job_api_v1_batch_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_job_progress_api_v1_batch_jobs__job_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobProgress"];
                 };
             };
             /** @description Validation Error */

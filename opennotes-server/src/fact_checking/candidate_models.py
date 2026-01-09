@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+import xxhash
 from sqlalchemy import ARRAY, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -16,6 +17,23 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
 
 from src.database import Base
+
+
+def compute_claim_hash(claim_text: str | None) -> str:
+    """
+    Compute xxh3_64 hash of claim text.
+
+    Returns a 16-character hexadecimal string representing the 64-bit hash.
+    Used for content-based deduplication - a single fact-check article can
+    check multiple claims, each needing a separate candidate row.
+
+    Args:
+        claim_text: The claim text to hash. Empty/None becomes empty string.
+
+    Returns:
+        16-character hex string of the xxh3_64 hash.
+    """
+    return xxhash.xxh3_64((claim_text or "").encode()).hexdigest()
 
 
 class CandidateStatus(str, Enum):
@@ -78,6 +96,14 @@ class FactCheckedItemCandidate(Base):
     # Source URL for deduplication (indexed via __table_args__)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # Hash of claim text for multi-claim deduplication
+    # A single fact-check article can check multiple claims
+    claim_hash: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        comment="xxh3_64 hash of claim text for multi-claim deduplication",
+    )
+
     # Core content
     title: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -126,15 +152,17 @@ class FactCheckedItemCandidate(Base):
     )
 
     __table_args__ = (
-        # Unique constraint for idempotent imports
+        # Unique constraint for idempotent imports (includes claim_hash for multi-claim articles)
         Index(
-            "idx_candidates_source_url_dataset",
+            "idx_candidates_source_url_claim_hash_dataset",
             "source_url",
+            "claim_hash",
             "dataset_name",
             unique=True,
         ),
         # Single-column indexes for common queries
         Index("idx_candidates_source_url", "source_url"),
+        Index("idx_candidates_claim_hash", "claim_hash"),
         Index("idx_candidates_dataset_name", "dataset_name"),
         Index("idx_candidates_original_id", "original_id"),
         Index("idx_candidates_status", "status"),

@@ -7,8 +7,59 @@ from datetime import datetime
 
 import pytest
 
+from src.fact_checking.candidate_models import compute_claim_hash
 from src.fact_checking.import_pipeline.rating_normalizer import normalize_rating
 from src.fact_checking.import_pipeline.schemas import ClaimReviewRow, NormalizedCandidate
+
+
+class TestComputeClaimHash:
+    """Tests for claim hash computation."""
+
+    def test_deterministic_hash(self) -> None:
+        """Test that the same input always produces the same hash."""
+        claim = "This is a test claim"
+        hash1 = compute_claim_hash(claim)
+        hash2 = compute_claim_hash(claim)
+        assert hash1 == hash2
+
+    def test_hash_is_16_chars(self) -> None:
+        """Test that hash is exactly 16 characters (64-bit xxh3 hex)."""
+        hash_result = compute_claim_hash("test claim")
+        assert len(hash_result) == 16
+        assert all(c in "0123456789abcdef" for c in hash_result)
+
+    def test_different_claims_different_hashes(self) -> None:
+        """Test that different claims produce different hashes."""
+        hash1 = compute_claim_hash("Claim about 558,000 migrants")
+        hash2 = compute_claim_hash("Claim about one million migrants")
+        assert hash1 != hash2
+
+    def test_none_input(self) -> None:
+        """Test that None produces a consistent hash (empty string hash)."""
+        hash1 = compute_claim_hash(None)
+        hash2 = compute_claim_hash(None)
+        hash3 = compute_claim_hash("")
+        assert hash1 == hash2
+        assert hash1 == hash3  # None and empty string should hash the same
+
+    def test_empty_string(self) -> None:
+        """Test that empty string produces a valid hash."""
+        hash_result = compute_claim_hash("")
+        assert len(hash_result) == 16
+
+    def test_unicode_claim(self) -> None:
+        """Test that unicode claims are hashed correctly."""
+        claim = "Test claim with unicode: "
+        hash_result = compute_claim_hash(claim)
+        assert len(hash_result) == 16
+
+    def test_whitespace_variations_different_hashes(self) -> None:
+        """Test that claims with different whitespace produce different hashes."""
+        hash1 = compute_claim_hash("test claim")
+        hash2 = compute_claim_hash("test  claim")  # Extra space
+        hash3 = compute_claim_hash(" test claim ")  # Leading/trailing spaces
+        # All should be different (no normalization in hash)
+        assert len({hash1, hash2, hash3}) == 3
 
 
 class TestRatingNormalizer:
@@ -137,6 +188,7 @@ class TestNormalizedCandidate:
         candidate = NormalizedCandidate.from_claim_review_row(row)
 
         assert candidate.source_url == "https://snopes.com/fact-check/test"
+        assert candidate.claim_hash == compute_claim_hash("This is a test claim")
         assert candidate.title == "Fact Check: Test Claim"
         # Rating goes to predicted_ratings (trusted source at 1.0 probability)
         assert candidate.predicted_ratings == {"false": 1.0}
@@ -145,6 +197,61 @@ class TestNormalizedCandidate:
         assert candidate.original_id == "200"
         assert candidate.extracted_data["claim"] == "This is a test claim"
         assert candidate.extracted_data["claimant"] == "John Doe"
+
+    def test_claim_hash_computed_from_claim_text(self) -> None:
+        """Test that claim_hash is correctly computed from claim text."""
+        row = ClaimReviewRow(
+            id=1,
+            claim_id=100,
+            fact_check_id=200,
+            claim="558,000 migrants entered the UK illegally",
+            url="https://example.com/article",
+            title="Test",
+            publisher_name="Test",
+            publisher_site="example.com",
+        )
+
+        candidate = NormalizedCandidate.from_claim_review_row(row)
+        expected_hash = compute_claim_hash("558,000 migrants entered the UK illegally")
+        assert candidate.claim_hash == expected_hash
+        assert len(candidate.claim_hash) == 16
+
+    def test_different_claims_same_url_different_hash(self) -> None:
+        """Test that same URL with different claims produces different hashes.
+
+        This is the core deduplication scenario: one fact-check article (URL)
+        can check multiple distinct claims. Each should have a unique hash.
+        """
+        url = "https://fullfact.org/immigration/migration-numbers"
+
+        row1 = ClaimReviewRow(
+            id=1,
+            claim_id=100,
+            fact_check_id=200,
+            claim="558,000 migrants entered the UK illegally",
+            url=url,
+            title="Full Fact Check: UK Migration",
+            publisher_name="Full Fact",
+            publisher_site="fullfact.org",
+        )
+
+        row2 = ClaimReviewRow(
+            id=2,
+            claim_id=101,
+            fact_check_id=200,  # Same fact_check_id = same article
+            claim="One million migrants arrived in 2023",
+            url=url,  # Same URL
+            title="Full Fact Check: UK Migration",
+            publisher_name="Full Fact",
+            publisher_site="fullfact.org",
+        )
+
+        candidate1 = NormalizedCandidate.from_claim_review_row(row1)
+        candidate2 = NormalizedCandidate.from_claim_review_row(row2)
+
+        # Same URL, but different claim_hash values
+        assert candidate1.source_url == candidate2.source_url
+        assert candidate1.claim_hash != candidate2.claim_hash
 
     def test_no_rating_yields_none_predicted_ratings(self) -> None:
         """Test that missing rating results in None predicted_ratings."""
