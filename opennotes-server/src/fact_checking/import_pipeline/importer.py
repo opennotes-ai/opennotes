@@ -108,6 +108,7 @@ async def upsert_candidates(
     values = [
         {
             "source_url": c.source_url,
+            "claim_hash": c.claim_hash,
             "title": c.title,
             "predicted_ratings": c.predicted_ratings,
             "published_date": c.published_date,
@@ -123,8 +124,9 @@ async def upsert_candidates(
 
     # Note: rating is NOT updated on conflict - it's set via human approval only.
     # predicted_ratings IS updated on re-import with newer data.
+    # Conflict key includes claim_hash for multi-claim articles (same URL, different claims)
     stmt = stmt.on_conflict_do_update(
-        index_elements=["source_url", "dataset_name"],
+        index_elements=["source_url", "claim_hash", "dataset_name"],
         set_={
             "title": stmt.excluded.title,
             "predicted_ratings": stmt.excluded.predicted_ratings,

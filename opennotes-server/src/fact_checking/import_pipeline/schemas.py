@@ -11,6 +11,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.fact_checking.candidate_models import compute_claim_hash
 from src.fact_checking.import_pipeline.rating_normalizer import normalize_rating
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ class NormalizedCandidate(BaseModel):
     """
 
     source_url: str
+    claim_hash: str = Field(description="xxh3_64 hash of claim text for multi-claim deduplication")
     title: str
     predicted_ratings: dict[str, float] | None = Field(
         default=None, description="ML/AI predicted ratings as {rating: probability}"
@@ -145,6 +147,7 @@ class NormalizedCandidate(BaseModel):
 
         return cls(
             source_url=row.url,
+            claim_hash=compute_claim_hash(row.claim),
             title=row.title,
             predicted_ratings=predicted_ratings,
             published_date=published_date,
