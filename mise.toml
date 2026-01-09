@@ -62,8 +62,14 @@ echo "Cleaned up generated .env files"
 '''
 
 [tasks."_db:ensure-postgres"]
-description = "Internal: Ensure opennotes-postgres container is running"
+description = "Internal: Ensure PostgreSQL is available (container or DATABASE_URL)"
 run = '''
+# If DATABASE_URL is set, assume postgres is available externally (e.g., CI)
+if [ -n "${DATABASE_URL:-}" ]; then
+    echo "DATABASE_URL is set, using external PostgreSQL." >&2
+    exit 0
+fi
+
 CONTAINER_NAME="opennotes-postgres"
 
 # Check if container exists
