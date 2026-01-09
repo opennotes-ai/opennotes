@@ -16,16 +16,15 @@ Rate Limiting and Concurrency Control:
 - Returns 409 Conflict if an operation is already in progress
 
 Status Tracking:
-- Each rechunk operation returns a task_id for status polling
-- Use GET /chunks/tasks/{task_id} to check progress
-- Task status is stored in Redis with 24-hour TTL
+- Each rechunk operation returns a BatchJob for status polling
+- Use GET /batch-jobs/{job_id} to check progress
+- Job status is stored in PostgreSQL with Redis for real-time progress
 """
 
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -33,30 +32,19 @@ from src.auth.community_dependencies import (
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
+from src.batch_jobs.models import BatchJobStatus
+from src.batch_jobs.rechunk_service import (
+    JOB_TYPE_FACT_CHECK,
+    JOB_TYPE_PREVIOUSLY_SEEN,
+    RechunkBatchJobService,
+)
+from src.batch_jobs.schemas import BatchJobResponse
+from src.batch_jobs.service import BatchJobService, InvalidStateTransitionError
 from src.cache.redis_client import redis_client
-from src.config import settings
 from src.database import get_db
-from src.fact_checking.chunk_task_schemas import (
-    RechunkTaskCancelResponse,
-    RechunkTaskCreate,
-    RechunkTaskResponse,
-    RechunkTaskStartResponse,
-    RechunkTaskStatus,
-    RechunkTaskType,
-)
-from src.fact_checking.chunk_task_tracker import (
-    RechunkTaskTracker,
-    get_rechunk_task_tracker,
-)
-from src.fact_checking.models import FactCheckItem
-from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
-from src.tasks.rechunk_tasks import (
-    process_fact_check_rechunk_task,
-    process_previously_seen_rechunk_task,
-)
 from src.users.models import User
 from src.users.profile_crud import get_profile_by_id
 
@@ -78,59 +66,84 @@ rechunk_lock_manager = _GlobalRechunkLockManager()
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
 
+def get_rechunk_batch_job_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> RechunkBatchJobService:
+    """Get RechunkBatchJobService with injected dependencies."""
+    batch_job_service = BatchJobService(db)
+    return RechunkBatchJobService(db, rechunk_lock_manager, batch_job_service)
+
+
+def get_batch_job_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BatchJobService:
+    """Get BatchJobService with injected dependencies."""
+    return BatchJobService(db)
+
+
 @router.get(
-    "/tasks/{task_id}",
-    response_model=RechunkTaskResponse,
-    summary="Get rechunk task status",
-    description="Retrieve the current status and progress of a rechunk background task. "
-    "If the task is associated with a community server, requires admin or moderator access. "
-    "If the task was started without a community server (global credentials), only requires authentication.",
+    "/jobs/{job_id}",
+    response_model=BatchJobResponse,
+    summary="Get rechunk job status",
+    description="Retrieve the current status and progress of a rechunk batch job. "
+    "If the job is associated with a community server, requires admin or moderator access. "
+    "If the job was started without a community server (global credentials), only requires authentication.",
 )
-async def get_rechunk_task_status(
+async def get_rechunk_job_status(
     request: Request,
-    task_id: UUID,
+    job_id: UUID,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
-) -> RechunkTaskResponse:
+    service: Annotated[BatchJobService, Depends(get_batch_job_service)],
+) -> BatchJobResponse:
     """
-    Get the status of a rechunk background task.
+    Get the status of a rechunk batch job.
 
     Args:
         request: FastAPI request object
-        task_id: The unique identifier of the task
+        job_id: The unique identifier of the job
         user: Authenticated user
         db: Database session
-        tracker: Task tracker service
+        service: Batch job service
 
     Returns:
-        Task status including progress metrics
+        Job status including progress metrics
 
     Raises:
-        HTTPException: 403 if user lacks admin/moderator permission for the task's community
-        HTTPException: 404 if task not found
+        HTTPException: 403 if user lacks admin/moderator permission for the job's community
+        HTTPException: 404 if job not found
     """
-    task = await tracker.get_task(task_id)
-    if task is None:
+    job = await service.get_job(job_id)
+    if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task {task_id} not found or has expired",
+            detail=f"Job {job_id} not found",
         )
 
-    if task.community_server_id is not None:
+    if job.job_type not in (JOB_TYPE_FACT_CHECK, JOB_TYPE_PREVIOUSLY_SEEN):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} is not a rechunk job",
+        )
+
+    metadata = job.metadata_ or {}
+    community_server_id = metadata.get("community_server_id")
+
+    if community_server_id is not None:
         await verify_community_admin_by_uuid(
-            community_server_id=task.community_server_id,
+            community_server_id=UUID(community_server_id),
             current_user=user,
             db=db,
             request=request,
         )
 
-    return task
+    return BatchJobResponse.model_validate(job)
 
 
 @router.post(
     "/fact-check/rechunk",
-    response_model=RechunkTaskStartResponse,
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
     summary="Re-chunk and re-embed fact check items",
     description="Initiates a background task to re-chunk and re-embed all fact check items. "
     "Useful for updating embeddings after model changes or migration to chunk-based embeddings. "
@@ -143,7 +156,7 @@ async def rechunk_fact_check_items(
     request: Request,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
+    service: Annotated[RechunkBatchJobService, Depends(get_rechunk_batch_job_service)],
     community_server_id: UUID | None = Query(
         None,
         description="Community server ID for LLM credentials (optional, uses global fallback if not provided)",
@@ -154,7 +167,7 @@ async def rechunk_fact_check_items(
         le=1000,
         description="Number of items to process in each batch (1-1000)",
     ),
-) -> RechunkTaskStartResponse:
+) -> BatchJobResponse:
     """
     Re-chunk and re-embed all fact check items.
 
@@ -173,12 +186,12 @@ async def rechunk_fact_check_items(
         request: FastAPI request object
         user: Authenticated user (via API key or JWT)
         db: Database session
-        tracker: Task tracker service
+        service: Rechunk batch job service
         community_server_id: Community server UUID for LLM credentials (optional)
         batch_size: Number of items to process per batch (default 100, max 1000)
 
     Returns:
-        Task start response with task_id for status polling
+        BatchJobResponse with job_id for status polling
 
     Raises:
         HTTPException: 403 if user lacks admin/moderator permission for the community
@@ -192,65 +205,35 @@ async def rechunk_fact_check_items(
             request=request,
         )
 
-    lock_acquired = await rechunk_lock_manager.acquire_lock("fact_check")
-    if not lock_acquired:
+    try:
+        job = await service.start_fact_check_rechunk_job(
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+        )
+    except RuntimeError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A fact check rechunk operation is already in progress. "
-            "Please wait for it to complete before starting a new one.",
+            detail=str(e),
         )
-
-    try:
-        result = await db.execute(select(func.count(FactCheckItem.id)))
-        total_items = result.scalar_one()
-
-        task = await tracker.create_task(
-            RechunkTaskCreate(
-                task_type=RechunkTaskType.FACT_CHECK,
-                community_server_id=community_server_id,
-                batch_size=batch_size,
-                total_items=total_items,
-            )
-        )
-    except Exception:
-        await rechunk_lock_manager.release_lock("fact_check")
-        raise
-
-    try:
-        await process_fact_check_rechunk_task.kiq(
-            task_id=str(task.task_id),
-            community_server_id=str(community_server_id) if community_server_id else None,
-            batch_size=batch_size,
-            db_url=settings.DATABASE_URL,
-            redis_url=settings.REDIS_URL,
-        )
-    except Exception:
-        await rechunk_lock_manager.release_lock("fact_check")
-        raise
 
     logger.info(
-        "Started fact check rechunking task",
+        "Started fact check rechunking job",
         extra={
-            "task_id": str(task.task_id),
+            "job_id": str(job.id),
             "user_id": str(user.id),
             "community_server_id": str(community_server_id) if community_server_id else None,
             "batch_size": batch_size,
-            "total_items": total_items,
+            "total_items": job.total_tasks,
         },
     )
 
-    return RechunkTaskStartResponse(
-        task_id=task.task_id,
-        status=RechunkTaskStatus.PENDING,
-        total_items=total_items,
-        batch_size=batch_size,
-        message=f"Re-chunking {total_items} fact check items in batches of {batch_size}",
-    )
+    return BatchJobResponse.model_validate(job)
 
 
 @router.post(
     "/previously-seen/rechunk",
-    response_model=RechunkTaskStartResponse,
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
     summary="Re-chunk and re-embed previously seen messages",
     description="Initiates a background task to re-chunk and re-embed previously seen messages "
     "for the specified community. Useful for updating embeddings after model changes or "
@@ -262,7 +245,7 @@ async def rechunk_previously_seen_messages(
     request: Request,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
+    service: Annotated[RechunkBatchJobService, Depends(get_rechunk_batch_job_service)],
     community_server_id: UUID = Query(
         ..., description="Community server ID for filtering and LLM credentials"
     ),
@@ -272,7 +255,7 @@ async def rechunk_previously_seen_messages(
         le=1000,
         description="Number of items to process in each batch (1-1000)",
     ),
-) -> RechunkTaskStartResponse:
+) -> BatchJobResponse:
     """
     Re-chunk and re-embed previously seen messages for a community.
 
@@ -290,12 +273,12 @@ async def rechunk_previously_seen_messages(
         request: FastAPI request object
         user: Authenticated user (via API key or JWT)
         db: Database session
-        tracker: Task tracker service
+        service: Rechunk batch job service
         community_server_id: Community server UUID for filtering and LLM credentials
         batch_size: Number of items to process per batch (default 100, max 1000)
 
     Returns:
-        Task start response with task_id for status polling
+        BatchJobResponse with job_id for status polling
 
     Raises:
         HTTPException: 403 if user lacks admin/moderator permission for the community
@@ -308,202 +291,157 @@ async def rechunk_previously_seen_messages(
         request=request,
     )
 
-    lock_acquired = await rechunk_lock_manager.acquire_lock(
-        "previously_seen", str(community_server_id)
-    )
-    if not lock_acquired:
+    try:
+        job = await service.start_previously_seen_rechunk_job(
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+        )
+    except RuntimeError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A previously seen message rechunk operation is already in progress "
-            f"for community {community_server_id}. Please wait for it to complete.",
+            detail=str(e),
         )
-
-    try:
-        result = await db.execute(
-            select(func.count(PreviouslySeenMessage.id)).where(
-                PreviouslySeenMessage.community_server_id == community_server_id
-            )
-        )
-        total_items = result.scalar_one()
-
-        task = await tracker.create_task(
-            RechunkTaskCreate(
-                task_type=RechunkTaskType.PREVIOUSLY_SEEN,
-                community_server_id=community_server_id,
-                batch_size=batch_size,
-                total_items=total_items,
-            )
-        )
-    except Exception:
-        await rechunk_lock_manager.release_lock("previously_seen", str(community_server_id))
-        raise
-
-    try:
-        await process_previously_seen_rechunk_task.kiq(
-            task_id=str(task.task_id),
-            community_server_id=str(community_server_id),
-            batch_size=batch_size,
-            db_url=settings.DATABASE_URL,
-            redis_url=settings.REDIS_URL,
-        )
-    except Exception:
-        await rechunk_lock_manager.release_lock("previously_seen", str(community_server_id))
-        raise
 
     logger.info(
-        "Started previously seen message rechunking task",
+        "Started previously seen message rechunking job",
         extra={
-            "task_id": str(task.task_id),
+            "job_id": str(job.id),
             "user_id": str(user.id),
             "community_server_id": str(community_server_id),
             "batch_size": batch_size,
-            "total_items": total_items,
+            "total_items": job.total_tasks,
         },
     )
 
-    return RechunkTaskStartResponse(
-        task_id=task.task_id,
-        status=RechunkTaskStatus.PENDING,
-        total_items=total_items,
-        batch_size=batch_size,
-        message=f"Re-chunking {total_items} previously seen messages in batches of {batch_size}",
-    )
+    return BatchJobResponse.model_validate(job)
 
 
 @router.get(
-    "/tasks",
-    response_model=list[RechunkTaskResponse],
-    summary="List all rechunk tasks",
-    description="List all active rechunk tasks. Optionally filter by status. "
+    "/jobs",
+    response_model=list[BatchJobResponse],
+    summary="List all rechunk jobs",
+    description="List all rechunk batch jobs. Optionally filter by status. "
     "Requires authentication.",
 )
-async def list_rechunk_tasks(
+async def list_rechunk_jobs(
     user: Annotated[User, Depends(get_current_user_or_api_key)],
-    tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
-    task_status: RechunkTaskStatus | None = Query(
+    service: Annotated[BatchJobService, Depends(get_batch_job_service)],
+    job_status: BatchJobStatus | None = Query(
         None,
         alias="status",
-        description="Filter by task status (pending, in_progress, completed, failed)",
+        description="Filter by job status (pending, in_progress, completed, failed, cancelled)",
     ),
-) -> list[RechunkTaskResponse]:
+) -> list[BatchJobResponse]:
     """
-    List all rechunk tasks.
+    List all rechunk batch jobs.
 
     Args:
         user: Authenticated user
-        tracker: Task tracker service
-        task_status: Optional status filter
+        service: Batch job service
+        job_status: Optional status filter
 
     Returns:
-        List of rechunk tasks
+        List of rechunk batch jobs
     """
-    return await tracker.list_tasks(status=task_status)
+    fact_check_jobs = await service.list_jobs(
+        job_type=JOB_TYPE_FACT_CHECK,
+        status=job_status,
+    )
+    previously_seen_jobs = await service.list_jobs(
+        job_type=JOB_TYPE_PREVIOUSLY_SEEN,
+        status=job_status,
+    )
+
+    all_jobs = fact_check_jobs + previously_seen_jobs
+    all_jobs.sort(key=lambda j: j.created_at, reverse=True)
+
+    return [BatchJobResponse.model_validate(job) for job in all_jobs]
 
 
 @router.delete(
-    "/tasks/{task_id}",
-    response_model=RechunkTaskCancelResponse,
-    summary="Cancel a rechunk task",
-    description="Cancel a rechunk task and release its lock. "
-    "By default, only allows canceling tasks in PENDING or IN_PROGRESS state. "
-    "Use force=true to cancel tasks in any state (including COMPLETED/FAILED). "
-    "Requires admin/moderator permission for the task's community, "
-    "or OpenNotes admin for global tasks.",
+    "/jobs/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Cancel a rechunk job",
+    description="Cancel a rechunk job and release its lock. "
+    "Jobs in terminal states (completed, failed, cancelled) cannot be cancelled. "
+    "Requires admin/moderator permission for the job's community, "
+    "or OpenNotes admin for global jobs.",
 )
-async def cancel_rechunk_task(
+async def cancel_rechunk_job(
     request: Request,
-    task_id: UUID,
+    job_id: UUID,
     user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    tracker: Annotated[RechunkTaskTracker, Depends(get_rechunk_task_tracker)],
-    force: bool = Query(
-        False,
-        description="Skip state validation and cancel task in any state",
-    ),
-) -> RechunkTaskCancelResponse:
+    service: Annotated[RechunkBatchJobService, Depends(get_rechunk_batch_job_service)],
+    batch_job_service: Annotated[BatchJobService, Depends(get_batch_job_service)],
+) -> None:
     """
-    Cancel a rechunk task and release its lock.
+    Cancel a rechunk job and release its lock.
 
     Args:
         request: FastAPI request object
-        task_id: The unique identifier of the task to cancel
+        job_id: The unique identifier of the job to cancel
         user: Authenticated user
         db: Database session
-        tracker: Task tracker service
-        force: If True, skip state validation
-
-    Returns:
-        Cancel response with task_id and lock_released status
+        service: Rechunk batch job service
+        batch_job_service: Batch job service for looking up job
 
     Raises:
-        HTTPException: 400 if task is in terminal state and force=False
         HTTPException: 403 if user lacks permission
-        HTTPException: 404 if task not found
+        HTTPException: 404 if job not found
+        HTTPException: 409 if job is in terminal state
     """
-    task = await tracker.get_task(task_id)
-    if task is None:
+    job = await batch_job_service.get_job(job_id)
+    if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task {task_id} not found or has expired",
+            detail=f"Job {job_id} not found",
         )
 
-    task_status_value = (
-        RechunkTaskStatus(task.status) if isinstance(task.status, str) else task.status
-    )
-    if not force and task_status_value in (
-        RechunkTaskStatus.COMPLETED,
-        RechunkTaskStatus.FAILED,
-    ):
+    if job.job_type not in (JOB_TYPE_FACT_CHECK, JOB_TYPE_PREVIOUSLY_SEEN):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Task {task_id} is in terminal state ({task_status_value.value}). "
-            "Use force=true to cancel anyway.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} is not a rechunk job",
         )
 
-    if task.community_server_id is not None:
+    metadata = job.metadata_ or {}
+    community_server_id = metadata.get("community_server_id")
+
+    if community_server_id is not None:
         await verify_community_admin_by_uuid(
-            community_server_id=task.community_server_id,
+            community_server_id=UUID(community_server_id),
             current_user=user,
             db=db,
             request=request,
         )
-    # Global tasks require service account or OpenNotes admin
     elif not getattr(user, "is_service_account", False):
-        # Check if user is an OpenNotes admin via their profile
         profile_id = await _get_profile_id_from_user(db, user)
         profile = await get_profile_by_id(db, profile_id) if profile_id else None
         if not profile or not profile.is_opennotes_admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only OpenNotes admins or service accounts can cancel global tasks",
+                detail="Only OpenNotes admins or service accounts can cancel global jobs",
             )
 
-    task_type_value = (
-        task.task_type.value if isinstance(task.task_type, RechunkTaskType) else task.task_type
-    )
-    resource_id = str(task.community_server_id) if task.community_server_id else None
-    lock_released = await rechunk_lock_manager.release_lock(task_type_value, resource_id)
-
-    deleted = await tracker.delete_task(task_id)
-    if not deleted:
+    try:
+        cancelled_job = await service.cancel_rechunk_job(job_id)
+        if cancelled_job is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job {job_id} not found",
+            )
+    except InvalidStateTransitionError as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete task {task_id} from Redis",
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot cancel job: {e}",
         )
 
     logger.info(
-        "Cancelled rechunk task",
+        "Cancelled rechunk job",
         extra={
-            "task_id": str(task_id),
+            "job_id": str(job_id),
             "user_id": str(user.id),
-            "task_type": task_type_value,
-            "lock_released": lock_released,
-            "force": force,
+            "job_type": job.job_type,
+            "community_server_id": community_server_id,
         },
-    )
-
-    return RechunkTaskCancelResponse(
-        task_id=task_id,
-        message=f"Task {task_id} cancelled successfully",
-        lock_released=lock_released,
     )

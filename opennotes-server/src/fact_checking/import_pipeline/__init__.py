@@ -2,6 +2,10 @@
 
 Provides streaming import, validation, and normalization of fact-check
 datasets from sources like HuggingFace.
+
+Note: Import operations now run asynchronously via BatchJob infrastructure.
+Use POST /api/v1/fact-checking/import/fact-check-bureau to start an import job,
+and poll GET /api/v1/batch-jobs/{job_id} for status.
 """
 
 from src.fact_checking.import_pipeline.importer import (
@@ -14,7 +18,6 @@ from src.fact_checking.import_pipeline.promotion import bulk_promote_scraped, pr
 from src.fact_checking.import_pipeline.rating_normalizer import normalize_rating
 from src.fact_checking.import_pipeline.router import (
     ImportFactCheckBureauRequest,
-    ImportFactCheckBureauResponse,
 )
 from src.fact_checking.import_pipeline.router import (
     router as import_router,
@@ -29,7 +32,6 @@ from src.fact_checking.import_pipeline.scrape_task import (
 __all__ = [
     "ClaimReviewRow",
     "ImportFactCheckBureauRequest",
-    "ImportFactCheckBureauResponse",
     "ImportStats",
     "NormalizedCandidate",
     "bulk_promote_scraped",
