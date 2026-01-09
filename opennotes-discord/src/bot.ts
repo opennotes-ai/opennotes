@@ -237,6 +237,15 @@ export class Bot {
         } catch (error) {
           logger.error('Request reply button failed', { error });
         }
+      } else if (
+        interaction.customId.startsWith('queue:previous:') ||
+        interaction.customId.startsWith('queue:next:')
+      ) {
+        try {
+          await listCommand.handlePaginationButton(interaction);
+        } catch (error) {
+          logger.error('Pagination button failed', { error });
+        }
       } else if (isVibecheckPromptInteraction(interaction.customId)) {
         try {
           await handleVibecheckPromptInteraction(interaction);

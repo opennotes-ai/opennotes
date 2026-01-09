@@ -40,6 +40,15 @@ import { cache } from '../cache.js';
 const configCache = new ConfigCache(apiClient);
 const lastUsage = new Map<string, number>();
 
+interface QueueState {
+  userId: string;
+  guildId: string | null;
+  communityServerUuid: string | undefined;
+  currentPage: number;
+  thresholds: { min_ratings_needed: number; min_raters_per_note: number };
+  isAdmin: boolean;
+}
+
 function createSummaryV2(
   currentPage: number,
   totalNotes: number,
@@ -873,6 +882,160 @@ export async function handleRequestReplyButton(interaction: ButtonInteraction): 
       await interaction.reply({
         content: formatErrorForUser(errorId, 'Failed to process button click.'),
         flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+}
+
+export async function handlePaginationButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+  const customId = interaction.customId;
+
+  try {
+    const parseResult = parseCustomId(customId, 3);
+    if (!parseResult.success || !parseResult.parts) {
+      logger.error('Failed to parse pagination button customId', {
+        error_id: errorId,
+        customId,
+        error: parseResult.error,
+      });
+      await interaction.reply({
+        content: 'Invalid button data. Please run `/list notes` again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const [, direction, stateId] = parseResult.parts;
+    const cacheKey = `queue_state:${stateId}`;
+    const state = await cache.get<QueueState>(cacheKey);
+
+    if (!state) {
+      logger.debug('Queue state not found - may have expired', {
+        error_id: errorId,
+        stateId,
+        user_id: interaction.user.id,
+      });
+      await interaction.update({
+        content: 'Queue session has expired. Please run `/list notes` again.',
+        components: [],
+      });
+      return;
+    }
+
+    if (interaction.user.id !== state.userId) {
+      await interaction.reply({
+        content: 'This queue belongs to another user. Please run `/list notes` to view your own queue.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const notesPerPage = LIST_COMMAND_LIMITS.NOTES_PER_PAGE;
+    const notesResponse = await apiClient.listNotesWithStatus(
+      'NEEDS_MORE_RATINGS',
+      1,
+      1,
+      state.communityServerUuid,
+      state.userId
+    );
+    const totalNotes = notesResponse.total;
+    const totalPages = Math.ceil(totalNotes / notesPerPage);
+
+    let newPage = state.currentPage;
+    if (direction === 'previous') {
+      newPage = Math.max(1, state.currentPage - 1);
+    } else if (direction === 'next') {
+      newPage = Math.min(totalPages, state.currentPage + 1);
+    }
+
+    if (newPage === state.currentPage) {
+      await interaction.deferUpdate();
+      return;
+    }
+
+    const newNotesResponse = await apiClient.listNotesWithStatus(
+      'NEEDS_MORE_RATINGS',
+      newPage,
+      notesPerPage,
+      state.communityServerUuid,
+      state.userId
+    );
+
+    const updatedState: QueueState = {
+      ...state,
+      currentPage: newPage,
+    };
+    await cache.set(cacheKey, updatedState, LIST_COMMAND_LIMITS.STATE_CACHE_TTL_SECONDS);
+
+    const summaryV2 = createSummaryV2(newPage, totalNotes, notesPerPage);
+    const member = interaction.guild?.members.cache.get(state.userId) || null;
+
+    const itemsV2: QueueItemV2[] = newNotesResponse.data.map((note) =>
+      createNoteItemV2(note, state.thresholds, member)
+    );
+
+    const pagination: PaginationConfig = {
+      currentPage: newPage,
+      totalPages,
+      previousButtonId: `queue:previous:${stateId}`,
+      nextButtonId: `queue:next:${stateId}`,
+    };
+
+    const containers = QueueRendererV2.buildContainers(summaryV2, itemsV2, pagination);
+
+    if (containers.length === 0) {
+      await interaction.update({
+        content: 'No notes available.',
+        components: [],
+      });
+      return;
+    }
+
+    await interaction.update({
+      components: [containers[0]],
+      flags: v2MessageFlags(),
+    });
+
+    logger.info('Pagination button handled successfully', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      direction,
+      old_page: state.currentPage,
+      new_page: newPage,
+      total_pages: totalPages,
+      stateId,
+    });
+  } catch (error) {
+    const errorType = classifyApiError(error);
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Error handling pagination button', {
+      error_id: errorId,
+      customId,
+      user_id: interaction.user.id,
+      error_type: errorType,
+      error: errorDetails.message,
+      stack: errorDetails.stack,
+    });
+
+    const userMessage = `${getQueueErrorMessage(errorType)}\n\nError ID: \`${errorId}\``;
+
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({
+          content: userMessage,
+          flags: MessageFlags.Ephemeral,
+        });
+      } else {
+        await interaction.reply({
+          content: userMessage,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    } catch {
+      logger.debug('Failed to send error response for pagination button', {
+        error_id: errorId,
       });
     }
   }
