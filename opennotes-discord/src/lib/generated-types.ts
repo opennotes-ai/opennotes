@@ -2596,7 +2596,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chunks/tasks/{task_id}": {
+    "/api/v1/chunks/jobs/{job_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2604,17 +2604,17 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get rechunk task status
-         * @description Retrieve the current status and progress of a rechunk background task. If the task is associated with a community server, requires admin or moderator access. If the task was started without a community server (global credentials), only requires authentication.
+         * Get rechunk job status
+         * @description Retrieve the current status and progress of a rechunk batch job. If the job is associated with a community server, requires admin or moderator access. If the job was started without a community server (global credentials), only requires authentication.
          */
-        get: operations["get_rechunk_task_status_api_v1_chunks_tasks__task_id__get"];
+        get: operations["get_rechunk_job_status_api_v1_chunks_jobs__job_id__get"];
         put?: never;
         post?: never;
         /**
-         * Cancel a rechunk task
-         * @description Cancel a rechunk task and release its lock. By default, only allows canceling tasks in PENDING or IN_PROGRESS state. Use force=true to cancel tasks in any state (including COMPLETED/FAILED). Requires admin/moderator permission for the task's community, or OpenNotes admin for global tasks.
+         * Cancel a rechunk job
+         * @description Cancel a rechunk job and release its lock. Jobs in terminal states (completed, failed, cancelled) cannot be cancelled. Requires admin/moderator permission for the job's community, or OpenNotes admin for global jobs.
          */
-        delete: operations["cancel_rechunk_task_api_v1_chunks_tasks__task_id__delete"];
+        delete: operations["cancel_rechunk_job_api_v1_chunks_jobs__job_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2660,7 +2660,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chunks/tasks": {
+    "/api/v1/chunks/jobs": {
         parameters: {
             query?: never;
             header?: never;
@@ -2668,10 +2668,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List all rechunk tasks
-         * @description List all active rechunk tasks. Optionally filter by status. Requires authentication.
+         * List all rechunk jobs
+         * @description List all rechunk batch jobs. Optionally filter by status. Requires authentication.
          */
-        get: operations["list_rechunk_tasks_api_v1_chunks_tasks_get"];
+        get: operations["list_rechunk_jobs_api_v1_chunks_jobs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2690,10 +2690,30 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Import fact-check-bureau dataset
-         * @description Import the fact-check-bureau dataset from HuggingFace. Supports dry-run mode for validation and enqueue-scrapes mode for triggering content scraping of pending candidates.
+         * Start fact-check-bureau import job
+         * @description Start an asynchronous import of the fact-check-bureau dataset from HuggingFace. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
          */
         post: operations["import_fact_check_bureau_endpoint_api_v1_fact_checking_import_fact_check_bureau_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fact-checking/import/enqueue-scrapes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue scrape tasks for pending candidates
+         * @description Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that returns the count of enqueued tasks.
+         */
+        post: operations["enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4552,7 +4572,7 @@ export interface components {
             /**
              * Batch Size
              * @description Batch size for import operations
-             * @default 100
+             * @default 1000
              */
             batch_size: number;
             /**
@@ -4563,51 +4583,10 @@ export interface components {
             dry_run: boolean;
             /**
              * Enqueue Scrapes
-             * @description Enqueue scrape tasks for pending candidates instead of importing
+             * @description Enqueue scrape tasks for pending candidates after import completes
              * @default false
              */
             enqueue_scrapes: boolean;
-        };
-        /**
-         * ImportFactCheckBureauResponse
-         * @description Response containing import statistics.
-         */
-        ImportFactCheckBureauResponse: {
-            /**
-             * Total Rows
-             * @description Total rows in the dataset
-             */
-            total_rows: number;
-            /**
-             * Valid Rows
-             * @description Rows that passed validation
-             */
-            valid_rows: number;
-            /**
-             * Invalid Rows
-             * @description Rows that failed validation
-             */
-            invalid_rows: number;
-            /**
-             * Inserted
-             * @description Rows inserted into database
-             */
-            inserted: number;
-            /**
-             * Updated
-             * @description Rows updated in database
-             */
-            updated: number;
-            /**
-             * Errors
-             * @description First 10 validation/import errors
-             */
-            errors?: string[];
-            /**
-             * Dry Run
-             * @description Whether this was a dry run
-             */
-            dry_run: boolean;
         };
         /**
          * JSONAPILinks
@@ -6653,124 +6632,6 @@ export interface components {
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
-        /**
-         * RechunkTaskCancelResponse
-         * @description Response schema for cancelling a rechunk task.
-         */
-        RechunkTaskCancelResponse: {
-            /**
-             * Task Id
-             * Format: uuid
-             * @description ID of the cancelled task
-             */
-            task_id: string;
-            /**
-             * Message
-             * @description Human-readable status message
-             */
-            message: string;
-            /**
-             * Lock Released
-             * @description Whether the lock was successfully released
-             */
-            lock_released: boolean;
-        };
-        /**
-         * RechunkTaskResponse
-         * @description Response schema for rechunk task status with full details.
-         */
-        RechunkTaskResponse: {
-            /** @description Type of rechunk operation (fact_check or previously_seen) */
-            task_type: components["schemas"]["RechunkTaskType"];
-            /**
-             * Community Server Id
-             * @description Community server ID for LLM credentials (None uses global fallback)
-             */
-            community_server_id?: string | null;
-            /**
-             * Batch Size
-             * @description Batch size for processing
-             */
-            batch_size: number;
-            /**
-             * Task Id
-             * Format: uuid
-             * @description Unique task identifier
-             */
-            task_id: string;
-            /** @description Current task status */
-            status: components["schemas"]["RechunkTaskStatus"];
-            /**
-             * Processed Count
-             * @description Number of items processed
-             * @default 0
-             */
-            processed_count: number;
-            /**
-             * Total Count
-             * @description Total items to process
-             * @default 0
-             */
-            total_count: number;
-            /**
-             * Error
-             * @description Error message if task failed
-             */
-            error?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description When the task was created
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             * @description When the task was last updated
-             */
-            updated_at: string;
-        };
-        /**
-         * RechunkTaskStartResponse
-         * @description Response schema for starting a rechunk task.
-         */
-        RechunkTaskStartResponse: {
-            /**
-             * Task Id
-             * Format: uuid
-             * @description Unique task identifier for status polling
-             */
-            task_id: string;
-            /** @description Initial task status (pending) */
-            status: components["schemas"]["RechunkTaskStatus"];
-            /**
-             * Total Items
-             * @description Total items to process
-             */
-            total_items: number;
-            /**
-             * Batch Size
-             * @description Batch size for processing
-             */
-            batch_size: number;
-            /**
-             * Message
-             * @description Human-readable status message
-             */
-            message: string;
-        };
-        /**
-         * RechunkTaskStatus
-         * @description Status states for a rechunk task.
-         * @enum {string}
-         */
-        RechunkTaskStatus: "pending" | "in_progress" | "completed" | "failed";
-        /**
-         * RechunkTaskType
-         * @description Type of rechunk operation.
-         * @enum {string}
-         */
-        RechunkTaskType: "fact_check" | "previously_seen";
         /**
          * RefreshTokenRequest
          * @description Request body for refresh token endpoint.
@@ -11598,14 +11459,14 @@ export interface operations {
             };
         };
     };
-    get_rechunk_task_status_api_v1_chunks_tasks__task_id__get: {
+    get_rechunk_job_status_api_v1_chunks_jobs__job_id__get: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                task_id: string;
+                job_id: string;
             };
             cookie?: never;
         };
@@ -11617,8 +11478,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RechunkTaskResponse"];
+                    "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description User lacks admin/moderator permission for the job's community */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Job not found or not a rechunk job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11631,30 +11506,46 @@ export interface operations {
             };
         };
     };
-    cancel_rechunk_task_api_v1_chunks_tasks__task_id__delete: {
+    cancel_rechunk_job_api_v1_chunks_jobs__job_id__delete: {
         parameters: {
-            query?: {
-                /** @description Skip state validation and cancel task in any state */
-                force?: boolean;
-            };
+            query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                task_id: string;
+                job_id: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["RechunkTaskCancelResponse"];
+                content?: never;
+            };
+            /** @description User lacks permission for the job's community or is not an OpenNotes admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description Job not found or not a rechunk job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Job is in terminal state and cannot be cancelled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11684,13 +11575,27 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RechunkTaskStartResponse"];
+                    "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description User lacks admin/moderator permission for the community */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A rechunk operation is already in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11720,13 +11625,27 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RechunkTaskStartResponse"];
+                    "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description User lacks admin/moderator permission for the community */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A rechunk operation is already in progress for this community */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11739,11 +11658,11 @@ export interface operations {
             };
         };
     };
-    list_rechunk_tasks_api_v1_chunks_tasks_get: {
+    list_rechunk_jobs_api_v1_chunks_jobs_get: {
         parameters: {
             query?: {
-                /** @description Filter by task status (pending, in_progress, completed, failed) */
-                status?: components["schemas"]["RechunkTaskStatus"] | null;
+                /** @description Filter by job status (pending, in_progress, completed, failed, cancelled) */
+                status?: components["schemas"]["src__batch_jobs__models__BatchJobStatus"] | null;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -11759,7 +11678,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RechunkTaskResponse"][];
+                    "application/json": components["schemas"]["BatchJobResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -11789,12 +11708,45 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post: {
+        parameters: {
+            query?: {
+                batch_size?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ImportFactCheckBureauResponse"] | components["schemas"]["EnqueueScrapeResponse"];
+                    "application/json": components["schemas"]["EnqueueScrapeResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11903,6 +11855,13 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
+            /** @description Batch job not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11929,6 +11888,20 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Batch job not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Job is in terminal state and cannot be cancelled */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11966,6 +11939,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobProgress"];
                 };
+            };
+            /** @description Batch job not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

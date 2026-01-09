@@ -47,12 +47,22 @@ async def _update_job_total_tasks(
     total_tasks: int,
 ) -> None:
     """Update the total_tasks count on a BatchJob."""
-    async with session() as db:
-        service = BatchJobService(db)
-        job = await service.get_job(job_id)
-        if job:
-            job.total_tasks = total_tasks
-            await db.commit()
+    try:
+        async with session() as db:
+            service = BatchJobService(db)
+            job = await service.get_job(job_id)
+            if job:
+                job.total_tasks = total_tasks
+                await db.commit()
+    except Exception as e:
+        logger.error(
+            "Failed to update job total_tasks",
+            extra={
+                "job_id": str(job_id),
+                "total_tasks": total_tasks,
+                "error": str(e),
+            },
+        )
 
 
 async def _start_job(
@@ -237,14 +247,24 @@ async def process_fact_check_import(
                         processed = (batch_num + 1) * batch_size
                         processed = min(processed, stats.total_rows)
 
-                        await _update_progress(
-                            async_session,
-                            progress_tracker,
-                            job_uuid,
-                            completed_tasks=stats.valid_rows,
-                            failed_tasks=stats.invalid_rows,
-                            current_item=f"Batch {batch_num + 1} ({processed}/{stats.total_rows})",
-                        )
+                        try:
+                            await _update_progress(
+                                async_session,
+                                progress_tracker,
+                                job_uuid,
+                                completed_tasks=stats.valid_rows,
+                                failed_tasks=stats.invalid_rows,
+                                current_item=f"Batch {batch_num + 1} ({processed}/{stats.total_rows})",
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to update progress after batch",
+                                extra={
+                                    "job_id": job_id,
+                                    "batch_num": batch_num,
+                                    "error": str(e),
+                                },
+                            )
 
                         if processed % 10000 == 0 or processed >= stats.total_rows:
                             logger.info(

@@ -391,3 +391,33 @@ class TestNormalizedCandidate:
 
         candidate = NormalizedCandidate.from_claim_review_row(row)
         assert candidate.dataset_tags == ["snopes.com"]
+
+    def test_claim_hash_pattern_validation(self) -> None:
+        """Test that claim_hash field validates 16 hex character pattern."""
+        from pydantic import ValidationError
+
+        valid_hash = "a1b2c3d4e5f6a7b8"  # 16 hex chars
+        candidate = NormalizedCandidate(
+            source_url="https://example.com",
+            claim_hash=valid_hash,
+            title="Test",
+            dataset_name="test",
+            original_id="1",
+        )
+        assert candidate.claim_hash == valid_hash
+
+        invalid_hashes = [
+            "abc123",  # Too short
+            "a1b2c3d4e5f6a7b8a9",  # Too long
+            "ghijklmnopqrstuv",  # Not hex
+            "A1B2C3D4E5F6A7B8",  # Uppercase (not lowercase hex)
+        ]
+        for invalid_hash in invalid_hashes:
+            with pytest.raises(ValidationError):
+                NormalizedCandidate(
+                    source_url="https://example.com",
+                    claim_hash=invalid_hash,
+                    title="Test",
+                    dataset_name="test",
+                    original_id="1",
+                )

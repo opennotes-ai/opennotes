@@ -382,6 +382,41 @@ class TestCancelRechunkJobEndpoint:
 
             assert response.status_code == 204
 
+    @pytest.mark.asyncio
+    async def test_cancel_non_rechunk_job_returns_404(
+        self,
+        service_account_headers,
+        db,
+    ):
+        """Cancel request for non-rechunk job type returns 404.
+
+        Task: task-986.10 AC#4 - Validates job_type before allowing cancel.
+        """
+        from src.batch_jobs.models import BatchJob
+
+        other_job = BatchJob(
+            id=uuid4(),
+            job_type="import:fact_check",
+            status=BatchJobStatus.IN_PROGRESS.value,
+            total_tasks=100,
+            completed_tasks=25,
+            failed_tasks=0,
+            metadata_={},
+        )
+        db.add(other_job)
+        await db.commit()
+        await db.refresh(other_job)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{other_job.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 404
+            assert "not a rechunk job" in response.json()["detail"].lower()
+
 
 class TestListRechunkJobsEndpoint:
     """Tests for GET /api/v1/chunks/jobs endpoint."""

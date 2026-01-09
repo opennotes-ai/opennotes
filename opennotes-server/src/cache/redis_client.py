@@ -281,5 +281,72 @@ class RedisClient:
             logger.error(f"Redis MGET failed for keys: {e}")
             return []
 
+    async def hset(self, key: str, mapping: dict[str, str | int | float]) -> int:
+        """
+        Set multiple hash fields at once.
+
+        Args:
+            key: The hash key
+            mapping: Dictionary of field-value pairs
+
+        Returns:
+            Number of fields added (not updated)
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            str_mapping = {k: str(v) for k, v in mapping.items()}
+            return await self.circuit_breaker.call(self.client.hset, key, mapping=str_mapping)
+        except Exception as e:
+            logger.error(f"Redis HSET failed for key '{key}': {e}")
+            return 0
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        """
+        Get all fields and values from a hash.
+
+        Args:
+            key: The hash key
+
+        Returns:
+            Dictionary of field-value pairs (empty if key doesn't exist)
+        """
+        if not self.client:
+            return {}
+
+        try:
+            result = await self.circuit_breaker.call(self.client.hgetall, key)
+            return {
+                k.decode("utf-8") if isinstance(k, bytes) else k: v.decode("utf-8")
+                if isinstance(v, bytes)
+                else v
+                for k, v in result.items()
+            }
+        except Exception as e:
+            logger.error(f"Redis HGETALL failed for key '{key}': {e}")
+            return {}
+
+    async def hincrby(self, key: str, field: str, amount: int = 1) -> int:
+        """
+        Atomically increment a hash field by the given amount.
+
+        Args:
+            key: The hash key
+            field: The field to increment
+            amount: Amount to increment by (default 1)
+
+        Returns:
+            The new value after increment
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.hincrby, key, field, amount)
+        except Exception as e:
+            logger.error(f"Redis HINCRBY failed for key '{key}' field '{field}': {e}")
+            raise
+
 
 redis_client = RedisClient()

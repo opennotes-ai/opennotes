@@ -88,6 +88,10 @@ def get_batch_job_service(
     description="Retrieve the current status and progress of a rechunk batch job. "
     "If the job is associated with a community server, requires admin or moderator access. "
     "If the job was started without a community server (global credentials), only requires authentication.",
+    responses={
+        403: {"description": "User lacks admin/moderator permission for the job's community"},
+        404: {"description": "Job not found or not a rechunk job"},
+    },
 )
 async def get_rechunk_job_status(
     request: Request,
@@ -150,6 +154,10 @@ async def get_rechunk_job_status(
     "When community_server_id is provided, requires admin or moderator access. "
     "When not provided, uses global LLM credentials and only requires authentication. "
     "Rate limited to 1 request per minute. Returns 409 if operation already in progress.",
+    responses={
+        403: {"description": "User lacks admin/moderator permission for the community"},
+        409: {"description": "A rechunk operation is already in progress"},
+    },
 )
 @limiter.limit("1/minute")
 async def rechunk_fact_check_items(
@@ -239,6 +247,10 @@ async def rechunk_fact_check_items(
     "for the specified community. Useful for updating embeddings after model changes or "
     "migration to chunk-based embeddings. Requires admin or moderator access to the community server. "
     "Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.",
+    responses={
+        403: {"description": "User lacks admin/moderator permission for the community"},
+        409: {"description": "A rechunk operation is already in progress for this community"},
+    },
 )
 @limiter.limit("1/minute")
 async def rechunk_previously_seen_messages(
@@ -366,6 +378,13 @@ async def list_rechunk_jobs(
     "Jobs in terminal states (completed, failed, cancelled) cannot be cancelled. "
     "Requires admin/moderator permission for the job's community, "
     "or OpenNotes admin for global jobs.",
+    responses={
+        403: {
+            "description": "User lacks permission for the job's community or is not an OpenNotes admin"
+        },
+        404: {"description": "Job not found or not a rechunk job"},
+        409: {"description": "Job is in terminal state and cannot be cancelled"},
+    },
 )
 async def cancel_rechunk_job(
     request: Request,

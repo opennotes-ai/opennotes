@@ -637,3 +637,136 @@ class TestRechunkKiqFailure:
             assert response.status_code == 500
 
             mock_lock_manager.release_lock.assert_called_with("previously_seen", str(server.id))
+
+
+class TestRechunkEndpointDatabaseIntegration:
+    """Tests that verify batch jobs are actually created in the database.
+
+    These tests verify that the rechunk endpoints create proper BatchJob records
+    with correct job_type values, rather than only checking HTTP responses.
+    """
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_fact_check_rechunk_creates_batch_job_record(
+        self,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+        db,
+    ):
+        """Verify BatchJob record is created in database with correct job_type."""
+        from uuid import UUID as UUID_
+
+        from sqlalchemy import select
+
+        from src.batch_jobs.models import BatchJob
+
+        mock_task.kiq = AsyncMock()
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/fact-check/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 201
+            data = response.json()
+            job_id = UUID_(data["id"])
+
+            result = await db.execute(select(BatchJob).where(BatchJob.id == job_id))
+            job = result.scalar_one_or_none()
+
+            assert job is not None, "BatchJob record should exist in database"
+            assert job.job_type == "rechunk:fact_check"
+            assert job.status == "in_progress"
+            assert job.metadata_.get("community_server_id") == str(server.id)
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_previously_seen_rechunk_creates_batch_job_record(
+        self,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+        db,
+    ):
+        """Verify BatchJob record is created in database with correct job_type."""
+        from uuid import UUID as UUID_
+
+        from sqlalchemy import select
+
+        from src.batch_jobs.models import BatchJob
+
+        mock_task.kiq = AsyncMock()
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/previously-seen/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 201
+            data = response.json()
+            job_id = UUID_(data["id"])
+
+            result = await db.execute(select(BatchJob).where(BatchJob.id == job_id))
+            job = result.scalar_one_or_none()
+
+            assert job is not None, "BatchJob record should exist in database"
+            assert job.job_type == "rechunk:previously_seen"
+            assert job.status == "in_progress"
+            assert job.metadata_.get("community_server_id") == str(server.id)
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_batch_job_has_correct_total_tasks_count(
+        self,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+        db,
+    ):
+        """Verify BatchJob.total_tasks reflects actual item count."""
+        from uuid import UUID as UUID_
+
+        from sqlalchemy import select
+
+        from src.batch_jobs.models import BatchJob
+
+        mock_task.kiq = AsyncMock()
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/fact-check/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 201
+            data = response.json()
+            job_id = UUID_(data["id"])
+
+            result = await db.execute(select(BatchJob).where(BatchJob.id == job_id))
+            job = result.scalar_one()
+
+            assert job.total_tasks == 3
+            assert job.completed_tasks == 0
+            assert job.failed_tasks == 0

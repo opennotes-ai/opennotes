@@ -263,6 +263,7 @@ async def _handle_fact_check_rechunk_final_failure(
                 )
                 await session.commit()
             except Exception as e:
+                await session.rollback()
                 logger.error(
                     "Failed to mark job as failed",
                     extra={"job_id": job_id, "error": str(e)},
@@ -347,6 +348,7 @@ async def _handle_previously_seen_rechunk_final_failure(
                 )
                 await session.commit()
             except Exception as e:
+                await session.rollback()
                 logger.error(
                     "Failed to mark job as failed",
                     extra={
@@ -464,6 +466,7 @@ async def process_fact_check_rechunk_task(
 
         failed_count = 0
 
+        item_errors: list[dict] = []
         try:
             async with async_session() as db:
                 total_count_result = await db.execute(select(func.count(FactCheckItem.id)))
@@ -509,6 +512,12 @@ async def process_fact_check_rechunk_task(
                             processed_count += 1
                         except Exception as item_error:
                             failed_count += 1
+                            item_errors.append(
+                                {
+                                    "item_id": str(item.id),
+                                    "error": str(item_error),
+                                }
+                            )
                             logger.error(
                                 "Failed to process fact check item",
                                 extra={
@@ -518,11 +527,20 @@ async def process_fact_check_rechunk_task(
                                 },
                             )
 
-                        await progress_tracker.update_progress(
-                            job_uuid,
-                            processed_count=processed_count,
-                            error_count=failed_count,
-                        )
+                        try:
+                            await progress_tracker.update_progress(
+                                job_uuid,
+                                processed_count=processed_count,
+                                error_count=failed_count,
+                            )
+                        except Exception as progress_error:
+                            logger.warning(
+                                "Failed to update progress, continuing",
+                                extra={
+                                    "job_id": job_id,
+                                    "error": str(progress_error),
+                                },
+                            )
 
                     offset += batch_size
 
@@ -569,6 +587,7 @@ async def process_fact_check_rechunk_task(
             error_msg = str(e)
             span.record_exception(e)
             span.set_status(StatusCode.ERROR, error_msg)
+            span.set_attribute("job.item_errors", len(item_errors))
 
             logger.warning(
                 "Fact check rechunk batch failed, will retry if attempts remain",
@@ -577,6 +596,7 @@ async def process_fact_check_rechunk_task(
                     "community_server_id": community_server_id,
                     "processed_count": processed_count,
                     "failed_count": failed_count,
+                    "item_errors": item_errors[:10],
                     "error": error_msg,
                 },
             )
@@ -661,6 +681,7 @@ async def process_previously_seen_rechunk_task(
             span.set_attribute("job.resumed", False)
 
         failed_count = 0
+        item_errors: list[dict] = []
 
         try:
             async with async_session() as db:
@@ -715,6 +736,12 @@ async def process_previously_seen_rechunk_task(
                                 processed_count += 1
                             except Exception as item_error:
                                 failed_count += 1
+                                item_errors.append(
+                                    {
+                                        "message_id": str(msg.id),
+                                        "error": str(item_error),
+                                    }
+                                )
                                 logger.error(
                                     "Failed to process previously seen message",
                                     extra={
@@ -726,11 +753,21 @@ async def process_previously_seen_rechunk_task(
                         else:
                             processed_count += 1
 
-                        await progress_tracker.update_progress(
-                            job_uuid,
-                            processed_count=processed_count,
-                            error_count=failed_count,
-                        )
+                        try:
+                            await progress_tracker.update_progress(
+                                job_uuid,
+                                processed_count=processed_count,
+                                error_count=failed_count,
+                            )
+                        except Exception as progress_error:
+                            logger.warning(
+                                "Failed to update progress, continuing",
+                                extra={
+                                    "job_id": job_id,
+                                    "community_server_id": community_server_id,
+                                    "error": str(progress_error),
+                                },
+                            )
 
                     offset += batch_size
 
@@ -777,6 +814,7 @@ async def process_previously_seen_rechunk_task(
             error_msg = str(e)
             span.record_exception(e)
             span.set_status(StatusCode.ERROR, error_msg)
+            span.set_attribute("job.item_errors", len(item_errors))
 
             logger.warning(
                 "Previously seen rechunk batch failed, will retry if attempts remain",
@@ -785,6 +823,7 @@ async def process_previously_seen_rechunk_task(
                     "community_server_id": community_server_id,
                     "processed_count": processed_count,
                     "failed_count": failed_count,
+                    "item_errors": item_errors[:10],
                     "error": error_msg,
                 },
             )

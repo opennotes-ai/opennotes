@@ -34,9 +34,17 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def compute_claim_hash(claim_text: str | None) -> str:
-    """Compute xxh3_64 hash of claim text."""
-    return xxhash.xxh3_64((claim_text or "").encode()).hexdigest()
+def compute_claim_hash(claim_text: str | None, row_id: str | None = None) -> str:
+    """Compute xxh3_64 hash of claim text.
+
+    For NULL claims, uses the row UUID to generate a unique placeholder hash,
+    preventing collisions when multiple rows have NULL claim data.
+    """
+    if claim_text:
+        return xxhash.xxh3_64(claim_text.encode()).hexdigest()
+    if row_id:
+        return xxhash.xxh3_64(f"__NULL_CLAIM__{row_id}".encode()).hexdigest()
+    return xxhash.xxh3_64(b"").hexdigest()
 
 
 def upgrade() -> None:
@@ -69,7 +77,7 @@ def upgrade() -> None:
 
     # Update each row with computed hash
     for row in rows:
-        claim_hash = compute_claim_hash(row.claim)
+        claim_hash = compute_claim_hash(row.claim, str(row.id))
         conn.execute(
             sa.text(
                 """

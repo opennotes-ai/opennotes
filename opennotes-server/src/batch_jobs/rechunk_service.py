@@ -110,10 +110,7 @@ class RechunkBatchJobService:
                 )
             )
 
-            job = await self._batch_job_service.start_job(job.id)
-            if job is None:
-                raise RuntimeError("Failed to start batch job")
-
+            await self._batch_job_service.start_job(job.id)
             await self._session.commit()
 
         except Exception:
@@ -128,7 +125,12 @@ class RechunkBatchJobService:
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
             )
-        except Exception:
+        except Exception as e:
+            await self._batch_job_service.fail_job(
+                job.id,
+                error_summary={"error": str(e), "stage": "task_dispatch"},
+            )
+            await self._session.commit()
             await self._lock_manager.release_lock("fact_check")
             raise
 
@@ -193,10 +195,7 @@ class RechunkBatchJobService:
                 )
             )
 
-            job = await self._batch_job_service.start_job(job.id)
-            if job is None:
-                raise RuntimeError("Failed to start batch job")
-
+            await self._batch_job_service.start_job(job.id)
             await self._session.commit()
 
         except Exception:
@@ -211,7 +210,12 @@ class RechunkBatchJobService:
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
             )
-        except Exception:
+        except Exception as e:
+            await self._batch_job_service.fail_job(
+                job.id,
+                error_summary={"error": str(e), "stage": "task_dispatch"},
+            )
+            await self._session.commit()
             await self._lock_manager.release_lock("previously_seen", str(community_server_id))
             raise
 

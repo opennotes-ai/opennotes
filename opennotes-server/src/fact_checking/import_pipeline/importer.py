@@ -94,6 +94,9 @@ async def upsert_candidates(
     """Insert or update candidates in database.
 
     Uses PostgreSQL ON CONFLICT to handle duplicates idempotently.
+    Uses RETURNING with xmax to distinguish inserts from updates:
+    - xmax = 0 means the row was inserted (no previous transaction modified it)
+    - xmax > 0 means the row was updated (previous transaction's ID stored in xmax)
 
     Args:
         session: Database session.
@@ -122,9 +125,6 @@ async def upsert_candidates(
 
     stmt = insert(FactCheckedItemCandidate).values(values)
 
-    # Note: rating is NOT updated on conflict - it's set via human approval only.
-    # predicted_ratings IS updated on re-import with newer data.
-    # Conflict key includes claim_hash for multi-claim articles (same URL, different claims)
     stmt = stmt.on_conflict_do_update(
         index_elements=["source_url", "claim_hash", "dataset_name"],
         set_={
@@ -135,12 +135,22 @@ async def upsert_candidates(
             "extracted_data": stmt.excluded.extracted_data,
             "updated_at": text("now()"),
         },
-    )
+    ).returning(FactCheckedItemCandidate.id, text("xmax"))
 
-    await session.execute(stmt)
+    result = await session.execute(stmt)
+    rows = result.fetchall()
     await session.commit()
 
-    return len(candidates), 0
+    inserted_count = 0
+    updated_count = 0
+    for row in rows:
+        xmax = row[1]
+        if xmax == 0:
+            inserted_count += 1
+        else:
+            updated_count += 1
+
+    return inserted_count, updated_count
 
 
 async def stream_csv_from_url(url: str) -> AsyncIterator[str]:
