@@ -61,6 +61,52 @@ find opennotes-* -name ".env" -not -name "*.yaml" -type f -delete
 echo "Cleaned up generated .env files"
 '''
 
+[tasks."_db:ensure-postgres"]
+description = "Internal: Ensure opennotes-postgres container is running"
+run = '''
+CONTAINER_NAME="opennotes-postgres"
+
+# Check if container exists
+if ! docker ps -a -q -f name="$CONTAINER_NAME" | grep -q .; then
+    echo "Error: Container '$CONTAINER_NAME' does not exist." >&2
+    echo "" >&2
+    echo "The database container is managed by OpenTofu. Please run:" >&2
+    echo "    mise run apply:infra:local" >&2
+    echo "" >&2
+    exit 1
+fi
+
+# Check if container is running
+if docker ps -q -f name="$CONTAINER_NAME" | grep -q .; then
+    exit 0
+fi
+
+# Container exists but is not running - prompt user
+echo "Container '$CONTAINER_NAME' exists but is not running."
+read -p "Start it? [y/N] " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted." >&2
+    exit 1
+fi
+
+echo "Starting $CONTAINER_NAME..."
+docker start "$CONTAINER_NAME"
+
+# Wait for postgres to be ready
+echo "Waiting for PostgreSQL to be ready..."
+for i in {1..30}; do
+    if docker exec "$CONTAINER_NAME" pg_isready -U opennotes >/dev/null 2>&1; then
+        echo "PostgreSQL is ready."
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "Error: PostgreSQL did not become ready within 30 seconds." >&2
+exit 1
+'''
+
 [tasks."_db:get-prefix"]
 description = "Internal: Detect environment and output command prefix for database operations"
 dir = "{{vars.server_dir}}"
@@ -171,6 +217,7 @@ fi
 
 [tasks."db:migrate"]
 description = "Run database migrations (container-aware)"
+depends = ["_db:ensure-postgres"]
 dir = "{{vars.server_dir}}"
 run = '''
 DB_OPS_CMD_PREFIX="$(mise run _db:get-prefix)"
@@ -180,6 +227,7 @@ alias = "migrate"
 
 [tasks."db:migrate:create"]
 description = "Create new migration (container-aware)"
+depends = ["_db:ensure-postgres"]
 dir = "{{vars.server_dir}}"
 run = '''
 MESSAGE="{{arg(name="message")}}"
@@ -192,18 +240,49 @@ arg "message" description="Migration message" default="auto migration"
 
 [tasks."db:migrate:history"]
 description = "Show migration history (container-aware)"
+depends = ["_db:ensure-postgres"]
 dir = "{{vars.server_dir}}"
 run = '''
 DB_OPS_CMD_PREFIX="$(mise run _db:get-prefix)"
 ${DB_OPS_CMD_PREFIX}uv run alembic history
 '''
 
+[tasks."db:migrate:stamp"]
+description = "Force-set alembic_version (for orphaned migration recovery)"
+depends = ["_db:ensure-postgres"]
+dir = "{{vars.server_dir}}"
+run = '''
+REVISION="{{arg(name="revision")}}"
+
+echo "WARNING: This command force-sets the alembic_version table."
+echo "Use this only when your database points to a non-existent revision"
+echo "(e.g., after switching from a feature branch that had migrations)."
+echo ""
+echo "Target revision: $REVISION"
+echo ""
+read -p "Are you sure? [y/N] " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 1
+fi
+
+DB_OPS_CMD_PREFIX="$(mise run _db:get-prefix)"
+${DB_OPS_CMD_PREFIX}uv run alembic stamp "$REVISION"
+echo "Database stamped to revision: $REVISION"
+'''
+usage = '''
+arg "revision" description="Target revision (use 'head' for latest)" default="head"
+'''
+
 [tasks."db:shell"]
 description = "Open database shell"
+depends = ["_db:ensure-postgres"]
 run = "docker exec -it opennotes-postgres psql -U opennotes -d opennotes"
 
 [tasks."db:check"]
 description = "Check for schema drift between models and database (container-aware)"
+depends = ["_db:ensure-postgres"]
 dir = "{{vars.server_dir}}"
 run = '''
 DB_OPS_CMD_PREFIX="$(mise run _db:get-prefix)"

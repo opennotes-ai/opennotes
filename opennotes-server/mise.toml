@@ -84,23 +84,33 @@ run = [
 
 [tasks."db:downgrade"]
 description = "Rollback one migration"
-run = "uv run alembic downgrade -1"
+run = '''
+cd .. && mise run _db:ensure-postgres
+uv run alembic downgrade -1
+'''
 
 [tasks."db:current"]
 description = "Show current migration"
-run = "uv run alembic current"
+run = '''
+cd .. && mise run _db:ensure-postgres
+uv run alembic current
+'''
 
 [tasks."db:reset"]
 description = "Reset database (drop and recreate)"
 confirm = "This will DELETE all data. Continue?"
-run = [
-    "uv run alembic downgrade base",
-    "uv run alembic upgrade head"
-]
+run = '''
+cd .. && mise run _db:ensure-postgres
+uv run alembic downgrade base
+uv run alembic upgrade head
+'''
 
 [tasks."db:seed"]
 description = "Seed development data into database"
-run = "uv run python scripts/seed_api_keys.py"
+run = '''
+cd .. && mise run _db:ensure-postgres
+uv run python scripts/seed_api_keys.py
+'''
 
 # ========================================
 # API Documentation
