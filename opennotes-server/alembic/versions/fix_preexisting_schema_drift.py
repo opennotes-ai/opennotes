@@ -33,10 +33,13 @@ def upgrade() -> None:
     )
 
     # Add index on id column (model has index=True on id)
-    op.create_index(
-        op.f("ix_fact_checked_item_candidates_id"),
-        "fact_checked_item_candidates",
-        ["id"],
+    # Use IF NOT EXISTS to handle cases where index already exists
+    conn = op.get_bind()
+    conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_fact_checked_item_candidates_id "
+            "ON fact_checked_item_candidates (id)"
+        )
     )
 
 
