@@ -56,7 +56,6 @@ class Note(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("user_profiles.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
 
     channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
@@ -158,7 +157,6 @@ class Rating(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("user_profiles.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
 
     note_id: Mapped[UUID] = mapped_column(
@@ -209,7 +207,6 @@ class Request(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("message_archive.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
 
     migrated_from_content: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
