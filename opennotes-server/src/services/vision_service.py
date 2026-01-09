@@ -72,7 +72,7 @@ class VisionService:
             return cast(str, self.description_cache[cache_key])
 
         # Convert guild ID string to UUID for LLMService
-        # Get CommunityServer UUID from platform_id (Discord guild ID)
+        # Get CommunityServer UUID from platform_community_server_id (Discord guild ID)
         result = await db.execute(
             select(CommunityServer.id).where(
                 CommunityServer.platform_community_server_id == community_server_id
@@ -81,7 +81,9 @@ class VisionService:
         community_server_uuid = result.scalar_one_or_none()
 
         if not community_server_uuid:
-            raise ValueError(f"Community server not found for platform_id: {community_server_id}")
+            raise ValueError(
+                f"Community server not found for platform_community_server_id: {community_server_id}"
+            )
 
         # Generate description via LLMService (handles retries internally)
         description = await self.llm_service.describe_image(

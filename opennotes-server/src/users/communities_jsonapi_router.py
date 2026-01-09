@@ -3,7 +3,7 @@
 This module implements a JSON:API 1.1 compliant endpoint for community servers.
 It provides:
 - Standard JSON:API response envelope structure
-- Community server lookup by platform and platform_id
+- Community server lookup by platform and platform_community_server_id
 - Community server retrieval by ID
 - Proper content-type headers (application/vnd.api+json)
 

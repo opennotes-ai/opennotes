@@ -275,7 +275,7 @@ class BulkScanMessageBatchEvent(BaseEvent):
     event_type: EventType = EventType.BULK_SCAN_MESSAGE_BATCH
     scan_id: UUID = Field(..., description="Scan this batch belongs to")
     community_server_id: UUID = Field(
-        ..., description="Community server UUID (needed for platform_id lookup)"
+        ..., description="Community server UUID (needed for platform_community_server_id lookup)"
     )
     messages: list[BulkScanMessage] = Field(
         ...,

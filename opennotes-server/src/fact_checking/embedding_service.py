@@ -143,7 +143,7 @@ class EmbeddingService:
                 span.set_attribute("embedding.cache_hit", False)
 
                 # Convert guild ID string to UUID for LLMService
-                # Get CommunityServer UUID from platform_id (Discord guild ID)
+                # Get CommunityServer UUID from platform_community_server_id (Discord guild ID)
                 result = await db.execute(
                     select(CommunityServer.id).where(
                         CommunityServer.platform_community_server_id == community_server_id
@@ -153,7 +153,7 @@ class EmbeddingService:
 
                 if not community_server_uuid:
                     raise ValueError(
-                        f"Community server not found for platform_id: {community_server_id}"
+                        f"Community server not found for platform_community_server_id: {community_server_id}"
                     )
 
                 # Generate embedding via LLMService (handles retries internally)
