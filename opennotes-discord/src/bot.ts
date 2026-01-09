@@ -246,6 +246,18 @@ export class Bot {
         } catch (error) {
           logger.error('Pagination button failed', { error });
         }
+      } else if (interaction.customId.startsWith('write_note:')) {
+        try {
+          await listCommand.handleWriteNoteButton(interaction);
+        } catch (error) {
+          logger.error('Write note button failed', { error });
+        }
+      } else if (interaction.customId.startsWith('ai_write_note:')) {
+        try {
+          await listCommand.handleAiWriteNoteButton(interaction);
+        } catch (error) {
+          logger.error('AI write note button failed', { error });
+        }
       } else if (isVibecheckPromptInteraction(interaction.customId)) {
         try {
           await handleVibecheckPromptInteraction(interaction);

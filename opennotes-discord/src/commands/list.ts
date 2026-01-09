@@ -6,6 +6,10 @@ import {
   ButtonStyle,
   MessageFlags,
   ModalSubmitInteraction,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ModalActionRowComponentBuilder,
   ButtonInteraction,
   GuildMember,
 } from 'discord.js';
@@ -713,6 +717,184 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
     } else {
       await interaction.reply({
         content: formatErrorForUser(errorId, 'Failed to create note.'),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+}
+
+export async function handleWriteNoteButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+
+  try {
+    const parts = interaction.customId.split(':');
+    if (parts.length !== 3) {
+      logger.error('Invalid write_note customId format', {
+        error_id: errorId,
+        customId: interaction.customId,
+      });
+      await interaction.reply({
+        content: 'Invalid button data. Please try again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const classification = parts[1] as 'NOT_MISLEADING' | 'MISINFORMED_OR_POTENTIALLY_MISLEADING';
+    const shortId = parts[2];
+    const cacheKey = `write_note_state:${shortId}`;
+
+    const requestId = await cache.get<string>(cacheKey);
+
+    if (!requestId) {
+      logger.error('Write note state not found in cache', {
+        error_id: errorId,
+        shortId,
+        cacheKey,
+      });
+      await interaction.reply({
+        content: 'Button expired. Please run the /list requests command again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const modalShortId = generateShortId();
+    const modalCacheKey = `write_note_modal_state:${modalShortId}`;
+    const classificationCacheKey = `write_note_classification:${modalShortId}`;
+    const ttl = 300;
+
+    await cache.set(modalCacheKey, requestId, ttl);
+    await cache.set(classificationCacheKey, classification, ttl);
+
+    const modal = new ModalBuilder()
+      .setCustomId(`write_note_modal:${modalShortId}`)
+      .setTitle(classification === 'NOT_MISLEADING' ? 'Write Note - Not Misleading' : 'Write Note - Misinformed');
+
+    const noteInput = new TextInputBuilder()
+      .setCustomId('summary')
+      .setLabel('Note Content')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Write your community note explaining this content...')
+      .setRequired(true)
+      .setMinLength(10)
+      .setMaxLength(1000);
+
+    const actionRow = new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(noteInput);
+    modal.addComponents(actionRow);
+
+    await interaction.showModal(modal);
+
+    logger.info('Write note modal shown', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      request_id: requestId,
+      classification,
+    });
+  } catch (error) {
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Error handling write note button', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      error: errorDetails.message,
+      error_type: errorDetails.type,
+      stack: errorDetails.stack,
+    });
+
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: formatErrorForUser(errorId, 'Failed to open note editor.'),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+}
+
+export async function handleAiWriteNoteButton(interaction: ButtonInteraction): Promise<void> {
+  const errorId = generateErrorId();
+
+  try {
+    const parts = interaction.customId.split(':');
+    if (parts.length !== 2) {
+      logger.error('Invalid ai_write_note customId format', {
+        error_id: errorId,
+        customId: interaction.customId,
+      });
+      await interaction.reply({
+        content: 'Invalid button data. Please try again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const shortId = parts[1];
+    const cacheKey = `write_note_state:${shortId}`;
+
+    const requestId = await cache.get<string>(cacheKey);
+
+    if (!requestId) {
+      logger.error('AI write note state not found in cache', {
+        error_id: errorId,
+        shortId,
+        cacheKey,
+      });
+      await interaction.reply({
+        content: 'Button expired. Please run the /list requests command again.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    logger.info('Generating AI note', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      request_id: requestId,
+    });
+
+    const userContext = {
+      userId: interaction.user.id,
+      username: interaction.user.username,
+      displayName: interaction.user.displayName || interaction.user.username,
+      avatarUrl: interaction.user.avatarURL() || undefined,
+      guildId: interaction.guildId || undefined,
+    };
+
+    const result = await apiClient.generateAiNote(requestId, userContext);
+
+    const noteId = result.data.id;
+    const noteContent = result.data.attributes.summary || 'AI-generated note created.';
+
+    await interaction.editReply({
+      content: `✅ **AI Note Generated**\n\nNote ID: \`${noteId}\`\n\n> ${noteContent.slice(0, 200)}${noteContent.length > 200 ? '...' : ''}\n\nThe note has been created and will enter the rating queue.`,
+    });
+
+    logger.info('AI note generated successfully', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      request_id: requestId,
+      note_id: noteId,
+    });
+  } catch (error) {
+    const errorDetails = extractErrorDetails(error);
+
+    logger.error('Error generating AI note', {
+      error_id: errorId,
+      user_id: interaction.user.id,
+      error: errorDetails.message,
+      error_type: errorDetails.type,
+      stack: errorDetails.stack,
+    });
+
+    if (interaction.deferred) {
+      await interaction.editReply({
+        content: formatErrorForUser(errorId, 'Failed to generate AI note. Please try again.'),
+      });
+    } else if (!interaction.replied) {
+      await interaction.reply({
+        content: formatErrorForUser(errorId, 'Failed to generate AI note.'),
         flags: MessageFlags.Ephemeral,
       });
     }
