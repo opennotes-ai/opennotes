@@ -295,6 +295,201 @@ description = "Open Redis CLI"
 run = "docker exec -it opennotes-redis redis-cli"
 
 # ========================================
+# Database Branching Tasks
+# ========================================
+
+[tasks."_db:branch-name"]
+description = "Internal: Get sanitized branch database name from current git branch"
+run = '''
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then
+    echo "Error: Not on a git branch or in detached HEAD state." >&2
+    exit 1
+fi
+
+# Sanitize: replace non-alphanumeric with underscore, lowercase
+SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g' | sed 's/__*/_/g' | sed 's/^_//;s/_$//')
+
+# Prefix with opennotes_
+echo "opennotes_${SANITIZED}"
+'''
+
+[tasks."db:branch:create"]
+description = "Create a branch-specific database cloned from main opennotes database"
+depends = ["_db:ensure-postgres"]
+run = '''
+BRANCH_DB=$(mise run _db:branch-name)
+MAIN_DB="opennotes"
+CONTAINER="opennotes-postgres"
+DB_USER="opennotes"
+
+if [ "$BRANCH_DB" = "opennotes_main" ]; then
+    echo "Error: You're on the main branch. No need to create a branch database." >&2
+    echo "The main database 'opennotes' is used directly." >&2
+    exit 1
+fi
+
+echo "Creating branch database: $BRANCH_DB"
+echo "Cloning from: $MAIN_DB"
+echo ""
+
+# Check if branch database already exists
+EXISTS=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$BRANCH_DB'" 2>/dev/null)
+if [ "$EXISTS" = "1" ]; then
+    echo "Database '$BRANCH_DB' already exists."
+    read -p "Drop and recreate? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
+    echo "Dropping existing database..."
+    docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "DROP DATABASE \"$BRANCH_DB\";"
+fi
+
+# Terminate connections to main database (required for TEMPLATE cloning)
+echo "Terminating connections to $MAIN_DB..."
+docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "
+    SELECT pg_terminate_backend(pid)
+    FROM pg_stat_activity
+    WHERE datname = '$MAIN_DB' AND pid <> pg_backend_pid();
+" >/dev/null 2>&1 || true
+
+# Clone database using TEMPLATE
+echo "Cloning database (this may take a moment)..."
+docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$BRANCH_DB\" TEMPLATE \"$MAIN_DB\";"
+
+echo ""
+echo "✓ Branch database created: $BRANCH_DB"
+echo ""
+echo "To use this database, run:"
+echo "    mise run db:branch:switch"
+'''
+
+[tasks."db:branch:switch"]
+description = "Switch DATABASE_URL to the branch database (outputs export command)"
+depends = ["_db:ensure-postgres"]
+run = '''
+BRANCH_DB=$(mise run _db:branch-name)
+CONTAINER="opennotes-postgres"
+DB_USER="opennotes"
+
+# Check if branch database exists
+EXISTS=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$BRANCH_DB'" 2>/dev/null)
+
+if [ "$EXISTS" != "1" ]; then
+    if [ "$BRANCH_DB" = "opennotes_main" ]; then
+        echo "On main branch - using default 'opennotes' database."
+        BRANCH_DB="opennotes"
+    else
+        echo "Error: Branch database '$BRANCH_DB' does not exist." >&2
+        echo "Create it first with: mise run db:branch:create" >&2
+        exit 1
+    fi
+fi
+
+# Get current DATABASE_URL components or use defaults
+HOST="${POSTGRES_HOST:-localhost}"
+PORT="${POSTGRES_PORT:-5432}"
+USER="${POSTGRES_USER:-opennotes}"
+PASS="${POSTGRES_PASSWORD:-opennotes}"
+
+NEW_URL="postgresql+asyncpg://${USER}:${PASS}@${HOST}:${PORT}/${BRANCH_DB}"
+
+echo "To switch to branch database '$BRANCH_DB', run:"
+echo ""
+echo "    export DATABASE_URL=\"$NEW_URL\""
+echo ""
+echo "Or add to your .env file:"
+echo "    DATABASE_URL=$NEW_URL"
+echo ""
+echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
+echo "Target database: $BRANCH_DB"
+'''
+
+[tasks."db:branch:delete"]
+description = "Delete the branch-specific database"
+depends = ["_db:ensure-postgres"]
+run = '''
+BRANCH_DB=$(mise run _db:branch-name)
+CONTAINER="opennotes-postgres"
+DB_USER="opennotes"
+
+if [ "$BRANCH_DB" = "opennotes_main" ]; then
+    echo "Error: Cannot delete the main database." >&2
+    exit 1
+fi
+
+# Check if branch database exists
+EXISTS=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$BRANCH_DB'" 2>/dev/null)
+if [ "$EXISTS" != "1" ]; then
+    echo "Database '$BRANCH_DB' does not exist."
+    exit 0
+fi
+
+echo "This will permanently delete database: $BRANCH_DB"
+read -p "Are you sure? [y/N] " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 1
+fi
+
+# Terminate connections
+echo "Terminating connections..."
+docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "
+    SELECT pg_terminate_backend(pid)
+    FROM pg_stat_activity
+    WHERE datname = '$BRANCH_DB' AND pid <> pg_backend_pid();
+" >/dev/null 2>&1 || true
+
+# Drop database
+docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -c "DROP DATABASE \"$BRANCH_DB\";"
+
+echo "✓ Deleted database: $BRANCH_DB"
+'''
+
+[tasks."db:branch:list"]
+description = "List all branch databases and show which is active"
+depends = ["_db:ensure-postgres"]
+run = '''
+CONTAINER="opennotes-postgres"
+DB_USER="opennotes"
+
+# Get current DATABASE_URL database name
+if [ -n "${DATABASE_URL:-}" ]; then
+    # Extract database name from URL (last path component)
+    CURRENT_DB=$(echo "$DATABASE_URL" | sed 's|.*/||')
+else
+    CURRENT_DB="opennotes"
+fi
+
+echo "Branch databases (opennotes_*):"
+echo "================================"
+
+# List all opennotes_* databases
+docker exec "$CONTAINER" psql -U "$DB_USER" -d postgres -tAc "
+    SELECT datname || CASE WHEN datname = '$CURRENT_DB' THEN ' (active)' ELSE '' END
+    FROM pg_database
+    WHERE datname LIKE 'opennotes_%'
+    ORDER BY datname;
+"
+
+echo ""
+echo "Main database:"
+echo "=============="
+if [ "$CURRENT_DB" = "opennotes" ]; then
+    echo "opennotes (active)"
+else
+    echo "opennotes"
+fi
+
+echo ""
+echo "Current branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'N/A')"
+echo "Active database: $CURRENT_DB"
+'''
+
+# ========================================
 # Build Tasks
 # ========================================
 
