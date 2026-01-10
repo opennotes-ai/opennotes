@@ -214,7 +214,9 @@ class TestCommunitiesJSONAPI:
         assert "attributes" in server_resource, "Resource must have 'attributes'"
         attributes = server_resource["attributes"]
         assert "platform" in attributes, "Attributes must include 'platform'"
-        assert "platform_id" in attributes, "Attributes must include 'platform_id'"
+        assert "platform_community_server_id" in attributes, (
+            "Attributes must include 'platform_community_server_id'"
+        )
         assert "name" in attributes, "Attributes must include 'name'"
         assert "is_active" in attributes, "Attributes must include 'is_active'"
 
