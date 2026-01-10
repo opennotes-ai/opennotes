@@ -46,6 +46,20 @@ export function getExplanationsCacheKey(scanId: string): string {
   return `vibecheck:explanations:${scanId}`;
 }
 
+function createListRequestsButton(): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId('request_reply:list_requests')
+    .setLabel('List Requests')
+    .setStyle(ButtonStyle.Primary);
+}
+
+function createListNotesButton(): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId('request_reply:list_notes')
+    .setLabel('List Notes')
+    .setStyle(ButtonStyle.Secondary);
+}
+
 async function fetchExplanations(
   flaggedMessages: FlaggedMessageResource[],
   communityServerId: string
@@ -524,11 +538,22 @@ async function showAiGenerationPrompt(
         );
         const createdCount = result.data.attributes.created_count;
 
+        const buttons: ButtonBuilder[] = [];
+        if (createdCount > 0) {
+          buttons.push(createListRequestsButton());
+          if (generateAiNotes) {
+            buttons.push(createListNotesButton());
+          }
+        }
+
+        const components = buttons.length > 0
+          ? [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)]
+          : [];
+
         await aiButtonInteraction.update({
           content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}` +
-            (generateAiNotes ? ' with AI-generated drafts.' : '.') +
-            `\n\nUse \`/list requests\` to view and manage them.`,
-          components: [],
+            (generateAiNotes ? ' with AI-generated drafts.' : '.'),
+          components,
         });
       } catch (error) {
         logger.error('Failed to create note requests', {
@@ -759,8 +784,14 @@ async function handleCreateRequestsSubcommand(
     );
 
     const createdCount = result.data.attributes.created_count;
+
+    const components = createdCount > 0
+      ? [new ActionRowBuilder<ButtonBuilder>().addComponents(createListRequestsButton())]
+      : [];
+
     await interaction.editReply({
-      content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.\n\nUse \`/list requests\` to view and manage them.`,
+      content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}.`,
+      components,
     });
   } catch (error) {
     if (error instanceof ApiError && error.statusCode === 404) {
