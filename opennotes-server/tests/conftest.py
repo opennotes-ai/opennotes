@@ -463,7 +463,9 @@ def test_services():
 
     compose_env = {
         "POSTGRES_PASSWORD": os.environ.get("POSTGRES_PASSWORD", "testpass"),
-        "POSTGRES_IMAGE": os.environ.get("POSTGRES_IMAGE", "pgvector/pgvector:pg18"),
+        "POSTGRES_IMAGE": os.environ.get(
+            "POSTGRES_IMAGE", "opennotes/postgres:18-pgvector-pgroonga"
+        ),
         "REDIS_IMAGE": os.environ.get("REDIS_IMAGE", "redis:7-alpine"),
         "NATS_IMAGE": os.environ.get("NATS_IMAGE", "nats:2.10-alpine"),
         "DISCORD_TOKEN": "dummy-token-for-parsing",
