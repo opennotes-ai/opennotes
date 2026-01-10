@@ -28,6 +28,7 @@ def mock_session():
     session.execute = AsyncMock()
     session.commit = AsyncMock()
     session.flush = AsyncMock()
+    session.refresh = AsyncMock()
     return session
 
 
