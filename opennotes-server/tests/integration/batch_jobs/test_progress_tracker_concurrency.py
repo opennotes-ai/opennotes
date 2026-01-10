@@ -6,6 +6,7 @@ when multiple coroutines update progress simultaneously.
 """
 
 import asyncio
+import os
 from uuid import uuid4
 
 import pytest
@@ -17,10 +18,19 @@ from src.cache.redis_client import RedisClient
 @pytest.fixture
 async def redis_client() -> RedisClient:
     """Create and connect a Redis client for testing."""
-    client = RedisClient()
-    await client.connect()
-    yield client
-    await client.disconnect()
+    # Set INTEGRATION_TESTS to bypass the test-mode skip in RedisClient.connect()
+    old_value = os.environ.get("INTEGRATION_TESTS")
+    os.environ["INTEGRATION_TESTS"] = "true"
+    try:
+        client = RedisClient()
+        await client.connect()
+        yield client
+        await client.disconnect()
+    finally:
+        if old_value is None:
+            os.environ.pop("INTEGRATION_TESTS", None)
+        else:
+            os.environ["INTEGRATION_TESTS"] = old_value
 
 
 @pytest.fixture

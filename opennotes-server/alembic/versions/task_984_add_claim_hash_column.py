@@ -40,7 +40,7 @@ def compute_claim_hash(claim_text: str | None, row_id: str | None = None) -> str
     For NULL claims, uses the row UUID to generate a unique placeholder hash,
     preventing collisions when multiple rows have NULL claim data.
     """
-    if claim_text:
+    if claim_text is not None:
         return xxhash.xxh3_64(claim_text.encode()).hexdigest()
     if row_id:
         return xxhash.xxh3_64(f"__NULL_CLAIM__{row_id}".encode()).hexdigest()
