@@ -51,7 +51,7 @@ class FactCheckItem(Base):
     )
 
     # Dataset identification
-    dataset_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    dataset_name: Mapped[str] = mapped_column(String(100), nullable=False)
     dataset_tags: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, index=True)
 
     # Core content
