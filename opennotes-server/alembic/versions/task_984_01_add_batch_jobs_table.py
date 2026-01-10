@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column(
             "status",
             sa.String(length=20),
-            server_default="pending",
+            server_default=sa.text("'pending'"),
             nullable=False,
         ),
         sa.Column("total_tasks", sa.Integer(), server_default="0", nullable=False),
@@ -44,7 +44,7 @@ def upgrade() -> None:
         sa.Column(
             "metadata",
             postgresql.JSONB(astext_type=sa.Text()),
-            server_default="{}",
+            server_default=sa.text("'{}'::jsonb"),
             nullable=False,
         ),
         sa.Column(
@@ -69,8 +69,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
-    # Create indexes - use SQLAlchemy naming convention (ix_tablename_column)
-    op.create_index(op.f("ix_batch_jobs_id"), "batch_jobs", ["id"])
     op.create_index(op.f("ix_batch_jobs_job_type"), "batch_jobs", ["job_type"])
     op.create_index(op.f("ix_batch_jobs_status"), "batch_jobs", ["status"])
 
@@ -78,5 +76,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index(op.f("ix_batch_jobs_status"), table_name="batch_jobs")
     op.drop_index(op.f("ix_batch_jobs_job_type"), table_name="batch_jobs")
-    op.drop_index(op.f("ix_batch_jobs_id"), table_name="batch_jobs")
     op.drop_table("batch_jobs")

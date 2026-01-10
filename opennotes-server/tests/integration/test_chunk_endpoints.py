@@ -21,6 +21,7 @@ Regular users without the above permissions receive 403 Forbidden.
 Task: task-871.04 - Create API endpoints for bulk re-chunking operations
 Task: task-871.10 - Add authorization check to rechunk endpoints
 Task: task-871.40 - Refactor test fixture inheritance to module-level fixtures
+Task: task-986 - Refactor to use BatchJob infrastructure
 
 Note: Fixtures are defined at module-level for better pytest-asyncio reliability.
 Class-based fixture inheritance can cause issues with async fixtures.
@@ -229,38 +230,19 @@ class TestFactCheckRechunkEndpoint:
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
-    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
+    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_service_account_can_initiate_rechunk(
         self,
-        mock_get_tracker,
+        mock_lock_manager,
         mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Service account can initiate fact check rechunking."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4 as gen_uuid
-
-        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
-
         mock_task.kiq = AsyncMock()
-
-        mock_tracker = MagicMock()
-        task_response = RechunkTaskResponse(
-            task_id=gen_uuid(),
-            task_type="fact_check",
-            community_server_id=community_server_with_data["server"].id,
-            batch_size=100,
-            status=RechunkTaskStatus.PENDING,
-            processed_count=0,
-            total_count=3,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-        mock_tracker.create_task = AsyncMock(return_value=task_response)
-        mock_get_tracker.return_value = mock_tracker
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
         server = community_server_with_data["server"]
 
@@ -271,15 +253,16 @@ class TestFactCheckRechunkEndpoint:
                 headers=service_account_headers,
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
-            assert data["status"] == "pending"
-            assert "total_items" in data
-            assert "task_id" in data
+            assert data["status"] == "in_progress"
+            assert "id" in data
+            assert data["total_tasks"] >= 0
+            assert data["job_type"] == "rechunk:fact_check"
 
             mock_task.kiq.assert_called_once()
             call_kwargs = mock_task.kiq.call_args.kwargs
-            assert call_kwargs["task_id"] == data["task_id"]
+            assert call_kwargs["job_id"] == data["id"]
             assert call_kwargs["community_server_id"] == str(server.id)
             assert call_kwargs["batch_size"] == 100
 
@@ -302,38 +285,19 @@ class TestFactCheckRechunkEndpoint:
             assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
-    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
+    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_batch_size_parameter_accepted(
         self,
-        mock_get_tracker,
+        mock_lock_manager,
         mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Endpoint accepts custom batch_size parameter."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4 as gen_uuid
-
-        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
-
         mock_task.kiq = AsyncMock()
-
-        mock_tracker = MagicMock()
-        task_response = RechunkTaskResponse(
-            task_id=gen_uuid(),
-            task_type="fact_check",
-            community_server_id=community_server_with_data["server"].id,
-            batch_size=50,
-            status=RechunkTaskStatus.PENDING,
-            processed_count=0,
-            total_count=3,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-        mock_tracker.create_task = AsyncMock(return_value=task_response)
-        mock_get_tracker.return_value = mock_tracker
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
         server = community_server_with_data["server"]
 
@@ -344,9 +308,12 @@ class TestFactCheckRechunkEndpoint:
                 headers=service_account_headers,
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
-            assert data["status"] == "pending"
+            assert data["status"] == "in_progress"
+
+            call_kwargs = mock_task.kiq.call_args.kwargs
+            assert call_kwargs["batch_size"] == 50
 
     @pytest.mark.asyncio
     async def test_invalid_batch_size_rejected(
@@ -394,38 +361,19 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
-    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
+    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_service_account_can_initiate_rechunk(
         self,
-        mock_get_tracker,
+        mock_lock_manager,
         mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Service account can initiate previously seen message rechunking."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4 as gen_uuid
-
-        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
-
         mock_task.kiq = AsyncMock()
-
-        mock_tracker = MagicMock()
-        task_response = RechunkTaskResponse(
-            task_id=gen_uuid(),
-            task_type="previously_seen",
-            community_server_id=community_server_with_data["server"].id,
-            batch_size=100,
-            status=RechunkTaskStatus.PENDING,
-            processed_count=0,
-            total_count=2,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-        mock_tracker.create_task = AsyncMock(return_value=task_response)
-        mock_get_tracker.return_value = mock_tracker
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
         server = community_server_with_data["server"]
 
@@ -436,15 +384,16 @@ class TestPreviouslySeenRechunkEndpoint:
                 headers=service_account_headers,
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
-            assert data["status"] == "pending"
-            assert "total_items" in data
-            assert "task_id" in data
+            assert data["status"] == "in_progress"
+            assert "id" in data
+            assert data["total_tasks"] >= 0
+            assert data["job_type"] == "rechunk:previously_seen"
 
             mock_task.kiq.assert_called_once()
             call_kwargs = mock_task.kiq.call_args.kwargs
-            assert call_kwargs["task_id"] == data["task_id"]
+            assert call_kwargs["job_id"] == data["id"]
             assert call_kwargs["community_server_id"] == str(server.id)
             assert call_kwargs["batch_size"] == 100
 
@@ -472,38 +421,19 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
-    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
+    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_batch_size_parameter_accepted(
         self,
-        mock_get_tracker,
+        mock_lock_manager,
         mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Endpoint accepts custom batch_size parameter."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4 as gen_uuid
-
-        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
-
         mock_task.kiq = AsyncMock()
-
-        mock_tracker = MagicMock()
-        task_response = RechunkTaskResponse(
-            task_id=gen_uuid(),
-            task_type="previously_seen",
-            community_server_id=community_server_with_data["server"].id,
-            batch_size=75,
-            status=RechunkTaskStatus.PENDING,
-            processed_count=0,
-            total_count=2,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-        mock_tracker.create_task = AsyncMock(return_value=task_response)
-        mock_get_tracker.return_value = mock_tracker
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
         server = community_server_with_data["server"]
 
@@ -514,9 +444,12 @@ class TestPreviouslySeenRechunkEndpoint:
                 headers=service_account_headers,
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
-            assert data["status"] == "pending"
+            assert data["status"] == "in_progress"
+
+            call_kwargs = mock_task.kiq.call_args.kwargs
+            assert call_kwargs["batch_size"] == 75
 
     @pytest.mark.asyncio
     async def test_invalid_batch_size_rejected(
@@ -554,7 +487,7 @@ class TestRechunkConcurrencyControl:
     """
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
+    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_fact_check_rechunk_returns_409_when_already_in_progress(
         self,
@@ -581,7 +514,7 @@ class TestRechunkConcurrencyControl:
             assert "already in progress" in data["detail"]
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
+    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_previously_seen_rechunk_returns_409_when_already_in_progress(
         self,
@@ -608,12 +541,10 @@ class TestRechunkConcurrencyControl:
             assert "already in progress" in data["detail"]
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
+    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_previously_seen_rechunk_different_communities_allowed(
         self,
-        mock_get_tracker,
         mock_lock_manager,
         mock_task,
         service_account_headers,
@@ -621,10 +552,6 @@ class TestRechunkConcurrencyControl:
         db,
     ):
         """Different communities can rechunk previously seen messages concurrently."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4 as gen_uuid
-
-        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
         from src.llm_config.models import CommunityServer
 
         mock_task.kiq = AsyncMock()
@@ -641,22 +568,7 @@ class TestRechunkConcurrencyControl:
         await db.refresh(server2)
 
         mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
-
-        mock_tracker = MagicMock()
-        task_response = RechunkTaskResponse(
-            task_id=gen_uuid(),
-            task_type="previously_seen",
-            community_server_id=server2.id,
-            batch_size=100,
-            status=RechunkTaskStatus.PENDING,
-            processed_count=0,
-            total_count=0,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-        mock_tracker.create_task = AsyncMock(return_value=task_response)
-        mock_get_tracker.return_value = mock_tracker
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -665,52 +577,29 @@ class TestRechunkConcurrencyControl:
                 headers=service_account_headers,
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
-            assert data["status"] == "pending"
+            assert data["status"] == "in_progress"
 
 
 class TestRechunkKiqFailure:
     """Test lock release when .kiq() fails (task-909.04)."""
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_fact_check_rechunk_task")
+    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_fact_check_kiq_failure_releases_lock(
         self,
-        mock_get_tracker,
         mock_lock_manager,
         mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Lock is released when .kiq() fails for fact check rechunk."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4 as gen_uuid
-
-        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
-
         mock_task.kiq = AsyncMock(side_effect=Exception("NATS connection failed"))
 
         mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
         mock_lock_manager.release_lock = AsyncMock(return_value=True)
-
-        mock_tracker = MagicMock()
-        task_response = RechunkTaskResponse(
-            task_id=gen_uuid(),
-            task_type="fact_check",
-            community_server_id=community_server_with_data["server"].id,
-            batch_size=100,
-            status=RechunkTaskStatus.PENDING,
-            processed_count=0,
-            total_count=3,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-        mock_tracker.create_task = AsyncMock(return_value=task_response)
-        mock_get_tracker.return_value = mock_tracker
 
         server = community_server_with_data["server"]
 
@@ -726,43 +615,20 @@ class TestRechunkKiqFailure:
             mock_lock_manager.release_lock.assert_called_with("fact_check")
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.process_previously_seen_rechunk_task")
+    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    @patch("src.fact_checking.chunk_router.get_rechunk_task_tracker")
     async def test_previously_seen_kiq_failure_releases_lock(
         self,
-        mock_get_tracker,
         mock_lock_manager,
         mock_task,
         service_account_headers,
         community_server_with_data,
     ):
         """Lock is released when .kiq() fails for previously seen rechunk."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4 as gen_uuid
-
-        from src.fact_checking.chunk_task_schemas import RechunkTaskResponse, RechunkTaskStatus
-
         mock_task.kiq = AsyncMock(side_effect=Exception("NATS connection failed"))
 
         mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
         mock_lock_manager.release_lock = AsyncMock(return_value=True)
-
-        mock_tracker = MagicMock()
-        task_response = RechunkTaskResponse(
-            task_id=gen_uuid(),
-            task_type="previously_seen",
-            community_server_id=community_server_with_data["server"].id,
-            batch_size=100,
-            status=RechunkTaskStatus.PENDING,
-            processed_count=0,
-            total_count=2,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-        mock_tracker.create_task = AsyncMock(return_value=task_response)
-        mock_get_tracker.return_value = mock_tracker
 
         server = community_server_with_data["server"]
 
@@ -776,3 +642,139 @@ class TestRechunkKiqFailure:
             assert response.status_code == 500
 
             mock_lock_manager.release_lock.assert_called_with("previously_seen", str(server.id))
+
+
+class TestRechunkEndpointDatabaseIntegration:
+    """Tests that verify batch jobs are actually created in the database.
+
+    These tests verify that the rechunk endpoints create proper BatchJob records
+    with correct job_type values, rather than only checking HTTP responses.
+    """
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_fact_check_rechunk_creates_batch_job_record(
+        self,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+        db,
+    ):
+        """Verify BatchJob record is created in database with correct job_type."""
+        from uuid import UUID as UUID_
+
+        from sqlalchemy import select
+
+        from src.batch_jobs.models import BatchJob
+
+        mock_task.kiq = AsyncMock()
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/fact-check/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 201
+            data = response.json()
+            job_id = UUID_(data["id"])
+
+            result = await db.execute(select(BatchJob).where(BatchJob.id == job_id))
+            job = result.scalar_one_or_none()
+
+            assert job is not None, "BatchJob record should exist in database"
+            assert job.job_type == "rechunk:fact_check"
+            assert job.status == "in_progress"
+            assert job.metadata_.get("community_server_id") == str(server.id)
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_previously_seen_rechunk_creates_batch_job_record(
+        self,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+        db,
+    ):
+        """Verify BatchJob record is created in database with correct job_type."""
+        from uuid import UUID as UUID_
+
+        from sqlalchemy import select
+
+        from src.batch_jobs.models import BatchJob
+
+        mock_task.kiq = AsyncMock()
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/previously-seen/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 201
+            data = response.json()
+            job_id = UUID_(data["id"])
+
+            result = await db.execute(select(BatchJob).where(BatchJob.id == job_id))
+            job = result.scalar_one_or_none()
+
+            assert job is not None, "BatchJob record should exist in database"
+            assert job.job_type == "rechunk:previously_seen"
+            assert job.status == "in_progress"
+            assert job.metadata_.get("community_server_id") == str(server.id)
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
+    async def test_batch_job_has_correct_total_tasks_count(
+        self,
+        mock_lock_manager,
+        mock_task,
+        service_account_headers,
+        community_server_with_data,
+        db,
+    ):
+        """Verify BatchJob.total_tasks reflects actual item count."""
+        from uuid import UUID as UUID_
+
+        from sqlalchemy import select
+
+        from src.batch_jobs.models import BatchJob
+
+        mock_task.kiq = AsyncMock()
+        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
+        mock_lock_manager.release_lock = AsyncMock(return_value=True)
+
+        server = community_server_with_data["server"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/chunks/fact-check/rechunk?community_server_id={server.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 201
+            data = response.json()
+            job_id = UUID_(data["id"])
+
+            result = await db.execute(select(BatchJob).where(BatchJob.id == job_id))
+            job = result.scalar_one()
+
+            assert job.total_tasks == 3
+            assert job.completed_tasks == 0
+            assert job.failed_tasks == 0

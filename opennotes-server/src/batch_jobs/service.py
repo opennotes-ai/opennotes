@@ -143,11 +143,16 @@ class BatchJobService:
         current_status = BatchJobStatus(job.status)
         self._validate_transition(current_status, BatchJobStatus.IN_PROGRESS)
 
+        await self._progress_tracker.start_tracking(job_id)
+
         job.status = BatchJobStatus.IN_PROGRESS.value
         job.started_at = datetime.now(UTC)
 
-        await self._session.flush()
-        await self._progress_tracker.start_tracking(job_id)
+        try:
+            await self._session.flush()
+        except Exception:
+            await self._progress_tracker.stop_tracking(job_id)
+            raise
 
         logger.info(
             "Started batch job",

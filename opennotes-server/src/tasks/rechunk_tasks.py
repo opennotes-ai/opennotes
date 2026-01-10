@@ -29,12 +29,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from taskiq import TaskiqMessage, TaskiqResult
 
+from src.batch_jobs.models import BatchJobStatus
+from src.batch_jobs.progress_tracker import BatchJobProgressTracker
+from src.batch_jobs.service import BatchJobService
 from src.cache.redis_client import RedisClient
 from src.common.db_retry import is_deadlock_error
 from src.config import get_settings
 from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-from src.fact_checking.chunk_task_schemas import RechunkTaskStatus
-from src.fact_checking.chunk_task_tracker import RechunkTaskTracker
 from src.fact_checking.chunking_service import ChunkingService
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
@@ -214,64 +215,79 @@ async def _handle_fact_check_rechunk_final_failure(
 ) -> None:
     """
     Called by RetryWithFinalCallbackMiddleware when all retries are exhausted.
-    Marks the task as failed and releases the lock.
+    Marks the job as failed and releases the lock.
     """
-    task_id = message.kwargs.get("task_id")
+    job_id = message.kwargs.get("job_id")
     redis_url = message.kwargs.get("redis_url")
+    db_url = message.kwargs.get("db_url")
 
-    if not task_id or not redis_url:
-        logger.error("Missing task_id or redis_url in final failure handler")
+    if not job_id or not redis_url or not db_url:
+        logger.error("Missing job_id, redis_url, or db_url in final failure handler")
         return
 
-    # Validate UUID format upfront to prevent lock leakage on malformed task_id
     try:
-        task_uuid = UUID(task_id)
+        job_uuid = UUID(job_id)
     except ValueError:
         logger.error(
-            "Invalid task_id format in final failure handler",
-            extra={"task_id": task_id},
+            "Invalid job_id format in final failure handler",
+            extra={"job_id": job_id},
         )
         return
+
+    settings = get_settings()
+    engine = create_async_engine(
+        db_url,
+        pool_pre_ping=True,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
 
     redis_client = RedisClient()
     try:
         await redis_client.connect(redis_url)
-        tracker = RechunkTaskTracker(redis_client)
         lock_manager = TaskRechunkLockManager(redis_client)
+        progress_tracker = BatchJobProgressTracker(redis_client)
 
-        task = await tracker.get_task(task_uuid)
-        processed_count = task.processed_count if task else 0
+        progress = await progress_tracker.get_progress(job_uuid)
+        completed_count = progress.processed_count if progress else 0
 
-        mark_failed_error = None
-        try:
-            await tracker.mark_failed(task_uuid, str(exception), processed_count)
-        except Exception as e:
-            mark_failed_error = e
-            logger.error(
-                "Failed to mark task as failed",
-                extra={"task_id": task_id, "error": str(e)},
-            )
+        async with async_session() as session:
+            batch_job_service = BatchJobService(session, progress_tracker)
 
-        # Always release lock, even if mark_failed fails
+            try:
+                await batch_job_service.fail_job(
+                    job_uuid,
+                    error_summary={"error": str(exception)},
+                    completed_tasks=completed_count,
+                )
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                logger.error(
+                    "Failed to mark job as failed",
+                    extra={"job_id": job_id, "error": str(e)},
+                )
+
         try:
             await lock_manager.release_lock("fact_check")
         except Exception as lock_error:
             logger.error(
-                "Failed to release lock after task failure",
-                extra={"task_id": task_id, "error": str(lock_error)},
+                "Failed to release lock after job failure",
+                extra={"job_id": job_id, "error": str(lock_error)},
             )
 
-        if mark_failed_error is None:
-            logger.error(
-                "Fact check rechunk task failed after all retries exhausted",
-                extra={
-                    "task_id": task_id,
-                    "processed_count": processed_count,
-                    "error": str(exception),
-                },
-            )
+        logger.error(
+            "Fact check rechunk job failed after all retries exhausted",
+            extra={
+                "job_id": job_id,
+                "completed_count": completed_count,
+                "error": str(exception),
+            },
+        )
     finally:
         await redis_client.disconnect()
+        await engine.dispose()
 
 
 async def _handle_previously_seen_rechunk_final_failure(
@@ -281,74 +297,91 @@ async def _handle_previously_seen_rechunk_final_failure(
 ) -> None:
     """
     Called by RetryWithFinalCallbackMiddleware when all retries are exhausted.
-    Marks the task as failed and releases the lock.
+    Marks the job as failed and releases the lock.
     """
-    task_id = message.kwargs.get("task_id")
+    job_id = message.kwargs.get("job_id")
     community_server_id = message.kwargs.get("community_server_id")
     redis_url = message.kwargs.get("redis_url")
+    db_url = message.kwargs.get("db_url")
 
-    if not task_id or not redis_url or not community_server_id:
-        logger.error("Missing task_id, community_server_id, or redis_url in final failure handler")
-        return
-
-    # Validate UUID format upfront to prevent lock leakage on malformed task_id
-    try:
-        task_uuid = UUID(task_id)
-    except ValueError:
+    if not job_id or not redis_url or not db_url or not community_server_id:
         logger.error(
-            "Invalid task_id format in final failure handler",
-            extra={"task_id": task_id},
+            "Missing job_id, community_server_id, redis_url, or db_url in final failure handler"
         )
         return
+
+    try:
+        job_uuid = UUID(job_id)
+    except ValueError:
+        logger.error(
+            "Invalid job_id format in final failure handler",
+            extra={"job_id": job_id},
+        )
+        return
+
+    settings = get_settings()
+    engine = create_async_engine(
+        db_url,
+        pool_pre_ping=True,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
 
     redis_client = RedisClient()
     try:
         await redis_client.connect(redis_url)
-        tracker = RechunkTaskTracker(redis_client)
         lock_manager = TaskRechunkLockManager(redis_client)
+        progress_tracker = BatchJobProgressTracker(redis_client)
 
-        task = await tracker.get_task(task_uuid)
-        processed_count = task.processed_count if task else 0
+        progress = await progress_tracker.get_progress(job_uuid)
+        completed_count = progress.processed_count if progress else 0
 
-        mark_failed_error = None
-        try:
-            await tracker.mark_failed(task_uuid, str(exception), processed_count)
-        except Exception as e:
-            mark_failed_error = e
-            logger.error(
-                "Failed to mark task as failed",
-                extra={
-                    "task_id": task_id,
-                    "community_server_id": community_server_id,
-                    "error": str(e),
-                },
-            )
+        async with async_session() as session:
+            batch_job_service = BatchJobService(session, progress_tracker)
 
-        # Always release lock, even if mark_failed fails
+            try:
+                await batch_job_service.fail_job(
+                    job_uuid,
+                    error_summary={"error": str(exception)},
+                    completed_tasks=completed_count,
+                )
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                logger.error(
+                    "Failed to mark job as failed",
+                    extra={
+                        "job_id": job_id,
+                        "community_server_id": community_server_id,
+                        "error": str(e),
+                    },
+                )
+
         try:
             await lock_manager.release_lock("previously_seen", community_server_id)
         except Exception as lock_error:
             logger.error(
-                "Failed to release lock after task failure",
+                "Failed to release lock after job failure",
                 extra={
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "community_server_id": community_server_id,
                     "error": str(lock_error),
                 },
             )
 
-        if mark_failed_error is None:
-            logger.error(
-                "Previously seen rechunk task failed after all retries exhausted",
-                extra={
-                    "task_id": task_id,
-                    "community_server_id": community_server_id,
-                    "processed_count": processed_count,
-                    "error": str(exception),
-                },
-            )
+        logger.error(
+            "Previously seen rechunk job failed after all retries exhausted",
+            extra={
+                "job_id": job_id,
+                "community_server_id": community_server_id,
+                "completed_count": completed_count,
+                "error": str(exception),
+            },
+        )
     finally:
         await redis_client.disconnect()
+        await engine.dispose()
 
 
 retry_callback_registry.register("rechunk:fact_check", _handle_fact_check_rechunk_final_failure)
@@ -359,7 +392,7 @@ retry_callback_registry.register(
 
 @register_task(task_name="rechunk:fact_check", component="rechunk", task_type="batch")
 async def process_fact_check_rechunk_task(
-    task_id: str,
+    job_id: str,
     community_server_id: str | None,
     batch_size: int,
     db_url: str,
@@ -372,28 +405,28 @@ async def process_fact_check_rechunk_task(
     1. Queries all FactCheckItem records
     2. For each item, clears existing FactCheckChunk entries
     3. Re-chunks and embeds the content using ChunkEmbeddingService
-    4. Updates task progress in Redis
+    4. Updates job progress via BatchJobService
     5. Releases the lock when complete
 
     Args:
-        task_id: UUID string of the task for status tracking
+        job_id: UUID string of the batch job for status tracking
         community_server_id: UUID string of the community server for LLM credentials,
             or None to use global fallback
         batch_size: Number of items to process in each batch
         db_url: Database connection URL
-        redis_url: Redis connection URL for task tracking
+        redis_url: Redis connection URL for progress tracking
 
     Returns:
         dict with status and processed_count
     """
     with _tracer.start_as_current_span("rechunk.fact_check") as span:
-        span.set_attribute("task.id", task_id)
-        span.set_attribute("task.type", "fact_check")
-        span.set_attribute("task.community_server_id", community_server_id or "global")
-        span.set_attribute("task.batch_size", batch_size)
+        span.set_attribute("job.id", job_id)
+        span.set_attribute("job.type", "fact_check")
+        span.set_attribute("job.community_server_id", community_server_id or "global")
+        span.set_attribute("job.batch_size", batch_size)
 
         settings = get_settings()
-        task_uuid = UUID(task_id)
+        job_uuid = UUID(job_id)
         community_uuid = UUID(community_server_id) if community_server_id else None
 
         engine = create_async_engine(
@@ -408,32 +441,33 @@ async def process_fact_check_rechunk_task(
 
         redis_client_bg = RedisClient()
         await redis_client_bg.connect(redis_url)
-        tracker = RechunkTaskTracker(redis_client_bg)
+        progress_tracker = BatchJobProgressTracker(redis_client_bg)
         lock_manager = TaskRechunkLockManager(redis_client_bg)
 
         service = get_chunk_embedding_service()
 
-        existing_task = await tracker.get_task(task_uuid)
-        if existing_task and existing_task.processed_count > 0:
-            processed_count = existing_task.processed_count
+        progress = await progress_tracker.get_progress(job_uuid)
+        if progress and progress.processed_count > 0:
+            processed_count = progress.processed_count
             offset = processed_count
             logger.info(
                 "Resuming fact check rechunk from previous progress",
                 extra={
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "resumed_from_count": processed_count,
                 },
             )
-            span.set_attribute("task.resumed", True)
-            span.set_attribute("task.resumed_from_count", processed_count)
+            span.set_attribute("job.resumed", True)
+            span.set_attribute("job.resumed_from_count", processed_count)
         else:
             processed_count = 0
             offset = 0
-            span.set_attribute("task.resumed", False)
+            span.set_attribute("job.resumed", False)
 
+        failed_count = 0
+
+        item_errors: list[dict] = []
         try:
-            await tracker.update_status(task_uuid, RechunkTaskStatus.IN_PROGRESS)
-
             async with async_session() as db:
                 total_count_result = await db.execute(select(func.count(FactCheckItem.id)))
                 total_items = total_count_result.scalar() or 0
@@ -442,7 +476,7 @@ async def process_fact_check_rechunk_task(
                     logger.warning(
                         "Stored progress exceeds current item count, resetting offset",
                         extra={
-                            "task_id": task_id,
+                            "job_id": job_id,
                             "stored_offset": offset,
                             "total_items": total_items,
                         },
@@ -467,54 +501,102 @@ async def process_fact_check_rechunk_task(
                         break
 
                     for item in items:
-                        await _process_fact_check_item_with_retry(
-                            engine=engine,
-                            service=service,
-                            item_id=item.id,
-                            item_content=item.content,
-                            community_server_id=community_uuid,
-                        )
-                        processed_count += 1
+                        try:
+                            await _process_fact_check_item_with_retry(
+                                engine=engine,
+                                service=service,
+                                item_id=item.id,
+                                item_content=item.content,
+                                community_server_id=community_uuid,
+                            )
+                            processed_count += 1
+                        except Exception as item_error:
+                            failed_count += 1
+                            item_errors.append(
+                                {
+                                    "item_id": str(item.id),
+                                    "error": str(item_error),
+                                }
+                            )
+                            logger.error(
+                                "Failed to process fact check item",
+                                extra={
+                                    "job_id": job_id,
+                                    "item_id": str(item.id),
+                                    "error": str(item_error),
+                                },
+                            )
+
+                        try:
+                            await progress_tracker.update_progress(
+                                job_uuid,
+                                processed_count=processed_count,
+                                error_count=failed_count,
+                            )
+                        except Exception as progress_error:
+                            logger.warning(
+                                "Failed to update progress, continuing",
+                                extra={
+                                    "job_id": job_id,
+                                    "error": str(progress_error),
+                                },
+                            )
 
                     offset += batch_size
-
-                    await tracker.update_progress(task_uuid, processed_count)
 
                     logger.info(
                         "Processed fact check rechunk batch",
                         extra={
-                            "task_id": task_id,
+                            "job_id": job_id,
                             "community_server_id": community_server_id,
                             "processed_count": processed_count,
+                            "failed_count": failed_count,
                             "batch_offset": offset,
                         },
                     )
 
-            await tracker.mark_completed(task_uuid, processed_count)
+            async with async_session() as session:
+                batch_job_service = BatchJobService(session, progress_tracker)
+                await batch_job_service.complete_job(
+                    job_uuid,
+                    completed_tasks=processed_count,
+                    failed_tasks=failed_count,
+                )
+                await session.commit()
+
             await lock_manager.release_lock("fact_check")
-            span.set_attribute("task.processed_count", processed_count)
+            span.set_attribute("job.processed_count", processed_count)
+            span.set_attribute("job.failed_count", failed_count)
 
             logger.info(
                 "Completed fact check rechunking",
                 extra={
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "community_server_id": community_server_id,
                     "total_processed": processed_count,
+                    "total_failed": failed_count,
                 },
             )
 
-            return {"status": "completed", "processed_count": processed_count}
+            return {
+                "status": BatchJobStatus.COMPLETED.value,
+                "processed_count": processed_count,
+                "failed_count": failed_count,
+            }
         except Exception as e:
             error_msg = str(e)
             span.record_exception(e)
             span.set_status(StatusCode.ERROR, error_msg)
+            span.set_attribute("job.item_errors", len(item_errors))
 
             logger.warning(
                 "Fact check rechunk batch failed, will retry if attempts remain",
                 extra={
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "community_server_id": community_server_id,
                     "processed_count": processed_count,
+                    "failed_count": failed_count,
+                    "item_errors": item_errors[:10],
                     "error": error_msg,
                 },
             )
@@ -526,7 +608,7 @@ async def process_fact_check_rechunk_task(
 
 @register_task(task_name="rechunk:previously_seen", component="rechunk", task_type="batch")
 async def process_previously_seen_rechunk_task(
-    task_id: str,
+    job_id: str,
     community_server_id: str,
     batch_size: int,
     db_url: str,
@@ -539,27 +621,27 @@ async def process_previously_seen_rechunk_task(
     1. Queries PreviouslySeenMessage records for the specified community
     2. For each message, clears existing PreviouslySeenChunk entries
     3. Re-chunks and embeds the content using ChunkEmbeddingService
-    4. Updates task progress in Redis
+    4. Updates job progress via BatchJobService
     5. Releases the lock when complete
 
     Args:
-        task_id: UUID string of the task for status tracking
+        job_id: UUID string of the batch job for status tracking
         community_server_id: UUID string of the community server
         batch_size: Number of items to process in each batch
         db_url: Database connection URL
-        redis_url: Redis connection URL for task tracking
+        redis_url: Redis connection URL for progress tracking
 
     Returns:
         dict with status and processed_count
     """
     with _tracer.start_as_current_span("rechunk.previously_seen") as span:
-        span.set_attribute("task.id", task_id)
-        span.set_attribute("task.type", "previously_seen")
-        span.set_attribute("task.community_server_id", community_server_id)
-        span.set_attribute("task.batch_size", batch_size)
+        span.set_attribute("job.id", job_id)
+        span.set_attribute("job.type", "previously_seen")
+        span.set_attribute("job.community_server_id", community_server_id)
+        span.set_attribute("job.batch_size", batch_size)
 
         settings = get_settings()
-        task_uuid = UUID(task_id)
+        job_uuid = UUID(job_id)
         community_uuid = UUID(community_server_id)
 
         engine = create_async_engine(
@@ -574,33 +656,34 @@ async def process_previously_seen_rechunk_task(
 
         redis_client_bg = RedisClient()
         await redis_client_bg.connect(redis_url)
-        tracker = RechunkTaskTracker(redis_client_bg)
+        progress_tracker = BatchJobProgressTracker(redis_client_bg)
         lock_manager = TaskRechunkLockManager(redis_client_bg)
 
         service = get_chunk_embedding_service()
 
-        existing_task = await tracker.get_task(task_uuid)
-        if existing_task and existing_task.processed_count > 0:
-            processed_count = existing_task.processed_count
+        progress = await progress_tracker.get_progress(job_uuid)
+        if progress and progress.processed_count > 0:
+            processed_count = progress.processed_count
             offset = processed_count
             logger.info(
                 "Resuming previously seen rechunk from previous progress",
                 extra={
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "community_server_id": community_server_id,
                     "resumed_from_count": processed_count,
                 },
             )
-            span.set_attribute("task.resumed", True)
-            span.set_attribute("task.resumed_from_count", processed_count)
+            span.set_attribute("job.resumed", True)
+            span.set_attribute("job.resumed_from_count", processed_count)
         else:
             processed_count = 0
             offset = 0
-            span.set_attribute("task.resumed", False)
+            span.set_attribute("job.resumed", False)
+
+        failed_count = 0
+        item_errors: list[dict] = []
 
         try:
-            await tracker.update_status(task_uuid, RechunkTaskStatus.IN_PROGRESS)
-
             async with async_session() as db:
                 total_count_result = await db.execute(
                     select(func.count(PreviouslySeenMessage.id)).where(
@@ -613,7 +696,7 @@ async def process_previously_seen_rechunk_task(
                     logger.warning(
                         "Stored progress exceeds current item count, resetting offset",
                         extra={
-                            "task_id": task_id,
+                            "job_id": job_id,
                             "community_server_id": community_server_id,
                             "stored_offset": offset,
                             "total_items": total_items,
@@ -642,54 +725,105 @@ async def process_previously_seen_rechunk_task(
                     for msg in messages:
                         content = (msg.extra_metadata or {}).get("content", "")
                         if content:
-                            await _process_previously_seen_item_with_retry(
-                                engine=engine,
-                                service=service,
-                                item_id=msg.id,
-                                item_content=content,
-                                community_server_id=community_uuid,
+                            try:
+                                await _process_previously_seen_item_with_retry(
+                                    engine=engine,
+                                    service=service,
+                                    item_id=msg.id,
+                                    item_content=content,
+                                    community_server_id=community_uuid,
+                                )
+                                processed_count += 1
+                            except Exception as item_error:
+                                failed_count += 1
+                                item_errors.append(
+                                    {
+                                        "message_id": str(msg.id),
+                                        "error": str(item_error),
+                                    }
+                                )
+                                logger.error(
+                                    "Failed to process previously seen message",
+                                    extra={
+                                        "job_id": job_id,
+                                        "message_id": str(msg.id),
+                                        "error": str(item_error),
+                                    },
+                                )
+                        else:
+                            processed_count += 1
+
+                        try:
+                            await progress_tracker.update_progress(
+                                job_uuid,
+                                processed_count=processed_count,
+                                error_count=failed_count,
                             )
-                        processed_count += 1
+                        except Exception as progress_error:
+                            logger.warning(
+                                "Failed to update progress, continuing",
+                                extra={
+                                    "job_id": job_id,
+                                    "community_server_id": community_server_id,
+                                    "error": str(progress_error),
+                                },
+                            )
 
                     offset += batch_size
-
-                    await tracker.update_progress(task_uuid, processed_count)
 
                     logger.info(
                         "Processed previously seen rechunk batch",
                         extra={
-                            "task_id": task_id,
+                            "job_id": job_id,
                             "community_server_id": community_server_id,
                             "processed_count": processed_count,
+                            "failed_count": failed_count,
                             "batch_offset": offset,
                         },
                     )
 
-            await tracker.mark_completed(task_uuid, processed_count)
+            async with async_session() as session:
+                batch_job_service = BatchJobService(session, progress_tracker)
+                await batch_job_service.complete_job(
+                    job_uuid,
+                    completed_tasks=processed_count,
+                    failed_tasks=failed_count,
+                )
+                await session.commit()
+
             await lock_manager.release_lock("previously_seen", community_server_id)
-            span.set_attribute("task.processed_count", processed_count)
+            span.set_attribute("job.processed_count", processed_count)
+            span.set_attribute("job.failed_count", failed_count)
 
             logger.info(
                 "Completed previously seen message rechunking",
                 extra={
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "community_server_id": community_server_id,
                     "total_processed": processed_count,
+                    "total_failed": failed_count,
                 },
             )
 
-            return {"status": "completed", "processed_count": processed_count}
+            return {
+                "status": BatchJobStatus.COMPLETED.value,
+                "processed_count": processed_count,
+                "failed_count": failed_count,
+            }
         except Exception as e:
             error_msg = str(e)
             span.record_exception(e)
             span.set_status(StatusCode.ERROR, error_msg)
+            span.set_attribute("job.item_errors", len(item_errors))
 
             logger.warning(
                 "Previously seen rechunk batch failed, will retry if attempts remain",
                 extra={
-                    "task_id": task_id,
+                    "job_id": job_id,
                     "community_server_id": community_server_id,
                     "processed_count": processed_count,
+                    "failed_count": failed_count,
+                    "item_errors": item_errors[:10],
                     "error": error_msg,
                 },
             )

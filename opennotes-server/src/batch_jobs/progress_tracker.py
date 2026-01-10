@@ -3,9 +3,11 @@ Redis-based real-time progress tracking for batch jobs.
 
 Provides fast, ephemeral progress updates that complement the persistent
 BatchJob database records. Used for real-time UI updates during job execution.
+
+Uses Redis hashes with HINCRBY for atomic increment operations to prevent
+race conditions during concurrent progress updates.
 """
 
-import json
 import time
 from dataclasses import dataclass, field
 from uuid import UUID
@@ -45,27 +47,29 @@ class BatchJobProgressData:
             return None
         return None  # Requires total_count which is in DB
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary for Redis storage."""
-        return {
+    def to_hash(self) -> dict[str, str | int | float]:
+        """Convert to dictionary for Redis hash storage."""
+        result: dict[str, str | int | float] = {
             "job_id": str(self.job_id),
             "processed_count": self.processed_count,
             "error_count": self.error_count,
-            "current_item": self.current_item,
             "started_at": self.started_at,
             "last_update_at": self.last_update_at,
         }
+        if self.current_item is not None:
+            result["current_item"] = self.current_item
+        return result
 
     @classmethod
-    def from_dict(cls, data: dict) -> "BatchJobProgressData":
-        """Create from dictionary (Redis data)."""
+    def from_hash(cls, data: dict[str, str]) -> "BatchJobProgressData":
+        """Create from Redis hash data."""
         return cls(
             job_id=UUID(data["job_id"]),
-            processed_count=data.get("processed_count", 0),
-            error_count=data.get("error_count", 0),
+            processed_count=int(data.get("processed_count", 0)),
+            error_count=int(data.get("error_count", 0)),
             current_item=data.get("current_item"),
-            started_at=data.get("started_at", time.time()),
-            last_update_at=data.get("last_update_at", time.time()),
+            started_at=float(data.get("started_at", time.time())),
+            last_update_at=float(data.get("last_update_at", time.time())),
         )
 
 
@@ -75,6 +79,9 @@ class BatchJobProgressTracker:
 
     Provides fast, ephemeral progress updates that can be polled frequently
     without impacting database performance.
+
+    Uses Redis hashes with HINCRBY for atomic increment operations to prevent
+    race conditions when multiple workers update progress concurrently.
     """
 
     def __init__(self, redis_client: RedisClient) -> None:
@@ -108,16 +115,13 @@ class BatchJobProgressTracker:
 
         try:
             key = self._progress_key(job_id)
-            result = await self._redis.set(
-                key,
-                json.dumps(progress.to_dict()),
-                ttl=BATCH_JOB_PROGRESS_TTL_SECONDS,
-            )
+            await self._redis.hset(key, progress.to_hash())
+            await self._redis.expire(key, BATCH_JOB_PROGRESS_TTL_SECONDS)
             logger.debug(
                 "Started progress tracking",
                 extra={"job_id": str(job_id)},
             )
-            return result is not False
+            return True
         except Exception as e:
             logger.error(
                 "Failed to start progress tracking",
@@ -137,44 +141,50 @@ class BatchJobProgressTracker:
         """
         Update progress for a job.
 
+        Uses atomic HINCRBY for increment operations to prevent race conditions.
+
         Args:
             job_id: The job's unique identifier
             processed_count: Absolute processed count (overrides increment)
             error_count: Absolute error count (overrides increment)
             current_item: Description of current item being processed
-            increment_processed: Increment processed_count by 1
-            increment_errors: Increment error_count by 1
+            increment_processed: Increment processed_count by 1 (atomic)
+            increment_errors: Increment error_count by 1 (atomic)
 
         Returns:
             Updated progress data, or None if not found/error
         """
-        progress = await self.get_progress(job_id)
-        if progress is None:
-            progress = BatchJobProgressData(job_id=job_id)
-
-        if processed_count is not None:
-            progress.processed_count = processed_count
-        elif increment_processed:
-            progress.processed_count += 1
-
-        if error_count is not None:
-            progress.error_count = error_count
-        elif increment_errors:
-            progress.error_count += 1
-
-        if current_item is not None:
-            progress.current_item = current_item
-
-        progress.last_update_at = time.time()
-
         try:
             key = self._progress_key(job_id)
-            await self._redis.set(
-                key,
-                json.dumps(progress.to_dict()),
-                ttl=BATCH_JOB_PROGRESS_TTL_SECONDS,
-            )
-            return progress
+
+            # Handle atomic increments first
+            if increment_processed and processed_count is None:
+                await self._redis.hincrby(key, "processed_count", 1)
+
+            if increment_errors and error_count is None:
+                await self._redis.hincrby(key, "error_count", 1)
+
+            # Build update hash for non-increment fields
+            updates: dict[str, str | int | float] = {
+                "last_update_at": time.time(),
+            }
+
+            if processed_count is not None:
+                updates["processed_count"] = processed_count
+
+            if error_count is not None:
+                updates["error_count"] = error_count
+
+            if current_item is not None:
+                updates["current_item"] = current_item
+
+            await self._redis.hset(key, updates)
+
+            # Refresh TTL
+            await self._redis.expire(key, BATCH_JOB_PROGRESS_TTL_SECONDS)
+
+            # Return current state
+            return await self.get_progress(job_id)
         except Exception as e:
             logger.error(
                 "Failed to update progress",
@@ -194,10 +204,10 @@ class BatchJobProgressTracker:
         """
         try:
             key = self._progress_key(job_id)
-            data = await self._redis.get(key)
-            if data is None:
+            data = await self._redis.hgetall(key)
+            if not data or "job_id" not in data:
                 return None
-            return BatchJobProgressData.from_dict(json.loads(data))
+            return BatchJobProgressData.from_hash(data)
         except Exception as e:
             logger.error(
                 "Failed to get progress",

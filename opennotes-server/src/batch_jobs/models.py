@@ -44,7 +44,6 @@ class BatchJob(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         primary_key=True,
         server_default=text("uuidv7()"),
-        index=True,
     )
 
     job_type: Mapped[str] = mapped_column(

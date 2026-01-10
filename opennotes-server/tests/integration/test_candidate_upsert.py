@@ -69,18 +69,16 @@ def single_claim_candidate() -> NormalizedCandidate:
 class TestCandidateUpsert:
     """Tests for candidate upsert behavior."""
 
+    @pytest.mark.asyncio
     async def test_insert_multi_claim_candidates(
         self, db_session: AsyncSession, multi_claim_candidates: list[NormalizedCandidate]
     ) -> None:
         """Test that multiple claims with same URL are inserted as separate rows."""
         inserted, updated = await upsert_candidates(db_session, multi_claim_candidates)
 
-        # upsert_candidates returns (len(candidates), 0) for simplicity
-        # The actual insert/update counting would require RETURNING with xmax checking
-        assert inserted == 2
-        assert updated == 0
+        assert inserted == 2, f"Expected 2 inserts for new candidates, got {inserted}"
+        assert updated == 0, f"Expected 0 updates for new candidates, got {updated}"
 
-        # Verify both rows exist in database
         query = select(FactCheckedItemCandidate).where(
             FactCheckedItemCandidate.source_url
             == "https://fullfact.org/immigration/migration-numbers"
@@ -88,19 +86,18 @@ class TestCandidateUpsert:
         rows = (await db_session.execute(query)).scalars().all()
 
         assert len(rows) == 2
-        # Verify different claim hashes
         hashes = {row.claim_hash for row in rows}
         assert len(hashes) == 2
 
+    @pytest.mark.asyncio
     async def test_upsert_same_claim_updates_existing(
         self, db_session: AsyncSession, single_claim_candidate: NormalizedCandidate
     ) -> None:
         """Test that upserting same URL+claim updates rather than duplicates."""
-        # First insert
-        inserted1, _ = await upsert_candidates(db_session, [single_claim_candidate])
-        assert inserted1 == 1
+        inserted1, updated1 = await upsert_candidates(db_session, [single_claim_candidate])
+        assert inserted1 == 1, f"Expected 1 insert for new candidate, got {inserted1}"
+        assert updated1 == 0, f"Expected 0 updates for new candidate, got {updated1}"
 
-        # Modify the candidate (different predicted ratings)
         updated_candidate = NormalizedCandidate(
             source_url=single_claim_candidate.source_url,
             claim_hash=single_claim_candidate.claim_hash,
@@ -112,38 +109,34 @@ class TestCandidateUpsert:
             predicted_ratings={"false": 0.9, "mostly_false": 0.1},
         )
 
-        # Second upsert - the function doesn't distinguish insert vs update
-        # but we verify the behavior by checking the database state
-        inserted2, _ = await upsert_candidates(db_session, [updated_candidate])
-        assert inserted2 == 1  # Returns count of candidates processed
+        inserted2, updated2 = await upsert_candidates(db_session, [updated_candidate])
+        assert inserted2 == 0, f"Expected 0 inserts for existing candidate, got {inserted2}"
+        assert updated2 == 1, f"Expected 1 update for existing candidate, got {updated2}"
 
-        # Verify only one row exists (not duplicated)
         query = select(FactCheckedItemCandidate).where(
             FactCheckedItemCandidate.source_url == single_claim_candidate.source_url
         )
         rows = (await db_session.execute(query)).scalars().all()
         assert len(rows) == 1
 
-        # Verify the row was updated
         row = rows[0]
         assert row.title == "Updated Title"
         assert row.predicted_ratings == {"false": 0.9, "mostly_false": 0.1}
 
+    @pytest.mark.asyncio
     async def test_mixed_insert_and_update(
         self, db_session: AsyncSession, multi_claim_candidates: list[NormalizedCandidate]
     ) -> None:
         """Test upsert with mix of new and existing candidates."""
-        # Insert first claim only
         first_only = [multi_claim_candidates[0]]
-        inserted1, _ = await upsert_candidates(db_session, first_only)
-        assert inserted1 == 1
+        inserted1, updated1 = await upsert_candidates(db_session, first_only)
+        assert inserted1 == 1, f"Expected 1 insert for new candidate, got {inserted1}"
+        assert updated1 == 0, f"Expected 0 updates for new candidate, got {updated1}"
 
-        # Now upsert both - one should update, one should insert
-        # The function processes both; we verify via database state
-        inserted2, _ = await upsert_candidates(db_session, multi_claim_candidates)
-        assert inserted2 == 2  # Returns count processed (not distinguishing insert vs update)
+        inserted2, updated2 = await upsert_candidates(db_session, multi_claim_candidates)
+        assert inserted2 == 1, f"Expected 1 insert for new candidate, got {inserted2}"
+        assert updated2 == 1, f"Expected 1 update for existing candidate, got {updated2}"
 
-        # Verify exactly 2 rows exist (not 3)
         query = select(FactCheckedItemCandidate).where(
             FactCheckedItemCandidate.source_url
             == "https://fullfact.org/immigration/migration-numbers"
@@ -151,6 +144,7 @@ class TestCandidateUpsert:
         rows = (await db_session.execute(query)).scalars().all()
         assert len(rows) == 2
 
+    @pytest.mark.asyncio
     async def test_different_urls_same_claim_hash(self, db_session: AsyncSession) -> None:
         """Test that same claim hash with different URLs creates separate rows.
 
@@ -180,16 +174,17 @@ class TestCandidateUpsert:
             ),
         ]
 
-        inserted, _ = await upsert_candidates(db_session, candidates)
-        assert inserted == 2
+        inserted, updated = await upsert_candidates(db_session, candidates)
+        assert inserted == 2, f"Expected 2 inserts for new candidates, got {inserted}"
+        assert updated == 0, f"Expected 0 updates for new candidates, got {updated}"
 
-        # Both should exist (different URLs)
         query = select(FactCheckedItemCandidate).where(
             FactCheckedItemCandidate.claim_hash == claim_hash
         )
         rows = (await db_session.execute(query)).scalars().all()
         assert len(rows) == 2
 
+    @pytest.mark.asyncio
     async def test_empty_claim_hash_handling(self, db_session: AsyncSession) -> None:
         """Test that candidates with empty/None claims get consistent hashes."""
         empty_hash = compute_claim_hash("")
@@ -215,10 +210,10 @@ class TestCandidateUpsert:
             ),
         ]
 
-        inserted, _ = await upsert_candidates(db_session, candidates)
-        assert inserted == 2
+        inserted, updated = await upsert_candidates(db_session, candidates)
+        assert inserted == 2, f"Expected 2 inserts for new candidates, got {inserted}"
+        assert updated == 0, f"Expected 0 updates for new candidates, got {updated}"
 
-        # Both should exist (different URLs, same empty claim hash)
         query = select(FactCheckedItemCandidate).where(
             FactCheckedItemCandidate.claim_hash == empty_hash
         )
