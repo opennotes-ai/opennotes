@@ -77,7 +77,7 @@ const createCommunityServerJSONAPIResponse = (id: string, platformId: string) =>
   id,
   {
     platform: 'discord',
-    platform_id: platformId,
+    platform_community_server_id: platformId,
     name: 'Test Guild',
     is_active: true,
   }

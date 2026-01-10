@@ -871,7 +871,7 @@ describe('ApiClient Wrapper', () => {
           id: '123e4567-e89b-12d3-a456-426614174000',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
           },

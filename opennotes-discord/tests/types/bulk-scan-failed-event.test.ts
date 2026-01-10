@@ -41,7 +41,7 @@ describe('BulkScanProgressEvent updates', () => {
       metadata: {},
       scan_id: 'scan-123',
       community_server_id: 'server-456',
-      platform_id: '123456789',
+      platform_community_server_id: '123456789',
       batch_number: 1,
       messages_in_batch: 50,
       message_scores: [],

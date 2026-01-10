@@ -90,7 +90,7 @@ describe('note-queue-profiled command', () => {
         id: 'guild456',
         attributes: {
           platform: 'discord',
-          platform_id: 'guild456',
+          platform_community_server_id: 'guild456',
           name: 'Test Guild',
           is_active: true,
           is_public: true,

@@ -25,7 +25,7 @@ function createMockCommunityServerResponse(
       id,
       attributes: {
         platform: 'discord',
-        platform_id: platformId,
+        platform_community_server_id: platformId,
         name,
         is_active: isActive,
         is_public: true,
