@@ -32,7 +32,7 @@ class TestLatestScanFixtures:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="latest_scan_test_community",
+            platform_community_server_id="latest_scan_test_community",
             name="Latest Scan Test Community",
             is_active=True,
             is_public=True,
@@ -50,7 +50,7 @@ class TestLatestScanFixtures:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="latest_scan_other_community",
+            platform_community_server_id="latest_scan_other_community",
             name="Latest Scan Other Community",
             is_active=True,
             is_public=True,

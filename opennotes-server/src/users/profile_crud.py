@@ -711,7 +711,7 @@ async def _ensure_community_membership(
     result = await db.execute(
         select(CommunityServer).where(
             CommunityServer.platform == "discord",
-            CommunityServer.platform_id == guild_id,
+            CommunityServer.platform_community_server_id == guild_id,
         )
     )
     community_server = result.scalar_one_or_none()

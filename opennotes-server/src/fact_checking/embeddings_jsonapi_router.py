@@ -93,7 +93,7 @@ async def get_community_server_uuid(
     result = await db.execute(
         select(CommunityServer.id).where(
             CommunityServer.platform == platform,
-            CommunityServer.platform_id == platform_id,
+            CommunityServer.platform_community_server_id == platform_id,
             CommunityServer.is_active.is_(True),
         )
     )

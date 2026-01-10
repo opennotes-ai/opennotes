@@ -263,7 +263,7 @@ describe('vibecheck command', () => {
         id: 'community-server-uuid-123',
         attributes: {
           platform: 'discord',
-          platform_id: 'guild789',
+          platform_community_server_id: 'guild789',
           name: 'Test Server',
           is_active: true,
           is_public: true,

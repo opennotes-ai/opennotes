@@ -98,7 +98,7 @@ export interface BulkScanProgressEvent extends BaseEvent {
   event_type: typeof EventType.BULK_SCAN_PROGRESS;
   scan_id: string;
   community_server_id: string;
-  platform_id: string;
+  platform_community_server_id: string;
   batch_number: number;
   messages_in_batch: number;
   messages_processed: number;

@@ -2665,7 +2665,7 @@
           "community-servers-jsonapi"
         ],
         "summary": "Lookup Community Server Jsonapi",
-        "description": "Look up a community server by platform and platform ID with JSON:API format.\n\nReturns the internal UUID for a community server based on its platform-specific identifier.\nAuto-creates the community server if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (default: \"discord\")\n    platform_id: Platform-specific ID (e.g., Discord guild ID)\n\nReturns:\n    JSON:API formatted response with community server details\n\nRaises:\n    404: If community server not found and user is not a service account",
+        "description": "Look up a community server by platform and platform ID with JSON:API format.\n\nReturns the internal UUID for a community server based on its platform-specific identifier.\nAuto-creates the community server if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (default: \"discord\")\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n\nReturns:\n    JSON:API formatted response with community server details\n\nRaises:\n    404: If community server not found and user is not a service account",
         "operationId": "lookup_community_server_jsonapi_api_v2_community_servers_lookup_get",
         "security": [
           {
@@ -2686,13 +2686,13 @@
             "description": "Platform type"
           },
           {
-            "name": "platform_id",
+            "name": "platform_community_server_id",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
               "description": "Platform-specific ID (e.g., Discord guild ID)",
-              "title": "Platform Id"
+              "title": "Platform Community Server Id"
             },
             "description": "Platform-specific ID (e.g., Discord guild ID)"
           },
@@ -6136,7 +6136,7 @@
           "community-servers"
         ],
         "summary": "Lookup Community Server",
-        "description": "Look up a community server by platform and platform ID.\n\nReturns the internal UUID for a community server based on its platform-specific identifier.\nAuto-creates the community server if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (default: \"discord\")\n    platform_id: Platform-specific ID (e.g., Discord guild ID)\n\nReturns:\n    Community server details including internal UUID\n\nRaises:\n    404: If community server not found and user is not a service account",
+        "description": "Look up a community server by platform and platform ID.\n\nReturns the internal UUID for a community server based on its platform-specific identifier.\nAuto-creates the community server if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (default: \"discord\")\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n\nReturns:\n    Community server details including internal UUID\n\nRaises:\n    404: If community server not found and user is not a service account",
         "operationId": "lookup_community_server_api_v1_community_servers_lookup_get",
         "security": [
           {
@@ -6157,13 +6157,13 @@
             "description": "Platform type"
           },
           {
-            "name": "platform_id",
+            "name": "platform_community_server_id",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
               "description": "Platform-specific ID (e.g., Discord guild ID)",
-              "title": "Platform Id"
+              "title": "Platform Community Server Id"
             },
             "description": "Platform-specific ID (e.g., Discord guild ID)"
           },
@@ -6208,14 +6208,14 @@
         }
       }
     },
-    "/api/v1/community-servers/{platform_id}/welcome-message": {
+    "/api/v1/community-servers/{platform_community_server_id}/welcome-message": {
       "patch": {
         "tags": [
           "community-servers"
         ],
         "summary": "Update Welcome Message",
-        "description": "Update the welcome message ID for a community server.\n\nThis endpoint is typically called by the Discord bot after posting and pinning\na welcome message in the bot channel. Only service accounts (bots) can call this.\n\nArgs:\n    platform_id: Platform-specific ID (e.g., Discord guild ID)\n    request_body: Contains the welcome_message_id to set (or null to clear)\n\nReturns:\n    Updated community server welcome message info\n\nRaises:\n    401: If not authenticated\n    403: If not a service account\n    404: If community server not found",
-        "operationId": "update_welcome_message_api_v1_community_servers__platform_id__welcome_message_patch",
+        "description": "Update the welcome message ID for a community server.\n\nThis endpoint is typically called by the Discord bot after posting and pinning\na welcome message in the bot channel. Only service accounts (bots) can call this.\n\nArgs:\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n    request_body: Contains the welcome_message_id to set (or null to clear)\n\nReturns:\n    Updated community server welcome message info\n\nRaises:\n    401: If not authenticated\n    403: If not a service account\n    404: If community server not found",
+        "operationId": "update_welcome_message_api_v1_community_servers__platform_community_server_id__welcome_message_patch",
         "security": [
           {
             "HTTPBearer": []
@@ -6223,12 +6223,12 @@
         ],
         "parameters": [
           {
-            "name": "platform_id",
+            "name": "platform_community_server_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Platform Id"
+              "title": "Platform Community Server Id"
             }
           },
           {
@@ -9929,9 +9929,9 @@
             "type": "string",
             "title": "Platform"
           },
-          "platform_id": {
+          "platform_community_server_id": {
             "type": "string",
-            "title": "Platform Id"
+            "title": "Platform Community Server Id"
           },
           "name": {
             "type": "string",
@@ -9986,7 +9986,7 @@
         "type": "object",
         "required": [
           "platform",
-          "platform_id",
+          "platform_community_server_id",
           "name"
         ],
         "title": "CommunityServerAttributes",
@@ -10005,9 +10005,9 @@
             "title": "Platform",
             "description": "Platform type (e.g., 'discord')"
           },
-          "platform_id": {
+          "platform_community_server_id": {
             "type": "string",
-            "title": "Platform Id",
+            "title": "Platform Community Server Id",
             "description": "Platform-specific ID (e.g., Discord guild ID)"
           },
           "name": {
@@ -10025,7 +10025,7 @@
         "required": [
           "id",
           "platform",
-          "platform_id",
+          "platform_community_server_id",
           "name",
           "is_active"
         ],
@@ -17608,9 +17608,9 @@
             "title": "Id",
             "description": "Internal community server UUID"
           },
-          "platform_id": {
+          "platform_community_server_id": {
             "type": "string",
-            "title": "Platform Id",
+            "title": "Platform Community Server Id",
             "description": "Platform-specific ID (e.g., Discord guild ID)"
           },
           "welcome_message_id": {
@@ -17629,7 +17629,7 @@
         "type": "object",
         "required": [
           "id",
-          "platform_id",
+          "platform_community_server_id",
           "welcome_message_id"
         ],
         "title": "WelcomeMessageUpdateResponse",

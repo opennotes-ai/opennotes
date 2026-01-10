@@ -46,7 +46,7 @@ async def create_note_with_request() -> tuple[Note, Request, CommunityServer]:
         community_server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="test-server-123",
+            platform_community_server_id="test-server-123",
             name="Test Server",
             is_active=True,
         )
@@ -154,7 +154,7 @@ class TestRequestStatusOnPublish:
             community_server = CommunityServer(
                 id=uuid4(),
                 platform="discord",
-                platform_id="test-server-456",
+                platform_community_server_id="test-server-456",
                 name="Test Server 2",
                 is_active=True,
             )
@@ -387,7 +387,7 @@ class TestRequestStatusOnNoteCreation:
             community_server = CommunityServer(
                 id=uuid4(),
                 platform="discord",
-                platform_id="test-server-note-create-123",
+                platform_community_server_id="test-server-note-create-123",
                 name="Test Server for Note Creation",
                 is_active=True,
             )
@@ -455,7 +455,7 @@ class TestRequestStatusOnNoteCreation:
             community_server = CommunityServer(
                 id=uuid4(),
                 platform="discord",
-                platform_id="test-server-no-request-456",
+                platform_community_server_id="test-server-no-request-456",
                 name="Test Server No Request",
                 is_active=True,
             )

@@ -376,7 +376,7 @@ describe('JSON:API Response Parsing', () => {
             id: 'cs-uuid-123',
             attributes: {
               platform: 'discord',
-              platform_id: 'guild-123456789',
+              platform_community_server_id: 'guild-123456789',
               name: 'Test Community',
               description: 'A test community server',
               is_active: true,
@@ -400,7 +400,7 @@ describe('JSON:API Response Parsing', () => {
         expect(result.data.type).toBe('community-servers');
         expect(result.data.id).toBe('cs-uuid-123');
         expect(result.data.attributes.platform).toBe('discord');
-        expect(result.data.attributes.platform_id).toBe('guild-123456789');
+        expect(result.data.attributes.platform_community_server_id).toBe('guild-123456789');
         expect(result.data.attributes.name).toBe('Test Community');
         expect(result.data.attributes.is_active).toBe(true);
         expect(result.data.attributes.is_public).toBe(false);

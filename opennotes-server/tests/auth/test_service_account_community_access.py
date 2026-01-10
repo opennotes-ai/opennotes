@@ -131,7 +131,7 @@ class TestServiceAccountCommunityMembership:
             # Create a test community server
             community = CommunityServer(
                 platform="discord",
-                platform_id="123456789",
+                platform_community_server_id="123456789",
                 name="Test Server",
                 is_active=True,
                 is_public=True,
@@ -187,7 +187,7 @@ class TestServiceAccountCommunityMembership:
             # Create community
             community = CommunityServer(
                 platform="discord",
-                platform_id="987654321",
+                platform_community_server_id="987654321",
                 name="Test Server 2",
                 is_active=True,
                 is_public=True,
@@ -271,7 +271,7 @@ class TestServiceAccountCommunityMembership:
             # Create community
             community = CommunityServer(
                 platform="discord",
-                platform_id="111222333",
+                platform_community_server_id="111222333",
                 name="Test Server 3",
                 is_active=True,
                 is_public=True,

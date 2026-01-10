@@ -33,7 +33,7 @@ async def communities_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name=f"Test Guild for Communities JSONAPI {unique_suffix}",
             description="A test community for JSON:API endpoint testing",
             is_public=True,
@@ -44,7 +44,7 @@ async def communities_jsonapi_community_server():
 
     return {
         "uuid": community_server_id,
-        "platform_id": platform_id,
+        "platform_community_server_id": platform_id,
         "platform": "discord",
         "name": f"Test Guild for Communities JSONAPI {unique_suffix}",
     }
@@ -160,7 +160,9 @@ class TestCommunitiesJSONAPI:
             "/api/v2/community-servers/lookup",
             params={
                 "platform": communities_jsonapi_community_server["platform"],
-                "platform_id": communities_jsonapi_community_server["platform_id"],
+                "platform_community_server_id": communities_jsonapi_community_server[
+                    "platform_community_server_id"
+                ],
             },
         )
         assert response.status_code == 200
@@ -188,7 +190,9 @@ class TestCommunitiesJSONAPI:
             "/api/v2/community-servers/lookup",
             params={
                 "platform": communities_jsonapi_community_server["platform"],
-                "platform_id": communities_jsonapi_community_server["platform_id"],
+                "platform_community_server_id": communities_jsonapi_community_server[
+                    "platform_community_server_id"
+                ],
             },
         )
         assert response.status_code == 200
@@ -210,7 +214,9 @@ class TestCommunitiesJSONAPI:
         assert "attributes" in server_resource, "Resource must have 'attributes'"
         attributes = server_resource["attributes"]
         assert "platform" in attributes, "Attributes must include 'platform'"
-        assert "platform_id" in attributes, "Attributes must include 'platform_id'"
+        assert "platform_community_server_id" in attributes, (
+            "Attributes must include 'platform_community_server_id'"
+        )
         assert "name" in attributes, "Attributes must include 'name'"
         assert "is_active" in attributes, "Attributes must include 'is_active'"
 
@@ -251,7 +257,9 @@ class TestCommunitiesJSONAPI:
             "/api/v2/community-servers/lookup",
             params={
                 "platform": communities_jsonapi_community_server["platform"],
-                "platform_id": communities_jsonapi_community_server["platform_id"],
+                "platform_community_server_id": communities_jsonapi_community_server[
+                    "platform_community_server_id"
+                ],
             },
         )
         assert response.status_code == 200
@@ -282,7 +290,7 @@ class TestCommunitiesJSONAPI:
             "/api/v2/community-servers/lookup",
             params={
                 "platform": "discord",
-                "platform_id": "nonexistent_guild_id_12345",
+                "platform_community_server_id": "nonexistent_guild_id_12345",
             },
         )
         assert response.status_code == 404
@@ -303,7 +311,7 @@ class TestCommunitiesJSONAPI:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
                 "/api/v2/community-servers/lookup",
-                params={"platform": "discord", "platform_id": "some_id"},
+                params={"platform": "discord", "platform_community_server_id": "some_id"},
             )
             assert response.status_code == 401
 

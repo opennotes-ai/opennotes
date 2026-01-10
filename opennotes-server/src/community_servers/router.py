@@ -25,7 +25,9 @@ class CommunityServerLookupResponse(BaseModel):
 
     id: UUID = Field(..., description="Internal community server UUID")
     platform: str = Field(..., description="Platform type (e.g., 'discord')")
-    platform_id: str = Field(..., description="Platform-specific ID (e.g., Discord guild ID)")
+    platform_community_server_id: str = Field(
+        ..., description="Platform-specific ID (e.g., Discord guild ID)"
+    )
     name: str = Field(..., description="Community server name")
     is_active: bool = Field(..., description="Whether the community server is active")
 
@@ -46,7 +48,9 @@ class WelcomeMessageUpdateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Internal community server UUID")
-    platform_id: str = Field(..., description="Platform-specific ID (e.g., Discord guild ID)")
+    platform_community_server_id: str = Field(
+        ..., description="Platform-specific ID (e.g., Discord guild ID)"
+    )
     welcome_message_id: str | None = Field(
         ..., description="Discord message ID of the welcome message"
     )
@@ -57,7 +61,9 @@ async def lookup_community_server(
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
     platform: str = Query("discord", description="Platform type"),
-    platform_id: str = Query(..., description="Platform-specific ID (e.g., Discord guild ID)"),
+    platform_community_server_id: str = Query(
+        ..., description="Platform-specific ID (e.g., Discord guild ID)"
+    ),
 ) -> CommunityServerLookupResponse:
     """
     Look up a community server by platform and platform ID.
@@ -67,7 +73,7 @@ async def lookup_community_server(
 
     Args:
         platform: Platform type (default: "discord")
-        platform_id: Platform-specific ID (e.g., Discord guild ID)
+        platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
 
     Returns:
         Community server details including internal UUID
@@ -80,7 +86,7 @@ async def lookup_community_server(
         extra={
             "user_id": current_user.id,
             "platform": platform,
-            "platform_id": platform_id,
+            "platform_community_server_id": platform_community_server_id,
         },
     )
 
@@ -89,7 +95,7 @@ async def lookup_community_server(
 
     community_server = await get_community_server_by_platform_id(
         db=db,
-        community_server_id=platform_id,
+        community_server_id=platform_community_server_id,
         platform=platform,
         auto_create=auto_create,
     )
@@ -101,24 +107,24 @@ async def lookup_community_server(
     if not community_server:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Community server not found: {platform}:{platform_id}",
+            detail=f"Community server not found: {platform}:{platform_community_server_id}",
         )
 
     return CommunityServerLookupResponse(
         id=community_server.id,
         platform=community_server.platform,
-        platform_id=community_server.platform_id,
+        platform_community_server_id=community_server.platform_community_server_id,
         name=community_server.name,
         is_active=community_server.is_active,
     )
 
 
 @router.patch(
-    "/community-servers/{platform_id}/welcome-message",
+    "/community-servers/{platform_community_server_id}/welcome-message",
     response_model=WelcomeMessageUpdateResponse,
 )
 async def update_welcome_message(
-    platform_id: str,
+    platform_community_server_id: str,
     request_body: WelcomeMessageUpdateRequest,
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -130,7 +136,7 @@ async def update_welcome_message(
     a welcome message in the bot channel. Only service accounts (bots) can call this.
 
     Args:
-        platform_id: Platform-specific ID (e.g., Discord guild ID)
+        platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
         request_body: Contains the welcome_message_id to set (or null to clear)
 
     Returns:
@@ -145,7 +151,7 @@ async def update_welcome_message(
         "Updating welcome message ID",
         extra={
             "user_id": current_user.id,
-            "platform_id": platform_id,
+            "platform_community_server_id": platform_community_server_id,
             "welcome_message_id": request_body.welcome_message_id,
         },
     )
@@ -159,7 +165,7 @@ async def update_welcome_message(
 
     community_server = await get_community_server_by_platform_id(
         db=db,
-        community_server_id=platform_id,
+        community_server_id=platform_community_server_id,
         platform="discord",
         auto_create=False,
     )
@@ -167,7 +173,7 @@ async def update_welcome_message(
     if not community_server:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Community server not found: discord:{platform_id}",
+            detail=f"Community server not found: discord:{platform_community_server_id}",
         )
 
     community_server.welcome_message_id = request_body.welcome_message_id
@@ -178,13 +184,13 @@ async def update_welcome_message(
         "Welcome message ID updated successfully",
         extra={
             "community_server_id": str(community_server.id),
-            "platform_id": platform_id,
+            "platform_community_server_id": platform_community_server_id,
             "welcome_message_id": community_server.welcome_message_id,
         },
     )
 
     return WelcomeMessageUpdateResponse(
         id=community_server.id,
-        platform_id=community_server.platform_id,
+        platform_community_server_id=community_server.platform_community_server_id,
         welcome_message_id=community_server.welcome_message_id,
     )

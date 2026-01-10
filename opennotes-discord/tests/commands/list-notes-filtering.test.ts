@@ -130,7 +130,7 @@ function setupDefaultMocks(communityUuid: string = 'community-uuid-123'): void {
       id: communityUuid,
       attributes: {
         platform: 'discord',
-        platform_id: 'guild-456',
+        platform_community_server_id: 'guild-456',
         name: 'Test Guild',
         is_active: true,
         is_public: true,

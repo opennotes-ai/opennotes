@@ -68,7 +68,9 @@ async def get_platform_id(
         Platform ID (e.g., Discord guild ID) or None if not found
     """
     result = await session.execute(
-        select(CommunityServer.platform_id).where(CommunityServer.id == community_server_id)
+        select(CommunityServer.platform_community_server_id).where(
+            CommunityServer.id == community_server_id
+        )
     )
     return result.scalar_one_or_none()
 
@@ -276,7 +278,7 @@ async def handle_message_batch_with_progress(
         event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
         scan_id=event.scan_id,
         community_server_id=event.community_server_id,
-        platform_id=platform_id,
+        platform_community_server_id=platform_id,
         batch_number=event.batch_number,
         messages_in_batch=len(typed_messages),
         messages_processed=processed_count,

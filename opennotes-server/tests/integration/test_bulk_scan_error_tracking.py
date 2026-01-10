@@ -193,7 +193,7 @@ class TestBulkScanErrorSummaryInResponse:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="error_tracking_test_community",
+            platform_community_server_id="error_tracking_test_community",
             name="Error Tracking Test Community",
             is_active=True,
             is_public=True,

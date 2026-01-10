@@ -17,7 +17,7 @@ class TestCommunityServerWelcomeMessageId:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="123456789",
+            platform_community_server_id="123456789",
             name="Test Server",
         )
         assert hasattr(server, "welcome_message_id")
@@ -27,7 +27,7 @@ class TestCommunityServerWelcomeMessageId:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="123456789",
+            platform_community_server_id="123456789",
             name="Test Server",
         )
         assert server.welcome_message_id is None
@@ -38,7 +38,7 @@ class TestCommunityServerWelcomeMessageId:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="123456789",
+            platform_community_server_id="123456789",
             name="Test Server",
             welcome_message_id=message_id,
         )
@@ -50,7 +50,7 @@ class TestCommunityServerWelcomeMessageId:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="123456789",
+            platform_community_server_id="123456789",
             name="Test Server",
             welcome_message_id=long_id,
         )

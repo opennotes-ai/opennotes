@@ -1443,7 +1443,7 @@ async def community_server(db):
     server = CommunityServer(
         id=uuid4(),
         platform="discord",
-        platform_id="test-server-123",
+        platform_community_server_id="test-server-123",
         name="Test Server",
         is_active=True,
     )

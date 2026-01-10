@@ -275,7 +275,7 @@ class BulkScanMessageBatchEvent(BaseEvent):
     event_type: EventType = EventType.BULK_SCAN_MESSAGE_BATCH
     scan_id: UUID = Field(..., description="Scan this batch belongs to")
     community_server_id: UUID = Field(
-        ..., description="Community server UUID (needed for platform_id lookup)"
+        ..., description="Community server UUID (needed for platform_community_server_id lookup)"
     )
     messages: list[BulkScanMessage] = Field(
         ...,
@@ -387,7 +387,9 @@ class BulkScanProgressEvent(BaseEvent):
     event_type: EventType = EventType.BULK_SCAN_PROGRESS
     scan_id: UUID = Field(..., description="Scan this progress belongs to")
     community_server_id: UUID = Field(..., description="Community server being scanned")
-    platform_id: str = Field(..., description="Platform ID (e.g., Discord guild ID)")
+    platform_community_server_id: str = Field(
+        ..., description="Platform ID (e.g., Discord guild ID)"
+    )
     batch_number: int = Field(..., ge=1, description="Batch sequence number")
     messages_in_batch: int = Field(..., ge=0, description="Number of messages in this batch")
     messages_processed: int = Field(

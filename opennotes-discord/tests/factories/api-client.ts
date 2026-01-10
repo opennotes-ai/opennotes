@@ -183,7 +183,7 @@ function createMockCommunityServerJSONAPIResponse(params: {
       id: params.id ?? `community-${seq}`,
       attributes: {
         platform: 'discord',
-        platform_id: params.platformId ?? `platform-${seq}`,
+        platform_community_server_id: params.platformId ?? `platform-${seq}`,
         name: `Test Community ${seq}`,
         is_active: true,
         is_public: true,
@@ -320,7 +320,7 @@ export const apiClientFactory = Factory.define<MockApiClient, ApiClientTransient
       ),
       updateWelcomeMessageId: jest.fn<() => Promise<WelcomeMessageUpdateResponse>>().mockResolvedValue({
         id: defaultCommunityServerId ?? `community-${sequence}`,
-        platform_id: `platform-${sequence}`,
+        platform_community_server_id: `platform-${sequence}`,
         welcome_message_id: null,
       }),
       getRatingThresholds: jest.fn<() => Promise<RatingThresholdsResponse>>().mockResolvedValue({

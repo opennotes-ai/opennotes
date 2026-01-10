@@ -429,7 +429,7 @@ class AINoteWriter:
 
         try:
             result_platform = await db.execute(
-                select(CommunityServer.platform_id).where(
+                select(CommunityServer.platform_community_server_id).where(
                     CommunityServer.id == request.community_server_id
                 )
             )
@@ -501,7 +501,9 @@ class AINoteWriter:
             ValueError: If community server not found
         """
         result = await db.execute(
-            select(CommunityServer.id).where(CommunityServer.platform_id == community_server_id)
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == community_server_id
+            )
         )
         community_server_uuid = result.scalar_one_or_none()
 

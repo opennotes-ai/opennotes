@@ -58,7 +58,7 @@ async def welcome_test_community_server() -> CommunityServer:
     async with async_session_maker() as db:
         server = CommunityServer(
             platform="discord",
-            platform_id=f"welcome_test_{unique_suffix}",
+            platform_community_server_id=f"welcome_test_{unique_suffix}",
             name=f"Welcome Test Server {unique_suffix}",
             is_active=True,
             is_public=True,
@@ -85,7 +85,7 @@ class TestWelcomeMessageEndpoint:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v1/community-servers/{welcome_test_community_server.platform_id}/welcome-message",
+                f"/api/v1/community-servers/{welcome_test_community_server.platform_community_server_id}/welcome-message",
                 headers=service_account_headers,
                 json={"welcome_message_id": message_id},
             )
@@ -108,7 +108,7 @@ class TestWelcomeMessageEndpoint:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v1/community-servers/{welcome_test_community_server.platform_id}/welcome-message",
+                f"/api/v1/community-servers/{welcome_test_community_server.platform_community_server_id}/welcome-message",
                 headers=service_account_headers,
                 json={"welcome_message_id": message_id},
             )
@@ -153,7 +153,7 @@ class TestWelcomeMessageEndpoint:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v1/community-servers/{welcome_test_community_server.platform_id}/welcome-message",
+                f"/api/v1/community-servers/{welcome_test_community_server.platform_community_server_id}/welcome-message",
                 headers=service_account_headers,
                 json={"welcome_message_id": None},
             )
@@ -191,7 +191,7 @@ class TestWelcomeMessageEndpoint:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.patch(
-                f"/api/v1/community-servers/{welcome_test_community_server.platform_id}/welcome-message",
+                f"/api/v1/community-servers/{welcome_test_community_server.platform_community_server_id}/welcome-message",
                 json={"welcome_message_id": "1234567890123456789"},
             )
 

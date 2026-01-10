@@ -1047,7 +1047,7 @@ export interface paths {
          *
          *     Args:
          *         platform: Platform type (default: "discord")
-         *         platform_id: Platform-specific ID (e.g., Discord guild ID)
+         *         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
          *
          *     Returns:
          *         JSON:API formatted response with community server details
@@ -2190,7 +2190,7 @@ export interface paths {
          *
          *     Args:
          *         platform: Platform type (default: "discord")
-         *         platform_id: Platform-specific ID (e.g., Discord guild ID)
+         *         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
          *
          *     Returns:
          *         Community server details including internal UUID
@@ -2207,7 +2207,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/community-servers/{platform_id}/welcome-message": {
+    "/api/v1/community-servers/{platform_community_server_id}/welcome-message": {
         parameters: {
             query?: never;
             header?: never;
@@ -2228,7 +2228,7 @@ export interface paths {
          *     a welcome message in the bot channel. Only service accounts (bots) can call this.
          *
          *     Args:
-         *         platform_id: Platform-specific ID (e.g., Discord guild ID)
+         *         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
          *         request_body: Contains the welcome_message_id to set (or null to clear)
          *
          *     Returns:
@@ -2239,7 +2239,7 @@ export interface paths {
          *         403: If not a service account
          *         404: If community server not found
          */
-        patch: operations["update_welcome_message_api_v1_community_servers__platform_id__welcome_message_patch"];
+        patch: operations["update_welcome_message_api_v1_community_servers__platform_community_server_id__welcome_message_patch"];
         trace?: never;
     };
     "/api/v1/community-servers/{community_server_id}/admins": {
@@ -3834,8 +3834,8 @@ export interface components {
         CommunityServerAttributes: {
             /** Platform */
             platform: string;
-            /** Platform Id */
-            platform_id: string;
+            /** Platform Community Server Id */
+            platform_community_server_id: string;
             /** Name */
             name: string;
             /** Description */
@@ -3872,10 +3872,10 @@ export interface components {
              */
             platform: string;
             /**
-             * Platform Id
+             * Platform Community Server Id
              * @description Platform-specific ID (e.g., Discord guild ID)
              */
-            platform_id: string;
+            platform_community_server_id: string;
             /**
              * Name
              * @description Community server name
@@ -7803,10 +7803,10 @@ export interface components {
              */
             id: string;
             /**
-             * Platform Id
+             * Platform Community Server Id
              * @description Platform-specific ID (e.g., Discord guild ID)
              */
-            platform_id: string;
+            platform_community_server_id: string;
             /**
              * Welcome Message Id
              * @description Discord message ID of the welcome message
@@ -9359,7 +9359,7 @@ export interface operations {
                 /** @description Platform type */
                 platform?: string;
                 /** @description Platform-specific ID (e.g., Discord guild ID) */
-                platform_id: string;
+                platform_community_server_id: string;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -11038,7 +11038,7 @@ export interface operations {
                 /** @description Platform type */
                 platform?: string;
                 /** @description Platform-specific ID (e.g., Discord guild ID) */
-                platform_id: string;
+                platform_community_server_id: string;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -11068,14 +11068,14 @@ export interface operations {
             };
         };
     };
-    update_welcome_message_api_v1_community_servers__platform_id__welcome_message_patch: {
+    update_welcome_message_api_v1_community_servers__platform_community_server_id__welcome_message_patch: {
         parameters: {
             query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path: {
-                platform_id: string;
+                platform_community_server_id: string;
             };
             cookie?: never;
         };

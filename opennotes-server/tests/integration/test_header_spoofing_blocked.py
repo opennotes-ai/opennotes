@@ -32,7 +32,7 @@ async def test_community_server() -> CommunityServer:
     async with async_session_maker() as db:
         community = CommunityServer(
             platform="discord",
-            platform_id="spooftest123456",
+            platform_community_server_id="spooftest123456",
             name="Header Spoof Test Community",
             description="Community for testing header spoofing prevention",
             is_active=True,
@@ -258,7 +258,7 @@ class TestHeaderSpoofingBlocked:
         # Regular user with spoofed header should be BLOCKED
         with pytest.raises(HTTPException) as exc_info:
             await verify_community_admin(
-                test_community_server.platform_id,
+                test_community_server.platform_community_server_id,
                 regular_user,
                 db_session,
                 spoofed_request,
@@ -283,7 +283,7 @@ class TestHeaderSpoofingBlocked:
 
         with pytest.raises(HTTPException) as exc_info:
             await verify_community_admin(
-                test_community_server.platform_id,
+                test_community_server.platform_community_server_id,
                 regular_user,
                 db_session,
                 request,
@@ -309,7 +309,7 @@ class TestHeaderSpoofingBlocked:
         request = create_mock_request_no_header()
 
         result = await verify_community_admin(
-            test_community_server.platform_id,
+            test_community_server.platform_community_server_id,
             service_account_user,
             db_session,
             request,
@@ -334,7 +334,7 @@ class TestHeaderSpoofingBlocked:
 
         with pytest.raises(HTTPException) as exc_info:
             await verify_community_admin(
-                test_community_server.platform_id,
+                test_community_server.platform_community_server_id,
                 regular_user,
                 db_session,
                 request,

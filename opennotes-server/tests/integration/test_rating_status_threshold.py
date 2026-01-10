@@ -28,7 +28,7 @@ async def community_server() -> CommunityServer:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id=f"test-server-{uuid4().hex[:8]}",
+            platform_community_server_id=f"test-server-{uuid4().hex[:8]}",
             name="Test Server",
             is_active=True,
         )

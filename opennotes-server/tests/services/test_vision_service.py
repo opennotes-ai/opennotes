@@ -30,7 +30,7 @@ async def setup_community_config(db_session: AsyncSession):
     """Set up test community server with OpenAI config."""
     community_server = CommunityServer(
         platform="discord",
-        platform_id="test-guild-123",
+        platform_community_server_id="test-guild-123",
         name="Test Community",
     )
     db_session.add(community_server)
@@ -67,7 +67,7 @@ async def test_describe_image_success(
     description = await vision_service.describe_image(
         db=db_session,
         image_url="https://example.com/cat.jpg",
-        community_server_id=community_server.platform_id,
+        community_server_id=community_server.platform_community_server_id,
     )
 
     assert description == "A cat sitting on a table"
@@ -97,7 +97,7 @@ async def test_describe_image_with_custom_params(
     description = await vision_service.describe_image(
         db=db_session,
         image_url="https://example.com/detailed.jpg",
-        community_server_id=community_server.platform_id,
+        community_server_id=community_server.platform_community_server_id,
         detail="high",
         max_tokens=500,
     )
@@ -125,13 +125,13 @@ async def test_describe_image_caching(
     description1 = await vision_service.describe_image(
         db=db_session,
         image_url="https://example.com/cached.jpg",
-        community_server_id=community_server.platform_id,
+        community_server_id=community_server.platform_community_server_id,
     )
 
     description2 = await vision_service.describe_image(
         db=db_session,
         image_url="https://example.com/cached.jpg",
-        community_server_id=community_server.platform_id,
+        community_server_id=community_server.platform_community_server_id,
     )
 
     assert description1 == description2 == "Cached description"
@@ -162,7 +162,7 @@ async def test_describe_image_rate_limit_retry(
         await vision_service.describe_image(
             db=db_session,
             image_url="https://example.com/retry.jpg",
-            community_server_id=community_server.platform_id,
+            community_server_id=community_server.platform_community_server_id,
         )
 
     # VisionService calls LLMService once (no retry logic in VisionService)
@@ -198,7 +198,7 @@ async def test_describe_image_api_error(
         await vision_service.describe_image(
             db=db_session,
             image_url="https://example.com/error.jpg",
-            community_server_id=community_server.platform_id,
+            community_server_id=community_server.platform_community_server_id,
         )
 
 

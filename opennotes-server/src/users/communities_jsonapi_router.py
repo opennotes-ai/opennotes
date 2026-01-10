@@ -3,7 +3,7 @@
 This module implements a JSON:API 1.1 compliant endpoint for community servers.
 It provides:
 - Standard JSON:API response envelope structure
-- Community server lookup by platform and platform_id
+- Community server lookup by platform and platform_community_server_id
 - Community server retrieval by ID
 - Proper content-type headers (application/vnd.api+json)
 
@@ -46,7 +46,7 @@ class CommunityServerAttributes(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     platform: str
-    platform_id: str
+    platform_community_server_id: str
     name: str
     description: str | None = None
     is_active: bool = True
@@ -80,7 +80,7 @@ def community_server_to_resource(server: CommunityServer) -> CommunityServerReso
         id=str(server.id),
         attributes=CommunityServerAttributes(
             platform=server.platform,
-            platform_id=server.platform_id,
+            platform_community_server_id=server.platform_community_server_id,
             name=server.name,
             description=server.description,
             is_active=server.is_active,
@@ -119,7 +119,9 @@ async def lookup_community_server_jsonapi(
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
     platform: str = Query("discord", description="Platform type"),
-    platform_id: str = Query(..., description="Platform-specific ID (e.g., Discord guild ID)"),
+    platform_community_server_id: str = Query(
+        ..., description="Platform-specific ID (e.g., Discord guild ID)"
+    ),
 ) -> JSONResponse:
     """Look up a community server by platform and platform ID with JSON:API format.
 
@@ -128,7 +130,7 @@ async def lookup_community_server_jsonapi(
 
     Args:
         platform: Platform type (default: "discord")
-        platform_id: Platform-specific ID (e.g., Discord guild ID)
+        platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
 
     Returns:
         JSON:API formatted response with community server details
@@ -142,7 +144,7 @@ async def lookup_community_server_jsonapi(
             extra={
                 "user_id": current_user.id,
                 "platform": platform,
-                "platform_id": platform_id,
+                "platform_community_server_id": platform_community_server_id,
             },
         )
 
@@ -150,7 +152,7 @@ async def lookup_community_server_jsonapi(
 
         community_server = await get_community_server_by_platform_id(
             db=db,
-            community_server_id=platform_id,
+            community_server_id=platform_community_server_id,
             platform=platform,
             auto_create=auto_create,
         )
@@ -163,7 +165,7 @@ async def lookup_community_server_jsonapi(
             return create_error_response(
                 status.HTTP_404_NOT_FOUND,
                 "Not Found",
-                f"Community server not found: {platform}:{platform_id}",
+                f"Community server not found: {platform}:{platform_community_server_id}",
             )
 
         server_resource = community_server_to_resource(community_server)

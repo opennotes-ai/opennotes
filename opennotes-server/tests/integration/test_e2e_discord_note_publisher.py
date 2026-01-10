@@ -107,7 +107,7 @@ async def discord_e2e_setup(setup_database):
         # Create community server
         community = CommunityServer(
             platform="discord",
-            platform_id="e2e_guild_789",
+            platform_community_server_id="e2e_guild_789",
             name="E2E Test Community",
             is_active=True,
         )
@@ -165,7 +165,7 @@ async def discord_e2e_setup(setup_database):
 
         # Create note_publisher configuration
         note_publisher_config = NotePublisherConfig(
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             channel_id=None,
             enabled=True,
             threshold=0.75,
@@ -326,7 +326,7 @@ class TestDiscordMessageE2E:
         # Step 1: Perform similarity search (simulating Discord bot behavior) using JSON:API format
         search_request = make_similarity_search_request(
             text=discord_message_content,
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             dataset_tags=["snopes"],
             similarity_threshold=0.70,
             limit=5,
@@ -363,7 +363,7 @@ class TestDiscordMessageE2E:
             note_id="00000000-0000-0000-0000-000000088888",
             original_message_id="e2e_discord_msg_12345",
             channel_id="e2e_channel_67890",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.85,
             confidence_at_post="high",
             success=True,
@@ -414,7 +414,7 @@ class TestDiscordMessageE2E:
         # Using JSON:API format for similarity search
         search_request = make_similarity_search_request(
             text=unrelated_message,
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             dataset_tags=["snopes"],
             similarity_threshold=0.75,  # High threshold
             limit=5,
@@ -454,7 +454,7 @@ class TestDiscordMessageE2E:
             note_id="00000000-0000-0000-0000-000000077777",
             original_message_id="duplicate_check_msg_999",
             channel_id="e2e_channel_99999",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.82,
             confidence_at_post="high",
             success=True,
@@ -468,7 +468,7 @@ class TestDiscordMessageE2E:
 
         # Check for duplicate - uses JSON:API filter syntax and returns list
         dup_response = await discord_client.get(
-            f"/api/v2/note-publisher-posts?filter[community_server_id]={community.platform_id}"
+            f"/api/v2/note-publisher-posts?filter[community_server_id]={community.platform_community_server_id}"
         )
         assert dup_response.status_code == 200
 
@@ -513,7 +513,7 @@ class TestDiscordMessageE2E:
             note_id="00000000-0000-0000-0000-000000066666",
             original_message_id="cooldown_msg_111",
             channel_id="cooldown_channel_222",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.88,
             confidence_at_post="high",
             success=True,
@@ -524,7 +524,7 @@ class TestDiscordMessageE2E:
 
         # Check last post in channel - JSON:API uses filter params
         last_post_response = await discord_client.get(
-            f"/api/v2/note-publisher-posts?filter[community_server_id]={community.platform_id}&filter[channel_id]=cooldown_channel_222"
+            f"/api/v2/note-publisher-posts?filter[community_server_id]={community.platform_community_server_id}&filter[channel_id]=cooldown_channel_222"
         )
         assert last_post_response.status_code == 200
 
@@ -566,7 +566,7 @@ class TestDiscordMessageE2E:
 
         # First, disable note_publisher for this server using JSON:API format
         disable_request = make_note_publisher_config_request(
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             channel_id=None,
             enabled=False,  # Disable
             threshold=0.75,
@@ -581,7 +581,7 @@ class TestDiscordMessageE2E:
 
         # Verify config via list endpoint with filter
         get_config_response = await discord_client.get(
-            f"/api/v2/note-publisher-configs?filter[community_server_id]={community.platform_id}"
+            f"/api/v2/note-publisher-configs?filter[community_server_id]={community.platform_community_server_id}"
         )
         assert get_config_response.status_code == 200
 
@@ -607,7 +607,7 @@ class TestDiscordWebhookFailureHandling:
             note_id="00000000-0000-0000-0000-000000055555",
             original_message_id="failed_msg_333",
             channel_id="failed_channel_444",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.79,
             confidence_at_post="medium",
             success=False,
@@ -646,7 +646,7 @@ class TestDiscordWebhookFailureHandling:
             note_id="00000000-0000-0000-0000-000000044444",
             original_message_id="perm_fail_msg_555",
             channel_id="no_perm_channel_666",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.84,
             confidence_at_post="high",
             success=False,
@@ -720,7 +720,7 @@ class TestNotePublisherRequestCompletion:
             note_id=str(note1.id),
             original_message_id="request_completion_msg_001",
             channel_id="request_completion_channel",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.90,
             confidence_at_post="high",
             success=True,
@@ -793,7 +793,7 @@ class TestNotePublisherRequestCompletion:
             note_id=str(note2.id),
             original_message_id="failed_request_msg_002",
             channel_id="failed_request_channel",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.85,
             confidence_at_post="high",
             success=False,
@@ -839,7 +839,7 @@ class TestNotePublisherRequestCompletion:
             note_id=str(note3.id),
             original_message_id="no_request_msg_003",
             channel_id="no_request_channel",
-            community_server_id=community.platform_id,
+            community_server_id=community.platform_community_server_id,
             score_at_post=0.88,
             confidence_at_post="high",
             success=True,

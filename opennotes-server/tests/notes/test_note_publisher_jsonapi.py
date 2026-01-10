@@ -36,13 +36,13 @@ async def note_publisher_jsonapi_community_server():
         community_server = CommunityServer(
             id=community_server_id,
             platform="discord",
-            platform_id=platform_id,
+            platform_community_server_id=platform_id,
             name="Test Guild for Note Publisher JSONAPI",
         )
         db.add(community_server)
         await db.commit()
 
-    return {"uuid": community_server_id, "platform_id": platform_id}
+    return {"uuid": community_server_id, "platform_community_server_id": platform_id}
 
 
 @pytest.fixture
@@ -272,7 +272,7 @@ class TestNotePublisherConfigsJSONAPIList:
         - Each resource has 'type', 'id', and 'attributes'
         - Pagination via page[number] and page[size]
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
 
         response = await note_publisher_jsonapi_auth_client.get(
             f"/api/v2/note-publisher-configs?filter[community_server_id]={platform_id}"
@@ -298,7 +298,7 @@ class TestNotePublisherConfigsJSONAPIList:
         note_publisher_jsonapi_community_server,
     ):
         """Test GET /api/v2/note-publisher-configs supports JSON:API pagination."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
 
         response = await note_publisher_jsonapi_auth_client.get(
             f"/api/v2/note-publisher-configs?filter[community_server_id]={platform_id}&page[number]=1&page[size]=10"
@@ -338,7 +338,7 @@ class TestNotePublisherConfigsJSONAPIGet:
         - 'data' object containing single resource
         - Resource has 'type', 'id', and 'attributes'
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
 
         create_body = {
             "data": {
@@ -407,7 +407,7 @@ class TestNotePublisherConfigsJSONAPICreate:
         - Response with 201 Created status
         - Response body with 'data' object containing created resource
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_create_{uuid4().hex[:8]}"
 
         request_body = {
@@ -449,7 +449,7 @@ class TestNotePublisherConfigsJSONAPICreate:
         note_publisher_jsonapi_community_server,
     ):
         """Test POST /api/v2/note-publisher-configs rejects invalid resource type."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
 
         request_body = {
             "data": {
@@ -474,7 +474,7 @@ class TestNotePublisherConfigsJSONAPICreate:
         note_publisher_jsonapi_community_server,
     ):
         """Test POST /api/v2/note-publisher-configs returns 409 for duplicate config."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_conflict_{uuid4().hex[:8]}"
 
         request_body = {
@@ -518,7 +518,7 @@ class TestNotePublisherConfigsJSONAPIUpdate:
         - Response with 200 OK status
         - Response body with 'data' object containing updated resource
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_update_{uuid4().hex[:8]}"
 
         create_body = {
@@ -600,7 +600,7 @@ class TestNotePublisherConfigsJSONAPIUpdate:
         note_publisher_jsonapi_community_server,
     ):
         """Test PATCH /api/v2/note-publisher-configs/{id} returns 409 if ID in body doesn't match URL."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_mismatch_{uuid4().hex[:8]}"
 
         create_body = {
@@ -651,7 +651,7 @@ class TestNotePublisherConfigsJSONAPIDelete:
         - Response with 204 No Content status
         - No response body
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         channel_id = f"test_channel_delete_{uuid4().hex[:8]}"
 
         create_body = {
@@ -717,7 +717,7 @@ class TestNotePublisherPostsJSONAPIList:
         - Each resource has 'type', 'id', and 'attributes'
         - Pagination via page[number] and page[size]
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
 
         response = await note_publisher_jsonapi_auth_client.get(
             f"/api/v2/note-publisher-posts?filter[community_server_id]={platform_id}"
@@ -743,7 +743,7 @@ class TestNotePublisherPostsJSONAPIList:
         note_publisher_jsonapi_community_server,
     ):
         """Test GET /api/v2/note-publisher-posts supports JSON:API pagination."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
 
         response = await note_publisher_jsonapi_auth_client.get(
             f"/api/v2/note-publisher-posts?filter[community_server_id]={platform_id}&page[number]=1&page[size]=10"
@@ -784,7 +784,7 @@ class TestNotePublisherPostsJSONAPIGet:
         - 'data' object containing single resource
         - Resource has 'type', 'id', and 'attributes'
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         note_id = str(note_publisher_jsonapi_test_note["id"])
 
         create_body = {
@@ -859,7 +859,7 @@ class TestNotePublisherPostsJSONAPICreate:
         - Response with 201 Created status
         - Response body with 'data' object containing created resource
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         note_id = str(note_publisher_jsonapi_test_note["id"])
         original_message_id = f"test_msg_create_{uuid4().hex[:8]}"
 
@@ -906,7 +906,7 @@ class TestNotePublisherPostsJSONAPICreate:
         note_publisher_jsonapi_test_note,
     ):
         """Test POST /api/v2/note-publisher-posts rejects invalid resource type."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         note_id = str(note_publisher_jsonapi_test_note["id"])
 
         request_body = {
@@ -938,7 +938,7 @@ class TestNotePublisherPostsJSONAPICreate:
         note_publisher_jsonapi_test_note,
     ):
         """Test POST /api/v2/note-publisher-posts returns 409 for duplicate original_message_id."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         note_id = str(note_publisher_jsonapi_test_note["id"])
         original_message_id = f"test_msg_conflict_{uuid4().hex[:8]}"
 
@@ -978,7 +978,7 @@ class TestNotePublisherPostsJSONAPICreate:
         note_publisher_jsonapi_test_note,
     ):
         """Test POST /api/v2/note-publisher-posts creates a failed post record."""
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         note_id = str(note_publisher_jsonapi_test_note["id"])
         original_message_id = f"test_msg_error_{uuid4().hex[:8]}"
 
@@ -1022,7 +1022,7 @@ class TestNotePublisherPostsJSONAPICreate:
         This test verifies the security fix for the authorization vulnerability where
         an authenticated user could create post records for any community they don't belong to.
         """
-        platform_id = note_publisher_jsonapi_community_server["platform_id"]
+        platform_id = note_publisher_jsonapi_community_server["platform_community_server_id"]
         note_id = str(note_publisher_jsonapi_test_note["id"])
         original_message_id = f"test_msg_unauth_{uuid4().hex[:8]}"
 

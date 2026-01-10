@@ -260,7 +260,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -308,7 +308,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -349,7 +349,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -382,7 +382,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -421,7 +421,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -464,7 +464,7 @@ describe('GuildOnboardingService', () => {
       mockApiClient.updateWelcomeMessageId.mockReset();
       mockApiClient.updateWelcomeMessageId.mockResolvedValue({
         id: 'community-server-123',
-        platform_id: 'guild-123',
+        platform_community_server_id: 'guild-123',
         welcome_message_id: 'message-456',
       });
     });
@@ -476,7 +476,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -498,7 +498,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -525,7 +525,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -559,7 +559,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -586,7 +586,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -615,7 +615,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -643,7 +643,7 @@ describe('GuildOnboardingService', () => {
           id: 'community-server-123',
           attributes: {
             platform: 'discord',
-            platform_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             name: 'Test Guild',
             is_active: true,
             is_public: true,
@@ -692,7 +692,7 @@ describe('GuildOnboardingService', () => {
       mockApiClient.updateWelcomeMessageId.mockReset();
       mockApiClient.updateWelcomeMessageId.mockResolvedValue({
         id: 'community-server-123',
-        platform_id: 'guild-123',
+        platform_community_server_id: 'guild-123',
         welcome_message_id: 'message-456',
       });
     });
@@ -711,7 +711,7 @@ describe('GuildOnboardingService', () => {
             id: 'community-server-123',
             attributes: {
               platform: 'discord',
-              platform_id: 'guild-123',
+              platform_community_server_id: 'guild-123',
               name: 'Test Guild',
               welcome_message_id: null, // Not tracked
             },
@@ -738,7 +738,7 @@ describe('GuildOnboardingService', () => {
             id: 'community-server-123',
             attributes: {
               platform: 'discord',
-              platform_id: 'guild-123',
+              platform_community_server_id: 'guild-123',
               name: 'Test Guild',
               welcome_message_id: 'existing-welcome-123',
             },
@@ -767,7 +767,7 @@ describe('GuildOnboardingService', () => {
             id: 'community-server-123',
             attributes: {
               platform: 'discord',
-              platform_id: 'guild-123',
+              platform_community_server_id: 'guild-123',
               name: 'Test Guild',
               welcome_message_id: 'old-welcome-123',
             },
@@ -794,7 +794,7 @@ describe('GuildOnboardingService', () => {
             id: 'community-server-123',
             attributes: {
               platform: 'discord',
-              platform_id: 'guild-123',
+              platform_community_server_id: 'guild-123',
               name: 'Test Guild',
               welcome_message_id: 'legacy-welcome-123',
             },
@@ -840,7 +840,7 @@ describe('GuildOnboardingService', () => {
             id: 'community-server-123',
             attributes: {
               platform: 'discord',
-              platform_id: 'guild-123',
+              platform_community_server_id: 'guild-123',
               name: 'Test Guild',
               welcome_message_id: 'welcome-1',
             },
@@ -916,7 +916,7 @@ describe('GuildOnboardingService', () => {
             id: 'community-server-123',
             attributes: {
               platform: 'discord',
-              platform_id: 'guild-123',
+              platform_community_server_id: 'guild-123',
               name: 'Test Guild',
               welcome_message_id: 'wrong-old-id', // Stale ID
             },
@@ -963,7 +963,7 @@ describe('GuildOnboardingService', () => {
       mockApiClient.updateWelcomeMessageId.mockReset();
       mockApiClient.updateWelcomeMessageId.mockResolvedValue({
         id: 'community-server-123',
-        platform_id: 'guild-123',
+        platform_community_server_id: 'guild-123',
         welcome_message_id: 'message-456',
       });
     });

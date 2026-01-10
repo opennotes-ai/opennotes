@@ -246,7 +246,7 @@ class BulkContentScanService:
         Args:
             scan_id: UUID of the scan
             messages: Single BulkScanMessage OR sequence of messages
-            community_server_platform_id: CommunityServer.platform_id (e.g., Discord guild ID)
+            community_server_platform_id: CommunityServer.platform_community_server_id (e.g., Discord guild ID)
             scan_types: Sequence of ScanType to run (default: all)
             collect_scores: If True, also collect and return score info for debug mode
 
@@ -322,7 +322,7 @@ class BulkContentScanService:
         Args:
             scan_id: UUID of the scan
             messages: Single BulkScanMessage OR sequence of messages
-            community_server_platform_id: CommunityServer.platform_id
+            community_server_platform_id: CommunityServer.platform_community_server_id
             scan_types: Sequence of ScanType to run (default: all)
 
         Returns:
@@ -351,7 +351,7 @@ class BulkContentScanService:
         Args:
             scan_id: UUID of the scan
             message: The message to scan
-            community_server_platform_id: CommunityServer.platform_id
+            community_server_platform_id: CommunityServer.platform_community_server_id
             scan_type: Type of scan to run
 
         Returns:
@@ -781,7 +781,7 @@ class BulkContentScanService:
         Args:
             scan_id: UUID of the scan
             message: The message to scan
-            community_server_platform_id: CommunityServer.platform_id
+            community_server_platform_id: CommunityServer.platform_community_server_id
 
         Returns:
             ScanCandidate if a match was found, None otherwise
@@ -1647,7 +1647,9 @@ async def create_note_requests_from_flagged_messages(
     platform_id: str | None = None
     if generate_ai_notes:
         result = await session.execute(
-            select(CommunityServer.platform_id).where(CommunityServer.id == community_server_id)
+            select(CommunityServer.platform_community_server_id).where(
+                CommunityServer.id == community_server_id
+            )
         )
         platform_id = result.scalar_one_or_none()
         if not platform_id:

@@ -35,7 +35,7 @@ async def test_community_config_foreign_key_constraint():
         # Create a CommunityServer
         community_server = CommunityServer(
             platform="discord",
-            platform_id=uuid4().hex,
+            platform_community_server_id=uuid4().hex,
             name="Test Server",
         )
         session.add(community_server)
@@ -114,7 +114,7 @@ async def test_community_config_cascade_delete_on_server_delete():
         # Create a CommunityServer
         community_server = CommunityServer(
             platform="discord",
-            platform_id=uuid4().hex,
+            platform_community_server_id=uuid4().hex,
             name="Test Server to Delete",
         )
         session.add(community_server)
@@ -175,7 +175,7 @@ async def test_community_config_relationship_loading():
         # Create a CommunityServer
         community_server = CommunityServer(
             platform="discord",
-            platform_id=uuid4().hex,
+            platform_community_server_id=uuid4().hex,
             name="Relationship Test Server",
         )
         session.add(community_server)
@@ -224,7 +224,7 @@ async def test_community_server_has_configs_relationship():
         # Create a CommunityServer
         community_server = CommunityServer(
             platform="discord",
-            platform_id=uuid4().hex,
+            platform_community_server_id=uuid4().hex,
             name="Config Relationship Test",
         )
         session.add(community_server)

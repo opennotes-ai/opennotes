@@ -32,7 +32,7 @@ class TestAuthorizationFixtures:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="auth_test_community_a",
+            platform_community_server_id="auth_test_community_a",
             name="Authorization Test Community A",
             is_active=True,
             is_public=True,
@@ -50,7 +50,7 @@ class TestAuthorizationFixtures:
         server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_id="auth_test_community_b",
+            platform_community_server_id="auth_test_community_b",
             name="Authorization Test Community B",
             is_active=True,
             is_public=True,

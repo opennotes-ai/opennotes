@@ -338,7 +338,7 @@ class TestMessageArchiveService:
         async with get_session_maker()() as db:
             community_server = CommunityServer(
                 platform="discord",
-                platform_id="test-guild-456",
+                platform_community_server_id="test-guild-456",
                 name="Test Community",
             )
             db.add(community_server)
@@ -363,7 +363,7 @@ class TestMessageArchiveService:
             archive = await MessageArchiveService.create_from_image(
                 db=db,
                 image_url="https://example.com/test-image.jpg",
-                community_server_id=community_server.platform_id,
+                community_server_id=community_server.platform_community_server_id,
                 vision_service=mock_vision_service,
                 platform_message_id="img_msg_vision_1",
             )
@@ -380,7 +380,10 @@ class TestMessageArchiveService:
             mock_vision_service.describe_image.assert_called_once()
             call_args = mock_vision_service.describe_image.call_args
             assert call_args.kwargs["image_url"] == "https://example.com/test-image.jpg"
-            assert call_args.kwargs["community_server_id"] == community_server.platform_id
+            assert (
+                call_args.kwargs["community_server_id"]
+                == community_server.platform_community_server_id
+            )
 
     @pytest.mark.asyncio
     async def test_create_from_image_with_custom_vision_params(self):
@@ -388,7 +391,7 @@ class TestMessageArchiveService:
         async with get_session_maker()() as db:
             community_server = CommunityServer(
                 platform="discord",
-                platform_id="test-guild-789",
+                platform_community_server_id="test-guild-789",
                 name="Test Community",
             )
             db.add(community_server)
@@ -411,7 +414,7 @@ class TestMessageArchiveService:
             archive = await MessageArchiveService.create_from_image(
                 db=db,
                 image_url="https://example.com/detailed-image.jpg",
-                community_server_id=community_server.platform_id,
+                community_server_id=community_server.platform_community_server_id,
                 vision_service=mock_vision_service,
                 detail="high",
                 max_tokens=500,
@@ -430,7 +433,7 @@ class TestMessageArchiveService:
         async with get_session_maker()() as db:
             community_server = CommunityServer(
                 platform="discord",
-                platform_id="test-guild-error",
+                platform_community_server_id="test-guild-error",
                 name="Test Community",
             )
             db.add(community_server)
@@ -455,7 +458,7 @@ class TestMessageArchiveService:
             archive = await MessageArchiveService.create_from_image(
                 db=db,
                 image_url="https://example.com/error-image.jpg",
-                community_server_id=community_server.platform_id,
+                community_server_id=community_server.platform_community_server_id,
                 vision_service=mock_vision_service,
                 platform_message_id="img_msg_error",
             )
@@ -472,7 +475,7 @@ class TestMessageArchiveService:
         async with get_session_maker()() as db:
             community_server = CommunityServer(
                 platform="discord",
-                platform_id="test-guild-metadata",
+                platform_community_server_id="test-guild-metadata",
                 name="Test Community",
             )
             db.add(community_server)
@@ -496,7 +499,7 @@ class TestMessageArchiveService:
             archive = await MessageArchiveService.create_from_image(
                 db=db,
                 image_url="https://example.com/full-metadata.jpg",
-                community_server_id=community_server.platform_id,
+                community_server_id=community_server.platform_community_server_id,
                 vision_service=mock_vision_service,
                 platform_message_id="img_msg_full",
                 platform_channel_id="channel_999",

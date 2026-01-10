@@ -60,7 +60,7 @@ function createMockProgressEvent(overrides: Partial<BulkScanProgressEvent> = {})
     metadata: {},
     scan_id: 'scan-abc-123',
     community_server_id: 'cs-uuid-123',
-    platform_id: 'guild-123',
+    platform_community_server_id: 'guild-123',
     batch_number: 1,
     messages_in_batch: 10,
     messages_processed: 100,
@@ -126,7 +126,7 @@ describe('VibecheckProgressService', () => {
     it('should skip if guild not found', async () => {
       const mockClient = createMockClient([]);
       const service = new VibecheckProgressService(mockClient);
-      const event = createMockProgressEvent({ platform_id: 'unknown-guild' });
+      const event = createMockProgressEvent({ platform_community_server_id: 'unknown-guild' });
 
       await service.handleProgressEvent(event);
 

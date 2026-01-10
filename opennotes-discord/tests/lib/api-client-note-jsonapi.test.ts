@@ -127,7 +127,7 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
     id: '550e8400-e29b-41d4-a716-446655440001',
     attributes: {
       platform: 'discord',
-      platform_id: 'guild-123',
+      platform_community_server_id: 'guild-123',
       name: 'Test Server',
       is_active: true,
     },
