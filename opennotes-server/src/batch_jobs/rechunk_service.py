@@ -112,6 +112,7 @@ class RechunkBatchJobService:
 
             await self._batch_job_service.start_job(job.id)
             await self._session.commit()
+            await self._session.refresh(job)
 
         except Exception:
             await self._lock_manager.release_lock("fact_check")
@@ -131,6 +132,7 @@ class RechunkBatchJobService:
                 error_summary={"error": str(e), "stage": "task_dispatch"},
             )
             await self._session.commit()
+            await self._session.refresh(job)
             await self._lock_manager.release_lock("fact_check")
             raise
 
@@ -197,6 +199,7 @@ class RechunkBatchJobService:
 
             await self._batch_job_service.start_job(job.id)
             await self._session.commit()
+            await self._session.refresh(job)
 
         except Exception:
             await self._lock_manager.release_lock("previously_seen", str(community_server_id))
@@ -216,6 +219,7 @@ class RechunkBatchJobService:
                 error_summary={"error": str(e), "stage": "task_dispatch"},
             )
             await self._session.commit()
+            await self._session.refresh(job)
             await self._lock_manager.release_lock("previously_seen", str(community_server_id))
             raise
 
