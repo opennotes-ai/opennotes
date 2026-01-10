@@ -46,6 +46,20 @@ export function getExplanationsCacheKey(scanId: string): string {
   return `vibecheck:explanations:${scanId}`;
 }
 
+function createListRequestsButton(): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId('request_reply:list_requests')
+    .setLabel('List Requests')
+    .setStyle(ButtonStyle.Primary);
+}
+
+function createListNotesButton(): ButtonBuilder {
+  return new ButtonBuilder()
+    .setCustomId('request_reply:list_notes')
+    .setLabel('List Notes')
+    .setStyle(ButtonStyle.Secondary);
+}
+
 async function fetchExplanations(
   flaggedMessages: FlaggedMessageResource[],
   communityServerId: string
@@ -524,32 +538,22 @@ async function showAiGenerationPrompt(
         );
         const createdCount = result.data.attributes.created_count;
 
-        const listRequestsButton = new ButtonBuilder()
-          .setCustomId('request_reply:list_requests')
-          .setLabel('List Requests')
-          .setStyle(ButtonStyle.Primary);
-
-        const listNotesButton = new ButtonBuilder()
-          .setCustomId('request_reply:list_notes')
-          .setLabel('List Notes')
-          .setStyle(ButtonStyle.Secondary);
-
         const buttons: ButtonBuilder[] = [];
         if (createdCount > 0) {
-          buttons.push(listRequestsButton);
-        }
-        if (generateAiNotes && createdCount > 0) {
-          buttons.push(listNotesButton);
+          buttons.push(createListRequestsButton());
+          if (generateAiNotes) {
+            buttons.push(createListNotesButton());
+          }
         }
 
-        const actionRow = buttons.length > 0
-          ? new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)
-          : undefined;
+        const components = buttons.length > 0
+          ? [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)]
+          : [];
 
         await aiButtonInteraction.update({
           content: `Created ${createdCount} note request${createdCount !== 1 ? 's' : ''}` +
             (generateAiNotes ? ' with AI-generated drafts.' : '.'),
-          components: actionRow ? [actionRow] : [],
+          components,
         });
       } catch (error) {
         logger.error('Failed to create note requests', {
@@ -781,13 +785,8 @@ async function handleCreateRequestsSubcommand(
 
     const createdCount = result.data.attributes.created_count;
 
-    const listRequestsButton = new ButtonBuilder()
-      .setCustomId('request_reply:list_requests')
-      .setLabel('List Requests')
-      .setStyle(ButtonStyle.Primary);
-
     const components = createdCount > 0
-      ? [new ActionRowBuilder<ButtonBuilder>().addComponents(listRequestsButton)]
+      ? [new ActionRowBuilder<ButtonBuilder>().addComponents(createListRequestsButton())]
       : [];
 
     await interaction.editReply({
