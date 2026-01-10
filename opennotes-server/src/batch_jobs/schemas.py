@@ -86,7 +86,7 @@ class BatchJobResponse(BatchJobBase):
     failed_tasks: int = Field(default=0, ge=0, description="Tasks that failed")
     metadata_: dict = Field(
         default_factory=dict,
-        alias="metadata",
+        serialization_alias="metadata",
         description="Job-specific metadata",
     )
     error_summary: dict | None = Field(

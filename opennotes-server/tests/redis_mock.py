@@ -456,17 +456,35 @@ class StatefulRedisMock:
 
         return len(self.store[key])
 
-    async def _hset(self, key: str, field: str, value: Any) -> int:
-        """Set a field in a hash"""
+    async def _hset(
+        self,
+        key: str,
+        field: str | None = None,
+        value: Any = None,
+        mapping: dict[str, Any] | None = None,
+    ) -> int:
+        """Set field(s) in a hash. Supports both single field/value and mapping."""
         if key not in self.store:
             self.store[key] = {}
 
         if not isinstance(self.store[key], dict):
             raise TypeError(f"Key {key} is not a hash")
 
-        is_new = field not in self.store[key]
-        self.store[key][field] = str(value)
-        return 1 if is_new else 0
+        added = 0
+        # Handle mapping (bulk set)
+        if mapping:
+            for f, v in mapping.items():
+                is_new = f not in self.store[key]
+                self.store[key][f] = str(v)
+                if is_new:
+                    added += 1
+        # Handle single field/value
+        elif field is not None:
+            is_new = field not in self.store[key]
+            self.store[key][field] = str(value)
+            added = 1 if is_new else 0
+
+        return added
 
     async def _hget(self, key: str, field: str) -> str | None:
         """Get a field from a hash"""
