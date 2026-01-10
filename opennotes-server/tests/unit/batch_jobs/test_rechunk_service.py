@@ -48,6 +48,7 @@ def mock_batch_job_service():
     service.start_job = AsyncMock()
     service.cancel_job = AsyncMock()
     service.get_job = AsyncMock()
+    service.fail_job = AsyncMock()
     return service
 
 
