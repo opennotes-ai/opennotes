@@ -17,6 +17,11 @@ def mock_session():
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
     session.get = AsyncMock()
+
+    mock_execute_result = MagicMock()
+    mock_execute_result.fetchall = MagicMock(return_value=[])
+    session.execute = AsyncMock(return_value=mock_execute_result)
+
     return session
 
 
