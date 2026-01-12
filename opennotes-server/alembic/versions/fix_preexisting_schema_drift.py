@@ -44,10 +44,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        op.f("ix_fact_checked_item_candidates_id"),
-        table_name="fact_checked_item_candidates",
-    )
+    conn = op.get_bind()
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_fact_checked_item_candidates_id"))
     op.alter_column(
         "fact_checked_item_candidates",
         "rating",

@@ -463,7 +463,9 @@ def test_services():
 
     compose_env = {
         "POSTGRES_PASSWORD": os.environ.get("POSTGRES_PASSWORD", "testpass"),
-        "POSTGRES_IMAGE": os.environ.get("POSTGRES_IMAGE", "pgvector/pgvector:pg18"),
+        "POSTGRES_IMAGE": os.environ.get(
+            "POSTGRES_IMAGE", "opennotes/postgres:18-pgvector-pgroonga"
+        ),
         "REDIS_IMAGE": os.environ.get("REDIS_IMAGE", "redis:7-alpine"),
         "NATS_IMAGE": os.environ.get("NATS_IMAGE", "nats:2.10-alpine"),
         "DISCORD_TOKEN": "dummy-token-for-parsing",
@@ -1539,6 +1541,12 @@ async def mock_external_services(request):
     redis_client.ping = mock_redis.ping
     redis_client.keys = mock_redis.keys
     redis_client.setex = mock_redis.setex
+    # Hash operations for progress tracker
+    redis_client.hset = mock_redis.hset
+    redis_client.hget = mock_redis.hget
+    redis_client.hgetall = mock_redis.hgetall
+    redis_client.hincrby = mock_redis.hincrby
+    redis_client.expire = mock_redis.expire
 
     # Mock rate limiter to bypass rate limiting in tests
     rate_limiter.redis_client = mock_redis

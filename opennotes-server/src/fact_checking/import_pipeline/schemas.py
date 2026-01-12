@@ -91,7 +91,10 @@ class NormalizedCandidate(BaseModel):
     """
 
     source_url: str
-    claim_hash: str = Field(description="xxh3_64 hash of claim text for multi-claim deduplication")
+    claim_hash: str = Field(
+        pattern=r"^[0-9a-f]{16}$",
+        description="xxh3_64 hash of claim text for multi-claim deduplication (16 hex chars)",
+    )
     title: str
     predicted_ratings: dict[str, float] | None = Field(
         default=None, description="ML/AI predicted ratings as {rating: probability}"

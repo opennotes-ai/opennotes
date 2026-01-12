@@ -7311,14 +7311,14 @@
         }
       }
     },
-    "/api/v1/chunks/tasks/{task_id}": {
+    "/api/v1/chunks/jobs/{job_id}": {
       "get": {
         "tags": [
           "chunks"
         ],
-        "summary": "Get rechunk task status",
-        "description": "Retrieve the current status and progress of a rechunk background task. If the task is associated with a community server, requires admin or moderator access. If the task was started without a community server (global credentials), only requires authentication.",
-        "operationId": "get_rechunk_task_status_api_v1_chunks_tasks__task_id__get",
+        "summary": "Get rechunk job status",
+        "description": "Retrieve the current status and progress of a rechunk batch job. If the job is associated with a community server, requires admin or moderator access. If the job was started without a community server (global credentials), only requires authentication.",
+        "operationId": "get_rechunk_job_status_api_v1_chunks_jobs__job_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -7326,13 +7326,13 @@
         ],
         "parameters": [
           {
-            "name": "task_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Task Id"
+              "title": "Job Id"
             }
           },
           {
@@ -7358,10 +7358,16 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RechunkTaskResponse"
+                  "$ref": "#/components/schemas/BatchJobResponse"
                 }
               }
             }
+          },
+          "403": {
+            "description": "User lacks admin/moderator permission for the job's community"
+          },
+          "404": {
+            "description": "Job not found or not a rechunk job"
           },
           "422": {
             "description": "Validation Error",
@@ -7379,9 +7385,9 @@
         "tags": [
           "chunks"
         ],
-        "summary": "Cancel a rechunk task",
-        "description": "Cancel a rechunk task and release its lock. By default, only allows canceling tasks in PENDING or IN_PROGRESS state. Use force=true to cancel tasks in any state (including COMPLETED/FAILED). Requires admin/moderator permission for the task's community, or OpenNotes admin for global tasks.",
-        "operationId": "cancel_rechunk_task_api_v1_chunks_tasks__task_id__delete",
+        "summary": "Cancel a rechunk job",
+        "description": "Cancel a rechunk job and release its lock. Jobs in terminal states (completed, failed, cancelled) cannot be cancelled. Requires admin/moderator permission for the job's community, or OpenNotes admin for global jobs.",
+        "operationId": "cancel_rechunk_job_api_v1_chunks_jobs__job_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -7389,26 +7395,14 @@
         ],
         "parameters": [
           {
-            "name": "task_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Task Id"
+              "title": "Job Id"
             }
-          },
-          {
-            "name": "force",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Skip state validation and cancel task in any state",
-              "default": false,
-              "title": "Force"
-            },
-            "description": "Skip state validation and cancel task in any state"
           },
           {
             "name": "X-API-Key",
@@ -7428,15 +7422,17 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RechunkTaskCancelResponse"
-                }
-              }
-            }
+          "204": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "User lacks permission for the job's community or is not an OpenNotes admin"
+          },
+          "404": {
+            "description": "Job not found or not a rechunk job"
+          },
+          "409": {
+            "description": "Job is in terminal state and cannot be cancelled"
           },
           "422": {
             "description": "Validation Error",
@@ -7516,15 +7512,21 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RechunkTaskStartResponse"
+                  "$ref": "#/components/schemas/BatchJobResponse"
                 }
               }
             }
+          },
+          "403": {
+            "description": "User lacks admin/moderator permission for the community"
+          },
+          "409": {
+            "description": "A rechunk operation is already in progress"
           },
           "422": {
             "description": "Validation Error",
@@ -7597,15 +7599,21 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RechunkTaskStartResponse"
+                  "$ref": "#/components/schemas/BatchJobResponse"
                 }
               }
             }
+          },
+          "403": {
+            "description": "User lacks admin/moderator permission for the community"
+          },
+          "409": {
+            "description": "A rechunk operation is already in progress for this community"
           },
           "422": {
             "description": "Validation Error",
@@ -7620,14 +7628,14 @@
         }
       }
     },
-    "/api/v1/chunks/tasks": {
+    "/api/v1/chunks/jobs": {
       "get": {
         "tags": [
           "chunks"
         ],
-        "summary": "List all rechunk tasks",
-        "description": "List all active rechunk tasks. Optionally filter by status. Requires authentication.",
-        "operationId": "list_rechunk_tasks_api_v1_chunks_tasks_get",
+        "summary": "List all rechunk jobs",
+        "description": "List all rechunk batch jobs. Optionally filter by status. Requires authentication.",
+        "operationId": "list_rechunk_jobs_api_v1_chunks_jobs_get",
         "security": [
           {
             "HTTPBearer": []
@@ -7641,16 +7649,16 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/RechunkTaskStatus"
+                  "$ref": "#/components/schemas/src__batch_jobs__models__BatchJobStatus"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Filter by task status (pending, in_progress, completed, failed)",
+              "description": "Filter by job status (pending, in_progress, completed, failed, cancelled)",
               "title": "Status"
             },
-            "description": "Filter by task status (pending, in_progress, completed, failed)"
+            "description": "Filter by job status (pending, in_progress, completed, failed, cancelled)"
           },
           {
             "name": "X-API-Key",
@@ -7677,9 +7685,9 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/RechunkTaskResponse"
+                    "$ref": "#/components/schemas/BatchJobResponse"
                   },
-                  "title": "Response List Rechunk Tasks Api V1 Chunks Tasks Get"
+                  "title": "Response List Rechunk Jobs Api V1 Chunks Jobs Get"
                 }
               }
             }
@@ -7702,8 +7710,8 @@
         "tags": [
           "fact-checking-import"
         ],
-        "summary": "Import fact-check-bureau dataset",
-        "description": "Import the fact-check-bureau dataset from HuggingFace. Supports dry-run mode for validation and enqueue-scrapes mode for triggering content scraping of pending candidates.",
+        "summary": "Start fact-check-bureau import job",
+        "description": "Start an asynchronous import of the fact-check-bureau dataset from HuggingFace. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
         "operationId": "import_fact_check_bureau_endpoint_api_v1_fact_checking_import_fact_check_bureau_post",
         "security": [
           {
@@ -7739,20 +7747,77 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fact-checking/import/enqueue-scrapes": {
+      "post": {
+        "tags": [
+          "fact-checking-import"
+        ],
+        "summary": "Enqueue scrape tasks for pending candidates",
+        "description": "Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that returns the count of enqueued tasks.",
+        "operationId": "enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Batch Size"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/ImportFactCheckBureauResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/EnqueueScrapeResponse"
-                    }
-                  ],
-                  "title": "Response Import Fact Check Bureau Endpoint Api V1 Fact Checking Import Fact Check Bureau Post"
+                  "$ref": "#/components/schemas/EnqueueScrapeResponse"
                 }
               }
             }
@@ -7994,6 +8059,9 @@
               }
             }
           },
+          "404": {
+            "description": "Batch job not found"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -8049,6 +8117,12 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "404": {
+            "description": "Batch job not found"
+          },
+          "409": {
+            "description": "Job is in terminal state and cannot be cancelled"
           },
           "422": {
             "description": "Validation Error",
@@ -8114,6 +8188,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Batch job not found"
           },
           "422": {
             "description": "Validation Error",
@@ -11200,7 +11277,7 @@
             "minimum": 1.0,
             "title": "Batch Size",
             "description": "Batch size for import operations",
-            "default": 100
+            "default": 1000
           },
           "dry_run": {
             "type": "boolean",
@@ -11211,66 +11288,13 @@
           "enqueue_scrapes": {
             "type": "boolean",
             "title": "Enqueue Scrapes",
-            "description": "Enqueue scrape tasks for pending candidates instead of importing",
+            "description": "Enqueue scrape tasks for pending candidates after import completes",
             "default": false
           }
         },
         "type": "object",
         "title": "ImportFactCheckBureauRequest",
         "description": "Request parameters for fact-check bureau import."
-      },
-      "ImportFactCheckBureauResponse": {
-        "properties": {
-          "total_rows": {
-            "type": "integer",
-            "title": "Total Rows",
-            "description": "Total rows in the dataset"
-          },
-          "valid_rows": {
-            "type": "integer",
-            "title": "Valid Rows",
-            "description": "Rows that passed validation"
-          },
-          "invalid_rows": {
-            "type": "integer",
-            "title": "Invalid Rows",
-            "description": "Rows that failed validation"
-          },
-          "inserted": {
-            "type": "integer",
-            "title": "Inserted",
-            "description": "Rows inserted into database"
-          },
-          "updated": {
-            "type": "integer",
-            "title": "Updated",
-            "description": "Rows updated in database"
-          },
-          "errors": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Errors",
-            "description": "First 10 validation/import errors"
-          },
-          "dry_run": {
-            "type": "boolean",
-            "title": "Dry Run",
-            "description": "Whether this was a dry run"
-          }
-        },
-        "type": "object",
-        "required": [
-          "total_rows",
-          "valid_rows",
-          "invalid_rows",
-          "inserted",
-          "updated",
-          "dry_run"
-        ],
-        "title": "ImportFactCheckBureauResponse",
-        "description": "Response containing import statistics."
       },
       "JSONAPILinks": {
         "properties": {
@@ -15507,183 +15531,6 @@
         ],
         "title": "RecentScanResponse",
         "description": "JSON:API response for recent scan check."
-      },
-      "RechunkTaskCancelResponse": {
-        "properties": {
-          "task_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Task Id",
-            "description": "ID of the cancelled task"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "description": "Human-readable status message"
-          },
-          "lock_released": {
-            "type": "boolean",
-            "title": "Lock Released",
-            "description": "Whether the lock was successfully released"
-          }
-        },
-        "type": "object",
-        "required": [
-          "task_id",
-          "message",
-          "lock_released"
-        ],
-        "title": "RechunkTaskCancelResponse",
-        "description": "Response schema for cancelling a rechunk task."
-      },
-      "RechunkTaskResponse": {
-        "properties": {
-          "task_type": {
-            "$ref": "#/components/schemas/RechunkTaskType",
-            "description": "Type of rechunk operation (fact_check or previously_seen)"
-          },
-          "community_server_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Community Server Id",
-            "description": "Community server ID for LLM credentials (None uses global fallback)"
-          },
-          "batch_size": {
-            "type": "integer",
-            "maximum": 1000.0,
-            "minimum": 1.0,
-            "title": "Batch Size",
-            "description": "Batch size for processing"
-          },
-          "task_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Task Id",
-            "description": "Unique task identifier"
-          },
-          "status": {
-            "$ref": "#/components/schemas/RechunkTaskStatus",
-            "description": "Current task status"
-          },
-          "processed_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Processed Count",
-            "description": "Number of items processed",
-            "default": 0
-          },
-          "total_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Total Count",
-            "description": "Total items to process",
-            "default": 0
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error",
-            "description": "Error message if task failed"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At",
-            "description": "When the task was created"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At",
-            "description": "When the task was last updated"
-          }
-        },
-        "type": "object",
-        "required": [
-          "task_type",
-          "batch_size",
-          "task_id",
-          "status",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "RechunkTaskResponse",
-        "description": "Response schema for rechunk task status with full details."
-      },
-      "RechunkTaskStartResponse": {
-        "properties": {
-          "task_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Task Id",
-            "description": "Unique task identifier for status polling"
-          },
-          "status": {
-            "$ref": "#/components/schemas/RechunkTaskStatus",
-            "description": "Initial task status (pending)"
-          },
-          "total_items": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Total Items",
-            "description": "Total items to process"
-          },
-          "batch_size": {
-            "type": "integer",
-            "maximum": 1000.0,
-            "minimum": 1.0,
-            "title": "Batch Size",
-            "description": "Batch size for processing"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "description": "Human-readable status message"
-          }
-        },
-        "type": "object",
-        "required": [
-          "task_id",
-          "status",
-          "total_items",
-          "batch_size",
-          "message"
-        ],
-        "title": "RechunkTaskStartResponse",
-        "description": "Response schema for starting a rechunk task."
-      },
-      "RechunkTaskStatus": {
-        "type": "string",
-        "enum": [
-          "pending",
-          "in_progress",
-          "completed",
-          "failed"
-        ],
-        "title": "RechunkTaskStatus",
-        "description": "Status states for a rechunk task."
-      },
-      "RechunkTaskType": {
-        "type": "string",
-        "enum": [
-          "fact_check",
-          "previously_seen"
-        ],
-        "title": "RechunkTaskType",
-        "description": "Type of rechunk operation."
       },
       "RefreshTokenRequest": {
         "properties": {

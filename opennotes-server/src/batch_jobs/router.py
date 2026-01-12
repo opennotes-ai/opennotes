@@ -78,6 +78,9 @@ async def create_batch_job(
     response_model=BatchJobResponse,
     summary="Get batch job status",
     description="Get the current status and progress of a batch job.",
+    responses={
+        404: {"description": "Batch job not found"},
+    },
 )
 async def get_batch_job(
     job_id: UUID,
@@ -112,6 +115,9 @@ async def get_batch_job(
     summary="Get real-time progress",
     description="Get real-time progress information from Redis cache. "
     "Includes processing rate and ETA when available.",
+    responses={
+        404: {"description": "Batch job not found"},
+    },
 )
 async def get_batch_job_progress(
     job_id: UUID,
@@ -209,6 +215,10 @@ async def list_batch_jobs(
     summary="Cancel a batch job",
     description="Cancel a running or pending batch job. "
     "Jobs in terminal states (completed, failed, cancelled) cannot be cancelled.",
+    responses={
+        404: {"description": "Batch job not found"},
+        409: {"description": "Job is in terminal state and cannot be cancelled"},
+    },
 )
 async def cancel_batch_job(
     job_id: UUID,

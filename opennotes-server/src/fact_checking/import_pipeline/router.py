@@ -1,9 +1,9 @@
 """API endpoint for fact-check bureau import.
 
 Exposes the import pipeline functionality via REST API for programmatic access.
+Import operations run asynchronously via BatchJob infrastructure.
 """
 
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -11,12 +11,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
+from src.batch_jobs.import_service import ImportBatchJobService
+from src.batch_jobs.schemas import BatchJobResponse
 from src.database import get_db
-from src.fact_checking.import_pipeline.importer import import_fact_check_bureau
 from src.fact_checking.import_pipeline.scrape_task import enqueue_scrape_batch
+from src.monitoring import get_logger
 from src.users.models import User
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(
     prefix="/fact-checking/import",
@@ -28,7 +30,7 @@ class ImportFactCheckBureauRequest(BaseModel):
     """Request parameters for fact-check bureau import."""
 
     batch_size: int = Field(
-        default=100,
+        default=1000,
         ge=1,
         le=10000,
         description="Batch size for import operations",
@@ -39,25 +41,8 @@ class ImportFactCheckBureauRequest(BaseModel):
     )
     enqueue_scrapes: bool = Field(
         default=False,
-        description="Enqueue scrape tasks for pending candidates instead of importing",
+        description="Enqueue scrape tasks for pending candidates after import completes",
     )
-
-
-class ImportFactCheckBureauResponse(BaseModel):
-    """Response containing import statistics."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    total_rows: int = Field(description="Total rows in the dataset")
-    valid_rows: int = Field(description="Rows that passed validation")
-    invalid_rows: int = Field(description="Rows that failed validation")
-    inserted: int = Field(description="Rows inserted into database")
-    updated: int = Field(description="Rows updated in database")
-    errors: list[str] = Field(
-        default_factory=list,
-        description="First 10 validation/import errors",
-    )
-    dry_run: bool = Field(description="Whether this was a dry run")
 
 
 class EnqueueScrapeResponse(BaseModel):
@@ -68,60 +53,112 @@ class EnqueueScrapeResponse(BaseModel):
     enqueued: int = Field(description="Number of scrape tasks enqueued")
 
 
+def get_import_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ImportBatchJobService:
+    """Get ImportBatchJobService with injected dependencies."""
+    return ImportBatchJobService(db)
+
+
 @router.post(
     "/fact-check-bureau",
-    response_model=ImportFactCheckBureauResponse | EnqueueScrapeResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Import fact-check-bureau dataset",
-    description="Import the fact-check-bureau dataset from HuggingFace. "
-    "Supports dry-run mode for validation and enqueue-scrapes mode for "
-    "triggering content scraping of pending candidates.",
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Start fact-check-bureau import job",
+    description="Start an asynchronous import of the fact-check-bureau dataset from "
+    "HuggingFace. Returns immediately with a BatchJob that can be polled for status. "
+    "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
 )
 async def import_fact_check_bureau_endpoint(
     request: ImportFactCheckBureauRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    service: Annotated[ImportBatchJobService, Depends(get_import_service)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
-) -> ImportFactCheckBureauResponse | EnqueueScrapeResponse:
-    """Import fact-check-bureau dataset or enqueue scrape tasks.
+) -> BatchJobResponse:
+    """Start a fact-check-bureau import job.
 
     Requires authentication via API key (X-API-Key header) or Bearer token.
 
+    This endpoint returns immediately with a BatchJob in PENDING status.
+    The actual import runs asynchronously as a background task.
+
+    Poll the job status at:
+    - GET /api/v1/batch-jobs/{job_id} - Full job status
+    - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
+
     Args:
         request: Import configuration parameters.
-        db: Database session.
+        service: Import batch job service.
         current_user: Authenticated user (via API key or JWT).
 
     Returns:
-        Import statistics or scrape enqueue count.
+        BatchJobResponse with job ID for status polling.
     """
     logger.info(
-        f"Import request from user {current_user.id}: "
-        f"batch_size={request.batch_size}, dry_run={request.dry_run}, "
-        f"enqueue_scrapes={request.enqueue_scrapes}"
+        "Starting import job",
+        extra={
+            "user_id": str(current_user.id),
+            "batch_size": request.batch_size,
+            "dry_run": request.dry_run,
+            "enqueue_scrapes": request.enqueue_scrapes,
+        },
     )
 
-    if request.enqueue_scrapes:
-        result = await enqueue_scrape_batch(batch_size=request.batch_size)
-        logger.info(f"Enqueued {result['enqueued']} scrape tasks")
-        return EnqueueScrapeResponse(enqueued=result["enqueued"])
-
-    stats = await import_fact_check_bureau(
-        session=db,
+    job = await service.start_import_job(
         batch_size=request.batch_size,
         dry_run=request.dry_run,
+        enqueue_scrapes=request.enqueue_scrapes,
     )
 
     logger.info(
-        f"Import complete: {stats.total_rows} total, {stats.valid_rows} valid, "
-        f"{stats.inserted} inserted, {stats.updated} updated"
+        "Import job created",
+        extra={
+            "job_id": str(job.id),
+            "user_id": str(current_user.id),
+        },
     )
 
-    return ImportFactCheckBureauResponse(
-        total_rows=stats.total_rows,
-        valid_rows=stats.valid_rows,
-        invalid_rows=stats.invalid_rows,
-        inserted=stats.inserted,
-        updated=stats.updated,
-        errors=stats.errors[:10] if stats.errors else [],
-        dry_run=request.dry_run,
+    return BatchJobResponse.model_validate(job)
+
+
+@router.post(
+    "/enqueue-scrapes",
+    response_model=EnqueueScrapeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Enqueue scrape tasks for pending candidates",
+    description="Enqueue scrape tasks for candidates with status=pending. "
+    "This is a synchronous operation that returns the count of enqueued tasks.",
+)
+async def enqueue_scrapes_endpoint(
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    batch_size: int = 100,
+) -> EnqueueScrapeResponse:
+    """Enqueue scrape tasks for pending candidates.
+
+    Finds candidates with status=pending and no content,
+    then enqueues scrape tasks for each.
+
+    Args:
+        current_user: Authenticated user (via API key or JWT).
+        batch_size: Maximum number of candidates to enqueue (default 100).
+
+    Returns:
+        Count of enqueued tasks.
+    """
+    logger.info(
+        "Enqueue scrapes request",
+        extra={
+            "user_id": str(current_user.id),
+            "batch_size": batch_size,
+        },
     )
+
+    result = await enqueue_scrape_batch(batch_size=batch_size)
+
+    logger.info(
+        "Scrape tasks enqueued",
+        extra={
+            "enqueued": result["enqueued"],
+        },
+    )
+
+    return EnqueueScrapeResponse(enqueued=result["enqueued"])

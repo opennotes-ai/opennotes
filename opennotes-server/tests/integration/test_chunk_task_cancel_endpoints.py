@@ -1,13 +1,14 @@
 """
-Integration tests for rechunk task cancel and list endpoints.
+Integration tests for rechunk job cancel and list endpoints.
 
 Task: task-917 - Add cancel/clear endpoint for rechunk tasks
+Task: task-986 - Refactor to use BatchJob infrastructure
 
 These tests verify:
-1. DELETE /api/v1/chunks/tasks/{task_id} cancels a task and releases lock
-2. GET /api/v1/chunks/tasks lists all active tasks
-3. Authorization requirements for both endpoints
-4. Force parameter behavior for DELETE endpoint
+1. DELETE /api/v1/chunks/jobs/{job_id} cancels a job and releases lock
+2. GET /api/v1/chunks/jobs lists all rechunk batch jobs
+3. GET /api/v1/chunks/jobs/{job_id} gets a specific rechunk batch job
+4. Authorization requirements for all endpoints
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,7 +18,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.auth.auth import create_access_token
-from src.fact_checking.chunk_task_tracker import get_rechunk_task_tracker
+from src.batch_jobs.models import BatchJobStatus
 from src.main import app
 
 
@@ -104,8 +105,6 @@ async def opennotes_admin_user(db):
     await db.commit()
     await db.refresh(user)
 
-    # Set is_opennotes_admin for authorization check
-    # (This attribute is normally on UserProfile, but auth checks use getattr)
     user.is_opennotes_admin = True
 
     return {"user": user}
@@ -129,703 +128,479 @@ def admin_headers(opennotes_admin_user):
     return _create_auth_headers(opennotes_admin_user)
 
 
-class TestCancelRechunkTaskEndpoint:
-    """Tests for DELETE /api/v1/chunks/tasks/{task_id} endpoint."""
+@pytest.fixture
+async def fact_check_batch_job(db):
+    """Create a fact check rechunk batch job for testing."""
+    from src.batch_jobs.models import BatchJob
+
+    job = BatchJob(
+        id=uuid4(),
+        job_type="rechunk:fact_check",
+        status=BatchJobStatus.IN_PROGRESS.value,
+        total_tasks=100,
+        completed_tasks=25,
+        failed_tasks=0,
+        metadata_={"community_server_id": None, "batch_size": 100, "chunk_type": "fact_check"},
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    return job
+
+
+@pytest.fixture
+async def previously_seen_batch_job(db):
+    """Create a previously seen rechunk batch job for testing."""
+    from src.batch_jobs.models import BatchJob
+
+    community_id = uuid4()
+    job = BatchJob(
+        id=uuid4(),
+        job_type="rechunk:previously_seen",
+        status=BatchJobStatus.IN_PROGRESS.value,
+        total_tasks=50,
+        completed_tasks=10,
+        failed_tasks=2,
+        metadata_={
+            "community_server_id": str(community_id),
+            "batch_size": 100,
+            "chunk_type": "previously_seen",
+        },
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    return job
+
+
+class TestCancelRechunkJobEndpoint:
+    """Tests for DELETE /api/v1/chunks/jobs/{job_id} endpoint."""
 
     @pytest.mark.asyncio
     async def test_unauthenticated_request_returns_401(self):
         """Request without auth token returns 401."""
-        task_id = uuid4()
+        job_id = uuid4()
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.delete(f"/api/v1/chunks/tasks/{task_id}")
+            response = await client.delete(f"/api/v1/chunks/jobs/{job_id}")
 
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_cancel_task_not_found_returns_404(
+    async def test_cancel_job_not_found_returns_404(
         self,
         service_account_headers,
     ):
-        """Cancel request for non-existent task returns 404."""
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=None)
+        """Cancel request for non-existent job returns 404."""
+        job_id = uuid4()
 
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            task_id = uuid4()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{job_id}",
+                headers=service_account_headers,
+            )
 
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 404
-                assert "not found" in response.json()["detail"].lower()
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_cancel_in_progress_task_success(
+    async def test_cancel_in_progress_job_success(
         self,
         mock_lock_manager,
         service_account_headers,
+        fact_check_batch_job,
     ):
-        """Cancel request for in-progress task succeeds."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
-
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.IN_PROGRESS,
-            processed_count=25,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-        mock_tracker.delete_task = AsyncMock(return_value=True)
-
+        """Cancel request for in-progress job succeeds."""
         mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=service_account_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{fact_check_batch_job.id}",
+                headers=service_account_headers,
+            )
 
-                assert response.status_code == 200
-                data = response.json()
-                assert data["task_id"] == str(task_id)
-                assert data["lock_released"] is True
-                assert "cancelled" in data["message"].lower()
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 204
+            mock_lock_manager.release_lock.assert_called_with("fact_check")
 
     @pytest.mark.asyncio
-    async def test_cancel_completed_task_without_force_returns_400(
+    async def test_cancel_completed_job_returns_409(
         self,
         service_account_headers,
+        db,
     ):
-        """Cancel request for completed task without force returns 400."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
+        """Cancel request for completed job returns 409."""
+        from src.batch_jobs.models import BatchJob
+
+        job = BatchJob(
+            id=uuid4(),
+            job_type="rechunk:fact_check",
+            status=BatchJobStatus.COMPLETED.value,
+            total_tasks=100,
+            completed_tasks=100,
+            failed_tasks=0,
+            metadata_={"community_server_id": None, "batch_size": 100, "chunk_type": "fact_check"},
         )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
 
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.COMPLETED,
-            processed_count=100,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{job.id}",
+                headers=service_account_headers,
+            )
 
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 400
-                assert "terminal state" in response.json()["detail"].lower()
-        finally:
-            app.dependency_overrides.clear()
-
-    @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_cancel_completed_task_with_force_succeeds(
-        self,
-        mock_lock_manager,
-        service_account_headers,
-    ):
-        """Cancel request for completed task with force=true succeeds."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
-
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.COMPLETED,
-            processed_count=100,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-        mock_tracker.delete_task = AsyncMock(return_value=True)
-
-        mock_lock_manager.release_lock = AsyncMock(return_value=False)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}?force=true",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 200
-                data = response.json()
-                assert data["task_id"] == str(task_id)
-                assert data["lock_released"] is False
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 409
+            assert "cancel" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.verify_community_admin_by_uuid")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_cancel_previously_seen_task_releases_correct_lock(
+    async def test_cancel_previously_seen_job_releases_correct_lock(
         self,
         mock_lock_manager,
         mock_verify_admin,
         service_account_headers,
+        previously_seen_batch_job,
     ):
-        """Cancel request for previously_seen task releases lock with community_server_id."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
-
-        task_id = uuid4()
-        community_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.PREVIOUSLY_SEEN,
-            community_server_id=community_id,
-            batch_size=100,
-            status=RechunkTaskStatus.IN_PROGRESS,
-            processed_count=25,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-        mock_tracker.delete_task = AsyncMock(return_value=True)
-
+        """Cancel request for previously_seen job releases lock with community_server_id."""
         mock_lock_manager.release_lock = AsyncMock(return_value=True)
         mock_verify_admin.return_value = None
 
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=service_account_headers,
-                )
+        community_id = previously_seen_batch_job.metadata_["community_server_id"]
 
-                assert response.status_code == 200
-                mock_lock_manager.release_lock.assert_called_once_with(
-                    "previously_seen", str(community_id)
-                )
-        finally:
-            app.dependency_overrides.clear()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{previously_seen_batch_job.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 204
+            mock_lock_manager.release_lock.assert_called_once_with("previously_seen", community_id)
 
     @pytest.mark.asyncio
-    async def test_regular_user_cannot_cancel_global_task(
+    async def test_regular_user_cannot_cancel_global_job(
         self,
         regular_user_headers,
+        fact_check_batch_job,
     ):
-        """Regular user cannot cancel global fact_check task (requires OpenNotes admin)."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
+        """Regular user cannot cancel global fact_check job (requires OpenNotes admin)."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{fact_check_batch_job.id}",
+                headers=regular_user_headers,
+            )
 
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.IN_PROGRESS,
-            processed_count=25,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=regular_user_headers,
-                )
-
-                assert response.status_code == 403
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_cancel_failed_task_without_force_returns_400(
+    async def test_cancel_failed_job_returns_409(
         self,
         service_account_headers,
+        db,
     ):
-        """Cancel request for failed task without force returns 400."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
+        """Cancel request for failed job returns 409."""
+        from src.batch_jobs.models import BatchJob
+
+        job = BatchJob(
+            id=uuid4(),
+            job_type="rechunk:fact_check",
+            status=BatchJobStatus.FAILED.value,
+            total_tasks=100,
+            completed_tasks=50,
+            failed_tasks=50,
+            metadata_={"community_server_id": None, "batch_size": 100, "chunk_type": "fact_check"},
+            error_summary={"error": "Task failed due to timeout"},
         )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
 
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.FAILED,
-            processed_count=50,
-            total_count=100,
-            error="Task failed due to timeout",
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{job.id}",
+                headers=service_account_headers,
+            )
 
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 400
-                assert "terminal state" in response.json()["detail"].lower()
-        finally:
-            app.dependency_overrides.clear()
-
-    @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_cancel_failed_task_with_force_succeeds(
-        self,
-        mock_lock_manager,
-        service_account_headers,
-    ):
-        """Cancel request for failed task with force=true succeeds."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
-
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.FAILED,
-            processed_count=50,
-            total_count=100,
-            error="Task failed due to timeout",
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-        mock_tracker.delete_task = AsyncMock(return_value=True)
-
-        mock_lock_manager.release_lock = AsyncMock(return_value=False)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}?force=true",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 200
-                data = response.json()
-                assert data["task_id"] == str(task_id)
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 409
 
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.get_profile_by_id")
     @patch("src.fact_checking.chunk_router._get_profile_id_from_user")
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_opennotes_admin_can_cancel_global_task(
+    async def test_opennotes_admin_can_cancel_global_job(
         self,
         mock_lock_manager,
         mock_get_profile_id,
         mock_get_profile,
         admin_headers,
+        fact_check_batch_job,
     ):
-        """OpenNotes admin can cancel global fact_check task."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
-
-        task_id = uuid4()
+        """OpenNotes admin can cancel global fact_check job."""
         profile_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.IN_PROGRESS,
-            processed_count=25,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-        mock_tracker.delete_task = AsyncMock(return_value=True)
-
         mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
-        # Mock profile lookup to return an OpenNotes admin profile
         mock_get_profile_id.return_value = profile_id
         mock_profile = MagicMock()
         mock_profile.is_opennotes_admin = True
         mock_get_profile.return_value = mock_profile
 
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=admin_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{fact_check_batch_job.id}",
+                headers=admin_headers,
+            )
 
-                assert response.status_code == 200
-                data = response.json()
-                assert data["task_id"] == str(task_id)
-                assert data["lock_released"] is True
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 204
 
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_service_account_can_cancel_global_task(
+    async def test_service_account_can_cancel_global_job(
         self,
         mock_lock_manager,
         service_account_headers,
+        fact_check_batch_job,
     ):
-        """Service account can cancel global fact_check task."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
-
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.IN_PROGRESS,
-            processed_count=25,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
-
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-        mock_tracker.delete_task = AsyncMock(return_value=True)
-
+        """Service account can cancel global fact_check job."""
         mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=service_account_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{fact_check_batch_job.id}",
+                headers=service_account_headers,
+            )
 
-                assert response.status_code == 200
-                data = response.json()
-                assert data["task_id"] == str(task_id)
-                assert data["lock_released"] is True
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 204
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_cancel_task_delete_failure_returns_500(
+    async def test_cancel_non_rechunk_job_returns_404(
         self,
-        mock_lock_manager,
         service_account_headers,
+        db,
     ):
-        """Cancel request returns 500 when delete_task fails."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
+        """Cancel request for non-rechunk job type returns 404.
+
+        Task: task-986.10 AC#4 - Validates job_type before allowing cancel.
+        """
+        from src.batch_jobs.models import BatchJob
+
+        other_job = BatchJob(
+            id=uuid4(),
+            job_type="import:fact_check",
+            status=BatchJobStatus.IN_PROGRESS.value,
+            total_tasks=100,
+            completed_tasks=25,
+            failed_tasks=0,
+            metadata_={},
         )
+        db.add(other_job)
+        await db.commit()
+        await db.refresh(other_job)
 
-        task_id = uuid4()
-        task_response = RechunkTaskResponse(
-            task_id=task_id,
-            task_type=RechunkTaskType.FACT_CHECK,
-            community_server_id=None,
-            batch_size=100,
-            status=RechunkTaskStatus.IN_PROGRESS,
-            processed_count=25,
-            total_count=100,
-            error=None,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
-        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete(
+                f"/api/v1/chunks/jobs/{other_job.id}",
+                headers=service_account_headers,
+            )
 
-        mock_tracker = MagicMock()
-        mock_tracker.get_task = AsyncMock(return_value=task_response)
-        mock_tracker.delete_task = AsyncMock(return_value=False)  # Deletion fails
-
-        mock_lock_manager.release_lock = AsyncMock(return_value=True)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.delete(
-                    f"/api/v1/chunks/tasks/{task_id}",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 500
-                assert "failed to delete" in response.json()["detail"].lower()
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 404
+            assert "not a rechunk job" in response.json()["detail"].lower()
 
 
-class TestListRechunkTasksEndpoint:
-    """Tests for GET /api/v1/chunks/tasks endpoint."""
+class TestListRechunkJobsEndpoint:
+    """Tests for GET /api/v1/chunks/jobs endpoint."""
 
     @pytest.mark.asyncio
     async def test_unauthenticated_request_returns_401(self):
         """Request without auth token returns 401."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/api/v1/chunks/tasks")
+            response = await client.get("/api/v1/chunks/jobs")
 
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_list_tasks_empty(
+    async def test_list_jobs_empty(
         self,
         service_account_headers,
     ):
-        """List tasks returns empty array when no tasks exist."""
-        mock_tracker = MagicMock()
-        mock_tracker.list_tasks = AsyncMock(return_value=[])
+        """List jobs returns empty array when no jobs exist."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/chunks/jobs",
+                headers=service_account_headers,
+            )
 
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    "/api/v1/chunks/tasks",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 200
-                assert response.json() == []
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 200
+            assert response.json() == []
 
     @pytest.mark.asyncio
-    async def test_list_tasks_returns_all_tasks(
+    async def test_list_jobs_returns_all_rechunk_jobs(
         self,
         service_account_headers,
+        fact_check_batch_job,
+        previously_seen_batch_job,
     ):
-        """List tasks returns all tasks."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
+        """List jobs returns all rechunk batch jobs."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/chunks/jobs",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 2
+            job_ids = {job["id"] for job in data}
+            assert str(fact_check_batch_job.id) in job_ids
+            assert str(previously_seen_batch_job.id) in job_ids
+
+    @pytest.mark.asyncio
+    async def test_list_jobs_filters_by_status(
+        self,
+        service_account_headers,
+        fact_check_batch_job,
+        db,
+    ):
+        """List jobs with status filter only returns matching jobs."""
+        from src.batch_jobs.models import BatchJob
+
+        completed_job = BatchJob(
+            id=uuid4(),
+            job_type="rechunk:fact_check",
+            status=BatchJobStatus.COMPLETED.value,
+            total_tasks=100,
+            completed_tasks=100,
+            failed_tasks=0,
+            metadata_={"community_server_id": None, "batch_size": 100, "chunk_type": "fact_check"},
         )
+        db.add(completed_job)
+        await db.commit()
 
-        task_id_1 = uuid4()
-        task_id_2 = uuid4()
-        tasks = [
-            RechunkTaskResponse(
-                task_id=task_id_1,
-                task_type=RechunkTaskType.FACT_CHECK,
-                community_server_id=None,
-                batch_size=100,
-                status=RechunkTaskStatus.IN_PROGRESS,
-                processed_count=25,
-                total_count=100,
-                error=None,
-                created_at="2024-01-01T00:00:00Z",
-                updated_at="2024-01-01T00:00:00Z",
-            ),
-            RechunkTaskResponse(
-                task_id=task_id_2,
-                task_type=RechunkTaskType.PREVIOUSLY_SEEN,
-                community_server_id=uuid4(),
-                batch_size=50,
-                status=RechunkTaskStatus.PENDING,
-                processed_count=0,
-                total_count=50,
-                error=None,
-                created_at="2024-01-01T00:00:00Z",
-                updated_at="2024-01-01T00:00:00Z",
-            ),
-        ]
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/chunks/jobs?status=in_progress",
+                headers=service_account_headers,
+            )
 
-        mock_tracker = MagicMock()
-        mock_tracker.list_tasks = AsyncMock(return_value=tasks)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    "/api/v1/chunks/tasks",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 200
-                data = response.json()
-                assert len(data) == 2
-                task_ids = {task["task_id"] for task in data}
-                assert str(task_id_1) in task_ids
-                assert str(task_id_2) in task_ids
-        finally:
-            app.dependency_overrides.clear()
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["status"] == "in_progress"
 
     @pytest.mark.asyncio
-    async def test_list_tasks_filters_by_status(
-        self,
-        service_account_headers,
-    ):
-        """List tasks with status filter only returns matching tasks."""
-        from src.fact_checking.chunk_task_schemas import (
-            RechunkTaskResponse,
-            RechunkTaskStatus,
-            RechunkTaskType,
-        )
-
-        task_id = uuid4()
-        tasks = [
-            RechunkTaskResponse(
-                task_id=task_id,
-                task_type=RechunkTaskType.FACT_CHECK,
-                community_server_id=None,
-                batch_size=100,
-                status=RechunkTaskStatus.IN_PROGRESS,
-                processed_count=25,
-                total_count=100,
-                error=None,
-                created_at="2024-01-01T00:00:00Z",
-                updated_at="2024-01-01T00:00:00Z",
-            ),
-        ]
-
-        mock_tracker = MagicMock()
-        mock_tracker.list_tasks = AsyncMock(return_value=tasks)
-
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    "/api/v1/chunks/tasks?status=in_progress",
-                    headers=service_account_headers,
-                )
-
-                assert response.status_code == 200
-                data = response.json()
-                assert len(data) == 1
-                assert data[0]["status"] == "in_progress"
-
-                mock_tracker.list_tasks.assert_called_once()
-                call_kwargs = mock_tracker.list_tasks.call_args.kwargs
-                assert call_kwargs.get("status") == RechunkTaskStatus.IN_PROGRESS
-        finally:
-            app.dependency_overrides.clear()
-
-    @pytest.mark.asyncio
-    async def test_regular_user_can_list_own_community_tasks(
+    async def test_regular_user_can_list_jobs(
         self,
         regular_user_headers,
+        fact_check_batch_job,
     ):
-        """Regular user can list tasks (read-only operation)."""
-        mock_tracker = MagicMock()
-        mock_tracker.list_tasks = AsyncMock(return_value=[])
+        """Regular user can list jobs (read-only operation)."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/v1/chunks/jobs",
+                headers=regular_user_headers,
+            )
 
-        app.dependency_overrides[get_rechunk_task_tracker] = lambda: mock_tracker
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    "/api/v1/chunks/tasks",
-                    headers=regular_user_headers,
-                )
+            assert response.status_code == 200
 
-                assert response.status_code == 200
-        finally:
-            app.dependency_overrides.clear()
+
+class TestGetRechunkJobEndpoint:
+    """Tests for GET /api/v1/chunks/jobs/{job_id} endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_request_returns_401(self):
+        """Request without auth token returns 401."""
+        job_id = uuid4()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(f"/api/v1/chunks/jobs/{job_id}")
+
+            assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_get_job_not_found_returns_404(
+        self,
+        service_account_headers,
+    ):
+        """Get request for non-existent job returns 404."""
+        job_id = uuid4()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                f"/api/v1/chunks/jobs/{job_id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_get_job_returns_job_details(
+        self,
+        service_account_headers,
+        fact_check_batch_job,
+    ):
+        """Get request for existing job returns job details."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                f"/api/v1/chunks/jobs/{fact_check_batch_job.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == str(fact_check_batch_job.id)
+            assert data["job_type"] == "rechunk:fact_check"
+            assert data["status"] == "in_progress"
+            assert data["total_tasks"] == 100
+            assert data["completed_tasks"] == 25
+
+    @pytest.mark.asyncio
+    async def test_get_non_rechunk_job_returns_404(
+        self,
+        service_account_headers,
+        db,
+    ):
+        """Get request for non-rechunk job type returns 404."""
+        from src.batch_jobs.models import BatchJob
+
+        other_job = BatchJob(
+            id=uuid4(),
+            job_type="import:fact_check",
+            status=BatchJobStatus.IN_PROGRESS.value,
+            total_tasks=100,
+            completed_tasks=0,
+            failed_tasks=0,
+            metadata_={},
+        )
+        db.add(other_job)
+        await db.commit()
+        await db.refresh(other_job)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                f"/api/v1/chunks/jobs/{other_job.id}",
+                headers=service_account_headers,
+            )
+
+            assert response.status_code == 404
+            assert "not a rechunk job" in response.json()["detail"].lower()
