@@ -101,12 +101,10 @@ export class BotChannelService {
       await channel.permissionOverwrites.set([
         {
           id: everyoneRoleId,
-          allow: [
+          deny: [
             PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.UseApplicationCommands,
-            PermissionFlagsBits.ReadMessageHistory,
+            PermissionFlagsBits.SendMessages,
           ],
-          deny: [PermissionFlagsBits.SendMessages],
         },
         {
           id: openNotesRole.id,
