@@ -380,6 +380,7 @@ async def finalize_bulk_scan_task(
                 flagged = await service.get_flagged_results(scan_uuid)
                 error_summary_data = await service.get_error_summary(scan_uuid)
                 processed_count = await service.get_processed_count(scan_uuid)
+                skipped_count = await service.get_skipped_count(scan_uuid)
 
                 total_errors = error_summary_data.get("total_errors", 0)
                 error_types = error_summary_data.get("error_types", {})
@@ -425,6 +426,7 @@ async def finalize_bulk_scan_task(
                     scan_id=scan_uuid,
                     messages_scanned=messages_scanned,
                     messages_flagged=len(flagged),
+                    messages_skipped=skipped_count,
                     flagged_messages=flagged,
                     error_summary=error_summary,
                 )
@@ -435,6 +437,7 @@ async def finalize_bulk_scan_task(
                     community_server_id=community_uuid,
                     messages_scanned=messages_scanned,
                     messages_flagged=len(flagged),
+                    messages_skipped=skipped_count,
                 )
                 async with create_worker_event_publisher() as worker_publisher:
                     await worker_publisher.publish_event(processing_finished_event)
@@ -445,6 +448,7 @@ async def finalize_bulk_scan_task(
                         "scan_id": scan_id,
                         "messages_scanned": messages_scanned,
                         "messages_flagged": len(flagged),
+                        "messages_skipped": skipped_count,
                         "status": status.value,
                         "total_errors": total_errors,
                     },

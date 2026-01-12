@@ -125,6 +125,18 @@ def _get_redis_finalize_dispatched_key(scan_id: UUID) -> str:
     return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:finalize_dispatched:{scan_id}"
 
 
+def _get_redis_skipped_count_key(scan_id: UUID) -> str:
+    """Get environment-prefixed Redis key for skipped message count.
+
+    Messages are skipped when they already have a note request associated
+    with them (via platform_message_id).
+
+    Format: {environment}:{prefix}:skipped:{scan_id}
+    Example: production:bulk_scan:skipped:abc-123
+    """
+    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:skipped:{scan_id}"
+
+
 class BulkContentScanService:
     """Service for managing bulk content scans."""
 
@@ -236,9 +248,10 @@ class BulkContentScanService:
         """Process one or more messages through specified scan types.
 
         Uses the candidate-based flow:
-        1. Generate candidates via _similarity_scan_candidate() / _moderation_scan_candidate()
-        2. Pass ALL candidates through _filter_candidates_with_relevance()
-        3. Return filtered FlaggedMessage list (and optionally score info)
+        1. Filter out messages that already have note requests (via platform_message_id)
+        2. Generate candidates via _similarity_scan_candidate() / _moderation_scan_candidate()
+        3. Pass ALL candidates through _filter_candidates_with_relevance()
+        4. Return filtered FlaggedMessage list (and optionally score info)
 
         The filtering logic is IDENTICAL regardless of collect_scores setting.
         Debug mode only affects whether score information is collected and returned.
@@ -256,6 +269,24 @@ class BulkContentScanService:
         """
         if isinstance(messages, BulkScanMessage):
             messages = [messages]
+
+        original_count = len(messages)
+
+        platform_message_ids = [msg.message_id for msg in messages]
+        existing_ids = await self.get_existing_request_message_ids(platform_message_ids)
+
+        if existing_ids:
+            messages = [msg for msg in messages if msg.message_id not in existing_ids]
+            skipped_count = original_count - len(messages)
+            await self.increment_skipped_count(scan_id, skipped_count)
+            logger.info(
+                "Skipped messages with existing note requests",
+                extra={
+                    "scan_id": str(scan_id),
+                    "skipped_count": skipped_count,
+                    "remaining_count": len(messages),
+                },
+            )
 
         candidates: list[ScanCandidate] = []
         all_scores: list[dict] = []
@@ -1495,6 +1526,76 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         if count is None:
             return 0
         return int(count.decode() if isinstance(count, bytes) else count)
+
+    async def increment_skipped_count(self, scan_id: UUID, count: int = 1) -> None:
+        """Increment the count of skipped messages.
+
+        Messages are skipped when they already have a note request associated
+        with them (via platform_message_id).
+
+        Args:
+            scan_id: UUID of the scan
+            count: Number of messages skipped
+        """
+        skipped_key = _get_redis_skipped_count_key(scan_id)
+        await self.redis_client.incrby(skipped_key, count)  # type: ignore[misc]
+        await self.redis_client.expire(skipped_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+
+    async def get_skipped_count(self, scan_id: UUID) -> int:
+        """Get the count of skipped messages.
+
+        Args:
+            scan_id: UUID of the scan
+
+        Returns:
+            Number of skipped messages (those with existing note requests)
+        """
+        skipped_key = _get_redis_skipped_count_key(scan_id)
+        count = await self.redis_client.get(skipped_key)
+        if count is None:
+            return 0
+        return int(count.decode() if isinstance(count, bytes) else count)
+
+    async def get_existing_request_message_ids(
+        self,
+        platform_message_ids: list[str],
+    ) -> set[str]:
+        """Get set of platform_message_ids that already have note requests.
+
+        This is used to filter out messages that already have requests before
+        processing them in bulk content scanning, preventing duplicate requests.
+
+        Args:
+            platform_message_ids: List of platform message IDs to check
+
+        Returns:
+            Set of platform_message_ids that already have associated requests
+        """
+        if not platform_message_ids:
+            return set()
+
+        from src.notes.message_archive_models import MessageArchive  # noqa: PLC0415
+        from src.notes.models import Request  # noqa: PLC0415
+
+        stmt = (
+            select(MessageArchive.platform_message_id)
+            .join(Request, Request.message_archive_id == MessageArchive.id)
+            .where(MessageArchive.platform_message_id.in_(platform_message_ids))
+        )
+
+        result = await self.session.execute(stmt)
+        existing_ids = {row[0] for row in result.fetchall() if row[0] is not None}
+
+        if existing_ids:
+            logger.info(
+                "Found messages with existing note requests",
+                extra={
+                    "checked_count": len(platform_message_ids),
+                    "existing_count": len(existing_ids),
+                },
+            )
+
+        return existing_ids
 
     async def set_all_batches_transmitted(self, scan_id: UUID, messages_scanned: int) -> None:
         """Set the all_batches_transmitted flag for a scan with message count.
