@@ -59,23 +59,21 @@ class UserProfile(Base, TimestampMixin):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
-    reputation: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0", nullable=False, index=True
-    )
+    reputation: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     role: Mapped[str] = mapped_column(
         String(50), default="user", server_default="user", nullable=False, index=True
     )
     is_opennotes_admin: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0", nullable=False, index=True
+        Boolean, default=False, server_default="0", nullable=False
     )
     is_human: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="1", nullable=False, index=True
+        Boolean, default=True, server_default="1", nullable=False
     )
     is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="1", nullable=False, index=True
+        Boolean, default=True, server_default="1", nullable=False
     )
     is_banned: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0", nullable=False, index=True
+        Boolean, default=False, server_default="0", nullable=False
     )
     banned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     banned_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -138,7 +136,6 @@ class UserIdentity(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("user_profiles.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     provider: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
@@ -211,31 +208,29 @@ class CommunityMember(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("community_servers.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     profile_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("user_profiles.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     is_external: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0", nullable=False, index=True
+        Boolean, default=False, server_default="0", nullable=False
     )
     role: Mapped[str] = mapped_column(
-        String(50), default="member", server_default="member", nullable=False, index=True
+        String(50), default="member", server_default="member", nullable=False
     )
     permissions: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )  # Flexible role-based permissions
     reputation_in_community: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     invited_by: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="SET NULL"), nullable=True
     )
     invitation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="1", nullable=False, index=True
+        Boolean, default=True, server_default="1", nullable=False
     )
     banned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     banned_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

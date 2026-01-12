@@ -69,10 +69,10 @@ class CommunityServer(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     settings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="1", nullable=False, index=True
+        Boolean, default=True, server_default="1", nullable=False
     )
     is_public: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="1", nullable=False, index=True
+        Boolean, default=True, server_default="1", nullable=False
     )
     welcome_message_id: Mapped[str | None] = mapped_column(
         String(30),
@@ -304,7 +304,7 @@ class LLMUsageLog(Base):
         nullable=False,
         comment="Cost of this API call in USD",
     )
-    success: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
