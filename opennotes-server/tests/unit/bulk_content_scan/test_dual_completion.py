@@ -33,6 +33,7 @@ def mock_service():
         return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
     )
     service.get_processed_count = AsyncMock(return_value=0)
+    service.get_skipped_count = AsyncMock(return_value=0)
     service.set_all_batches_transmitted = AsyncMock()
     service.get_all_batches_transmitted = AsyncMock(return_value=(False, None))
     return service

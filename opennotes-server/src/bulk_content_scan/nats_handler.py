@@ -313,6 +313,7 @@ async def handle_message_batch_with_progress(
             "messages_successful": successful_count,
             "messages_errored": error_count,
             "messages_flagged": len(flagged),
+            "messages_skipped": skipped_count,
         },
     )
 

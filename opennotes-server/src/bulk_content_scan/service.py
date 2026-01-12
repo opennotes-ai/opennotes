@@ -1566,10 +1566,13 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         processing them in bulk content scanning, preventing duplicate requests.
 
         Args:
-            platform_message_ids: List of platform message IDs to check
+            platform_message_ids: List of platform message IDs to check. For optimal
+                performance, batch sizes should stay under 1000 to avoid PostgreSQL
+                IN clause performance degradation.
 
         Returns:
-            Set of platform_message_ids that already have associated requests
+            Set of platform_message_ids that already have associated requests.
+            Returns empty set on database errors (fail-open to avoid blocking scans).
         """
         if not platform_message_ids:
             return set()
@@ -1577,25 +1580,34 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         from src.notes.message_archive_models import MessageArchive  # noqa: PLC0415
         from src.notes.models import Request  # noqa: PLC0415
 
-        stmt = (
-            select(MessageArchive.platform_message_id)
-            .join(Request, Request.message_archive_id == MessageArchive.id)
-            .where(MessageArchive.platform_message_id.in_(platform_message_ids))
-        )
-
-        result = await self.session.execute(stmt)
-        existing_ids = {row[0] for row in result.fetchall() if row[0] is not None}
-
-        if existing_ids:
-            logger.info(
-                "Found messages with existing note requests",
-                extra={
-                    "checked_count": len(platform_message_ids),
-                    "existing_count": len(existing_ids),
-                },
+        try:
+            stmt = (
+                select(MessageArchive.platform_message_id)
+                .distinct()
+                .join(Request, Request.message_archive_id == MessageArchive.id)
+                .where(MessageArchive.platform_message_id.in_(platform_message_ids))
             )
 
-        return existing_ids
+            result = await self.session.execute(stmt)
+            existing_ids = {row[0] for row in result.fetchall() if row[0] is not None}
+
+            if existing_ids:
+                logger.info(
+                    "Found messages with existing note requests",
+                    extra={
+                        "checked_count": len(platform_message_ids),
+                        "existing_count": len(existing_ids),
+                    },
+                )
+
+            return existing_ids
+        except Exception:
+            logger.warning(
+                "Failed to check for existing note requests, processing all messages",
+                extra={"checked_count": len(platform_message_ids)},
+                exc_info=True,
+            )
+            return set()
 
     async def set_all_batches_transmitted(self, scan_id: UUID, messages_scanned: int) -> None:
         """Set the all_batches_transmitted flag for a scan with message count.

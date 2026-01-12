@@ -1866,6 +1866,45 @@ class TestGetExistingRequestMessageIds:
 
         assert result == set()
 
+    @pytest.mark.asyncio
+    async def test_filters_null_values(self, mock_session, mock_embedding_service, mock_redis):
+        """Should filter out null values from results - task-867.02."""
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_result = MagicMock()
+        mock_result.fetchall = MagicMock(return_value=[("msg_1",), (None,), ("msg_3",), (None,)])
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        result = await service.get_existing_request_message_ids(["msg_1", "msg_2", "msg_3"])
+
+        assert result == {"msg_1", "msg_3"}
+        assert None not in result
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_set_on_database_error(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Should return empty set on database error (fail-open) - task-867.01."""
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_session.execute = AsyncMock(side_effect=Exception("Database connection error"))
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        result = await service.get_existing_request_message_ids(["msg_1", "msg_2"])
+
+        assert result == set()
+
 
 class TestProcessMessagesSkipsExistingRequests:
     """Test that process_messages skips messages with existing note requests - task-867."""
@@ -1939,6 +1978,10 @@ class TestProcessMessagesSkipsExistingRequests:
         )
 
         assert mock_embedding_service.similarity_search.call_count == 1
+        call_args = mock_embedding_service.similarity_search.call_args
+        processed_text = call_args[1]["query_text"]
+        assert "Test message content 1" in processed_text
+        assert "Test message content 2" not in processed_text
         mock_redis.incrby.assert_called()
 
     @pytest.mark.asyncio
@@ -2011,3 +2054,61 @@ class TestProcessMessagesSkipsExistingRequests:
 
         assert mock_embedding_service.similarity_search.call_count == 2
         mock_redis.incrby.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_all_when_all_have_existing_requests(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """All messages should be skipped when all have existing requests - task-867.04."""
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_result = MagicMock()
+        mock_result.fetchall = MagicMock(return_value=[("msg_1",), ("msg_2",), ("msg_3",)])
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message content 1",
+                author_id="user_1",
+                timestamp=datetime.now(UTC),
+            ),
+            BulkScanMessage(
+                message_id="msg_2",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message content 2",
+                author_id="user_2",
+                timestamp=datetime.now(UTC),
+            ),
+            BulkScanMessage(
+                message_id="msg_3",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message content 3",
+                author_id="user_3",
+                timestamp=datetime.now(UTC),
+            ),
+        ]
+
+        await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id="guild_123",
+        )
+
+        mock_embedding_service.similarity_search.assert_not_called()
+        mock_redis.incrby.assert_called_once()
+        call_args = mock_redis.incrby.call_args
+        assert call_args[0][1] == 3
+        assert str(scan_id) in call_args[0][0]
