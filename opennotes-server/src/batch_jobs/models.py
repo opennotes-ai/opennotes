@@ -8,7 +8,6 @@ Used for long-running operations like fact-check imports.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
 from uuid import UUID
 
 from sqlalchemy import DateTime, Integer, String, text
@@ -16,18 +15,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from src.batch_jobs.schemas import BatchJobStatus
 from src.database import Base
 from src.notes.models import TimestampMixin
-
-
-class BatchJobStatus(str, Enum):
-    """Status states for a batch job."""
-
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 class BatchJob(Base, TimestampMixin):

@@ -190,7 +190,7 @@ class RequestResource(BaseModel):
     attributes: RequestAttributes
 
 
-class RequestListResponse(BaseModel):
+class RequestListJSONAPIResponse(BaseModel):
     """JSON:API response for a list of request resources."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -312,7 +312,7 @@ def _build_attribute_filters(
     return filters
 
 
-@router.get("/requests", response_class=JSONResponse, response_model=RequestListResponse)
+@router.get("/requests", response_class=JSONResponse, response_model=RequestListJSONAPIResponse)
 async def list_requests_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -363,7 +363,7 @@ async def list_requests_jsonapi(
             if user_communities:
                 filters.append(Request.community_server_id.in_(user_communities))
             else:
-                response = RequestListResponse(
+                response = RequestListJSONAPIResponse(
                     data=[],
                     links=create_pagination_links_from_request(request, page_number, page_size, 0),
                     meta=JSONAPIMeta(count=0),
@@ -390,7 +390,7 @@ async def list_requests_jsonapi(
 
         request_resources = [request_to_resource(req) for req in requests]
 
-        response = RequestListResponse(
+        response = RequestListJSONAPIResponse(
             data=request_resources,
             links=create_pagination_links_from_request(request, page_number, page_size, total),
             meta=JSONAPIMeta(count=total),

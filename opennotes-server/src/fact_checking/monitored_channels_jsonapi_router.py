@@ -149,7 +149,7 @@ class MonitoredChannelResource(BaseModel):
     attributes: MonitoredChannelAttributes
 
 
-class MonitoredChannelListResponse(BaseModel):
+class MonitoredChannelListJSONAPIResponse(BaseModel):
     """JSON:API response for a list of monitored channel resources."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -232,7 +232,7 @@ def create_error_response(
 @router.get(
     "/monitored-channels",
     response_class=JSONResponse,
-    response_model=MonitoredChannelListResponse,
+    response_model=MonitoredChannelListJSONAPIResponse,
 )
 async def list_monitored_channels_jsonapi(
     request: HTTPRequest,
@@ -285,7 +285,7 @@ async def list_monitored_channels_jsonapi(
 
         channel_resources = [channel_to_resource(ch) for ch in channels]
 
-        response = MonitoredChannelListResponse(
+        response = MonitoredChannelListJSONAPIResponse(
             data=channel_resources,
             links=create_pagination_links_from_request(request, page_number, page_size, total),
             meta=JSONAPIMeta(count=total),

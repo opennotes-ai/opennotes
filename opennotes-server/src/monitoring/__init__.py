@@ -1,5 +1,5 @@
 from src.monitoring.distributed_health import DistributedHealthCoordinator
-from src.monitoring.health import HealthChecker, HealthCheckResponse, HealthStatus
+from src.monitoring.health import HealthChecker, HealthStatus, MonitoringHealthCheckResponse
 from src.monitoring.instance import InstanceMetadata, initialize_instance_metadata
 from src.monitoring.logging import get_logger, setup_logging
 from src.monitoring.metrics import get_metrics
@@ -12,11 +12,11 @@ from src.monitoring.middleware_apm import (
 
 __all__ = [
     "DistributedHealthCoordinator",
-    "HealthCheckResponse",
     "HealthChecker",
     "HealthStatus",
     "InstanceMetadata",
     "MetricsMiddleware",
+    "MonitoringHealthCheckResponse",
     "get_logger",
     "get_metrics",
     "get_middleware_apm_config",

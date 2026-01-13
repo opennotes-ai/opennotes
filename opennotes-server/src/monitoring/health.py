@@ -28,7 +28,7 @@ class ComponentHealth(BaseModel):
     details: dict[str, Any] | None = None
 
 
-class HealthCheckResponse(BaseModel):
+class MonitoringHealthCheckResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     status: HealthStatus
     timestamp: float
@@ -190,7 +190,7 @@ class HealthChecker:
                 error=str(e),
             )
 
-    async def check_all(self) -> HealthCheckResponse:
+    async def check_all(self) -> MonitoringHealthCheckResponse:
         components: dict[str, ComponentHealth] = {}
         tasks = {}
 
@@ -209,7 +209,7 @@ class HealthChecker:
         overall_status = self._determine_overall_status(components)
         uptime = time.time() - self.start_time
 
-        return HealthCheckResponse(
+        return MonitoringHealthCheckResponse(
             status=overall_status,
             timestamp=time.time(),
             version=self.version,
