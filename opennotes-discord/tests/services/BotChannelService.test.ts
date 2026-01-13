@@ -174,19 +174,17 @@ describe('BotChannelService', () => {
   });
 
   describe('setupPermissions', () => {
-    it('should set up permissions for @everyone role', async () => {
+    it('should set up permissions for @everyone role (hidden by default)', async () => {
       await service.setupPermissions(mockChannel, mockRole, mockBotMember);
 
       expect(mockChannel.permissionOverwrites.set).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
             id: 'everyone-role-id',
-            allow: expect.arrayContaining([
+            deny: expect.arrayContaining([
               PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.UseApplicationCommands,
-              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.SendMessages,
             ]),
-            deny: expect.arrayContaining([PermissionFlagsBits.SendMessages]),
           }),
         ])
       );
