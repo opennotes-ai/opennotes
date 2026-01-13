@@ -61,7 +61,6 @@ dependencies = [
     "traceloop-sdk>=0.35.0",
     "dspy>=2.6.0",
     "ruamel.yaml>=0.18.0",
-    "middleware-io[profiling]>=2.4.1",
     "setuptools>=80.9.0",
     "trafilatura>=2.0.0",
 ]
@@ -144,7 +143,7 @@ ignore = [
 "scripts/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in scripts
 "src/tasks/**/*.py" = ["PLC0415"]  # Lazy imports required for TaskIQ tasks to avoid import-time settings validation
 "src/monitoring/logging.py" = ["PLC0415"]  # Circular dependency: imports handled in try-except blocks
-"src/monitoring/middleware_apm.py" = ["PLC0415", "PLW0603"]  # Lazy import for optional middleware-io pkg; global state for init tracking
+"src/monitoring/otel.py" = ["PLC0415", "PLW0602", "PLW0603", "ARG002"]  # Lazy imports for optional OTel pkgs; global state for init tracking
 "src/llm_config/manager.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/middleware/profile_tracking.py" = ["RUF006"]  # Fire-and-forget background tasks intentional
 "src/database.py" = ["ARG002"]  # TypeDecorator methods require dialect param for base class compatibility

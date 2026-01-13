@@ -1,78 +1,201 @@
 /**
- * Middleware.io APM instrumentation for the Discord bot.
+ * Generic OpenTelemetry instrumentation for the Discord bot.
  *
  * This file MUST be loaded via --require before any other imports
  * for automatic instrumentation to work correctly.
  *
- * Usage: node --require ./instrumentation.cjs dist/index.js
+ * Usage: node --require ./src/instrumentation.cjs dist/index.js
  *
  * Environment variables:
- * - MW_API_KEY: Middleware.io API key (required)
- * - MW_TARGET: Middleware.io endpoint URL (required for serverless/Cloud Run)
- * - MW_SERVICE_NAME: Service name (defaults to 'opennotes-discord')
- * - MW_SAMPLE_RATE: Trace sampling rate 0-100 (defaults to 100)
- * - MIDDLEWARE_APM_ENABLED: Set to 'true' to enable (defaults to false)
+ * - OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint (default: http://localhost:4317)
+ * - OTEL_EXPORTER_OTLP_HEADERS: Auth headers in 'key=value' format
+ * - OTEL_SERVICE_NAME: Service name (defaults to 'opennotes-discord')
+ * - OTEL_SDK_DISABLED: Set to 'true' to disable OTel (useful for tests)
+ * - ENABLE_TRACING: Set to 'true' to enable (defaults to false)
+ * - ENABLE_CONSOLE_TRACING: Set to 'true' for console span export
  *
- * Reference: https://docs.middleware.io/apm-configuration/node-js
+ * Created: task-998
  */
 
-const MW_API_KEY = process.env.MW_API_KEY;
-const MW_TARGET = process.env.MW_TARGET;
-const MW_SERVICE_NAME = process.env.MW_SERVICE_NAME || 'opennotes-discord';
-const MIDDLEWARE_APM_ENABLED = process.env.MIDDLEWARE_APM_ENABLED === 'true';
+const ENABLE_TRACING = process.env.ENABLE_TRACING === 'true';
+const OTEL_SDK_DISABLED = process.env.OTEL_SDK_DISABLED === 'true';
+const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'opennotes-discord';
+const SERVICE_VERSION = process.env.SERVICE_VERSION || process.env.npm_package_version || '0.0.1';
+const ENVIRONMENT = process.env.NODE_ENV || 'development';
 
-if (MIDDLEWARE_APM_ENABLED && MW_API_KEY && MW_TARGET) {
+if (ENABLE_TRACING && !OTEL_SDK_DISABLED) {
   try {
-    const tracker = require('@middleware.io/node-apm');
+    const { NodeSDK } = require('@opentelemetry/sdk-node');
+    const { Resource } = require('@opentelemetry/resources');
+    const {
+      ATTR_SERVICE_NAME,
+      ATTR_SERVICE_VERSION,
+      ATTR_DEPLOYMENT_ENVIRONMENT,
+    } = require('@opentelemetry/semantic-conventions');
+    const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
+    const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
+    const { BatchSpanProcessor, ConsoleSpanExporter } = require('@opentelemetry/sdk-trace-base');
+    const { propagation, context: otelContext } = require('@opentelemetry/api');
+    const {
+      W3CTraceContextPropagator,
+      W3CBaggagePropagator,
+      CompositePropagator,
+    } = require('@opentelemetry/core');
 
-    tracker.track({
-      serviceName: MW_SERVICE_NAME,
-      accessToken: MW_API_KEY,
-      target: MW_TARGET,
-      enableProfiling: true,
-      customResourceAttributes: {
-        'deployment.environment': process.env.NODE_ENV || 'development',
-        'service.version': process.env.SERVICE_VERSION || process.env.npm_package_version || '0.0.1',
-      },
+    const BAGGAGE_KEYS_TO_PROPAGATE = [
+      'discord.user_id',
+      'discord.username',
+      'discord.guild_id',
+      'request_id',
+    ];
+
+    class BaggageSpanProcessor {
+      onStart(span, parentContext) {
+        const baggage = propagation.getBaggage(parentContext);
+        if (!baggage) return;
+
+        for (const key of BAGGAGE_KEYS_TO_PROPAGATE) {
+          const entry = baggage.getEntry(key);
+          if (entry) {
+            const attrKey = key.replace(/\./g, '_');
+            span.setAttribute(attrKey, entry.value);
+          }
+        }
+      }
+
+      onEnd() {}
+      shutdown() {
+        return Promise.resolve();
+      }
+      forceFlush() {
+        return Promise.resolve();
+      }
+    }
+
+    const resource = new Resource({
+      [ATTR_SERVICE_NAME]: SERVICE_NAME,
+      [ATTR_SERVICE_VERSION]: SERVICE_VERSION,
+      [ATTR_DEPLOYMENT_ENVIRONMENT]: ENVIRONMENT,
     });
+
+    propagation.setGlobalPropagator(
+      new CompositePropagator({
+        propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+      })
+    );
+
+    const endpoint =
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
+      process.env.OTLP_ENDPOINT ||
+      'http://localhost:4317';
+
+    const headersStr = process.env.OTEL_EXPORTER_OTLP_HEADERS || process.env.OTLP_HEADERS;
+    const headers = {};
+    if (headersStr) {
+      for (const pair of headersStr.split(',')) {
+        const eqIndex = pair.indexOf('=');
+        if (eqIndex > 0) {
+          const key = pair.slice(0, eqIndex).trim();
+          const value = pair.slice(eqIndex + 1).trim();
+          if (key && value) {
+            headers[key] = value;
+          }
+        }
+      }
+    }
+
+    const traceExporter = new OTLPTraceExporter({
+      url: endpoint,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+    });
+
+    const spanProcessors = [new BaggageSpanProcessor(), new BatchSpanProcessor(traceExporter)];
+
+    if (process.env.ENABLE_CONSOLE_TRACING === 'true') {
+      spanProcessors.push(new BatchSpanProcessor(new ConsoleSpanExporter()));
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'INFO',
+          message: 'Console span exporter enabled',
+        })
+      );
+    }
+
+    const sdk = new NodeSDK({
+      resource,
+      spanProcessors,
+      instrumentations: [
+        getNodeAutoInstrumentations({
+          '@opentelemetry/instrumentation-fs': { enabled: false },
+          '@opentelemetry/instrumentation-dns': { enabled: false },
+        }),
+      ],
+    });
+
+    sdk.start();
 
     console.log(
       JSON.stringify({
         timestamp: new Date().toISOString(),
         level: 'INFO',
-        message: `Middleware.io APM initialized: service=${MW_SERVICE_NAME}, target=${MW_TARGET}`,
+        message: `OpenTelemetry initialized: service=${SERVICE_NAME}, version=${SERVICE_VERSION}, env=${ENVIRONMENT}, endpoint=${endpoint}`,
       })
     );
 
-    module.exports = { tracker };
+    process.on('SIGTERM', () => {
+      sdk
+        .shutdown()
+        .then(() => {
+          console.log(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: 'INFO',
+              message: 'OpenTelemetry SDK shut down gracefully',
+            })
+          );
+        })
+        .catch((err) => {
+          console.error(
+            JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: 'ERROR',
+              message: 'Error shutting down OpenTelemetry SDK',
+              error: err.message,
+            })
+          );
+        });
+    });
+
+    module.exports = { sdk };
   } catch (error) {
     console.error(
       JSON.stringify({
         timestamp: new Date().toISOString(),
         level: 'ERROR',
-        message: 'Failed to initialize Middleware.io APM',
+        message: 'Failed to initialize OpenTelemetry',
         error: error.message,
       })
     );
-    module.exports = { tracker: null };
+    module.exports = { sdk: null };
   }
 } else {
-  if (!MIDDLEWARE_APM_ENABLED) {
+  if (OTEL_SDK_DISABLED) {
     console.log(
       JSON.stringify({
         timestamp: new Date().toISOString(),
         level: 'INFO',
-        message: 'Middleware.io APM disabled (MIDDLEWARE_APM_ENABLED != true)',
+        message: 'OpenTelemetry SDK disabled via OTEL_SDK_DISABLED=true',
       })
     );
-  } else if (!MW_API_KEY || !MW_TARGET) {
+  } else if (!ENABLE_TRACING) {
     console.log(
       JSON.stringify({
         timestamp: new Date().toISOString(),
-        level: 'WARN',
-        message: 'Middleware.io APM enabled but missing MW_API_KEY or MW_TARGET',
+        level: 'INFO',
+        message: 'OpenTelemetry disabled (ENABLE_TRACING != true)',
       })
     );
   }
-  module.exports = { tracker: null };
+  module.exports = { sdk: null };
 }

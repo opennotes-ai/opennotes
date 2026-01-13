@@ -11,37 +11,29 @@ from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from slowapi.errors import RateLimitExceeded
 
-_mw_apm_enabled = os.getenv("MIDDLEWARE_APM_ENABLED", "false").lower() == "true"
 _testing = os.getenv("TESTING", "false").lower() == "true"
+_otel_enabled = os.getenv("ENABLE_TRACING", "true").lower() == "true"
 
-if _mw_apm_enabled and not _testing:
-    from src.monitoring.middleware_apm import setup_middleware_apm
+if _otel_enabled and not _testing:
+    from src.monitoring.otel import setup_otel
 
-    _mw_api_key = os.getenv("MW_API_KEY")
-    _mw_target = os.getenv("MW_TARGET")
-    _mw_service_name = os.getenv("MW_SERVICE_NAME", "opennotes-server")
-    _mw_sample_rate = float(os.getenv("MW_SAMPLE_RATE", "1.0"))
-    _mw_collect_profiling = os.getenv("MW_COLLECT_PROFILING", "true").lower() == "true"
-    _mw_collect_metrics = os.getenv("MW_COLLECT_METRICS", "true").lower() == "true"
-    _mw_collect_logs = os.getenv("MW_COLLECT_LOGS", "true").lower() == "true"
+    _service_name = os.getenv("OTEL_SERVICE_NAME", "opennotes-server")
+    _service_version = os.getenv("SERVICE_VERSION", "0.0.1")
+    _environment = os.getenv("ENVIRONMENT", "development")
+    _otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTLP_ENDPOINT")
+    _otlp_headers = os.getenv("OTEL_EXPORTER_OTLP_HEADERS") or os.getenv("OTLP_HEADERS")
+    _sample_rate = float(os.getenv("TRACE_SAMPLE_RATE", "0.1"))
+    _console_export = os.getenv("ENABLE_CONSOLE_TRACING", "false").lower() == "true"
 
-    if _mw_api_key and _mw_target:
-        setup_middleware_apm(
-            api_key=_mw_api_key,
-            target=_mw_target,
-            service_name=_mw_service_name,
-            sample_rate=_mw_sample_rate,
-            collect_profiling=_mw_collect_profiling,
-            collect_metrics=_mw_collect_metrics,
-            collect_logs=_mw_collect_logs,
-        )
-    else:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "MIDDLEWARE_APM_ENABLED=true but MW_API_KEY or MW_TARGET not set. "
-            "Middleware.io APM not initialized. Using middleware-run wrapper is recommended."
-        )
+    setup_otel(
+        service_name=_service_name,
+        service_version=_service_version,
+        environment=_environment,
+        otlp_endpoint=_otlp_endpoint,
+        otlp_headers=_otlp_headers,
+        sample_rate=_sample_rate,
+        enable_console_export=_console_export,
+    )
 
 LoggingInstrumentor().instrument(set_logging_format=False)
 
