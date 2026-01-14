@@ -10,9 +10,9 @@ Usage:
 
 Environment variables:
     - OTEL_SERVICE_NAME: Service name (defaults to PROJECT_NAME)
-    - OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint (default: http://localhost:4317)
+    - OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint (optional, OTLP export disabled if not set)
     - OTEL_EXPORTER_OTLP_HEADERS: Auth headers in 'key=value' format
-    - OTEL_SDK_DISABLED: Set to 'true' to disable OTel (useful for tests)
+    - OTEL_SDK_DISABLED: Set to 'true' to disable OTel entirely (useful for tests)
     - TRACE_SAMPLE_RATE: Sampling rate 0.0-1.0 (default: 0.1)
 
 Created: task-998
@@ -56,7 +56,7 @@ def setup_otel(
         service_name: Service name for identification in traces
         service_version: Service version string
         environment: Deployment environment (development, staging, production)
-        otlp_endpoint: OTLP gRPC endpoint (default: http://localhost:4317)
+        otlp_endpoint: OTLP gRPC endpoint (optional, OTLP export disabled if not set)
         otlp_headers: Auth headers in 'key=value,key2=value2' format
         sample_rate: Trace sampling rate 0.0-1.0 (default: 0.1 = 10%)
         enable_console_export: Enable console span export for debugging
@@ -125,14 +125,14 @@ def setup_otel(
 
         _tracer_provider.add_span_processor(BaggageSpanProcessor())
 
-        endpoint = otlp_endpoint or os.getenv(
-            "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"
-        )
-        headers = _parse_headers(otlp_headers or os.getenv("OTEL_EXPORTER_OTLP_HEADERS"))
-
-        otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers, insecure=True)
-        _tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-        logger.info(f"OTLP exporter configured: {endpoint}")
+        endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+        if endpoint:
+            headers = _parse_headers(otlp_headers or os.getenv("OTEL_EXPORTER_OTLP_HEADERS"))
+            otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers, insecure=True)
+            _tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+            logger.info(f"OTLP exporter configured: {endpoint}")
+        else:
+            logger.info("OTLP endpoint not configured - OTLP export disabled")
 
         if enable_console_export:
             _tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))

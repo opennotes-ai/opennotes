@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Any, Literal, cast
 
 from cryptography.fernet import Fernet
-from pydantic import Field, computed_field, field_validator, model_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Module-level singleton tracking variables
@@ -459,7 +459,9 @@ class Settings(BaseSettings):
     ENABLE_JSON_LOGGING: bool = Field(default=True, description="Enable JSON structured logging")
 
     OTLP_ENDPOINT: str | None = Field(
-        default=None, description="OpenTelemetry OTLP endpoint (e.g., http://tempo:4317)"
+        default=None,
+        description="OpenTelemetry OTLP endpoint (e.g., http://tempo:4317)",
+        validation_alias=AliasChoices("OTEL_EXPORTER_OTLP_ENDPOINT", "OTLP_ENDPOINT"),
     )
     OTLP_INSECURE: bool = Field(
         default=False, description="Use insecure OTLP connection (only for local development)"
@@ -482,6 +484,7 @@ class Settings(BaseSettings):
     OTLP_HEADERS: str | None = Field(
         default=None,
         description="OTLP exporter headers in 'key=value,key2=value2' format for authentication",
+        validation_alias=AliasChoices("OTEL_EXPORTER_OTLP_HEADERS", "OTLP_HEADERS"),
     )
 
     PYROSCOPE_ENABLED: bool = Field(
