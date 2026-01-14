@@ -4,10 +4,10 @@ from src.monitoring.instance import InstanceMetadata, initialize_instance_metada
 from src.monitoring.logging import get_logger, setup_logging
 from src.monitoring.metrics import get_metrics
 from src.monitoring.middleware import MetricsMiddleware
-from src.monitoring.middleware_apm import (
-    get_middleware_apm_config,
-    is_middleware_apm_configured,
-    setup_middleware_apm,
+from src.monitoring.otel import (
+    is_otel_configured,
+    setup_otel,
+    shutdown_otel,
 )
 
 __all__ = [
@@ -19,9 +19,9 @@ __all__ = [
     "MonitoringHealthCheckResponse",
     "get_logger",
     "get_metrics",
-    "get_middleware_apm_config",
     "initialize_instance_metadata",
-    "is_middleware_apm_configured",
+    "is_otel_configured",
     "setup_logging",
-    "setup_middleware_apm",
+    "setup_otel",
+    "shutdown_otel",
 ]
