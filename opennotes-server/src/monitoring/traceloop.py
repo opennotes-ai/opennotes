@@ -6,6 +6,10 @@ the main FastAPI server and taskiq workers.
 
 import logging
 import os
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk.trace.export import SpanExporter
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +22,10 @@ def setup_traceloop(
     version: str,
     environment: str,
     instance_id: str,
-    otlp_endpoint: str | None,
+    otlp_endpoint: str | None = None,
     otlp_headers: str | None = None,
     trace_content: bool = False,
+    exporter: "SpanExporter | None" = None,
 ) -> bool:
     """Initialize Traceloop SDK for LLM observability.
 
@@ -34,9 +39,12 @@ def setup_traceloop(
         version: Service version
         environment: Deployment environment
         instance_id: Service instance ID
-        otlp_endpoint: OTLP exporter endpoint
+        otlp_endpoint: OTLP exporter endpoint (used if exporter not provided)
         otlp_headers: Comma-separated key=value pairs for OTLP headers
         trace_content: Whether to log prompt/completion content
+        exporter: Pre-configured SpanExporter to use (recommended - avoids
+            protocol mismatch between gRPC/HTTP OTLP). If provided, otlp_endpoint
+            is ignored and this exporter is used directly.
 
     Returns:
         True if Traceloop was successfully configured, False otherwise.
@@ -47,8 +55,10 @@ def setup_traceloop(
         logger.debug("Traceloop already configured, skipping setup")
         return True
 
-    if not otlp_endpoint:
-        logger.warning("Traceloop enabled but OTLP_ENDPOINT not set - LLM observability disabled")
+    if not exporter and not otlp_endpoint:
+        logger.warning(
+            "Traceloop enabled but no exporter or OTLP_ENDPOINT set - LLM observability disabled"
+        )
         return False
 
     try:
@@ -56,35 +66,45 @@ def setup_traceloop(
 
         os.environ["TRACELOOP_TRACE_CONTENT"] = str(trace_content).lower()
 
-        headers: dict[str, str] = {
-            "X-Trace-Source": "traceloop",
-        }
-        if otlp_headers:
-            for raw_pair in otlp_headers.split(","):
-                pair = raw_pair.strip()
-                if "=" in pair:
-                    key, value = pair.split("=", 1)
-                    headers[key.strip()] = value.strip()
-
-        Traceloop.init(
-            app_name=app_name.replace(" ", "-").lower(),
-            api_endpoint=otlp_endpoint,
-            headers=headers if headers else {},
-            disable_batch=False,
-            resource_attributes={
+        init_kwargs: dict[str, Any] = {
+            "app_name": app_name.replace(" ", "-").lower(),
+            "disable_batch": False,
+            "resource_attributes": {
                 "service.name": service_name,
                 "service.version": version,
                 "deployment.environment": environment,
                 "service.instance.id": instance_id,
             },
-            enabled=True,
-            telemetry_enabled=False,
-        )
+            "enabled": True,
+            "telemetry_enabled": False,
+        }
 
-        logger.info(
-            f"Traceloop LLM observability enabled: endpoint={otlp_endpoint}, "
-            f"trace_content={trace_content}"
-        )
+        if exporter:
+            init_kwargs["exporter"] = exporter
+            logger.info(
+                f"Traceloop LLM observability enabled with shared exporter, "
+                f"trace_content={trace_content}"
+            )
+        else:
+            headers: dict[str, str] = {
+                "X-Trace-Source": "traceloop",
+            }
+            if otlp_headers:
+                for raw_pair in otlp_headers.split(","):
+                    pair = raw_pair.strip()
+                    if "=" in pair:
+                        key, value = pair.split("=", 1)
+                        headers[key.strip()] = value.strip()
+
+            init_kwargs["api_endpoint"] = otlp_endpoint
+            init_kwargs["headers"] = headers if headers else {}
+            logger.info(
+                f"Traceloop LLM observability enabled: endpoint={otlp_endpoint}, "
+                f"trace_content={trace_content}"
+            )
+
+        Traceloop.init(**init_kwargs)
+
         _traceloop_configured = True
         return True
 

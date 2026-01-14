@@ -128,6 +128,7 @@ initialize_instance_metadata(
 logger.info(f"Instance metadata initialized: {settings.INSTANCE_ID}")
 
 if settings.TRACELOOP_ENABLED and not settings.TESTING:
+    from src.monitoring.otel import get_otlp_exporter
     from src.monitoring.traceloop import setup_traceloop
 
     setup_traceloop(
@@ -139,6 +140,7 @@ if settings.TRACELOOP_ENABLED and not settings.TESTING:
         otlp_endpoint=settings.OTLP_ENDPOINT,
         otlp_headers=settings.OTLP_HEADERS,
         trace_content=settings.TRACELOOP_TRACE_CONTENT,
+        exporter=get_otlp_exporter(),
     )
 
 health_checker = HealthChecker(

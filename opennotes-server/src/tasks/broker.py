@@ -190,6 +190,7 @@ def get_broker() -> PullBasedJetStreamBroker:
     if _broker_instance is None:
         from src.config import get_settings
         from src.monitoring.logging import setup_logging
+        from src.monitoring.otel import get_otlp_exporter, setup_otel
         from src.monitoring.traceloop import setup_traceloop
 
         settings = get_settings()
@@ -198,6 +199,16 @@ def get_broker() -> PullBasedJetStreamBroker:
             json_format=True,
             service_name="opennotes-taskiq-worker",
         )
+
+        if settings.OTLP_ENDPOINT:
+            setup_otel(
+                service_name="opennotes-taskiq-worker",
+                service_version=settings.VERSION,
+                environment=settings.ENVIRONMENT,
+                otlp_endpoint=settings.OTLP_ENDPOINT,
+                otlp_headers=settings.OTLP_HEADERS,
+                sample_rate=settings.TRACE_SAMPLE_RATE,
+            )
 
         if settings.TRACELOOP_ENABLED:
             setup_traceloop(
@@ -209,6 +220,7 @@ def get_broker() -> PullBasedJetStreamBroker:
                 otlp_endpoint=settings.OTLP_ENDPOINT,
                 otlp_headers=settings.OTLP_HEADERS,
                 trace_content=settings.TRACELOOP_TRACE_CONTENT,
+                exporter=get_otlp_exporter(),
             )
 
         _broker_instance = _create_broker()

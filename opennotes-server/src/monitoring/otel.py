@@ -23,12 +23,14 @@ import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.trace import TracerProvider
 
 logger = logging.getLogger(__name__)
 
 _otel_initialized = False
 _tracer_provider: "TracerProvider | None" = None
+_otlp_exporter: "OTLPSpanExporter | None" = None
 
 BAGGAGE_KEYS_TO_PROPAGATE = [
     "discord.user_id",
@@ -125,11 +127,12 @@ def setup_otel(
 
         _tracer_provider.add_span_processor(BaggageSpanProcessor())
 
+        global _otlp_exporter
         endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
         if endpoint:
             headers = _parse_headers(otlp_headers or os.getenv("OTEL_EXPORTER_OTLP_HEADERS"))
-            otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers, insecure=True)
-            _tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+            _otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers, insecure=True)
+            _tracer_provider.add_span_processor(BatchSpanProcessor(_otlp_exporter))
             logger.info(f"OTLP exporter configured: {endpoint}")
         else:
             logger.info("OTLP endpoint not configured - OTLP export disabled")
@@ -189,3 +192,15 @@ def is_otel_configured() -> bool:
     """Check if OpenTelemetry environment is configured."""
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTLP_ENDPOINT")
     return bool(endpoint)
+
+
+def get_otlp_exporter() -> "OTLPSpanExporter | None":
+    """Get the configured OTLP span exporter.
+
+    Returns the gRPC OTLP exporter created during setup_otel(), or None
+    if OpenTelemetry was not initialized or no OTLP endpoint was configured.
+
+    This allows other components (like Traceloop) to reuse the same exporter
+    instead of creating their own, ensuring consistent protocol usage.
+    """
+    return _otlp_exporter
