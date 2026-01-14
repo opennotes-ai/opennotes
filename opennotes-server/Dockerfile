@@ -73,13 +73,12 @@ COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
 # =============================================================================
-# Middleware.io APM (task-969)
-# Application telemetry (traces, metrics, logs, profiling) is handled by the
-# middleware-io Python SDK - no additional installation needed in the container.
+# OpenTelemetry (task-998)
+# Application telemetry (traces, metrics, logs) uses generic OpenTelemetry SDK
+# with OTLP export. Configure via OTEL_EXPORTER_OTLP_ENDPOINT env var.
 #
-# For host-level metrics (CPU, memory, disk), run the MW host agent as a
-# sidecar container: ghcr.io/middleware-labs/mw-host-agent:master
-# See: https://docs.middleware.io/agent-installation/docker
+# For host-level metrics (CPU, memory, disk), run an OpenTelemetry Collector
+# sidecar container configured with hostmetrics receiver.
 # =============================================================================
 
 # RUN_MODE controls startup: server (default), worker, or both
@@ -111,13 +110,12 @@ COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
 # =============================================================================
-# Middleware.io APM (task-969)
-# Application telemetry (traces, metrics, logs, profiling) is handled by the
-# middleware-io Python SDK - no additional installation needed in the container.
+# OpenTelemetry (task-998)
+# Application telemetry (traces, metrics, logs) uses generic OpenTelemetry SDK
+# with OTLP export. Configure via OTEL_EXPORTER_OTLP_ENDPOINT env var.
 #
-# For host-level metrics (CPU, memory, disk), run the MW host agent as a
-# sidecar container: ghcr.io/middleware-labs/mw-host-agent:master
-# See: https://docs.middleware.io/agent-installation/docker
+# For host-level metrics (CPU, memory, disk), run an OpenTelemetry Collector
+# sidecar container configured with hostmetrics receiver.
 # =============================================================================
 
 # RUN_MODE controls startup: server (default), worker, or both

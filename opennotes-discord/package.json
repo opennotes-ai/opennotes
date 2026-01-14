@@ -26,7 +26,12 @@
     "schemas:validate": "ENABLE_SCHEMA_VALIDATION=true pnpm test:schemas"
   },
   "dependencies": {
-    "@middleware.io/node-apm": "^2.4.2",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.52.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.56.0",
+    "@opentelemetry/resources": "^1.29.0",
+    "@opentelemetry/sdk-node": "^0.56.0",
+    "@opentelemetry/semantic-conventions": "^1.29.0",
     "@opennotes/shared-types": "workspace:*",
     "@sapphire/snowflake": "^3.5.5",
     "ajv": "^8.17.1",
