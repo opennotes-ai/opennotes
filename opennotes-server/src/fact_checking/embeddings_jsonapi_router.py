@@ -147,7 +147,7 @@ class SimilaritySearchCreateData(BaseModel):
     attributes: SimilaritySearchCreateAttributes
 
 
-class SimilaritySearchRequest(BaseModel):
+class SimilaritySearchJSONAPIRequest(BaseModel):
     """JSON:API request body for performing a similarity search."""
 
     data: SimilaritySearchCreateData
@@ -232,7 +232,7 @@ def create_error_response(
 @limiter.limit("100/minute")
 async def similarity_search_jsonapi(
     request: HTTPRequest,
-    body: SimilaritySearchRequest,
+    body: SimilaritySearchJSONAPIRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     embedding_service: Annotated[EmbeddingService, Depends(get_embedding_service)],

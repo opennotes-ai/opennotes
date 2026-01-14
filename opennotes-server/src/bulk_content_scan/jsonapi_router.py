@@ -87,7 +87,7 @@ class BulkScanCreateData(BaseModel):
     attributes: BulkScanCreateAttributes
 
 
-class BulkScanCreateRequest(BaseModel):
+class BulkScanCreateJSONAPIRequest(BaseModel):
     """JSON:API request body for creating a bulk scan."""
 
     data: BulkScanCreateData
@@ -192,7 +192,7 @@ class BulkScanResultsResource(BaseModel):
     relationships: dict[str, Any] | None = None
 
 
-class BulkScanResultsResponse(BaseModel):
+class BulkScanResultsJSONAPIResponse(BaseModel):
     """JSON:API response for bulk scan results with included flagged messages."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -252,7 +252,7 @@ class LatestScanResource(BaseModel):
     relationships: dict[str, Any] | None = None
 
 
-class LatestScanResponse(BaseModel):
+class LatestScanJSONAPIResponse(BaseModel):
     """JSON:API response for the latest scan with included flagged messages."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -521,7 +521,7 @@ def get_ai_note_writer() -> AINoteWriter:
 @router.post("/bulk-scans", response_class=JSONResponse, response_model=BulkScanSingleResponse)
 @limiter.limit("5/hour")
 async def initiate_scan(
-    body: BulkScanCreateRequest,
+    body: BulkScanCreateJSONAPIRequest,
     request: HTTPRequest,
     service: Annotated[BulkContentScanService, Depends(get_bulk_scan_service)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
@@ -615,7 +615,9 @@ async def initiate_scan(
 
 
 @router.get(
-    "/bulk-scans/{scan_id}", response_class=JSONResponse, response_model=BulkScanResultsResponse
+    "/bulk-scans/{scan_id}",
+    response_class=JSONResponse,
+    response_model=BulkScanResultsJSONAPIResponse,
 )
 async def get_scan_results(
     scan_id: UUID,
@@ -698,7 +700,7 @@ async def get_scan_results(
 
         included = [flagged_message_to_resource(msg) for msg in flagged_messages]
 
-        response = BulkScanResultsResponse(
+        response = BulkScanResultsJSONAPIResponse(
             data=resource,
             included=included,
             links=JSONAPILinks(self_=str(request.url)),
@@ -781,7 +783,7 @@ async def check_recent_scan(
 @router.get(
     "/bulk-scans/communities/{community_server_id}/latest",
     response_class=JSONResponse,
-    response_model=LatestScanResponse,
+    response_model=LatestScanJSONAPIResponse,
 )
 async def get_latest_scan(
     community_server_id: UUID,
@@ -872,7 +874,7 @@ async def get_latest_scan(
 
         included = [flagged_message_to_resource(msg) for msg in flagged_messages]
 
-        response = LatestScanResponse(
+        response = LatestScanJSONAPIResponse(
             data=resource,
             included=included,
             links=JSONAPILinks(self_=str(request.url)),

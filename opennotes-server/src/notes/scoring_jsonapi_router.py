@@ -187,7 +187,7 @@ class ScoringStatusResource(BaseModel):
     attributes: ScoringStatusAttributes
 
 
-class ScoringStatusResponse(BaseModel):
+class ScoringStatusJSONAPIResponse(BaseModel):
     """JSON:API response for scoring status."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -296,7 +296,9 @@ def note_score_to_resource(note_id: UUID, score_response: Any) -> NoteScoreResou
     )
 
 
-@router.get("/scoring/status", response_class=JSONResponse, response_model=ScoringStatusResponse)
+@router.get(
+    "/scoring/status", response_class=JSONResponse, response_model=ScoringStatusJSONAPIResponse
+)
 async def get_scoring_status_jsonapi(
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -388,7 +390,7 @@ async def get_scoring_status_jsonapi(
             configuration={},
         )
 
-        response = ScoringStatusResponse(
+        response = ScoringStatusJSONAPIResponse(
             data=ScoringStatusResource(
                 type="scoring-status",
                 id="current",

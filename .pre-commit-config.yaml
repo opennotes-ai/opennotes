@@ -141,3 +141,25 @@ repos:
         files: ^opennotes-server/src/.*(schemas?|models?)\.py$
         pass_filenames: false
         verbose: true
+
+  # =============================================================================
+  # OpenAPI/TypeScript Schema Regeneration
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: regenerate-openapi
+        name: Regenerate OpenAPI and TypeScript types
+        entry: bash -c 'mise run build:types:openapi && git add opennotes-server/openapi.json opennotes-discord/src/lib/generated-types.ts 2>/dev/null || true'
+        language: system
+        files: ^opennotes-server/src/.*\.(py)$
+        pass_filenames: false
+        verbose: true
+        require_serial: true
+
+      - id: typecheck-discord
+        name: TypeScript type check (opennotes-discord)
+        entry: bash -c 'cd opennotes-discord && pnpm run type-check'
+        language: system
+        files: ^opennotes-discord/src/.*\.ts$
+        pass_filenames: false
+        require_serial: true

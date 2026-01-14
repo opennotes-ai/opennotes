@@ -153,13 +153,13 @@ export interface NotePublisherRecordRequest {
 }
 
 // Bulk scan types from generated OpenAPI schema (JSONAPI structures)
-export type LatestScanResponse = components['schemas']['LatestScanResponse'];
+export type LatestScanResponse = components['schemas']['LatestScanJSONAPIResponse'];
 export type LatestScanResource = components['schemas']['LatestScanResource'];
 export type LatestScanAttributes = components['schemas']['LatestScanAttributes'];
 export type FlaggedMessageResource = components['schemas']['FlaggedMessageResource'];
 export type FlaggedMessageAttributes = components['schemas']['FlaggedMessageAttributes'];
 export type BulkScanSingleResponse = components['schemas']['BulkScanSingleResponse'];
-export type BulkScanResultsResponse = components['schemas']['BulkScanResultsResponse'];
+export type BulkScanResultsResponse = components['schemas']['BulkScanResultsJSONAPIResponse'];
 export type RecentScanResponse = components['schemas']['RecentScanResponse'];
 export type NoteRequestsResultResponse = components['schemas']['NoteRequestsResultResponse'];
 export type SimilarityMatch = components['schemas']['SimilarityMatch'];
