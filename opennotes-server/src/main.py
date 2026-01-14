@@ -407,7 +407,7 @@ app = FastAPI(
     separate_input_output_schemas=False,
 )
 
-if settings.MIDDLEWARE_APM_ENABLED and not settings.TESTING:
+if settings.ENABLE_TRACING and not settings.TESTING:
     app.add_middleware(DiscordContextMiddleware)
 
 app.state.limiter = limiter
