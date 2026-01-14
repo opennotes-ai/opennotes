@@ -23,6 +23,7 @@ def mock_service():
         return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
     )
     service.get_processed_count = AsyncMock(return_value=0)
+    service.get_skipped_count = AsyncMock(return_value=0)
     return service
 
 
@@ -317,3 +318,69 @@ class TestBulkScanHandlerRegistration:
 
         assert asyncio.iscoroutinefunction(handle_message_batch)
         assert asyncio.iscoroutinefunction(handle_all_batches_transmitted)
+
+
+class TestSkippedCountInEvents:
+    """Test that skipped_count is called by handlers - task-867.03."""
+
+    @pytest.mark.asyncio
+    async def test_batch_handler_with_progress_calls_get_skipped_count(
+        self, mock_service, sample_messages
+    ):
+        """Verify handle_message_batch_with_progress calls get_skipped_count for progress events."""
+        from src.bulk_content_scan.nats_handler import handle_message_batch_with_progress
+        from src.events.schemas import BulkScanMessageBatchEvent
+
+        scan_id = uuid4()
+        community_server_id = uuid4()
+
+        event = BulkScanMessageBatchEvent(
+            event_id="evt_123",
+            scan_id=scan_id,
+            community_server_id=community_server_id,
+            messages=sample_messages,
+            batch_number=1,
+            is_final_batch=False,
+        )
+
+        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_event_publisher:
+            mock_event_publisher.publish_event = AsyncMock()
+            await handle_message_batch_with_progress(
+                event=event,
+                service=mock_service,
+                nats_client=AsyncMock(),
+                platform_id="test_platform_123",
+                debug_mode=False,
+            )
+
+        mock_service.get_skipped_count.assert_called_once_with(scan_id)
+
+    @pytest.mark.asyncio
+    async def test_finalize_calls_get_skipped_count(self, mock_service, mock_publisher):
+        """Verify finalize_scan calls get_skipped_count for results events."""
+        from src.bulk_content_scan.nats_handler import finalize_scan
+
+        scan_id = uuid4()
+        community_server_id = uuid4()
+
+        mock_service.get_flagged_results = AsyncMock(return_value=[])
+        mock_service.get_error_summary = AsyncMock(
+            return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
+        )
+        mock_service.get_processed_count = AsyncMock(return_value=100)
+        mock_service.try_set_finalize_dispatched = AsyncMock(return_value=True)
+
+        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_event_publisher:
+            mock_event_publisher.publish_event = AsyncMock()
+            await finalize_scan(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                messages_scanned=100,
+                service=mock_service,
+                publisher=mock_publisher,
+            )
+
+        mock_service.get_skipped_count.assert_called_once_with(scan_id)
+        mock_publisher.publish.assert_called_once()
+        publish_kwargs = mock_publisher.publish.call_args[1]
+        assert "messages_skipped" in publish_kwargs

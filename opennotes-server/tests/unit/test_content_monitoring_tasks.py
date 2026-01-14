@@ -290,6 +290,7 @@ class TestFinalizeBulkScanTask:
         mock_service.get_flagged_results = AsyncMock(return_value=[])
         mock_service.get_error_summary = AsyncMock(return_value={"total_errors": 0})
         mock_service.get_processed_count = AsyncMock(return_value=100)
+        mock_service.get_skipped_count = AsyncMock(return_value=0)
         mock_service.complete_scan = AsyncMock()
 
         mock_redis = AsyncMock()

@@ -255,6 +255,7 @@ async def handle_message_batch_with_progress(
     await service.increment_processed_count(event.scan_id, successful_count)
 
     processed_count = await service.get_processed_count(event.scan_id)
+    skipped_count = await service.get_skipped_count(event.scan_id)
     channel_ids = list({msg.channel_id for msg in typed_messages})
 
     message_score_infos: list[MessageScoreInfo] = []
@@ -282,6 +283,7 @@ async def handle_message_batch_with_progress(
         batch_number=event.batch_number,
         messages_in_batch=len(typed_messages),
         messages_processed=processed_count,
+        messages_skipped=skipped_count,
         channel_ids=channel_ids,
         message_scores=message_score_infos,
         threshold_used=threshold,
@@ -311,6 +313,7 @@ async def handle_message_batch_with_progress(
             "messages_successful": successful_count,
             "messages_errored": error_count,
             "messages_flagged": len(flagged),
+            "messages_skipped": skipped_count,
         },
     )
 
@@ -358,6 +361,7 @@ async def finalize_scan(
     flagged = await service.get_flagged_results(scan_id)
     error_summary_data = await service.get_error_summary(scan_id)
     processed_count = await service.get_processed_count(scan_id)
+    skipped_count = await service.get_skipped_count(scan_id)
 
     total_errors = error_summary_data.get("total_errors", 0)
     error_types = error_summary_data.get("error_types", {})
@@ -402,6 +406,7 @@ async def finalize_scan(
         scan_id=scan_id,
         messages_scanned=messages_scanned,
         messages_flagged=len(flagged),
+        messages_skipped=skipped_count,
         flagged_messages=flagged,
         error_summary=error_summary,
     )
@@ -412,6 +417,7 @@ async def finalize_scan(
         community_server_id=community_server_id,
         messages_scanned=messages_scanned,
         messages_flagged=len(flagged),
+        messages_skipped=skipped_count,
     )
     await event_publisher.publish_event(processing_finished_event)
 
@@ -421,6 +427,7 @@ async def finalize_scan(
             "scan_id": str(scan_id),
             "messages_scanned": messages_scanned,
             "messages_flagged": len(flagged),
+            "messages_skipped": skipped_count,
             "status": status,
             "total_errors": total_errors,
         },
@@ -497,6 +504,7 @@ class BulkScanResultsPublisher:
         scan_id: UUID | None = None,
         messages_scanned: int = 0,
         messages_flagged: int = 0,
+        messages_skipped: int = 0,
         flagged_messages: list[FlaggedMessage] | None = None,
         error_summary: ScanErrorSummary | None = None,
         **_kwargs: Any,
@@ -507,6 +515,7 @@ class BulkScanResultsPublisher:
             scan_id: UUID of the scan
             messages_scanned: Total messages processed
             messages_flagged: Number flagged
+            messages_skipped: Messages skipped (already have note requests)
             flagged_messages: List of FlaggedMessage objects
             error_summary: Summary of errors encountered during scan
             **_kwargs: Additional arguments (ignored, for protocol compatibility)
@@ -519,6 +528,7 @@ class BulkScanResultsPublisher:
             scan_id=scan_id,
             messages_scanned=messages_scanned,
             messages_flagged=messages_flagged,
+            messages_skipped=messages_skipped,
             flagged_messages=flagged_messages or [],
             error_summary=error_summary,
         )

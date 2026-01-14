@@ -312,6 +312,9 @@ class BulkScanProcessingFinishedEvent(BaseEvent):
     community_server_id: UUID = Field(..., description="Community server that was scanned")
     messages_scanned: int = Field(..., ge=0, description="Total messages processed")
     messages_flagged: int = Field(..., ge=0, description="Number of flagged messages")
+    messages_skipped: int = Field(
+        default=0, ge=0, description="Messages skipped (already have note requests)"
+    )
 
 
 class ScanErrorInfo(StrictEventSchema):
@@ -344,6 +347,9 @@ class BulkScanResultsEvent(BaseEvent):
     scan_id: UUID = Field(..., description="Scan results belong to")
     messages_scanned: int = Field(..., ge=0, description="Total messages processed")
     messages_flagged: int = Field(..., ge=0, description="Number of messages flagged")
+    messages_skipped: int = Field(
+        default=0, ge=0, description="Messages skipped (already have note requests)"
+    )
     flagged_messages: list[FlaggedMessage] = Field(
         default_factory=list,
         description="Flagged messages with match info",
@@ -394,6 +400,9 @@ class BulkScanProgressEvent(BaseEvent):
     messages_in_batch: int = Field(..., ge=0, description="Number of messages in this batch")
     messages_processed: int = Field(
         default=0, ge=0, description="Total messages processed so far in this scan"
+    )
+    messages_skipped: int = Field(
+        default=0, ge=0, description="Total messages skipped (already have note requests)"
     )
     channel_ids: list[str] = Field(
         default_factory=list, description="Channel IDs being processed in this batch"
