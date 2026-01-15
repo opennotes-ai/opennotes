@@ -99,6 +99,10 @@ class NormalizedCandidate(BaseModel):
     predicted_ratings: dict[str, float] | None = Field(
         default=None, description="ML/AI predicted ratings as {rating: probability}"
     )
+    rating_details: str | None = Field(
+        default=None,
+        description="Original rating value when normalized to a different canonical rating",
+    )
     published_date: datetime | None = None
     dataset_name: str = Field(description="Source identifier from publisher_site")
     dataset_tags: list[str] = Field(default_factory=list, description="Tags from publisher_name")
@@ -143,16 +147,15 @@ class NormalizedCandidate(BaseModel):
 
         extracted_data = cls._build_extracted_data(row, languages, tweet_ids_parsed)
 
-        # Store normalized rating in predicted_ratings with probability 1.0
-        # (trusted source). The rating field stays NULL until human approval.
-        normalized_rating = normalize_rating(row.rating)
-        predicted_ratings = {normalized_rating: 1.0} if normalized_rating else None
+        canonical_rating, rating_details = normalize_rating(row.rating)
+        predicted_ratings = {canonical_rating: 1.0} if canonical_rating else None
 
         return cls(
             source_url=row.url,
             claim_hash=compute_claim_hash(row.claim),
             title=row.title,
             predicted_ratings=predicted_ratings,
+            rating_details=rating_details,
             published_date=published_date,
             dataset_name=dataset_name,
             dataset_tags=dataset_tags,

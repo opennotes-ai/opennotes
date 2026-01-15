@@ -2,11 +2,44 @@
 
 Maps various rating formats from different sources to canonical lowercase
 snake_case values for consistent storage and querying.
+
+Canonical ratings (10 total):
+- false, true, mostly_false, mostly_true, mixture
+- unproven, misleading, satire, legend, outdated
+
+Intermediate values are mapped to canonical ratings, with the original
+stored in rating_details for context preservation.
 """
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+CANONICAL_RATINGS: set[str] = {
+    "false",
+    "true",
+    "mostly_false",
+    "mostly_true",
+    "mixture",
+    "unproven",
+    "misleading",
+    "satire",
+    "legend",
+    "outdated",
+}
+
+INTERMEDIATE_TO_CANONICAL: dict[str, str] = {
+    "missing_context": "misleading",
+    "altered": "false",
+    "miscaptioned": "false",
+    "misattributed": "false",
+    "correct_attribution": "true",
+    "scam": "false",
+    "out_of_context": "misleading",
+    "exaggerated": "misleading",
+}
+
+SKIP_RATINGS: set[str] = {"in_progress", "explainer", "flip", "recall"}
 
 RATING_MAPPINGS: dict[str, str] = {
     # Boolean verdicts
@@ -318,39 +351,75 @@ RATING_MAPPINGS: dict[str, str] = {
 }
 
 
-def normalize_rating(rating: str | None) -> str | None:
+def normalize_rating(rating: str | None) -> tuple[str | None, str | None]:
     """Normalize a fact-check rating to canonical format.
+
+    Maps ratings to one of 10 canonical values, storing the original
+    rating in rating_details when normalization occurs.
 
     Args:
         rating: The raw rating string from the source dataset.
 
     Returns:
-        Normalized lowercase rating string, or original value if unknown.
-        Returns None if input is None or empty.
+        Tuple of (canonical_rating, rating_details):
+        - canonical_rating: One of the 10 canonical ratings, or None for skipped/empty
+        - rating_details: Original rating value if different from canonical, None otherwise
+
+    Canonical ratings: false, true, mostly_false, mostly_true, mixture,
+                       unproven, misleading, satire, legend, outdated
+
+    Skipped ratings (return None): in_progress, explainer, flip, recall
 
     Examples:
         >>> normalize_rating("False")
-        'false'
+        ('false', None)
         >>> normalize_rating("Mostly True")
-        'mostly_true'
-        >>> normalize_rating("Pants on Fire")
-        'false'
+        ('mostly_true', None)
+        >>> normalize_rating("Missing Context")
+        ('misleading', 'missing_context')
+        >>> normalize_rating("Altered")
+        ('false', 'altered')
+        >>> normalize_rating("In Progress")
+        (None, 'in_progress')
         >>> normalize_rating("Unknown Rating")
-        'unknown rating'
+        ('unknown_rating', 'Unknown Rating')
     """
-    if not rating:
-        return None
+    if not rating or not rating.strip():
+        return (None, None)
 
     rating_stripped = rating.strip()
-    if not rating_stripped:
-        return None
 
     if rating_stripped in RATING_MAPPINGS:
-        return RATING_MAPPINGS[rating_stripped]
+        intermediate = RATING_MAPPINGS[rating_stripped]
+        return _resolve_intermediate(intermediate)
 
     normalized = rating_stripped.lower().replace(" ", "_").replace("-", "_")
+    result = _resolve_intermediate(normalized)
 
-    if normalized not in set(RATING_MAPPINGS.values()):
-        logger.warning(f"Unknown rating value: '{rating}' -> '{normalized}'")
+    if result[0] is not None or result[1] is not None:
+        return result
 
-    return normalized
+    logger.warning(f"Unknown rating value: '{rating}' -> '{normalized}'")
+    return (normalized, rating_stripped)
+
+
+def _resolve_intermediate(intermediate: str) -> tuple[str | None, str | None]:
+    """Resolve an intermediate rating value to canonical form.
+
+    Args:
+        intermediate: A normalized/intermediate rating string.
+
+    Returns:
+        Tuple of (canonical_rating, rating_details).
+    """
+    if intermediate in SKIP_RATINGS:
+        return (None, intermediate)
+
+    if intermediate in INTERMEDIATE_TO_CANONICAL:
+        canonical = INTERMEDIATE_TO_CANONICAL[intermediate]
+        return (canonical, intermediate)
+
+    if intermediate in CANONICAL_RATINGS:
+        return (intermediate, None)
+
+    return (None, None)

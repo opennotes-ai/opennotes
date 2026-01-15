@@ -67,6 +67,9 @@ class FactCheckItem(Base):
 
     # Rating/verdict
     rating: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Original rating value when normalized to a different canonical rating
+    # e.g., "missing_context" when rating is "misleading", "altered" when rating is "false"
+    rating_details: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # DEPRECATED: Use chunk_embeddings table instead. Will be removed in v2.0.
     # Vector embedding for semantic search
