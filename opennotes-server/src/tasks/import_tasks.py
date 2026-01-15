@@ -16,12 +16,14 @@ from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
 from src.batch_jobs.service import BatchJobService
 from src.cache.redis_client import RedisClient
 from src.config import get_settings
+from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.importer import (
     HUGGINGFACE_DATASET_URL,
     ImportStats,
@@ -31,7 +33,10 @@ from src.fact_checking.import_pipeline.importer import (
     upsert_candidates,
     validate_and_normalize_batch,
 )
-from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
+from src.fact_checking.import_pipeline.scrape_tasks import (
+    enqueue_scrape_batch,
+    scrape_url_content,
+)
 from src.monitoring import get_logger
 from src.tasks.broker import register_task
 
@@ -359,6 +364,268 @@ async def process_fact_check_import(
                     "error": error_msg,
                     "valid_rows": stats.valid_rows,
                     "invalid_rows": stats.invalid_rows,
+                },
+            )
+
+            raise
+
+        finally:
+            await redis_client.disconnect()
+            await engine.dispose()
+
+
+@register_task(
+    task_name="scrape:candidates",
+    component="import_pipeline",
+    task_type="batch",
+)
+async def process_scrape_batch(
+    job_id: str,
+    batch_size: int,
+    dry_run: bool,
+    db_url: str,
+    redis_url: str,
+) -> dict[str, Any]:
+    """
+    TaskIQ task to process scraping of pending candidates.
+
+    This task:
+    1. Marks job as IN_PROGRESS
+    2. Counts total pending candidates without content
+    3. In dry_run mode: returns count without scraping
+    4. Otherwise: processes candidates in batches
+    5. For each candidate: scrapes content and updates status
+    6. Tracks progress via BatchJob infrastructure
+    7. Marks job as COMPLETED or FAILED
+
+    Args:
+        job_id: UUID string of the BatchJob for status tracking
+        batch_size: Number of candidates to process per batch
+        dry_run: If True, count candidates but don't scrape
+        db_url: Database connection URL
+        redis_url: Redis connection URL for progress tracking
+
+    Returns:
+        dict with status and scrape stats
+    """
+    with _tracer.start_as_current_span("scrape.candidates") as span:
+        span.set_attribute("job.id", job_id)
+        span.set_attribute("job.batch_size", batch_size)
+        span.set_attribute("job.dry_run", dry_run)
+
+        settings = get_settings()
+        job_uuid = UUID(job_id)
+
+        engine = create_async_engine(
+            db_url,
+            pool_pre_ping=True,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+            pool_timeout=settings.DB_POOL_TIMEOUT,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        redis_client = RedisClient()
+        await redis_client.connect(redis_url)
+        progress_tracker = BatchJobProgressTracker(redis_client)
+
+        scraped = 0
+        failed = 0
+        total_candidates = 0
+
+        try:
+            await _start_job(async_session, progress_tracker, job_uuid)
+
+            async with async_session() as db:
+                count_query = (
+                    select(func.count())
+                    .select_from(FactCheckedItemCandidate)
+                    .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
+                    .where(FactCheckedItemCandidate.content.is_(None))
+                )
+                count_result = await db.execute(count_query)
+                total_candidates = count_result.scalar_one()
+
+            await _update_job_total_tasks(async_session, job_uuid, total_candidates)
+            span.set_attribute("scrape.total_candidates", total_candidates)
+
+            logger.info(
+                "Starting candidate scrape batch",
+                extra={
+                    "job_id": job_id,
+                    "batch_size": batch_size,
+                    "dry_run": dry_run,
+                    "total_candidates": total_candidates,
+                },
+            )
+
+            if dry_run:
+                final_stats = {
+                    "total_candidates": total_candidates,
+                    "scraped": 0,
+                    "failed": 0,
+                    "dry_run": True,
+                }
+
+                await _complete_job(
+                    async_session,
+                    progress_tracker,
+                    job_uuid,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    stats=final_stats,
+                )
+
+                logger.info(
+                    "Candidate scrape batch dry run completed",
+                    extra={
+                        "job_id": job_id,
+                        **final_stats,
+                    },
+                )
+
+                return {"status": "completed", **final_stats}
+
+            while True:
+                async with async_session() as db:
+                    candidates_query = (
+                        select(FactCheckedItemCandidate)
+                        .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
+                        .where(FactCheckedItemCandidate.content.is_(None))
+                        .limit(batch_size)
+                    )
+                    result = await db.execute(candidates_query)
+                    candidates = result.scalars().all()
+
+                    if not candidates:
+                        break
+
+                    for candidate in candidates:
+                        await db.execute(
+                            update(FactCheckedItemCandidate)
+                            .where(FactCheckedItemCandidate.id == candidate.id)
+                            .values(status=CandidateStatus.SCRAPING.value)
+                        )
+                        await db.commit()
+
+                        content = scrape_url_content(candidate.source_url)
+
+                        if content:
+                            await db.execute(
+                                update(FactCheckedItemCandidate)
+                                .where(FactCheckedItemCandidate.id == candidate.id)
+                                .values(
+                                    status=CandidateStatus.SCRAPED.value,
+                                    content=content,
+                                )
+                            )
+                            await db.commit()
+                            scraped += 1
+                            logger.debug(
+                                "Scraped candidate",
+                                extra={
+                                    "candidate_id": str(candidate.id),
+                                    "content_length": len(content),
+                                },
+                            )
+                        else:
+                            await db.execute(
+                                update(FactCheckedItemCandidate)
+                                .where(FactCheckedItemCandidate.id == candidate.id)
+                                .values(
+                                    status=CandidateStatus.SCRAPE_FAILED.value,
+                                    error_message="Failed to extract content from URL",
+                                )
+                            )
+                            await db.commit()
+                            failed += 1
+                            logger.warning(
+                                "Failed to scrape candidate",
+                                extra={
+                                    "candidate_id": str(candidate.id),
+                                    "source_url": candidate.source_url,
+                                },
+                            )
+
+                    try:
+                        await _update_progress(
+                            async_session,
+                            progress_tracker,
+                            job_uuid,
+                            completed_tasks=scraped,
+                            failed_tasks=failed,
+                            current_item=f"Processed {scraped + failed}/{total_candidates}",
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to update progress during scrape batch",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(e),
+                            },
+                        )
+
+            final_stats = {
+                "total_candidates": total_candidates,
+                "scraped": scraped,
+                "failed": failed,
+                "dry_run": False,
+            }
+
+            await _complete_job(
+                async_session,
+                progress_tracker,
+                job_uuid,
+                completed_tasks=scraped,
+                failed_tasks=failed,
+                stats=final_stats,
+            )
+
+            span.set_attribute("scrape.scraped", scraped)
+            span.set_attribute("scrape.failed", failed)
+
+            logger.info(
+                "Candidate scrape batch completed",
+                extra={
+                    "job_id": job_id,
+                    **final_stats,
+                },
+            )
+
+            return {"status": "completed", **final_stats}
+
+        except Exception as e:
+            error_msg = str(e)
+            span.record_exception(e)
+            span.set_status(StatusCode.ERROR, error_msg)
+
+            error_summary = {
+                "exception": error_msg,
+                "exception_type": type(e).__name__,
+                "partial_stats": {
+                    "total_candidates": total_candidates,
+                    "scraped": scraped,
+                    "failed": failed,
+                },
+            }
+
+            await _fail_job(
+                async_session,
+                progress_tracker,
+                job_uuid,
+                error_summary=error_summary,
+                completed_tasks=scraped,
+                failed_tasks=failed,
+            )
+
+            logger.error(
+                "Candidate scrape batch failed",
+                extra={
+                    "job_id": job_id,
+                    "error": error_msg,
+                    "scraped": scraped,
+                    "failed": failed,
                 },
             )
 
