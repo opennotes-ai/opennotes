@@ -26,13 +26,15 @@
     "schemas:validate": "ENABLE_SCHEMA_VALIDATION=true pnpm test:schemas"
   },
   "dependencies": {
+    "@opennotes/shared-types": "workspace:*",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.52.0",
+    "@opentelemetry/core": "^2.4.0",
     "@opentelemetry/exporter-trace-otlp-grpc": "^0.56.0",
     "@opentelemetry/resources": "^1.29.0",
     "@opentelemetry/sdk-node": "^0.56.0",
+    "@opentelemetry/sdk-trace-base": "^2.4.0",
     "@opentelemetry/semantic-conventions": "^1.29.0",
-    "@opennotes/shared-types": "workspace:*",
     "@sapphire/snowflake": "^3.5.5",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
@@ -49,7 +51,6 @@
   "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@opennotes/test-utils": "workspace:*",
-    "fishery": "^2.2.2",
     "@types/express": "^4.17.25",
     "@types/ioredis-mock": "^8.2.6",
     "@types/jest": "^29.5.11",
@@ -58,6 +59,7 @@
     "@typescript-eslint/eslint-plugin": "^6.11.0",
     "@typescript-eslint/parser": "^6.11.0",
     "eslint": "^8.53.0",
+    "fishery": "^2.2.2",
     "ioredis-mock": "^8.13.1",
     "jest": "^29.7.0",
     "openapi-typescript": "^7.10.1",
