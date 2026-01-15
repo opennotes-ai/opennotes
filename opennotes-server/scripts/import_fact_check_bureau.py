@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import get_settings
 from src.database import get_db
 from src.fact_checking.import_pipeline.importer import import_fact_check_bureau
-from src.fact_checking.import_pipeline.scrape_task import enqueue_scrape_batch
+from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
 from src.monitoring.logging import setup_logging
 
 

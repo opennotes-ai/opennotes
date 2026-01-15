@@ -96,12 +96,14 @@ docker compose up opennotes-worker   # Taskiq worker
 For local development without Docker:
 
 ```bash
-# Run worker separately from the API server
-python -m taskiq worker src.tasks.broker:get_broker src.tasks.rechunk_tasks
+# Run worker with auto-discovery of all *tasks.py modules
+python -m taskiq worker src.tasks.broker:get_broker -fsd -tp "**/*tasks.py"
 
-# Or with uvicorn reload
-python -m taskiq worker src.tasks.broker:get_broker src.tasks.rechunk_tasks --reload
+# Or with reload for development
+python -m taskiq worker src.tasks.broker:get_broker -fsd -tp "**/*tasks.py" --reload
 ```
+
+The `-fsd` (file system discovery) flag with `-tp` (task pattern) automatically discovers all task modules matching the `**/*tasks.py` pattern.
 
 ### Docker Compose
 
@@ -160,9 +162,10 @@ if result.is_err:
 
 ## Adding New Tasks
 
-1. Create a new module in `src/tasks/`
+1. Create a new module following the `*tasks.py` naming convention (e.g., `src/tasks/my_tasks.py`)
 2. Use the `@register_task()` decorator
-3. Update the worker command in `docker-compose.yml` to include the new module
+
+That's it! The worker uses file system discovery (`-fsd`) to automatically find all modules matching `**/*tasks.py`.
 
 Example:
 
@@ -176,8 +179,8 @@ async def process_webhook(payload: dict) -> bool:
     return True
 ```
 
-Update the `opennotes-worker` service in `docker-compose.yml`:
-
-```yaml
-command: ["python", "-m", "taskiq", "worker", "src.tasks.broker:get_broker", "src.tasks.rechunk_tasks", "src.tasks.my_tasks"]
-```
+**Important:** Task files must end with `tasks.py` (plural) to be discovered:
+- ✅ `my_tasks.py` - will be discovered
+- ✅ `import_tasks.py` - will be discovered
+- ❌ `my_task.py` - will NOT be discovered (singular)
+- ❌ `tasks.py` - will NOT be discovered (missing prefix)

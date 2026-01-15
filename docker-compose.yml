@@ -205,7 +205,7 @@ services:
     build:
       context: .
       dockerfile: ./opennotes-server/Dockerfile
-    command: ["python", "-m", "taskiq", "worker", "src.tasks.broker:get_broker", "src.tasks.rechunk_tasks"]
+    command: ["python", "-m", "taskiq", "worker", "src.tasks.broker:get_broker", "-fsd", "-tp", "**/*tasks.py"]
     environment:
       # Environment configuration
       - ENVIRONMENT=${ENVIRONMENT:-development}

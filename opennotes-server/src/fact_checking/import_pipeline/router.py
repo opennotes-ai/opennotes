@@ -14,7 +14,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.batch_jobs.import_service import ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.database import get_db
-from src.fact_checking.import_pipeline.scrape_task import enqueue_scrape_batch
+from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
 from src.monitoring import get_logger
 from src.users.models import User
 
