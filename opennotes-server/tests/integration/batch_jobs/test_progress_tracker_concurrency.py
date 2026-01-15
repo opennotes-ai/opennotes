@@ -7,23 +7,36 @@ when multiple coroutines update progress simultaneously.
 
 import asyncio
 import os
+from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
 
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
 from src.cache.redis_client import RedisClient
+from src.config import settings
 
 
 @pytest.fixture
-async def redis_client() -> RedisClient:
-    """Create and connect a Redis client for testing."""
+async def redis_client(test_services) -> AsyncIterator[RedisClient]:
+    """Create and connect a Redis client using testcontainers Redis.
+
+    Depends on test_services fixture which sets up testcontainers
+    and updates settings.REDIS_URL to point to the container.
+    """
+    from src.circuit_breaker import circuit_breaker_registry
+
     # Set INTEGRATION_TESTS to bypass the test-mode skip in RedisClient.connect()
     old_value = os.environ.get("INTEGRATION_TESTS")
     os.environ["INTEGRATION_TESTS"] = "true"
     try:
+        # Create client first (this registers the circuit breaker)
         client = RedisClient()
-        await client.connect()
+        # Reset circuit breaker AFTER client creation (ensures breaker is registered)
+        # but BEFORE connect (so connection isn't blocked by tripped breaker)
+        await circuit_breaker_registry.reset("redis")
+        # settings.REDIS_URL is set by test_services fixture to testcontainers URL
+        await client.connect(settings.REDIS_URL)
         yield client
         await client.disconnect()
     finally:
@@ -31,6 +44,8 @@ async def redis_client() -> RedisClient:
             os.environ.pop("INTEGRATION_TESTS", None)
         else:
             os.environ["INTEGRATION_TESTS"] = old_value
+        # Reset circuit breaker after test to avoid polluting next test
+        await circuit_breaker_registry.reset("redis")
 
 
 @pytest.fixture
