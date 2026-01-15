@@ -121,6 +121,7 @@ class FactCheckItem(Base):
         CheckConstraint("array_length(dataset_tags, 1) > 0", name="check_dataset_tags_not_empty"),
         # B-tree indexes for filtering
         Index("idx_fact_check_items_dataset_name", "dataset_name"),
+        Index("idx_fact_check_items_created_at", "created_at"),
         Index("idx_fact_check_items_dataset_tags", "dataset_tags", postgresql_using="gin"),
         # GIN index for JSONB extra_metadata queries
         Index("idx_fact_check_items_metadata", "metadata", postgresql_using="gin"),
