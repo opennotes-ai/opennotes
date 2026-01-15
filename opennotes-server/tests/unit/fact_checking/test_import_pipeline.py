@@ -63,54 +63,232 @@ class TestComputeClaimHash:
 
 
 class TestRatingNormalizer:
-    """Tests for rating normalization."""
+    """Tests for rating normalization.
+
+    normalize_rating() returns a tuple of (canonical_rating, rating_details).
+    rating_details is set when the original rating differs from the canonical.
+    """
 
     @pytest.mark.parametrize(
-        ("input_rating", "expected"),
+        ("input_rating", "expected_canonical", "expected_details"),
         [
-            ("False", "false"),
-            ("false", "false"),
-            ("FALSE", "false"),
-            ("True", "true"),
-            ("true", "true"),
-            ("TRUE", "true"),
-            ("Mostly False", "mostly_false"),
-            ("mostly true", "mostly_true"),
-            ("Mixture", "mixture"),
-            ("mixed", "mixture"),
-            ("Half True", "mixture"),
-            ("Pants on Fire", "false"),
-            ("pants on fire", "false"),
-            ("Four Pinocchios", "false"),
-            ("Unproven", "unproven"),
-            ("unverified", "unproven"),
-            ("Misleading", "misleading"),
-            ("Satire", "satire"),
-            ("Outdated", "outdated"),
+            ("False", "false", None),
+            ("false", "false", None),
+            ("FALSE", "false", None),
+            ("True", "true", None),
+            ("true", "true", None),
+            ("TRUE", "true", None),
+            ("Mostly False", "mostly_false", None),
+            ("mostly true", "mostly_true", None),
+            ("Mixture", "mixture", None),
+            ("mixed", "mixture", None),
+            ("Half True", "mixture", None),
+            ("Pants on Fire", "false", None),
+            ("pants on fire", "false", None),
+            ("Four Pinocchios", "false", None),
+            ("Unproven", "unproven", None),
+            ("unverified", "unproven", None),
+            ("Misleading", "misleading", None),
+            ("Satire", "satire", None),
+            ("Outdated", "outdated", None),
         ],
     )
-    def test_known_ratings(self, input_rating: str, expected: str) -> None:
+    def test_known_ratings(
+        self, input_rating: str, expected_canonical: str, expected_details: str | None
+    ) -> None:
         """Test normalization of known rating values."""
-        assert normalize_rating(input_rating) == expected
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected_canonical", "expected_details"),
+        [
+            ("Faux", "false", None),
+            ("faux", "false", None),
+            ("FAUX", "false", None),
+            ("Vrai", "true", None),
+            ("vrai", "true", None),
+            ("Trompeur", "misleading", None),
+            ("Plutôt Vrai", "mostly_true", None),
+            ("Plutôt Faux", "mostly_false", None),
+            ("C'est plus compliqué", "mixture", None),
+            ("Partiellement faux", "mixture", None),
+            ("Contexte manquant", "misleading", "missing_context"),
+            ("Infondé", "unproven", None),
+            ("Montage", "false", "altered"),
+            ("Photomontage", "false", "altered"),
+            ("Détourné", "misleading", "out_of_context"),
+            ("Exagéré", "misleading", "exaggerated"),
+            ("Arnaque", "false", "scam"),
+        ],
+    )
+    def test_french_ratings(
+        self, input_rating: str, expected_canonical: str, expected_details: str | None
+    ) -> None:
+        """Test normalization of French rating values."""
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected_canonical", "expected_details"),
+        [
+            ("Falso", "false", None),
+            ("Verdadero", "true", None),
+            ("Engañoso", "misleading", None),
+            ("Parcialmente falso", "mostly_false", None),
+            ("Parcialmente verdadero", "mostly_true", None),
+            ("Sin contexto", "misleading", "missing_context"),
+            ("Sin pruebas", "unproven", None),
+            ("Sátira", "satire", None),
+            ("Estafa", "false", "scam"),
+        ],
+    )
+    def test_spanish_ratings(
+        self, input_rating: str, expected_canonical: str, expected_details: str | None
+    ) -> None:
+        """Test normalization of Spanish rating values."""
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected_canonical", "expected_details"),
+        [
+            ("Falsch", "false", None),
+            ("Wahr", "true", None),
+            ("Irreführend", "misleading", None),
+            ("Teilweise falsch", "mostly_false", None),
+            ("Teilweise wahr", "mostly_true", None),
+            ("Unbelegt", "unproven", None),
+            ("Manipuliert", "false", "altered"),
+            ("Fehlender Kontext", "misleading", "missing_context"),
+        ],
+    )
+    def test_german_ratings(
+        self, input_rating: str, expected_canonical: str, expected_details: str | None
+    ) -> None:
+        """Test normalization of German rating values."""
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected_canonical", "expected_details"),
+        [
+            ("Verdadeiro", "true", None),
+            ("Enganoso", "misleading", None),
+            ("Parcialmente verdadeiro", "mostly_true", None),
+            ("Sem provas", "unproven", None),
+            ("Fora de contexto", "misleading", "out_of_context"),
+        ],
+    )
+    def test_portuguese_ratings(
+        self, input_rating: str, expected_canonical: str, expected_details: str | None
+    ) -> None:
+        """Test normalization of Portuguese rating values."""
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected_canonical", "expected_details"),
+        [
+            ("Vero", "true", None),
+            ("Fuorviante", "misleading", None),
+            ("Parzialmente falso", "mostly_false", None),
+            ("Parzialmente vero", "mostly_true", None),
+            ("Senza prove", "unproven", None),
+            ("Satira", "satire", None),
+        ],
+    )
+    def test_italian_ratings(
+        self, input_rating: str, expected_canonical: str, expected_details: str | None
+    ) -> None:
+        """Test normalization of Italian rating values."""
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected_canonical", "expected_details"),
+        [
+            ("Vals", "false", None),
+            ("Waar", "true", None),
+            ("Misleidend", "misleading", None),
+            ("Onbewezen", "unproven", None),
+        ],
+    )
+    def test_dutch_ratings(
+        self, input_rating: str, expected_canonical: str, expected_details: str | None
+    ) -> None:
+        """Test normalization of Dutch rating values."""
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected_canonical", "expected_details"),
+        [
+            ("Missing Context", "misleading", "missing_context"),
+            ("Needs Context", "misleading", "missing_context"),
+            ("Altered", "false", "altered"),
+            ("Digitally Altered", "false", "altered"),
+            ("Manipulated", "false", "altered"),
+            ("Doctored", "false", "altered"),
+            ("Miscaptioned", "false", "miscaptioned"),
+            ("Wrong Caption", "false", "miscaptioned"),
+            ("Misattributed", "false", "misattributed"),
+            ("Wrong Attribution", "false", "misattributed"),
+            ("Correct Attribution", "true", "correct_attribution"),
+            ("Labeled Satire", "satire", None),
+            ("Originated as Satire", "satire", None),
+            ("Scam", "false", "scam"),
+            ("Fraud", "false", "scam"),
+            ("Out of Context", "misleading", "out_of_context"),
+            ("Taken Out of Context", "misleading", "out_of_context"),
+            ("Exaggerated", "misleading", "exaggerated"),
+            ("Exaggeration", "misleading", "exaggerated"),
+            ("In Progress", None, "in_progress"),
+            ("Under Review", None, "in_progress"),
+            ("Explainer", None, "explainer"),
+            ("Full Flop", None, "flip"),
+            ("Half Flip", None, "flip"),
+            ("Recall", None, "recall"),
+            ("Fake", "false", None),
+            ("Fabricated", "false", None),
+            ("Unfounded", "unproven", None),
+            ("No Evidence", "unproven", None),
+        ],
+    )
+    def test_content_type_ratings(
+        self, input_rating: str, expected_canonical: str | None, expected_details: str | None
+    ) -> None:
+        """Test normalization of English content type ratings."""
+        canonical, details = normalize_rating(input_rating)
+        assert canonical == expected_canonical
+        assert details == expected_details
 
     def test_none_input(self) -> None:
-        """Test None input returns None."""
-        assert normalize_rating(None) is None
+        """Test None input returns (None, None)."""
+        assert normalize_rating(None) == (None, None)
 
     def test_empty_string(self) -> None:
-        """Test empty string returns None."""
-        assert normalize_rating("") is None
-        assert normalize_rating("   ") is None
+        """Test empty string returns (None, None)."""
+        assert normalize_rating("") == (None, None)
+        assert normalize_rating("   ") == (None, None)
 
     def test_unknown_rating_normalized(self) -> None:
-        """Test unknown ratings are converted to lowercase snake_case."""
-        result = normalize_rating("Some Unknown Rating")
-        assert result == "some_unknown_rating"
+        """Test unknown ratings are converted to lowercase snake_case with original as details."""
+        canonical, details = normalize_rating("Some Unknown Rating")
+        assert canonical == "some_unknown_rating"
+        assert details == "Some Unknown Rating"
 
     def test_whitespace_stripped(self) -> None:
         """Test whitespace is stripped from ratings."""
-        assert normalize_rating("  False  ") == "false"
-        assert normalize_rating("\tTrue\n") == "true"
+        assert normalize_rating("  False  ") == ("false", None)
+        assert normalize_rating("\tTrue\n") == ("true", None)
 
 
 class TestClaimReviewRow:
@@ -190,8 +368,8 @@ class TestNormalizedCandidate:
         assert candidate.source_url == "https://snopes.com/fact-check/test"
         assert candidate.claim_hash == compute_claim_hash("This is a test claim")
         assert candidate.title == "Fact Check: Test Claim"
-        # Rating goes to predicted_ratings (trusted source at 1.0 probability)
         assert candidate.predicted_ratings == {"false": 1.0}
+        assert candidate.rating_details is None
         assert candidate.dataset_name == "snopes.com"
         assert candidate.dataset_tags == ["Snopes"]
         assert candidate.original_id == "200"
@@ -269,6 +447,43 @@ class TestNormalizedCandidate:
 
         candidate = NormalizedCandidate.from_claim_review_row(row)
         assert candidate.predicted_ratings is None
+        assert candidate.rating_details is None
+
+    def test_intermediate_rating_produces_rating_details(self) -> None:
+        """Test that intermediate ratings map to canonical with rating_details."""
+        row = ClaimReviewRow(
+            id=1,
+            claim_id=100,
+            fact_check_id=200,
+            claim="Test",
+            url="https://example.com",
+            title="Test",
+            publisher_name="Test",
+            publisher_site="example.com",
+            rating="Missing Context",
+        )
+
+        candidate = NormalizedCandidate.from_claim_review_row(row)
+        assert candidate.predicted_ratings == {"misleading": 1.0}
+        assert candidate.rating_details == "missing_context"
+
+    def test_skipped_rating_yields_none_predicted_ratings(self) -> None:
+        """Test that skipped ratings (in_progress, explainer, etc.) produce None canonical."""
+        row = ClaimReviewRow(
+            id=1,
+            claim_id=100,
+            fact_check_id=200,
+            claim="Test",
+            url="https://example.com",
+            title="Test",
+            publisher_name="Test",
+            publisher_site="example.com",
+            rating="In Progress",
+        )
+
+        candidate = NormalizedCandidate.from_claim_review_row(row)
+        assert candidate.predicted_ratings is None
+        assert candidate.rating_details == "in_progress"
 
     def test_date_parsing_iso(self) -> None:
         """Test ISO date format parsing."""

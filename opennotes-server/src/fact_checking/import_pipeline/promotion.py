@@ -91,6 +91,7 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
             original_id=candidate.original_id,
             published_date=candidate.published_date,
             rating=candidate.rating,
+            rating_details=candidate.rating_details,
             extra_metadata=candidate.extracted_data,
         )
 

@@ -112,6 +112,9 @@ class FactCheckedItemCandidate(Base):
     # Rating/verdict
     # Human-approved rating (NULL until approved)
     rating: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Original rating value when normalized to a different canonical rating
+    # e.g., "missing_context" when rating is "misleading", "altered" when rating is "false"
+    rating_details: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # ML/AI predicted ratings as {rating_value: probability}
     # e.g., {"false": 0.85, "mostly_false": 0.10, "mixture": 0.05}
     # For trusted sources, set the known rating to 1.0
