@@ -56,10 +56,6 @@ def import_candidates(
     _setup_logging(verbose)
     logger = logging.getLogger(__name__)
 
-    if source != "fact-check-bureau":
-        click.echo(f"Error: Unknown source '{source}'", err=True)
-        sys.exit(1)
-
     async def _run() -> None:
         from src.batch_jobs.import_service import ImportBatchJobService  # noqa: PLC0415
         from src.database import get_session_maker  # noqa: PLC0415
@@ -128,6 +124,14 @@ def scrape_content(
         async with get_session_maker()() as session:
             service = ImportBatchJobService(session)
 
+            if not hasattr(service, "start_scrape_job"):
+                click.echo(
+                    "Error: start_scrape_job not yet implemented. "
+                    "This feature requires PR 118 to be merged.",
+                    err=True,
+                )
+                sys.exit(1)
+
             click.echo("Starting content scraping...")
             if dry_run:
                 click.echo("DRY RUN: No content will be scraped")
@@ -153,15 +157,6 @@ def scrape_content(
 
     try:
         run_async(_run())
-    except AttributeError as e:
-        if "start_scrape_job" in str(e):
-            click.echo(
-                "Error: start_scrape_job not yet implemented. "
-                "This feature requires PR 118 to be merged.",
-                err=True,
-            )
-            sys.exit(1)
-        raise
     except Exception as e:
         logger.exception("Scrape failed")
         click.echo(f"Error: {e}", err=True)
@@ -198,6 +193,14 @@ def promote_candidates(
         async with get_session_maker()() as session:
             service = ImportBatchJobService(session)
 
+            if not hasattr(service, "start_promotion_job"):
+                click.echo(
+                    "Error: start_promotion_job not yet implemented. "
+                    "This feature requires PR 118 to be merged.",
+                    err=True,
+                )
+                sys.exit(1)
+
             click.echo("Starting candidate promotion...")
             if dry_run:
                 click.echo("DRY RUN: No candidates will be promoted")
@@ -223,15 +226,6 @@ def promote_candidates(
 
     try:
         run_async(_run())
-    except AttributeError as e:
-        if "start_promotion_job" in str(e):
-            click.echo(
-                "Error: start_promotion_job not yet implemented. "
-                "This feature requires PR 118 to be merged.",
-                err=True,
-            )
-            sys.exit(1)
-        raise
     except Exception as e:
         logger.exception("Promotion failed")
         click.echo(f"Error: {e}", err=True)

@@ -1,6 +1,7 @@
 """Unit tests for fact-check CLI commands."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from click.testing import CliRunner
@@ -18,7 +19,7 @@ def cli_runner() -> CliRunner:
 def _create_mock_job() -> MagicMock:
     """Create a mock BatchJob."""
     mock_job = MagicMock(spec=BatchJob)
-    mock_job.id = "test-job-id"
+    mock_job.id = uuid4()
     mock_job.status = "pending"
     return mock_job
 

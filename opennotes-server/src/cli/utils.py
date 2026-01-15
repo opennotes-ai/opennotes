@@ -7,7 +7,6 @@ Provides async execution helpers, job polling, and output formatting.
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, TypeVar
@@ -125,7 +124,7 @@ async def poll_job_until_complete(
             return job
 
         current_progress = job.completed_tasks
-        if verbose or current_progress != last_progress:
+        if current_progress != last_progress:
             if job.total_tasks > 0:
                 pct = job.progress_percentage
                 click.echo(f"Progress: {job.completed_tasks}/{job.total_tasks} ({pct:.1f}%)")
@@ -174,22 +173,28 @@ def format_job_output(job: BatchJob, verbose: bool = False) -> str:
     return "\n".join(lines)
 
 
-def print_job_result(job: BatchJob, verbose: bool = False) -> None:
+def print_job_result(job: BatchJob, verbose: bool = False) -> int:
     """
     Print job result to stdout with appropriate formatting.
 
     Args:
         job: The batch job to print
         verbose: Whether to include detailed information
+
+    Returns:
+        Exit code: 0 for success/cancelled, 1 for failed
     """
     click.echo(format_job_output(job, verbose))
 
     if job.status == "completed":
         click.echo(click.style("Job completed successfully", fg="green"))
-    elif job.status == "failed":
+        return 0
+    if job.status == "failed":
         click.echo(click.style("Job failed", fg="red"), err=True)
         if job.error_summary:
             click.echo(f"Error details: {job.error_summary}", err=True)
-        sys.exit(1)
-    elif job.status == "cancelled":
+        return 1
+    if job.status == "cancelled":
         click.echo(click.style("Job was cancelled", fg="yellow"))
+        return 0
+    return 0
