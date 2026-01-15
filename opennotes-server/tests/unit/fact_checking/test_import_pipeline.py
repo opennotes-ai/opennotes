@@ -93,6 +93,147 @@ class TestRatingNormalizer:
         """Test normalization of known rating values."""
         assert normalize_rating(input_rating) == expected
 
+    @pytest.mark.parametrize(
+        ("input_rating", "expected"),
+        [
+            ("Faux", "false"),
+            ("faux", "false"),
+            ("FAUX", "false"),
+            ("Vrai", "true"),
+            ("vrai", "true"),
+            ("Trompeur", "misleading"),
+            ("Plutôt Vrai", "mostly_true"),
+            ("Plutôt Faux", "mostly_false"),
+            ("C'est plus compliqué", "mixture"),
+            ("Partiellement faux", "mixture"),
+            ("Contexte manquant", "missing_context"),
+            ("Infondé", "unproven"),
+            ("Montage", "altered"),
+            ("Photomontage", "altered"),
+            ("Détourné", "out_of_context"),
+            ("Exagéré", "exaggerated"),
+            ("Arnaque", "scam"),
+        ],
+    )
+    def test_french_ratings(self, input_rating: str, expected: str) -> None:
+        """Test normalization of French rating values."""
+        assert normalize_rating(input_rating) == expected
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected"),
+        [
+            ("Falso", "false"),
+            ("Verdadero", "true"),
+            ("Engañoso", "misleading"),
+            ("Parcialmente falso", "mostly_false"),
+            ("Parcialmente verdadero", "mostly_true"),
+            ("Sin contexto", "missing_context"),
+            ("Sin pruebas", "unproven"),
+            ("Sátira", "satire"),
+            ("Estafa", "scam"),
+        ],
+    )
+    def test_spanish_ratings(self, input_rating: str, expected: str) -> None:
+        """Test normalization of Spanish rating values."""
+        assert normalize_rating(input_rating) == expected
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected"),
+        [
+            ("Falsch", "false"),
+            ("Wahr", "true"),
+            ("Irreführend", "misleading"),
+            ("Teilweise falsch", "mostly_false"),
+            ("Teilweise wahr", "mostly_true"),
+            ("Unbelegt", "unproven"),
+            ("Manipuliert", "altered"),
+            ("Fehlender Kontext", "missing_context"),
+        ],
+    )
+    def test_german_ratings(self, input_rating: str, expected: str) -> None:
+        """Test normalization of German rating values."""
+        assert normalize_rating(input_rating) == expected
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected"),
+        [
+            ("Verdadeiro", "true"),
+            ("Enganoso", "misleading"),
+            ("Parcialmente verdadeiro", "mostly_true"),
+            ("Sem provas", "unproven"),
+            ("Fora de contexto", "out_of_context"),
+        ],
+    )
+    def test_portuguese_ratings(self, input_rating: str, expected: str) -> None:
+        """Test normalization of Portuguese rating values."""
+        assert normalize_rating(input_rating) == expected
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected"),
+        [
+            ("Vero", "true"),
+            ("Fuorviante", "misleading"),
+            ("Parzialmente falso", "mostly_false"),
+            ("Parzialmente vero", "mostly_true"),
+            ("Senza prove", "unproven"),
+            ("Satira", "satire"),
+        ],
+    )
+    def test_italian_ratings(self, input_rating: str, expected: str) -> None:
+        """Test normalization of Italian rating values."""
+        assert normalize_rating(input_rating) == expected
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected"),
+        [
+            ("Vals", "false"),
+            ("Waar", "true"),
+            ("Misleidend", "misleading"),
+            ("Onbewezen", "unproven"),
+        ],
+    )
+    def test_dutch_ratings(self, input_rating: str, expected: str) -> None:
+        """Test normalization of Dutch rating values."""
+        assert normalize_rating(input_rating) == expected
+
+    @pytest.mark.parametrize(
+        ("input_rating", "expected"),
+        [
+            ("Missing Context", "missing_context"),
+            ("Needs Context", "missing_context"),
+            ("Altered", "altered"),
+            ("Digitally Altered", "altered"),
+            ("Manipulated", "altered"),
+            ("Doctored", "altered"),
+            ("Miscaptioned", "miscaptioned"),
+            ("Wrong Caption", "miscaptioned"),
+            ("Misattributed", "misattributed"),
+            ("Wrong Attribution", "misattributed"),
+            ("Correct Attribution", "correct_attribution"),
+            ("Labeled Satire", "satire"),
+            ("Originated as Satire", "satire"),
+            ("Scam", "scam"),
+            ("Fraud", "scam"),
+            ("Out of Context", "out_of_context"),
+            ("Taken Out of Context", "out_of_context"),
+            ("Exaggerated", "exaggerated"),
+            ("Exaggeration", "exaggerated"),
+            ("In Progress", "in_progress"),
+            ("Under Review", "in_progress"),
+            ("Explainer", "explainer"),
+            ("Full Flop", "flip"),
+            ("Half Flip", "flip"),
+            ("Recall", "recall"),
+            ("Fake", "false"),
+            ("Fabricated", "false"),
+            ("Unfounded", "unproven"),
+            ("No Evidence", "unproven"),
+        ],
+    )
+    def test_content_type_ratings(self, input_rating: str, expected: str) -> None:
+        """Test normalization of English content type ratings."""
+        assert normalize_rating(input_rating) == expected
+
     def test_none_input(self) -> None:
         """Test None input returns None."""
         assert normalize_rating(None) is None
