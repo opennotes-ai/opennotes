@@ -60,4 +60,4 @@ RUN pnpm install --frozen-lockfile --prod
 # Copy built application directly to /app/dist (matches package.json start script)
 COPY --from=builder /workspace/opennotes-discord/dist ./dist
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "--require", "./dist/instrumentation.cjs", "dist/index.js"]
