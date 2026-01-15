@@ -78,6 +78,7 @@ def validate_and_normalize_batch(
     candidates: list[NormalizedCandidate] = []
     errors: list[str] = []
 
+    batch_prefix = f"Batch {batch_num}, " if batch_num is not None else ""
     for row in rows:
         try:
             claim_review = ClaimReviewRow(**row)
@@ -85,10 +86,10 @@ def validate_and_normalize_batch(
             candidates.append(candidate)
         except ValidationError as e:
             row_id = row.get("id", "unknown")
-            errors.append(f"Row {row_id}: {e}")
+            errors.append(f"{batch_prefix}Row {row_id}: {e}")
         except Exception as e:
             row_id = row.get("id", "unknown")
-            errors.append(f"Row {row_id}: Unexpected error - {e}")
+            errors.append(f"{batch_prefix}Row {row_id}: Unexpected error - {e}")
 
     output_count = len(candidates) + len(errors)
     if output_count != input_count:
@@ -213,7 +214,7 @@ async def import_fact_check_bureau(
             logger.info(f"Loaded {stats.total_rows} rows from CSV")
 
             for batch_num, batch in enumerate(batched(iter(rows), batch_size)):
-                candidates, errors = validate_and_normalize_batch(batch)
+                candidates, errors = validate_and_normalize_batch(batch, batch_num=batch_num)
                 stats.valid_rows += len(candidates)
                 stats.invalid_rows += len(errors)
 

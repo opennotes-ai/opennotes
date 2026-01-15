@@ -781,3 +781,25 @@ class TestValidateAndNormalizeBatchRowAccounting:
         candidates, errors = validate_and_normalize_batch(rows, batch_num=42)
 
         assert len(candidates) + len(errors) == 1
+
+    def test_error_messages_include_batch_num(self) -> None:
+        """Test that error messages include batch_num when provided."""
+        from src.fact_checking.import_pipeline.importer import validate_and_normalize_batch
+
+        rows = [{"id": "bad_row"}]
+        _, errors = validate_and_normalize_batch(rows, batch_num=5)
+
+        assert len(errors) == 1
+        assert "Batch 5, " in errors[0]
+        assert "Row bad_row" in errors[0]
+
+    def test_error_messages_without_batch_num(self) -> None:
+        """Test that error messages work without batch_num."""
+        from src.fact_checking.import_pipeline.importer import validate_and_normalize_batch
+
+        rows = [{"id": "bad_row"}]
+        _, errors = validate_and_normalize_batch(rows, batch_num=None)
+
+        assert len(errors) == 1
+        assert "Batch" not in errors[0]
+        assert "Row bad_row" in errors[0]

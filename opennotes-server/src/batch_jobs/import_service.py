@@ -30,6 +30,17 @@ LOCK_OPERATION_SCRAPE = "scrape"
 LOCK_OPERATION_PROMOTE = "promote"
 
 
+class ConcurrentJobError(Exception):
+    """Raised when attempting to start a job while another job of the same type is running."""
+
+    def __init__(self, job_type: str) -> None:
+        self.job_type = job_type
+        super().__init__(
+            f"A {job_type} job is already in progress. "
+            "Please wait for it to complete before starting a new one."
+        )
+
+
 class ImportBatchJobService:
     """
     Service for managing fact-check import batch jobs.
@@ -78,7 +89,7 @@ class ImportBatchJobService:
             The created BatchJob (in PENDING status)
 
         Raises:
-            RuntimeError: If a lock manager is configured and a job is already running
+            ConcurrentJobError: If a lock manager is configured and a job is already running
         """
         from src.tasks.import_tasks import process_fact_check_import  # noqa: PLC0415
 
@@ -87,10 +98,7 @@ class ImportBatchJobService:
         if self._lock_manager is not None:
             lock_acquired = await self._lock_manager.acquire_lock(LOCK_OPERATION_IMPORT)
             if not lock_acquired:
-                raise RuntimeError(
-                    "An import job is already in progress. "
-                    "Please wait for it to complete before starting a new one."
-                )
+                raise ConcurrentJobError(LOCK_OPERATION_IMPORT)
 
         try:
             metadata = {
@@ -133,6 +141,7 @@ class ImportBatchJobService:
                 enqueue_scrapes=enqueue_scrapes,
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
+                lock_operation=LOCK_OPERATION_IMPORT if self._lock_manager else None,
             )
         except Exception as e:
             await self._batch_job_service.fail_job(
@@ -181,7 +190,7 @@ class ImportBatchJobService:
             The created BatchJob (in PENDING status)
 
         Raises:
-            RuntimeError: If a lock manager is configured and a job is already running
+            ConcurrentJobError: If a lock manager is configured and a job is already running
         """
         from src.tasks.import_tasks import process_scrape_batch  # noqa: PLC0415
 
@@ -190,10 +199,7 @@ class ImportBatchJobService:
         if self._lock_manager is not None:
             lock_acquired = await self._lock_manager.acquire_lock(LOCK_OPERATION_SCRAPE)
             if not lock_acquired:
-                raise RuntimeError(
-                    "A scrape job is already in progress. "
-                    "Please wait for it to complete before starting a new one."
-                )
+                raise ConcurrentJobError(LOCK_OPERATION_SCRAPE)
 
         try:
             metadata = {
@@ -232,6 +238,7 @@ class ImportBatchJobService:
                 dry_run=dry_run,
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
+                lock_operation=LOCK_OPERATION_SCRAPE if self._lock_manager else None,
             )
         except Exception as e:
             await self._batch_job_service.fail_job(
@@ -268,7 +275,7 @@ class ImportBatchJobService:
             The created BatchJob (in PENDING status)
 
         Raises:
-            RuntimeError: If a lock manager is configured and a job is already running
+            ConcurrentJobError: If a lock manager is configured and a job is already running
         """
         from src.tasks.import_tasks import process_promotion_batch  # noqa: PLC0415
 
@@ -277,10 +284,7 @@ class ImportBatchJobService:
         if self._lock_manager is not None:
             lock_acquired = await self._lock_manager.acquire_lock(LOCK_OPERATION_PROMOTE)
             if not lock_acquired:
-                raise RuntimeError(
-                    "A promotion job is already in progress. "
-                    "Please wait for it to complete before starting a new one."
-                )
+                raise ConcurrentJobError(LOCK_OPERATION_PROMOTE)
 
         try:
             metadata = {
@@ -319,6 +323,7 @@ class ImportBatchJobService:
                 dry_run=dry_run,
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
+                lock_operation=LOCK_OPERATION_PROMOTE if self._lock_manager else None,
             )
         except Exception as e:
             await self._batch_job_service.fail_job(

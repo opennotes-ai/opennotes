@@ -17,6 +17,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
+pytestmark = pytest.mark.unit
+
 
 class TestHelperFunctions:
     """Test helper functions for job state management."""

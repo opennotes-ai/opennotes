@@ -15,33 +15,9 @@ from uuid import uuid4
 
 import pytest
 
+from .conftest import create_mock_session_context, create_mock_settings
+
 pytestmark = pytest.mark.unit
-
-
-def create_mock_settings():
-    """Create mock settings for tests."""
-    settings = MagicMock()
-    settings.DB_POOL_SIZE = 5
-    settings.DB_POOL_MAX_OVERFLOW = 10
-    settings.DB_POOL_TIMEOUT = 30
-    settings.DB_POOL_RECYCLE = 1800
-    return settings
-
-
-def create_mock_session_context(mock_db):
-    """Create a mock async session context manager that works with multiple context entries."""
-
-    class MockSessionContextManager:
-        async def __aenter__(self):
-            return mock_db
-
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            return None
-
-    mock_session_maker = MagicMock()
-    mock_session_maker.return_value = MockSessionContextManager()
-    mock_session_maker.side_effect = lambda: MockSessionContextManager()
-    return mock_session_maker
 
 
 def create_flexible_execute_mock(
@@ -63,10 +39,11 @@ def create_flexible_execute_mock(
         result = MagicMock()
 
         query_str = str(query)
+        query_lower = query_str.lower()
 
-        if "count" in query_str.lower():
+        if "count(" in query_lower:
             result.scalar_one.return_value = total_count
-        elif "update" in query_str.lower():
+        elif query_lower.strip().startswith("update") or "set status" in query_lower:
             result.rowcount = 1
         else:
 
@@ -169,44 +146,19 @@ class TestScrapeBatchProcessing:
         """Scrape failures are marked as failed but processing continues."""
         job_id = str(uuid4())
 
+        candidate1_id = uuid4()
+        candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id, "https://example.com/good"),
+            (candidate2_id, "https://example.com/bad"),
+        ]
+
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
-
-        candidate1 = MagicMock()
-        candidate1.id = uuid4()
-        candidate1.source_url = "https://example.com/good"
-
-        candidate2 = MagicMock()
-        candidate2.id = uuid4()
-        candidate2.source_url = "https://example.com/bad"
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 2
-
-        mock_candidates_result = MagicMock()
-        call_count = [0]
-
-        def mock_scalars():
-            result = MagicMock()
-            if call_count[0] == 0:
-                result.all.return_value = [candidate1, candidate2]
-            else:
-                result.all.return_value = []
-            call_count[0] += 1
-            return result
-
-        mock_candidates_result.scalars = mock_scalars
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_count_result,
-                mock_candidates_result,
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                mock_candidates_result,
-            ]
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=2,
+            candidate_rows=candidate_rows,
+            batch_exhausted_after=1,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -350,50 +302,21 @@ class TestScrapeBatchJobCompletion:
         """Job completes with accurate statistics in metadata."""
         job_id = str(uuid4())
 
+        candidate1_id = uuid4()
+        candidate2_id = uuid4()
+        candidate3_id = uuid4()
+        candidate_rows = [
+            (candidate1_id, "https://example.com/1"),
+            (candidate2_id, "https://example.com/2"),
+            (candidate3_id, "https://example.com/fail"),
+        ]
+
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
-
-        candidate1 = MagicMock()
-        candidate1.id = uuid4()
-        candidate1.source_url = "https://example.com/1"
-
-        candidate2 = MagicMock()
-        candidate2.id = uuid4()
-        candidate2.source_url = "https://example.com/2"
-
-        candidate3 = MagicMock()
-        candidate3.id = uuid4()
-        candidate3.source_url = "https://example.com/fail"
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 3
-
-        mock_candidates_result = MagicMock()
-        call_count = [0]
-
-        def mock_scalars():
-            result = MagicMock()
-            if call_count[0] == 0:
-                result.all.return_value = [candidate1, candidate2, candidate3]
-            else:
-                result.all.return_value = []
-            call_count[0] += 1
-            return result
-
-        mock_candidates_result.scalars = mock_scalars
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_count_result,
-                mock_candidates_result,
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                mock_candidates_result,
-            ]
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=3,
+            candidate_rows=candidate_rows,
+            batch_exhausted_after=1,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -484,6 +407,9 @@ class TestScrapeBatchFailureHandling:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         mock_db.execute = AsyncMock(side_effect=Exception("Database connection lost"))
 
@@ -520,14 +446,16 @@ class TestScrapeBatchFailureHandling:
 
             mock_batch_job_service.fail_job.assert_called_once()
             call_args = mock_batch_job_service.fail_job.call_args
-            error_summary = call_args[1]["error_summary"]
+            error_summary = call_args[0][1]
             assert "exception" in error_summary
             assert error_summary["exception"] == "Database connection lost"
             assert "exception_type" in error_summary
             assert error_summary["exception_type"] == "Exception"
             assert "partial_stats" in error_summary
-            assert call_args[1]["completed_tasks"] == 0
-            assert call_args[1]["failed_tasks"] == 0
+            completed_tasks = call_args[0][2]
+            failed_tasks = call_args[0][3]
+            assert completed_tasks == 0
+            assert failed_tasks == 0
 
     @pytest.mark.asyncio
     async def test_resources_cleaned_up_on_failure(self):
@@ -548,6 +476,9 @@ class TestScrapeBatchFailureHandling:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.start_job = AsyncMock(side_effect=Exception("Start job failed"))
         mock_batch_job_service.fail_job = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         mock_engine_instance = MagicMock()
         mock_engine_instance.dispose = AsyncMock()
@@ -596,14 +527,11 @@ class TestScrapeBatchNoCandidates:
 
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 0
-
-        empty_candidates_result = MagicMock()
-        empty_candidates_result.scalars.return_value.all.return_value = []
-
-        mock_db.execute = AsyncMock(side_effect=[mock_count_result, empty_candidates_result])
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=0,
+            candidate_rows=[],
+            batch_exhausted_after=0,
+        )
 
         mock_session_maker = create_mock_session_context(mock_db)
 
@@ -671,3 +599,53 @@ class TestScrapeBatchTaskLabels:
         _, labels = registered_tasks["scrape:candidates"]
         assert labels.get("component") == "import_pipeline"
         assert labels.get("task_type") == "batch"
+
+
+class TestScrapeBatchRaceConditionPrevention:
+    """Test that status is updated atomically within FOR UPDATE lock session.
+
+    The race condition fix ensures:
+    1. SELECT ... FOR UPDATE SKIP LOCKED (acquire lock)
+    2. UPDATE ... SET status='scraping' (while still holding lock)
+    3. COMMIT (release lock atomically with status change)
+
+    This test verifies the fix by checking that:
+    - The code path includes both SELECT FOR UPDATE and UPDATE queries
+    - Status update to SCRAPING happens before lock is released
+    """
+
+    def test_scrape_batch_updates_status_in_for_update_session(self):
+        """Verify process_scrape_batch updates status within the FOR UPDATE session.
+
+        We inspect the source code to confirm the fix is in place:
+        - The UPDATE statement must be inside the `async with async_session() as db:` block
+        - The UPDATE must use CandidateStatus.SCRAPING
+        - The UPDATE must happen BEFORE db.commit() which releases the lock
+        """
+        import inspect
+
+        from src.tasks.import_tasks import process_scrape_batch
+
+        source = inspect.getsource(process_scrape_batch._func)
+
+        scraping_in_update = source.find(".values(status=CandidateStatus.SCRAPING")
+        assert scraping_in_update != -1, (
+            "Code should update status to SCRAPING in a values() call. "
+            "This prevents race conditions by marking candidates before releasing lock."
+        )
+
+        for_update_pos = source.find("with_for_update")
+
+        assert for_update_pos < scraping_in_update, (
+            "SCRAPING status update should come after FOR UPDATE query is defined"
+        )
+
+        commit_search_start = source.find("with_for_update")
+        commit_in_session = source.find("await db.commit()", commit_search_start)
+        scraping_in_session = source.find(
+            ".values(status=CandidateStatus.SCRAPING", commit_search_start
+        )
+
+        assert scraping_in_session < commit_in_session, (
+            "Status update to SCRAPING must happen BEFORE commit (which releases the lock)"
+        )

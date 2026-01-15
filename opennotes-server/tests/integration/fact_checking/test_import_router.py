@@ -20,6 +20,7 @@ from httpx import ASGITransport, AsyncClient
 
 from src.auth.auth import create_access_token
 from src.auth.models import APIKeyCreate
+from src.batch_jobs.import_service import ConcurrentJobError
 from src.batch_jobs.models import BatchJob, BatchJobStatus
 from src.fact_checking.import_pipeline.router import get_import_service
 from src.main import app
@@ -297,6 +298,33 @@ class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
         finally:
             app.dependency_overrides.pop(get_import_service, None)
 
+    @pytest.mark.asyncio
+    async def test_scrape_candidates_returns_409_when_job_already_running(
+        self,
+        auth_headers,
+    ):
+        """Returns 409 Conflict when a scrape job is already in progress."""
+        mock_service = MagicMock()
+        mock_service.start_scrape_job = AsyncMock(side_effect=ConcurrentJobError("scrape"))
+
+        app.dependency_overrides[get_import_service] = lambda: mock_service
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/import/scrape-candidates",
+                    json={"batch_size": 100, "dry_run": False},
+                    headers=auth_headers,
+                )
+
+                assert response.status_code == 409
+                data = response.json()
+                assert "detail" in data
+                assert "scrape" in data["detail"].lower()
+                assert "already in progress" in data["detail"].lower()
+        finally:
+            app.dependency_overrides.pop(get_import_service, None)
+
 
 @pytest.mark.integration
 class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
@@ -488,5 +516,32 @@ class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
                 )
 
                 assert response.status_code == 500
+        finally:
+            app.dependency_overrides.pop(get_import_service, None)
+
+    @pytest.mark.asyncio
+    async def test_promote_candidates_returns_409_when_job_already_running(
+        self,
+        auth_headers,
+    ):
+        """Returns 409 Conflict when a promotion job is already in progress."""
+        mock_service = MagicMock()
+        mock_service.start_promotion_job = AsyncMock(side_effect=ConcurrentJobError("promote"))
+
+        app.dependency_overrides[get_import_service] = lambda: mock_service
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/import/promote-candidates",
+                    json={"batch_size": 100, "dry_run": False},
+                    headers=auth_headers,
+                )
+
+                assert response.status_code == 409
+                data = response.json()
+                assert "detail" in data
+                assert "promote" in data["detail"].lower()
+                assert "already in progress" in data["detail"].lower()
         finally:
             app.dependency_overrides.pop(get_import_service, None)

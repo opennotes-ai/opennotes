@@ -40,6 +40,7 @@ from src.fact_checking.import_pipeline.scrape_tasks import (
     enqueue_scrape_batch,
     scrape_url_content,
 )
+from src.fact_checking.rechunk_lock import TaskRechunkLockManager
 from src.monitoring import get_logger
 from src.tasks.broker import register_task
 
@@ -48,6 +49,42 @@ _tracer = trace.get_tracer(__name__)
 
 MAX_STORED_ERRORS = 50
 SCRAPING_TIMEOUT_MINUTES = 30
+
+
+async def _release_job_lock(
+    redis_client: RedisClient,
+    lock_operation: str | None,
+    job_id: str,
+) -> None:
+    """Release a job lock if lock_operation is specified.
+
+    Called in finally blocks to ensure locks are released on task completion.
+    """
+    if lock_operation is None:
+        return
+
+    try:
+        lock_manager = TaskRechunkLockManager(redis_client)
+        released = await lock_manager.release_lock(lock_operation)
+        if released:
+            logger.info(
+                "Released job lock",
+                extra={"job_id": job_id, "lock_operation": lock_operation},
+            )
+        else:
+            logger.warning(
+                "Lock was already released or did not exist",
+                extra={"job_id": job_id, "lock_operation": lock_operation},
+            )
+    except Exception as e:
+        logger.error(
+            "Failed to release job lock",
+            extra={
+                "job_id": job_id,
+                "lock_operation": lock_operation,
+                "error": str(e),
+            },
+        )
 
 
 def _check_row_accounting(
@@ -254,6 +291,7 @@ async def process_fact_check_import(
     enqueue_scrapes: bool,
     db_url: str,
     redis_url: str,
+    lock_operation: str | None = None,
 ) -> dict[str, Any]:
     """
     TaskIQ task to process fact-check bureau import.
@@ -266,6 +304,7 @@ async def process_fact_check_import(
     5. Updates progress after each batch
     6. Marks job as COMPLETED or FAILED
     7. Optionally enqueues scrape tasks for imported candidates
+    8. Releases the job lock (if lock_operation provided)
 
     Args:
         job_id: UUID string of the BatchJob for status tracking
@@ -274,6 +313,7 @@ async def process_fact_check_import(
         enqueue_scrapes: If True, enqueue scrape tasks after import
         db_url: Database connection URL
         redis_url: Redis connection URL for progress tracking
+        lock_operation: Lock operation name to release on completion (optional)
 
     Returns:
         dict with status and import stats
@@ -509,6 +549,7 @@ async def process_fact_check_import(
             raise
 
         finally:
+            await _release_job_lock(redis_client, lock_operation, job_id)
             await redis_client.disconnect()
             await engine.dispose()
 
@@ -524,6 +565,7 @@ async def process_scrape_batch(
     dry_run: bool,
     db_url: str,
     redis_url: str,
+    lock_operation: str | None = None,
 ) -> dict[str, Any]:
     """
     TaskIQ task to process scraping of pending candidates.
@@ -537,6 +579,7 @@ async def process_scrape_batch(
     6. For each candidate: scrapes content (non-blocking) and updates status
     7. Tracks progress via BatchJob infrastructure
     8. Marks job as COMPLETED or FAILED
+    9. Releases the job lock (if lock_operation provided)
 
     Args:
         job_id: UUID string of the BatchJob for status tracking
@@ -544,6 +587,7 @@ async def process_scrape_batch(
         dry_run: If True, count candidates but don't scrape
         db_url: Database connection URL
         redis_url: Redis connection URL for progress tracking
+        lock_operation: Lock operation name to release on completion (optional)
 
     Returns:
         dict with status and scrape stats
@@ -649,15 +693,15 @@ async def process_scrape_batch(
                     if not candidate_rows:
                         break
 
-                for candidate_id, source_url in candidate_rows:
-                    async with async_session() as db:
-                        await db.execute(
-                            update(FactCheckedItemCandidate)
-                            .where(FactCheckedItemCandidate.id == candidate_id)
-                            .values(status=CandidateStatus.SCRAPING.value)
-                        )
-                        await db.commit()
+                    candidate_ids = [row[0] for row in candidate_rows]
+                    await db.execute(
+                        update(FactCheckedItemCandidate)
+                        .where(FactCheckedItemCandidate.id.in_(candidate_ids))
+                        .values(status=CandidateStatus.SCRAPING.value)
+                    )
+                    await db.commit()
 
+                for candidate_id, source_url in candidate_rows:
                     content = await asyncio.to_thread(scrape_url_content, source_url)
 
                     async with async_session() as db:
@@ -793,6 +837,7 @@ async def process_scrape_batch(
             raise
 
         finally:
+            await _release_job_lock(redis_client, lock_operation, job_id)
             await redis_client.disconnect()
             await engine.dispose()
 
@@ -808,6 +853,7 @@ async def process_promotion_batch(
     dry_run: bool,
     db_url: str,
     redis_url: str,
+    lock_operation: str | None = None,
 ) -> dict[str, Any]:
     """
     TaskIQ task to promote scraped candidates to fact_check_items.
@@ -820,6 +866,7 @@ async def process_promotion_batch(
     5. For each candidate: calls promote_candidate to create fact_check_item
     6. Tracks progress via BatchJob infrastructure
     7. Marks job as COMPLETED or FAILED
+    8. Releases the job lock (if lock_operation provided)
 
     Args:
         job_id: UUID string of the BatchJob for status tracking
@@ -827,6 +874,7 @@ async def process_promotion_batch(
         dry_run: If True, count candidates but don't promote
         db_url: Database connection URL
         redis_url: Redis connection URL for progress tracking
+        lock_operation: Lock operation name to release on completion (optional)
 
     Returns:
         dict with status and promotion stats
@@ -865,8 +913,8 @@ async def process_promotion_batch(
                     select(func.count())
                     .select_from(FactCheckedItemCandidate)
                     .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
-                    .where(FactCheckedItemCandidate.content.isnot(None))
-                    .where(FactCheckedItemCandidate.rating.isnot(None))
+                    .where(FactCheckedItemCandidate.content.is_not(None))
+                    .where(FactCheckedItemCandidate.rating.is_not(None))
                 )
                 count_result = await db.execute(count_query)
                 total_candidates = count_result.scalar_one()
@@ -916,8 +964,8 @@ async def process_promotion_batch(
                     candidates_query = (
                         select(FactCheckedItemCandidate.id)
                         .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
-                        .where(FactCheckedItemCandidate.content.isnot(None))
-                        .where(FactCheckedItemCandidate.rating.isnot(None))
+                        .where(FactCheckedItemCandidate.content.is_not(None))
+                        .where(FactCheckedItemCandidate.rating.is_not(None))
                         .limit(batch_size)
                         .with_for_update(skip_locked=True)
                     )
@@ -926,6 +974,13 @@ async def process_promotion_batch(
 
                     if not candidate_ids:
                         break
+
+                    await db.execute(
+                        update(FactCheckedItemCandidate)
+                        .where(FactCheckedItemCandidate.id.in_(candidate_ids))
+                        .values(status=CandidateStatus.PROMOTING.value)
+                    )
+                    await db.commit()
 
                 for candidate_id in candidate_ids:
                     async with async_session() as db:
@@ -1042,5 +1097,6 @@ async def process_promotion_batch(
             raise
 
         finally:
+            await _release_job_lock(redis_client, lock_operation, job_id)
             await redis_client.disconnect()
             await engine.dispose()

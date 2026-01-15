@@ -15,23 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-
-def create_mock_settings():
-    """Create mock settings for tests."""
-    settings = MagicMock()
-    settings.DB_POOL_SIZE = 5
-    settings.DB_POOL_MAX_OVERFLOW = 10
-    settings.DB_POOL_TIMEOUT = 30
-    settings.DB_POOL_RECYCLE = 1800
-    return settings
-
-
-def create_mock_session_context(mock_db):
-    """Create a mock async session context manager."""
-    mock_session_maker = MagicMock()
-    mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-    mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
-    return mock_session_maker
+from .conftest import create_mock_session_context, create_mock_settings
 
 
 @pytest.mark.unit
@@ -58,10 +42,14 @@ class TestPromotionBatchProcessing:
         mock_candidates_result_empty = MagicMock()
         mock_candidates_result_empty.fetchall.return_value = []
 
+        mock_update_result = MagicMock()
+        mock_update_result.rowcount = 2
+
         mock_db.execute = AsyncMock(
             side_effect=[
                 mock_count_result,
                 mock_candidates_result_first,
+                mock_update_result,
                 mock_candidates_result_empty,
             ]
         )
@@ -138,10 +126,14 @@ class TestPromotionBatchProcessing:
         mock_candidates_result_empty = MagicMock()
         mock_candidates_result_empty.fetchall.return_value = []
 
+        mock_update_result = MagicMock()
+        mock_update_result.rowcount = 2
+
         mock_db.execute = AsyncMock(
             side_effect=[
                 mock_count_result,
                 mock_candidates_result_first,
+                mock_update_result,
                 mock_candidates_result_empty,
             ]
         )
@@ -300,10 +292,14 @@ class TestPromotionBatchJobCompletion:
         mock_candidates_result_empty = MagicMock()
         mock_candidates_result_empty.fetchall.return_value = []
 
+        mock_update_result = MagicMock()
+        mock_update_result.rowcount = 3
+
         mock_db.execute = AsyncMock(
             side_effect=[
                 mock_count_result,
                 mock_candidates_result_first,
+                mock_update_result,
                 mock_candidates_result_empty,
             ]
         )
@@ -393,6 +389,9 @@ class TestPromotionBatchFailureHandling:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         mock_db.execute = AsyncMock(side_effect=Exception("Database connection lost"))
 
@@ -443,6 +442,9 @@ class TestPromotionBatchFailureHandling:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.start_job = AsyncMock(side_effect=Exception("Start job failed"))
         mock_batch_job_service.fail_job = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         mock_engine_instance = MagicMock()
         mock_engine_instance.dispose = AsyncMock()
@@ -567,10 +569,14 @@ class TestPromotionBatchRaceConditions:
         mock_candidates_result_empty = MagicMock()
         mock_candidates_result_empty.fetchall.return_value = []
 
+        mock_update_result = MagicMock()
+        mock_update_result.rowcount = 2
+
         mock_db.execute = AsyncMock(
             side_effect=[
                 mock_count_result,
                 mock_candidates_result_first,
+                mock_update_result,
                 mock_candidates_result_empty,
             ]
         )
@@ -652,10 +658,14 @@ class TestPromotionBatchExceptionHandling:
         mock_candidates_result_empty = MagicMock()
         mock_candidates_result_empty.fetchall.return_value = []
 
+        mock_update_result = MagicMock()
+        mock_update_result.rowcount = 2
+
         mock_db.execute = AsyncMock(
             side_effect=[
                 mock_count_result,
                 mock_candidates_result_first,
+                mock_update_result,
                 mock_candidates_result_empty,
             ]
         )
@@ -731,3 +741,52 @@ class TestPromotionBatchTaskLabels:
         _, labels = _all_registered_tasks["promote:candidates"]
         assert labels.get("component") == "import_pipeline"
         assert labels.get("task_type") == "batch"
+
+
+@pytest.mark.unit
+class TestPromotionBatchRaceConditionPrevention:
+    """Test that status is updated atomically within FOR UPDATE lock session.
+
+    The race condition fix ensures:
+    1. SELECT ... FOR UPDATE SKIP LOCKED (acquire lock)
+    2. UPDATE ... SET status='promoting' (while still holding lock)
+    3. COMMIT (release lock atomically with status change)
+
+    This test verifies the fix by checking that:
+    - The code path includes both SELECT FOR UPDATE and UPDATE queries
+    - Status update to PROMOTING happens before lock is released
+    """
+
+    def test_promotion_batch_updates_status_in_for_update_session(self):
+        """Verify process_promotion_batch updates status within the FOR UPDATE session.
+
+        We inspect the source code to confirm the fix is in place:
+        - The UPDATE statement must be inside the `async with async_session() as db:` block
+        - The UPDATE must use CandidateStatus.PROMOTING
+        - The UPDATE must happen BEFORE db.commit() which releases the lock
+        """
+        import inspect
+
+        from src.tasks.import_tasks import process_promotion_batch
+
+        source = inspect.getsource(process_promotion_batch._func)
+
+        assert "CandidateStatus.PROMOTING" in source, (
+            "Code should update status to PROMOTING. "
+            "This prevents race conditions by marking candidates before releasing lock."
+        )
+
+        promoting_pos = source.find("CandidateStatus.PROMOTING")
+        for_update_pos = source.find("with_for_update")
+
+        assert for_update_pos < promoting_pos, (
+            "PROMOTING status update should come after FOR UPDATE query is defined"
+        )
+
+        commit_search_start = source.find("with_for_update")
+        commit_in_session = source.find("await db.commit()", commit_search_start)
+        promoting_in_session = source.find("CandidateStatus.PROMOTING", commit_search_start)
+
+        assert promoting_in_session < commit_in_session, (
+            "Status update to PROMOTING must happen BEFORE commit (which releases the lock)"
+        )

@@ -6,12 +6,12 @@ Import operations run asynchronously via BatchJob infrastructure.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
-from src.batch_jobs.import_service import ImportBatchJobService
+from src.batch_jobs.import_service import ConcurrentJobError, ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.database import get_db
 from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
@@ -83,6 +83,9 @@ def get_import_service(
     description="Start an asynchronous import of the fact-check-bureau dataset from "
     "HuggingFace. Returns immediately with a BatchJob that can be polled for status. "
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        409: {"description": "An import job is already in progress"},
+    },
 )
 async def import_fact_check_bureau_endpoint(
     request: ImportFactCheckBureauRequest,
@@ -107,6 +110,9 @@ async def import_fact_check_bureau_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 409 Conflict if an import job is already running.
     """
     logger.info(
         "Starting import job",
@@ -118,12 +124,25 @@ async def import_fact_check_bureau_endpoint(
         },
     )
 
-    job = await service.start_import_job(
-        batch_size=request.batch_size,
-        dry_run=request.dry_run,
-        enqueue_scrapes=request.enqueue_scrapes,
-        user_id=str(current_user.id),
-    )
+    try:
+        job = await service.start_import_job(
+            batch_size=request.batch_size,
+            dry_run=request.dry_run,
+            enqueue_scrapes=request.enqueue_scrapes,
+            user_id=str(current_user.id),
+        )
+    except ConcurrentJobError as e:
+        logger.warning(
+            "Import job blocked by concurrent job",
+            extra={
+                "user_id": str(current_user.id),
+                "job_type": e.job_type,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        ) from e
 
     logger.info(
         "Import job created",
@@ -188,6 +207,9 @@ async def enqueue_scrapes_endpoint(
     description="Start an asynchronous batch job to scrape content for pending candidates. "
     "Returns immediately with a BatchJob that can be polled for status. "
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        409: {"description": "A scrape job is already in progress"},
+    },
 )
 async def scrape_candidates_endpoint(
     request: BatchProcessingRequest,
@@ -212,6 +234,9 @@ async def scrape_candidates_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 409 Conflict if a scrape job is already running.
     """
     logger.info(
         "Starting scrape candidates job",
@@ -222,11 +247,24 @@ async def scrape_candidates_endpoint(
         },
     )
 
-    job = await service.start_scrape_job(
-        batch_size=request.batch_size,
-        dry_run=request.dry_run,
-        user_id=str(current_user.id),
-    )
+    try:
+        job = await service.start_scrape_job(
+            batch_size=request.batch_size,
+            dry_run=request.dry_run,
+            user_id=str(current_user.id),
+        )
+    except ConcurrentJobError as e:
+        logger.warning(
+            "Scrape job blocked by concurrent job",
+            extra={
+                "user_id": str(current_user.id),
+                "job_type": e.job_type,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        ) from e
 
     logger.info(
         "Scrape candidates job created",
@@ -247,6 +285,9 @@ async def scrape_candidates_endpoint(
     description="Start an asynchronous batch job to promote scraped candidates to fact-check items. "
     "Returns immediately with a BatchJob that can be polled for status. "
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        409: {"description": "A promotion job is already in progress"},
+    },
 )
 async def promote_candidates_endpoint(
     request: BatchProcessingRequest,
@@ -271,6 +312,9 @@ async def promote_candidates_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 409 Conflict if a promotion job is already running.
     """
     logger.info(
         "Starting promote candidates job",
@@ -281,11 +325,24 @@ async def promote_candidates_endpoint(
         },
     )
 
-    job = await service.start_promotion_job(
-        batch_size=request.batch_size,
-        dry_run=request.dry_run,
-        user_id=str(current_user.id),
-    )
+    try:
+        job = await service.start_promotion_job(
+            batch_size=request.batch_size,
+            dry_run=request.dry_run,
+            user_id=str(current_user.id),
+        )
+    except ConcurrentJobError as e:
+        logger.warning(
+            "Promotion job blocked by concurrent job",
+            extra={
+                "user_id": str(current_user.id),
+                "job_type": e.job_type,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        ) from e
 
     logger.info(
         "Promote candidates job created",

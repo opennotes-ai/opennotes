@@ -33,7 +33,7 @@ def _validate_candidate_for_promotion(
     if not candidate.rating:
         return f"Cannot promote candidate without human-approved rating: {candidate_id}"
 
-    if candidate.status != CandidateStatus.SCRAPED.value:
+    if candidate.status not in (CandidateStatus.SCRAPED.value, CandidateStatus.PROMOTING.value):
         return f"Cannot promote candidate with status {candidate.status}: {candidate_id}"
 
     return None
@@ -131,8 +131,8 @@ async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> 
     result = await session.execute(
         select(FactCheckedItemCandidate.id)
         .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
-        .where(FactCheckedItemCandidate.content.isnot(None))
-        .where(FactCheckedItemCandidate.rating.isnot(None))
+        .where(FactCheckedItemCandidate.content.is_not(None))
+        .where(FactCheckedItemCandidate.rating.is_not(None))
         .limit(batch_size)
     )
     candidate_ids = [row[0] for row in result.fetchall()]

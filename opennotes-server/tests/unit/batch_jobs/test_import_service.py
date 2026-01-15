@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.batch_jobs.import_service import ImportBatchJobService
+from src.batch_jobs.import_service import ConcurrentJobError, ImportBatchJobService
 from src.batch_jobs.models import BatchJob
 
 
@@ -138,6 +138,7 @@ class TestStartScrapeJob:
             dry_run=True,
             db_url="postgresql://test",
             redis_url="redis://test",
+            lock_operation=None,
         )
 
     @pytest.mark.asyncio
@@ -283,6 +284,7 @@ class TestStartPromotionJob:
             dry_run=True,
             db_url="postgresql://test",
             redis_url="redis://test",
+            lock_operation=None,
         )
 
     @pytest.mark.asyncio
@@ -499,10 +501,10 @@ class TestLockManager:
         mock_lock_manager,
         mock_session,
     ):
-        """start_scrape_job raises RuntimeError if lock cannot be acquired."""
+        """start_scrape_job raises ConcurrentJobError if lock cannot be acquired."""
         mock_lock_manager.acquire_lock.return_value = False
 
-        with pytest.raises(RuntimeError, match="scrape job is already in progress"):
+        with pytest.raises(ConcurrentJobError, match="scrape job is already in progress"):
             await import_service_with_lock.start_scrape_job()
 
         mock_batch_job_service.create_job.assert_not_called()
@@ -575,10 +577,10 @@ class TestLockManager:
         mock_lock_manager,
         mock_session,
     ):
-        """start_promotion_job raises RuntimeError if lock cannot be acquired."""
+        """start_promotion_job raises ConcurrentJobError if lock cannot be acquired."""
         mock_lock_manager.acquire_lock.return_value = False
 
-        with pytest.raises(RuntimeError, match="promotion job is already in progress"):
+        with pytest.raises(ConcurrentJobError, match="promote job is already in progress"):
             await import_service_with_lock.start_promotion_job()
 
         mock_batch_job_service.create_job.assert_not_called()
@@ -636,3 +638,129 @@ class TestLockManager:
 
         mock_lock_manager.release_lock.assert_called_once_with("scrape")
         mock_task.kiq.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_scrape_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_scrape_job_passes_lock_operation_to_task(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_scrape_job passes lock_operation to task when lock manager configured.
+
+        This enables the background task to release the lock when it completes.
+        """
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service_with_lock.start_scrape_job()
+
+        mock_task.kiq.assert_called_once()
+        call_kwargs = mock_task.kiq.call_args[1]
+        assert call_kwargs["lock_operation"] == "scrape"
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_promotion_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_promotion_job_passes_lock_operation_to_task(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_promotion_job passes lock_operation to task when lock manager configured.
+
+        This enables the background task to release the lock when it completes.
+        """
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service_with_lock.start_promotion_job()
+
+        mock_task.kiq.assert_called_once()
+        call_kwargs = mock_task.kiq.call_args[1]
+        assert call_kwargs["lock_operation"] == "promote"
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_scrape_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_scrape_job_does_not_release_lock_on_success(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_scrape_job does NOT release lock on successful dispatch.
+
+        The lock is released by the background task when it completes, not by
+        the service method. This ensures the lock is held until the job finishes.
+        """
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service_with_lock.start_scrape_job()
+
+        mock_lock_manager.release_lock.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_promotion_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_promotion_job_does_not_release_lock_on_success(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_promotion_job does NOT release lock on successful dispatch.
+
+        The lock is released by the background task when it completes, not by
+        the service method. This ensures the lock is held until the job finishes.
+        """
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service_with_lock.start_promotion_job()
+
+        mock_lock_manager.release_lock.assert_not_called()

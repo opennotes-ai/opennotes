@@ -43,6 +43,7 @@ class CandidateStatus(str, Enum):
     SCRAPING = "scraping"
     SCRAPED = "scraped"
     SCRAPE_FAILED = "scrape_failed"
+    PROMOTING = "promoting"
     PROMOTED = "promoted"
 
 
@@ -56,7 +57,8 @@ class FactCheckedItemCandidate(Base):
     2. scraping - Content scraping in progress
     3. scraped - Content successfully scraped
     4. scrape_failed - Content scraping failed
-    5. promoted - Successfully promoted to fact_check_items table
+    5. promoting - Promotion to fact_check_items in progress
+    6. promoted - Successfully promoted to fact_check_items table
 
     Rating Workflow:
     - `rating` is the human-approved verdict (NULL until approved)
@@ -78,7 +80,7 @@ class FactCheckedItemCandidate(Base):
         dataset_tags: Tags for filtering (e.g., publisher_name)
         original_id: ID from source dataset for traceability
         extracted_data: JSONB for source-specific fields not in schema
-        status: Processing status (pending, scraping, scraped, scrape_failed, promoted)
+        status: Processing status (pending, scraping, scraped, scrape_failed, promoting, promoted)
         error_message: Error details if scrape_failed
         created_at: Timestamp when record was created
         updated_at: Timestamp of last update
