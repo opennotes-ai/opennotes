@@ -13,12 +13,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.dependencies import get_current_user_or_api_key
 from src.batch_jobs.import_service import ConcurrentJobError, ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
+from src.cache.redis_client import redis_client
 from src.database import get_db
 from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
+from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
+
+
+class _GlobalImportLockManager(RechunkLockManager):
+    """Lock manager that uses the global redis_client as fallback."""
+
+    @property
+    def redis(self):
+        if self._redis is not None:
+            return self._redis
+        return redis_client.client
+
+
+import_lock_manager = _GlobalImportLockManager()
 
 router = APIRouter(
     prefix="/fact-checking/import",
@@ -72,7 +87,7 @@ def get_import_service(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ImportBatchJobService:
     """Get ImportBatchJobService with injected dependencies."""
-    return ImportBatchJobService(db)
+    return ImportBatchJobService(db, lock_manager=import_lock_manager)
 
 
 @router.post(

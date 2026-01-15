@@ -94,10 +94,13 @@ def validate_and_normalize_batch(
     output_count = len(candidates) + len(errors)
     if output_count != input_count:
         logger.error(
-            f"Row count mismatch in batch validation: "
-            f"input={input_count}, output={output_count} "
-            f"(candidates={len(candidates)}, errors={len(errors)}), "
-            f"batch_num={batch_num}"
+            "Row count mismatch in batch validation: "
+            "input=%d, output=%d (candidates=%d, errors=%d), batch_num=%s",
+            input_count,
+            output_count,
+            len(candidates),
+            len(errors),
+            batch_num,
         )
 
     return candidates, errors
@@ -205,13 +208,13 @@ async def import_fact_check_bureau(
     dataset_url = url or HUGGINGFACE_DATASET_URL
     stats = ImportStats(errors=[])
 
-    logger.info(f"Starting import from {dataset_url}")
+    logger.info("Starting import from %s", dataset_url)
 
     try:
         async for content in stream_csv_from_url(dataset_url):
             rows = list(parse_csv_rows(content))
             stats.total_rows = len(rows)
-            logger.info(f"Loaded {stats.total_rows} rows from CSV")
+            logger.info("Loaded %d rows from CSV", stats.total_rows)
 
             for batch_num, batch in enumerate(batched(iter(rows), batch_size)):
                 candidates, errors = validate_and_normalize_batch(batch, batch_num=batch_num)
@@ -229,24 +232,28 @@ async def import_fact_check_bureau(
                 processed = (batch_num + 1) * batch_size
                 if processed % 10000 == 0 or processed >= stats.total_rows:
                     logger.info(
-                        f"Progress: {min(processed, stats.total_rows)}/{stats.total_rows} rows "
-                        f"({stats.valid_rows} valid, {stats.invalid_rows} invalid)"
+                        "Progress: %d/%d rows (%d valid, %d invalid)",
+                        min(processed, stats.total_rows),
+                        stats.total_rows,
+                        stats.valid_rows,
+                        stats.invalid_rows,
                     )
 
     except httpx.HTTPError as e:
-        error_msg = f"HTTP error fetching dataset: {e}"
-        logger.error(error_msg)
+        logger.error("HTTP error fetching dataset: %s", e)
         if stats.errors is not None:
-            stats.errors.append(error_msg)
+            stats.errors.append(f"HTTP error fetching dataset: {e}")
     except Exception as e:
-        error_msg = f"Import failed: {e}"
-        logger.exception(error_msg)
+        logger.exception("Import failed: %s", e)
         if stats.errors is not None:
-            stats.errors.append(error_msg)
+            stats.errors.append(f"Import failed: {e}")
 
     logger.info(
-        f"Import complete: {stats.total_rows} total, {stats.valid_rows} valid, "
-        f"{stats.inserted} inserted, {stats.updated} updated"
+        "Import complete: %d total, %d valid, %d inserted, %d updated",
+        stats.total_rows,
+        stats.valid_rows,
+        stats.inserted,
+        stats.updated,
     )
 
     return stats

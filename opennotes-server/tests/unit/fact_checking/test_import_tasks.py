@@ -1553,7 +1553,7 @@ class TestTaskIQLabels:
 
 
 class TestRecoverStuckCandidates:
-    """Test recovery mechanism for stuck SCRAPING candidates."""
+    """Test recovery mechanism for stuck SCRAPING and PROMOTING candidates."""
 
     @pytest.mark.asyncio
     async def test_recover_stuck_scraping_candidates_recovers_old(self):
@@ -1595,6 +1595,50 @@ class TestRecoverStuckCandidates:
         mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
 
         recovered = await _recover_stuck_scraping_candidates(mock_session_maker)
+
+        assert recovered == 0
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_promoting_candidates_recovers_old(self):
+        """Candidates stuck in PROMOTING state beyond timeout are recovered."""
+        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 3
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        recovered = await _recover_stuck_promoting_candidates(
+            mock_session_maker, timeout_minutes=30
+        )
+
+        assert recovered == 3
+        mock_db.execute.assert_called_once()
+        mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_promoting_candidates_none_found(self):
+        """No candidates stuck in PROMOTING means zero recovered."""
+        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        recovered = await _recover_stuck_promoting_candidates(mock_session_maker)
 
         assert recovered == 0
 

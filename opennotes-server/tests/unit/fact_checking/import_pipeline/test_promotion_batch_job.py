@@ -45,8 +45,12 @@ class TestPromotionBatchProcessing:
         mock_update_result = MagicMock()
         mock_update_result.rowcount = 2
 
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+
         mock_db.execute = AsyncMock(
             side_effect=[
+                mock_recovery_result,
                 mock_count_result,
                 mock_candidates_result_first,
                 mock_update_result,
@@ -129,8 +133,12 @@ class TestPromotionBatchProcessing:
         mock_update_result = MagicMock()
         mock_update_result.rowcount = 2
 
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+
         mock_db.execute = AsyncMock(
             side_effect=[
+                mock_recovery_result,
                 mock_count_result,
                 mock_candidates_result_first,
                 mock_update_result,
@@ -210,7 +218,10 @@ class TestPromotionBatchDryRun:
         mock_count_result = MagicMock()
         mock_count_result.scalar_one.return_value = 5
 
-        mock_db.execute = AsyncMock(return_value=mock_count_result)
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+
+        mock_db.execute = AsyncMock(side_effect=[mock_recovery_result, mock_count_result])
 
         mock_session_maker = create_mock_session_context(mock_db)
 
@@ -295,8 +306,12 @@ class TestPromotionBatchJobCompletion:
         mock_update_result = MagicMock()
         mock_update_result.rowcount = 3
 
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+
         mock_db.execute = AsyncMock(
             side_effect=[
+                mock_recovery_result,
                 mock_count_result,
                 mock_candidates_result_first,
                 mock_update_result,
@@ -431,6 +446,10 @@ class TestPromotionBatchFailureHandling:
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
 
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+        mock_db.execute = AsyncMock(return_value=mock_recovery_result)
+
         mock_session_maker = create_mock_session_context(mock_db)
 
         mock_redis = AsyncMock()
@@ -496,7 +515,12 @@ class TestPromotionBatchNoCandidates:
         empty_candidates_result = MagicMock()
         empty_candidates_result.fetchall.return_value = []
 
-        mock_db.execute = AsyncMock(side_effect=[mock_count_result, empty_candidates_result])
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+
+        mock_db.execute = AsyncMock(
+            side_effect=[mock_recovery_result, mock_count_result, empty_candidates_result]
+        )
 
         mock_session_maker = create_mock_session_context(mock_db)
 
@@ -572,8 +596,12 @@ class TestPromotionBatchRaceConditions:
         mock_update_result = MagicMock()
         mock_update_result.rowcount = 2
 
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+
         mock_db.execute = AsyncMock(
             side_effect=[
+                mock_recovery_result,
                 mock_count_result,
                 mock_candidates_result_first,
                 mock_update_result,
@@ -661,8 +689,12 @@ class TestPromotionBatchExceptionHandling:
         mock_update_result = MagicMock()
         mock_update_result.rowcount = 2
 
+        mock_recovery_result = MagicMock()
+        mock_recovery_result.rowcount = 0
+
         mock_db.execute = AsyncMock(
             side_effect=[
+                mock_recovery_result,
                 mock_count_result,
                 mock_candidates_result_first,
                 mock_update_result,
@@ -734,11 +766,13 @@ class TestPromotionBatchTaskLabels:
 
     def test_promotion_batch_task_has_labels(self):
         """Verify promotion batch task has component and task_type labels."""
-        from src.tasks.broker import _all_registered_tasks
+        import src.tasks.import_tasks  # noqa: F401
+        from src.tasks.broker import get_registered_tasks
 
-        assert "promote:candidates" in _all_registered_tasks
+        registered_tasks = get_registered_tasks()
+        assert "promote:candidates" in registered_tasks
 
-        _, labels = _all_registered_tasks["promote:candidates"]
+        _, labels = registered_tasks["promote:candidates"]
         assert labels.get("component") == "import_pipeline"
         assert labels.get("task_type") == "batch"
 
@@ -755,16 +789,33 @@ class TestPromotionBatchRaceConditionPrevention:
     This test verifies the fix by checking that:
     - The code path includes both SELECT FOR UPDATE and UPDATE queries
     - Status update to PROMOTING happens before lock is released
+
+    RATIONALE FOR SOURCE INSPECTION:
+    --------------------------------
+    This test uses inspect.getsource() rather than behavior-based testing because:
+
+    1. Race conditions are timing-dependent and non-deterministic. A behavior test
+       that runs concurrent workers might pass 99% of the time even with broken code,
+       only failing under specific timing conditions in production.
+
+    2. The fix being verified is a CODE STRUCTURE requirement: the status update MUST
+       occur between acquiring the FOR UPDATE lock and committing the transaction.
+       Source inspection guarantees this structure is present.
+
+    3. Integration tests for race conditions require complex setup (multiple workers,
+       real database connections, artificial delays) and still may not reliably
+       reproduce the race condition.
+
+    IF THIS TEST FAILS AFTER REFACTORING:
+    -------------------------------------
+    1. Verify the race condition fix is still present in the refactored code
+    2. The pattern to look for: SELECT ... FOR UPDATE, then UPDATE status, then COMMIT
+    3. Update the string searches in this test to match the new code structure
+    4. Do NOT simply delete this test - the race condition prevention is critical
     """
 
     def test_promotion_batch_updates_status_in_for_update_session(self):
-        """Verify process_promotion_batch updates status within the FOR UPDATE session.
-
-        We inspect the source code to confirm the fix is in place:
-        - The UPDATE statement must be inside the `async with async_session() as db:` block
-        - The UPDATE must use CandidateStatus.PROMOTING
-        - The UPDATE must happen BEFORE db.commit() which releases the lock
-        """
+        """Verify process_promotion_batch updates status within the FOR UPDATE session."""
         import inspect
 
         from src.tasks.import_tasks import process_promotion_batch

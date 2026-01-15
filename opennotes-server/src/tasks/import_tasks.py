@@ -49,6 +49,7 @@ _tracer = trace.get_tracer(__name__)
 
 MAX_STORED_ERRORS = 50
 SCRAPING_TIMEOUT_MINUTES = 30
+PROMOTING_TIMEOUT_MINUTES = 30
 
 
 async def _release_job_lock(
@@ -270,6 +271,49 @@ async def _recover_stuck_scraping_candidates(
         if recovered_count > 0:
             logger.info(
                 "Recovered candidates stuck in SCRAPING state",
+                extra={
+                    "recovered_count": recovered_count,
+                    "timeout_minutes": timeout_minutes,
+                },
+            )
+
+        return recovered_count
+
+
+async def _recover_stuck_promoting_candidates(
+    session: async_sessionmaker,
+    timeout_minutes: int = PROMOTING_TIMEOUT_MINUTES,
+) -> int:
+    """Recover candidates stuck in PROMOTING state due to task crash.
+
+    Candidates that have been in PROMOTING state for longer than the timeout
+    are reset back to SCRAPED state so they can be retried.
+
+    Args:
+        session: SQLAlchemy async session maker
+        timeout_minutes: Number of minutes after which PROMOTING state is considered stuck
+
+    Returns:
+        Number of candidates recovered
+    """
+    cutoff_time = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
+
+    async with session() as db:
+        result = await db.execute(
+            update(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.status == CandidateStatus.PROMOTING.value)
+            .where(FactCheckedItemCandidate.updated_at < cutoff_time)
+            .values(
+                status=CandidateStatus.SCRAPED.value,
+                error_message="Recovered from stuck PROMOTING state",
+            )
+        )
+        await db.commit()
+        recovered_count = result.rowcount
+
+        if recovered_count > 0:
+            logger.info(
+                "Recovered candidates stuck in PROMOTING state",
                 extra={
                     "recovered_count": recovered_count,
                     "timeout_minutes": timeout_minutes,
@@ -904,8 +948,13 @@ async def process_promotion_batch(
         promoted = 0
         failed = 0
         total_candidates = 0
+        recovered = 0
 
         try:
+            recovered = await _recover_stuck_promoting_candidates(async_session)
+            if recovered > 0:
+                span.set_attribute("promote.recovered_stuck", recovered)
+
             await _start_job(async_session, progress_tracker, job_uuid)
 
             async with async_session() as db:
@@ -929,6 +978,7 @@ async def process_promotion_batch(
                     "batch_size": batch_size,
                     "dry_run": dry_run,
                     "total_candidates": total_candidates,
+                    "recovered_stuck": recovered,
                 },
             )
 
@@ -937,6 +987,7 @@ async def process_promotion_batch(
                     "total_candidates": total_candidates,
                     "promoted": 0,
                     "failed": 0,
+                    "recovered_stuck": recovered,
                     "dry_run": True,
                 }
 
@@ -1025,6 +1076,7 @@ async def process_promotion_batch(
                 "total_candidates": total_candidates,
                 "promoted": promoted,
                 "failed": failed,
+                "recovered_stuck": recovered,
                 "dry_run": False,
             }
 

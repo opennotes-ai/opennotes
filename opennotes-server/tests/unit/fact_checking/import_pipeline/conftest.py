@@ -39,6 +39,5 @@ def create_mock_session_context(mock_db):
     Each call returns a fresh context manager to support multiple `async with` blocks.
     """
     mock_session_maker = MagicMock()
-    mock_session_maker.return_value = MockSessionContextManager(mock_db)
     mock_session_maker.side_effect = lambda: MockSessionContextManager(mock_db)
     return mock_session_maker
