@@ -31,7 +31,7 @@ from src.fact_checking.import_pipeline.importer import (
     upsert_candidates,
     validate_and_normalize_batch,
 )
-from src.fact_checking.import_pipeline.scrape_task import enqueue_scrape_batch
+from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
 from src.monitoring import get_logger
 from src.tasks.broker import register_task
 

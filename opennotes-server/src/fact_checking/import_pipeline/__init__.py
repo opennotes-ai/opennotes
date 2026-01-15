@@ -23,7 +23,7 @@ from src.fact_checking.import_pipeline.router import (
     router as import_router,
 )
 from src.fact_checking.import_pipeline.schemas import ClaimReviewRow, NormalizedCandidate
-from src.fact_checking.import_pipeline.scrape_task import (
+from src.fact_checking.import_pipeline.scrape_tasks import (
     enqueue_scrape_batch,
     scrape_candidate_content,
     scrape_url_content,
