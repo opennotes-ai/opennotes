@@ -7835,6 +7835,136 @@
         }
       }
     },
+    "/api/v1/fact-checking/import/scrape-candidates": {
+      "post": {
+        "tags": [
+          "fact-checking-import"
+        ],
+        "summary": "Start candidate scraping batch job",
+        "description": "Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+        "operationId": "scrape_candidates_endpoint_api_v1_fact_checking_import_scrape_candidates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeCandidatesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fact-checking/import/promote-candidates": {
+      "post": {
+        "tags": [
+          "fact-checking-import"
+        ],
+        "summary": "Start candidate promotion batch job",
+        "description": "Start an asynchronous batch job to promote scraped candidates to fact-check items. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+        "operationId": "promote_candidates_endpoint_api_v1_fact_checking_import_promote_candidates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteCandidatesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/batch-jobs": {
       "post": {
         "tags": [
@@ -15074,6 +15204,27 @@
         "title": "ProfileUpdateRequest",
         "description": "JSON:API request for updating a profile."
       },
+      "PromoteCandidatesRequest": {
+        "properties": {
+          "batch_size": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Maximum number of candidates to promote in this batch",
+            "default": 1000
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "Count candidates only, do not perform promotion",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "PromoteCandidatesRequest",
+        "description": "Request parameters for promoting scraped candidates."
+      },
       "RatingAttributes": {
         "properties": {
           "note_id": {
@@ -16422,6 +16573,27 @@
         ],
         "title": "ScoringStatusResource",
         "description": "JSON:API resource object for scoring status."
+      },
+      "ScrapeCandidatesRequest": {
+        "properties": {
+          "batch_size": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Maximum number of candidates to scrape in this batch",
+            "default": 1000
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "Count candidates only, do not perform scraping",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "ScrapeCandidatesRequest",
+        "description": "Request parameters for scraping pending candidates."
       },
       "ServiceStatus": {
         "properties": {

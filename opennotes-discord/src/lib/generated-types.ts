@@ -2720,6 +2720,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fact-checking/import/scrape-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start candidate scraping batch job
+         * @description Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
+         */
+        post: operations["scrape_candidates_endpoint_api_v1_fact_checking_import_scrape_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fact-checking/import/promote-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start candidate promotion batch job
+         * @description Start an asynchronous batch job to promote scraped candidates to fact-check items. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
+         */
+        post: operations["promote_candidates_endpoint_api_v1_fact_checking_import_promote_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/batch-jobs": {
         parameters: {
             query?: never;
@@ -6374,6 +6414,24 @@ export interface components {
             data: components["schemas"]["ProfileUpdateData"];
         };
         /**
+         * PromoteCandidatesRequest
+         * @description Request parameters for promoting scraped candidates.
+         */
+        PromoteCandidatesRequest: {
+            /**
+             * Batch Size
+             * @description Maximum number of candidates to promote in this batch
+             * @default 1000
+             */
+            batch_size: number;
+            /**
+             * Dry Run
+             * @description Count candidates only, do not perform promotion
+             * @default false
+             */
+            dry_run: boolean;
+        };
+        /**
          * RatingAttributes
          * @description Rating attributes for JSON:API resource.
          */
@@ -7118,6 +7176,24 @@ export interface components {
              */
             id: string;
             attributes: components["schemas"]["ScoringStatusAttributes"];
+        };
+        /**
+         * ScrapeCandidatesRequest
+         * @description Request parameters for scraping pending candidates.
+         */
+        ScrapeCandidatesRequest: {
+            /**
+             * Batch Size
+             * @description Maximum number of candidates to scrape in this batch
+             * @default 1000
+             */
+            batch_size: number;
+            /**
+             * Dry Run
+             * @description Count candidates only, do not perform scraping
+             * @default false
+             */
+            dry_run: boolean;
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -11747,6 +11823,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnqueueScrapeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scrape_candidates_endpoint_api_v1_fact_checking_import_scrape_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScrapeCandidatesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_candidates_endpoint_api_v1_fact_checking_import_promote_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteCandidatesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
             /** @description Validation Error */
