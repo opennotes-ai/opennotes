@@ -33,6 +33,7 @@ from src.fact_checking.import_pipeline.importer import (
     upsert_candidates,
     validate_and_normalize_batch,
 )
+from src.fact_checking.import_pipeline.promotion import promote_candidate
 from src.fact_checking.import_pipeline.scrape_tasks import (
     enqueue_scrape_batch,
     scrape_url_content,
@@ -625,6 +626,243 @@ async def process_scrape_batch(
                     "job_id": job_id,
                     "error": error_msg,
                     "scraped": scraped,
+                    "failed": failed,
+                },
+            )
+
+            raise
+
+        finally:
+            await redis_client.disconnect()
+            await engine.dispose()
+
+
+@register_task(
+    task_name="promote:candidates",
+    component="import_pipeline",
+    task_type="batch",
+)
+async def process_promotion_batch(
+    job_id: str,
+    batch_size: int,
+    dry_run: bool,
+    db_url: str,
+    redis_url: str,
+) -> dict[str, Any]:
+    """
+    TaskIQ task to promote scraped candidates to fact_check_items.
+
+    This task:
+    1. Marks job as IN_PROGRESS
+    2. Counts total promotable candidates (status='scraped', content IS NOT NULL, rating IS NOT NULL)
+    3. In dry_run mode: returns count without promoting
+    4. Otherwise: processes candidates in batches
+    5. For each candidate: calls promote_candidate to create fact_check_item
+    6. Tracks progress via BatchJob infrastructure
+    7. Marks job as COMPLETED or FAILED
+
+    Args:
+        job_id: UUID string of the BatchJob for status tracking
+        batch_size: Number of candidates to process per batch
+        dry_run: If True, count candidates but don't promote
+        db_url: Database connection URL
+        redis_url: Redis connection URL for progress tracking
+
+    Returns:
+        dict with status and promotion stats
+    """
+    with _tracer.start_as_current_span("promote.candidates") as span:
+        span.set_attribute("job.id", job_id)
+        span.set_attribute("job.batch_size", batch_size)
+        span.set_attribute("job.dry_run", dry_run)
+
+        settings = get_settings()
+        job_uuid = UUID(job_id)
+
+        engine = create_async_engine(
+            db_url,
+            pool_pre_ping=True,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+            pool_timeout=settings.DB_POOL_TIMEOUT,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        redis_client = RedisClient()
+        await redis_client.connect(redis_url)
+        progress_tracker = BatchJobProgressTracker(redis_client)
+
+        promoted = 0
+        failed = 0
+        total_candidates = 0
+
+        try:
+            await _start_job(async_session, progress_tracker, job_uuid)
+
+            async with async_session() as db:
+                count_query = (
+                    select(func.count())
+                    .select_from(FactCheckedItemCandidate)
+                    .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
+                    .where(FactCheckedItemCandidate.content.isnot(None))
+                    .where(FactCheckedItemCandidate.rating.isnot(None))
+                )
+                count_result = await db.execute(count_query)
+                total_candidates = count_result.scalar_one()
+
+            await _update_job_total_tasks(async_session, job_uuid, total_candidates)
+            span.set_attribute("promote.total_candidates", total_candidates)
+
+            logger.info(
+                "Starting candidate promotion batch",
+                extra={
+                    "job_id": job_id,
+                    "batch_size": batch_size,
+                    "dry_run": dry_run,
+                    "total_candidates": total_candidates,
+                },
+            )
+
+            if dry_run:
+                final_stats = {
+                    "total_candidates": total_candidates,
+                    "promoted": 0,
+                    "failed": 0,
+                    "dry_run": True,
+                }
+
+                await _complete_job(
+                    async_session,
+                    progress_tracker,
+                    job_uuid,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    stats=final_stats,
+                )
+
+                logger.info(
+                    "Candidate promotion batch dry run completed",
+                    extra={
+                        "job_id": job_id,
+                        **final_stats,
+                    },
+                )
+
+                return {"status": "completed", **final_stats}
+
+            while True:
+                async with async_session() as db:
+                    candidates_query = (
+                        select(FactCheckedItemCandidate.id)
+                        .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
+                        .where(FactCheckedItemCandidate.content.isnot(None))
+                        .where(FactCheckedItemCandidate.rating.isnot(None))
+                        .limit(batch_size)
+                    )
+                    result = await db.execute(candidates_query)
+                    candidate_ids = [row[0] for row in result.fetchall()]
+
+                    if not candidate_ids:
+                        break
+
+                    for candidate_id in candidate_ids:
+                        success = await promote_candidate(db, candidate_id)
+
+                        if success:
+                            promoted += 1
+                            logger.debug(
+                                "Promoted candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                },
+                            )
+                        else:
+                            failed += 1
+                            logger.warning(
+                                "Failed to promote candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                },
+                            )
+
+                    try:
+                        await _update_progress(
+                            async_session,
+                            progress_tracker,
+                            job_uuid,
+                            completed_tasks=promoted,
+                            failed_tasks=failed,
+                            current_item=f"Processed {promoted + failed}/{total_candidates}",
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to update progress during promotion batch",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(e),
+                            },
+                        )
+
+            final_stats = {
+                "total_candidates": total_candidates,
+                "promoted": promoted,
+                "failed": failed,
+                "dry_run": False,
+            }
+
+            await _complete_job(
+                async_session,
+                progress_tracker,
+                job_uuid,
+                completed_tasks=promoted,
+                failed_tasks=failed,
+                stats=final_stats,
+            )
+
+            span.set_attribute("promote.promoted", promoted)
+            span.set_attribute("promote.failed", failed)
+
+            logger.info(
+                "Candidate promotion batch completed",
+                extra={
+                    "job_id": job_id,
+                    **final_stats,
+                },
+            )
+
+            return {"status": "completed", **final_stats}
+
+        except Exception as e:
+            error_msg = str(e)
+            span.record_exception(e)
+            span.set_status(StatusCode.ERROR, error_msg)
+
+            error_summary = {
+                "exception": error_msg,
+                "exception_type": type(e).__name__,
+                "partial_stats": {
+                    "total_candidates": total_candidates,
+                    "promoted": promoted,
+                    "failed": failed,
+                },
+            }
+
+            await _fail_job(
+                async_session,
+                progress_tracker,
+                job_uuid,
+                error_summary=error_summary,
+                completed_tasks=promoted,
+                failed_tasks=failed,
+            )
+
+            logger.error(
+                "Candidate promotion batch failed",
+                extra={
+                    "job_id": job_id,
+                    "error": error_msg,
+                    "promoted": promoted,
                     "failed": failed,
                 },
             )
