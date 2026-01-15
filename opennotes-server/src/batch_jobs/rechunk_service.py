@@ -12,6 +12,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.batch_jobs.constants import (
+    RECHUNK_FACT_CHECK_JOB_TYPE,
+    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+)
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
@@ -33,10 +37,6 @@ class RechunkType(str, Enum):
 
     FACT_CHECK = "fact_check"
     PREVIOUSLY_SEEN = "previously_seen"
-
-
-JOB_TYPE_FACT_CHECK = "rechunk:fact_check"
-JOB_TYPE_PREVIOUSLY_SEEN = "rechunk:previously_seen"
 
 
 class RechunkBatchJobService:
@@ -98,7 +98,7 @@ class RechunkBatchJobService:
 
             job = await self._batch_job_service.create_job(
                 BatchJobCreate(
-                    job_type=JOB_TYPE_FACT_CHECK,
+                    job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
                     total_tasks=total_items,
                     metadata={
                         "community_server_id": str(community_server_id)
@@ -187,7 +187,7 @@ class RechunkBatchJobService:
 
             job = await self._batch_job_service.create_job(
                 BatchJobCreate(
-                    job_type=JOB_TYPE_PREVIOUSLY_SEEN,
+                    job_type=RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
                     total_tasks=total_items,
                     metadata={
                         "community_server_id": str(community_server_id),

@@ -8,7 +8,7 @@ Tests for:
 Both endpoints should:
 - Accept batch_size and dry_run parameters
 - Return BatchJobResponse (201 Created)
-- Require authentication
+- Require authentication (Bearer token or X-API-Key)
 """
 
 from datetime import UTC, datetime
@@ -19,9 +19,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.auth.auth import create_access_token
+from src.auth.models import APIKeyCreate
 from src.batch_jobs.models import BatchJob, BatchJobStatus
 from src.fact_checking.import_pipeline.router import get_import_service
 from src.main import app
+from src.users.crud import create_api_key
 
 
 class TestImportRouterFixtures:
@@ -59,6 +61,17 @@ class TestImportRouterFixtures:
         return {"Authorization": f"Bearer {access_token}"}
 
     @pytest.fixture
+    async def api_key_headers(self, test_user, db):
+        """Create API key headers for test user."""
+        _, raw_key = await create_api_key(
+            db=db,
+            user_id=test_user.id,
+            api_key_create=APIKeyCreate(name="Test Import API Key", expires_in_days=30),
+        )
+        await db.commit()
+        return {"X-API-Key": raw_key}
+
+    @pytest.fixture
     def mock_scrape_job(self):
         """Create a mock BatchJob for scrape operations."""
         now = datetime.now(UTC)
@@ -91,6 +104,7 @@ class TestImportRouterFixtures:
         )
 
 
+@pytest.mark.integration
 class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
     """Tests for POST /api/v1/fact-checking/import/scrape-candidates endpoint."""
 
@@ -145,7 +159,10 @@ class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
                 )
 
                 assert response.status_code == 201
-                mock_service.start_scrape_job.assert_called_once_with(batch_size=50, dry_run=True)
+                call_kwargs = mock_service.start_scrape_job.call_args.kwargs
+                assert call_kwargs["batch_size"] == 50
+                assert call_kwargs["dry_run"] is True
+                assert "user_id" in call_kwargs
         finally:
             app.dependency_overrides.pop(get_import_service, None)
 
@@ -182,13 +199,106 @@ class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
                 )
 
                 assert response.status_code == 201
-                mock_service.start_scrape_job.assert_called_once_with(
-                    batch_size=1000, dry_run=False
+                call_kwargs = mock_service.start_scrape_job.call_args.kwargs
+                assert call_kwargs["batch_size"] == 1000
+                assert call_kwargs["dry_run"] is False
+                assert "user_id" in call_kwargs
+        finally:
+            app.dependency_overrides.pop(get_import_service, None)
+
+    @pytest.mark.asyncio
+    async def test_scrape_candidates_with_api_key_authentication(
+        self,
+        api_key_headers,
+        mock_scrape_job,
+    ):
+        """Request with X-API-Key header returns 201."""
+        mock_service = MagicMock()
+        mock_service.start_scrape_job = AsyncMock(return_value=mock_scrape_job)
+
+        app.dependency_overrides[get_import_service] = lambda: mock_service
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/import/scrape-candidates",
+                    json={"batch_size": 100, "dry_run": False},
+                    headers=api_key_headers,
                 )
+
+                assert response.status_code == 201
+                data = response.json()
+                assert data["id"] == str(mock_scrape_job.id)
+                assert data["job_type"] == "scrape:candidates"
+        finally:
+            app.dependency_overrides.pop(get_import_service, None)
+
+    @pytest.mark.asyncio
+    async def test_scrape_candidates_batch_size_zero_returns_422(self, auth_headers):
+        """batch_size=0 returns 422 validation error."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={"batch_size": 0, "dry_run": False},
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_scrape_candidates_batch_size_negative_returns_422(self, auth_headers):
+        """batch_size=-1 returns 422 validation error."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={"batch_size": -1, "dry_run": False},
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_scrape_candidates_batch_size_exceeds_max_returns_422(self, auth_headers):
+        """batch_size=10001 (exceeds max 10000) returns 422 validation error."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={"batch_size": 10001, "dry_run": False},
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_scrape_candidates_service_exception_propagates(
+        self,
+        auth_headers,
+    ):
+        """Service exception is propagated (not silently swallowed)."""
+        mock_service = MagicMock()
+        mock_service.start_scrape_job = AsyncMock(
+            side_effect=Exception("Database connection failed")
+        )
+
+        app.dependency_overrides[get_import_service] = lambda: mock_service
+        try:
+            transport = ASGITransport(app=app, raise_app_exceptions=False)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/import/scrape-candidates",
+                    json={"batch_size": 100, "dry_run": False},
+                    headers=auth_headers,
+                )
+
+                assert response.status_code == 500
         finally:
             app.dependency_overrides.pop(get_import_service, None)
 
 
+@pytest.mark.integration
 class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
     """Tests for POST /api/v1/fact-checking/import/promote-candidates endpoint."""
 
@@ -243,9 +353,10 @@ class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
                 )
 
                 assert response.status_code == 201
-                mock_service.start_promotion_job.assert_called_once_with(
-                    batch_size=50, dry_run=True
-                )
+                call_kwargs = mock_service.start_promotion_job.call_args.kwargs
+                assert call_kwargs["batch_size"] == 50
+                assert call_kwargs["dry_run"] is True
+                assert "user_id" in call_kwargs
         finally:
             app.dependency_overrides.pop(get_import_service, None)
 
@@ -282,8 +393,100 @@ class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
                 )
 
                 assert response.status_code == 201
-                mock_service.start_promotion_job.assert_called_once_with(
-                    batch_size=1000, dry_run=False
+                call_kwargs = mock_service.start_promotion_job.call_args.kwargs
+                assert call_kwargs["batch_size"] == 1000
+                assert call_kwargs["dry_run"] is False
+                assert "user_id" in call_kwargs
+        finally:
+            app.dependency_overrides.pop(get_import_service, None)
+
+    @pytest.mark.asyncio
+    async def test_promote_candidates_with_api_key_authentication(
+        self,
+        api_key_headers,
+        mock_promotion_job,
+    ):
+        """Request with X-API-Key header returns 201."""
+        mock_service = MagicMock()
+        mock_service.start_promotion_job = AsyncMock(return_value=mock_promotion_job)
+
+        app.dependency_overrides[get_import_service] = lambda: mock_service
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/import/promote-candidates",
+                    json={"batch_size": 100, "dry_run": False},
+                    headers=api_key_headers,
                 )
+
+                assert response.status_code == 201
+                data = response.json()
+                assert data["id"] == str(mock_promotion_job.id)
+                assert data["job_type"] == "promote:candidates"
+        finally:
+            app.dependency_overrides.pop(get_import_service, None)
+
+    @pytest.mark.asyncio
+    async def test_promote_candidates_batch_size_zero_returns_422(self, auth_headers):
+        """batch_size=0 returns 422 validation error."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={"batch_size": 0, "dry_run": False},
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_promote_candidates_batch_size_negative_returns_422(self, auth_headers):
+        """batch_size=-1 returns 422 validation error."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={"batch_size": -1, "dry_run": False},
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_promote_candidates_batch_size_exceeds_max_returns_422(self, auth_headers):
+        """batch_size=10001 (exceeds max 10000) returns 422 validation error."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={"batch_size": 10001, "dry_run": False},
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_promote_candidates_service_exception_propagates(
+        self,
+        auth_headers,
+    ):
+        """Service exception is propagated (not silently swallowed)."""
+        mock_service = MagicMock()
+        mock_service.start_promotion_job = AsyncMock(
+            side_effect=Exception("Database connection failed")
+        )
+
+        app.dependency_overrides[get_import_service] = lambda: mock_service
+        try:
+            transport = ASGITransport(app=app, raise_app_exceptions=False)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/import/promote-candidates",
+                    json={"batch_size": 100, "dry_run": False},
+                    headers=auth_headers,
+                )
+
+                assert response.status_code == 500
         finally:
             app.dependency_overrides.pop(get_import_service, None)

@@ -12,10 +12,12 @@ from uuid import uuid4
 
 import pytest
 
+from src.batch_jobs.constants import (
+    RECHUNK_FACT_CHECK_JOB_TYPE,
+    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+)
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.rechunk_service import (
-    JOB_TYPE_FACT_CHECK,
-    JOB_TYPE_PREVIOUSLY_SEEN,
     RechunkBatchJobService,
     RechunkType,
 )
@@ -98,7 +100,7 @@ class TestRechunkServiceNullCommunityServerId:
         create_call = mock_batch_job_service.create_job.call_args
         job_create = create_call[0][0]
 
-        assert job_create.job_type == JOB_TYPE_FACT_CHECK
+        assert job_create.job_type == RECHUNK_FACT_CHECK_JOB_TYPE
         assert job_create.metadata_["community_server_id"] is None
         assert job_create.metadata_["community_server_id"] != "None"
         assert job_create.metadata_["batch_size"] == 50
@@ -224,7 +226,7 @@ class TestRechunkServiceWithCommunityServerId:
         create_call = mock_batch_job_service.create_job.call_args
         job_create = create_call[0][0]
 
-        assert job_create.job_type == JOB_TYPE_PREVIOUSLY_SEEN
+        assert job_create.job_type == RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE
         assert job_create.metadata_["community_server_id"] == str(community_server_id)
         assert job_create.metadata_["chunk_type"] == RechunkType.PREVIOUSLY_SEEN.value
 

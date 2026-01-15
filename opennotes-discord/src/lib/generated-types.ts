@@ -3406,6 +3406,24 @@ export interface components {
          */
         BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
         /**
+         * BatchProcessingRequest
+         * @description Shared request parameters for batch processing operations (scrape, promote).
+         */
+        BatchProcessingRequest: {
+            /**
+             * Batch Size
+             * @description Maximum number of candidates to process in this batch
+             * @default 1000
+             */
+            batch_size: number;
+            /**
+             * Dry Run
+             * @description Count candidates only, do not perform operation
+             * @default false
+             */
+            dry_run: boolean;
+        };
+        /**
          * BatchScoreRequest
          * @description JSON:API request body for batch scores.
          */
@@ -6414,24 +6432,6 @@ export interface components {
             data: components["schemas"]["ProfileUpdateData"];
         };
         /**
-         * PromoteCandidatesRequest
-         * @description Request parameters for promoting scraped candidates.
-         */
-        PromoteCandidatesRequest: {
-            /**
-             * Batch Size
-             * @description Maximum number of candidates to promote in this batch
-             * @default 1000
-             */
-            batch_size: number;
-            /**
-             * Dry Run
-             * @description Count candidates only, do not perform promotion
-             * @default false
-             */
-            dry_run: boolean;
-        };
-        /**
          * RatingAttributes
          * @description Rating attributes for JSON:API resource.
          */
@@ -7176,24 +7176,6 @@ export interface components {
              */
             id: string;
             attributes: components["schemas"]["ScoringStatusAttributes"];
-        };
-        /**
-         * ScrapeCandidatesRequest
-         * @description Request parameters for scraping pending candidates.
-         */
-        ScrapeCandidatesRequest: {
-            /**
-             * Batch Size
-             * @description Maximum number of candidates to scrape in this batch
-             * @default 1000
-             */
-            batch_size: number;
-            /**
-             * Dry Run
-             * @description Count candidates only, do not perform scraping
-             * @default false
-             */
-            dry_run: boolean;
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -11847,7 +11829,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ScrapeCandidatesRequest"];
+                "application/json": components["schemas"]["BatchProcessingRequest"];
             };
         };
         responses: {
@@ -11882,7 +11864,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PromoteCandidatesRequest"];
+                "application/json": components["schemas"]["BatchProcessingRequest"];
             };
         };
         responses: {

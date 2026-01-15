@@ -45,33 +45,18 @@ class ImportFactCheckBureauRequest(BaseModel):
     )
 
 
-class ScrapeCandidatesRequest(BaseModel):
-    """Request parameters for scraping pending candidates."""
+class BatchProcessingRequest(BaseModel):
+    """Shared request parameters for batch processing operations (scrape, promote)."""
 
     batch_size: int = Field(
         default=1000,
         ge=1,
         le=10000,
-        description="Maximum number of candidates to scrape in this batch",
+        description="Maximum number of candidates to process in this batch",
     )
     dry_run: bool = Field(
         default=False,
-        description="Count candidates only, do not perform scraping",
-    )
-
-
-class PromoteCandidatesRequest(BaseModel):
-    """Request parameters for promoting scraped candidates."""
-
-    batch_size: int = Field(
-        default=1000,
-        ge=1,
-        le=10000,
-        description="Maximum number of candidates to promote in this batch",
-    )
-    dry_run: bool = Field(
-        default=False,
-        description="Count candidates only, do not perform promotion",
+        description="Count candidates only, do not perform operation",
     )
 
 
@@ -137,6 +122,7 @@ async def import_fact_check_bureau_endpoint(
         batch_size=request.batch_size,
         dry_run=request.dry_run,
         enqueue_scrapes=request.enqueue_scrapes,
+        user_id=str(current_user.id),
     )
 
     logger.info(
@@ -204,7 +190,7 @@ async def enqueue_scrapes_endpoint(
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
 )
 async def scrape_candidates_endpoint(
-    request: ScrapeCandidatesRequest,
+    request: BatchProcessingRequest,
     service: Annotated[ImportBatchJobService, Depends(get_import_service)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> BatchJobResponse:
@@ -239,6 +225,7 @@ async def scrape_candidates_endpoint(
     job = await service.start_scrape_job(
         batch_size=request.batch_size,
         dry_run=request.dry_run,
+        user_id=str(current_user.id),
     )
 
     logger.info(
@@ -262,7 +249,7 @@ async def scrape_candidates_endpoint(
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
 )
 async def promote_candidates_endpoint(
-    request: PromoteCandidatesRequest,
+    request: BatchProcessingRequest,
     service: Annotated[ImportBatchJobService, Depends(get_import_service)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> BatchJobResponse:
@@ -297,6 +284,7 @@ async def promote_candidates_endpoint(
     job = await service.start_promotion_job(
         batch_size=request.batch_size,
         dry_run=request.dry_run,
+        user_id=str(current_user.id),
     )
 
     logger.info(

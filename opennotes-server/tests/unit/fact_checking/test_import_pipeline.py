@@ -636,3 +636,148 @@ class TestNormalizedCandidate:
                     dataset_name="test",
                     original_id="1",
                 )
+
+
+class TestBatchedFunction:
+    """Tests for the batched() helper function."""
+
+    def test_batched_exact_multiple(self) -> None:
+        """Test batching when items are exact multiple of batch size."""
+        from src.fact_checking.import_pipeline.importer import batched
+
+        items = list(range(10))
+        batches = list(batched(iter(items), 5))
+
+        assert len(batches) == 2
+        assert batches[0] == [0, 1, 2, 3, 4]
+        assert batches[1] == [5, 6, 7, 8, 9]
+        assert sum(len(b) for b in batches) == 10
+
+    def test_batched_partial_final_batch(self) -> None:
+        """Test batching with partial final batch."""
+        from src.fact_checking.import_pipeline.importer import batched
+
+        items = list(range(12))
+        batches = list(batched(iter(items), 5))
+
+        assert len(batches) == 3
+        assert batches[0] == [0, 1, 2, 3, 4]
+        assert batches[1] == [5, 6, 7, 8, 9]
+        assert batches[2] == [10, 11]
+        assert sum(len(b) for b in batches) == 12
+
+    def test_batched_empty_iterator(self) -> None:
+        """Test batching empty iterator."""
+        from src.fact_checking.import_pipeline.importer import batched
+
+        batches = list(batched(iter([]), 5))
+        assert batches == []
+
+    def test_batched_single_item(self) -> None:
+        """Test batching single item."""
+        from src.fact_checking.import_pipeline.importer import batched
+
+        batches = list(batched(iter([1]), 5))
+        assert len(batches) == 1
+        assert batches[0] == [1]
+
+    def test_batched_preserves_all_items(self) -> None:
+        """Test that batching preserves all items without loss."""
+        from src.fact_checking.import_pipeline.importer import batched
+
+        original = list(range(43954))
+        batch_size = 1000
+        batches = list(batched(iter(original), batch_size))
+
+        total_items = sum(len(b) for b in batches)
+        assert total_items == 43954
+
+        reconstructed = [item for batch in batches for item in batch]
+        assert reconstructed == original
+
+
+class TestValidateAndNormalizeBatchRowAccounting:
+    """Tests for row accounting in validate_and_normalize_batch."""
+
+    def test_all_valid_rows_counted(self) -> None:
+        """Test that all valid rows are counted correctly."""
+        from src.fact_checking.import_pipeline.importer import validate_and_normalize_batch
+
+        rows = [
+            {
+                "id": i,
+                "claim_id": 100 + i,
+                "fact_check_id": 200 + i,
+                "claim": f"Test claim {i}",
+                "url": f"https://example.com/{i}",
+                "title": f"Test {i}",
+                "publisher_name": "Publisher",
+                "publisher_site": "example.com",
+            }
+            for i in range(10)
+        ]
+
+        candidates, errors = validate_and_normalize_batch(rows)
+
+        assert len(candidates) + len(errors) == len(rows)
+        assert len(candidates) == 10
+        assert len(errors) == 0
+
+    def test_all_invalid_rows_counted(self) -> None:
+        """Test that all invalid rows are counted as errors."""
+        from src.fact_checking.import_pipeline.importer import validate_and_normalize_batch
+
+        rows = [{"id": i, "incomplete": "row"} for i in range(10)]
+
+        candidates, errors = validate_and_normalize_batch(rows)
+
+        assert len(candidates) + len(errors) == len(rows)
+        assert len(candidates) == 0
+        assert len(errors) == 10
+
+    def test_mixed_valid_invalid_rows_counted(self) -> None:
+        """Test that mixed valid/invalid rows are all accounted for."""
+        from src.fact_checking.import_pipeline.importer import validate_and_normalize_batch
+
+        valid_row = {
+            "id": 1,
+            "claim_id": 100,
+            "fact_check_id": 200,
+            "claim": "Test claim",
+            "url": "https://example.com",
+            "title": "Test",
+            "publisher_name": "Publisher",
+            "publisher_site": "example.com",
+        }
+        invalid_row = {"id": 2, "incomplete": "row"}
+
+        rows = [valid_row, invalid_row, valid_row.copy(), invalid_row.copy()]
+        rows[2]["id"] = 3
+        rows[3]["id"] = 4
+
+        candidates, errors = validate_and_normalize_batch(rows)
+
+        assert len(candidates) + len(errors) == len(rows)
+        assert len(candidates) == 2
+        assert len(errors) == 2
+
+    def test_row_accounting_with_batch_num_logging(self) -> None:
+        """Test that batch_num parameter is passed for diagnostic logging."""
+        from src.fact_checking.import_pipeline.importer import validate_and_normalize_batch
+
+        rows = [
+            {
+                "id": 1,
+                "claim_id": 100,
+                "fact_check_id": 200,
+                "claim": "Test claim",
+                "url": "https://example.com",
+                "title": "Test",
+                "publisher_name": "Publisher",
+                "publisher_site": "example.com",
+            }
+        ]
+
+        candidates, errors = validate_and_normalize_batch(rows, batch_num=42)
+
+        assert len(candidates) + len(errors) == 1

@@ -34,6 +34,7 @@ def create_mock_session_context(mock_db):
     return mock_session_maker
 
 
+@pytest.mark.unit
 class TestPromotionBatchProcessing:
     """Test main promotion batch processing functionality."""
 
@@ -202,6 +203,7 @@ class TestPromotionBatchProcessing:
             mock_batch_job_service.complete_job.assert_called_once()
 
 
+@pytest.mark.unit
 class TestPromotionBatchDryRun:
     """Test dry run mode functionality."""
 
@@ -269,6 +271,7 @@ class TestPromotionBatchDryRun:
             mock_batch_job_service.complete_job.assert_called_once()
 
 
+@pytest.mark.unit
 class TestPromotionBatchJobCompletion:
     """Test job completion with correct stats."""
 
@@ -362,11 +365,12 @@ class TestPromotionBatchJobCompletion:
             assert result["failed"] == 1
             assert result["dry_run"] is False
             mock_batch_job_service.complete_job.assert_called_once()
-            call_args = mock_batch_job_service.complete_job.call_args
-            assert call_args[0][1] == 2
-            assert call_args[0][2] == 1
+            _, completed_tasks, failed_tasks = mock_batch_job_service.complete_job.call_args.args
+            assert completed_tasks == 2
+            assert failed_tasks == 1
 
 
+@pytest.mark.unit
 class TestPromotionBatchFailureHandling:
     """Test failure handling scenarios."""
 
@@ -472,6 +476,7 @@ class TestPromotionBatchFailureHandling:
             mock_engine_instance.dispose.assert_called_once()
 
 
+@pytest.mark.unit
 class TestPromotionBatchNoCandidates:
     """Test handling of empty candidate sets."""
 
@@ -538,6 +543,182 @@ class TestPromotionBatchNoCandidates:
             mock_batch_job_service.complete_job.assert_called_once()
 
 
+@pytest.mark.unit
+class TestPromotionBatchRaceConditions:
+    """Test race condition handling during batch processing."""
+
+    @pytest.mark.asyncio
+    async def test_handles_candidate_status_change_during_processing(self):
+        """Handles race condition when candidate status changes between count and fetch."""
+        job_id = str(uuid4())
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        candidate1_id = uuid4()
+        candidate2_id = uuid4()
+
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 3
+
+        mock_candidates_result_first = MagicMock()
+        mock_candidates_result_first.fetchall.return_value = [(candidate1_id,), (candidate2_id,)]
+
+        mock_candidates_result_empty = MagicMock()
+        mock_candidates_result_empty.fetchall.return_value = []
+
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_count_result,
+                mock_candidates_result_first,
+                mock_candidates_result_empty,
+            ]
+        )
+
+        mock_session_maker = create_mock_session_context(mock_db)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch(
+                "src.tasks.import_tasks.promote_candidate",
+                return_value=True,
+            ) as mock_promote,
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_settings.return_value = create_mock_settings()
+
+            from src.tasks.import_tasks import process_promotion_batch
+
+            result = await process_promotion_batch(
+                job_id=job_id,
+                batch_size=10,
+                dry_run=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            assert result["status"] == "completed"
+            assert result["total_candidates"] == 3
+            assert result["promoted"] == 2
+            assert result["failed"] == 0
+            assert mock_promote.call_count == 2
+            mock_batch_job_service.complete_job.assert_called_once()
+
+
+@pytest.mark.unit
+class TestPromotionBatchExceptionHandling:
+    """Test exception handling during promotion."""
+
+    @pytest.mark.asyncio
+    async def test_handles_promote_candidate_exception(self):
+        """Handles exception raised by promote_candidate gracefully."""
+        job_id = str(uuid4())
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        candidate1_id = uuid4()
+        candidate2_id = uuid4()
+
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 2
+
+        mock_candidates_result_first = MagicMock()
+        mock_candidates_result_first.fetchall.return_value = [(candidate1_id,), (candidate2_id,)]
+
+        mock_candidates_result_empty = MagicMock()
+        mock_candidates_result_empty.fetchall.return_value = []
+
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_count_result,
+                mock_candidates_result_first,
+                mock_candidates_result_empty,
+            ]
+        )
+
+        mock_session_maker = create_mock_session_context(mock_db)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.fail_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+
+        promote_call_count = [0]
+
+        async def promote_raises_on_second(session, cid):
+            promote_call_count[0] += 1
+            if promote_call_count[0] == 2:
+                raise RuntimeError("Database constraint violation")
+            return True
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch(
+                "src.tasks.import_tasks.promote_candidate",
+                side_effect=promote_raises_on_second,
+            ),
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_settings.return_value = create_mock_settings()
+
+            from src.tasks.import_tasks import process_promotion_batch
+
+            with pytest.raises(RuntimeError, match="Database constraint violation"):
+                await process_promotion_batch(
+                    job_id=job_id,
+                    batch_size=10,
+                    dry_run=False,
+                    db_url="postgresql+asyncpg://test:test@localhost/test",
+                    redis_url="redis://localhost:6379",
+                )
+
+            mock_batch_job_service.fail_job.assert_called_once()
+
+
+@pytest.mark.unit
 class TestPromotionBatchTaskLabels:
     """Test TaskIQ task labels are properly configured."""
 

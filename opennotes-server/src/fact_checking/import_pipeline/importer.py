@@ -63,12 +63,18 @@ def parse_csv_rows(content: str) -> Iterator[dict[str, Any]]:
 
 def validate_and_normalize_batch(
     rows: list[dict[str, Any]],
+    batch_num: int | None = None,
 ) -> tuple[list[NormalizedCandidate], list[str]]:
     """Validate and normalize a batch of CSV rows.
+
+    Args:
+        rows: List of raw CSV row dictionaries.
+        batch_num: Optional batch number for diagnostic logging.
 
     Returns:
         Tuple of (valid candidates, error messages)
     """
+    input_count = len(rows)
     candidates: list[NormalizedCandidate] = []
     errors: list[str] = []
 
@@ -83,6 +89,15 @@ def validate_and_normalize_batch(
         except Exception as e:
             row_id = row.get("id", "unknown")
             errors.append(f"Row {row_id}: Unexpected error - {e}")
+
+    output_count = len(candidates) + len(errors)
+    if output_count != input_count:
+        logger.error(
+            f"Row count mismatch in batch validation: "
+            f"input={input_count}, output={output_count} "
+            f"(candidates={len(candidates)}, errors={len(errors)}), "
+            f"batch_num={batch_num}"
+        )
 
     return candidates, errors
 

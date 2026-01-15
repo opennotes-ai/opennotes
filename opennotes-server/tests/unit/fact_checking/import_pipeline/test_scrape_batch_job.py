@@ -15,6 +15,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 
 def create_mock_settings():
     """Create mock settings for tests."""
@@ -27,11 +29,59 @@ def create_mock_settings():
 
 
 def create_mock_session_context(mock_db):
-    """Create a mock async session context manager."""
+    """Create a mock async session context manager that works with multiple context entries."""
+
+    class MockSessionContextManager:
+        async def __aenter__(self):
+            return mock_db
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return None
+
     mock_session_maker = MagicMock()
-    mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-    mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session_maker.return_value = MockSessionContextManager()
+    mock_session_maker.side_effect = lambda: MockSessionContextManager()
     return mock_session_maker
+
+
+def create_flexible_execute_mock(
+    total_count: int,
+    candidate_rows: list,
+    batch_exhausted_after: int = 1,
+):
+    """
+    Create a flexible mock for db.execute that handles various query types.
+
+    Args:
+        total_count: Count to return for COUNT queries
+        candidate_rows: List of (id, url) tuples to return for SELECT queries via fetchall()
+        batch_exhausted_after: After this many fetchall() calls for candidates, return empty list
+    """
+    fetchall_call_count = [0]
+
+    def execute_side_effect(query):
+        result = MagicMock()
+
+        query_str = str(query)
+
+        if "count" in query_str.lower():
+            result.scalar_one.return_value = total_count
+        elif "update" in query_str.lower():
+            result.rowcount = 1
+        else:
+
+            def mock_fetchall():
+                if fetchall_call_count[0] < batch_exhausted_after:
+                    fetchall_call_count[0] += 1
+                    return candidate_rows
+                return []
+
+            result.fetchall = mock_fetchall
+            result.scalar_one.return_value = total_count
+
+        return result
+
+    return AsyncMock(side_effect=execute_side_effect)
 
 
 class TestScrapeBatchProcessing:
@@ -42,44 +92,19 @@ class TestScrapeBatchProcessing:
         """Successfully processes pending candidates and tracks progress."""
         job_id = str(uuid4())
 
+        candidate1_id = uuid4()
+        candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id, "https://example.com/article1"),
+            (candidate2_id, "https://example.com/article2"),
+        ]
+
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
-
-        candidate1 = MagicMock()
-        candidate1.id = uuid4()
-        candidate1.source_url = "https://example.com/article1"
-
-        candidate2 = MagicMock()
-        candidate2.id = uuid4()
-        candidate2.source_url = "https://example.com/article2"
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 2
-
-        mock_candidates_result = MagicMock()
-        call_count = [0]
-
-        def mock_scalars():
-            result = MagicMock()
-            if call_count[0] == 0:
-                result.all.return_value = [candidate1, candidate2]
-            else:
-                result.all.return_value = []
-            call_count[0] += 1
-            return result
-
-        mock_candidates_result.scalars = mock_scalars
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_count_result,
-                mock_candidates_result,
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                MagicMock(),
-                mock_candidates_result,
-            ]
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=2,
+            candidate_rows=candidate_rows,
+            batch_exhausted_after=1,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -112,6 +137,11 @@ class TestScrapeBatchProcessing:
                 return_value="Scraped content here",
             ) as mock_scrape,
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -214,6 +244,11 @@ class TestScrapeBatchProcessing:
                 side_effect=scrape_side_effect,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -278,6 +313,11 @@ class TestScrapeBatchDryRun:
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.scrape_url_content") as mock_scrape,
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -391,6 +431,11 @@ class TestScrapeBatchJobCompletion:
                 side_effect=scrape_side_effect,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -422,7 +467,7 @@ class TestScrapeBatchFailureHandling:
 
     @pytest.mark.asyncio
     async def test_job_fails_on_database_error(self):
-        """Database error causes job failure."""
+        """Database error causes job failure with proper error_summary."""
         job_id = str(uuid4())
 
         mock_db = AsyncMock()
@@ -452,6 +497,11 @@ class TestScrapeBatchFailureHandling:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                side_effect=Exception("Database connection lost"),
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -469,6 +519,15 @@ class TestScrapeBatchFailureHandling:
                 )
 
             mock_batch_job_service.fail_job.assert_called_once()
+            call_args = mock_batch_job_service.fail_job.call_args
+            error_summary = call_args[1]["error_summary"]
+            assert "exception" in error_summary
+            assert error_summary["exception"] == "Database connection lost"
+            assert "exception_type" in error_summary
+            assert error_summary["exception_type"] == "Exception"
+            assert "partial_stats" in error_summary
+            assert call_args[1]["completed_tasks"] == 0
+            assert call_args[1]["failed_tasks"] == 0
 
     @pytest.mark.asyncio
     async def test_resources_cleaned_up_on_failure(self):
@@ -503,6 +562,11 @@ class TestScrapeBatchFailureHandling:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = mock_engine_instance
             mock_settings.return_value = create_mock_settings()
@@ -566,6 +630,11 @@ class TestScrapeBatchNoCandidates:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -593,10 +662,12 @@ class TestScrapeBatchTaskLabels:
 
     def test_scrape_batch_task_has_labels(self):
         """Verify scrape batch task has component and task_type labels."""
-        from src.tasks.broker import _all_registered_tasks
+        import src.tasks.import_tasks  # noqa: F401
+        from src.tasks.broker import get_registered_tasks
 
-        assert "scrape:candidates" in _all_registered_tasks
+        registered_tasks = get_registered_tasks()
+        assert "scrape:candidates" in registered_tasks
 
-        _, labels = _all_registered_tasks["scrape:candidates"]
+        _, labels = registered_tasks["scrape:candidates"]
         assert labels.get("component") == "import_pipeline"
         assert labels.get("task_type") == "batch"

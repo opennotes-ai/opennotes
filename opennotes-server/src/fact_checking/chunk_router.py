@@ -32,12 +32,12 @@ from src.auth.community_dependencies import (
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
-from src.batch_jobs.models import BatchJobStatus
-from src.batch_jobs.rechunk_service import (
-    JOB_TYPE_FACT_CHECK,
-    JOB_TYPE_PREVIOUSLY_SEEN,
-    RechunkBatchJobService,
+from src.batch_jobs.constants import (
+    RECHUNK_FACT_CHECK_JOB_TYPE,
+    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
 )
+from src.batch_jobs.models import BatchJobStatus
+from src.batch_jobs.rechunk_service import RechunkBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.batch_jobs.service import BatchJobService, InvalidStateTransitionError
 from src.cache.redis_client import redis_client
@@ -124,7 +124,7 @@ async def get_rechunk_job_status(
             detail=f"Job {job_id} not found",
         )
 
-    if job.job_type not in (JOB_TYPE_FACT_CHECK, JOB_TYPE_PREVIOUSLY_SEEN):
+    if job.job_type not in (RECHUNK_FACT_CHECK_JOB_TYPE, RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Job {job_id} is not a rechunk job",
@@ -356,11 +356,11 @@ async def list_rechunk_jobs(
         List of rechunk batch jobs
     """
     fact_check_jobs = await service.list_jobs(
-        job_type=JOB_TYPE_FACT_CHECK,
+        job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
         status=job_status,
     )
     previously_seen_jobs = await service.list_jobs(
-        job_type=JOB_TYPE_PREVIOUSLY_SEEN,
+        job_type=RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
         status=job_status,
     )
 
@@ -417,7 +417,7 @@ async def cancel_rechunk_job(
             detail=f"Job {job_id} not found",
         )
 
-    if job.job_type not in (JOB_TYPE_FACT_CHECK, JOB_TYPE_PREVIOUSLY_SEEN):
+    if job.job_type not in (RECHUNK_FACT_CHECK_JOB_TYPE, RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Job {job_id} is not a rechunk job",

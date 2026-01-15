@@ -7871,7 +7871,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ScrapeCandidatesRequest"
+                "$ref": "#/components/schemas/BatchProcessingRequest"
               }
             }
           }
@@ -7936,7 +7936,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PromoteCandidatesRequest"
+                "$ref": "#/components/schemas/BatchProcessingRequest"
               }
             }
           }
@@ -9255,6 +9255,27 @@
         ],
         "title": "BatchJobStatus",
         "description": "Status states for a batch job."
+      },
+      "BatchProcessingRequest": {
+        "properties": {
+          "batch_size": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Maximum number of candidates to process in this batch",
+            "default": 1000
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "Count candidates only, do not perform operation",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "BatchProcessingRequest",
+        "description": "Shared request parameters for batch processing operations (scrape, promote)."
       },
       "BatchScoreRequest": {
         "properties": {
@@ -15204,27 +15225,6 @@
         "title": "ProfileUpdateRequest",
         "description": "JSON:API request for updating a profile."
       },
-      "PromoteCandidatesRequest": {
-        "properties": {
-          "batch_size": {
-            "type": "integer",
-            "maximum": 10000.0,
-            "minimum": 1.0,
-            "title": "Batch Size",
-            "description": "Maximum number of candidates to promote in this batch",
-            "default": 1000
-          },
-          "dry_run": {
-            "type": "boolean",
-            "title": "Dry Run",
-            "description": "Count candidates only, do not perform promotion",
-            "default": false
-          }
-        },
-        "type": "object",
-        "title": "PromoteCandidatesRequest",
-        "description": "Request parameters for promoting scraped candidates."
-      },
       "RatingAttributes": {
         "properties": {
           "note_id": {
@@ -16573,27 +16573,6 @@
         ],
         "title": "ScoringStatusResource",
         "description": "JSON:API resource object for scoring status."
-      },
-      "ScrapeCandidatesRequest": {
-        "properties": {
-          "batch_size": {
-            "type": "integer",
-            "maximum": 10000.0,
-            "minimum": 1.0,
-            "title": "Batch Size",
-            "description": "Maximum number of candidates to scrape in this batch",
-            "default": 1000
-          },
-          "dry_run": {
-            "type": "boolean",
-            "title": "Dry Run",
-            "description": "Count candidates only, do not perform scraping",
-            "default": false
-          }
-        },
-        "type": "object",
-        "title": "ScrapeCandidatesRequest",
-        "description": "Request parameters for scraping pending candidates."
       },
       "ServiceStatus": {
         "properties": {

@@ -405,6 +405,22 @@ def get_broker_health() -> dict[str, Any]:
     }
 
 
+def get_registered_tasks() -> dict[str, tuple[Callable[..., Any], dict[str, Any]]]:
+    """
+    Get all registered tasks with their labels.
+
+    Returns a dict mapping task names to (function, labels) tuples.
+    This is useful for testing task registration and inspecting labels.
+
+    Example:
+        tasks = get_registered_tasks()
+        if "my:task" in tasks:
+            func, labels = tasks["my:task"]
+            assert labels.get("component") == "my_component"
+    """
+    return dict(_all_registered_tasks)
+
+
 async def check_redis_ssl_connectivity() -> dict[str, Any]:
     """
     Check Redis SSL connectivity for TaskIQ result backend.
@@ -465,6 +481,7 @@ __all__ = [
     "check_redis_ssl_connectivity",
     "get_broker",
     "get_broker_health",
+    "get_registered_tasks",
     "is_broker_initialized",
     "register_task",
     "reset_broker",
