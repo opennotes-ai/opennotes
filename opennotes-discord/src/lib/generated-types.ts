@@ -3304,7 +3304,7 @@ export interface components {
              */
             id: string;
             /** @description Current job status */
-            status: components["schemas"]["src__batch_jobs__models__BatchJobStatus"];
+            status: components["schemas"]["BatchJobStatus"];
             /**
              * Total Tasks
              * @description Total tasks to process
@@ -3327,7 +3327,7 @@ export interface components {
              * Metadata
              * @description Job-specific metadata
              */
-            metadata?: {
+            metadata_?: {
                 [key: string]: unknown;
             };
             /**
@@ -3359,6 +3359,12 @@ export interface components {
              */
             updated_at?: string | null;
         };
+        /**
+         * BatchJobStatus
+         * @description Status states for a batch job.
+         * @enum {string}
+         */
+        BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
         /**
          * BatchScoreRequest
          * @description JSON:API request body for batch scores.
@@ -3509,10 +3515,10 @@ export interface components {
             attributes: components["schemas"]["BulkScanCreateAttributes"];
         };
         /**
-         * BulkScanCreateRequest
+         * BulkScanCreateJSONAPIRequest
          * @description JSON:API request body for creating a bulk scan.
          */
-        BulkScanCreateRequest: {
+        BulkScanCreateJSONAPIRequest: {
             data: components["schemas"]["BulkScanCreateData"];
         };
         /**
@@ -3555,6 +3561,25 @@ export interface components {
             error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
         };
         /**
+         * BulkScanResultsJSONAPIResponse
+         * @description JSON:API response for bulk scan results with included flagged messages.
+         */
+        BulkScanResultsJSONAPIResponse: {
+            data: components["schemas"]["BulkScanResultsResource"];
+            /** Included */
+            included?: components["schemas"]["FlaggedMessageResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
          * BulkScanResultsResource
          * @description JSON:API resource object for bulk scan results.
          */
@@ -3571,25 +3596,6 @@ export interface components {
             relationships?: {
                 [key: string]: unknown;
             } | null;
-        };
-        /**
-         * BulkScanResultsResponse
-         * @description JSON:API response for bulk scan results with included flagged messages.
-         */
-        BulkScanResultsResponse: {
-            data: components["schemas"]["BulkScanResultsResource"];
-            /** Included */
-            included?: components["schemas"]["FlaggedMessageResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * BulkScanSingleResponse
@@ -4876,6 +4882,25 @@ export interface components {
             error_summary?: components["schemas"]["ScanErrorSummarySchema"] | null;
         };
         /**
+         * LatestScanJSONAPIResponse
+         * @description JSON:API response for the latest scan with included flagged messages.
+         */
+        LatestScanJSONAPIResponse: {
+            data: components["schemas"]["LatestScanResource"];
+            /** Included */
+            included?: components["schemas"]["FlaggedMessageResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
          * LatestScanResource
          * @description JSON:API resource object for the latest scan.
          */
@@ -4892,25 +4917,6 @@ export interface components {
             relationships?: {
                 [key: string]: unknown;
             } | null;
-        };
-        /**
-         * LatestScanResponse
-         * @description JSON:API response for the latest scan with included flagged messages.
-         */
-        LatestScanResponse: {
-            data: components["schemas"]["LatestScanResource"];
-            /** Included */
-            included?: components["schemas"]["FlaggedMessageResource"][];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
          * MonitoredChannelAttributes
@@ -5006,10 +5012,10 @@ export interface components {
             data: components["schemas"]["MonitoredChannelCreateData"];
         };
         /**
-         * MonitoredChannelListResponse
+         * MonitoredChannelListJSONAPIResponse
          * @description JSON:API response for a list of monitored channel resources.
          */
-        MonitoredChannelListResponse: {
+        MonitoredChannelListJSONAPIResponse: {
             /** Data */
             data: components["schemas"]["MonitoredChannelResource"][];
             /**
@@ -6782,10 +6788,10 @@ export interface components {
             data: components["schemas"]["RequestCreateData"];
         };
         /**
-         * RequestListResponse
+         * RequestListJSONAPIResponse
          * @description JSON:API response for a list of request resources.
          */
-        RequestListResponse: {
+        RequestListJSONAPIResponse: {
             /** Data */
             data: components["schemas"]["RequestResource"][];
             /**
@@ -7080,6 +7086,23 @@ export interface components {
             };
         };
         /**
+         * ScoringStatusJSONAPIResponse
+         * @description JSON:API response for scoring status.
+         */
+        ScoringStatusJSONAPIResponse: {
+            data: components["schemas"]["ScoringStatusResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
          * ScoringStatusResource
          * @description JSON:API resource object for scoring status.
          */
@@ -7095,23 +7118,6 @@ export interface components {
              */
             id: string;
             attributes: components["schemas"]["ScoringStatusAttributes"];
-        };
-        /**
-         * ScoringStatusResponse
-         * @description JSON:API response for scoring status.
-         */
-        ScoringStatusResponse: {
-            data: components["schemas"]["ScoringStatusResource"];
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -7234,10 +7240,10 @@ export interface components {
             attributes: components["schemas"]["SimilaritySearchCreateAttributes"];
         };
         /**
-         * SimilaritySearchRequest
+         * SimilaritySearchJSONAPIRequest
          * @description JSON:API request body for performing a similarity search.
          */
-        SimilaritySearchRequest: {
+        SimilaritySearchJSONAPIRequest: {
             data: components["schemas"]["SimilaritySearchCreateData"];
         };
         /**
@@ -7674,12 +7680,6 @@ export interface components {
              */
             welcome_message_id: string | null;
         };
-        /**
-         * BatchJobStatus
-         * @description Status states for a batch job.
-         * @enum {string}
-         */
-        src__batch_jobs__models__BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
     };
     responses: never;
     parameters: never;
@@ -9378,7 +9378,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RequestListResponse"];
+                    "application/json": components["schemas"]["RequestListJSONAPIResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9547,7 +9547,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ScoringStatusResponse"];
+                    "application/json": components["schemas"]["ScoringStatusJSONAPIResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9750,7 +9750,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MonitoredChannelListResponse"];
+                    "application/json": components["schemas"]["MonitoredChannelListJSONAPIResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10330,7 +10330,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SimilaritySearchRequest"];
+                "application/json": components["schemas"]["SimilaritySearchJSONAPIRequest"];
             };
         };
         responses: {
@@ -10400,7 +10400,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BulkScanCreateRequest"];
+                "application/json": components["schemas"]["BulkScanCreateJSONAPIRequest"];
             };
         };
         responses: {
@@ -10443,7 +10443,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BulkScanResultsResponse"];
+                    "application/json": components["schemas"]["BulkScanResultsJSONAPIResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10509,7 +10509,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LatestScanResponse"];
+                    "application/json": components["schemas"]["LatestScanJSONAPIResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11662,7 +11662,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Filter by job status (pending, in_progress, completed, failed, cancelled) */
-                status?: components["schemas"]["src__batch_jobs__models__BatchJobStatus"] | null;
+                status?: components["schemas"]["BatchJobStatus"] | null;
             };
             header?: {
                 "X-API-Key"?: string | null;
@@ -11766,7 +11766,7 @@ export interface operations {
                 /** @description Filter by job type */
                 job_type?: string | null;
                 /** @description Filter by job status */
-                status?: components["schemas"]["src__batch_jobs__models__BatchJobStatus"] | null;
+                status?: components["schemas"]["BatchJobStatus"] | null;
                 /** @description Maximum number of jobs to return */
                 limit?: number;
             };
