@@ -18,6 +18,8 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 IMPORT_JOB_TYPE = "import:fact_check_bureau"
+SCRAPE_JOB_TYPE = "scrape:candidates"
+PROMOTION_JOB_TYPE = "promote:candidates"
 
 
 class ImportBatchJobService:
@@ -116,23 +118,53 @@ class ImportBatchJobService:
         dry_run: bool = False,
     ) -> BatchJob:
         """
-        Start a content scraping job for pending candidates.
+        Start a new candidate scrape job.
 
-        Note: This is a stub. Full implementation in PR 118.
+        Creates a BatchJob in PENDING status and dispatches a TaskIQ
+        background task to scrape pending candidates. Returns immediately
+        without blocking the HTTP connection.
 
         Args:
-            batch_size: Number of candidates to process per batch
-            dry_run: If True, validate only without scraping
+            batch_size: Number of candidates to process per batch (default 1000)
+            dry_run: If True, count candidates but don't scrape
 
         Returns:
-            The created BatchJob
-
-        Raises:
-            NotImplementedError: Until PR 118 is merged
+            The created BatchJob (in PENDING status)
         """
-        raise NotImplementedError(
-            "start_scrape_job not yet implemented. Requires PR 118 to be merged."
+        from src.tasks.import_tasks import process_scrape_batch  # noqa: PLC0415
+
+        settings = get_settings()
+
+        job_data = BatchJobCreate(
+            job_type=SCRAPE_JOB_TYPE,
+            total_tasks=0,
+            metadata={
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+            },
         )
+
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
+
+        logger.info(
+            "Created scrape batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+            },
+        )
+
+        await process_scrape_batch.kiq(
+            job_id=str(job.id),
+            batch_size=batch_size,
+            dry_run=dry_run,
+            db_url=settings.DATABASE_URL,
+            redis_url=settings.REDIS_URL,
+        )
+
+        return job
 
     async def start_promotion_job(
         self,
@@ -140,23 +172,53 @@ class ImportBatchJobService:
         dry_run: bool = False,
     ) -> BatchJob:
         """
-        Start a promotion job for scraped candidates.
+        Start a new candidate promotion job.
 
-        Note: This is a stub. Full implementation in PR 118.
+        Creates a BatchJob in PENDING status and dispatches a TaskIQ
+        background task to promote scraped candidates. Returns immediately
+        without blocking the HTTP connection.
 
         Args:
-            batch_size: Number of candidates to promote per batch
-            dry_run: If True, validate only without promoting
+            batch_size: Number of candidates to process per batch (default 1000)
+            dry_run: If True, count candidates but don't promote
 
         Returns:
-            The created BatchJob
-
-        Raises:
-            NotImplementedError: Until PR 118 is merged
+            The created BatchJob (in PENDING status)
         """
-        raise NotImplementedError(
-            "start_promotion_job not yet implemented. Requires PR 118 to be merged."
+        from src.tasks.import_tasks import process_promotion_batch  # noqa: PLC0415
+
+        settings = get_settings()
+
+        job_data = BatchJobCreate(
+            job_type=PROMOTION_JOB_TYPE,
+            total_tasks=0,
+            metadata={
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+            },
         )
+
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
+
+        logger.info(
+            "Created promotion batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+            },
+        )
+
+        await process_promotion_batch.kiq(
+            job_id=str(job.id),
+            batch_size=batch_size,
+            dry_run=dry_run,
+            db_url=settings.DATABASE_URL,
+            redis_url=settings.REDIS_URL,
+        )
+
+        return job
 
 
 def get_import_batch_job_service(session: AsyncSession) -> ImportBatchJobService:
