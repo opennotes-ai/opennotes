@@ -48,8 +48,8 @@ logger = get_logger(__name__)
 _tracer = trace.get_tracer(__name__)
 
 MAX_STORED_ERRORS = 50
-SCRAPING_TIMEOUT_MINUTES = 30
-PROMOTING_TIMEOUT_MINUTES = 30
+SCRAPING_TIMEOUT_MINUTES = 120  # 2 hours - allows ~1400 candidates at 5s each
+PROMOTING_TIMEOUT_MINUTES = 120  # 2 hours - allows large batch promotion
 
 
 async def _release_job_lock(
