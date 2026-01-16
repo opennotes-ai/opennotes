@@ -337,8 +337,9 @@ class TestStreamHttpFailures:
         mock_batch_job_service.fail_job = AsyncMock()
 
         async def timeout_error(*args, **kwargs):
+            if False:
+                yield
             raise httpx.TimeoutException("Connection timed out")
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -399,11 +400,12 @@ class TestStreamHttpFailures:
         mock_batch_job_service.fail_job = AsyncMock()
 
         async def http_404_error(*args, **kwargs):
+            if False:
+                yield
             response = MagicMock()
             response.status_code = 404
             request = MagicMock()
             raise httpx.HTTPStatusError("Not Found", request=request, response=response)
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -464,11 +466,12 @@ class TestStreamHttpFailures:
         mock_batch_job_service.fail_job = AsyncMock()
 
         async def http_500_error(*args, **kwargs):
+            if False:
+                yield
             response = MagicMock()
             response.status_code = 500
             request = MagicMock()
             raise httpx.HTTPStatusError("Internal Server Error", request=request, response=response)
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -529,8 +532,9 @@ class TestStreamHttpFailures:
         mock_batch_job_service.fail_job = AsyncMock()
 
         async def connection_reset(*args, **kwargs):
+            if False:
+                yield
             raise httpx.RemoteProtocolError("Connection reset by peer")
-            yield  # pragma: no cover - makes this an async generator
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -1889,8 +1893,9 @@ class TestFailJobErrorHandling:
         original_error = ValueError("Original processing error")
 
         async def raise_error(*args, **kwargs):
+            if False:
+                yield
             raise original_error
-            yield  # pragma: no cover
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,

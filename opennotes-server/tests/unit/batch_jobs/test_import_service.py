@@ -42,7 +42,11 @@ def mock_batch_job_service():
 
 @pytest.fixture
 def mock_lock_manager():
-    """Create a mock RechunkLockManager."""
+    """Create a mock lock manager for ImportBatchJobService locking tests.
+
+    Mocks acquire_lock (returns True by default) and release_lock methods
+    to verify locking behavior without requiring Redis.
+    """
     manager = MagicMock()
     manager.acquire_lock = AsyncMock(return_value=True)
     manager.release_lock = AsyncMock(return_value=True)
@@ -763,5 +767,169 @@ class TestLockManager:
         )
 
         await import_service_with_lock.start_promotion_job()
+
+        mock_lock_manager.release_lock.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_fact_check_import")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_import_job_acquires_lock(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_import_job acquires lock when lock manager is configured."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service_with_lock.start_import_job()
+
+        mock_lock_manager.acquire_lock.assert_called_once_with("import")
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_fact_check_import")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_import_job_raises_if_lock_not_acquired(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_import_job raises ConcurrentJobError if lock cannot be acquired."""
+        mock_lock_manager.acquire_lock.return_value = False
+
+        with pytest.raises(ConcurrentJobError, match="import job is already in progress"):
+            await import_service_with_lock.start_import_job()
+
+        mock_batch_job_service.create_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_fact_check_import")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_import_job_releases_lock_on_kiq_failure(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_import_job releases lock when kiq() fails."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        mock_task.kiq = AsyncMock(side_effect=RuntimeError("NATS connection failed"))
+
+        with pytest.raises(RuntimeError):
+            await import_service_with_lock.start_import_job()
+
+        mock_lock_manager.release_lock.assert_called_once_with("import")
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_fact_check_import")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_import_job_releases_lock_on_create_job_failure(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_import_job releases lock when create_job fails."""
+        mock_batch_job_service.create_job.side_effect = Exception("DB error")
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        with pytest.raises(Exception, match="DB error"):
+            await import_service_with_lock.start_import_job()
+
+        mock_lock_manager.release_lock.assert_called_once_with("import")
+        mock_task.kiq.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_fact_check_import")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_import_job_passes_lock_operation_to_task(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_import_job passes lock_operation to task when lock manager configured.
+
+        This enables the background task to release the lock when it completes.
+        """
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service_with_lock.start_import_job()
+
+        mock_task.kiq.assert_called_once()
+        call_kwargs = mock_task.kiq.call_args[1]
+        assert call_kwargs["lock_operation"] == "import"
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_fact_check_import")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_import_job_does_not_release_lock_on_success(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service_with_lock,
+        mock_batch_job_service,
+        mock_lock_manager,
+        mock_session,
+    ):
+        """start_import_job does NOT release lock on successful dispatch.
+
+        The lock is released by the background task when it completes, not by
+        the service method. This ensures the lock is held until the job finishes.
+        """
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service_with_lock.start_import_job()
 
         mock_lock_manager.release_lock.assert_not_called()

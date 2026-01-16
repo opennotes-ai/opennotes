@@ -13,105 +13,27 @@ Both endpoints should:
 - Return 409 Conflict when concurrent job attempted (via lock_manager)
 
 Task: task-1006.17 - Wire lock_manager into router get_import_service dependency
+
+Fixtures:
+- auth_headers: from tests/conftest.py (uses registered_user)
+- api_key_headers: from tests/integration/fact_checking/conftest.py
+- mock_scrape_job: from tests/integration/fact_checking/conftest.py
+- mock_promotion_job: from tests/integration/fact_checking/conftest.py
 """
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src.auth.auth import create_access_token
-from src.auth.models import APIKeyCreate
 from src.batch_jobs import PROMOTION_JOB_TYPE, SCRAPE_JOB_TYPE
 from src.batch_jobs.import_service import ConcurrentJobError
-from src.batch_jobs.models import BatchJob, BatchJobStatus
 from src.fact_checking.import_pipeline.router import get_import_service
 from src.main import app
-from src.users.crud import create_api_key
-
-
-class TestImportRouterFixtures:
-    """Fixtures for import router testing scenarios."""
-
-    @pytest.fixture
-    async def test_user(self, db):
-        """Create a test user for authenticated requests."""
-        from src.users.models import User
-
-        user = User(
-            id=uuid4(),
-            username="import_test_user",
-            email="import_test@test.local",
-            hashed_password="hashed_password_placeholder",
-            role="user",
-            is_active=True,
-            is_superuser=False,
-            discord_id="discord_import_test",
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-        return user
-
-    @pytest.fixture
-    def auth_headers(self, test_user):
-        """Create auth headers for test user."""
-        token_data = {
-            "sub": str(test_user.id),
-            "username": test_user.username,
-            "role": test_user.role,
-        }
-        access_token = create_access_token(token_data)
-        return {"Authorization": f"Bearer {access_token}"}
-
-    @pytest.fixture
-    async def api_key_headers(self, test_user, db):
-        """Create API key headers for test user."""
-        _, raw_key = await create_api_key(
-            db=db,
-            user_id=test_user.id,
-            api_key_create=APIKeyCreate(name="Test Import API Key", expires_in_days=30),
-        )
-        await db.commit()
-        return {"X-API-Key": raw_key}
-
-    @pytest.fixture
-    def mock_scrape_job(self):
-        """Create a mock BatchJob for scrape operations."""
-        now = datetime.now(UTC)
-        return BatchJob(
-            id=uuid4(),
-            job_type=SCRAPE_JOB_TYPE,
-            status=BatchJobStatus.PENDING,
-            total_tasks=0,
-            completed_tasks=0,
-            failed_tasks=0,
-            metadata_={"batch_size": 100, "dry_run": False},
-            created_at=now,
-            updated_at=now,
-        )
-
-    @pytest.fixture
-    def mock_promotion_job(self):
-        """Create a mock BatchJob for promotion operations."""
-        now = datetime.now(UTC)
-        return BatchJob(
-            id=uuid4(),
-            job_type=PROMOTION_JOB_TYPE,
-            status=BatchJobStatus.PENDING,
-            total_tasks=0,
-            completed_tasks=0,
-            failed_tasks=0,
-            metadata_={"batch_size": 100, "dry_run": False},
-            created_at=now,
-            updated_at=now,
-        )
 
 
 @pytest.mark.integration
-class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
+class TestScrapeCandidatesEndpoint:
     """Tests for POST /api/v1/fact-checking/import/scrape-candidates endpoint."""
 
     @pytest.mark.asyncio
@@ -332,7 +254,7 @@ class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
 
 
 @pytest.mark.integration
-class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
+class TestPromoteCandidatesEndpoint:
     """Tests for POST /api/v1/fact-checking/import/promote-candidates endpoint."""
 
     @pytest.mark.asyncio
@@ -553,7 +475,7 @@ class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
 
 
 @pytest.mark.integration
-class TestImportLockManagerIntegration(TestImportRouterFixtures):
+class TestImportLockManagerIntegration:
     """Tests verifying lock_manager is properly wired into import endpoints.
 
     Task: task-1006.17 - Wire lock_manager into router get_import_service dependency
