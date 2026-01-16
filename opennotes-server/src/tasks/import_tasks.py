@@ -631,7 +631,7 @@ async def _scrape_single_url(
     component="import_pipeline",
     task_type="batch",
 )
-async def process_scrape_batch(
+async def process_scrape_batch(  # noqa: PLR0912
     job_id: str,
     batch_size: int,
     dry_run: bool,
@@ -752,62 +752,46 @@ async def process_scrape_batch(
 
                 return {"status": "completed", **final_stats}
 
-            progress_interval = max(1, batch_size)
-            while True:
-                async with async_session() as db:
-                    candidate_query = (
-                        select(FactCheckedItemCandidate.id, FactCheckedItemCandidate.source_url)
-                        .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
-                        .where(FactCheckedItemCandidate.content.is_(None))
-                        .limit(1)
-                        .with_for_update(skip_locked=True)
-                    )
-                    result = await db.execute(candidate_query)
-                    candidate_row = result.fetchone()
+            semaphore = asyncio.Semaphore(concurrency)
+            errors: list[str] = []
 
-                    if not candidate_row:
-                        break
+            async def process_single_candidate(
+                candidate_id: UUID,
+                source_url: str,
+            ) -> tuple[bool, str | None]:
+                """Process a single candidate with semaphore-bounded concurrency."""
+                async with semaphore:
+                    content = await _scrape_single_url(source_url, SCRAPE_URL_TIMEOUT_SECONDS)
 
-                    candidate_id, source_url = candidate_row
-                    await db.execute(
-                        update(FactCheckedItemCandidate)
-                        .where(FactCheckedItemCandidate.id == candidate_id)
-                        .values(status=CandidateStatus.SCRAPING.value)
-                    )
-                    await db.commit()
-
-                content = await asyncio.to_thread(scrape_url_content, source_url)
-
-                async with async_session() as db:
-                    if content:
-                        await db.execute(
-                            update(FactCheckedItemCandidate)
-                            .where(FactCheckedItemCandidate.id == candidate_id)
-                            .values(
-                                status=CandidateStatus.SCRAPED.value,
-                                content=content,
+                    async with async_session() as db:
+                        if content:
+                            await db.execute(
+                                update(FactCheckedItemCandidate)
+                                .where(FactCheckedItemCandidate.id == candidate_id)
+                                .values(
+                                    status=CandidateStatus.SCRAPED.value,
+                                    content=content,
+                                )
                             )
-                        )
-                        await db.commit()
-                        scraped += 1
-                        logger.debug(
-                            "Scraped candidate",
-                            extra={
-                                "candidate_id": str(candidate_id),
-                                "content_length": len(content),
-                            },
-                        )
-                    else:
+                            await db.commit()
+                            logger.debug(
+                                "Scraped candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                    "content_length": len(content),
+                                },
+                            )
+                            return (True, None)
+
                         await db.execute(
                             update(FactCheckedItemCandidate)
                             .where(FactCheckedItemCandidate.id == candidate_id)
                             .values(
                                 status=CandidateStatus.SCRAPE_FAILED.value,
-                                error_message="Failed to extract content from URL",
+                                error_message="Scrape returned no content or timed out",
                             )
                         )
                         await db.commit()
-                        failed += 1
                         logger.warning(
                             "Failed to scrape candidate",
                             extra={
@@ -815,9 +799,69 @@ async def process_scrape_batch(
                                 "source_url": source_url,
                             },
                         )
+                        return (False, "Scrape failed")
+
+            progress_interval = max(1, batch_size)
+
+            while True:
+                candidates: list[tuple[UUID, str]] = []
+
+                async with async_session() as db:
+                    candidate_query = (
+                        select(
+                            FactCheckedItemCandidate.id,
+                            FactCheckedItemCandidate.source_url,
+                        )
+                        .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
+                        .where(FactCheckedItemCandidate.content.is_(None))
+                        .limit(batch_size)
+                        .with_for_update(skip_locked=True)
+                    )
+                    result = await db.execute(candidate_query)
+                    candidates = list(result.fetchall())
+
+                    if not candidates:
+                        logger.info(f"Job {job_id}: No more candidates to process")
+                        break
+
+                    candidate_ids = [c[0] for c in candidates]
+                    await db.execute(
+                        update(FactCheckedItemCandidate)
+                        .where(FactCheckedItemCandidate.id.in_(candidate_ids))
+                        .values(status=CandidateStatus.SCRAPING.value)
+                    )
+                    await db.commit()
+
+                logger.info(
+                    f"Job {job_id}: Processing {len(candidates)} candidates in parallel "
+                    f"(concurrency={concurrency})"
+                )
+
+                tasks = [
+                    process_single_candidate(candidate_id, source_url)
+                    for candidate_id, source_url in candidates
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                batch_scraped = 0
+                batch_failed = 0
+                for result in results:
+                    if isinstance(result, Exception):
+                        batch_failed += 1
+                        errors.append(str(result)[:200])
+                        logger.error(f"Job {job_id}: Candidate processing error: {result}")
+                    elif result[0]:
+                        batch_scraped += 1
+                    else:
+                        batch_failed += 1
+                        if result[1]:
+                            errors.append(result[1])
+
+                scraped += batch_scraped
+                failed += batch_failed
 
                 processed = scraped + failed
-                if processed % progress_interval == 0:
+                if processed % progress_interval == 0 or processed == total_candidates:
                     try:
                         await _update_progress(
                             async_session,
