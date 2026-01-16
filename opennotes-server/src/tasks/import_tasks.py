@@ -51,6 +51,9 @@ MAX_STORED_ERRORS = 50
 SCRAPING_TIMEOUT_MINUTES = 120  # 2 hours - allows ~1400 candidates at 5s each
 PROMOTING_TIMEOUT_MINUTES = 120  # 2 hours - allows large batch promotion
 
+DEFAULT_SCRAPE_CONCURRENCY = 10  # Max concurrent URL scrapes
+SCRAPE_URL_TIMEOUT_SECONDS = 60  # Per-URL timeout
+
 
 async def _release_job_lock(
     redis_client: RedisClient,
