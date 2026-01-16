@@ -136,6 +136,11 @@ class FactCheckedItemCandidate(Base):
     )
 
     # Processing status (indexed via __table_args__)
+    # Uses String(20) rather than PostgreSQL ENUM for:
+    # 1. Codebase consistency - all status fields use String(20)
+    # 2. Pipeline flexibility - new statuses can be added without migrations
+    # 3. Application-level type safety via CandidateStatus enum is sufficient
+    # See task-1009 for decision rationale
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
