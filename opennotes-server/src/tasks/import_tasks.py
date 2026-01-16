@@ -846,7 +846,7 @@ async def process_scrape_batch(  # noqa: PLR0912
                 batch_scraped = 0
                 batch_failed = 0
                 for result in results:
-                    if isinstance(result, Exception):
+                    if isinstance(result, BaseException):
                         batch_failed += 1
                         errors.append(str(result)[:200])
                         logger.error(f"Job {job_id}: Candidate processing error: {result}")
