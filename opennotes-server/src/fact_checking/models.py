@@ -66,7 +66,7 @@ class FactCheckItem(Base):
     author: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Rating/verdict
-    rating: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rating: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Original rating value when normalized to a different canonical rating
     # e.g., "missing_context" when rating is "misleading", "altered" when rating is "false"
     rating_details: Mapped[str | None] = mapped_column(String(255), nullable=True)
