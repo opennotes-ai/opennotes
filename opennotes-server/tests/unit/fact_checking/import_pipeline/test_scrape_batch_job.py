@@ -10,6 +10,7 @@ Tests cover:
 - Job completion with correct stats
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -783,3 +784,55 @@ class TestMidBatchCrashRecovery:
             assert len(scrape_calls) == 2
             assert "https://example.com/1" in scrape_calls
             assert "https://example.com/2" in scrape_calls
+
+
+class TestSingleUrlScrapeHelper:
+    """Tests for _scrape_single_url helper function."""
+
+    @pytest.mark.asyncio
+    async def test_scrape_single_url_success(self):
+        """Successful scrape returns content."""
+        from src.tasks.import_tasks import _scrape_single_url
+
+        with patch("src.tasks.import_tasks.scrape_url_content") as mock_scrape:
+            mock_scrape.return_value = "scraped content"
+
+            result = await _scrape_single_url(
+                "https://example.com",
+                timeout_seconds=10,
+            )
+
+            assert result == "scraped content"
+            mock_scrape.assert_called_once_with("https://example.com")
+
+    @pytest.mark.asyncio
+    async def test_scrape_single_url_timeout(self):
+        """Timeout returns None instead of raising."""
+        from src.tasks.import_tasks import _scrape_single_url
+
+        async def slow_operation(*args):
+            await asyncio.sleep(10)
+            return "content"
+
+        with patch("src.tasks.import_tasks.asyncio.wait_for", side_effect=TimeoutError):
+            result = await _scrape_single_url(
+                "https://example.com",
+                timeout_seconds=0.1,
+            )
+
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_scrape_single_url_exception(self):
+        """Exception returns None instead of raising."""
+        from src.tasks.import_tasks import _scrape_single_url
+
+        with patch("src.tasks.import_tasks.scrape_url_content") as mock_scrape:
+            mock_scrape.side_effect = Exception("Network error")
+
+            result = await _scrape_single_url(
+                "https://example.com",
+                timeout_seconds=10,
+            )
+
+            assert result is None

@@ -21,7 +21,7 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.batch_jobs.constants import DEFAULT_SCRAPE_CONCURRENCY
+from src.batch_jobs.constants import DEFAULT_SCRAPE_CONCURRENCY, SCRAPE_URL_TIMEOUT_SECONDS
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
 from src.batch_jobs.service import BatchJobService
 from src.cache.redis_client import RedisClient
@@ -598,6 +598,32 @@ async def process_fact_check_import(
             await _release_job_lock(redis_client, lock_operation, job_id)
             await redis_client.disconnect()
             await engine.dispose()
+
+
+async def _scrape_single_url(
+    url: str,
+    timeout_seconds: float = SCRAPE_URL_TIMEOUT_SECONDS,
+) -> str | None:
+    """Scrape a single URL with timeout protection.
+
+    Args:
+        url: The URL to scrape
+        timeout_seconds: Maximum time to wait for scrape
+
+    Returns:
+        Scraped content on success, None on timeout or error.
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(scrape_url_content, url),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        logger.warning(f"Scrape timeout for URL: {url}")
+        return None
+    except Exception as e:
+        logger.error(f"Scrape error for URL {url}: {e}")
+        return None
 
 
 @register_task(
