@@ -262,6 +262,7 @@ async def _recover_stuck_scraping_candidates(
             .where(FactCheckedItemCandidate.updated_at < cutoff_time)
             .values(
                 status=CandidateStatus.PENDING.value,
+                content=None,
                 error_message="Recovered from stuck SCRAPING state",
             )
         )

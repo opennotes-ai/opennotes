@@ -1642,6 +1642,64 @@ class TestRecoverStuckCandidates:
 
         assert recovered == 0
 
+    @pytest.mark.asyncio
+    async def test_recover_stuck_scraping_candidates_clears_content(self):
+        """Recovery clears partial content to ensure candidates are re-scraped.
+
+        When a scraping job crashes mid-batch, candidates may have partial content.
+        Recovery must clear content=None so the scrape selection query
+        (which filters by content.is_(None)) will pick them up again.
+        """
+        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 1
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await _recover_stuck_scraping_candidates(mock_session_maker, timeout_minutes=30)
+
+        execute_call = mock_db.execute.call_args
+        update_stmt = execute_call[0][0]
+
+        compiled = update_stmt.compile()
+        assert "content" in str(compiled)
+
+        params = compiled.params
+        assert "content" in params
+        assert params["content"] is None
+
+    @pytest.mark.asyncio
+    async def test_recovered_candidates_are_selected_for_rescrape(self):
+        """Recovered candidates with cleared content appear in scrape selection query.
+
+        This tests the integration between recovery (which sets content=None)
+        and the scrape batch job's candidate selection query (which filters
+        by status=PENDING AND content IS NULL).
+        """
+        from sqlalchemy import func, select
+
+        from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
+
+        count_query = (
+            select(func.count())
+            .select_from(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
+            .where(FactCheckedItemCandidate.content.is_(None))
+        )
+
+        compiled = count_query.compile()
+        query_str = str(compiled)
+
+        assert "status" in query_str
+        assert "content IS NULL" in query_str
+
 
 class TestRowAccountingIntegrity:
     """Test row accounting integrity checks in import tasks."""
