@@ -722,87 +722,89 @@ async def process_scrape_batch(
 
                 return {"status": "completed", **final_stats}
 
+            progress_interval = max(1, batch_size)
             while True:
                 async with async_session() as db:
-                    candidates_query = (
+                    candidate_query = (
                         select(FactCheckedItemCandidate.id, FactCheckedItemCandidate.source_url)
                         .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
                         .where(FactCheckedItemCandidate.content.is_(None))
-                        .limit(batch_size)
+                        .limit(1)
                         .with_for_update(skip_locked=True)
                     )
-                    result = await db.execute(candidates_query)
-                    candidate_rows = result.fetchall()
+                    result = await db.execute(candidate_query)
+                    candidate_row = result.fetchone()
 
-                    if not candidate_rows:
+                    if not candidate_row:
                         break
 
-                    candidate_ids = [row[0] for row in candidate_rows]
+                    candidate_id, source_url = candidate_row
                     await db.execute(
                         update(FactCheckedItemCandidate)
-                        .where(FactCheckedItemCandidate.id.in_(candidate_ids))
+                        .where(FactCheckedItemCandidate.id == candidate_id)
                         .values(status=CandidateStatus.SCRAPING.value)
                     )
                     await db.commit()
 
-                for candidate_id, source_url in candidate_rows:
-                    content = await asyncio.to_thread(scrape_url_content, source_url)
+                content = await asyncio.to_thread(scrape_url_content, source_url)
 
-                    async with async_session() as db:
-                        if content:
-                            await db.execute(
-                                update(FactCheckedItemCandidate)
-                                .where(FactCheckedItemCandidate.id == candidate_id)
-                                .values(
-                                    status=CandidateStatus.SCRAPED.value,
-                                    content=content,
-                                )
+                async with async_session() as db:
+                    if content:
+                        await db.execute(
+                            update(FactCheckedItemCandidate)
+                            .where(FactCheckedItemCandidate.id == candidate_id)
+                            .values(
+                                status=CandidateStatus.SCRAPED.value,
+                                content=content,
                             )
-                            await db.commit()
-                            scraped += 1
-                            logger.debug(
-                                "Scraped candidate",
-                                extra={
-                                    "candidate_id": str(candidate_id),
-                                    "content_length": len(content),
-                                },
+                        )
+                        await db.commit()
+                        scraped += 1
+                        logger.debug(
+                            "Scraped candidate",
+                            extra={
+                                "candidate_id": str(candidate_id),
+                                "content_length": len(content),
+                            },
+                        )
+                    else:
+                        await db.execute(
+                            update(FactCheckedItemCandidate)
+                            .where(FactCheckedItemCandidate.id == candidate_id)
+                            .values(
+                                status=CandidateStatus.SCRAPE_FAILED.value,
+                                error_message="Failed to extract content from URL",
                             )
-                        else:
-                            await db.execute(
-                                update(FactCheckedItemCandidate)
-                                .where(FactCheckedItemCandidate.id == candidate_id)
-                                .values(
-                                    status=CandidateStatus.SCRAPE_FAILED.value,
-                                    error_message="Failed to extract content from URL",
-                                )
-                            )
-                            await db.commit()
-                            failed += 1
-                            logger.warning(
-                                "Failed to scrape candidate",
-                                extra={
-                                    "candidate_id": str(candidate_id),
-                                    "source_url": source_url,
-                                },
-                            )
+                        )
+                        await db.commit()
+                        failed += 1
+                        logger.warning(
+                            "Failed to scrape candidate",
+                            extra={
+                                "candidate_id": str(candidate_id),
+                                "source_url": source_url,
+                            },
+                        )
 
-                try:
-                    await _update_progress(
-                        async_session,
-                        progress_tracker,
-                        job_uuid,
-                        completed_tasks=scraped,
-                        failed_tasks=failed,
-                        current_item=f"Processed {scraped + failed}/{total_candidates}",
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "Failed to update progress during scrape batch",
-                        extra={
-                            "job_id": job_id,
-                            "error": str(e),
-                        },
-                    )
+                processed = scraped + failed
+                if processed % progress_interval == 0:
+                    try:
+                        await _update_progress(
+                            async_session,
+                            progress_tracker,
+                            job_uuid,
+                            completed_tasks=scraped,
+                            failed_tasks=failed,
+                            current_item=f"Processed {processed}/{total_candidates}",
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to update progress during scrape batch",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(e),
+                            },
+                        )
 
             final_stats = {
                 "total_candidates": total_candidates,

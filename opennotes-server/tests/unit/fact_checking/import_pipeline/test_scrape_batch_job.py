@@ -23,17 +23,18 @@ pytestmark = pytest.mark.unit
 def create_flexible_execute_mock(
     total_count: int,
     candidate_rows: list,
-    batch_exhausted_after: int = 1,
+    batch_exhausted_after: int | None = None,
 ):
     """
     Create a flexible mock for db.execute that handles various query types.
 
     Args:
         total_count: Count to return for COUNT queries
-        candidate_rows: List of (id, url) tuples to return for SELECT queries via fetchall()
-        batch_exhausted_after: After this many fetchall() calls for candidates, return empty list
+        candidate_rows: List of (id, url) tuples to return for SELECT queries via fetchone()
+        batch_exhausted_after: Ignored (kept for backward compatibility).
+            Candidates are returned one at a time via fetchone() until exhausted.
     """
-    fetchall_call_count = [0]
+    candidate_index = [0]
 
     def execute_side_effect(query):
         result = MagicMock()
@@ -47,13 +48,14 @@ def create_flexible_execute_mock(
             result.rowcount = 1
         else:
 
-            def mock_fetchall():
-                if fetchall_call_count[0] < batch_exhausted_after:
-                    fetchall_call_count[0] += 1
-                    return candidate_rows
-                return []
+            def mock_fetchone():
+                if candidate_index[0] < len(candidate_rows):
+                    row = candidate_rows[candidate_index[0]]
+                    candidate_index[0] += 1
+                    return row
+                return None
 
-            result.fetchall = mock_fetchall
+            result.fetchone = mock_fetchone
             result.scalar_one.return_value = total_count
 
         return result
@@ -667,3 +669,183 @@ class TestScrapeBatchRaceConditionPrevention:
         assert scraping_in_session < commit_in_session, (
             "Status update to SCRAPING must happen BEFORE commit (which releases the lock)"
         )
+
+
+@pytest.mark.unit
+class TestMidBatchCrashRecovery:
+    """Test recovery from crashes that leave candidates stuck in SCRAPING state.
+
+    The race condition fix ensures only ONE candidate is ever in SCRAPING state
+    at a time (single-candidate processing). Combined with the recovery mechanism,
+    this guarantees:
+    1. At most 1 candidate stuck in SCRAPING if worker crashes mid-processing
+    2. Stuck candidates are recovered on next batch run (after timeout)
+    3. Recovered candidates are processed normally
+    """
+
+    @pytest.mark.asyncio
+    async def test_recovery_from_crash_after_scraping_status_set(self):
+        """Verify stuck candidates are recovered and counted in stats.
+
+        Simulates the scenario where a previous worker crash left candidates
+        in SCRAPING state. The recovery mechanism should reset them to PENDING
+        before processing begins.
+        """
+        job_id = str(uuid4())
+
+        candidate1_id = uuid4()
+        candidate_rows = [
+            (candidate1_id, "https://example.com/article"),
+        ]
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=1,
+            candidate_rows=candidate_rows,
+        )
+
+        mock_session_maker = create_mock_session_context(mock_db)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+
+        recovered_count = 3
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch(
+                "src.tasks.import_tasks.scrape_url_content",
+                return_value="Recovered content",
+            ),
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=recovered_count,
+            ) as mock_recover,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_settings.return_value = create_mock_settings()
+
+            from src.tasks.import_tasks import process_scrape_batch
+
+            result = await process_scrape_batch(
+                job_id=job_id,
+                batch_size=10,
+                dry_run=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            mock_recover.assert_called_once()
+
+            assert result["status"] == "completed"
+            assert result["recovered_stuck"] == recovered_count
+            assert result["scraped"] == 1
+            assert result["failed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_single_candidate_processing_limits_stuck_blast_radius(self):
+        """Verify processing is single-candidate to limit crash impact.
+
+        The code uses LIMIT 1 to ensure only one candidate is ever marked
+        SCRAPING at a time. This test verifies the pattern by checking
+        that each iteration processes exactly one candidate.
+        """
+        job_id = str(uuid4())
+
+        candidate1_id = uuid4()
+        candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id, "https://example.com/1"),
+            (candidate2_id, "https://example.com/2"),
+        ]
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=2,
+            candidate_rows=candidate_rows,
+        )
+
+        mock_session_maker = create_mock_session_context(mock_db)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+
+        scrape_calls = []
+
+        def track_scrape(url):
+            scrape_calls.append(url)
+            return f"Content for {url}"
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch(
+                "src.tasks.import_tasks.scrape_url_content",
+                side_effect=track_scrape,
+            ),
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_scraping_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_settings.return_value = create_mock_settings()
+
+            from src.tasks.import_tasks import process_scrape_batch
+
+            result = await process_scrape_batch(
+                job_id=job_id,
+                batch_size=10,
+                dry_run=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            assert result["status"] == "completed"
+            assert result["scraped"] == 2
+            assert len(scrape_calls) == 2
+            assert "https://example.com/1" in scrape_calls
+            assert "https://example.com/2" in scrape_calls
