@@ -136,6 +136,11 @@ class FactCheckedItemCandidate(Base):
     )
 
     # Processing status (indexed via __table_args__)
+    # Uses String(20) rather than PostgreSQL ENUM for:
+    # 1. Codebase consistency - all status fields use String(20)
+    # 2. Pipeline flexibility - new statuses can be added without migrations
+    # 3. Application-level type safety via CandidateStatus enum is sufficient
+    # See task-1009 for decision rationale
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -147,6 +152,11 @@ class FactCheckedItemCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Note: onupdate callback only fires for ORM-level attribute changes.
+    # Direct SQL updates (via SQLAlchemy's update() construct) must explicitly
+    # set updated_at=func.now(). A database trigger was considered but would be
+    # inconsistent with other models in the codebase that use this same pattern.
+    # Refer to the scrape_tasks and promotion modules in import_pipeline.
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

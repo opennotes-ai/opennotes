@@ -7,7 +7,7 @@ to the main fact_check_items table.
 import logging
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
@@ -76,7 +76,8 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
         logger.warning(error)
         return False
 
-    assert candidate is not None  # Type narrowing: validation passed
+    if candidate is None:
+        raise RuntimeError(f"Candidate {candidate_id} unexpectedly None after validation")
 
     try:
         fact_check_item = FactCheckItem(
@@ -100,7 +101,7 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
         await session.execute(
             update(FactCheckedItemCandidate)
             .where(FactCheckedItemCandidate.id == candidate_id)
-            .values(status=CandidateStatus.PROMOTED.value)
+            .values(status=CandidateStatus.PROMOTED.value, updated_at=func.now())
         )
 
         await session.commit()

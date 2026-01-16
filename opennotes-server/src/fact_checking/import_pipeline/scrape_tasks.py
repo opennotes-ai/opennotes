@@ -11,7 +11,7 @@ import logging
 from uuid import UUID
 
 import trafilatura
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -39,8 +39,13 @@ async def update_candidate_status(
     content: str | None = None,
     error_message: str | None = None,
 ) -> None:
-    """Update candidate status and optionally content/error."""
-    values: dict = {"status": status.value}
+    """Update candidate status and optionally content/error.
+
+    Note: Uses direct SQL update for performance. Must explicitly set
+    updated_at since SQLAlchemy's onupdate callback only fires for
+    ORM-level attribute changes, not direct SQL updates.
+    """
+    values: dict = {"status": status.value, "updated_at": func.now()}
     if content is not None:
         values["content"] = content
     if error_message is not None:

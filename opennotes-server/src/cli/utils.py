@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, TypeVar
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
 import click
@@ -25,7 +25,7 @@ DEFAULT_POLL_INTERVAL = 2.0
 DEFAULT_TIMEOUT = 3600
 
 
-def run_async(coro: Awaitable[T]) -> T:
+def run_async(coro: Coroutine[Any, Any, T]) -> T:
     """
     Run an async coroutine from synchronous Click command context.
 
