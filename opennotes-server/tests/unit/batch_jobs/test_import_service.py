@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 
+from src.batch_jobs import PROMOTION_JOB_TYPE, SCRAPE_JOB_TYPE
 from src.batch_jobs.import_service import ConcurrentJobError, ImportBatchJobService
 from src.batch_jobs.models import BatchJob
 
@@ -100,7 +101,7 @@ class TestStartScrapeJob:
         create_call = mock_batch_job_service.create_job.call_args
         job_create = create_call[0][0]
 
-        assert job_create.job_type == "scrape:candidates"
+        assert job_create.job_type == SCRAPE_JOB_TYPE
         assert job_create.total_tasks == 0
         assert job_create.metadata_["batch_size"] == 500
         assert job_create.metadata_["dry_run"] is False
@@ -246,7 +247,7 @@ class TestStartPromotionJob:
         create_call = mock_batch_job_service.create_job.call_args
         job_create = create_call[0][0]
 
-        assert job_create.job_type == "promote:candidates"
+        assert job_create.job_type == PROMOTION_JOB_TYPE
         assert job_create.total_tasks == 0
         assert job_create.metadata_["batch_size"] == 500
         assert job_create.metadata_["dry_run"] is False

@@ -15,6 +15,8 @@ from uuid import uuid4
 
 import pytest
 
+from src.batch_jobs import SCRAPE_JOB_TYPE
+
 from .conftest import create_mock_session_context, create_mock_settings
 
 pytestmark = pytest.mark.unit
@@ -596,9 +598,9 @@ class TestScrapeBatchTaskLabels:
         from src.tasks.broker import get_registered_tasks
 
         registered_tasks = get_registered_tasks()
-        assert "scrape:candidates" in registered_tasks
+        assert SCRAPE_JOB_TYPE in registered_tasks
 
-        _, labels = registered_tasks["scrape:candidates"]
+        _, labels = registered_tasks[SCRAPE_JOB_TYPE]
         assert labels.get("component") == "import_pipeline"
         assert labels.get("task_type") == "batch"
 

@@ -24,6 +24,7 @@ from httpx import ASGITransport, AsyncClient
 
 from src.auth.auth import create_access_token
 from src.auth.models import APIKeyCreate
+from src.batch_jobs import PROMOTION_JOB_TYPE, SCRAPE_JOB_TYPE
 from src.batch_jobs.import_service import ConcurrentJobError
 from src.batch_jobs.models import BatchJob, BatchJobStatus
 from src.fact_checking.import_pipeline.router import get_import_service
@@ -82,7 +83,7 @@ class TestImportRouterFixtures:
         now = datetime.now(UTC)
         return BatchJob(
             id=uuid4(),
-            job_type="scrape:candidates",
+            job_type=SCRAPE_JOB_TYPE,
             status=BatchJobStatus.PENDING,
             total_tasks=0,
             completed_tasks=0,
@@ -98,7 +99,7 @@ class TestImportRouterFixtures:
         now = datetime.now(UTC)
         return BatchJob(
             id=uuid4(),
-            job_type="promote:candidates",
+            job_type=PROMOTION_JOB_TYPE,
             status=BatchJobStatus.PENDING,
             total_tasks=0,
             completed_tasks=0,
@@ -136,7 +137,7 @@ class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
                 assert response.status_code == 201
                 data = response.json()
                 assert data["id"] == str(mock_scrape_job.id)
-                assert data["job_type"] == "scrape:candidates"
+                assert data["job_type"] == SCRAPE_JOB_TYPE
                 assert data["status"] == "pending"
         finally:
             app.dependency_overrides.pop(get_import_service, None)
@@ -234,7 +235,7 @@ class TestScrapeCandidatesEndpoint(TestImportRouterFixtures):
                 assert response.status_code == 201
                 data = response.json()
                 assert data["id"] == str(mock_scrape_job.id)
-                assert data["job_type"] == "scrape:candidates"
+                assert data["job_type"] == SCRAPE_JOB_TYPE
         finally:
             app.dependency_overrides.pop(get_import_service, None)
 
@@ -357,7 +358,7 @@ class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
                 assert response.status_code == 201
                 data = response.json()
                 assert data["id"] == str(mock_promotion_job.id)
-                assert data["job_type"] == "promote:candidates"
+                assert data["job_type"] == PROMOTION_JOB_TYPE
                 assert data["status"] == "pending"
         finally:
             app.dependency_overrides.pop(get_import_service, None)
@@ -455,7 +456,7 @@ class TestPromoteCandidatesEndpoint(TestImportRouterFixtures):
                 assert response.status_code == 201
                 data = response.json()
                 assert data["id"] == str(mock_promotion_job.id)
-                assert data["job_type"] == "promote:candidates"
+                assert data["job_type"] == PROMOTION_JOB_TYPE
         finally:
             app.dependency_overrides.pop(get_import_service, None)
 
