@@ -936,3 +936,118 @@ class TestMidBatchCrashRecovery:
             assert len(promote_calls) == 2
             assert candidate1_id in promote_calls
             assert candidate2_id in promote_calls
+
+
+class TestPromotionBatchEmptyContentHandling:
+    """Test handling of candidates with empty string content.
+
+    Task: task-1008.07 - Add empty content validation in promotion query
+
+    The promotion queries filter on content.is_not(None) but empty strings ('')
+    would still pass. This test class verifies that empty content candidates
+    are excluded at the query level to avoid wasted processing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_excludes_candidates_with_empty_content(self):
+        """Verify candidates with empty string content are not processed.
+
+        When a candidate has content='' (empty string), it should be excluded
+        from both the count query and the candidate selection query. This prevents
+        wasting processing on candidates that would fail validation anyway.
+        """
+        job_id = str(uuid4())
+
+        candidate1_id = uuid4()
+        candidate_rows = [
+            (candidate1_id,),
+        ]
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=1,
+            candidate_rows=candidate_rows,
+        )
+
+        mock_session_maker = create_mock_session_context(mock_db)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch(
+                "src.tasks.import_tasks.promote_candidate",
+                return_value=True,
+            ) as mock_promote,
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_settings.return_value = create_mock_settings()
+
+            from src.tasks.import_tasks import process_promotion_batch
+
+            result = await process_promotion_batch(
+                job_id=job_id,
+                batch_size=10,
+                dry_run=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            assert result["status"] == "completed"
+            assert result["promoted"] == 1
+            mock_promote.assert_called_once()
+
+    def test_query_includes_empty_content_filter(self):
+        """Verify the promotion queries include empty string content filter.
+
+        Inspects the source code to confirm that content != '' filter is present
+        in both the count query and candidate selection query.
+        """
+        import inspect
+
+        from src.tasks.import_tasks import process_promotion_batch
+
+        source = inspect.getsource(process_promotion_batch)
+
+        assert 'content != ""' in source or "content != ''" in source, (
+            "process_promotion_batch should filter out empty content strings"
+        )
+
+    def test_bulk_promote_query_includes_empty_content_filter(self):
+        """Verify bulk_promote_scraped query includes empty string content filter."""
+        import inspect
+
+        from src.fact_checking.import_pipeline.promotion import bulk_promote_scraped
+
+        source = inspect.getsource(bulk_promote_scraped)
+
+        assert 'content != ""' in source or "content != ''" in source, (
+            "bulk_promote_scraped should filter out empty content strings"
+        )

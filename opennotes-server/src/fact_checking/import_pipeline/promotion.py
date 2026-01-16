@@ -132,6 +132,7 @@ async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> 
         select(FactCheckedItemCandidate.id)
         .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
         .where(FactCheckedItemCandidate.content.is_not(None))
+        .where(FactCheckedItemCandidate.content != "")
         .where(FactCheckedItemCandidate.rating.is_not(None))
         .limit(batch_size)
     )
