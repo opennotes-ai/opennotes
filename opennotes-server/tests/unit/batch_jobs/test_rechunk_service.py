@@ -16,8 +16,10 @@ from uuid import uuid4
 import pytest
 
 from src.batch_jobs.constants import (
+    PROMOTION_JOB_TYPE,
     RECHUNK_FACT_CHECK_JOB_TYPE,
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+    SCRAPE_JOB_TYPE,
 )
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.rechunk_service import (
@@ -471,3 +473,124 @@ class TestRechunkServiceStaleJobCleanup:
         assert len(result) == 0
         mock_batch_job_service.fail_job.assert_not_called()
         session.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_stale_jobs_marks_stale_scrape_job_as_failed(
+        self,
+        mock_batch_job_service,
+    ):
+        """Cleanup marks stale scrape jobs as failed (task-1010.11)."""
+        from datetime import UTC, datetime, timedelta
+
+        stale_job_id = uuid4()
+        stale_job = MagicMock(spec=BatchJob)
+        stale_job.id = stale_job_id
+        stale_job.job_type = SCRAPE_JOB_TYPE
+        stale_job.status = "in_progress"
+        stale_job.created_at = datetime.now(UTC) - timedelta(hours=3)
+
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [stale_job]
+        session.execute = AsyncMock(return_value=mock_result)
+        session.commit = AsyncMock()
+
+        mock_batch_job_service.fail_job = AsyncMock(return_value=stale_job)
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.cleanup_stale_jobs(stale_threshold_hours=2)
+
+        assert len(result) == 1
+        assert result[0].id == stale_job_id
+        mock_batch_job_service.fail_job.assert_called_once()
+        call_args = mock_batch_job_service.fail_job.call_args
+        assert call_args[0][0] == stale_job_id
+        assert "stale" in call_args[1]["error_summary"]["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_stale_jobs_marks_stale_promotion_job_as_failed(
+        self,
+        mock_batch_job_service,
+    ):
+        """Cleanup marks stale promotion jobs as failed (task-1010.11)."""
+        from datetime import UTC, datetime, timedelta
+
+        stale_job_id = uuid4()
+        stale_job = MagicMock(spec=BatchJob)
+        stale_job.id = stale_job_id
+        stale_job.job_type = PROMOTION_JOB_TYPE
+        stale_job.status = "pending"
+        stale_job.created_at = datetime.now(UTC) - timedelta(hours=5)
+
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [stale_job]
+        session.execute = AsyncMock(return_value=mock_result)
+        session.commit = AsyncMock()
+
+        mock_batch_job_service.fail_job = AsyncMock(return_value=stale_job)
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.cleanup_stale_jobs(stale_threshold_hours=2)
+
+        assert len(result) == 1
+        assert result[0].id == stale_job_id
+        mock_batch_job_service.fail_job.assert_called_once()
+        call_args = mock_batch_job_service.fail_job.call_args
+        assert call_args[0][0] == stale_job_id
+        assert "stale" in call_args[1]["error_summary"]["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_stale_jobs_handles_all_job_types(
+        self,
+        mock_batch_job_service,
+    ):
+        """Cleanup processes stale jobs of all supported types (task-1010.11)."""
+        from datetime import UTC, datetime, timedelta
+
+        stale_jobs = []
+        for job_type in [
+            RECHUNK_FACT_CHECK_JOB_TYPE,
+            RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+            SCRAPE_JOB_TYPE,
+            PROMOTION_JOB_TYPE,
+        ]:
+            job = MagicMock(spec=BatchJob)
+            job.id = uuid4()
+            job.job_type = job_type
+            job.status = "in_progress"
+            job.created_at = datetime.now(UTC) - timedelta(hours=3)
+            stale_jobs.append(job)
+
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = stale_jobs
+        session.execute = AsyncMock(return_value=mock_result)
+        session.commit = AsyncMock()
+
+        mock_batch_job_service.fail_job = AsyncMock(
+            side_effect=lambda job_id, **kwargs: next(
+                (j for j in stale_jobs if j.id == job_id), None
+            )
+        )
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.cleanup_stale_jobs(stale_threshold_hours=2)
+
+        assert len(result) == 4
+        assert mock_batch_job_service.fail_job.call_count == 4

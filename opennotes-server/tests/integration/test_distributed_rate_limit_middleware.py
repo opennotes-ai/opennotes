@@ -408,6 +408,49 @@ class TestMiddleware429Behavior:
         await middleware.post_execute(message2, MagicMock())
 
 
+class TestTemplateVariableFailFast:
+    """Tests for fail-fast behavior when template variables are missing."""
+
+    @pytest.mark.asyncio
+    async def test_missing_template_variable_raises_error_immediately(self, middleware):
+        """Verify RateLimitExceededError is raised immediately when template variable missing.
+
+        This ensures fail-fast behavior: tasks with missing template variables
+        fail immediately rather than continuing with un-interpolated lock names.
+        """
+        message = create_message(
+            {
+                RATE_LIMIT_NAME: "rechunk:previously_seen:{community_server_id}",
+                RATE_LIMIT_CAPACITY: "1",
+                RATE_LIMIT_MAX_SLEEP: "30",
+            },
+            kwargs={},
+        )
+
+        with pytest.raises(RateLimitExceededError) as exc_info:
+            await middleware.pre_execute(message)
+
+        assert exc_info.value.rate_limit_name == "rechunk:previously_seen:{community_server_id}"
+        assert exc_info.value.max_sleep == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_one_of_multiple_template_variables_raises_error(self, middleware):
+        """Verify error when any one of multiple template variables is missing."""
+        message = create_message(
+            {
+                RATE_LIMIT_NAME: "task:{job_type}:{community_id}",
+                RATE_LIMIT_CAPACITY: "1",
+            },
+            kwargs={"job_type": "rechunk"},
+        )
+
+        with pytest.raises(RateLimitExceededError) as exc_info:
+            await middleware.pre_execute(message)
+
+        assert exc_info.value.rate_limit_name == "task:{job_type}:{community_id}"
+        assert exc_info.value.max_sleep == 0
+
+
 class TestConcurrentRechunkForDifferentCommunities:
     """Tests for concurrent rechunk for different communities (AC#2).
 

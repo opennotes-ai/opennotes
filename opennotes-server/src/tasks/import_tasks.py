@@ -210,6 +210,9 @@ async def _recover_stuck_scraping_candidates(
     Candidates that have been in SCRAPING state for longer than the timeout
     are reset back to PENDING state so they can be retried.
 
+    Uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting candidates that are
+    actively being processed by another worker (which would hold a row lock).
+
     Args:
         session: SQLAlchemy async session maker
         timeout_minutes: Number of minutes after which SCRAPING state is considered stuck
@@ -220,10 +223,15 @@ async def _recover_stuck_scraping_candidates(
     cutoff_time = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
 
     async with session() as db:
-        result = await db.execute(
-            update(FactCheckedItemCandidate)
+        subquery = (
+            select(FactCheckedItemCandidate.id)
             .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPING.value)
             .where(FactCheckedItemCandidate.updated_at < cutoff_time)
+            .with_for_update(skip_locked=True)
+        )
+        result = await db.execute(
+            update(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.id.in_(subquery))
             .values(
                 status=CandidateStatus.PENDING.value,
                 content=None,
@@ -254,6 +262,9 @@ async def _recover_stuck_promoting_candidates(
     Candidates that have been in PROMOTING state for longer than the timeout
     are reset back to SCRAPED state so they can be retried.
 
+    Uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting candidates that are
+    actively being processed by another worker (which would hold a row lock).
+
     Args:
         session: SQLAlchemy async session maker
         timeout_minutes: Number of minutes after which PROMOTING state is considered stuck
@@ -264,10 +275,15 @@ async def _recover_stuck_promoting_candidates(
     cutoff_time = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
 
     async with session() as db:
-        result = await db.execute(
-            update(FactCheckedItemCandidate)
+        subquery = (
+            select(FactCheckedItemCandidate.id)
             .where(FactCheckedItemCandidate.status == CandidateStatus.PROMOTING.value)
             .where(FactCheckedItemCandidate.updated_at < cutoff_time)
+            .with_for_update(skip_locked=True)
+        )
+        result = await db.execute(
+            update(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.id.in_(subquery))
             .values(
                 status=CandidateStatus.SCRAPED.value,
                 error_message="Recovered from stuck PROMOTING state",

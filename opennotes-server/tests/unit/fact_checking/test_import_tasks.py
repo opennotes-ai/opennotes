@@ -1723,6 +1723,74 @@ class TestRecoverStuckCandidates:
         assert "status" in query_str
         assert "content IS NULL" in query_str
 
+    @pytest.mark.asyncio
+    async def test_recover_stuck_scraping_uses_skip_locked(self):
+        """Recovery uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting locked rows.
+
+        When a candidate is actively being processed by another worker, it holds
+        a row lock. The recovery function must skip such rows to avoid resetting
+        candidates that are legitimately being processed.
+        """
+        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await _recover_stuck_scraping_candidates(mock_session_maker, timeout_minutes=30)
+
+        execute_call = mock_db.execute.call_args
+        update_stmt = execute_call[0][0]
+
+        criterion = update_stmt._where_criteria[0]
+        scalar_select = criterion.right
+        inner_select = scalar_select.element
+        for_update_arg = inner_select._for_update_arg
+
+        assert for_update_arg is not None, "Subquery must have FOR UPDATE clause"
+        assert for_update_arg.skip_locked is True, "FOR UPDATE must use SKIP LOCKED"
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_promoting_uses_skip_locked(self):
+        """Recovery uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting locked rows.
+
+        When a candidate is actively being processed by another worker, it holds
+        a row lock. The recovery function must skip such rows to avoid resetting
+        candidates that are legitimately being processed.
+        """
+        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await _recover_stuck_promoting_candidates(mock_session_maker, timeout_minutes=30)
+
+        execute_call = mock_db.execute.call_args
+        update_stmt = execute_call[0][0]
+
+        criterion = update_stmt._where_criteria[0]
+        scalar_select = criterion.right
+        inner_select = scalar_select.element
+        for_update_arg = inner_select._for_update_arg
+
+        assert for_update_arg is not None, "Subquery must have FOR UPDATE clause"
+        assert for_update_arg.skip_locked is True, "FOR UPDATE must use SKIP LOCKED"
+
 
 class TestRowAccountingIntegrity:
     """Test row accounting integrity checks in import tasks."""

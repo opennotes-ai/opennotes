@@ -38,7 +38,7 @@ from src.batch_jobs.constants import (
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
 )
 from src.batch_jobs.models import BatchJobStatus
-from src.batch_jobs.rechunk_service import RechunkBatchJobService
+from src.batch_jobs.rechunk_service import ActiveJobExistsError, RechunkBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.batch_jobs.service import BatchJobService, InvalidStateTransitionError
 from src.database import get_db
@@ -200,10 +200,16 @@ async def rechunk_fact_check_items(
             request=request,
         )
 
-    job = await service.start_fact_check_rechunk_job(
-        community_server_id=community_server_id,
-        batch_size=batch_size,
-    )
+    try:
+        job = await service.start_fact_check_rechunk_job(
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+        )
+    except ActiveJobExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
 
     logger.info(
         "Started fact check rechunking job",
@@ -286,10 +292,16 @@ async def rechunk_previously_seen_messages(
         request=request,
     )
 
-    job = await service.start_previously_seen_rechunk_job(
-        community_server_id=community_server_id,
-        batch_size=batch_size,
-    )
+    try:
+        job = await service.start_previously_seen_rechunk_job(
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+        )
+    except ActiveJobExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
 
     logger.info(
         "Started previously seen message rechunking job",

@@ -583,3 +583,71 @@ class TestRechunkEndpointDatabaseIntegration:
             assert job.total_tasks == 3
             assert job.completed_tasks == 0
             assert job.failed_tasks == 0
+
+
+class TestActiveJobExistsErrorHandling:
+    """Tests that verify 429 response when ActiveJobExistsError is raised.
+
+    These tests verify that when a rechunk job is already in progress,
+    the API returns 429 Too Many Requests with an appropriate error message.
+
+    Task: task-1010.09 - Add ActiveJobExistsError exception handler to chunk_router.py
+    """
+
+    @pytest.mark.asyncio
+    async def test_fact_check_rechunk_returns_429_when_active_job_exists(
+        self,
+        service_account_headers,
+        community_server_with_data,
+    ):
+        """Fact check rechunk returns 429 when ActiveJobExistsError is raised."""
+        from src.batch_jobs.rechunk_service import ActiveJobExistsError
+
+        server = community_server_with_data["server"]
+        active_job_id = uuid4()
+
+        with patch(
+            "src.fact_checking.chunk_router.RechunkBatchJobService.start_fact_check_rechunk_job",
+            side_effect=ActiveJobExistsError("rechunk:fact_check", active_job_id),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    f"/api/v1/chunks/fact-check/rechunk?community_server_id={server.id}",
+                    headers=service_account_headers,
+                )
+
+                assert response.status_code == 429
+                data = response.json()
+                assert "detail" in data
+                assert "rechunk:fact_check" in data["detail"]
+                assert str(active_job_id) in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_previously_seen_rechunk_returns_429_when_active_job_exists(
+        self,
+        service_account_headers,
+        community_server_with_data,
+    ):
+        """Previously seen rechunk returns 429 when ActiveJobExistsError is raised."""
+        from src.batch_jobs.rechunk_service import ActiveJobExistsError
+
+        server = community_server_with_data["server"]
+        active_job_id = uuid4()
+
+        with patch(
+            "src.fact_checking.chunk_router.RechunkBatchJobService.start_previously_seen_rechunk_job",
+            side_effect=ActiveJobExistsError("rechunk:previously_seen", active_job_id),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    f"/api/v1/chunks/previously-seen/rechunk?community_server_id={server.id}",
+                    headers=service_account_headers,
+                )
+
+                assert response.status_code == 429
+                data = response.json()
+                assert "detail" in data
+                assert "rechunk:previously_seen" in data["detail"]
+                assert str(active_job_id) in data["detail"]

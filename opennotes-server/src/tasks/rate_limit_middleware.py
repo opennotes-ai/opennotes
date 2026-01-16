@@ -15,6 +15,17 @@ Label Configuration:
     rate_limit_max_sleep: Optional. Seconds before MaxSleepExceededError (default: 30)
     rate_limit_expiry: Optional. Redis key TTL in seconds (default: 1800)
 
+Template Variable Requirements:
+    Template variables in rate_limit_name MUST be provided as task kwargs.
+    If a required variable is missing, RateLimitExceededError is raised
+    immediately (fail-fast behavior) with max_sleep=0 to indicate a
+    configuration error rather than a timeout.
+
+    Known templates and their required kwargs:
+    - "rechunk:previously_seen:{community_server_id}" requires: community_server_id
+    - "import:candidates:{community_server_id}" requires: community_server_id
+    - "task:{job_type}:{community_id}" requires: job_type, community_id
+
 Example:
     @register_task(
         task_name="import:candidates",
@@ -35,12 +46,20 @@ Example:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 from typing import Any
 
 from limiters import AsyncSemaphore, MaxSleepExceededError
 from redis.asyncio import Redis
 from taskiq import TaskiqMessage, TaskiqMiddleware, TaskiqResult
+
+from src.monitoring.metrics import (
+    semaphore_leak_prevented_total,
+    semaphore_release_failures_total,
+    semaphore_release_retries_total,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +84,22 @@ DEFAULT_CAPACITY = 1
 DEFAULT_MAX_SLEEP = 30
 DEFAULT_EXPIRY = 1800
 
+RELEASE_MAX_ATTEMPTS = 3
+RELEASE_BASE_DELAY = 0.1
+RELEASE_MAX_DELAY = 2.0
+RELEASE_JITTER = 0.1
+CONSECUTIVE_FAILURES_ALERT_THRESHOLD = 3
+
 
 class DistributedRateLimitMiddleware(TaskiqMiddleware):
     """TaskIQ middleware for distributed rate limiting using redis-rate-limiters."""
 
-    def __init__(self, redis_url: str) -> None:
+    def __init__(self, redis_url: str, instance_id: str = "default") -> None:
         self._redis_url = redis_url
         self._redis: Redis | None = None
         self._active_semaphores: dict[str, AsyncSemaphore] = {}
+        self._instance_id = instance_id
+        self._consecutive_release_failures: int = 0
 
     async def startup(self) -> None:
         self._redis = Redis.from_url(self._redis_url)
@@ -113,15 +140,28 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
             try:
                 rate_limit_name = rate_limit_name.format_map(message.kwargs)
             except KeyError as e:
-                logger.warning(
-                    f"Missing template variable for rate_limit_name '{rate_limit_name}': {e}"
+                logger.error(
+                    f"Missing required template variable for rate_limit_name '{rate_limit_name}': {e}. "
+                    f"Available kwargs: {list(message.kwargs.keys())}"
                 )
+                raise RateLimitExceededError(rate_limit_name, max_sleep=0)
 
         capacity = int(labels.get(RATE_LIMIT_CAPACITY, DEFAULT_CAPACITY))
         max_sleep = int(labels.get(RATE_LIMIT_MAX_SLEEP, DEFAULT_MAX_SLEEP))
         expiry = int(labels.get(RATE_LIMIT_EXPIRY, DEFAULT_EXPIRY))
 
         logger.debug(f"Acquiring rate limit: name={rate_limit_name}, capacity={capacity}")
+
+        if message.task_id in self._active_semaphores:
+            logger.warning(
+                f"Semaphore leak prevented: task_id={message.task_id} already has active semaphore "
+                f"for task={message.task_name}. Preserving original semaphore reference."
+            )
+            semaphore_leak_prevented_total.labels(
+                task_name=message.task_name,
+                instance_id=self._instance_id,
+            ).inc()
+            return message
 
         semaphore = self._get_semaphore(rate_limit_name, capacity, max_sleep, expiry)
 
@@ -148,11 +188,63 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
     ) -> None:
         await self._release_semaphore(message)
 
+    async def _release_with_retry(self, semaphore: AsyncSemaphore, task_name: str) -> bool:
+        """Release semaphore with retry logic and exponential backoff.
+
+        Args:
+            semaphore: The AsyncSemaphore to release.
+            task_name: The task name for metric labels.
+
+        Returns:
+            True if release succeeded, False if all retries exhausted.
+        """
+        for attempt in range(RELEASE_MAX_ATTEMPTS):
+            try:
+                await semaphore.__aexit__(None, None, None)
+                logger.debug(f"Released rate limit for task {task_name}")
+                return True
+            except Exception as e:
+                if attempt < RELEASE_MAX_ATTEMPTS - 1:
+                    delay = min(RELEASE_BASE_DELAY * (2**attempt), RELEASE_MAX_DELAY)
+                    jitter = delay * random.uniform(-RELEASE_JITTER, RELEASE_JITTER)
+                    wait_time = delay + jitter
+                    logger.debug(
+                        f"Semaphore release attempt {attempt + 1}/{RELEASE_MAX_ATTEMPTS} "
+                        f"failed for {task_name}: {e}. Retrying in {wait_time:.3f}s"
+                    )
+                    semaphore_release_retries_total.labels(
+                        task_name=task_name,
+                        instance_id=self._instance_id,
+                    ).inc()
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(
+                        f"Semaphore release failed after {RELEASE_MAX_ATTEMPTS} attempts "
+                        f"for task {task_name}: {e}"
+                    )
+        return False
+
     async def _release_semaphore(self, message: TaskiqMessage) -> None:
         semaphore = self._active_semaphores.pop(message.task_id, None)
         if semaphore:
-            try:
-                await semaphore.__aexit__(None, None, None)
-                logger.debug(f"Released rate limit for task {message.task_name}")
-            except Exception as e:
-                logger.error(f"Error releasing semaphore: {e}")
+            success = await self._release_with_retry(semaphore, message.task_name)
+            if success:
+                self._consecutive_release_failures = 0
+            else:
+                self._consecutive_release_failures += 1
+                semaphore_release_failures_total.labels(
+                    task_name=message.task_name,
+                    instance_id=self._instance_id,
+                ).inc()
+                if self._consecutive_release_failures >= CONSECUTIVE_FAILURES_ALERT_THRESHOLD:
+                    logger.error(
+                        f"ALERT: {self._consecutive_release_failures} consecutive semaphore release "
+                        f"failures detected. Most recent failure for task {message.task_name}. "
+                        f"Redis connectivity may be degraded.",
+                        extra={
+                            "alert_type": "semaphore_release_failures",
+                            "consecutive_failures": self._consecutive_release_failures,
+                            "task_name": message.task_name,
+                            "instance_id": self._instance_id,
+                        },
+                    )

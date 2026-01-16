@@ -23,8 +23,10 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.batch_jobs.constants import (
+    PROMOTION_JOB_TYPE,
     RECHUNK_FACT_CHECK_JOB_TYPE,
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+    SCRAPE_JOB_TYPE,
 )
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobCreate, BatchJobStatus
@@ -89,18 +91,26 @@ class RechunkBatchJobService:
         This prevents creating orphaned jobs by ensuring we don't create a new
         job when one is already pending or running.
 
+        Uses SELECT FOR UPDATE to acquire a row-level lock on any active job found,
+        preventing TOCTOU race conditions where concurrent requests could both pass
+        the check before either creates a new job.
+
         Args:
             job_type: The job type to check
 
         Raises:
             ActiveJobExistsError: If an active job exists for this type
         """
-        query = select(BatchJob).where(
-            BatchJob.job_type == job_type,
-            or_(
-                BatchJob.status == BatchJobStatus.PENDING.value,
-                BatchJob.status == BatchJobStatus.IN_PROGRESS.value,
-            ),
+        query = (
+            select(BatchJob)
+            .where(
+                BatchJob.job_type == job_type,
+                or_(
+                    BatchJob.status == BatchJobStatus.PENDING.value,
+                    BatchJob.status == BatchJobStatus.IN_PROGRESS.value,
+                ),
+            )
+            .with_for_update()
         )
         result = await self._session.execute(query)
         active_job = result.scalar_one_or_none()
@@ -321,6 +331,8 @@ class RechunkBatchJobService:
                 [
                     RECHUNK_FACT_CHECK_JOB_TYPE,
                     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+                    SCRAPE_JOB_TYPE,
+                    PROMOTION_JOB_TYPE,
                 ]
             ),
             or_(

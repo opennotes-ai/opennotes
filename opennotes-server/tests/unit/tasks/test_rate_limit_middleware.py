@@ -9,6 +9,7 @@ from src.tasks.rate_limit_middleware import (
     RATE_LIMIT_MAX_SLEEP,
     RATE_LIMIT_NAME,
     DistributedRateLimitMiddleware,
+    RateLimitExceededError,
 )
 
 
@@ -141,8 +142,8 @@ class TestRateLimitNameTemplateInterpolation:
         assert actual_name == expected_name
 
     @pytest.mark.asyncio
-    async def test_missing_template_variable_logs_warning_and_continues(self, middleware):
-        """Missing template variables log a warning but don't prevent execution."""
+    async def test_missing_template_variable_raises_rate_limit_error(self, middleware):
+        """Missing template variables raise RateLimitExceededError (fail-fast)."""
         message = MagicMock()
         message.task_id = "test-task-123"
         message.kwargs = {}
@@ -151,14 +152,11 @@ class TestRateLimitNameTemplateInterpolation:
             RATE_LIMIT_CAPACITY: "1",
         }
 
-        mock_semaphore = AsyncMock()
-        mock_semaphore.__aenter__ = AsyncMock()
-
-        with patch.object(middleware, "_get_semaphore", return_value=mock_semaphore) as mock_get:
+        with pytest.raises(RateLimitExceededError) as exc_info:
             await middleware.pre_execute(message)
 
-        actual_name = mock_get.call_args[0][0]
-        assert actual_name == "task:{missing_var}"
+        assert exc_info.value.rate_limit_name == "task:{missing_var}"
+        assert exc_info.value.max_sleep == 0
 
     @pytest.mark.asyncio
     async def test_no_template_variable_unchanged(self, middleware):
@@ -212,3 +210,131 @@ class TestRateLimitNameTemplateInterpolation:
         assert captured_names[0] == f"rechunk:{community_id_1}"
         assert captured_names[1] == f"rechunk:{community_id_2}"
         assert captured_names[0] != captured_names[1]
+
+
+class TestSemaphoreReleaseRetry:
+    """Tests for semaphore release retry logic."""
+
+    @pytest.fixture
+    def middleware(self):
+        """Create middleware instance."""
+        redis_url = "redis://localhost:6379"
+        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+
+    @pytest.mark.asyncio
+    async def test_release_with_retry_succeeds_first_attempt(self, middleware):
+        """Semaphore release succeeds on first attempt."""
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(return_value=False)
+
+        result = await middleware._release_with_retry(mock_semaphore, "test_task")
+
+        assert result is True
+        mock_semaphore.__aexit__.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_release_with_retry_succeeds_after_transient_failure(self, middleware):
+        """Semaphore release succeeds after transient failure on first attempt."""
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(side_effect=[Exception("transient error"), None])
+
+        with patch("src.tasks.rate_limit_middleware.asyncio.sleep", new_callable=AsyncMock):
+            result = await middleware._release_with_retry(mock_semaphore, "test_task")
+
+        assert result is True
+        assert mock_semaphore.__aexit__.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_release_with_retry_exhausts_retries(self, middleware):
+        """Semaphore release fails after exhausting all retries."""
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(side_effect=Exception("persistent error"))
+
+        with patch("src.tasks.rate_limit_middleware.asyncio.sleep", new_callable=AsyncMock):
+            result = await middleware._release_with_retry(mock_semaphore, "test_task")
+
+        assert result is False
+        assert mock_semaphore.__aexit__.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_consecutive_failure_counter_increments_and_resets(self, middleware):
+        """Consecutive failure counter increments on failure and resets on success."""
+        message = MagicMock()
+        message.task_id = "test-task"
+        message.task_name = "test_task"
+
+        mock_semaphore_fail = AsyncMock()
+        mock_semaphore_fail.__aexit__ = AsyncMock(side_effect=Exception("error"))
+        mock_semaphore_success = AsyncMock()
+        mock_semaphore_success.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("src.tasks.rate_limit_middleware.asyncio.sleep", new_callable=AsyncMock):
+            middleware._active_semaphores[message.task_id] = mock_semaphore_fail
+            await middleware._release_semaphore(message)
+            assert middleware._consecutive_release_failures == 1
+
+            middleware._active_semaphores[message.task_id] = mock_semaphore_fail
+            await middleware._release_semaphore(message)
+            assert middleware._consecutive_release_failures == 2
+
+            middleware._active_semaphores[message.task_id] = mock_semaphore_success
+            await middleware._release_semaphore(message)
+            assert middleware._consecutive_release_failures == 0
+
+    @pytest.mark.asyncio
+    async def test_alert_log_emitted_at_threshold(self, middleware, caplog):
+        """ERROR log is emitted when consecutive failures reach threshold."""
+        import logging
+
+        message = MagicMock()
+        message.task_id = "test-task"
+        message.task_name = "test_task"
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(side_effect=Exception("error"))
+
+        with (
+            patch("src.tasks.rate_limit_middleware.asyncio.sleep", new_callable=AsyncMock),
+            caplog.at_level(logging.ERROR),
+        ):
+            for _ in range(3):
+                middleware._active_semaphores[message.task_id] = mock_semaphore
+                await middleware._release_semaphore(message)
+
+        assert "ALERT:" in caplog.text
+        assert "3 consecutive semaphore release failures" in caplog.text
+
+
+class TestSemaphoreLeakPrevention:
+    """Tests for semaphore leak prevention when task_id already tracked."""
+
+    @pytest.fixture
+    def middleware(self):
+        """Create middleware instance."""
+        redis_url = "redis://localhost:6379"
+        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+
+    @pytest.mark.asyncio
+    async def test_pre_execute_skips_tracking_when_task_id_exists(self, middleware):
+        """Pre-execute skips acquiring new semaphore when task_id already tracked."""
+        existing_semaphore = AsyncMock()
+        message = MagicMock()
+        message.task_id = "existing-task"
+        message.task_name = "test_task"
+        message.kwargs = {}
+        message.labels = {
+            RATE_LIMIT_NAME: "test:lock",
+            RATE_LIMIT_CAPACITY: "1",
+        }
+
+        middleware._active_semaphores[message.task_id] = existing_semaphore
+
+        mock_new_semaphore = AsyncMock()
+        with patch.object(
+            middleware, "_get_semaphore", return_value=mock_new_semaphore
+        ) as mock_get:
+            result = await middleware.pre_execute(message)
+
+        assert result == message
+        mock_get.assert_not_called()
+        assert middleware._active_semaphores[message.task_id] is existing_semaphore
