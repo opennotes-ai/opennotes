@@ -2617,7 +2617,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'dev'", specifier = "==2.1.2" },
     { name = "torch", marker = "extra == 'scoring'", specifier = "==2.1.2" },
     { name = "traceloop-sdk", specifier = ">=0.35.0" },
-    { name = "trafilatura", specifier = ">=2.0.0" },
+    { name = "trafilatura", specifier = ">=2.0.0,<3.0.0" },
     { name = "transformers", specifier = ">=4.36.0,<4.41.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
     { name = "wandb", specifier = ">=0.23.0" },

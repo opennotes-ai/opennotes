@@ -110,6 +110,54 @@ class ImportBatchJobService:
         """
         return await self._batch_job_service.get_job(job_id)
 
+    async def start_scrape_job(
+        self,
+        batch_size: int = 1000,
+        dry_run: bool = False,
+    ) -> BatchJob:
+        """
+        Start a content scraping job for pending candidates.
+
+        Note: This is a stub. Full implementation in PR 118.
+
+        Args:
+            batch_size: Number of candidates to process per batch
+            dry_run: If True, validate only without scraping
+
+        Returns:
+            The created BatchJob
+
+        Raises:
+            NotImplementedError: Until PR 118 is merged
+        """
+        raise NotImplementedError(
+            "start_scrape_job not yet implemented. Requires PR 118 to be merged."
+        )
+
+    async def start_promotion_job(
+        self,
+        batch_size: int = 1000,
+        dry_run: bool = False,
+    ) -> BatchJob:
+        """
+        Start a promotion job for scraped candidates.
+
+        Note: This is a stub. Full implementation in PR 118.
+
+        Args:
+            batch_size: Number of candidates to promote per batch
+            dry_run: If True, validate only without promoting
+
+        Returns:
+            The created BatchJob
+
+        Raises:
+            NotImplementedError: Until PR 118 is merged
+        """
+        raise NotImplementedError(
+            "start_promotion_job not yet implemented. Requires PR 118 to be merged."
+        )
+
 
 def get_import_batch_job_service(session: AsyncSession) -> ImportBatchJobService:
     """Factory function to create an ImportBatchJobService instance."""
