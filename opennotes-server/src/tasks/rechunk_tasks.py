@@ -390,7 +390,13 @@ retry_callback_registry.register(
 )
 
 
-@register_task(task_name="rechunk:fact_check", component="rechunk", task_type="batch")
+@register_task(
+    task_name="rechunk:fact_check",
+    component="rechunk",
+    task_type="batch",
+    rate_limit_name="rechunk:fact_check",
+    rate_limit_capacity="1",
+)
 async def process_fact_check_rechunk_task(
     job_id: str,
     community_server_id: str | None,
@@ -606,7 +612,13 @@ async def process_fact_check_rechunk_task(
             await engine.dispose()
 
 
-@register_task(task_name="rechunk:previously_seen", component="rechunk", task_type="batch")
+@register_task(
+    task_name="rechunk:previously_seen",
+    component="rechunk",
+    task_type="batch",
+    rate_limit_name="rechunk:previously_seen:{community_server_id}",
+    rate_limit_capacity="1",
+)
 async def process_previously_seen_rechunk_task(
     job_id: str,
     community_server_id: str,

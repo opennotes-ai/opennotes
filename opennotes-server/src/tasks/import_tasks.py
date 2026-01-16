@@ -329,6 +329,8 @@ async def _recover_stuck_promoting_candidates(
     task_name="import:fact_check_bureau",
     component="import_pipeline",
     task_type="batch",
+    rate_limit_name="import:fact_check",
+    rate_limit_capacity="1",
 )
 async def process_fact_check_import(
     job_id: str,
@@ -630,6 +632,8 @@ async def _scrape_single_url(
     task_name="scrape:candidates",
     component="import_pipeline",
     task_type="batch",
+    rate_limit_name="scrape:candidates",
+    rate_limit_capacity="1",
 )
 async def process_scrape_batch(  # noqa: PLR0912
     job_id: str,
@@ -966,6 +970,8 @@ async def process_scrape_batch(  # noqa: PLR0912
     task_name="promote:candidates",
     component="import_pipeline",
     task_type="batch",
+    rate_limit_name="promote:candidates",
+    rate_limit_capacity="1",
 )
 async def process_promotion_batch(
     job_id: str,
