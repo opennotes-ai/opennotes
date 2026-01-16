@@ -768,8 +768,6 @@ async def process_scrape_batch(  # noqa: PLR0912
             progress_interval = max(1, batch_size)
 
             while True:
-                candidates: list[tuple[UUID, str]] = []
-
                 async with async_session() as db:
                     candidate_query = (
                         select(

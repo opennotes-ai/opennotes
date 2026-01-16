@@ -98,14 +98,14 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
 
         return message
 
-    async def post_execute(self, message: TaskiqMessage, _result: TaskiqResult[Any]) -> None:
+    async def post_execute(self, message: TaskiqMessage, result: TaskiqResult[Any]) -> None:  # noqa: ARG002
         await self._release_semaphore(message)
 
     async def on_error(
         self,
         message: TaskiqMessage,
-        _result: BaseException,
-        _exception: BaseException,
+        result: BaseException,  # noqa: ARG002
+        exception: BaseException,  # noqa: ARG002
     ) -> None:
         await self._release_semaphore(message)
 
