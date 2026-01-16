@@ -4,6 +4,9 @@ Rechunk-specific batch job service.
 Provides high-level operations for creating and managing rechunk batch jobs.
 This is a thin wrapper around BatchJobService that handles rechunk-specific
 logic like counting items and setting up appropriate metadata.
+
+Note: Concurrent job prevention is handled by BatchJobRateLimitMiddleware,
+not by this service. The middleware enforces one active job per type.
 """
 
 from enum import Enum
@@ -22,7 +25,6 @@ from src.batch_jobs.service import BatchJobService
 from src.config import settings
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
-from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.monitoring import get_logger
 from src.tasks.rechunk_tasks import (
     process_fact_check_rechunk_task,
@@ -50,7 +52,6 @@ class RechunkBatchJobService:
     def __init__(
         self,
         session: AsyncSession,
-        lock_manager: RechunkLockManager,
         batch_job_service: BatchJobService | None = None,
     ) -> None:
         """
@@ -58,11 +59,9 @@ class RechunkBatchJobService:
 
         Args:
             session: SQLAlchemy async session for database operations
-            lock_manager: Lock manager for preventing concurrent rechunk operations
             batch_job_service: Optional BatchJobService instance (created if not provided)
         """
         self._session = session
-        self._lock_manager = lock_manager
         self._batch_job_service = batch_job_service or BatchJobService(session)
 
     async def start_fact_check_rechunk_job(
@@ -73,7 +72,7 @@ class RechunkBatchJobService:
         """
         Start a fact check rechunk job.
 
-        Creates a BatchJob, acquires the lock, and dispatches the TaskIQ task.
+        Creates a BatchJob and dispatches the TaskIQ task.
 
         Args:
             community_server_id: Community server ID for LLM credentials (None for global)
@@ -81,42 +80,27 @@ class RechunkBatchJobService:
 
         Returns:
             The created and started BatchJob
-
-        Raises:
-            RuntimeError: If the lock cannot be acquired
         """
-        lock_acquired = await self._lock_manager.acquire_lock("fact_check")
-        if not lock_acquired:
-            raise RuntimeError(
-                "A fact check rechunk operation is already in progress. "
-                "Please wait for it to complete before starting a new one."
+        result = await self._session.execute(select(func.count(FactCheckItem.id)))
+        total_items = result.scalar_one()
+
+        job = await self._batch_job_service.create_job(
+            BatchJobCreate(
+                job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                total_tasks=total_items,
+                metadata={
+                    "community_server_id": str(community_server_id)
+                    if community_server_id
+                    else None,
+                    "batch_size": batch_size,
+                    "chunk_type": RechunkType.FACT_CHECK.value,
+                },
             )
+        )
 
-        try:
-            result = await self._session.execute(select(func.count(FactCheckItem.id)))
-            total_items = result.scalar_one()
-
-            job = await self._batch_job_service.create_job(
-                BatchJobCreate(
-                    job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
-                    total_tasks=total_items,
-                    metadata={
-                        "community_server_id": str(community_server_id)
-                        if community_server_id
-                        else None,
-                        "batch_size": batch_size,
-                        "chunk_type": RechunkType.FACT_CHECK.value,
-                    },
-                )
-            )
-
-            await self._batch_job_service.start_job(job.id)
-            await self._session.commit()
-            await self._session.refresh(job)
-
-        except Exception:
-            await self._lock_manager.release_lock("fact_check")
-            raise
+        await self._batch_job_service.start_job(job.id)
+        await self._session.commit()
+        await self._session.refresh(job)
 
         try:
             await process_fact_check_rechunk_task.kiq(
@@ -133,7 +117,6 @@ class RechunkBatchJobService:
             )
             await self._session.commit()
             await self._session.refresh(job)
-            await self._lock_manager.release_lock("fact_check")
             raise
 
         logger.info(
@@ -156,7 +139,7 @@ class RechunkBatchJobService:
         """
         Start a previously seen message rechunk job.
 
-        Creates a BatchJob, acquires the lock, and dispatches the TaskIQ task.
+        Creates a BatchJob and dispatches the TaskIQ task.
 
         Args:
             community_server_id: Community server ID for LLM credentials
@@ -164,46 +147,29 @@ class RechunkBatchJobService:
 
         Returns:
             The created and started BatchJob
-
-        Raises:
-            RuntimeError: If the lock cannot be acquired
         """
-        lock_acquired = await self._lock_manager.acquire_lock(
-            "previously_seen", str(community_server_id)
+        result = await self._session.execute(
+            select(func.count(PreviouslySeenMessage.id)).where(
+                PreviouslySeenMessage.community_server_id == community_server_id
+            )
         )
-        if not lock_acquired:
-            raise RuntimeError(
-                f"A previously seen message rechunk operation is already in progress "
-                f"for community {community_server_id}. Please wait for it to complete."
+        total_items = result.scalar_one()
+
+        job = await self._batch_job_service.create_job(
+            BatchJobCreate(
+                job_type=RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+                total_tasks=total_items,
+                metadata={
+                    "community_server_id": str(community_server_id),
+                    "batch_size": batch_size,
+                    "chunk_type": RechunkType.PREVIOUSLY_SEEN.value,
+                },
             )
+        )
 
-        try:
-            result = await self._session.execute(
-                select(func.count(PreviouslySeenMessage.id)).where(
-                    PreviouslySeenMessage.community_server_id == community_server_id
-                )
-            )
-            total_items = result.scalar_one()
-
-            job = await self._batch_job_service.create_job(
-                BatchJobCreate(
-                    job_type=RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
-                    total_tasks=total_items,
-                    metadata={
-                        "community_server_id": str(community_server_id),
-                        "batch_size": batch_size,
-                        "chunk_type": RechunkType.PREVIOUSLY_SEEN.value,
-                    },
-                )
-            )
-
-            await self._batch_job_service.start_job(job.id)
-            await self._session.commit()
-            await self._session.refresh(job)
-
-        except Exception:
-            await self._lock_manager.release_lock("previously_seen", str(community_server_id))
-            raise
+        await self._batch_job_service.start_job(job.id)
+        await self._session.commit()
+        await self._session.refresh(job)
 
         try:
             await process_previously_seen_rechunk_task.kiq(
@@ -220,7 +186,6 @@ class RechunkBatchJobService:
             )
             await self._session.commit()
             await self._session.refresh(job)
-            await self._lock_manager.release_lock("previously_seen", str(community_server_id))
             raise
 
         logger.info(
@@ -237,7 +202,7 @@ class RechunkBatchJobService:
 
     async def cancel_rechunk_job(self, job_id: UUID) -> BatchJob | None:
         """
-        Cancel a rechunk job and release its lock.
+        Cancel a rechunk job.
 
         Args:
             job_id: The job's unique identifier
@@ -254,12 +219,6 @@ class RechunkBatchJobService:
         community_server_id = metadata.get("community_server_id")
 
         cancelled_job = await self._batch_job_service.cancel_job(job_id)
-
-        if chunk_type == RechunkType.FACT_CHECK.value:
-            await self._lock_manager.release_lock("fact_check")
-        elif chunk_type == RechunkType.PREVIOUSLY_SEEN.value and community_server_id:
-            await self._lock_manager.release_lock("previously_seen", community_server_id)
-
         await self._session.commit()
 
         logger.info(

@@ -2,38 +2,26 @@
 
 Exposes the import pipeline functionality via REST API for programmatic access.
 Import operations run asynchronously via BatchJob infrastructure.
+
+Note: Concurrent job prevention is handled by BatchJobRateLimitMiddleware,
+not by these endpoints. The middleware enforces one active job per type.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
-from src.batch_jobs.import_service import ConcurrentJobError, ImportBatchJobService
+from src.batch_jobs.import_service import ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
-from src.cache.redis_client import redis_client
 from src.database import get_db
 from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
-from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
-
-
-class _GlobalImportLockManager(RechunkLockManager):
-    """Lock manager that uses the global redis_client as fallback."""
-
-    @property
-    def redis(self):
-        if self._redis is not None:
-            return self._redis
-        return redis_client.client
-
-
-import_lock_manager = _GlobalImportLockManager()
 
 router = APIRouter(
     prefix="/fact-checking/import",
@@ -87,7 +75,7 @@ def get_import_service(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ImportBatchJobService:
     """Get ImportBatchJobService with injected dependencies."""
-    return ImportBatchJobService(db, lock_manager=import_lock_manager)
+    return ImportBatchJobService(db)
 
 
 @router.post(
@@ -114,6 +102,9 @@ async def import_fact_check_bureau_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual import runs asynchronously as a background task.
 
+    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    If an import job is already running, the middleware returns 429 Too Many Requests.
+
     Poll the job status at:
     - GET /api/v1/batch-jobs/{job_id} - Full job status
     - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
@@ -125,9 +116,6 @@ async def import_fact_check_bureau_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
-
-    Raises:
-        HTTPException: 409 Conflict if an import job is already running.
     """
     logger.info(
         "Starting import job",
@@ -139,25 +127,12 @@ async def import_fact_check_bureau_endpoint(
         },
     )
 
-    try:
-        job = await service.start_import_job(
-            batch_size=request.batch_size,
-            dry_run=request.dry_run,
-            enqueue_scrapes=request.enqueue_scrapes,
-            user_id=str(current_user.id),
-        )
-    except ConcurrentJobError as e:
-        logger.warning(
-            "Import job blocked by concurrent job",
-            extra={
-                "user_id": str(current_user.id),
-                "job_type": e.job_type,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        ) from e
+    job = await service.start_import_job(
+        batch_size=request.batch_size,
+        dry_run=request.dry_run,
+        enqueue_scrapes=request.enqueue_scrapes,
+        user_id=str(current_user.id),
+    )
 
     logger.info(
         "Import job created",
@@ -238,6 +213,9 @@ async def scrape_candidates_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual scraping runs asynchronously as a background task.
 
+    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    If a scrape job is already running, the middleware returns 429 Too Many Requests.
+
     Poll the job status at:
     - GET /api/v1/batch-jobs/{job_id} - Full job status
     - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
@@ -249,9 +227,6 @@ async def scrape_candidates_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
-
-    Raises:
-        HTTPException: 409 Conflict if a scrape job is already running.
     """
     logger.info(
         "Starting scrape candidates job",
@@ -262,24 +237,11 @@ async def scrape_candidates_endpoint(
         },
     )
 
-    try:
-        job = await service.start_scrape_job(
-            batch_size=request.batch_size,
-            dry_run=request.dry_run,
-            user_id=str(current_user.id),
-        )
-    except ConcurrentJobError as e:
-        logger.warning(
-            "Scrape job blocked by concurrent job",
-            extra={
-                "user_id": str(current_user.id),
-                "job_type": e.job_type,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        ) from e
+    job = await service.start_scrape_job(
+        batch_size=request.batch_size,
+        dry_run=request.dry_run,
+        user_id=str(current_user.id),
+    )
 
     logger.info(
         "Scrape candidates job created",
@@ -316,6 +278,9 @@ async def promote_candidates_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual promotion runs asynchronously as a background task.
 
+    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    If a promotion job is already running, the middleware returns 429 Too Many Requests.
+
     Poll the job status at:
     - GET /api/v1/batch-jobs/{job_id} - Full job status
     - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
@@ -327,9 +292,6 @@ async def promote_candidates_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
-
-    Raises:
-        HTTPException: 409 Conflict if a promotion job is already running.
     """
     logger.info(
         "Starting promote candidates job",
@@ -340,24 +302,11 @@ async def promote_candidates_endpoint(
         },
     )
 
-    try:
-        job = await service.start_promotion_job(
-            batch_size=request.batch_size,
-            dry_run=request.dry_run,
-            user_id=str(current_user.id),
-        )
-    except ConcurrentJobError as e:
-        logger.warning(
-            "Promotion job blocked by concurrent job",
-            extra={
-                "user_id": str(current_user.id),
-                "job_type": e.job_type,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
-        ) from e
+    job = await service.start_promotion_job(
+        batch_size=request.batch_size,
+        dry_run=request.dry_run,
+        user_id=str(current_user.id),
+    )
 
     logger.info(
         "Promote candidates job created",

@@ -2631,7 +2631,7 @@ export interface paths {
         put?: never;
         /**
          * Re-chunk and re-embed fact check items
-         * @description Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 409 if operation already in progress.
+         * @description Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 429 if operation already in progress.
          */
         post: operations["rechunk_fact_check_items_api_v1_chunks_fact_check_rechunk_post"];
         delete?: never;
@@ -2651,7 +2651,7 @@ export interface paths {
         put?: never;
         /**
          * Re-chunk and re-embed previously seen messages
-         * @description Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.
+         * @description Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 429 if operation already in progress for this community.
          */
         post: operations["rechunk_previously_seen_messages_api_v1_chunks_previously_seen_rechunk_post"];
         delete?: never;
@@ -11648,13 +11648,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description A rechunk operation is already in progress */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11663,6 +11656,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A rechunk operation is already in progress */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11698,13 +11698,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description A rechunk operation is already in progress for this community */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11713,6 +11706,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A rechunk operation is already in progress for this community */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

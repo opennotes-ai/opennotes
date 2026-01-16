@@ -4,6 +4,9 @@ Unit tests for RechunkBatchJobService.
 Tests rechunk job creation and cancellation, with focus on null community_server_id
 handling to ensure task-896 and task-898 regressions are prevented.
 
+Note: Rate limiting for concurrent jobs is now handled by BatchJobRateLimitMiddleware,
+not by the service layer. Lock management tests have been moved to middleware tests.
+
 Task: task-986.10 - Restore deleted test coverage
 """
 
@@ -35,15 +38,6 @@ def mock_session():
 
 
 @pytest.fixture
-def mock_lock_manager():
-    """Create a mock RechunkLockManager."""
-    lock_manager = MagicMock()
-    lock_manager.acquire_lock = AsyncMock(return_value=True)
-    lock_manager.release_lock = AsyncMock(return_value=True)
-    return lock_manager
-
-
-@pytest.fixture
 def mock_batch_job_service():
     """Create a mock BatchJobService."""
     service = MagicMock()
@@ -56,11 +50,10 @@ def mock_batch_job_service():
 
 
 @pytest.fixture
-def rechunk_service(mock_session, mock_lock_manager, mock_batch_job_service):
+def rechunk_service(mock_session, mock_batch_job_service):
     """Create a RechunkBatchJobService with mocked dependencies."""
     return RechunkBatchJobService(
         session=mock_session,
-        lock_manager=mock_lock_manager,
         batch_job_service=mock_batch_job_service,
     )
 
@@ -111,9 +104,8 @@ class TestRechunkServiceNullCommunityServerId:
         self,
         rechunk_service,
         mock_batch_job_service,
-        mock_lock_manager,
     ):
-        """Cancel rechunk job with null community_server_id releases fact_check lock correctly."""
+        """Cancel rechunk job with null community_server_id works correctly."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
@@ -127,7 +119,7 @@ class TestRechunkServiceNullCommunityServerId:
         result = await rechunk_service.cancel_rechunk_job(job_id)
 
         assert result == mock_job
-        mock_lock_manager.release_lock.assert_called_once_with("fact_check")
+        mock_batch_job_service.cancel_job.assert_called_once_with(job_id)
 
 
 @pytest.mark.unit
@@ -231,13 +223,12 @@ class TestRechunkServiceWithCommunityServerId:
         assert job_create.metadata_["chunk_type"] == RechunkType.PREVIOUSLY_SEEN.value
 
     @pytest.mark.asyncio
-    async def test_cancel_previously_seen_job_releases_lock_with_community_id(
+    async def test_cancel_previously_seen_job_works_correctly(
         self,
         rechunk_service,
         mock_batch_job_service,
-        mock_lock_manager,
     ):
-        """Cancel previously_seen job releases lock with community_server_id."""
+        """Cancel previously_seen job works correctly."""
         job_id = uuid4()
         community_server_id = str(uuid4())
         mock_job = MagicMock(spec=BatchJob)
@@ -252,65 +243,23 @@ class TestRechunkServiceWithCommunityServerId:
         result = await rechunk_service.cancel_rechunk_job(job_id)
 
         assert result == mock_job
-        mock_lock_manager.release_lock.assert_called_once_with(
-            "previously_seen", community_server_id
-        )
+        mock_batch_job_service.cancel_job.assert_called_once_with(job_id)
 
 
 @pytest.mark.unit
-class TestRechunkServiceLockHandling:
-    """Tests for lock acquisition and release."""
-
-    @pytest.mark.asyncio
-    async def test_lock_acquisition_failure_raises_runtime_error(
-        self,
-        rechunk_service,
-        mock_lock_manager,
-    ):
-        """Lock acquisition failure raises RuntimeError."""
-        mock_lock_manager.acquire_lock.return_value = False
-
-        with pytest.raises(RuntimeError) as exc_info:
-            await rechunk_service.start_fact_check_rechunk_job(
-                community_server_id=None,
-            )
-
-        assert "already in progress" in str(exc_info.value).lower()
+class TestRechunkServiceTaskDispatchFailure:
+    """Tests for task dispatch failure scenarios."""
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
-    async def test_lock_released_on_job_creation_failure(
+    async def test_job_marked_failed_on_task_dispatch_failure(
         self,
         mock_task,
         rechunk_service,
         mock_batch_job_service,
-        mock_lock_manager,
         mock_session,
     ):
-        """Lock is released when job creation fails."""
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = 100
-        mock_session.execute.return_value = mock_result
-        mock_batch_job_service.create_job.side_effect = Exception("DB error")
-
-        with pytest.raises(Exception, match="DB error"):
-            await rechunk_service.start_fact_check_rechunk_job(
-                community_server_id=None,
-            )
-
-        mock_lock_manager.release_lock.assert_called_once_with("fact_check")
-
-    @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
-    async def test_lock_released_on_task_dispatch_failure(
-        self,
-        mock_task,
-        rechunk_service,
-        mock_batch_job_service,
-        mock_lock_manager,
-        mock_session,
-    ):
-        """Lock is released when task dispatch fails."""
+        """Job is marked as failed when task dispatch fails."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
@@ -327,7 +276,6 @@ class TestRechunkServiceLockHandling:
                 community_server_id=None,
             )
 
-        mock_lock_manager.release_lock.assert_called_once_with("fact_check")
         mock_batch_job_service.fail_job.assert_called_once()
 
     @pytest.mark.asyncio
@@ -335,7 +283,6 @@ class TestRechunkServiceLockHandling:
         self,
         rechunk_service,
         mock_batch_job_service,
-        mock_lock_manager,
     ):
         """Cancel returns None when job not found."""
         mock_batch_job_service.get_job.return_value = None
@@ -343,7 +290,6 @@ class TestRechunkServiceLockHandling:
         result = await rechunk_service.cancel_rechunk_job(uuid4())
 
         assert result is None
-        mock_lock_manager.release_lock.assert_not_called()
 
 
 @pytest.mark.unit
@@ -355,7 +301,6 @@ class TestRechunkServiceEdgeCases:
         self,
         rechunk_service,
         mock_batch_job_service,
-        mock_lock_manager,
     ):
         """Cancel job with empty metadata handles gracefully."""
         job_id = uuid4()
@@ -368,14 +313,12 @@ class TestRechunkServiceEdgeCases:
         result = await rechunk_service.cancel_rechunk_job(job_id)
 
         assert result == mock_job
-        mock_lock_manager.release_lock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_cancel_job_with_none_metadata(
         self,
         rechunk_service,
         mock_batch_job_service,
-        mock_lock_manager,
     ):
         """Cancel job with None metadata handles gracefully."""
         job_id = uuid4()
@@ -388,4 +331,3 @@ class TestRechunkServiceEdgeCases:
         result = await rechunk_service.cancel_rechunk_job(job_id)
 
         assert result == mock_job
-        mock_lock_manager.release_lock.assert_not_called()

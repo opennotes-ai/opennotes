@@ -13,7 +13,6 @@ from src.batch_jobs.constants import (
     SCRAPE_JOB_TYPE,
 )
 from src.batch_jobs.import_service import (
-    ConcurrentJobError,
     ImportBatchJobService,
     get_import_batch_job_service,
 )
@@ -53,7 +52,6 @@ __all__ = [
     "BatchJobService",
     "BatchJobStatus",
     "BatchJobUpdate",
-    "ConcurrentJobError",
     "ImportBatchJobService",
     "InvalidStateTransitionError",
     "RechunkBatchJobService",

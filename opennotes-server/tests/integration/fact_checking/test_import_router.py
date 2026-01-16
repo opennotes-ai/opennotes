@@ -10,9 +10,11 @@ Both endpoints should:
 - Accept batch_size and dry_run parameters
 - Return BatchJobResponse (201 Created)
 - Require authentication (Bearer token or X-API-Key)
-- Return 409 Conflict when concurrent job attempted (via lock_manager)
 
-Task: task-1006.17 - Wire lock_manager into router get_import_service dependency
+Note: Rate limiting for concurrent jobs is now handled by BatchJobRateLimitMiddleware,
+not by the service layer. Rate limiting tests are in test_batch_job_rate_limit_middleware.py.
+
+Task: task-1006.03 - Add scrape and promotion endpoints
 
 Fixtures:
 - auth_headers: from tests/conftest.py (uses registered_user)
@@ -21,13 +23,12 @@ Fixtures:
 - mock_promotion_job: from tests/integration/fact_checking/conftest.py
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.batch_jobs import PROMOTION_JOB_TYPE, SCRAPE_JOB_TYPE
-from src.batch_jobs.import_service import ConcurrentJobError
 from src.fact_checking.import_pipeline.router import get_import_service
 from src.main import app
 
@@ -225,33 +226,6 @@ class TestScrapeCandidatesEndpoint:
         finally:
             app.dependency_overrides.pop(get_import_service, None)
 
-    @pytest.mark.asyncio
-    async def test_scrape_candidates_returns_409_when_job_already_running(
-        self,
-        auth_headers,
-    ):
-        """Returns 409 Conflict when a scrape job is already in progress."""
-        mock_service = MagicMock()
-        mock_service.start_scrape_job = AsyncMock(side_effect=ConcurrentJobError("scrape"))
-
-        app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/scrape-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=auth_headers,
-                )
-
-                assert response.status_code == 409
-                data = response.json()
-                assert "detail" in data
-                assert "scrape" in data["detail"].lower()
-                assert "already in progress" in data["detail"].lower()
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
-
 
 @pytest.mark.integration
 class TestPromoteCandidatesEndpoint:
@@ -445,185 +419,3 @@ class TestPromoteCandidatesEndpoint:
                 assert response.status_code == 500
         finally:
             app.dependency_overrides.pop(get_import_service, None)
-
-    @pytest.mark.asyncio
-    async def test_promote_candidates_returns_409_when_job_already_running(
-        self,
-        auth_headers,
-    ):
-        """Returns 409 Conflict when a promotion job is already in progress."""
-        mock_service = MagicMock()
-        mock_service.start_promotion_job = AsyncMock(side_effect=ConcurrentJobError("promote"))
-
-        app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/promote-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=auth_headers,
-                )
-
-                assert response.status_code == 409
-                data = response.json()
-                assert "detail" in data
-                assert "promote" in data["detail"].lower()
-                assert "already in progress" in data["detail"].lower()
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
-
-
-@pytest.mark.integration
-class TestImportLockManagerIntegration:
-    """Tests verifying lock_manager is properly wired into import endpoints.
-
-    Task: task-1006.17 - Wire lock_manager into router get_import_service dependency
-
-    These tests verify that the import_lock_manager module-level instance is
-    passed to ImportBatchJobService, enabling 409 Conflict responses when
-    concurrent jobs are attempted.
-    """
-
-    @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.fact_checking.import_pipeline.router.import_lock_manager")
-    async def test_scrape_endpoint_uses_lock_manager_returns_409(
-        self,
-        mock_lock_manager,
-        mock_task,
-        auth_headers,
-    ):
-        """Scrape endpoint returns 409 when lock_manager reports lock unavailable.
-
-        This verifies the router properly wires lock_manager into ImportBatchJobService.
-        """
-        mock_task.kiq = AsyncMock()
-        mock_lock_manager.acquire_lock = AsyncMock(return_value=False)
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/import/scrape-candidates",
-                json={"batch_size": 100, "dry_run": False},
-                headers=auth_headers,
-            )
-
-            assert response.status_code == 409
-            data = response.json()
-            assert "scrape" in data["detail"].lower()
-            assert "already in progress" in data["detail"].lower()
-
-            mock_lock_manager.acquire_lock.assert_called_once_with("scrape")
-
-    @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.fact_checking.import_pipeline.router.import_lock_manager")
-    async def test_promote_endpoint_uses_lock_manager_returns_409(
-        self,
-        mock_lock_manager,
-        mock_task,
-        auth_headers,
-    ):
-        """Promote endpoint returns 409 when lock_manager reports lock unavailable.
-
-        This verifies the router properly wires lock_manager into ImportBatchJobService.
-        """
-        mock_task.kiq = AsyncMock()
-        mock_lock_manager.acquire_lock = AsyncMock(return_value=False)
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/import/promote-candidates",
-                json={"batch_size": 100, "dry_run": False},
-                headers=auth_headers,
-            )
-
-            assert response.status_code == 409
-            data = response.json()
-            assert "promote" in data["detail"].lower()
-            assert "already in progress" in data["detail"].lower()
-
-            mock_lock_manager.acquire_lock.assert_called_once_with("promote")
-
-    @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_fact_check_import")
-    @patch("src.fact_checking.import_pipeline.router.import_lock_manager")
-    async def test_import_endpoint_uses_lock_manager_returns_409(
-        self,
-        mock_lock_manager,
-        mock_task,
-        auth_headers,
-    ):
-        """Import endpoint returns 409 when lock_manager reports lock unavailable.
-
-        This verifies the router properly wires lock_manager into ImportBatchJobService.
-        """
-        mock_task.kiq = AsyncMock()
-        mock_lock_manager.acquire_lock = AsyncMock(return_value=False)
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/import/fact-check-bureau",
-                json={"batch_size": 100, "dry_run": False},
-                headers=auth_headers,
-            )
-
-            assert response.status_code == 409
-            data = response.json()
-            assert "import" in data["detail"].lower()
-            assert "already in progress" in data["detail"].lower()
-
-            mock_lock_manager.acquire_lock.assert_called_once_with("import")
-
-    @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.fact_checking.import_pipeline.router.import_lock_manager")
-    async def test_scrape_endpoint_acquires_lock_on_success(
-        self,
-        mock_lock_manager,
-        mock_task,
-        auth_headers,
-    ):
-        """Scrape endpoint acquires lock when starting job successfully."""
-        mock_task.kiq = AsyncMock()
-        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
-        mock_lock_manager.release_lock = AsyncMock(return_value=True)
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/import/scrape-candidates",
-                json={"batch_size": 100, "dry_run": False},
-                headers=auth_headers,
-            )
-
-            assert response.status_code == 201
-            mock_lock_manager.acquire_lock.assert_called_once_with("scrape")
-
-    @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.fact_checking.import_pipeline.router.import_lock_manager")
-    async def test_scrape_endpoint_releases_lock_on_kiq_failure(
-        self,
-        mock_lock_manager,
-        mock_task,
-        auth_headers,
-    ):
-        """Scrape endpoint releases lock when TaskIQ dispatch fails."""
-        mock_task.kiq = AsyncMock(side_effect=Exception("NATS connection failed"))
-        mock_lock_manager.acquire_lock = AsyncMock(return_value=True)
-        mock_lock_manager.release_lock = AsyncMock(return_value=True)
-
-        transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/import/scrape-candidates",
-                json={"batch_size": 100, "dry_run": False},
-                headers=auth_headers,
-            )
-
-            assert response.status_code == 500
-            mock_lock_manager.release_lock.assert_called_once_with("scrape")

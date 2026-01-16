@@ -3,6 +3,9 @@ Service for managing fact-check import batch jobs.
 
 Provides high-level operations for starting and managing import jobs
 that run asynchronously via TaskIQ background tasks.
+
+Note: Concurrent job prevention is handled by BatchJobRateLimitMiddleware,
+not by this service. The middleware enforces one active job per type.
 """
 
 from uuid import UUID
@@ -19,27 +22,11 @@ from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
 from src.config import get_settings
-from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 
 USER_ID_KEY = "user_id"
-
-LOCK_OPERATION_IMPORT = "import"
-LOCK_OPERATION_SCRAPE = "scrape"
-LOCK_OPERATION_PROMOTE = "promote"
-
-
-class ConcurrentJobError(Exception):
-    """Raised when attempting to start a job while another job of the same type is running."""
-
-    def __init__(self, job_type: str) -> None:
-        self.job_type = job_type
-        super().__init__(
-            f"A {job_type} job is already in progress. "
-            "Please wait for it to complete before starting a new one."
-        )
 
 
 class ImportBatchJobService:
@@ -53,18 +40,15 @@ class ImportBatchJobService:
     def __init__(
         self,
         session: AsyncSession,
-        lock_manager: RechunkLockManager | None = None,
     ) -> None:
         """
         Initialize the service.
 
         Args:
             session: SQLAlchemy async session for database operations
-            lock_manager: Optional lock manager for preventing concurrent jobs
         """
         self._session = session
         self._batch_job_service = BatchJobService(session)
-        self._lock_manager = lock_manager
 
     async def start_import_job(
         self,
@@ -88,51 +72,38 @@ class ImportBatchJobService:
 
         Returns:
             The created BatchJob (in PENDING status)
-
-        Raises:
-            ConcurrentJobError: If a lock manager is configured and a job is already running
         """
         from src.tasks.import_tasks import process_fact_check_import  # noqa: PLC0415
 
         settings = get_settings()
 
-        if self._lock_manager is not None:
-            lock_acquired = await self._lock_manager.acquire_lock(LOCK_OPERATION_IMPORT)
-            if not lock_acquired:
-                raise ConcurrentJobError(LOCK_OPERATION_IMPORT)
+        metadata = {
+            "source": "fact_check_bureau",
+            "batch_size": batch_size,
+            "dry_run": dry_run,
+            "enqueue_scrapes": enqueue_scrapes,
+        }
+        if user_id is not None:
+            metadata[USER_ID_KEY] = user_id
 
-        try:
-            metadata = {
-                "source": "fact_check_bureau",
+        job_data = BatchJobCreate(
+            job_type=IMPORT_JOB_TYPE,
+            total_tasks=0,
+            metadata=metadata,
+        )
+
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
+
+        logger.info(
+            "Created import batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
                 "batch_size": batch_size,
                 "dry_run": dry_run,
                 "enqueue_scrapes": enqueue_scrapes,
-            }
-            if user_id is not None:
-                metadata[USER_ID_KEY] = user_id
-
-            job_data = BatchJobCreate(
-                job_type=IMPORT_JOB_TYPE,
-                total_tasks=0,
-                metadata=metadata,
-            )
-
-            job = await self._batch_job_service.create_job(job_data)
-            await self._session.commit()
-
-            logger.info(
-                "Created import batch job, dispatching background task",
-                extra={
-                    "job_id": str(job.id),
-                    "batch_size": batch_size,
-                    "dry_run": dry_run,
-                    "enqueue_scrapes": enqueue_scrapes,
-                },
-            )
-        except Exception:
-            if self._lock_manager is not None:
-                await self._lock_manager.release_lock(LOCK_OPERATION_IMPORT)
-            raise
+            },
+        )
 
         try:
             await process_fact_check_import.kiq(
@@ -150,8 +121,6 @@ class ImportBatchJobService:
             )
             await self._session.commit()
             await self._session.refresh(job)
-            if self._lock_manager is not None:
-                await self._lock_manager.release_lock(LOCK_OPERATION_IMPORT)
             raise
 
         return job
@@ -188,48 +157,35 @@ class ImportBatchJobService:
 
         Returns:
             The created BatchJob (in PENDING status)
-
-        Raises:
-            ConcurrentJobError: If a lock manager is configured and a job is already running
         """
         from src.tasks.import_tasks import process_scrape_batch  # noqa: PLC0415
 
         settings = get_settings()
 
-        if self._lock_manager is not None:
-            lock_acquired = await self._lock_manager.acquire_lock(LOCK_OPERATION_SCRAPE)
-            if not lock_acquired:
-                raise ConcurrentJobError(LOCK_OPERATION_SCRAPE)
+        metadata = {
+            "batch_size": batch_size,
+            "dry_run": dry_run,
+        }
+        if user_id is not None:
+            metadata[USER_ID_KEY] = user_id
 
-        try:
-            metadata = {
+        job_data = BatchJobCreate(
+            job_type=SCRAPE_JOB_TYPE,
+            total_tasks=0,
+            metadata=metadata,
+        )
+
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
+
+        logger.info(
+            "Created scrape batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
                 "batch_size": batch_size,
                 "dry_run": dry_run,
-            }
-            if user_id is not None:
-                metadata[USER_ID_KEY] = user_id
-
-            job_data = BatchJobCreate(
-                job_type=SCRAPE_JOB_TYPE,
-                total_tasks=0,
-                metadata=metadata,
-            )
-
-            job = await self._batch_job_service.create_job(job_data)
-            await self._session.commit()
-
-            logger.info(
-                "Created scrape batch job, dispatching background task",
-                extra={
-                    "job_id": str(job.id),
-                    "batch_size": batch_size,
-                    "dry_run": dry_run,
-                },
-            )
-        except Exception:
-            if self._lock_manager is not None:
-                await self._lock_manager.release_lock(LOCK_OPERATION_SCRAPE)
-            raise
+            },
+        )
 
         try:
             await process_scrape_batch.kiq(
@@ -247,8 +203,6 @@ class ImportBatchJobService:
             )
             await self._session.commit()
             await self._session.refresh(job)
-            if self._lock_manager is not None:
-                await self._lock_manager.release_lock(LOCK_OPERATION_SCRAPE)
             raise
 
         return job
@@ -273,48 +227,35 @@ class ImportBatchJobService:
 
         Returns:
             The created BatchJob (in PENDING status)
-
-        Raises:
-            ConcurrentJobError: If a lock manager is configured and a job is already running
         """
         from src.tasks.import_tasks import process_promotion_batch  # noqa: PLC0415
 
         settings = get_settings()
 
-        if self._lock_manager is not None:
-            lock_acquired = await self._lock_manager.acquire_lock(LOCK_OPERATION_PROMOTE)
-            if not lock_acquired:
-                raise ConcurrentJobError(LOCK_OPERATION_PROMOTE)
+        metadata = {
+            "batch_size": batch_size,
+            "dry_run": dry_run,
+        }
+        if user_id is not None:
+            metadata[USER_ID_KEY] = user_id
 
-        try:
-            metadata = {
+        job_data = BatchJobCreate(
+            job_type=PROMOTION_JOB_TYPE,
+            total_tasks=0,
+            metadata=metadata,
+        )
+
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
+
+        logger.info(
+            "Created promotion batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
                 "batch_size": batch_size,
                 "dry_run": dry_run,
-            }
-            if user_id is not None:
-                metadata[USER_ID_KEY] = user_id
-
-            job_data = BatchJobCreate(
-                job_type=PROMOTION_JOB_TYPE,
-                total_tasks=0,
-                metadata=metadata,
-            )
-
-            job = await self._batch_job_service.create_job(job_data)
-            await self._session.commit()
-
-            logger.info(
-                "Created promotion batch job, dispatching background task",
-                extra={
-                    "job_id": str(job.id),
-                    "batch_size": batch_size,
-                    "dry_run": dry_run,
-                },
-            )
-        except Exception:
-            if self._lock_manager is not None:
-                await self._lock_manager.release_lock(LOCK_OPERATION_PROMOTE)
-            raise
+            },
+        )
 
         try:
             await process_promotion_batch.kiq(
@@ -331,8 +272,6 @@ class ImportBatchJobService:
             )
             await self._session.commit()
             await self._session.refresh(job)
-            if self._lock_manager is not None:
-                await self._lock_manager.release_lock(LOCK_OPERATION_PROMOTE)
             raise
 
         return job
@@ -340,7 +279,6 @@ class ImportBatchJobService:
 
 def get_import_batch_job_service(
     session: AsyncSession,
-    lock_manager: RechunkLockManager | None = None,
 ) -> ImportBatchJobService:
     """Factory function to create an ImportBatchJobService instance."""
-    return ImportBatchJobService(session, lock_manager)
+    return ImportBatchJobService(session)
