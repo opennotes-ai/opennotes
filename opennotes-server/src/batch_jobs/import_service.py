@@ -4,7 +4,7 @@ Service for managing fact-check import batch jobs.
 Provides high-level operations for starting and managing import jobs
 that run asynchronously via TaskIQ background tasks.
 
-Note: Concurrent job prevention is handled by BatchJobRateLimitMiddleware,
+Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
 not by this service. The middleware enforces one active job per type.
 """
 

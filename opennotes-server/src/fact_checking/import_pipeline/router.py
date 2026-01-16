@@ -3,7 +3,7 @@
 Exposes the import pipeline functionality via REST API for programmatic access.
 Import operations run asynchronously via BatchJob infrastructure.
 
-Note: Concurrent job prevention is handled by BatchJobRateLimitMiddleware,
+Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
 not by these endpoints. The middleware enforces one active job per type.
 """
 
@@ -102,7 +102,7 @@ async def import_fact_check_bureau_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual import runs asynchronously as a background task.
 
-    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
     If an import job is already running, the middleware returns 429 Too Many Requests.
 
     Poll the job status at:
@@ -213,7 +213,7 @@ async def scrape_candidates_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual scraping runs asynchronously as a background task.
 
-    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
     If a scrape job is already running, the middleware returns 429 Too Many Requests.
 
     Poll the job status at:
@@ -278,7 +278,7 @@ async def promote_candidates_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual promotion runs asynchronously as a background task.
 
-    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
     If a promotion job is already running, the middleware returns 429 Too Many Requests.
 
     Poll the job status at:

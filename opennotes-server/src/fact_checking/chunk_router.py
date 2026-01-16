@@ -14,7 +14,7 @@ Rate Limiting and Concurrency Control:
 - Endpoints are rate-limited to 1 request per minute per user
 - Only one rechunk operation can run per resource (table/community) at a time
 - Returns 429 Too Many Requests if an operation is already in progress
-  (handled by BatchJobRateLimitMiddleware)
+  (handled by DistributedRateLimitMiddleware)
 
 Status Tracking:
 - Each rechunk operation returns a BatchJob for status polling
@@ -175,7 +175,7 @@ async def rechunk_fact_check_items(
     When community_server_id is provided, requires admin or moderator access
     to that community. When not provided, uses global LLM credentials.
 
-    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
     If a rechunk job is already running, the middleware returns 429 Too Many Requests.
 
     Args:
@@ -261,7 +261,7 @@ async def rechunk_previously_seen_messages(
 
     Requires admin or moderator access to the community server.
 
-    Note: Concurrent job rate limiting is handled by BatchJobRateLimitMiddleware.
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
     If a rechunk job is already running for this community, the middleware returns
     429 Too Many Requests.
 

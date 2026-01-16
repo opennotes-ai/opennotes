@@ -4,7 +4,7 @@ Unit tests for ImportBatchJobService.
 Tests for start_scrape_job and start_promotion_job methods to verify
 correct BatchJob creation and TaskIQ task dispatch.
 
-Note: Rate limiting for concurrent jobs is now handled by BatchJobRateLimitMiddleware,
+Note: Rate limiting for concurrent jobs is now handled by DistributedRateLimitMiddleware,
 not by the service layer. Lock management tests have been moved to middleware tests.
 
 Task: task-1006.03 - Add start_scrape_job and start_promotion_job

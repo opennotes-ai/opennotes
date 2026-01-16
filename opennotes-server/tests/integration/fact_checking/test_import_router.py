@@ -11,7 +11,7 @@ Both endpoints should:
 - Return BatchJobResponse (201 Created)
 - Require authentication (Bearer token or X-API-Key)
 
-Note: Rate limiting for concurrent jobs is now handled by BatchJobRateLimitMiddleware,
+Note: Rate limiting for concurrent jobs is now handled by DistributedRateLimitMiddleware,
 not by the service layer. Rate limiting tests are in test_batch_job_rate_limit_middleware.py.
 
 Task: task-1006.03 - Add scrape and promotion endpoints

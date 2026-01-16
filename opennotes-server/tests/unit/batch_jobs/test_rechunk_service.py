@@ -4,7 +4,7 @@ Unit tests for RechunkBatchJobService.
 Tests rechunk job creation and cancellation, with focus on null community_server_id
 handling to ensure task-896 and task-898 regressions are prevented.
 
-Note: Rate limiting for concurrent jobs is now handled by BatchJobRateLimitMiddleware,
+Note: Rate limiting for concurrent jobs is now handled by DistributedRateLimitMiddleware,
 not by the service layer. Lock management tests have been moved to middleware tests.
 
 Task: task-986.10 - Restore deleted test coverage

@@ -5,7 +5,7 @@ Provides high-level operations for creating and managing rechunk batch jobs.
 This is a thin wrapper around BatchJobService that handles rechunk-specific
 logic like counting items and setting up appropriate metadata.
 
-Note: Concurrent job prevention is handled by BatchJobRateLimitMiddleware,
+Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
 not by this service. The middleware enforces one active job per type.
 """
 
