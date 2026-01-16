@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.batch_jobs.constants import (
+    DEFAULT_SCRAPE_CONCURRENCY,
     IMPORT_JOB_TYPE,
     PROMOTION_JOB_TYPE,
     SCRAPE_JOB_TYPE,
@@ -239,6 +240,7 @@ class ImportBatchJobService:
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
                 lock_operation=LOCK_OPERATION_SCRAPE if self._lock_manager else None,
+                concurrency=DEFAULT_SCRAPE_CONCURRENCY,
             )
         except Exception as e:
             await self._batch_job_service.fail_job(

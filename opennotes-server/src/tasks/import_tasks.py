@@ -21,6 +21,7 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from src.batch_jobs.constants import DEFAULT_SCRAPE_CONCURRENCY
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
 from src.batch_jobs.service import BatchJobService
 from src.cache.redis_client import RedisClient
@@ -50,9 +51,6 @@ _tracer = trace.get_tracer(__name__)
 MAX_STORED_ERRORS = 50
 SCRAPING_TIMEOUT_MINUTES = 120  # 2 hours - allows ~1400 candidates at 5s each
 PROMOTING_TIMEOUT_MINUTES = 120  # 2 hours - allows large batch promotion
-
-DEFAULT_SCRAPE_CONCURRENCY = 10  # Max concurrent URL scrapes
-SCRAPE_URL_TIMEOUT_SECONDS = 60  # Per-URL timeout
 
 
 async def _release_job_lock(
@@ -614,6 +612,7 @@ async def process_scrape_batch(
     db_url: str,
     redis_url: str,
     lock_operation: str | None = None,
+    concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
 ) -> dict[str, Any]:
     """
     TaskIQ task to process scraping of pending candidates.
@@ -636,6 +635,7 @@ async def process_scrape_batch(
         db_url: Database connection URL
         redis_url: Redis connection URL for progress tracking
         lock_operation: Lock operation name to release on completion (optional)
+        concurrency: Max concurrent URL scrapes (default: DEFAULT_SCRAPE_CONCURRENCY)
 
     Returns:
         dict with status and scrape stats
