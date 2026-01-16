@@ -1012,67 +1012,70 @@ async def process_promotion_batch(
 
                 return {"status": "completed", **final_stats}
 
+            progress_interval = max(1, batch_size)
             while True:
                 async with async_session() as db:
-                    candidates_query = (
+                    candidate_query = (
                         select(FactCheckedItemCandidate.id)
                         .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
                         .where(FactCheckedItemCandidate.content.is_not(None))
                         .where(FactCheckedItemCandidate.rating.is_not(None))
-                        .limit(batch_size)
+                        .limit(1)
                         .with_for_update(skip_locked=True)
                     )
-                    result = await db.execute(candidates_query)
-                    candidate_ids = [row[0] for row in result.fetchall()]
+                    result = await db.execute(candidate_query)
+                    candidate_row = result.fetchone()
 
-                    if not candidate_ids:
+                    if not candidate_row:
                         break
 
+                    candidate_id = candidate_row[0]
                     await db.execute(
                         update(FactCheckedItemCandidate)
-                        .where(FactCheckedItemCandidate.id.in_(candidate_ids))
+                        .where(FactCheckedItemCandidate.id == candidate_id)
                         .values(status=CandidateStatus.PROMOTING.value)
                     )
                     await db.commit()
 
-                for candidate_id in candidate_ids:
-                    async with async_session() as db:
-                        success = await promote_candidate(db, candidate_id)
+                async with async_session() as db:
+                    success = await promote_candidate(db, candidate_id)
 
-                        if success:
-                            promoted += 1
-                            logger.debug(
-                                "Promoted candidate",
-                                extra={
-                                    "candidate_id": str(candidate_id),
-                                },
-                            )
-                        else:
-                            failed += 1
-                            logger.warning(
-                                "Failed to promote candidate",
-                                extra={
-                                    "candidate_id": str(candidate_id),
-                                },
-                            )
+                    if success:
+                        promoted += 1
+                        logger.debug(
+                            "Promoted candidate",
+                            extra={
+                                "candidate_id": str(candidate_id),
+                            },
+                        )
+                    else:
+                        failed += 1
+                        logger.warning(
+                            "Failed to promote candidate",
+                            extra={
+                                "candidate_id": str(candidate_id),
+                            },
+                        )
 
-                try:
-                    await _update_progress(
-                        async_session,
-                        progress_tracker,
-                        job_uuid,
-                        completed_tasks=promoted,
-                        failed_tasks=failed,
-                        current_item=f"Processed {promoted + failed}/{total_candidates}",
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "Failed to update progress during promotion batch",
-                        extra={
-                            "job_id": job_id,
-                            "error": str(e),
-                        },
-                    )
+                processed = promoted + failed
+                if processed % progress_interval == 0:
+                    try:
+                        await _update_progress(
+                            async_session,
+                            progress_tracker,
+                            job_uuid,
+                            completed_tasks=promoted,
+                            failed_tasks=failed,
+                            current_item=f"Processed {processed}/{total_candidates}",
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to update progress during promotion batch",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(e),
+                            },
+                        )
 
             final_stats = {
                 "total_candidates": total_candidates,

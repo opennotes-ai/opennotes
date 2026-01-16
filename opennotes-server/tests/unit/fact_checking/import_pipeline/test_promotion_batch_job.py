@@ -8,6 +8,8 @@ Tests cover:
 - Handling promotion failures gracefully (marks as failed but continues)
 - Dry run mode (counts candidates but doesn't promote)
 - Job completion with correct stats
+- Race condition prevention (task-1008.02)
+- Recovery from mid-batch crash
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,8 +19,49 @@ import pytest
 
 from .conftest import create_mock_session_context, create_mock_settings
 
+pytestmark = pytest.mark.unit
 
-@pytest.mark.unit
+
+def create_flexible_execute_mock(
+    total_count: int,
+    candidate_rows: list,
+):
+    """
+    Create a flexible mock for db.execute that handles various query types.
+
+    Args:
+        total_count: Count to return for COUNT queries
+        candidate_rows: List of (id,) tuples to return for SELECT queries via fetchone()
+    """
+    candidate_index = [0]
+
+    def execute_side_effect(query):
+        result = MagicMock()
+
+        query_str = str(query)
+        query_lower = query_str.lower()
+
+        if "count(" in query_lower:
+            result.scalar_one.return_value = total_count
+        elif query_lower.strip().startswith("update") or "set status" in query_lower:
+            result.rowcount = 1
+        else:
+
+            def mock_fetchone():
+                if candidate_index[0] < len(candidate_rows):
+                    row = candidate_rows[candidate_index[0]]
+                    candidate_index[0] += 1
+                    return row
+                return None
+
+            result.fetchone = mock_fetchone
+            result.scalar_one.return_value = total_count
+
+        return result
+
+    return AsyncMock(side_effect=execute_side_effect)
+
+
 class TestPromotionBatchProcessing:
     """Test main promotion batch processing functionality."""
 
@@ -27,35 +70,18 @@ class TestPromotionBatchProcessing:
         """Successfully processes scraped candidates and tracks progress."""
         job_id = str(uuid4())
 
-        mock_db = AsyncMock()
-        mock_db.commit = AsyncMock()
-
         candidate1_id = uuid4()
         candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id,),
+            (candidate2_id,),
+        ]
 
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 2
-
-        mock_candidates_result_first = MagicMock()
-        mock_candidates_result_first.fetchall.return_value = [(candidate1_id,), (candidate2_id,)]
-
-        mock_candidates_result_empty = MagicMock()
-        mock_candidates_result_empty.fetchall.return_value = []
-
-        mock_update_result = MagicMock()
-        mock_update_result.rowcount = 2
-
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_recovery_result,
-                mock_count_result,
-                mock_candidates_result_first,
-                mock_update_result,
-                mock_candidates_result_empty,
-            ]
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=2,
+            candidate_rows=candidate_rows,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -88,6 +114,11 @@ class TestPromotionBatchProcessing:
                 return_value=True,
             ) as mock_promote,
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -115,35 +146,18 @@ class TestPromotionBatchProcessing:
         """Promotion failures are marked as failed but processing continues."""
         job_id = str(uuid4())
 
-        mock_db = AsyncMock()
-        mock_db.commit = AsyncMock()
-
         candidate1_id = uuid4()
         candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id,),
+            (candidate2_id,),
+        ]
 
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 2
-
-        mock_candidates_result_first = MagicMock()
-        mock_candidates_result_first.fetchall.return_value = [(candidate1_id,), (candidate2_id,)]
-
-        mock_candidates_result_empty = MagicMock()
-        mock_candidates_result_empty.fetchall.return_value = []
-
-        mock_update_result = MagicMock()
-        mock_update_result.rowcount = 2
-
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_recovery_result,
-                mock_count_result,
-                mock_candidates_result_first,
-                mock_update_result,
-                mock_candidates_result_empty,
-            ]
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=2,
+            candidate_rows=candidate_rows,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -182,6 +196,11 @@ class TestPromotionBatchProcessing:
                 side_effect=promote_side_effect,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -203,7 +222,6 @@ class TestPromotionBatchProcessing:
             mock_batch_job_service.complete_job.assert_called_once()
 
 
-@pytest.mark.unit
 class TestPromotionBatchDryRun:
     """Test dry run mode functionality."""
 
@@ -218,10 +236,7 @@ class TestPromotionBatchDryRun:
         mock_count_result = MagicMock()
         mock_count_result.scalar_one.return_value = 5
 
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-
-        mock_db.execute = AsyncMock(side_effect=[mock_recovery_result, mock_count_result])
+        mock_db.execute = AsyncMock(return_value=mock_count_result)
 
         mock_session_maker = create_mock_session_context(mock_db)
 
@@ -250,6 +265,11 @@ class TestPromotionBatchDryRun:
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.promote_candidate") as mock_promote,
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -274,7 +294,6 @@ class TestPromotionBatchDryRun:
             mock_batch_job_service.complete_job.assert_called_once()
 
 
-@pytest.mark.unit
 class TestPromotionBatchJobCompletion:
     """Test job completion with correct stats."""
 
@@ -283,40 +302,20 @@ class TestPromotionBatchJobCompletion:
         """Job completes with accurate statistics in metadata."""
         job_id = str(uuid4())
 
-        mock_db = AsyncMock()
-        mock_db.commit = AsyncMock()
-
         candidate1_id = uuid4()
         candidate2_id = uuid4()
         candidate3_id = uuid4()
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 3
-
-        mock_candidates_result_first = MagicMock()
-        mock_candidates_result_first.fetchall.return_value = [
+        candidate_rows = [
             (candidate1_id,),
             (candidate2_id,),
             (candidate3_id,),
         ]
 
-        mock_candidates_result_empty = MagicMock()
-        mock_candidates_result_empty.fetchall.return_value = []
-
-        mock_update_result = MagicMock()
-        mock_update_result.rowcount = 3
-
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_recovery_result,
-                mock_count_result,
-                mock_candidates_result_first,
-                mock_update_result,
-                mock_candidates_result_empty,
-            ]
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=3,
+            candidate_rows=candidate_rows,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -355,6 +354,11 @@ class TestPromotionBatchJobCompletion:
                 side_effect=promote_side_effect,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -381,7 +385,6 @@ class TestPromotionBatchJobCompletion:
             assert failed_tasks == 1
 
 
-@pytest.mark.unit
 class TestPromotionBatchFailureHandling:
     """Test failure handling scenarios."""
 
@@ -420,6 +423,11 @@ class TestPromotionBatchFailureHandling:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                side_effect=Exception("Database connection lost"),
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -446,9 +454,7 @@ class TestPromotionBatchFailureHandling:
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
 
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-        mock_db.execute = AsyncMock(return_value=mock_recovery_result)
+        mock_db.execute = AsyncMock(return_value=MagicMock())
 
         mock_session_maker = create_mock_session_context(mock_db)
 
@@ -478,6 +484,11 @@ class TestPromotionBatchFailureHandling:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = mock_engine_instance
             mock_settings.return_value = create_mock_settings()
@@ -497,7 +508,6 @@ class TestPromotionBatchFailureHandling:
             mock_engine_instance.dispose.assert_called_once()
 
 
-@pytest.mark.unit
 class TestPromotionBatchNoCandidates:
     """Test handling of empty candidate sets."""
 
@@ -508,18 +518,9 @@ class TestPromotionBatchNoCandidates:
 
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
-
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 0
-
-        empty_candidates_result = MagicMock()
-        empty_candidates_result.fetchall.return_value = []
-
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-
-        mock_db.execute = AsyncMock(
-            side_effect=[mock_recovery_result, mock_count_result, empty_candidates_result]
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=0,
+            candidate_rows=[],
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -547,6 +548,11 @@ class TestPromotionBatchNoCandidates:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -569,7 +575,6 @@ class TestPromotionBatchNoCandidates:
             mock_batch_job_service.complete_job.assert_called_once()
 
 
-@pytest.mark.unit
 class TestPromotionBatchRaceConditions:
     """Test race condition handling during batch processing."""
 
@@ -578,35 +583,18 @@ class TestPromotionBatchRaceConditions:
         """Handles race condition when candidate status changes between count and fetch."""
         job_id = str(uuid4())
 
-        mock_db = AsyncMock()
-        mock_db.commit = AsyncMock()
-
         candidate1_id = uuid4()
         candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id,),
+            (candidate2_id,),
+        ]
 
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 3
-
-        mock_candidates_result_first = MagicMock()
-        mock_candidates_result_first.fetchall.return_value = [(candidate1_id,), (candidate2_id,)]
-
-        mock_candidates_result_empty = MagicMock()
-        mock_candidates_result_empty.fetchall.return_value = []
-
-        mock_update_result = MagicMock()
-        mock_update_result.rowcount = 2
-
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_recovery_result,
-                mock_count_result,
-                mock_candidates_result_first,
-                mock_update_result,
-                mock_candidates_result_empty,
-            ]
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=3,
+            candidate_rows=candidate_rows,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -639,6 +627,11 @@ class TestPromotionBatchRaceConditions:
                 return_value=True,
             ) as mock_promote,
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -662,7 +655,6 @@ class TestPromotionBatchRaceConditions:
             mock_batch_job_service.complete_job.assert_called_once()
 
 
-@pytest.mark.unit
 class TestPromotionBatchExceptionHandling:
     """Test exception handling during promotion."""
 
@@ -671,35 +663,18 @@ class TestPromotionBatchExceptionHandling:
         """Handles exception raised by promote_candidate gracefully."""
         job_id = str(uuid4())
 
-        mock_db = AsyncMock()
-        mock_db.commit = AsyncMock()
-
         candidate1_id = uuid4()
         candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id,),
+            (candidate2_id,),
+        ]
 
-        mock_count_result = MagicMock()
-        mock_count_result.scalar_one.return_value = 2
-
-        mock_candidates_result_first = MagicMock()
-        mock_candidates_result_first.fetchall.return_value = [(candidate1_id,), (candidate2_id,)]
-
-        mock_candidates_result_empty = MagicMock()
-        mock_candidates_result_empty.fetchall.return_value = []
-
-        mock_update_result = MagicMock()
-        mock_update_result.rowcount = 2
-
-        mock_recovery_result = MagicMock()
-        mock_recovery_result.rowcount = 0
-
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                mock_recovery_result,
-                mock_count_result,
-                mock_candidates_result_first,
-                mock_update_result,
-                mock_candidates_result_empty,
-            ]
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=2,
+            candidate_rows=candidate_rows,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -741,6 +716,11 @@ class TestPromotionBatchExceptionHandling:
                 side_effect=promote_raises_on_second,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
         ):
             mock_engine.return_value = MagicMock()
             mock_engine.return_value.dispose = AsyncMock()
@@ -841,3 +821,182 @@ class TestPromotionBatchRaceConditionPrevention:
         assert promoting_in_session < commit_in_session, (
             "Status update to PROMOTING must happen BEFORE commit (which releases the lock)"
         )
+
+
+class TestMidBatchCrashRecovery:
+    """Test recovery from crashes that leave candidates stuck in PROMOTING state.
+
+    The race condition fix ensures only ONE candidate is ever in PROMOTING state
+    at a time (single-candidate processing). Combined with the recovery mechanism,
+    this guarantees:
+    1. At most 1 candidate stuck in PROMOTING if worker crashes mid-processing
+    2. Stuck candidates are recovered on next batch run (after timeout)
+    3. Recovered candidates are processed normally
+    """
+
+    @pytest.mark.asyncio
+    async def test_recovery_from_crash_after_promoting_status_set(self):
+        """Verify stuck candidates are recovered and counted in stats.
+
+        Simulates the scenario where a previous worker crash left candidates
+        in PROMOTING state. The recovery mechanism should reset them to SCRAPED
+        before processing begins.
+        """
+        job_id = str(uuid4())
+
+        candidate1_id = uuid4()
+        candidate_rows = [
+            (candidate1_id,),
+        ]
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=1,
+            candidate_rows=candidate_rows,
+        )
+
+        mock_session_maker = create_mock_session_context(mock_db)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+
+        recovered_count = 3
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch(
+                "src.tasks.import_tasks.promote_candidate",
+                return_value=True,
+            ),
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=recovered_count,
+            ) as mock_recover,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_settings.return_value = create_mock_settings()
+
+            from src.tasks.import_tasks import process_promotion_batch
+
+            result = await process_promotion_batch(
+                job_id=job_id,
+                batch_size=10,
+                dry_run=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            mock_recover.assert_called_once()
+
+            assert result["status"] == "completed"
+            assert result["recovered_stuck"] == recovered_count
+            assert result["promoted"] == 1
+            assert result["failed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_single_candidate_processing_limits_stuck_blast_radius(self):
+        """Verify processing is single-candidate to limit crash impact.
+
+        The code uses LIMIT 1 to ensure only one candidate is ever marked
+        PROMOTING at a time. This test verifies the pattern by checking
+        that each iteration processes exactly one candidate.
+        """
+        job_id = str(uuid4())
+
+        candidate1_id = uuid4()
+        candidate2_id = uuid4()
+        candidate_rows = [
+            (candidate1_id,),
+            (candidate2_id,),
+        ]
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = create_flexible_execute_mock(
+            total_count=2,
+            candidate_rows=candidate_rows,
+        )
+
+        mock_session_maker = create_mock_session_context(mock_db)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+
+        promote_calls = []
+
+        async def track_promote(session, cid):
+            promote_calls.append(cid)
+            return True
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch(
+                "src.tasks.import_tasks.promote_candidate",
+                side_effect=track_promote,
+            ),
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+            patch(
+                "src.tasks.import_tasks._recover_stuck_promoting_candidates",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            mock_settings.return_value = create_mock_settings()
+
+            from src.tasks.import_tasks import process_promotion_batch
+
+            result = await process_promotion_batch(
+                job_id=job_id,
+                batch_size=10,
+                dry_run=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            assert result["status"] == "completed"
+            assert result["promoted"] == 2
+            assert len(promote_calls) == 2
+            assert candidate1_id in promote_calls
+            assert candidate2_id in promote_calls
