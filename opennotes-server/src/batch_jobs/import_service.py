@@ -142,7 +142,6 @@ class ImportBatchJobService:
                 enqueue_scrapes=enqueue_scrapes,
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
-                lock_operation=LOCK_OPERATION_IMPORT if self._lock_manager else None,
             )
         except Exception as e:
             await self._batch_job_service.fail_job(
@@ -239,7 +238,6 @@ class ImportBatchJobService:
                 dry_run=dry_run,
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
-                lock_operation=LOCK_OPERATION_SCRAPE if self._lock_manager else None,
                 concurrency=DEFAULT_SCRAPE_CONCURRENCY,
             )
         except Exception as e:
@@ -325,7 +323,6 @@ class ImportBatchJobService:
                 dry_run=dry_run,
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
-                lock_operation=LOCK_OPERATION_PROMOTE if self._lock_manager else None,
             )
         except Exception as e:
             await self._batch_job_service.fail_job(
