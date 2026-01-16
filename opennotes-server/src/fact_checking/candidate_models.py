@@ -147,6 +147,11 @@ class FactCheckedItemCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Note: onupdate callback only fires for ORM-level attribute changes.
+    # Direct SQL updates (via SQLAlchemy's update() construct) must explicitly
+    # set updated_at=func.now(). A database trigger was considered but would be
+    # inconsistent with other models in the codebase that use this same pattern.
+    # Refer to the scrape_tasks and promotion modules in import_pipeline.
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
