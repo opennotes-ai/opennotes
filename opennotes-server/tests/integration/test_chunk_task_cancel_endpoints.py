@@ -11,7 +11,7 @@ These tests verify:
 4. Authorization requirements for all endpoints
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -206,16 +206,12 @@ class TestCancelRechunkJobEndpoint:
             assert "not found" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_cancel_in_progress_job_success(
         self,
-        mock_lock_manager,
         service_account_headers,
         fact_check_batch_job,
     ):
         """Cancel request for in-progress job succeeds."""
-        mock_lock_manager.release_lock = AsyncMock(return_value=True)
-
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.delete(
@@ -224,7 +220,6 @@ class TestCancelRechunkJobEndpoint:
             )
 
             assert response.status_code == 204
-            mock_lock_manager.release_lock.assert_called_with("fact_check")
 
     @pytest.mark.asyncio
     async def test_cancel_completed_job_returns_409(
@@ -260,19 +255,14 @@ class TestCancelRechunkJobEndpoint:
 
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.verify_community_admin_by_uuid")
-    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
-    async def test_cancel_previously_seen_job_releases_correct_lock(
+    async def test_cancel_previously_seen_job_success(
         self,
-        mock_lock_manager,
         mock_verify_admin,
         service_account_headers,
         previously_seen_batch_job,
     ):
-        """Cancel request for previously_seen job releases lock with community_server_id."""
-        mock_lock_manager.release_lock = AsyncMock(return_value=True)
+        """Cancel request for previously_seen job succeeds."""
         mock_verify_admin.return_value = None
-
-        community_id = previously_seen_batch_job.metadata_["community_server_id"]
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -282,7 +272,6 @@ class TestCancelRechunkJobEndpoint:
             )
 
             assert response.status_code == 204
-            mock_lock_manager.release_lock.assert_called_once_with("previously_seen", community_id)
 
     @pytest.mark.asyncio
     async def test_regular_user_cannot_cancel_global_job(
@@ -335,10 +324,8 @@ class TestCancelRechunkJobEndpoint:
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.get_profile_by_id")
     @patch("src.fact_checking.chunk_router._get_profile_id_from_user")
-    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_opennotes_admin_can_cancel_global_job(
         self,
-        mock_lock_manager,
         mock_get_profile_id,
         mock_get_profile,
         admin_headers,
@@ -346,7 +333,6 @@ class TestCancelRechunkJobEndpoint:
     ):
         """OpenNotes admin can cancel global fact_check job."""
         profile_id = uuid4()
-        mock_lock_manager.release_lock = AsyncMock(return_value=True)
 
         mock_get_profile_id.return_value = profile_id
         mock_profile = MagicMock()
@@ -363,16 +349,12 @@ class TestCancelRechunkJobEndpoint:
             assert response.status_code == 204
 
     @pytest.mark.asyncio
-    @patch("src.fact_checking.chunk_router.rechunk_lock_manager")
     async def test_service_account_can_cancel_global_job(
         self,
-        mock_lock_manager,
         service_account_headers,
         fact_check_batch_job,
     ):
         """Service account can cancel global fact_check job."""
-        mock_lock_manager.release_lock = AsyncMock(return_value=True)
-
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.delete(

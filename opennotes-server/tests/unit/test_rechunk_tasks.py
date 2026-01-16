@@ -68,9 +68,6 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
 
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
         mock_service = MagicMock()
         mock_service.chunk_and_embed_fact_check = AsyncMock()
 
@@ -83,7 +80,6 @@ class TestFactCheckRechunkTaskBatchIteration:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
@@ -147,9 +143,6 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
 
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
         mock_service = MagicMock()
         mock_service.chunk_and_embed_fact_check = AsyncMock()
 
@@ -162,7 +155,6 @@ class TestFactCheckRechunkTaskBatchIteration:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
@@ -235,9 +227,6 @@ class TestRechunkTaskProgressTracking:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
 
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
         mock_service = MagicMock()
         mock_service.chunk_and_embed_fact_check = AsyncMock()
 
@@ -250,7 +239,6 @@ class TestRechunkTaskProgressTracking:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
@@ -317,9 +305,6 @@ class TestRechunkTaskProgressTracking:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
 
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
         mock_service = MagicMock()
         mock_service.chunk_and_embed_fact_check = AsyncMock()
 
@@ -332,7 +317,6 @@ class TestRechunkTaskProgressTracking:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
@@ -408,9 +392,6 @@ class TestRechunkTaskProgressTracking:
         mock_batch_job_service.fail_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
 
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
         mock_service = MagicMock()
         mock_service.chunk_and_embed_fact_check = AsyncMock(
             side_effect=Exception("Embedding API error")
@@ -425,7 +406,6 @@ class TestRechunkTaskProgressTracking:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
@@ -457,239 +437,6 @@ class TestRechunkTaskProgressTracking:
             call_args = mock_batch_job_service.complete_job.call_args
             assert call_args.kwargs["completed_tasks"] == 0
             assert call_args.kwargs["failed_tasks"] == 1
-
-
-class TestRechunkTaskLockRelease:
-    """Test lock release on success and failure paths (AC#5)."""
-
-    @pytest.mark.asyncio
-    async def test_releases_lock_on_success(self):
-        """Lock is released when task completes successfully."""
-        job_id = str(uuid4())
-
-        is_count_query = [True]
-
-        async def mock_execute(query):
-            result = MagicMock()
-            if is_count_query[0]:
-                is_count_query[0] = False
-                result.scalar.return_value = 0
-                return result
-            result.scalars.return_value.all.return_value = []
-            return result
-
-        mock_db = AsyncMock()
-        mock_db.execute = mock_execute
-        mock_db.commit = AsyncMock()
-
-        mock_session_maker = MagicMock()
-        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
-
-        mock_redis = AsyncMock()
-        mock_redis.connect = AsyncMock()
-        mock_redis.disconnect = AsyncMock()
-
-        mock_progress_tracker = MagicMock()
-        mock_progress_tracker.get_progress = AsyncMock(return_value=None)
-        mock_progress_tracker.update_progress = AsyncMock()
-
-        mock_batch_job_service = MagicMock()
-        mock_batch_job_service.complete_job = AsyncMock()
-
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
-        with (
-            patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
-            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
-            patch("src.tasks.rechunk_tasks.RedisClient", return_value=mock_redis),
-            patch(
-                "src.tasks.rechunk_tasks.BatchJobProgressTracker",
-                return_value=mock_progress_tracker,
-            ),
-            patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
-            patch("src.tasks.rechunk_tasks.get_chunk_embedding_service"),
-            patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
-        ):
-            mock_engine.return_value = MagicMock()
-            mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
-
-            from src.tasks.rechunk_tasks import process_fact_check_rechunk_task
-
-            await process_fact_check_rechunk_task(
-                job_id=job_id,
-                community_server_id=None,
-                batch_size=10,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
-                redis_url="redis://localhost:6379",
-            )
-
-            mock_lock_manager.release_lock.assert_called_once_with("fact_check")
-
-    @pytest.mark.asyncio
-    async def test_does_not_release_lock_on_fatal_error(self):
-        """Lock is NOT released on fatal task failure - TaskIQ retry handles cleanup.
-
-        Fatal errors are those that occur outside the item processing loop,
-        such as database connection failures or batch job service failures.
-        Item-level errors are counted as failed_count and don't cause fatal failures.
-        """
-        job_id = str(uuid4())
-
-        is_count_query = [True]
-
-        async def mock_execute(query):
-            result = MagicMock()
-            if is_count_query[0]:
-                is_count_query[0] = False
-                result.scalar.return_value = 0
-                return result
-            result.scalars.return_value.all.return_value = []
-            return result
-
-        mock_db = AsyncMock()
-        mock_db.execute = mock_execute
-        mock_db.commit = AsyncMock()
-
-        mock_session_maker = MagicMock()
-        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
-
-        mock_redis = AsyncMock()
-        mock_redis.connect = AsyncMock()
-        mock_redis.disconnect = AsyncMock()
-
-        mock_progress_tracker = MagicMock()
-        mock_progress_tracker.get_progress = AsyncMock(return_value=None)
-        mock_progress_tracker.update_progress = AsyncMock()
-
-        mock_batch_job_service = MagicMock()
-        mock_batch_job_service.complete_job = AsyncMock(
-            side_effect=Exception("Database connection lost")
-        )
-
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
-        mock_service = MagicMock()
-
-        with (
-            patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
-            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
-            patch("src.tasks.rechunk_tasks.RedisClient", return_value=mock_redis),
-            patch(
-                "src.tasks.rechunk_tasks.BatchJobProgressTracker",
-                return_value=mock_progress_tracker,
-            ),
-            patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
-            patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
-            patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
-        ):
-            mock_engine.return_value = MagicMock()
-            mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
-
-            from src.tasks.rechunk_tasks import process_fact_check_rechunk_task
-
-            with pytest.raises(Exception, match="Database connection lost"):
-                await process_fact_check_rechunk_task(
-                    job_id=job_id,
-                    community_server_id=None,
-                    batch_size=10,
-                    db_url="postgresql+asyncpg://test:test@localhost/test",
-                    redis_url="redis://localhost:6379",
-                )
-
-            mock_lock_manager.release_lock.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_previously_seen_releases_lock_with_community_id(self):
-        """Previously seen task releases lock with community_server_id."""
-        job_id = str(uuid4())
-        community_server_id = str(uuid4())
-
-        is_count_query = [True]
-
-        async def mock_execute(query):
-            result = MagicMock()
-            if is_count_query[0]:
-                is_count_query[0] = False
-                result.scalar.return_value = 0
-                return result
-            result.scalars.return_value.all.return_value = []
-            return result
-
-        mock_db = AsyncMock()
-        mock_db.execute = mock_execute
-        mock_db.commit = AsyncMock()
-
-        mock_session_maker = MagicMock()
-        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
-
-        mock_redis = AsyncMock()
-        mock_redis.connect = AsyncMock()
-        mock_redis.disconnect = AsyncMock()
-
-        mock_progress_tracker = MagicMock()
-        mock_progress_tracker.get_progress = AsyncMock(return_value=None)
-        mock_progress_tracker.update_progress = AsyncMock()
-
-        mock_batch_job_service = MagicMock()
-        mock_batch_job_service.complete_job = AsyncMock()
-
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
-        with (
-            patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
-            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
-            patch("src.tasks.rechunk_tasks.RedisClient", return_value=mock_redis),
-            patch(
-                "src.tasks.rechunk_tasks.BatchJobProgressTracker",
-                return_value=mock_progress_tracker,
-            ),
-            patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
-            patch("src.tasks.rechunk_tasks.get_chunk_embedding_service"),
-            patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
-        ):
-            mock_engine.return_value = MagicMock()
-            mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
-
-            from src.tasks.rechunk_tasks import process_previously_seen_rechunk_task
-
-            await process_previously_seen_rechunk_task(
-                job_id=job_id,
-                community_server_id=community_server_id,
-                batch_size=10,
-                db_url="postgresql+asyncpg://test:test@localhost/test",
-                redis_url="redis://localhost:6379",
-            )
-
-            mock_lock_manager.release_lock.assert_called_once_with(
-                "previously_seen", community_server_id
-            )
 
 
 class TestTaskIQLabels:
@@ -898,8 +645,8 @@ class TestFinalRetryCallbackHandlers:
     """
 
     @pytest.mark.asyncio
-    async def test_fact_check_callback_marks_failed_and_releases_lock(self):
-        """Fact check callback marks job failed and releases lock."""
+    async def test_fact_check_callback_marks_job_failed(self):
+        """Fact check callback marks job failed."""
         from taskiq import TaskiqMessage, TaskiqResult
 
         from src.tasks.rechunk_tasks import _handle_fact_check_rechunk_final_failure
@@ -931,9 +678,6 @@ class TestFinalRetryCallbackHandlers:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
         with (
             patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
             patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
@@ -943,7 +687,6 @@ class TestFinalRetryCallbackHandlers:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
             mock_engine.return_value = MagicMock()
@@ -957,8 +700,6 @@ class TestFinalRetryCallbackHandlers:
 
             mock_redis.connect.assert_called_once_with(redis_url)
             mock_batch_job_service.fail_job.assert_called_once()
-
-            mock_lock_manager.release_lock.assert_called_once_with("fact_check")
             mock_redis.disconnect.assert_called_once()
 
     @pytest.mark.asyncio
@@ -982,8 +723,8 @@ class TestFinalRetryCallbackHandlers:
             mock_redis.connect.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_previously_seen_callback_marks_failed_and_releases_lock(self):
-        """Previously seen callback marks job failed and releases lock with community_id."""
+    async def test_previously_seen_callback_marks_job_failed(self):
+        """Previously seen callback marks job failed."""
         from taskiq import TaskiqMessage, TaskiqResult
 
         from src.tasks.rechunk_tasks import _handle_previously_seen_rechunk_final_failure
@@ -1021,9 +762,6 @@ class TestFinalRetryCallbackHandlers:
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        mock_lock_manager = MagicMock()
-        mock_lock_manager.release_lock = AsyncMock()
-
         with (
             patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
             patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
@@ -1033,7 +771,6 @@ class TestFinalRetryCallbackHandlers:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.rechunk_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.rechunk_tasks.TaskRechunkLockManager", return_value=mock_lock_manager),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
             mock_engine.return_value = MagicMock()
@@ -1047,8 +784,4 @@ class TestFinalRetryCallbackHandlers:
 
             mock_redis.connect.assert_called_once_with(redis_url)
             mock_batch_job_service.fail_job.assert_called_once()
-
-            mock_lock_manager.release_lock.assert_called_once_with(
-                "previously_seen", community_server_id
-            )
             mock_redis.disconnect.assert_called_once()
