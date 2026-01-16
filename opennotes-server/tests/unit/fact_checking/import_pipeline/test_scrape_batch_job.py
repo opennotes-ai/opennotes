@@ -26,7 +26,6 @@ pytestmark = pytest.mark.unit
 def create_flexible_execute_mock(
     total_count: int,
     candidate_rows: list,
-    batch_exhausted_after: int | None = None,
 ):
     """
     Create a flexible mock for db.execute that handles various query types.
@@ -34,9 +33,10 @@ def create_flexible_execute_mock(
     Args:
         total_count: Count to return for COUNT queries
         candidate_rows: List of (id, url) tuples to return for SELECT queries
-        batch_exhausted_after: Ignored (kept for backward compatibility).
-            In batch mode, all candidates are returned in one fetchall() call,
-            then subsequent calls return empty list.
+
+    Note: In batch mode, all candidates are returned in one fetchall() call,
+    then subsequent calls return empty list. UPDATE ... RETURNING queries
+    use fetchall() to get the updated rows.
     """
     batch_returned = [False]
 
@@ -48,9 +48,7 @@ def create_flexible_execute_mock(
 
         if "count(" in query_lower:
             result.scalar_one.return_value = total_count
-        elif query_lower.strip().startswith("update") or "set status" in query_lower:
-            result.rowcount = 1
-        else:
+        elif "returning" in query_lower:
 
             def mock_fetchall():
                 if not batch_returned[0]:
@@ -59,6 +57,10 @@ def create_flexible_execute_mock(
                 return []
 
             result.fetchall = mock_fetchall
+            result.rowcount = len(candidate_rows)
+        elif query_lower.strip().startswith("update") or "set status" in query_lower:
+            result.rowcount = 1
+        else:
             result.scalar_one.return_value = total_count
 
         return result
@@ -86,7 +88,6 @@ class TestScrapeBatchProcessing:
         mock_db.execute = create_flexible_execute_mock(
             total_count=2,
             candidate_rows=candidate_rows,
-            batch_exhausted_after=1,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -166,7 +167,6 @@ class TestScrapeBatchProcessing:
         mock_db.execute = create_flexible_execute_mock(
             total_count=2,
             candidate_rows=candidate_rows,
-            batch_exhausted_after=1,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -324,7 +324,6 @@ class TestScrapeBatchJobCompletion:
         mock_db.execute = create_flexible_execute_mock(
             total_count=3,
             candidate_rows=candidate_rows,
-            batch_exhausted_after=1,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)
@@ -538,7 +537,6 @@ class TestScrapeBatchNoCandidates:
         mock_db.execute = create_flexible_execute_mock(
             total_count=0,
             candidate_rows=[],
-            batch_exhausted_after=0,
         )
 
         mock_session_maker = create_mock_session_context(mock_db)

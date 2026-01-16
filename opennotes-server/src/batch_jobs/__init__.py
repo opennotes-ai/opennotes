@@ -23,6 +23,7 @@ from src.batch_jobs.progress_tracker import (
     get_batch_job_progress_tracker,
 )
 from src.batch_jobs.rechunk_service import (
+    ActiveJobExistsError,
     RechunkBatchJobService,
     RechunkType,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "RECHUNK_FACT_CHECK_JOB_TYPE",
     "RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE",
     "SCRAPE_JOB_TYPE",
+    "ActiveJobExistsError",
     "BatchJob",
     "BatchJobBase",
     "BatchJobCreate",

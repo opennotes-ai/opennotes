@@ -582,10 +582,16 @@ async def _scrape_single_url(
             timeout=timeout_seconds,
         )
     except TimeoutError:
-        logger.warning(f"Scrape timeout for URL: {url}")
+        logger.warning(
+            "Scrape timeout for URL",
+            extra={"url": url, "timeout_seconds": timeout_seconds},
+        )
         return None
     except Exception as e:
-        logger.error(f"Scrape error for URL {url}: {e}")
+        logger.error(
+            "Scrape error for URL",
+            extra={"url": url, "error": str(e), "error_type": type(e).__name__},
+        )
         return None
 
 
@@ -769,34 +775,40 @@ async def process_scrape_batch(  # noqa: PLR0912
 
             while True:
                 async with async_session() as db:
-                    candidate_query = (
-                        select(
-                            FactCheckedItemCandidate.id,
-                            FactCheckedItemCandidate.source_url,
-                        )
+                    subquery = (
+                        select(FactCheckedItemCandidate.id)
                         .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
                         .where(FactCheckedItemCandidate.content.is_(None))
                         .limit(batch_size)
                         .with_for_update(skip_locked=True)
                     )
-                    result = await db.execute(candidate_query)
-                    candidates = list(result.fetchall())
-
-                    if not candidates:
-                        logger.info(f"Job {job_id}: No more candidates to process")
-                        break
-
-                    candidate_ids = [c[0] for c in candidates]
-                    await db.execute(
+                    stmt = (
                         update(FactCheckedItemCandidate)
-                        .where(FactCheckedItemCandidate.id.in_(candidate_ids))
+                        .where(FactCheckedItemCandidate.id.in_(subquery))
                         .values(status=CandidateStatus.SCRAPING.value)
+                        .returning(
+                            FactCheckedItemCandidate.id,
+                            FactCheckedItemCandidate.source_url,
+                        )
                     )
+                    result = await db.execute(stmt)
+                    candidates = list(result.fetchall())
                     await db.commit()
 
+                    if not candidates:
+                        logger.info(
+                            "No more candidates to process",
+                            extra={"job_id": job_id},
+                        )
+                        break
+
                 logger.info(
-                    f"Job {job_id}: Processing {len(candidates)} candidates in parallel "
-                    f"(concurrency={concurrency})"
+                    "Processing candidates in parallel",
+                    extra={
+                        "job_id": job_id,
+                        "batch_size": len(candidates),
+                        "concurrency": concurrency,
+                    },
                 )
 
                 tasks = [
@@ -811,7 +823,14 @@ async def process_scrape_batch(  # noqa: PLR0912
                     if isinstance(result, BaseException):
                         batch_failed += 1
                         errors.append(str(result)[:200])
-                        logger.error(f"Job {job_id}: Candidate processing error: {result}")
+                        logger.error(
+                            "Candidate processing error",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(result),
+                                "error_type": type(result).__name__,
+                            },
+                        )
                     elif result[0]:
                         batch_scraped += 1
                     else:
@@ -1052,51 +1071,59 @@ async def process_promotion_batch(
             progress_interval = max(1, batch_size)
             while True:
                 async with async_session() as db:
-                    candidate_query = (
+                    subquery = (
                         select(FactCheckedItemCandidate.id)
                         .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
                         .where(FactCheckedItemCandidate.content.is_not(None))
                         .where(FactCheckedItemCandidate.content != "")
                         .where(FactCheckedItemCandidate.rating.is_not(None))
-                        .limit(1)
+                        .limit(batch_size)
                         .with_for_update(skip_locked=True)
                     )
-                    result = await db.execute(candidate_query)
-                    candidate_row = result.fetchone()
-
-                    if not candidate_row:
-                        break
-
-                    candidate_id = candidate_row[0]
-                    await db.execute(
+                    stmt = (
                         update(FactCheckedItemCandidate)
-                        .where(FactCheckedItemCandidate.id == candidate_id)
+                        .where(FactCheckedItemCandidate.id.in_(subquery))
                         .values(status=CandidateStatus.PROMOTING.value)
+                        .returning(FactCheckedItemCandidate.id)
                     )
+                    result = await db.execute(stmt)
+                    candidate_ids = [row[0] for row in result.fetchall()]
                     await db.commit()
 
-                async with async_session() as db:
-                    success = await promote_candidate(db, candidate_id)
+                    if not candidate_ids:
+                        break
 
-                    if success:
-                        promoted += 1
-                        logger.debug(
-                            "Promoted candidate",
-                            extra={
-                                "candidate_id": str(candidate_id),
-                            },
-                        )
-                    else:
-                        failed += 1
-                        logger.warning(
-                            "Failed to promote candidate",
-                            extra={
-                                "candidate_id": str(candidate_id),
-                            },
-                        )
+                logger.info(
+                    "Processing promotion batch",
+                    extra={
+                        "job_id": job_id,
+                        "batch_size": len(candidate_ids),
+                    },
+                )
+
+                for candidate_id in candidate_ids:
+                    async with async_session() as db:
+                        success = await promote_candidate(db, candidate_id)
+
+                        if success:
+                            promoted += 1
+                            logger.debug(
+                                "Promoted candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                },
+                            )
+                        else:
+                            failed += 1
+                            logger.warning(
+                                "Failed to promote candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                },
+                            )
 
                 processed = promoted + failed
-                if processed % progress_interval == 0:
+                if processed % progress_interval == 0 or processed == total_candidates:
                     try:
                         await _update_progress(
                             async_session,

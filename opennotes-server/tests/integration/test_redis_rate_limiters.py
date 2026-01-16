@@ -4,16 +4,22 @@ Verifies the AsyncSemaphore works correctly with our Redis setup.
 """
 
 import asyncio
+import os
 
 import pytest
 from limiters import AsyncSemaphore
 from redis.asyncio import Redis
 
 
+def get_redis_url() -> str:
+    """Get Redis URL from environment or use default for local development."""
+    return os.environ.get("REDIS_URL", "redis://localhost:6379")
+
+
 @pytest.fixture
 async def redis_client():
     """Create Redis client for testing."""
-    client = Redis.from_url("redis://localhost:6379")
+    client = Redis.from_url(get_redis_url())
     yield client
     await client.aclose()
 

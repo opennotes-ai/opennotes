@@ -6,7 +6,11 @@ allowing task-level concurrency control via labels.
 Designed to be extractable as a standalone package (taskiq-redis-ratelimit).
 
 Label Configuration:
-    rate_limit_name: Required. Lock signature/name (e.g., "import:fact_check")
+    rate_limit_name: Required. Lock signature/name (e.g., "import:fact_check").
+        Supports template variables using Python format syntax, which are
+        interpolated from task kwargs at runtime. For example,
+        "rechunk:previously_seen:{community_server_id}" will be interpolated
+        with the community_server_id kwarg value.
     rate_limit_capacity: Optional. Max concurrent permits (default: 1)
     rate_limit_max_sleep: Optional. Seconds before MaxSleepExceededError (default: 30)
     rate_limit_expiry: Optional. Redis key TTL in seconds (default: 1800)
@@ -19,6 +23,14 @@ Example:
     )
     async def my_task():
         ...
+
+    @register_task(
+        task_name="rechunk:previously_seen",
+        rate_limit_name="rechunk:previously_seen:{community_server_id}",
+        rate_limit_capacity="1",
+    )
+    async def my_per_community_task(community_server_id: str):
+        ...
 """
 
 from __future__ import annotations
@@ -26,11 +38,23 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from limiters import AsyncSemaphore
+from limiters import AsyncSemaphore, MaxSleepExceededError
 from redis.asyncio import Redis
 from taskiq import TaskiqMessage, TaskiqMiddleware, TaskiqResult
 
 logger = logging.getLogger(__name__)
+
+
+class RateLimitExceededError(Exception):
+    """Raised when a task cannot acquire a rate limit permit within max_sleep time."""
+
+    def __init__(self, rate_limit_name: str, max_sleep: int) -> None:
+        self.rate_limit_name = rate_limit_name
+        self.max_sleep = max_sleep
+        super().__init__(
+            f"Rate limit '{rate_limit_name}' exceeded: could not acquire permit within {max_sleep}s"
+        )
+
 
 RATE_LIMIT_NAME = "rate_limit_name"
 RATE_LIMIT_CAPACITY = "rate_limit_capacity"
@@ -48,7 +72,7 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
     def __init__(self, redis_url: str) -> None:
         self._redis_url = redis_url
         self._redis: Redis | None = None
-        self._active_semaphores: dict[int, AsyncSemaphore] = {}
+        self._active_semaphores: dict[str, AsyncSemaphore] = {}
 
     async def startup(self) -> None:
         self._redis = Redis.from_url(self._redis_url)
@@ -85,6 +109,14 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
         if not rate_limit_name:
             return message
 
+        if "{" in rate_limit_name:
+            try:
+                rate_limit_name = rate_limit_name.format_map(message.kwargs)
+            except KeyError as e:
+                logger.warning(
+                    f"Missing template variable for rate_limit_name '{rate_limit_name}': {e}"
+                )
+
         capacity = int(labels.get(RATE_LIMIT_CAPACITY, DEFAULT_CAPACITY))
         max_sleep = int(labels.get(RATE_LIMIT_MAX_SLEEP, DEFAULT_MAX_SLEEP))
         expiry = int(labels.get(RATE_LIMIT_EXPIRY, DEFAULT_EXPIRY))
@@ -92,9 +124,16 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
         logger.debug(f"Acquiring rate limit: name={rate_limit_name}, capacity={capacity}")
 
         semaphore = self._get_semaphore(rate_limit_name, capacity, max_sleep, expiry)
-        await semaphore.__aenter__()
 
-        self._active_semaphores[id(message)] = semaphore
+        self._active_semaphores[message.task_id] = semaphore
+        try:
+            await semaphore.__aenter__()
+        except MaxSleepExceededError:
+            del self._active_semaphores[message.task_id]
+            raise RateLimitExceededError(rate_limit_name, max_sleep)
+        except BaseException:
+            del self._active_semaphores[message.task_id]
+            raise
 
         return message
 
@@ -104,13 +143,13 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
     async def on_error(
         self,
         message: TaskiqMessage,
-        result: BaseException,  # noqa: ARG002
+        result: TaskiqResult[Any],  # noqa: ARG002
         exception: BaseException,  # noqa: ARG002
     ) -> None:
         await self._release_semaphore(message)
 
     async def _release_semaphore(self, message: TaskiqMessage) -> None:
-        semaphore = self._active_semaphores.pop(id(message), None)
+        semaphore = self._active_semaphores.pop(message.task_id, None)
         if semaphore:
             try:
                 await semaphore.__aexit__(None, None, None)

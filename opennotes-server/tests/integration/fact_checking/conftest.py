@@ -13,7 +13,21 @@ import pytest
 from src.auth.models import APIKeyCreate
 from src.batch_jobs import PROMOTION_JOB_TYPE, SCRAPE_JOB_TYPE
 from src.batch_jobs.models import BatchJob, BatchJobStatus
+from src.fact_checking.import_pipeline.router import get_import_service
+from src.main import app
 from src.users.crud import create_api_key
+
+
+@pytest.fixture(autouse=True)
+def cleanup_dependency_overrides():
+    """Automatically clean up FastAPI dependency overrides after each test.
+
+    This fixture ensures that any dependency overrides set during a test
+    are properly cleaned up, even if the test fails. This prevents test
+    pollution where overrides from one test affect another.
+    """
+    yield
+    app.dependency_overrides.pop(get_import_service, None)
 
 
 @pytest.fixture

@@ -26,11 +26,28 @@ from src.batch_jobs.rechunk_service import (
 )
 
 
+def _make_execute_side_effect(active_job=None, count_result=100):
+    """Create a side effect function for session.execute that handles different queries.
+
+    Args:
+        active_job: Value to return for scalar_one_or_none() (active job check)
+        count_result: Value to return for scalar_one() (count queries)
+    """
+
+    async def side_effect(query):
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = active_job
+        result.scalar_one.return_value = count_result
+        return result
+
+    return side_effect
+
+
 @pytest.fixture
 def mock_session():
     """Create a mock SQLAlchemy async session."""
     session = MagicMock()
-    session.execute = AsyncMock()
+    session.execute = AsyncMock(side_effect=_make_execute_side_effect(active_job=None))
     session.commit = AsyncMock()
     session.flush = AsyncMock()
     session.refresh = AsyncMock()
@@ -78,10 +95,6 @@ class TestRechunkServiceNullCommunityServerId:
         mock_batch_job_service.create_job.return_value = mock_job
         mock_batch_job_service.start_job.return_value = mock_job
         mock_task.kiq = AsyncMock()
-
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = 100
-        mock_session.execute.return_value = mock_result
 
         result = await rechunk_service.start_fact_check_rechunk_job(
             community_server_id=None,
@@ -143,10 +156,6 @@ class TestRechunkServiceMetadataSerialization:
         mock_batch_job_service.start_job.return_value = mock_job
         mock_task.kiq = AsyncMock()
 
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = 50
-        mock_session.execute.return_value = mock_result
-
         await rechunk_service.start_fact_check_rechunk_job(
             community_server_id=None,
             batch_size=100,
@@ -205,10 +214,6 @@ class TestRechunkServiceWithCommunityServerId:
         mock_batch_job_service.start_job.return_value = mock_job
         mock_task.kiq = AsyncMock()
 
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = 200
-        mock_session.execute.return_value = mock_result
-
         result = await rechunk_service.start_previously_seen_rechunk_job(
             community_server_id=community_server_id,
             batch_size=100,
@@ -266,10 +271,6 @@ class TestRechunkServiceTaskDispatchFailure:
         mock_batch_job_service.create_job.return_value = mock_job
         mock_batch_job_service.start_job.return_value = mock_job
         mock_task.kiq = AsyncMock(side_effect=Exception("Task dispatch error"))
-
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = 100
-        mock_session.execute.return_value = mock_result
 
         with pytest.raises(Exception, match="Task dispatch error"):
             await rechunk_service.start_fact_check_rechunk_job(
@@ -331,3 +332,142 @@ class TestRechunkServiceEdgeCases:
         result = await rechunk_service.cancel_rechunk_job(job_id)
 
         assert result == mock_job
+
+
+@pytest.mark.unit
+class TestRechunkServiceActiveJobCheck:
+    """Tests for active job check before creating new jobs (task-1010.04)."""
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    async def test_active_job_blocks_new_fact_check_job(
+        self,
+        mock_task,
+        mock_batch_job_service,
+    ):
+        """Creating a fact check job fails when one is already active."""
+        from src.batch_jobs.rechunk_service import ActiveJobExistsError
+
+        existing_job_id = uuid4()
+        existing_job = MagicMock(spec=BatchJob)
+        existing_job.id = existing_job_id
+        existing_job.status = "in_progress"
+
+        session = MagicMock()
+        session.execute = AsyncMock(side_effect=_make_execute_side_effect(active_job=existing_job))
+        session.commit = AsyncMock()
+        session.flush = AsyncMock()
+        session.refresh = AsyncMock()
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        with pytest.raises(ActiveJobExistsError) as exc_info:
+            await service.start_fact_check_rechunk_job(
+                community_server_id=None,
+            )
+
+        assert exc_info.value.active_job_id == existing_job_id
+        mock_batch_job_service.create_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    async def test_active_job_blocks_new_previously_seen_job(
+        self,
+        mock_task,
+        mock_batch_job_service,
+    ):
+        """Creating a previously seen job fails when one is already active."""
+        from src.batch_jobs.rechunk_service import ActiveJobExistsError
+
+        existing_job_id = uuid4()
+        existing_job = MagicMock(spec=BatchJob)
+        existing_job.id = existing_job_id
+        existing_job.status = "pending"
+
+        session = MagicMock()
+        session.execute = AsyncMock(side_effect=_make_execute_side_effect(active_job=existing_job))
+        session.commit = AsyncMock()
+        session.flush = AsyncMock()
+        session.refresh = AsyncMock()
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        with pytest.raises(ActiveJobExistsError) as exc_info:
+            await service.start_previously_seen_rechunk_job(
+                community_server_id=uuid4(),
+            )
+
+        assert exc_info.value.active_job_id == existing_job_id
+        mock_batch_job_service.create_job.assert_not_called()
+
+
+@pytest.mark.unit
+class TestRechunkServiceStaleJobCleanup:
+    """Tests for stale job cleanup (task-1010.04)."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_stale_jobs_marks_old_jobs_as_failed(
+        self,
+        mock_batch_job_service,
+    ):
+        """Cleanup marks stale jobs as failed."""
+        from datetime import UTC, datetime, timedelta
+
+        stale_job_id = uuid4()
+        stale_job = MagicMock(spec=BatchJob)
+        stale_job.id = stale_job_id
+        stale_job.status = "in_progress"
+        stale_job.created_at = datetime.now(UTC) - timedelta(hours=3)
+
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [stale_job]
+        session.execute = AsyncMock(return_value=mock_result)
+        session.commit = AsyncMock()
+
+        mock_batch_job_service.fail_job = AsyncMock(return_value=stale_job)
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.cleanup_stale_jobs(stale_threshold_hours=2)
+
+        assert len(result) == 1
+        assert result[0].id == stale_job_id
+        mock_batch_job_service.fail_job.assert_called_once()
+        call_args = mock_batch_job_service.fail_job.call_args
+        assert call_args[0][0] == stale_job_id
+        assert "stale" in call_args[1]["error_summary"]["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_stale_jobs_no_stale_jobs(
+        self,
+        mock_batch_job_service,
+    ):
+        """Cleanup does nothing when no stale jobs exist."""
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        session.execute = AsyncMock(return_value=mock_result)
+        session.commit = AsyncMock()
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.cleanup_stale_jobs()
+
+        assert len(result) == 0
+        mock_batch_job_service.fail_job.assert_not_called()
+        session.commit.assert_not_called()

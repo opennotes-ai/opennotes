@@ -34,7 +34,7 @@ def _validate_candidate_for_promotion(
     if not candidate:
         return f"Candidate not found for promotion: {candidate_id}"
 
-    if not candidate.content:
+    if not candidate.content or candidate.content == "":
         return f"Cannot promote candidate without content: {candidate_id}"
 
     if not candidate.rating:
@@ -125,8 +125,10 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
 async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> int:
     """Promote all scraped candidates with approved ratings to fact_check_items.
 
-    Finds candidates with status='scraped', content, and human-approved rating,
-    then promotes each to the main table.
+    Finds candidates with status='scraped' or 'promoting', content, and human-approved
+    rating, then promotes each to the main table. Including 'promoting' status enables
+    retry/idempotency: if a batch job crashes mid-promotion, the next run can
+    immediately retry without waiting for a recovery timeout.
 
     Args:
         session: Database session.
@@ -137,7 +139,11 @@ async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> 
     """
     result = await session.execute(
         select(FactCheckedItemCandidate.id)
-        .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
+        .where(
+            FactCheckedItemCandidate.status.in_(
+                [CandidateStatus.SCRAPED.value, CandidateStatus.PROMOTING.value]
+            )
+        )
         .where(FactCheckedItemCandidate.content.is_not(None))
         .where(FactCheckedItemCandidate.content != "")
         .where(FactCheckedItemCandidate.rating.is_not(None))

@@ -33,9 +33,13 @@ def create_flexible_execute_mock(
 
     Args:
         total_count: Count to return for COUNT queries
-        candidate_rows: List of (id,) tuples to return for SELECT queries via fetchone()
+        candidate_rows: List of (id,) tuples to return for SELECT queries via fetchall()
+
+    Note: In batch mode, all candidates are returned in one fetchall() call,
+    then subsequent calls return empty list. UPDATE ... RETURNING queries
+    use fetchall() to get the updated rows.
     """
-    candidate_index = [0]
+    batch_returned = [False]
 
     def execute_side_effect(query):
         result = MagicMock()
@@ -45,18 +49,19 @@ def create_flexible_execute_mock(
 
         if "count(" in query_lower:
             result.scalar_one.return_value = total_count
+        elif "returning" in query_lower:
+
+            def mock_fetchall():
+                if not batch_returned[0]:
+                    batch_returned[0] = True
+                    return candidate_rows
+                return []
+
+            result.fetchall = mock_fetchall
+            result.rowcount = len(candidate_rows)
         elif query_lower.strip().startswith("update") or "set status" in query_lower:
             result.rowcount = 1
         else:
-
-            def mock_fetchone():
-                if candidate_index[0] < len(candidate_rows):
-                    row = candidate_rows[candidate_index[0]]
-                    candidate_index[0] += 1
-                    return row
-                return None
-
-            result.fetchone = mock_fetchone
             result.scalar_one.return_value = total_count
 
         return result
@@ -1024,30 +1029,58 @@ class TestPromotionBatchEmptyContentHandling:
             assert result["promoted"] == 1
             mock_promote.assert_called_once()
 
-    def test_query_includes_empty_content_filter(self):
-        """Verify the promotion queries include empty string content filter.
+    @pytest.mark.asyncio
+    async def test_candidate_with_empty_content_is_not_promoted(self):
+        """Verify candidates with empty string content are not promoted.
 
-        Inspects the source code to confirm that content != '' filter is present
-        in both the count query and candidate selection query.
+        This tests the actual validation behavior rather than inspecting source code.
         """
-        import inspect
-
-        from src.tasks.import_tasks import process_promotion_batch
-
-        source = inspect.getsource(process_promotion_batch)
-
-        assert 'content != ""' in source or "content != ''" in source, (
-            "process_promotion_batch should filter out empty content strings"
+        from src.fact_checking.import_pipeline.promotion import (
+            _validate_candidate_for_promotion,
         )
 
-    def test_bulk_promote_query_includes_empty_content_filter(self):
-        """Verify bulk_promote_scraped query includes empty string content filter."""
-        import inspect
+        candidate_id = uuid4()
+        mock_candidate = MagicMock()
+        mock_candidate.content = ""
+        mock_candidate.rating = "Mixed"
+        mock_candidate.status = "scraped"
 
-        from src.fact_checking.import_pipeline.promotion import bulk_promote_scraped
+        result = _validate_candidate_for_promotion(mock_candidate, candidate_id)
 
-        source = inspect.getsource(bulk_promote_scraped)
+        assert result is not None
+        assert "without content" in result
 
-        assert 'content != ""' in source or "content != ''" in source, (
-            "bulk_promote_scraped should filter out empty content strings"
+    @pytest.mark.asyncio
+    async def test_candidate_with_none_content_is_not_promoted(self):
+        """Verify candidates with None content are not promoted."""
+        from src.fact_checking.import_pipeline.promotion import (
+            _validate_candidate_for_promotion,
         )
+
+        candidate_id = uuid4()
+        mock_candidate = MagicMock()
+        mock_candidate.content = None
+        mock_candidate.rating = "Mixed"
+        mock_candidate.status = "scraped"
+
+        result = _validate_candidate_for_promotion(mock_candidate, candidate_id)
+
+        assert result is not None
+        assert "without content" in result
+
+    @pytest.mark.asyncio
+    async def test_candidate_with_valid_content_passes_validation(self):
+        """Verify candidates with valid content pass validation."""
+        from src.fact_checking.import_pipeline.promotion import (
+            _validate_candidate_for_promotion,
+        )
+
+        candidate_id = uuid4()
+        mock_candidate = MagicMock()
+        mock_candidate.content = "Valid scraped content"
+        mock_candidate.rating = "Mixed"
+        mock_candidate.status = "scraped"
+
+        result = _validate_candidate_for_promotion(mock_candidate, candidate_id)
+
+        assert result is None

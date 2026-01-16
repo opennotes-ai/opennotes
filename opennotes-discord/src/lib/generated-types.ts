@@ -11774,13 +11774,6 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
-            /** @description An import job is already in progress */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11789,6 +11782,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description An import job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11849,13 +11849,6 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
-            /** @description A scrape job is already in progress */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11864,6 +11857,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A scrape job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11891,13 +11891,6 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
-            /** @description A promotion job is already in progress */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11906,6 +11899,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A promotion job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

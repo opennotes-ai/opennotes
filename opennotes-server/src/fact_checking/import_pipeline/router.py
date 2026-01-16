@@ -87,7 +87,7 @@ def get_import_service(
     "HuggingFace. Returns immediately with a BatchJob that can be polled for status. "
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
     responses={
-        409: {"description": "An import job is already in progress"},
+        429: {"description": "An import job is already in progress (rate limited)"},
     },
 )
 async def import_fact_check_bureau_endpoint(
@@ -198,7 +198,7 @@ async def enqueue_scrapes_endpoint(
     "Returns immediately with a BatchJob that can be polled for status. "
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
     responses={
-        409: {"description": "A scrape job is already in progress"},
+        429: {"description": "A scrape job is already in progress (rate limited)"},
     },
 )
 async def scrape_candidates_endpoint(
@@ -263,7 +263,7 @@ async def scrape_candidates_endpoint(
     "Returns immediately with a BatchJob that can be polled for status. "
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
     responses={
-        409: {"description": "A promotion job is already in progress"},
+        429: {"description": "A promotion job is already in progress (rate limited)"},
     },
 )
 async def promote_candidates_endpoint(

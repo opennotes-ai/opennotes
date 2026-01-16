@@ -21,6 +21,7 @@ Fixtures:
 - api_key_headers: from tests/integration/fact_checking/conftest.py
 - mock_scrape_job: from tests/integration/fact_checking/conftest.py
 - mock_promotion_job: from tests/integration/fact_checking/conftest.py
+- cleanup_dependency_overrides: from tests/integration/fact_checking/conftest.py (autouse)
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -48,22 +49,19 @@ class TestScrapeCandidatesEndpoint:
         mock_service.start_scrape_job = AsyncMock(return_value=mock_scrape_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/scrape-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={"batch_size": 100, "dry_run": False},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 201
-                data = response.json()
-                assert data["id"] == str(mock_scrape_job.id)
-                assert data["job_type"] == SCRAPE_JOB_TYPE
-                assert data["status"] == "pending"
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["id"] == str(mock_scrape_job.id)
+            assert data["job_type"] == SCRAPE_JOB_TYPE
+            assert data["status"] == "pending"
 
     @pytest.mark.asyncio
     async def test_scrape_candidates_with_dry_run(
@@ -78,22 +76,19 @@ class TestScrapeCandidatesEndpoint:
         mock_service.start_scrape_job = AsyncMock(return_value=mock_scrape_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/scrape-candidates",
-                    json={"batch_size": 50, "dry_run": True},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={"batch_size": 50, "dry_run": True},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 201
-                call_kwargs = mock_service.start_scrape_job.call_args.kwargs
-                assert call_kwargs["batch_size"] == 50
-                assert call_kwargs["dry_run"] is True
-                assert "user_id" in call_kwargs
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            call_kwargs = mock_service.start_scrape_job.call_args.kwargs
+            assert call_kwargs["batch_size"] == 50
+            assert call_kwargs["dry_run"] is True
+            assert "user_id" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_scrape_candidates_requires_authentication(self):
@@ -118,22 +113,19 @@ class TestScrapeCandidatesEndpoint:
         mock_service.start_scrape_job = AsyncMock(return_value=mock_scrape_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/scrape-candidates",
-                    json={},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 201
-                call_kwargs = mock_service.start_scrape_job.call_args.kwargs
-                assert call_kwargs["batch_size"] == 1000
-                assert call_kwargs["dry_run"] is False
-                assert "user_id" in call_kwargs
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            call_kwargs = mock_service.start_scrape_job.call_args.kwargs
+            assert call_kwargs["batch_size"] == 1000
+            assert call_kwargs["dry_run"] is False
+            assert "user_id" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_scrape_candidates_with_api_key_authentication(
@@ -146,21 +138,18 @@ class TestScrapeCandidatesEndpoint:
         mock_service.start_scrape_job = AsyncMock(return_value=mock_scrape_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/scrape-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=api_key_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={"batch_size": 100, "dry_run": False},
+                headers=api_key_headers,
+            )
 
-                assert response.status_code == 201
-                data = response.json()
-                assert data["id"] == str(mock_scrape_job.id)
-                assert data["job_type"] == SCRAPE_JOB_TYPE
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["id"] == str(mock_scrape_job.id)
+            assert data["job_type"] == SCRAPE_JOB_TYPE
 
     @pytest.mark.asyncio
     async def test_scrape_candidates_batch_size_zero_returns_422(self, auth_headers):
@@ -213,18 +202,15 @@ class TestScrapeCandidatesEndpoint:
         )
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app, raise_app_exceptions=False)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/scrape-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/scrape-candidates",
+                json={"batch_size": 100, "dry_run": False},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 500
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 500
 
 
 @pytest.mark.integration
@@ -242,22 +228,19 @@ class TestPromoteCandidatesEndpoint:
         mock_service.start_promotion_job = AsyncMock(return_value=mock_promotion_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/promote-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={"batch_size": 100, "dry_run": False},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 201
-                data = response.json()
-                assert data["id"] == str(mock_promotion_job.id)
-                assert data["job_type"] == PROMOTION_JOB_TYPE
-                assert data["status"] == "pending"
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["id"] == str(mock_promotion_job.id)
+            assert data["job_type"] == PROMOTION_JOB_TYPE
+            assert data["status"] == "pending"
 
     @pytest.mark.asyncio
     async def test_promote_candidates_with_dry_run(
@@ -272,22 +255,19 @@ class TestPromoteCandidatesEndpoint:
         mock_service.start_promotion_job = AsyncMock(return_value=mock_promotion_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/promote-candidates",
-                    json={"batch_size": 50, "dry_run": True},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={"batch_size": 50, "dry_run": True},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 201
-                call_kwargs = mock_service.start_promotion_job.call_args.kwargs
-                assert call_kwargs["batch_size"] == 50
-                assert call_kwargs["dry_run"] is True
-                assert "user_id" in call_kwargs
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            call_kwargs = mock_service.start_promotion_job.call_args.kwargs
+            assert call_kwargs["batch_size"] == 50
+            assert call_kwargs["dry_run"] is True
+            assert "user_id" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_promote_candidates_requires_authentication(self):
@@ -312,22 +292,19 @@ class TestPromoteCandidatesEndpoint:
         mock_service.start_promotion_job = AsyncMock(return_value=mock_promotion_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/promote-candidates",
-                    json={},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 201
-                call_kwargs = mock_service.start_promotion_job.call_args.kwargs
-                assert call_kwargs["batch_size"] == 1000
-                assert call_kwargs["dry_run"] is False
-                assert "user_id" in call_kwargs
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            call_kwargs = mock_service.start_promotion_job.call_args.kwargs
+            assert call_kwargs["batch_size"] == 1000
+            assert call_kwargs["dry_run"] is False
+            assert "user_id" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_promote_candidates_with_api_key_authentication(
@@ -340,21 +317,18 @@ class TestPromoteCandidatesEndpoint:
         mock_service.start_promotion_job = AsyncMock(return_value=mock_promotion_job)
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/promote-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=api_key_headers,
-                )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={"batch_size": 100, "dry_run": False},
+                headers=api_key_headers,
+            )
 
-                assert response.status_code == 201
-                data = response.json()
-                assert data["id"] == str(mock_promotion_job.id)
-                assert data["job_type"] == PROMOTION_JOB_TYPE
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["id"] == str(mock_promotion_job.id)
+            assert data["job_type"] == PROMOTION_JOB_TYPE
 
     @pytest.mark.asyncio
     async def test_promote_candidates_batch_size_zero_returns_422(self, auth_headers):
@@ -407,15 +381,12 @@ class TestPromoteCandidatesEndpoint:
         )
 
         app.dependency_overrides[get_import_service] = lambda: mock_service
-        try:
-            transport = ASGITransport(app=app, raise_app_exceptions=False)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.post(
-                    "/api/v1/fact-checking/import/promote-candidates",
-                    json={"batch_size": 100, "dry_run": False},
-                    headers=auth_headers,
-                )
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/import/promote-candidates",
+                json={"batch_size": 100, "dry_run": False},
+                headers=auth_headers,
+            )
 
-                assert response.status_code == 500
-        finally:
-            app.dependency_overrides.pop(get_import_service, None)
+            assert response.status_code == 500

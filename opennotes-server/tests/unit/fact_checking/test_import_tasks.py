@@ -11,6 +11,8 @@ Tests cover:
 - End-to-end task flow
 """
 
+from collections.abc import AsyncIterator
+from typing import TypeVar
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -18,6 +20,29 @@ import httpx
 import pytest
 
 pytestmark = pytest.mark.unit
+
+
+T = TypeVar("T")
+
+
+def async_generator_raising(exception: Exception):
+    """Create an async generator that raises an exception when iterated.
+
+    Use this instead of the `if False: yield` pattern for mocking async generators
+    that should raise errors.
+
+    Args:
+        exception: The exception to raise.
+
+    Returns:
+        An async generator function that raises the given exception.
+    """
+
+    async def generator(*args, **kwargs) -> AsyncIterator[T]:
+        raise exception
+        yield
+
+    return generator
 
 
 class TestHelperFunctions:
@@ -336,10 +361,7 @@ class TestStreamHttpFailures:
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def timeout_error(*args, **kwargs):
-            if False:
-                yield
-            raise httpx.TimeoutException("Connection timed out")
+        timeout_error = async_generator_raising(httpx.TimeoutException("Connection timed out"))
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -399,13 +421,12 @@ class TestStreamHttpFailures:
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def http_404_error(*args, **kwargs):
-            if False:
-                yield
-            response = MagicMock()
-            response.status_code = 404
-            request = MagicMock()
-            raise httpx.HTTPStatusError("Not Found", request=request, response=response)
+        response = MagicMock()
+        response.status_code = 404
+        request = MagicMock()
+        http_404_error = async_generator_raising(
+            httpx.HTTPStatusError("Not Found", request=request, response=response)
+        )
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -465,13 +486,12 @@ class TestStreamHttpFailures:
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def http_500_error(*args, **kwargs):
-            if False:
-                yield
-            response = MagicMock()
-            response.status_code = 500
-            request = MagicMock()
-            raise httpx.HTTPStatusError("Internal Server Error", request=request, response=response)
+        response = MagicMock()
+        response.status_code = 500
+        request = MagicMock()
+        http_500_error = async_generator_raising(
+            httpx.HTTPStatusError("Internal Server Error", request=request, response=response)
+        )
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -531,10 +551,9 @@ class TestStreamHttpFailures:
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def connection_reset(*args, **kwargs):
-            if False:
-                yield
-            raise httpx.RemoteProtocolError("Connection reset by peer")
+        connection_reset = async_generator_raising(
+            httpx.RemoteProtocolError("Connection reset by peer")
+        )
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -1891,11 +1910,7 @@ class TestFailJobErrorHandling:
         mock_batch_job_service.fail_job = AsyncMock(side_effect=Exception("fail_job also failed"))
 
         original_error = ValueError("Original processing error")
-
-        async def raise_error(*args, **kwargs):
-            if False:
-                yield
-            raise original_error
+        raise_error = async_generator_raising(original_error)
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,

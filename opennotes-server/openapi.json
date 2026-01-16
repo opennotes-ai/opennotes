@@ -7757,8 +7757,8 @@
               }
             }
           },
-          "409": {
-            "description": "An import job is already in progress"
+          "429": {
+            "description": "An import job is already in progress (rate limited)"
           },
           "422": {
             "description": "Validation Error",
@@ -7890,8 +7890,8 @@
               }
             }
           },
-          "409": {
-            "description": "A scrape job is already in progress"
+          "429": {
+            "description": "A scrape job is already in progress (rate limited)"
           },
           "422": {
             "description": "Validation Error",
@@ -7958,8 +7958,8 @@
               }
             }
           },
-          "409": {
-            "description": "A promotion job is already in progress"
+          "429": {
+            "description": "A promotion job is already in progress (rate limited)"
           },
           "422": {
             "description": "Validation Error",
