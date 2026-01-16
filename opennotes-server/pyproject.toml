@@ -62,7 +62,7 @@ dependencies = [
     "dspy>=2.6.0",
     "ruamel.yaml>=0.18.0",
     "setuptools>=80.9.0",
-    "trafilatura>=2.0.0",
+    "trafilatura>=2.0.0,<3.0.0",
 ]
 
 [project.optional-dependencies]
