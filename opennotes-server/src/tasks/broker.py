@@ -45,6 +45,7 @@ from src.cache.redis_client import create_redis_connection, get_redis_connection
 from src.config import get_settings
 from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 from src.tasks.middleware import RetryCallbackHandlerRegistry, RetryWithFinalCallbackMiddleware
+from src.tasks.rate_limit_middleware import DistributedRateLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,10 @@ def _create_broker() -> PullBasedJetStreamBroker:
         instance_id=settings.INSTANCE_ID,
     )
 
+    rate_limit_middleware = DistributedRateLimitMiddleware(
+        redis_url=settings.REDIS_URL,
+    )
+
     connection_kwargs: dict[str, Any] = {}
     if settings.NATS_USERNAME and settings.NATS_PASSWORD:
         connection_kwargs["user"] = settings.NATS_USERNAME
@@ -174,12 +179,14 @@ def _create_broker() -> PullBasedJetStreamBroker:
             **connection_kwargs,
         )
         .with_result_backend(result_backend)
-        .with_middlewares(tracing_middleware, metrics_middleware, retry_middleware)
+        .with_middlewares(
+            tracing_middleware, metrics_middleware, rate_limit_middleware, retry_middleware
+        )
     )
 
     logger.info(
         "Taskiq broker configured with RetryWithFinalCallbackMiddleware, "
-        "SafeOpenTelemetryMiddleware, and Prometheus metrics"
+        "SafeOpenTelemetryMiddleware, DistributedRateLimitMiddleware, and Prometheus metrics"
     )
 
     return new_broker
