@@ -21,6 +21,13 @@ def _validate_candidate_for_promotion(
 ) -> str | None:
     """Validate candidate is ready for promotion.
 
+    Accepts candidates with status SCRAPED or PROMOTING. Accepting PROMOTING
+    enables retry/idempotency: if a batch job crashes mid-promotion, the next
+    run can immediately retry without waiting for a recovery timeout.
+
+    State machine: SCRAPED -> PROMOTING -> PROMOTED (success)
+                           -> PROMOTING (retry on failure/crash)
+
     Returns:
         None if valid, error message string if invalid.
     """
