@@ -76,7 +76,8 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
         logger.warning(error)
         return False
 
-    assert candidate is not None  # Type narrowing: validation passed
+    if candidate is None:
+        raise RuntimeError(f"Candidate {candidate_id} unexpectedly None after validation")
 
     try:
         fact_check_item = FactCheckItem(
