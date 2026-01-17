@@ -36,10 +36,6 @@ from src.config import settings
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.monitoring import get_logger
-from src.tasks.rechunk_tasks import (
-    process_fact_check_rechunk_task,
-    process_previously_seen_rechunk_task,
-)
 
 logger = get_logger(__name__)
 
@@ -211,6 +207,8 @@ class RechunkBatchJobService:
         await self._session.refresh(job)
 
         try:
+            from src.tasks.rechunk_tasks import process_fact_check_rechunk_task  # noqa: PLC0415
+
             await process_fact_check_rechunk_task.kiq(
                 job_id=str(job.id),
                 community_server_id=str(community_server_id) if community_server_id else None,
@@ -295,6 +293,10 @@ class RechunkBatchJobService:
         await self._session.refresh(job)
 
         try:
+            from src.tasks.rechunk_tasks import (  # noqa: PLC0415
+                process_previously_seen_rechunk_task,
+            )
+
             await process_previously_seen_rechunk_task.kiq(
                 job_id=str(job.id),
                 community_server_id=str(community_server_id),
