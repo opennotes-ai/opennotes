@@ -3,12 +3,21 @@ Service for managing fact-check import batch jobs.
 
 Provides high-level operations for starting and managing import jobs
 that run asynchronously via TaskIQ background tasks.
+
+Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
+not by this service. The middleware enforces one active job per type.
 """
 
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.batch_jobs.constants import (
+    DEFAULT_SCRAPE_CONCURRENCY,
+    IMPORT_JOB_TYPE,
+    PROMOTION_JOB_TYPE,
+    SCRAPE_JOB_TYPE,
+)
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
@@ -17,7 +26,7 @@ from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 
-IMPORT_JOB_TYPE = "import:fact_check_bureau"
+USER_ID_KEY = "user_id"
 
 
 class ImportBatchJobService:
@@ -28,7 +37,10 @@ class ImportBatchJobService:
     non-blocking import operations.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+    ) -> None:
         """
         Initialize the service.
 
@@ -43,6 +55,7 @@ class ImportBatchJobService:
         batch_size: int = 1000,
         dry_run: bool = False,
         enqueue_scrapes: bool = False,
+        user_id: str | None = None,
     ) -> BatchJob:
         """
         Start a new fact-check import job.
@@ -55,6 +68,7 @@ class ImportBatchJobService:
             batch_size: Number of rows per batch during import (default 1000)
             dry_run: If True, validate only without inserting
             enqueue_scrapes: If True, enqueue scrape tasks after import
+            user_id: ID of the user who started the job (for audit trail)
 
         Returns:
             The created BatchJob (in PENDING status)
@@ -63,15 +77,19 @@ class ImportBatchJobService:
 
         settings = get_settings()
 
+        metadata = {
+            "source": "fact_check_bureau",
+            "batch_size": batch_size,
+            "dry_run": dry_run,
+            "enqueue_scrapes": enqueue_scrapes,
+        }
+        if user_id is not None:
+            metadata[USER_ID_KEY] = user_id
+
         job_data = BatchJobCreate(
             job_type=IMPORT_JOB_TYPE,
             total_tasks=0,
-            metadata={
-                "source": "fact_check_bureau",
-                "batch_size": batch_size,
-                "dry_run": dry_run,
-                "enqueue_scrapes": enqueue_scrapes,
-            },
+            metadata=metadata,
         )
 
         job = await self._batch_job_service.create_job(job_data)
@@ -87,14 +105,29 @@ class ImportBatchJobService:
             },
         )
 
-        await process_fact_check_import.kiq(
-            job_id=str(job.id),
-            batch_size=batch_size,
-            dry_run=dry_run,
-            enqueue_scrapes=enqueue_scrapes,
-            db_url=settings.DATABASE_URL,
-            redis_url=settings.REDIS_URL,
-        )
+        try:
+            await process_fact_check_import.kiq(
+                job_id=str(job.id),
+                batch_size=batch_size,
+                dry_run=dry_run,
+                enqueue_scrapes=enqueue_scrapes,
+                db_url=settings.DATABASE_URL,
+                redis_url=settings.REDIS_URL,
+            )
+        except Exception as e:
+            try:
+                await self._batch_job_service.fail_job(
+                    job.id,
+                    error_summary={"error": str(e), "stage": "task_dispatch"},
+                )
+                await self._session.commit()
+                await self._session.refresh(job)
+            except Exception:
+                logger.exception(
+                    "Failed to mark job as failed after task dispatch error",
+                    extra={"job_id": str(job.id)},
+                )
+            raise
 
         return job
 
@@ -114,51 +147,156 @@ class ImportBatchJobService:
         self,
         batch_size: int = 1000,
         dry_run: bool = False,
+        user_id: str | None = None,
     ) -> BatchJob:
         """
-        Start a content scraping job for pending candidates.
+        Start a new candidate scrape job.
 
-        Note: This is a stub. Full implementation in PR 118.
+        Creates a BatchJob in PENDING status and dispatches a TaskIQ
+        background task to scrape pending candidates. Returns immediately
+        without blocking the HTTP connection.
 
         Args:
-            batch_size: Number of candidates to process per batch
-            dry_run: If True, validate only without scraping
+            batch_size: Number of candidates to process per batch (default 1000)
+            dry_run: If True, count candidates but don't scrape
+            user_id: ID of the user who started the job (for audit trail)
 
         Returns:
-            The created BatchJob
-
-        Raises:
-            NotImplementedError: Until PR 118 is merged
+            The created BatchJob (in PENDING status)
         """
-        raise NotImplementedError(
-            "start_scrape_job not yet implemented. Requires PR 118 to be merged."
+        from src.tasks.import_tasks import process_scrape_batch  # noqa: PLC0415
+
+        settings = get_settings()
+
+        metadata = {
+            "batch_size": batch_size,
+            "dry_run": dry_run,
+        }
+        if user_id is not None:
+            metadata[USER_ID_KEY] = user_id
+
+        job_data = BatchJobCreate(
+            job_type=SCRAPE_JOB_TYPE,
+            total_tasks=0,
+            metadata=metadata,
         )
+
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
+
+        logger.info(
+            "Created scrape batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+            },
+        )
+
+        try:
+            await process_scrape_batch.kiq(
+                job_id=str(job.id),
+                batch_size=batch_size,
+                dry_run=dry_run,
+                db_url=settings.DATABASE_URL,
+                redis_url=settings.REDIS_URL,
+                concurrency=DEFAULT_SCRAPE_CONCURRENCY,
+            )
+        except Exception as e:
+            try:
+                await self._batch_job_service.fail_job(
+                    job.id,
+                    error_summary={"error": str(e), "stage": "task_dispatch"},
+                )
+                await self._session.commit()
+                await self._session.refresh(job)
+            except Exception:
+                logger.exception(
+                    "Failed to mark job as failed after task dispatch error",
+                    extra={"job_id": str(job.id)},
+                )
+            raise
+
+        return job
 
     async def start_promotion_job(
         self,
         batch_size: int = 1000,
         dry_run: bool = False,
+        user_id: str | None = None,
     ) -> BatchJob:
         """
-        Start a promotion job for scraped candidates.
+        Start a new candidate promotion job.
 
-        Note: This is a stub. Full implementation in PR 118.
+        Creates a BatchJob in PENDING status and dispatches a TaskIQ
+        background task to promote scraped candidates. Returns immediately
+        without blocking the HTTP connection.
 
         Args:
-            batch_size: Number of candidates to promote per batch
-            dry_run: If True, validate only without promoting
+            batch_size: Number of candidates to process per batch (default 1000)
+            dry_run: If True, count candidates but don't promote
+            user_id: ID of the user who started the job (for audit trail)
 
         Returns:
-            The created BatchJob
-
-        Raises:
-            NotImplementedError: Until PR 118 is merged
+            The created BatchJob (in PENDING status)
         """
-        raise NotImplementedError(
-            "start_promotion_job not yet implemented. Requires PR 118 to be merged."
+        from src.tasks.import_tasks import process_promotion_batch  # noqa: PLC0415
+
+        settings = get_settings()
+
+        metadata = {
+            "batch_size": batch_size,
+            "dry_run": dry_run,
+        }
+        if user_id is not None:
+            metadata[USER_ID_KEY] = user_id
+
+        job_data = BatchJobCreate(
+            job_type=PROMOTION_JOB_TYPE,
+            total_tasks=0,
+            metadata=metadata,
         )
 
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
 
-def get_import_batch_job_service(session: AsyncSession) -> ImportBatchJobService:
+        logger.info(
+            "Created promotion batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
+                "batch_size": batch_size,
+                "dry_run": dry_run,
+            },
+        )
+
+        try:
+            await process_promotion_batch.kiq(
+                job_id=str(job.id),
+                batch_size=batch_size,
+                dry_run=dry_run,
+                db_url=settings.DATABASE_URL,
+                redis_url=settings.REDIS_URL,
+            )
+        except Exception as e:
+            try:
+                await self._batch_job_service.fail_job(
+                    job.id,
+                    error_summary={"error": str(e), "stage": "task_dispatch"},
+                )
+                await self._session.commit()
+                await self._session.refresh(job)
+            except Exception:
+                logger.exception(
+                    "Failed to mark job as failed after task dispatch error",
+                    extra={"job_id": str(job.id)},
+                )
+            raise
+
+        return job
+
+
+def get_import_batch_job_service(
+    session: AsyncSession,
+) -> ImportBatchJobService:
     """Factory function to create an ImportBatchJobService instance."""
     return ImportBatchJobService(session)

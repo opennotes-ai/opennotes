@@ -2,15 +2,22 @@
 
 Exposes the import pipeline functionality via REST API for programmatic access.
 Import operations run asynchronously via BatchJob infrastructure.
+
+Concurrent job prevention uses dual-layer defense:
+1. DistributedRateLimitMiddleware: Blocks duplicate requests at API boundary
+2. Service-level ActiveJobExistsError: Database check before job creation
+
+Both layers return HTTP 429 when a job of the same type is already active.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
+from src.batch_jobs import ActiveJobExistsError
 from src.batch_jobs.import_service import ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.database import get_db
@@ -45,6 +52,21 @@ class ImportFactCheckBureauRequest(BaseModel):
     )
 
 
+class BatchProcessingRequest(BaseModel):
+    """Shared request parameters for batch processing operations (scrape, promote)."""
+
+    batch_size: int = Field(
+        default=1000,
+        ge=1,
+        le=10000,
+        description="Maximum number of candidates to process in this batch",
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="Count candidates only, do not perform operation",
+    )
+
+
 class EnqueueScrapeResponse(BaseModel):
     """Response for enqueue scrapes operation."""
 
@@ -68,6 +90,9 @@ def get_import_service(
     description="Start an asynchronous import of the fact-check-bureau dataset from "
     "HuggingFace. Returns immediately with a BatchJob that can be polled for status. "
     "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        429: {"description": "An import job is already in progress (rate limited)"},
+    },
 )
 async def import_fact_check_bureau_endpoint(
     request: ImportFactCheckBureauRequest,
@@ -80,6 +105,9 @@ async def import_fact_check_bureau_endpoint(
 
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual import runs asynchronously as a background task.
+
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
+    If an import job is already running, the middleware returns 429 Too Many Requests.
 
     Poll the job status at:
     - GET /api/v1/batch-jobs/{job_id} - Full job status
@@ -107,6 +135,7 @@ async def import_fact_check_bureau_endpoint(
         batch_size=request.batch_size,
         dry_run=request.dry_run,
         enqueue_scrapes=request.enqueue_scrapes,
+        user_id=str(current_user.id),
     )
 
     logger.info(
@@ -162,3 +191,157 @@ async def enqueue_scrapes_endpoint(
     )
 
     return EnqueueScrapeResponse(enqueued=result["enqueued"])
+
+
+@router.post(
+    "/scrape-candidates",
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Start candidate scraping batch job",
+    description="Start an asynchronous batch job to scrape content for pending candidates. "
+    "Returns immediately with a BatchJob that can be polled for status. "
+    "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        429: {"description": "A scrape job is already in progress (rate limited)"},
+    },
+)
+async def scrape_candidates_endpoint(
+    request: BatchProcessingRequest,
+    service: Annotated[ImportBatchJobService, Depends(get_import_service)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> BatchJobResponse:
+    """Start a candidate scraping batch job.
+
+    Requires authentication via API key (X-API-Key header) or Bearer token.
+
+    This endpoint returns immediately with a BatchJob in PENDING status.
+    The actual scraping runs asynchronously as a background task.
+
+    Concurrent job prevention uses dual-layer defense:
+    1. DistributedRateLimitMiddleware blocks duplicate requests at API boundary
+    2. Service-level ActiveJobExistsError provides database-level check
+
+    Both return HTTP 429 when a scrape job is already active.
+
+    Poll the job status at:
+    - GET /api/v1/batch-jobs/{job_id} - Full job status
+    - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
+
+    Args:
+        request: Scrape configuration parameters.
+        service: Import batch job service.
+        current_user: Authenticated user (via API key or JWT).
+
+    Returns:
+        BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 429 if a scrape job is already active.
+    """
+    logger.info(
+        "Starting scrape candidates job",
+        extra={
+            "user_id": str(current_user.id),
+            "batch_size": request.batch_size,
+            "dry_run": request.dry_run,
+        },
+    )
+
+    try:
+        job = await service.start_scrape_job(
+            batch_size=request.batch_size,
+            dry_run=request.dry_run,
+            user_id=str(current_user.id),
+        )
+    except ActiveJobExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
+
+    logger.info(
+        "Scrape candidates job created",
+        extra={
+            "job_id": str(job.id),
+            "user_id": str(current_user.id),
+        },
+    )
+
+    return BatchJobResponse.model_validate(job)
+
+
+@router.post(
+    "/promote-candidates",
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Start candidate promotion batch job",
+    description="Start an asynchronous batch job to promote scraped candidates to fact-check items. "
+    "Returns immediately with a BatchJob that can be polled for status. "
+    "Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        429: {"description": "A promotion job is already in progress (rate limited)"},
+    },
+)
+async def promote_candidates_endpoint(
+    request: BatchProcessingRequest,
+    service: Annotated[ImportBatchJobService, Depends(get_import_service)],
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+) -> BatchJobResponse:
+    """Start a candidate promotion batch job.
+
+    Requires authentication via API key (X-API-Key header) or Bearer token.
+
+    This endpoint returns immediately with a BatchJob in PENDING status.
+    The actual promotion runs asynchronously as a background task.
+
+    Concurrent job prevention uses dual-layer defense:
+    1. DistributedRateLimitMiddleware blocks duplicate requests at API boundary
+    2. Service-level ActiveJobExistsError provides database-level check
+
+    Both return HTTP 429 when a promotion job is already active.
+
+    Poll the job status at:
+    - GET /api/v1/batch-jobs/{job_id} - Full job status
+    - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
+
+    Args:
+        request: Promotion configuration parameters.
+        service: Import batch job service.
+        current_user: Authenticated user (via API key or JWT).
+
+    Returns:
+        BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 429 if a promotion job is already active.
+    """
+    logger.info(
+        "Starting promote candidates job",
+        extra={
+            "user_id": str(current_user.id),
+            "batch_size": request.batch_size,
+            "dry_run": request.dry_run,
+        },
+    )
+
+    try:
+        job = await service.start_promotion_job(
+            batch_size=request.batch_size,
+            dry_run=request.dry_run,
+            user_id=str(current_user.id),
+        )
+    except ActiveJobExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
+
+    logger.info(
+        "Promote candidates job created",
+        extra={
+            "job_id": str(job.id),
+            "user_id": str(current_user.id),
+        },
+    )
+
+    return BatchJobResponse.model_validate(job)

@@ -39,7 +39,6 @@ from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
 from src.fact_checking.chunking_service import ChunkingService
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
-from src.fact_checking.rechunk_lock import TaskRechunkLockManager
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.service import LLMService
@@ -246,7 +245,6 @@ async def _handle_fact_check_rechunk_final_failure(
     redis_client = RedisClient()
     try:
         await redis_client.connect(redis_url)
-        lock_manager = TaskRechunkLockManager(redis_client)
         progress_tracker = BatchJobProgressTracker(redis_client)
 
         progress = await progress_tracker.get_progress(job_uuid)
@@ -269,14 +267,6 @@ async def _handle_fact_check_rechunk_final_failure(
                     extra={"job_id": job_id, "error": str(e)},
                 )
 
-        try:
-            await lock_manager.release_lock("fact_check")
-        except Exception as lock_error:
-            logger.error(
-                "Failed to release lock after job failure",
-                extra={"job_id": job_id, "error": str(lock_error)},
-            )
-
         logger.error(
             "Fact check rechunk job failed after all retries exhausted",
             extra={
@@ -297,7 +287,7 @@ async def _handle_previously_seen_rechunk_final_failure(
 ) -> None:
     """
     Called by RetryWithFinalCallbackMiddleware when all retries are exhausted.
-    Marks the job as failed and releases the lock.
+    Marks the job as failed.
     """
     job_id = message.kwargs.get("job_id")
     community_server_id = message.kwargs.get("community_server_id")
@@ -331,7 +321,6 @@ async def _handle_previously_seen_rechunk_final_failure(
     redis_client = RedisClient()
     try:
         await redis_client.connect(redis_url)
-        lock_manager = TaskRechunkLockManager(redis_client)
         progress_tracker = BatchJobProgressTracker(redis_client)
 
         progress = await progress_tracker.get_progress(job_uuid)
@@ -358,18 +347,6 @@ async def _handle_previously_seen_rechunk_final_failure(
                     },
                 )
 
-        try:
-            await lock_manager.release_lock("previously_seen", community_server_id)
-        except Exception as lock_error:
-            logger.error(
-                "Failed to release lock after job failure",
-                extra={
-                    "job_id": job_id,
-                    "community_server_id": community_server_id,
-                    "error": str(lock_error),
-                },
-            )
-
         logger.error(
             "Previously seen rechunk job failed after all retries exhausted",
             extra={
@@ -390,7 +367,13 @@ retry_callback_registry.register(
 )
 
 
-@register_task(task_name="rechunk:fact_check", component="rechunk", task_type="batch")
+@register_task(
+    task_name="rechunk:fact_check",
+    component="rechunk",
+    task_type="batch",
+    rate_limit_name="rechunk:fact_check",
+    rate_limit_capacity="1",
+)
 async def process_fact_check_rechunk_task(
     job_id: str,
     community_server_id: str | None,
@@ -442,7 +425,6 @@ async def process_fact_check_rechunk_task(
         redis_client_bg = RedisClient()
         await redis_client_bg.connect(redis_url)
         progress_tracker = BatchJobProgressTracker(redis_client_bg)
-        lock_manager = TaskRechunkLockManager(redis_client_bg)
 
         service = get_chunk_embedding_service()
 
@@ -564,7 +546,6 @@ async def process_fact_check_rechunk_task(
                 )
                 await session.commit()
 
-            await lock_manager.release_lock("fact_check")
             span.set_attribute("job.processed_count", processed_count)
             span.set_attribute("job.failed_count", failed_count)
 
@@ -606,7 +587,13 @@ async def process_fact_check_rechunk_task(
             await engine.dispose()
 
 
-@register_task(task_name="rechunk:previously_seen", component="rechunk", task_type="batch")
+@register_task(
+    task_name="rechunk:previously_seen",
+    component="rechunk",
+    task_type="batch",
+    rate_limit_name="rechunk:previously_seen:{community_server_id}",
+    rate_limit_capacity="1",
+)
 async def process_previously_seen_rechunk_task(
     job_id: str,
     community_server_id: str,
@@ -657,7 +644,6 @@ async def process_previously_seen_rechunk_task(
         redis_client_bg = RedisClient()
         await redis_client_bg.connect(redis_url)
         progress_tracker = BatchJobProgressTracker(redis_client_bg)
-        lock_manager = TaskRechunkLockManager(redis_client_bg)
 
         service = get_chunk_embedding_service()
 
@@ -791,7 +777,6 @@ async def process_previously_seen_rechunk_task(
                 )
                 await session.commit()
 
-            await lock_manager.release_lock("previously_seen", community_server_id)
             span.set_attribute("job.processed_count", processed_count)
             span.set_attribute("job.failed_count", failed_count)
 

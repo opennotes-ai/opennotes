@@ -25,6 +25,44 @@ from src.fact_checking.import_pipeline.schemas import ClaimReviewRow, Normalized
 
 logger = logging.getLogger(__name__)
 
+
+class RowCountMismatchError(ValueError):
+    """Exception raised when input/output row counts don't match in batch validation.
+
+    This indicates potential silent data loss during validation - every input row
+    should either become a valid candidate or generate an error message.
+
+    Attributes:
+        input_count: Number of rows passed to validation
+        output_count: Sum of candidates + errors (should equal input_count)
+        candidates_count: Number of successfully validated candidates
+        errors_count: Number of validation errors
+        batch_num: Optional batch number for diagnostic context
+    """
+
+    def __init__(
+        self,
+        input_count: int,
+        output_count: int,
+        candidates_count: int,
+        errors_count: int,
+        batch_num: int | None = None,
+    ) -> None:
+        self.input_count = input_count
+        self.output_count = output_count
+        self.candidates_count = candidates_count
+        self.errors_count = errors_count
+        self.batch_num = batch_num
+
+        batch_info = f" (batch {batch_num})" if batch_num is not None else ""
+        message = (
+            f"Row count mismatch{batch_info}: "
+            f"input={input_count}, output={output_count} "
+            f"(candidates={candidates_count}, errors={errors_count})"
+        )
+        super().__init__(message)
+
+
 HUGGINGFACE_DATASET_URL = (
     "https://huggingface.co/datasets/NaughtyConstrictor/fact-check-bureau/"
     "resolve/main/claim_reviews.csv"
@@ -63,15 +101,22 @@ def parse_csv_rows(content: str) -> Iterator[dict[str, Any]]:
 
 def validate_and_normalize_batch(
     rows: list[dict[str, Any]],
+    batch_num: int | None = None,
 ) -> tuple[list[NormalizedCandidate], list[str]]:
     """Validate and normalize a batch of CSV rows.
+
+    Args:
+        rows: List of raw CSV row dictionaries.
+        batch_num: Optional batch number for diagnostic logging.
 
     Returns:
         Tuple of (valid candidates, error messages)
     """
+    input_count = len(rows)
     candidates: list[NormalizedCandidate] = []
     errors: list[str] = []
 
+    batch_prefix = f"Batch {batch_num}, " if batch_num is not None else ""
     for row in rows:
         try:
             claim_review = ClaimReviewRow(**row)
@@ -79,10 +124,29 @@ def validate_and_normalize_batch(
             candidates.append(candidate)
         except ValidationError as e:
             row_id = row.get("id", "unknown")
-            errors.append(f"Row {row_id}: {e}")
+            errors.append(f"{batch_prefix}Row {row_id}: {e}")
         except Exception as e:
             row_id = row.get("id", "unknown")
-            errors.append(f"Row {row_id}: Unexpected error - {e}")
+            errors.append(f"{batch_prefix}Row {row_id}: Unexpected error - {e}")
+
+    output_count = len(candidates) + len(errors)
+    if output_count != input_count:
+        logger.error(
+            "Row count mismatch in batch validation: "
+            "input=%d, output=%d (candidates=%d, errors=%d), batch_num=%s",
+            input_count,
+            output_count,
+            len(candidates),
+            len(errors),
+            batch_num,
+        )
+        raise RowCountMismatchError(
+            input_count=input_count,
+            output_count=output_count,
+            candidates_count=len(candidates),
+            errors_count=len(errors),
+            batch_num=batch_num,
+        )
 
     return candidates, errors
 
@@ -189,16 +253,16 @@ async def import_fact_check_bureau(
     dataset_url = url or HUGGINGFACE_DATASET_URL
     stats = ImportStats(errors=[])
 
-    logger.info(f"Starting import from {dataset_url}")
+    logger.info("Starting import from %s", dataset_url)
 
     try:
         async for content in stream_csv_from_url(dataset_url):
             rows = list(parse_csv_rows(content))
             stats.total_rows = len(rows)
-            logger.info(f"Loaded {stats.total_rows} rows from CSV")
+            logger.info("Loaded %d rows from CSV", stats.total_rows)
 
             for batch_num, batch in enumerate(batched(iter(rows), batch_size)):
-                candidates, errors = validate_and_normalize_batch(batch)
+                candidates, errors = validate_and_normalize_batch(batch, batch_num=batch_num)
                 stats.valid_rows += len(candidates)
                 stats.invalid_rows += len(errors)
 
@@ -213,24 +277,28 @@ async def import_fact_check_bureau(
                 processed = (batch_num + 1) * batch_size
                 if processed % 10000 == 0 or processed >= stats.total_rows:
                     logger.info(
-                        f"Progress: {min(processed, stats.total_rows)}/{stats.total_rows} rows "
-                        f"({stats.valid_rows} valid, {stats.invalid_rows} invalid)"
+                        "Progress: %d/%d rows (%d valid, %d invalid)",
+                        min(processed, stats.total_rows),
+                        stats.total_rows,
+                        stats.valid_rows,
+                        stats.invalid_rows,
                     )
 
     except httpx.HTTPError as e:
-        error_msg = f"HTTP error fetching dataset: {e}"
-        logger.error(error_msg)
+        logger.error("HTTP error fetching dataset: %s", e)
         if stats.errors is not None:
-            stats.errors.append(error_msg)
+            stats.errors.append(f"HTTP error fetching dataset: {e}")
     except Exception as e:
-        error_msg = f"Import failed: {e}"
-        logger.exception(error_msg)
+        logger.exception("Import failed: %s", e)
         if stats.errors is not None:
-            stats.errors.append(error_msg)
+            stats.errors.append(f"Import failed: {e}")
 
     logger.info(
-        f"Import complete: {stats.total_rows} total, {stats.valid_rows} valid, "
-        f"{stats.inserted} inserted, {stats.updated} updated"
+        "Import complete: %d total, %d valid, %d inserted, %d updated",
+        stats.total_rows,
+        stats.valid_rows,
+        stats.inserted,
+        stats.updated,
     )
 
     return stats

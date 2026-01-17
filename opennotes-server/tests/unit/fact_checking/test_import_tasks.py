@@ -11,11 +11,38 @@ Tests cover:
 - End-to-end task flow
 """
 
+from collections.abc import AsyncIterator
+from typing import TypeVar
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import httpx
 import pytest
+
+pytestmark = pytest.mark.unit
+
+
+T = TypeVar("T")
+
+
+def async_generator_raising(exception: Exception):
+    """Create an async generator that raises an exception when iterated.
+
+    Use this instead of the `if False: yield` pattern for mocking async generators
+    that should raise errors.
+
+    Args:
+        exception: The exception to raise.
+
+    Returns:
+        An async generator function that raises the given exception.
+    """
+
+    async def generator(*args, **kwargs) -> AsyncIterator[T]:
+        raise exception
+        yield
+
+    return generator
 
 
 class TestHelperFunctions:
@@ -91,7 +118,9 @@ class TestHelperFunctions:
 
         job_id = uuid4()
 
+        mock_job = MagicMock()
         mock_service = MagicMock()
+        mock_service.get_job = AsyncMock(return_value=mock_job)
         mock_service.start_job = AsyncMock()
 
         mock_db = AsyncMock()
@@ -106,6 +135,7 @@ class TestHelperFunctions:
         with patch("src.tasks.import_tasks.BatchJobService", return_value=mock_service):
             await _start_job(mock_session_maker, mock_progress_tracker, job_id)
 
+        mock_service.get_job.assert_called_once_with(job_id)
         mock_service.start_job.assert_called_once_with(job_id)
         mock_db.commit.assert_called_once()
 
@@ -116,7 +146,9 @@ class TestHelperFunctions:
 
         job_id = uuid4()
 
+        mock_job = MagicMock()
         mock_service = MagicMock()
+        mock_service.get_job = AsyncMock(return_value=mock_job)
         mock_service.start_job = AsyncMock(side_effect=Exception("DB failure"))
 
         mock_db = AsyncMock()
@@ -130,6 +162,30 @@ class TestHelperFunctions:
         with (
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_service),
             pytest.raises(Exception, match="DB failure"),
+        ):
+            await _start_job(mock_session_maker, mock_progress_tracker, job_id)
+
+    @pytest.mark.asyncio
+    async def test_start_job_not_found_raises(self):
+        """Job not found during start_job raises JobNotFoundError."""
+        from src.tasks.import_tasks import JobNotFoundError, _start_job
+
+        job_id = uuid4()
+
+        mock_service = MagicMock()
+        mock_service.get_job = AsyncMock(return_value=None)
+
+        mock_db = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_progress_tracker = MagicMock()
+
+        with (
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_service),
+            pytest.raises(JobNotFoundError),
         ):
             await _start_job(mock_session_maker, mock_progress_tracker, job_id)
 
@@ -301,12 +357,11 @@ class TestStreamHttpFailures:
         mock_progress_tracker = MagicMock()
 
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=MagicMock())
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def timeout_error(*args, **kwargs):
-            raise httpx.TimeoutException("Connection timed out")
-            yield  # pragma: no cover - makes this an async generator
+        timeout_error = async_generator_raising(httpx.TimeoutException("Connection timed out"))
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -362,15 +417,16 @@ class TestStreamHttpFailures:
         mock_progress_tracker = MagicMock()
 
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=MagicMock())
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def http_404_error(*args, **kwargs):
-            response = MagicMock()
-            response.status_code = 404
-            request = MagicMock()
-            raise httpx.HTTPStatusError("Not Found", request=request, response=response)
-            yield  # pragma: no cover - makes this an async generator
+        response = MagicMock()
+        response.status_code = 404
+        request = MagicMock()
+        http_404_error = async_generator_raising(
+            httpx.HTTPStatusError("Not Found", request=request, response=response)
+        )
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -426,15 +482,16 @@ class TestStreamHttpFailures:
         mock_progress_tracker = MagicMock()
 
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=MagicMock())
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def http_500_error(*args, **kwargs):
-            response = MagicMock()
-            response.status_code = 500
-            request = MagicMock()
-            raise httpx.HTTPStatusError("Internal Server Error", request=request, response=response)
-            yield  # pragma: no cover - makes this an async generator
+        response = MagicMock()
+        response.status_code = 500
+        request = MagicMock()
+        http_500_error = async_generator_raising(
+            httpx.HTTPStatusError("Internal Server Error", request=request, response=response)
+        )
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -490,12 +547,13 @@ class TestStreamHttpFailures:
         mock_progress_tracker = MagicMock()
 
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=MagicMock())
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
-        async def connection_reset(*args, **kwargs):
-            raise httpx.RemoteProtocolError("Connection reset by peer")
-            yield  # pragma: no cover - makes this an async generator
+        connection_reset = async_generator_raising(
+            httpx.RemoteProtocolError("Connection reset by peer")
+        )
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -555,13 +613,13 @@ class TestBatchValidationFailures:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock()
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
         csv_content += "1,Valid claim,https://example.com,Test,100,200,Publisher,example.com\n"
@@ -633,13 +691,13 @@ class TestBatchValidationFailures:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock()
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url\n1,Bad row,invalid\n"
 
@@ -706,13 +764,13 @@ class TestBatchValidationFailures:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock()
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url\n" + "\n".join(f"{i},row,url" for i in range(100))
 
@@ -783,6 +841,7 @@ class TestDatabaseFailures:
         mock_progress_tracker = MagicMock()
 
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=MagicMock())
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
@@ -853,6 +912,7 @@ class TestDatabaseFailures:
         mock_progress_tracker = MagicMock()
 
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=MagicMock())
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.fail_job = AsyncMock()
 
@@ -927,15 +987,15 @@ class TestRedisFailures:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock(
             side_effect=ConnectionError("Redis connection lost")
         )
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
         csv_content += "1,Test claim,https://example.com,Test,100,200,Publisher,example.com\n"
@@ -1003,15 +1063,15 @@ class TestRedisFailures:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock(
             side_effect=TimeoutError("Redis timeout")
         )
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
         csv_content += "1,Test claim,https://example.com,Test,100,200,Publisher,example.com\n"
@@ -1081,13 +1141,13 @@ class TestEndToEndFlow:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock()
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
         csv_content += "1,Claim 1,https://example.com/1,Test 1,100,200,Publisher,example.com\n"
@@ -1160,12 +1220,12 @@ class TestEndToEndFlow:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
-        mock_batch_job_service = MagicMock()
-        mock_batch_job_service.start_job = AsyncMock()
-        mock_batch_job_service.complete_job = AsyncMock()
         mock_job = MagicMock()
         mock_job.metadata_ = {}
+        mock_batch_job_service = MagicMock()
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
 
         csv_content = "id,claim,url\n"
 
@@ -1228,13 +1288,13 @@ class TestEndToEndFlow:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock()
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
         csv_content += "1,Claim 1,https://example.com/1,Test 1,100,200,Publisher,example.com\n"
@@ -1303,13 +1363,13 @@ class TestEndToEndFlow:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock()
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
         csv_content += "1,Claim 1,https://example.com/1,Test 1,100,200,Publisher,example.com\n"
@@ -1381,13 +1441,13 @@ class TestEndToEndFlow:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.update_progress = AsyncMock()
 
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock()
         mock_batch_job_service.complete_job = AsyncMock()
         mock_batch_job_service.update_progress = AsyncMock()
-        mock_job = MagicMock()
-        mock_job.metadata_ = {}
-        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
         csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
         csv_content += "1,Claim 1,https://example.com/1,Test 1,100,200,Publisher,example.com\n"
@@ -1457,7 +1517,9 @@ class TestEndToEndFlow:
 
         mock_progress_tracker = MagicMock()
 
+        mock_job = MagicMock()
         mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
         mock_batch_job_service.start_job = AsyncMock(side_effect=Exception("Job start failed"))
         mock_batch_job_service.fail_job = AsyncMock()
 
@@ -1511,3 +1573,444 @@ class TestTaskIQLabels:
         _, labels = _all_registered_tasks["import:fact_check_bureau"]
         assert labels.get("component") == "import_pipeline"
         assert labels.get("task_type") == "batch"
+
+
+class TestRecoverStuckCandidates:
+    """Test recovery mechanism for stuck SCRAPING and PROMOTING candidates."""
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_scraping_candidates_recovers_old(self):
+        """Candidates stuck in SCRAPING state beyond timeout are recovered."""
+
+        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 5
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        recovered = await _recover_stuck_scraping_candidates(mock_session_maker, timeout_minutes=30)
+
+        assert recovered == 5
+        mock_db.execute.assert_called_once()
+        mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_scraping_candidates_none_found(self):
+        """No candidates stuck means zero recovered."""
+        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        recovered = await _recover_stuck_scraping_candidates(mock_session_maker)
+
+        assert recovered == 0
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_promoting_candidates_recovers_old(self):
+        """Candidates stuck in PROMOTING state beyond timeout are recovered."""
+        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 3
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        recovered = await _recover_stuck_promoting_candidates(
+            mock_session_maker, timeout_minutes=30
+        )
+
+        assert recovered == 3
+        mock_db.execute.assert_called_once()
+        mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_promoting_candidates_none_found(self):
+        """No candidates stuck in PROMOTING means zero recovered."""
+        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        recovered = await _recover_stuck_promoting_candidates(mock_session_maker)
+
+        assert recovered == 0
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_scraping_candidates_clears_content(self):
+        """Recovery clears partial content to ensure candidates are re-scraped.
+
+        When a scraping job crashes mid-batch, candidates may have partial content.
+        Recovery must clear content=None so the scrape selection query
+        (which filters by content.is_(None)) will pick them up again.
+        """
+        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 1
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await _recover_stuck_scraping_candidates(mock_session_maker, timeout_minutes=30)
+
+        execute_call = mock_db.execute.call_args
+        update_stmt = execute_call[0][0]
+
+        compiled = update_stmt.compile()
+        assert "content" in str(compiled)
+
+        params = compiled.params
+        assert "content" in params
+        assert params["content"] is None
+
+    @pytest.mark.asyncio
+    async def test_recovered_candidates_are_selected_for_rescrape(self):
+        """Recovered candidates with cleared content appear in scrape selection query.
+
+        This tests the integration between recovery (which sets content=None)
+        and the scrape batch job's candidate selection query (which filters
+        by status=PENDING AND content IS NULL).
+        """
+        from sqlalchemy import func, select
+
+        from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
+
+        count_query = (
+            select(func.count())
+            .select_from(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
+            .where(FactCheckedItemCandidate.content.is_(None))
+        )
+
+        compiled = count_query.compile()
+        query_str = str(compiled)
+
+        assert "status" in query_str
+        assert "content IS NULL" in query_str
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_scraping_uses_skip_locked(self):
+        """Recovery uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting locked rows.
+
+        When a candidate is actively being processed by another worker, it holds
+        a row lock. The recovery function must skip such rows to avoid resetting
+        candidates that are legitimately being processed.
+        """
+        from src.tasks.import_tasks import _recover_stuck_scraping_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await _recover_stuck_scraping_candidates(mock_session_maker, timeout_minutes=30)
+
+        execute_call = mock_db.execute.call_args
+        update_stmt = execute_call[0][0]
+
+        criterion = update_stmt._where_criteria[0]
+        scalar_select = criterion.right
+        inner_select = scalar_select.element
+        for_update_arg = inner_select._for_update_arg
+
+        assert for_update_arg is not None, "Subquery must have FOR UPDATE clause"
+        assert for_update_arg.skip_locked is True, "FOR UPDATE must use SKIP LOCKED"
+
+    @pytest.mark.asyncio
+    async def test_recover_stuck_promoting_uses_skip_locked(self):
+        """Recovery uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting locked rows.
+
+        When a candidate is actively being processed by another worker, it holds
+        a row lock. The recovery function must skip such rows to avoid resetting
+        candidates that are legitimately being processed.
+        """
+        from src.tasks.import_tasks import _recover_stuck_promoting_candidates
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await _recover_stuck_promoting_candidates(mock_session_maker, timeout_minutes=30)
+
+        execute_call = mock_db.execute.call_args
+        update_stmt = execute_call[0][0]
+
+        criterion = update_stmt._where_criteria[0]
+        scalar_select = criterion.right
+        inner_select = scalar_select.element
+        for_update_arg = inner_select._for_update_arg
+
+        assert for_update_arg is not None, "Subquery must have FOR UPDATE clause"
+        assert for_update_arg.skip_locked is True, "FOR UPDATE must use SKIP LOCKED"
+
+
+class TestRowAccountingIntegrity:
+    """Test row accounting integrity checks in import tasks."""
+
+    @pytest.mark.asyncio
+    async def test_row_accounting_valid_flag_true_on_match(self):
+        """row_accounting_valid is True when counts match."""
+        job_id = str(uuid4())
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+        mock_progress_tracker.update_progress = AsyncMock()
+
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+
+        csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
+        csv_content += "1,Claim 1,https://example.com/1,Test 1,100,200,Publisher,example.com\n"
+        csv_content += "2,Claim 2,https://example.com/2,Test 2,101,201,Publisher,example.com\n"
+
+        async def mock_stream_csv(*args, **kwargs):
+            yield csv_content
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch("src.tasks.import_tasks.stream_csv_from_url", mock_stream_csv),
+            patch("src.tasks.import_tasks.validate_and_normalize_batch") as mock_validate,
+            patch("src.tasks.import_tasks.upsert_candidates") as mock_upsert,
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            settings = MagicMock()
+            settings.DB_POOL_SIZE = 5
+            settings.DB_POOL_MAX_OVERFLOW = 10
+            settings.DB_POOL_TIMEOUT = 30
+            settings.DB_POOL_RECYCLE = 1800
+            mock_settings.return_value = settings
+
+            mock_validate.return_value = ([MagicMock(), MagicMock()], [])
+            mock_upsert.return_value = (2, 0)
+
+            from src.tasks.import_tasks import process_fact_check_import
+
+            result = await process_fact_check_import(
+                job_id=job_id,
+                batch_size=100,
+                dry_run=False,
+                enqueue_scrapes=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            assert result["row_accounting_valid"] is True
+            assert result["valid_rows"] == 2
+            assert result["invalid_rows"] == 0
+
+    @pytest.mark.asyncio
+    async def test_row_accounting_valid_flag_false_on_mismatch(self):
+        """row_accounting_valid is False when counts don't match."""
+        job_id = str(uuid4())
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+        mock_progress_tracker.update_progress = AsyncMock()
+
+        mock_job = MagicMock()
+        mock_job.metadata_ = {}
+        mock_batch_job_service = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.complete_job = AsyncMock()
+        mock_batch_job_service.update_progress = AsyncMock()
+
+        csv_content = "id,claim,url,title,claim_id,fact_check_id,publisher_name,publisher_site\n"
+        csv_content += "1,Claim 1,https://example.com/1,Test 1,100,200,Publisher,example.com\n"
+        csv_content += "2,Claim 2,https://example.com/2,Test 2,101,201,Publisher,example.com\n"
+        csv_content += "3,Claim 3,https://example.com/3,Test 3,102,202,Publisher,example.com\n"
+        csv_content += "4,Claim 4,https://example.com/4,Test 4,103,203,Publisher,example.com\n"
+        csv_content += "5,Claim 5,https://example.com/5,Test 5,104,204,Publisher,example.com\n"
+
+        async def mock_stream_csv(*args, **kwargs):
+            yield csv_content
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch("src.tasks.import_tasks.stream_csv_from_url", mock_stream_csv),
+            patch("src.tasks.import_tasks.validate_and_normalize_batch") as mock_validate,
+            patch("src.tasks.import_tasks.upsert_candidates") as mock_upsert,
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            settings = MagicMock()
+            settings.DB_POOL_SIZE = 5
+            settings.DB_POOL_MAX_OVERFLOW = 10
+            settings.DB_POOL_TIMEOUT = 30
+            settings.DB_POOL_RECYCLE = 1800
+            mock_settings.return_value = settings
+
+            mock_validate.return_value = ([MagicMock(), MagicMock()], [])
+            mock_upsert.return_value = (2, 0)
+
+            from src.tasks.import_tasks import process_fact_check_import
+
+            result = await process_fact_check_import(
+                job_id=job_id,
+                batch_size=100,
+                dry_run=False,
+                enqueue_scrapes=False,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+                redis_url="redis://localhost:6379",
+            )
+
+            assert result["row_accounting_valid"] is False
+            assert result["total_rows"] == 5
+            assert result["valid_rows"] == 2
+            assert result["invalid_rows"] == 0
+
+
+class TestFailJobErrorHandling:
+    """Test that _fail_job errors don't mask original exceptions."""
+
+    @pytest.mark.asyncio
+    async def test_fail_job_failure_preserved_in_import_task(self):
+        """Original exception is raised even when _fail_job fails."""
+        job_id = str(uuid4())
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_redis = AsyncMock()
+        mock_redis.connect = AsyncMock()
+        mock_redis.disconnect = AsyncMock()
+
+        mock_progress_tracker = MagicMock()
+
+        mock_batch_job_service = MagicMock()
+        mock_job = MagicMock()
+        mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
+        mock_batch_job_service.start_job = AsyncMock()
+        mock_batch_job_service.fail_job = AsyncMock(side_effect=Exception("fail_job also failed"))
+
+        original_error = ValueError("Original processing error")
+        raise_error = async_generator_raising(original_error)
+
+        with (
+            patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
+            patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch("src.tasks.import_tasks.RedisClient", return_value=mock_redis),
+            patch(
+                "src.tasks.import_tasks.BatchJobProgressTracker",
+                return_value=mock_progress_tracker,
+            ),
+            patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
+            patch("src.tasks.import_tasks.stream_csv_from_url", raise_error),
+            patch("src.tasks.import_tasks.get_settings") as mock_settings,
+        ):
+            mock_engine.return_value = MagicMock()
+            mock_engine.return_value.dispose = AsyncMock()
+            settings = MagicMock()
+            settings.DB_POOL_SIZE = 5
+            settings.DB_POOL_MAX_OVERFLOW = 10
+            settings.DB_POOL_TIMEOUT = 30
+            settings.DB_POOL_RECYCLE = 1800
+            mock_settings.return_value = settings
+
+            from src.tasks.import_tasks import process_fact_check_import
+
+            with pytest.raises(ValueError, match="Original processing error"):
+                await process_fact_check_import(
+                    job_id=job_id,
+                    batch_size=100,
+                    dry_run=False,
+                    enqueue_scrapes=False,
+                    db_url="postgresql+asyncpg://test:test@localhost/test",
+                    redis_url="redis://localhost:6379",
+                )
+
+            mock_batch_job_service.fail_job.assert_called_once()

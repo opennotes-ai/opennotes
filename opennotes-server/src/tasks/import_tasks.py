@@ -11,17 +11,22 @@ Tasks are designed to be self-contained, creating their own database and Redis
 connections to work reliably in distributed worker environments.
 """
 
+import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from src.batch_jobs.constants import DEFAULT_SCRAPE_CONCURRENCY, SCRAPE_URL_TIMEOUT_SECONDS
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
 from src.batch_jobs.service import BatchJobService
 from src.cache.redis_client import RedisClient
 from src.config import get_settings
+from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.importer import (
     HUGGINGFACE_DATASET_URL,
     ImportStats,
@@ -31,7 +36,11 @@ from src.fact_checking.import_pipeline.importer import (
     upsert_candidates,
     validate_and_normalize_batch,
 )
-from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
+from src.fact_checking.import_pipeline.promotion import promote_candidate
+from src.fact_checking.import_pipeline.scrape_tasks import (
+    enqueue_scrape_batch,
+    scrape_url_content,
+)
 from src.monitoring import get_logger
 from src.tasks.broker import register_task
 
@@ -39,6 +48,50 @@ logger = get_logger(__name__)
 _tracer = trace.get_tracer(__name__)
 
 MAX_STORED_ERRORS = 50
+SCRAPING_TIMEOUT_MINUTES = 120  # 2 hours - allows ~1400 candidates at 5s each
+PROMOTING_TIMEOUT_MINUTES = 120  # 2 hours - allows large batch promotion
+PROGRESS_UPDATE_INTERVAL = 100  # Update progress at least every N items
+
+
+def _check_row_accounting(
+    job_id: str,
+    stats: ImportStats,
+    span: Any,
+) -> bool:
+    """Check row accounting integrity and log errors if mismatched.
+
+    Returns True if accounting is valid, False otherwise.
+    """
+    processed_count = stats.valid_rows + stats.invalid_rows
+    if processed_count == stats.total_rows:
+        return True
+
+    missing = stats.total_rows - processed_count
+    missing_pct = round(missing / stats.total_rows * 100, 2) if stats.total_rows > 0 else 0
+
+    logger.error(
+        "Row accounting integrity check failed",
+        extra={
+            "job_id": job_id,
+            "total_rows": stats.total_rows,
+            "valid_rows": stats.valid_rows,
+            "invalid_rows": stats.invalid_rows,
+            "processed": processed_count,
+            "missing": missing,
+            "missing_percentage": missing_pct,
+        },
+    )
+    span.set_attribute("import.row_mismatch", True)
+    span.set_attribute("import.missing_rows", missing)
+    return False
+
+
+class JobNotFoundError(Exception):
+    """Raised when a batch job is not found."""
+
+    def __init__(self, job_id: UUID) -> None:
+        self.job_id = job_id
+        super().__init__(f"Batch job not found: {job_id}")
 
 
 async def _update_job_total_tasks(
@@ -70,9 +123,16 @@ async def _start_job(
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
 ) -> None:
-    """Transition job from PENDING to IN_PROGRESS."""
+    """Transition job from PENDING to IN_PROGRESS.
+
+    Raises:
+        JobNotFoundError: If the job doesn't exist in the database.
+    """
     async with session() as db:
         service = BatchJobService(db, progress_tracker)
+        job = await service.get_job(job_id)
+        if job is None:
+            raise JobNotFoundError(job_id)
         await service.start_job(job_id)
         await db.commit()
 
@@ -142,10 +202,115 @@ def _aggregate_errors(
     }
 
 
+async def _recover_stuck_scraping_candidates(
+    session: async_sessionmaker,
+    timeout_minutes: int = SCRAPING_TIMEOUT_MINUTES,
+) -> int:
+    """Recover candidates stuck in SCRAPING state due to task crash.
+
+    Candidates that have been in SCRAPING state for longer than the timeout
+    are reset back to PENDING state so they can be retried.
+
+    Uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting candidates that are
+    actively being processed by another worker (which would hold a row lock).
+
+    Args:
+        session: SQLAlchemy async session maker
+        timeout_minutes: Number of minutes after which SCRAPING state is considered stuck
+
+    Returns:
+        Number of candidates recovered
+    """
+    cutoff_time = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
+
+    async with session() as db:
+        subquery = (
+            select(FactCheckedItemCandidate.id)
+            .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPING.value)
+            .where(FactCheckedItemCandidate.updated_at < cutoff_time)
+            .with_for_update(skip_locked=True)
+        )
+        result = await db.execute(
+            update(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.id.in_(subquery))
+            .values(
+                status=CandidateStatus.PENDING.value,
+                content=None,
+                error_message="Recovered from stuck SCRAPING state",
+            )
+        )
+        await db.commit()
+        recovered_count = result.rowcount
+
+        if recovered_count > 0:
+            logger.info(
+                "Recovered candidates stuck in SCRAPING state",
+                extra={
+                    "recovered_count": recovered_count,
+                    "timeout_minutes": timeout_minutes,
+                },
+            )
+
+        return recovered_count
+
+
+async def _recover_stuck_promoting_candidates(
+    session: async_sessionmaker,
+    timeout_minutes: int = PROMOTING_TIMEOUT_MINUTES,
+) -> int:
+    """Recover candidates stuck in PROMOTING state due to task crash.
+
+    Candidates that have been in PROMOTING state for longer than the timeout
+    are reset back to SCRAPED state so they can be retried.
+
+    Uses SELECT FOR UPDATE SKIP LOCKED to avoid resetting candidates that are
+    actively being processed by another worker (which would hold a row lock).
+
+    Args:
+        session: SQLAlchemy async session maker
+        timeout_minutes: Number of minutes after which PROMOTING state is considered stuck
+
+    Returns:
+        Number of candidates recovered
+    """
+    cutoff_time = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
+
+    async with session() as db:
+        subquery = (
+            select(FactCheckedItemCandidate.id)
+            .where(FactCheckedItemCandidate.status == CandidateStatus.PROMOTING.value)
+            .where(FactCheckedItemCandidate.updated_at < cutoff_time)
+            .with_for_update(skip_locked=True)
+        )
+        result = await db.execute(
+            update(FactCheckedItemCandidate)
+            .where(FactCheckedItemCandidate.id.in_(subquery))
+            .values(
+                status=CandidateStatus.SCRAPED.value,
+                error_message="Recovered from stuck PROMOTING state",
+            )
+        )
+        await db.commit()
+        recovered_count = result.rowcount
+
+        if recovered_count > 0:
+            logger.info(
+                "Recovered candidates stuck in PROMOTING state",
+                extra={
+                    "recovered_count": recovered_count,
+                    "timeout_minutes": timeout_minutes,
+                },
+            )
+
+        return recovered_count
+
+
 @register_task(
     task_name="import:fact_check_bureau",
     component="import_pipeline",
     task_type="batch",
+    rate_limit_name="import:fact_check",
+    rate_limit_capacity="1",
 )
 async def process_fact_check_import(
     job_id: str,
@@ -166,6 +331,8 @@ async def process_fact_check_import(
     5. Updates progress after each batch
     6. Marks job as COMPLETED or FAILED
     7. Optionally enqueues scrape tasks for imported candidates
+
+    Rate limiting is handled by TaskIQ middleware via @register_task labels.
 
     Args:
         job_id: UUID string of the BatchJob for status tracking
@@ -232,9 +399,17 @@ async def process_fact_check_import(
                     },
                 )
 
+                rows_seen_in_batches = 0
+                batch_count = 0
+
                 async with async_session() as db:
                     for batch_num, batch in enumerate(batched(iter(rows), batch_size)):
-                        candidates, errors = validate_and_normalize_batch(batch)
+                        batch_count += 1
+                        rows_seen_in_batches += len(batch)
+
+                        candidates, errors = validate_and_normalize_batch(
+                            batch, batch_num=batch_num
+                        )
                         stats.valid_rows += len(candidates)
                         stats.invalid_rows += len(errors)
                         all_errors.extend(errors)
@@ -278,6 +453,31 @@ async def process_fact_check_import(
                                 },
                             )
 
+                logger.info(
+                    "Batch processing complete",
+                    extra={
+                        "job_id": job_id,
+                        "batch_count": batch_count,
+                        "rows_seen_in_batches": rows_seen_in_batches,
+                        "total_rows": stats.total_rows,
+                        "valid_rows": stats.valid_rows,
+                        "invalid_rows": stats.invalid_rows,
+                    },
+                )
+
+                if rows_seen_in_batches != stats.total_rows:
+                    logger.error(
+                        "Row count mismatch: batching lost rows",
+                        extra={
+                            "job_id": job_id,
+                            "total_rows": stats.total_rows,
+                            "rows_seen_in_batches": rows_seen_in_batches,
+                            "missing": stats.total_rows - rows_seen_in_batches,
+                        },
+                    )
+
+            row_accounting_valid = _check_row_accounting(job_id, stats, span)
+
             final_stats = {
                 "total_rows": stats.total_rows,
                 "valid_rows": stats.valid_rows,
@@ -285,6 +485,7 @@ async def process_fact_check_import(
                 "inserted": stats.inserted,
                 "updated": stats.updated,
                 "dry_run": dry_run,
+                "row_accounting_valid": row_accounting_valid,
             }
 
             if all_errors:
@@ -343,14 +544,24 @@ async def process_fact_check_import(
             if all_errors:
                 error_summary["validation_errors"] = _aggregate_errors(all_errors)
 
-            await _fail_job(
-                async_session,
-                progress_tracker,
-                job_uuid,
-                error_summary=error_summary,
-                completed_tasks=stats.valid_rows,
-                failed_tasks=stats.invalid_rows,
-            )
+            try:
+                await _fail_job(
+                    async_session,
+                    progress_tracker,
+                    job_uuid,
+                    error_summary=error_summary,
+                    completed_tasks=stats.valid_rows,
+                    failed_tasks=stats.invalid_rows,
+                )
+            except Exception as fail_error:
+                logger.error(
+                    "Failed to mark job as failed",
+                    extra={
+                        "job_id": job_id,
+                        "fail_error": str(fail_error),
+                        "original_error": error_msg,
+                    },
+                )
 
             logger.error(
                 "Fact-check bureau import failed",
@@ -359,6 +570,688 @@ async def process_fact_check_import(
                     "error": error_msg,
                     "valid_rows": stats.valid_rows,
                     "invalid_rows": stats.invalid_rows,
+                },
+            )
+
+            raise
+
+        finally:
+            await redis_client.disconnect()
+            await engine.dispose()
+
+
+async def _scrape_single_url(
+    url: str,
+    timeout_seconds: float = SCRAPE_URL_TIMEOUT_SECONDS,
+) -> str | None:
+    """Scrape a single URL with timeout protection.
+
+    Args:
+        url: The URL to scrape
+        timeout_seconds: Maximum time to wait for scrape
+
+    Returns:
+        Scraped content on success, None on timeout or error.
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(scrape_url_content, url),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError:
+        logger.warning(
+            "Scrape timeout for URL",
+            extra={"url": url, "timeout_seconds": timeout_seconds},
+        )
+        return None
+    except Exception as e:
+        logger.error(
+            "Scrape error for URL",
+            extra={"url": url, "error": str(e), "error_type": type(e).__name__},
+        )
+        return None
+
+
+@register_task(
+    task_name="scrape:candidates",
+    component="import_pipeline",
+    task_type="batch",
+    rate_limit_name="scrape:candidates",
+    rate_limit_capacity="1",
+)
+async def process_scrape_batch(  # noqa: PLR0912
+    job_id: str,
+    batch_size: int,
+    dry_run: bool,
+    db_url: str,
+    redis_url: str,
+    concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
+) -> dict[str, Any]:
+    """
+    TaskIQ task to process scraping of pending candidates.
+
+    This task:
+    1. Recovers candidates stuck in SCRAPING state from previous crashes
+    2. Marks job as IN_PROGRESS
+    3. Counts total pending candidates without content
+    4. In dry_run mode: returns count without scraping
+    5. Otherwise: processes candidates with session-per-candidate pattern
+    6. For each candidate: scrapes content (non-blocking) and updates status
+    7. Tracks progress via BatchJob infrastructure
+    8. Marks job as COMPLETED or FAILED
+
+    Rate limiting is handled by TaskIQ middleware via @register_task labels.
+
+    Connection Pool Considerations:
+        Each concurrent scrape acquires a session from the pool when updating the
+        database. With DEFAULT_SCRAPE_CONCURRENCY=10, DB_POOL_SIZE=5, and
+        DB_POOL_MAX_OVERFLOW=10, the total available connections (15) exceed
+        concurrency, preventing pool exhaustion. The main task also uses connections
+        for progress updates, but session-per-operation pattern with quick commits
+        ensures connections are returned promptly.
+
+    Args:
+        job_id: UUID string of the BatchJob for status tracking
+        batch_size: Number of candidates to process per batch
+        dry_run: If True, count candidates but don't scrape
+        db_url: Database connection URL
+        redis_url: Redis connection URL for progress tracking
+        concurrency: Max concurrent URL scrapes (default: DEFAULT_SCRAPE_CONCURRENCY)
+
+    Returns:
+        dict with status and scrape stats
+    """
+    with _tracer.start_as_current_span("scrape.candidates") as span:
+        span.set_attribute("job.id", job_id)
+        span.set_attribute("job.batch_size", batch_size)
+        span.set_attribute("job.dry_run", dry_run)
+
+        settings = get_settings()
+        job_uuid = UUID(job_id)
+
+        engine = create_async_engine(
+            db_url,
+            pool_pre_ping=True,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+            pool_timeout=settings.DB_POOL_TIMEOUT,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        redis_client = RedisClient()
+        await redis_client.connect(redis_url)
+        progress_tracker = BatchJobProgressTracker(redis_client)
+
+        scraped = 0
+        failed = 0
+        total_candidates = 0
+        recovered = 0
+
+        try:
+            recovered = await _recover_stuck_scraping_candidates(async_session)
+            if recovered > 0:
+                span.set_attribute("scrape.recovered_stuck", recovered)
+
+            await _start_job(async_session, progress_tracker, job_uuid)
+
+            async with async_session() as db:
+                count_query = (
+                    select(func.count())
+                    .select_from(FactCheckedItemCandidate)
+                    .where(
+                        FactCheckedItemCandidate.status.in_(
+                            [
+                                CandidateStatus.PENDING.value,
+                                CandidateStatus.SCRAPING.value,
+                            ]
+                        )
+                    )
+                    .where(FactCheckedItemCandidate.content.is_(None))
+                )
+                count_result = await db.execute(count_query)
+                total_candidates = count_result.scalar_one()
+
+            await _update_job_total_tasks(async_session, job_uuid, total_candidates)
+            span.set_attribute("scrape.total_candidates", total_candidates)
+
+            logger.info(
+                "Starting candidate scrape batch",
+                extra={
+                    "job_id": job_id,
+                    "batch_size": batch_size,
+                    "dry_run": dry_run,
+                    "total_candidates": total_candidates,
+                    "recovered_stuck": recovered,
+                },
+            )
+
+            if dry_run:
+                final_stats = {
+                    "total_candidates": total_candidates,
+                    "scraped": 0,
+                    "failed": 0,
+                    "recovered_stuck": recovered,
+                    "dry_run": True,
+                }
+
+                await _complete_job(
+                    async_session,
+                    progress_tracker,
+                    job_uuid,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    stats=final_stats,
+                )
+
+                logger.info(
+                    "Candidate scrape batch dry run completed",
+                    extra={
+                        "job_id": job_id,
+                        **final_stats,
+                    },
+                )
+
+                return {"status": "completed", **final_stats}
+
+            semaphore = asyncio.Semaphore(concurrency)
+            errors: list[str] = []
+
+            async def process_single_candidate(
+                candidate_id: UUID,
+                source_url: str,
+            ) -> tuple[bool, str | None]:
+                """Process a single candidate with semaphore-bounded concurrency."""
+                async with semaphore:
+                    content = await _scrape_single_url(source_url, SCRAPE_URL_TIMEOUT_SECONDS)
+
+                    async with async_session() as db:
+                        if content:
+                            await db.execute(
+                                update(FactCheckedItemCandidate)
+                                .where(FactCheckedItemCandidate.id == candidate_id)
+                                .values(
+                                    status=CandidateStatus.SCRAPED.value,
+                                    content=content,
+                                )
+                            )
+                            await db.commit()
+                            logger.debug(
+                                "Scraped candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                    "content_length": len(content),
+                                },
+                            )
+                            return (True, None)
+
+                        await db.execute(
+                            update(FactCheckedItemCandidate)
+                            .where(FactCheckedItemCandidate.id == candidate_id)
+                            .values(
+                                status=CandidateStatus.SCRAPE_FAILED.value,
+                                error_message="Scrape returned no content or timed out",
+                            )
+                        )
+                        await db.commit()
+                        logger.warning(
+                            "Failed to scrape candidate",
+                            extra={
+                                "candidate_id": str(candidate_id),
+                                "source_url": source_url,
+                            },
+                        )
+                        return (False, "Scrape failed")
+
+            progress_interval = max(1, min(batch_size, PROGRESS_UPDATE_INTERVAL))
+
+            while True:
+                async with async_session() as db:
+                    subquery = (
+                        select(FactCheckedItemCandidate.id)
+                        .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
+                        .where(FactCheckedItemCandidate.content.is_(None))
+                        .limit(batch_size)
+                        .with_for_update(skip_locked=True)
+                    )
+                    stmt = (
+                        update(FactCheckedItemCandidate)
+                        .where(FactCheckedItemCandidate.id.in_(subquery))
+                        .values(status=CandidateStatus.SCRAPING.value)
+                        .returning(
+                            FactCheckedItemCandidate.id,
+                            FactCheckedItemCandidate.source_url,
+                        )
+                    )
+                    result = await db.execute(stmt)
+                    candidates = list(result.fetchall())
+                    await db.commit()
+
+                    if not candidates:
+                        logger.info(
+                            "No more candidates to process",
+                            extra={"job_id": job_id},
+                        )
+                        break
+
+                logger.info(
+                    "Processing candidates in parallel",
+                    extra={
+                        "job_id": job_id,
+                        "batch_size": len(candidates),
+                        "concurrency": concurrency,
+                    },
+                )
+
+                tasks = [
+                    process_single_candidate(candidate_id, source_url)
+                    for candidate_id, source_url in candidates
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                batch_scraped = 0
+                batch_failed = 0
+                for result in results:
+                    if isinstance(result, BaseException):
+                        batch_failed += 1
+                        errors.append(str(result)[:200])
+                        logger.error(
+                            "Candidate processing error",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(result),
+                                "error_type": type(result).__name__,
+                            },
+                        )
+                    elif result[0]:
+                        batch_scraped += 1
+                    else:
+                        batch_failed += 1
+                        if result[1]:
+                            errors.append(result[1])
+
+                scraped += batch_scraped
+                failed += batch_failed
+
+                processed = scraped + failed
+                if processed % progress_interval == 0 or processed == total_candidates:
+                    try:
+                        await _update_progress(
+                            async_session,
+                            progress_tracker,
+                            job_uuid,
+                            completed_tasks=scraped,
+                            failed_tasks=failed,
+                            current_item=f"Processed {processed}/{total_candidates}",
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to update progress during scrape batch",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(e),
+                            },
+                        )
+
+            final_stats = {
+                "total_candidates": total_candidates,
+                "scraped": scraped,
+                "failed": failed,
+                "recovered_stuck": recovered,
+                "dry_run": False,
+            }
+
+            await _complete_job(
+                async_session,
+                progress_tracker,
+                job_uuid,
+                completed_tasks=scraped,
+                failed_tasks=failed,
+                stats=final_stats,
+            )
+
+            span.set_attribute("scrape.scraped", scraped)
+            span.set_attribute("scrape.failed", failed)
+
+            logger.info(
+                "Candidate scrape batch completed",
+                extra={
+                    "job_id": job_id,
+                    **final_stats,
+                },
+            )
+
+            return {"status": "completed", **final_stats}
+
+        except Exception as e:
+            error_msg = str(e)
+            span.record_exception(e)
+            span.set_status(StatusCode.ERROR, error_msg)
+
+            error_summary = {
+                "exception": error_msg,
+                "exception_type": type(e).__name__,
+                "partial_stats": {
+                    "total_candidates": total_candidates,
+                    "scraped": scraped,
+                    "failed": failed,
+                },
+            }
+
+            try:
+                await _fail_job(
+                    async_session,
+                    progress_tracker,
+                    job_uuid,
+                    error_summary=error_summary,
+                    completed_tasks=scraped,
+                    failed_tasks=failed,
+                )
+            except Exception as fail_error:
+                logger.error(
+                    "Failed to mark job as failed",
+                    extra={
+                        "job_id": job_id,
+                        "fail_error": str(fail_error),
+                        "original_error": error_msg,
+                    },
+                )
+
+            logger.error(
+                "Candidate scrape batch failed",
+                extra={
+                    "job_id": job_id,
+                    "error": error_msg,
+                    "scraped": scraped,
+                    "failed": failed,
+                },
+            )
+
+            raise
+
+        finally:
+            await redis_client.disconnect()
+            await engine.dispose()
+
+
+@register_task(
+    task_name="promote:candidates",
+    component="import_pipeline",
+    task_type="batch",
+    rate_limit_name="promote:candidates",
+    rate_limit_capacity="1",
+)
+async def process_promotion_batch(
+    job_id: str,
+    batch_size: int,
+    dry_run: bool,
+    db_url: str,
+    redis_url: str,
+) -> dict[str, Any]:
+    """
+    TaskIQ task to promote scraped candidates to fact_check_items.
+
+    This task:
+    1. Marks job as IN_PROGRESS
+    2. Counts total promotable candidates (status='scraped', content IS NOT NULL, rating IS NOT NULL)
+    3. In dry_run mode: returns count without promoting
+    4. Otherwise: processes candidates in batches
+    5. For each candidate: calls promote_candidate to create fact_check_item
+    6. Tracks progress via BatchJob infrastructure
+    7. Marks job as COMPLETED or FAILED
+
+    Rate limiting is handled by TaskIQ middleware via @register_task labels.
+
+    Args:
+        job_id: UUID string of the BatchJob for status tracking
+        batch_size: Number of candidates to process per batch
+        dry_run: If True, count candidates but don't promote
+        db_url: Database connection URL
+        redis_url: Redis connection URL for progress tracking
+
+    Returns:
+        dict with status and promotion stats
+    """
+    with _tracer.start_as_current_span("promote.candidates") as span:
+        span.set_attribute("job.id", job_id)
+        span.set_attribute("job.batch_size", batch_size)
+        span.set_attribute("job.dry_run", dry_run)
+
+        settings = get_settings()
+        job_uuid = UUID(job_id)
+
+        engine = create_async_engine(
+            db_url,
+            pool_pre_ping=True,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+            pool_timeout=settings.DB_POOL_TIMEOUT,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        redis_client = RedisClient()
+        await redis_client.connect(redis_url)
+        progress_tracker = BatchJobProgressTracker(redis_client)
+
+        promoted = 0
+        failed = 0
+        total_candidates = 0
+        recovered = 0
+
+        try:
+            recovered = await _recover_stuck_promoting_candidates(async_session)
+            if recovered > 0:
+                span.set_attribute("promote.recovered_stuck", recovered)
+
+            await _start_job(async_session, progress_tracker, job_uuid)
+
+            async with async_session() as db:
+                count_query = (
+                    select(func.count())
+                    .select_from(FactCheckedItemCandidate)
+                    .where(
+                        FactCheckedItemCandidate.status.in_(
+                            [
+                                CandidateStatus.SCRAPED.value,
+                                CandidateStatus.PROMOTING.value,
+                            ]
+                        )
+                    )
+                    .where(FactCheckedItemCandidate.content.is_not(None))
+                    .where(FactCheckedItemCandidate.content != "")
+                    .where(FactCheckedItemCandidate.rating.is_not(None))
+                )
+                count_result = await db.execute(count_query)
+                total_candidates = count_result.scalar_one()
+
+            await _update_job_total_tasks(async_session, job_uuid, total_candidates)
+            span.set_attribute("promote.total_candidates", total_candidates)
+
+            logger.info(
+                "Starting candidate promotion batch",
+                extra={
+                    "job_id": job_id,
+                    "batch_size": batch_size,
+                    "dry_run": dry_run,
+                    "total_candidates": total_candidates,
+                    "recovered_stuck": recovered,
+                },
+            )
+
+            if dry_run:
+                final_stats = {
+                    "total_candidates": total_candidates,
+                    "promoted": 0,
+                    "failed": 0,
+                    "recovered_stuck": recovered,
+                    "dry_run": True,
+                }
+
+                await _complete_job(
+                    async_session,
+                    progress_tracker,
+                    job_uuid,
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    stats=final_stats,
+                )
+
+                logger.info(
+                    "Candidate promotion batch dry run completed",
+                    extra={
+                        "job_id": job_id,
+                        **final_stats,
+                    },
+                )
+
+                return {"status": "completed", **final_stats}
+
+            progress_interval = max(1, min(batch_size, PROGRESS_UPDATE_INTERVAL))
+            while True:
+                async with async_session() as db:
+                    subquery = (
+                        select(FactCheckedItemCandidate.id)
+                        .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
+                        .where(FactCheckedItemCandidate.content.is_not(None))
+                        .where(FactCheckedItemCandidate.content != "")
+                        .where(FactCheckedItemCandidate.rating.is_not(None))
+                        .limit(batch_size)
+                        .with_for_update(skip_locked=True)
+                    )
+                    stmt = (
+                        update(FactCheckedItemCandidate)
+                        .where(FactCheckedItemCandidate.id.in_(subquery))
+                        .values(status=CandidateStatus.PROMOTING.value)
+                        .returning(FactCheckedItemCandidate.id)
+                    )
+                    result = await db.execute(stmt)
+                    candidate_ids = [row[0] for row in result.fetchall()]
+                    await db.commit()
+
+                    if not candidate_ids:
+                        break
+
+                logger.info(
+                    "Processing promotion batch",
+                    extra={
+                        "job_id": job_id,
+                        "batch_size": len(candidate_ids),
+                    },
+                )
+
+                for candidate_id in candidate_ids:
+                    async with async_session() as db:
+                        success = await promote_candidate(db, candidate_id)
+
+                        if success:
+                            promoted += 1
+                            logger.debug(
+                                "Promoted candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                },
+                            )
+                        else:
+                            failed += 1
+                            logger.warning(
+                                "Failed to promote candidate",
+                                extra={
+                                    "candidate_id": str(candidate_id),
+                                },
+                            )
+
+                processed = promoted + failed
+                if processed % progress_interval == 0 or processed == total_candidates:
+                    try:
+                        await _update_progress(
+                            async_session,
+                            progress_tracker,
+                            job_uuid,
+                            completed_tasks=promoted,
+                            failed_tasks=failed,
+                            current_item=f"Processed {processed}/{total_candidates}",
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to update progress during promotion batch",
+                            extra={
+                                "job_id": job_id,
+                                "error": str(e),
+                            },
+                        )
+
+            final_stats = {
+                "total_candidates": total_candidates,
+                "promoted": promoted,
+                "failed": failed,
+                "recovered_stuck": recovered,
+                "dry_run": False,
+            }
+
+            await _complete_job(
+                async_session,
+                progress_tracker,
+                job_uuid,
+                completed_tasks=promoted,
+                failed_tasks=failed,
+                stats=final_stats,
+            )
+
+            span.set_attribute("promote.promoted", promoted)
+            span.set_attribute("promote.failed", failed)
+
+            logger.info(
+                "Candidate promotion batch completed",
+                extra={
+                    "job_id": job_id,
+                    **final_stats,
+                },
+            )
+
+            return {"status": "completed", **final_stats}
+
+        except Exception as e:
+            error_msg = str(e)
+            span.record_exception(e)
+            span.set_status(StatusCode.ERROR, error_msg)
+
+            error_summary = {
+                "exception": error_msg,
+                "exception_type": type(e).__name__,
+                "partial_stats": {
+                    "total_candidates": total_candidates,
+                    "promoted": promoted,
+                    "failed": failed,
+                },
+            }
+
+            try:
+                await _fail_job(
+                    async_session,
+                    progress_tracker,
+                    job_uuid,
+                    error_summary=error_summary,
+                    completed_tasks=promoted,
+                    failed_tasks=failed,
+                )
+            except Exception as fail_error:
+                logger.error(
+                    "Failed to mark job as failed",
+                    extra={
+                        "job_id": job_id,
+                        "fail_error": str(fail_error),
+                        "original_error": error_msg,
+                    },
+                )
+
+            logger.error(
+                "Candidate promotion batch failed",
+                extra={
+                    "job_id": job_id,
+                    "error": error_msg,
+                    "promoted": promoted,
+                    "failed": failed,
                 },
             )
 

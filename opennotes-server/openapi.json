@@ -7453,7 +7453,7 @@
           "chunks"
         ],
         "summary": "Re-chunk and re-embed fact check items",
-        "description": "Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 409 if operation already in progress.",
+        "description": "Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 429 if operation already in progress.",
         "operationId": "rechunk_fact_check_items_api_v1_chunks_fact_check_rechunk_post",
         "security": [
           {
@@ -7525,7 +7525,7 @@
           "403": {
             "description": "User lacks admin/moderator permission for the community"
           },
-          "409": {
+          "429": {
             "description": "A rechunk operation is already in progress"
           },
           "422": {
@@ -7547,7 +7547,7 @@
           "chunks"
         ],
         "summary": "Re-chunk and re-embed previously seen messages",
-        "description": "Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.",
+        "description": "Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 429 if operation already in progress for this community.",
         "operationId": "rechunk_previously_seen_messages_api_v1_chunks_previously_seen_rechunk_post",
         "security": [
           {
@@ -7612,7 +7612,7 @@
           "403": {
             "description": "User lacks admin/moderator permission for the community"
           },
-          "409": {
+          "429": {
             "description": "A rechunk operation is already in progress for this community"
           },
           "422": {
@@ -7757,6 +7757,9 @@
               }
             }
           },
+          "429": {
+            "description": "An import job is already in progress (rate limited)"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -7821,6 +7824,142 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fact-checking/import/scrape-candidates": {
+      "post": {
+        "tags": [
+          "fact-checking-import"
+        ],
+        "summary": "Start candidate scraping batch job",
+        "description": "Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+        "operationId": "scrape_candidates_endpoint_api_v1_fact_checking_import_scrape_candidates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchProcessingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A scrape job is already in progress (rate limited)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fact-checking/import/promote-candidates": {
+      "post": {
+        "tags": [
+          "fact-checking-import"
+        ],
+        "summary": "Start candidate promotion batch job",
+        "description": "Start an asynchronous batch job to promote scraped candidates to fact-check items. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+        "operationId": "promote_candidates_endpoint_api_v1_fact_checking_import_promote_candidates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchProcessingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchJobResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A promotion job is already in progress (rate limited)"
           },
           "422": {
             "description": "Validation Error",
@@ -9125,6 +9264,27 @@
         ],
         "title": "BatchJobStatus",
         "description": "Status states for a batch job."
+      },
+      "BatchProcessingRequest": {
+        "properties": {
+          "batch_size": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Maximum number of candidates to process in this batch",
+            "default": 1000
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "Count candidates only, do not perform operation",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "BatchProcessingRequest",
+        "description": "Shared request parameters for batch processing operations (scrape, promote)."
       },
       "BatchScoreRequest": {
         "properties": {

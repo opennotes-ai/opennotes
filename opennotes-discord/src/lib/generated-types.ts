@@ -2631,7 +2631,7 @@ export interface paths {
         put?: never;
         /**
          * Re-chunk and re-embed fact check items
-         * @description Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 409 if operation already in progress.
+         * @description Initiates a background task to re-chunk and re-embed all fact check items. Useful for updating embeddings after model changes or migration to chunk-based embeddings. When community_server_id is provided, requires admin or moderator access. When not provided, uses global LLM credentials and only requires authentication. Rate limited to 1 request per minute. Returns 429 if operation already in progress.
          */
         post: operations["rechunk_fact_check_items_api_v1_chunks_fact_check_rechunk_post"];
         delete?: never;
@@ -2651,7 +2651,7 @@ export interface paths {
         put?: never;
         /**
          * Re-chunk and re-embed previously seen messages
-         * @description Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.
+         * @description Initiates a background task to re-chunk and re-embed previously seen messages for the specified community. Useful for updating embeddings after model changes or migration to chunk-based embeddings. Requires admin or moderator access to the community server. Rate limited to 1 request per minute. Returns 429 if operation already in progress for this community.
          */
         post: operations["rechunk_previously_seen_messages_api_v1_chunks_previously_seen_rechunk_post"];
         delete?: never;
@@ -2714,6 +2714,46 @@ export interface paths {
          * @description Enqueue scrape tasks for candidates with status=pending. This is a synchronous operation that returns the count of enqueued tasks.
          */
         post: operations["enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fact-checking/import/scrape-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start candidate scraping batch job
+         * @description Start an asynchronous batch job to scrape content for pending candidates. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
+         */
+        post: operations["scrape_candidates_endpoint_api_v1_fact_checking_import_scrape_candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fact-checking/import/promote-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start candidate promotion batch job
+         * @description Start an asynchronous batch job to promote scraped candidates to fact-check items. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
+         */
+        post: operations["promote_candidates_endpoint_api_v1_fact_checking_import_promote_candidates_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3365,6 +3405,24 @@ export interface components {
          * @enum {string}
          */
         BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+        /**
+         * BatchProcessingRequest
+         * @description Shared request parameters for batch processing operations (scrape, promote).
+         */
+        BatchProcessingRequest: {
+            /**
+             * Batch Size
+             * @description Maximum number of candidates to process in this batch
+             * @default 1000
+             */
+            batch_size: number;
+            /**
+             * Dry Run
+             * @description Count candidates only, do not perform operation
+             * @default false
+             */
+            dry_run: boolean;
+        };
         /**
          * BatchScoreRequest
          * @description JSON:API request body for batch scores.
@@ -11590,13 +11648,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description A rechunk operation is already in progress */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11605,6 +11656,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A rechunk operation is already in progress */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11640,13 +11698,6 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description A rechunk operation is already in progress for this community */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11655,6 +11706,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A rechunk operation is already in progress for this community */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11725,6 +11783,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description An import job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post: {
@@ -11757,6 +11822,90 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    scrape_candidates_endpoint_api_v1_fact_checking_import_scrape_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchProcessingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description A scrape job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    promote_candidates_endpoint_api_v1_fact_checking_import_promote_candidates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchProcessingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description A promotion job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

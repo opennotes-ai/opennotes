@@ -451,6 +451,27 @@ search_analytics_failures_total = Counter(
     registry=registry,
 )
 
+semaphore_release_failures_total = Counter(
+    "semaphore_release_failures_total",
+    "Total semaphore release failures after all retries exhausted",
+    ["task_name", "instance_id"],
+    registry=registry,
+)
+
+semaphore_release_retries_total = Counter(
+    "semaphore_release_retries_total",
+    "Total semaphore release retry attempts",
+    ["task_name", "instance_id"],
+    registry=registry,
+)
+
+semaphore_leak_prevented_total = Counter(
+    "semaphore_leak_prevented_total",
+    "Total semaphore leaks prevented by checking existing task_id tracking",
+    ["task_name", "instance_id"],
+    registry=registry,
+)
+
 
 def get_metrics() -> bytes:
     return generate_latest(registry)

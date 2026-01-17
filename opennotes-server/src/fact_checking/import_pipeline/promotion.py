@@ -21,19 +21,26 @@ def _validate_candidate_for_promotion(
 ) -> str | None:
     """Validate candidate is ready for promotion.
 
+    Accepts candidates with status SCRAPED or PROMOTING. Accepting PROMOTING
+    enables retry/idempotency: if a batch job crashes mid-promotion, the next
+    run can immediately retry without waiting for a recovery timeout.
+
+    State machine: SCRAPED -> PROMOTING -> PROMOTED (success)
+                           -> PROMOTING (retry on failure/crash)
+
     Returns:
         None if valid, error message string if invalid.
     """
     if not candidate:
         return f"Candidate not found for promotion: {candidate_id}"
 
-    if not candidate.content:
+    if not candidate.content or candidate.content == "":
         return f"Cannot promote candidate without content: {candidate_id}"
 
     if not candidate.rating:
         return f"Cannot promote candidate without human-approved rating: {candidate_id}"
 
-    if candidate.status != CandidateStatus.SCRAPED.value:
+    if candidate.status not in (CandidateStatus.SCRAPED.value, CandidateStatus.PROMOTING.value):
         return f"Cannot promote candidate with status {candidate.status}: {candidate_id}"
 
     return None
@@ -118,8 +125,10 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
 async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> int:
     """Promote all scraped candidates with approved ratings to fact_check_items.
 
-    Finds candidates with status='scraped', content, and human-approved rating,
-    then promotes each to the main table.
+    Finds candidates with status='scraped' or 'promoting', content, and human-approved
+    rating, then promotes each to the main table. Including 'promoting' status enables
+    retry/idempotency: if a batch job crashes mid-promotion, the next run can
+    immediately retry without waiting for a recovery timeout.
 
     Args:
         session: Database session.
@@ -130,9 +139,14 @@ async def bulk_promote_scraped(session: AsyncSession, batch_size: int = 100) -> 
     """
     result = await session.execute(
         select(FactCheckedItemCandidate.id)
-        .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
-        .where(FactCheckedItemCandidate.content.isnot(None))
-        .where(FactCheckedItemCandidate.rating.isnot(None))
+        .where(
+            FactCheckedItemCandidate.status.in_(
+                [CandidateStatus.SCRAPED.value, CandidateStatus.PROMOTING.value]
+            )
+        )
+        .where(FactCheckedItemCandidate.content.is_not(None))
+        .where(FactCheckedItemCandidate.content != "")
+        .where(FactCheckedItemCandidate.rating.is_not(None))
         .limit(batch_size)
     )
     candidate_ids = [row[0] for row in result.fetchall()]

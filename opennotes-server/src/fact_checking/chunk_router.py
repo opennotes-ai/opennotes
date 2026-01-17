@@ -13,7 +13,8 @@ These endpoints are useful for:
 Rate Limiting and Concurrency Control:
 - Endpoints are rate-limited to 1 request per minute per user
 - Only one rechunk operation can run per resource (table/community) at a time
-- Returns 409 Conflict if an operation is already in progress
+- Returns 429 Too Many Requests if an operation is already in progress
+  (handled by DistributedRateLimitMiddleware)
 
 Status Tracking:
 - Each rechunk operation returns a BatchJob for status polling
@@ -32,36 +33,21 @@ from src.auth.community_dependencies import (
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
-from src.batch_jobs.models import BatchJobStatus
-from src.batch_jobs.rechunk_service import (
-    JOB_TYPE_FACT_CHECK,
-    JOB_TYPE_PREVIOUSLY_SEEN,
-    RechunkBatchJobService,
+from src.batch_jobs.constants import (
+    RECHUNK_FACT_CHECK_JOB_TYPE,
+    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
 )
+from src.batch_jobs.models import BatchJobStatus
+from src.batch_jobs.rechunk_service import ActiveJobExistsError, RechunkBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.batch_jobs.service import BatchJobService, InvalidStateTransitionError
-from src.cache.redis_client import redis_client
 from src.database import get_db
-from src.fact_checking.rechunk_lock import RechunkLockManager
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
 from src.users.models import User
 from src.users.profile_crud import get_profile_by_id
 
 logger = get_logger(__name__)
-
-
-class _GlobalRechunkLockManager(RechunkLockManager):
-    """Lock manager that uses the global redis_client as fallback."""
-
-    @property
-    def redis(self):
-        if self._redis is not None:
-            return self._redis
-        return redis_client.client
-
-
-rechunk_lock_manager = _GlobalRechunkLockManager()
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -71,7 +57,7 @@ def get_rechunk_batch_job_service(
 ) -> RechunkBatchJobService:
     """Get RechunkBatchJobService with injected dependencies."""
     batch_job_service = BatchJobService(db)
-    return RechunkBatchJobService(db, rechunk_lock_manager, batch_job_service)
+    return RechunkBatchJobService(db, batch_job_service)
 
 
 def get_batch_job_service(
@@ -124,7 +110,7 @@ async def get_rechunk_job_status(
             detail=f"Job {job_id} not found",
         )
 
-    if job.job_type not in (JOB_TYPE_FACT_CHECK, JOB_TYPE_PREVIOUSLY_SEEN):
+    if job.job_type not in (RECHUNK_FACT_CHECK_JOB_TYPE, RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Job {job_id} is not a rechunk job",
@@ -153,10 +139,10 @@ async def get_rechunk_job_status(
     "Useful for updating embeddings after model changes or migration to chunk-based embeddings. "
     "When community_server_id is provided, requires admin or moderator access. "
     "When not provided, uses global LLM credentials and only requires authentication. "
-    "Rate limited to 1 request per minute. Returns 409 if operation already in progress.",
+    "Rate limited to 1 request per minute. Returns 429 if operation already in progress.",
     responses={
         403: {"description": "User lacks admin/moderator permission for the community"},
-        409: {"description": "A rechunk operation is already in progress"},
+        429: {"description": "A rechunk operation is already in progress"},
     },
 )
 @limiter.limit("1/minute")
@@ -188,7 +174,9 @@ async def rechunk_fact_check_items(
 
     When community_server_id is provided, requires admin or moderator access
     to that community. When not provided, uses global LLM credentials.
-    Only one fact check rechunk operation can run at a time.
+
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
+    If a rechunk job is already running, the middleware returns 429 Too Many Requests.
 
     Args:
         request: FastAPI request object
@@ -203,7 +191,6 @@ async def rechunk_fact_check_items(
 
     Raises:
         HTTPException: 403 if user lacks admin/moderator permission for the community
-        HTTPException: 409 if a fact check rechunk operation is already in progress
     """
     if community_server_id is not None:
         await verify_community_admin_by_uuid(
@@ -218,9 +205,9 @@ async def rechunk_fact_check_items(
             community_server_id=community_server_id,
             batch_size=batch_size,
         )
-    except RuntimeError as e:
+    except ActiveJobExistsError as e:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(e),
         )
 
@@ -246,10 +233,10 @@ async def rechunk_fact_check_items(
     description="Initiates a background task to re-chunk and re-embed previously seen messages "
     "for the specified community. Useful for updating embeddings after model changes or "
     "migration to chunk-based embeddings. Requires admin or moderator access to the community server. "
-    "Rate limited to 1 request per minute. Returns 409 if operation already in progress for this community.",
+    "Rate limited to 1 request per minute. Returns 429 if operation already in progress for this community.",
     responses={
         403: {"description": "User lacks admin/moderator permission for the community"},
-        409: {"description": "A rechunk operation is already in progress for this community"},
+        429: {"description": "A rechunk operation is already in progress for this community"},
     },
 )
 @limiter.limit("1/minute")
@@ -279,7 +266,10 @@ async def rechunk_previously_seen_messages(
     5. Creates new PreviouslySeenChunk entries
 
     Requires admin or moderator access to the community server.
-    Only one rechunk operation can run per community at a time.
+
+    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
+    If a rechunk job is already running for this community, the middleware returns
+    429 Too Many Requests.
 
     Args:
         request: FastAPI request object
@@ -294,7 +284,6 @@ async def rechunk_previously_seen_messages(
 
     Raises:
         HTTPException: 403 if user lacks admin/moderator permission for the community
-        HTTPException: 409 if a rechunk operation is already in progress for this community
     """
     await verify_community_admin_by_uuid(
         community_server_id=community_server_id,
@@ -308,9 +297,9 @@ async def rechunk_previously_seen_messages(
             community_server_id=community_server_id,
             batch_size=batch_size,
         )
-    except RuntimeError as e:
+    except ActiveJobExistsError as e:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(e),
         )
 
@@ -356,11 +345,11 @@ async def list_rechunk_jobs(
         List of rechunk batch jobs
     """
     fact_check_jobs = await service.list_jobs(
-        job_type=JOB_TYPE_FACT_CHECK,
+        job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
         status=job_status,
     )
     previously_seen_jobs = await service.list_jobs(
-        job_type=JOB_TYPE_PREVIOUSLY_SEEN,
+        job_type=RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
         status=job_status,
     )
 
@@ -417,7 +406,7 @@ async def cancel_rechunk_job(
             detail=f"Job {job_id} not found",
         )
 
-    if job.job_type not in (JOB_TYPE_FACT_CHECK, JOB_TYPE_PREVIOUSLY_SEEN):
+    if job.job_type not in (RECHUNK_FACT_CHECK_JOB_TYPE, RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Job {job_id} is not a rechunk job",

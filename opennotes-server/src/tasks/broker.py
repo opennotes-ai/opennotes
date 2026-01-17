@@ -45,6 +45,7 @@ from src.cache.redis_client import create_redis_connection, get_redis_connection
 from src.config import get_settings
 from src.tasks.metrics_middleware import TaskIQMetricsMiddleware
 from src.tasks.middleware import RetryCallbackHandlerRegistry, RetryWithFinalCallbackMiddleware
+from src.tasks.rate_limit_middleware import DistributedRateLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,11 @@ def _create_broker() -> PullBasedJetStreamBroker:
         instance_id=settings.INSTANCE_ID,
     )
 
+    rate_limit_middleware = DistributedRateLimitMiddleware(
+        redis_url=settings.REDIS_URL,
+        instance_id=settings.INSTANCE_ID,
+    )
+
     connection_kwargs: dict[str, Any] = {}
     if settings.NATS_USERNAME and settings.NATS_PASSWORD:
         connection_kwargs["user"] = settings.NATS_USERNAME
@@ -174,12 +180,14 @@ def _create_broker() -> PullBasedJetStreamBroker:
             **connection_kwargs,
         )
         .with_result_backend(result_backend)
-        .with_middlewares(tracing_middleware, metrics_middleware, retry_middleware)
+        .with_middlewares(
+            tracing_middleware, rate_limit_middleware, metrics_middleware, retry_middleware
+        )
     )
 
     logger.info(
-        "Taskiq broker configured with RetryWithFinalCallbackMiddleware, "
-        "SafeOpenTelemetryMiddleware, and Prometheus metrics"
+        "Taskiq broker configured with middlewares: "
+        "tracing, rate_limit, metrics, retry (in execution order)"
     )
 
     return new_broker
@@ -405,6 +413,22 @@ def get_broker_health() -> dict[str, Any]:
     }
 
 
+def get_registered_tasks() -> dict[str, tuple[Callable[..., Any], dict[str, Any]]]:
+    """
+    Get all registered tasks with their labels.
+
+    Returns a dict mapping task names to (function, labels) tuples.
+    This is useful for testing task registration and inspecting labels.
+
+    Example:
+        tasks = get_registered_tasks()
+        if "my:task" in tasks:
+            func, labels = tasks["my:task"]
+            assert labels.get("component") == "my_component"
+    """
+    return dict(_all_registered_tasks)
+
+
 async def check_redis_ssl_connectivity() -> dict[str, Any]:
     """
     Check Redis SSL connectivity for TaskIQ result backend.
@@ -465,6 +489,7 @@ __all__ = [
     "check_redis_ssl_connectivity",
     "get_broker",
     "get_broker_health",
+    "get_registered_tasks",
     "is_broker_initialized",
     "register_task",
     "reset_broker",

@@ -2469,6 +2469,7 @@ dependencies = [
     { name = "python-json-logger" },
     { name = "python-multipart" },
     { name = "redis" },
+    { name = "redis-rate-limiters" },
     { name = "ruamel-yaml" },
     { name = "scikit-learn" },
     { name = "setuptools" },
@@ -2597,6 +2598,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.6" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.1" },
     { name = "redis", specifier = ">=5.0.0" },
+    { name = "redis-rate-limiters", specifier = ">=0.3.1,<0.4.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.6" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
@@ -4360,6 +4362,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0d/d6/e8b92798a5bd67d659d51a18170e91c16ac3b59738d91894651ee255ed49/redis-6.4.0.tar.gz", hash = "sha256:b01bc7282b8444e28ec36b261df5375183bb47a07eb9c603f284e89cbc5ef010", size = 4647399, upload-time = "2025-08-07T08:10:11.441Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/02/89e2ed7e85db6c93dfa9e8f691c5087df4e3551ab39081a4d7c6d1f90e05/redis-6.4.0-py3-none-any.whl", hash = "sha256:f0544fa9604264e9464cdf4814e7d4830f74b165d52f2a330a760a88dd248b7f", size = 279847, upload-time = "2025-08-07T08:10:09.84Z" },
+]
+
+[[package]]
+name = "redis-rate-limiters"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "redis" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d0/04/bd561c815600d3c3c46d5baac3db7e7a9765c9f07008300a447bbe861e09/redis_rate_limiters-0.3.1.tar.gz", hash = "sha256:b19222308ee082a4317086184c8008e55e1e8cce6d533e29a000073fe84d582e", size = 10028, upload-time = "2023-06-23T13:52:36.533Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/ca/751385211492882ddc2f6eedfb1075c8b41ae34653c0e92d09477fc1e812/redis_rate_limiters-0.3.1-py3-none-any.whl", hash = "sha256:7baf3e84fbfabb58b7e8315cc8fc117305ab5848f33c1d2b0e3e97600c5a268c", size = 10071, upload-time = "2023-06-23T13:52:35.438Z" },
 ]
 
 [[package]]
