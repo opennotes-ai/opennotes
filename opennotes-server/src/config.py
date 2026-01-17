@@ -188,7 +188,11 @@ class Settings(BaseSettings):
     REDIS_RETRY_ON_TIMEOUT: bool = Field(default=True)
     REDIS_REQUIRE_TLS: bool = Field(
         default=True,
-        description="Require TLS for Redis in production. Set to False for GCP Memorystore VPC connections.",
+        description="Require TLS for Redis in production (rediss:// URLs).",
+    )
+    REDIS_CA_CERT_PATH: str | None = Field(
+        default=None,
+        description="Path to CA certificate for Redis TLS verification. Required for GCP Memorystore.",
     )
 
     CACHE_SCORING_TTL: int = Field(
