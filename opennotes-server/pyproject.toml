@@ -202,9 +202,6 @@ exclude_lines = [
     "@(abc\\.)?abstractmethod",
 ]
 
-[project.scripts]
-opennotes-cli = "src.cli:main"
-
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
