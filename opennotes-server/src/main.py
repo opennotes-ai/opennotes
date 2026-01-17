@@ -22,7 +22,7 @@ if _otel_enabled and not _testing:
     _environment = os.getenv("ENVIRONMENT", "development")
     _otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTLP_ENDPOINT")
     _otlp_headers = os.getenv("OTEL_EXPORTER_OTLP_HEADERS") or os.getenv("OTLP_HEADERS")
-    _sample_rate = float(os.getenv("TRACE_SAMPLE_RATE", "0.1"))
+    _sample_rate = float(os.getenv("TRACING_SAMPLE_RATE", "1.0"))
     _console_export = os.getenv("ENABLE_CONSOLE_TRACING", "false").lower() == "true"
 
     setup_otel(

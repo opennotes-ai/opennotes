@@ -480,8 +480,8 @@ class Settings(BaseSettings):
         "When set to DEBUG, enables verbose logging for exporters and SDK internals.",
     )
     TRACING_SAMPLE_RATE: float = Field(
-        default=0.1,
-        description="Trace sampling rate (0.0-1.0). 0.1 = 10% of traces sampled. Use 1.0 for development.",
+        default=1.0,
+        description="Trace sampling rate (0.0-1.0). 1.0 = 100% of traces sampled.",
         ge=0.0,
         le=1.0,
     )
