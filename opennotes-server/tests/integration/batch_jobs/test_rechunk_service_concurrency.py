@@ -26,7 +26,7 @@ class TestRechunkServiceConcurrencyControl:
     """Tests for concurrent job creation being blocked by SELECT FOR UPDATE."""
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_concurrent_job_creation_with_existing_active_job_blocked(
         self,
         mock_task: AsyncMock,
@@ -115,7 +115,7 @@ class TestRechunkServiceConcurrencyControl:
             await cleanup_session.commit()
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_concurrent_job_creation_with_pending_job_blocked(
         self,
         mock_task: AsyncMock,
