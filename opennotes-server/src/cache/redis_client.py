@@ -1,6 +1,8 @@
 import logging
 import os
+import ssl
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import redis.asyncio as redis
@@ -21,10 +23,10 @@ def get_redis_connection_kwargs(
     **extra_kwargs: Any,
 ) -> dict[str, Any]:
     """
-    Build Redis connection kwargs with proper SSL handling for GCP Memorystore.
+    Build Redis connection kwargs with consistent configuration.
 
     This is the single source of truth for Redis connection configuration.
-    All Redis clients should use this function to ensure consistent SSL handling.
+    All Redis clients should use this function to ensure consistent settings.
 
     Args:
         url: Redis URL (redis:// or rediss:// for TLS)
@@ -48,8 +50,7 @@ def get_redis_connection_kwargs(
     ):
         raise ValueError(
             "Redis connection must use TLS in production (rediss://). "
-            f"Current URL scheme: {url.split('://')[0]}. "
-            "Set REDIS_REQUIRE_TLS=false for GCP Memorystore VPC connections."
+            f"Current URL scheme: {url.split('://')[0]}."
         )
 
     kwargs: dict[str, Any] = {
@@ -62,12 +63,22 @@ def get_redis_connection_kwargs(
         "decode_responses": decode_responses,
     }
 
-    # Handle TLS for GCP Memorystore with SERVER_AUTHENTICATION
-    # Server presents a Google-signed certificate, but we skip verification
-    # since traffic is VPC-internal via Private Service Access.
-    # Use ssl_cert_reqs="none" - this is the correct approach for redis-py async
     if url.startswith("rediss://"):
-        kwargs["ssl_cert_reqs"] = "none"
+        if settings.REDIS_CA_CERT_PATH:
+            ca_path = Path(settings.REDIS_CA_CERT_PATH)
+            if not ca_path.exists():
+                raise ValueError(
+                    f"Redis CA certificate not found at {settings.REDIS_CA_CERT_PATH}. "
+                    "Download it from GCP Console or via: "
+                    "gcloud redis instances describe INSTANCE_ID --region=REGION"
+                )
+            ssl_context = ssl.create_default_context(cafile=str(ca_path))
+            kwargs["ssl_context"] = ssl_context
+        else:
+            raise ValueError(
+                "REDIS_CA_CERT_PATH must be set for TLS connections (rediss://). "
+                "Download the CA certificate from GCP Memorystore and set the path."
+            )
 
     kwargs.update(extra_kwargs)
     return kwargs

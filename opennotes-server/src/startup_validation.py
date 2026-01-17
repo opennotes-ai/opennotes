@@ -16,6 +16,7 @@ import nats
 import redis.asyncio as redis
 from sqlalchemy import func, select, text
 
+from src.cache.redis_client import get_redis_connection_kwargs
 from src.config import settings
 from src.database import get_session_maker
 from src.fact_checking.models import FactCheckItem
@@ -208,16 +209,8 @@ async def check_redis_connectivity() -> CheckResult:
         CheckResult indicating if Redis is reachable
     """
     try:
-        # Build connection kwargs
-        redis_kwargs: dict[str, object] = {}
-
-        # For GCP Memorystore with SERVER_AUTHENTICATION:
-        # Server presents a Google-signed certificate, but we skip verification
-        # since traffic is VPC-internal via Private Service Access.
-        if settings.REDIS_URL.startswith("rediss://"):
-            redis_kwargs["ssl_cert_reqs"] = "none"
-
-        client = redis.from_url(settings.REDIS_URL, **redis_kwargs)  # type: ignore[no-untyped-call]
+        connection_kwargs = get_redis_connection_kwargs(settings.REDIS_URL)
+        client = redis.from_url(settings.REDIS_URL, **connection_kwargs)  # type: ignore[no-untyped-call]
         await client.ping()
         await client.aclose()
 
