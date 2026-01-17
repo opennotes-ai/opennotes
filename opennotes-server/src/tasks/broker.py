@@ -136,19 +136,21 @@ def _create_broker() -> PullBasedJetStreamBroker:
     )
 
     redis_kwargs = get_redis_connection_kwargs(settings.REDIS_URL)
-    ssl_cert_reqs = redis_kwargs.get("ssl_cert_reqs")
+    ssl_context = redis_kwargs.get("ssl_context")
 
     result_backend_kwargs: dict[str, Any] = {
         "redis_url": settings.REDIS_URL,
         "result_ex_time": settings.TASKIQ_RESULT_EXPIRY,
     }
-    if ssl_cert_reqs is not None:
-        result_backend_kwargs["ssl_cert_reqs"] = ssl_cert_reqs
-        logger.info(
-            "TaskIQ Redis result backend configured with SSL (ssl_cert_reqs=%s)", ssl_cert_reqs
-        )
+    if ssl_context is not None:
+        result_backend_kwargs["ssl_context"] = ssl_context
+        logger.info("TaskIQ Redis result backend configured with SSL context (CA cert)")
 
     result_backend: RedisAsyncResultBackend = RedisAsyncResultBackend(**result_backend_kwargs)
+
+    shared_redis_client = aioredis.Redis.from_url(settings.REDIS_URL, **redis_kwargs)
+    if ssl_context is not None:
+        logger.info("Shared Redis client configured with SSL context (CA cert)")
 
     retry_middleware = RetryWithFinalCallbackMiddleware(
         default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,
@@ -162,7 +164,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
     )
 
     rate_limit_middleware = DistributedRateLimitMiddleware(
-        redis_url=settings.REDIS_URL,
+        redis_client=shared_redis_client,
         instance_id=settings.INSTANCE_ID,
     )
 

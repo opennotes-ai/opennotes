@@ -55,6 +55,7 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
+import redis.asyncio as aioredis
 
 from src.tasks.rate_limit_middleware import (
     RATE_LIMIT_CAPACITY,
@@ -72,10 +73,23 @@ def get_redis_url() -> str:
     return os.environ.get("REDIS_URL", "redis://localhost:6379")
 
 
+def create_redis_client() -> aioredis.Redis:
+    """Create a Redis client for testing."""
+    return aioredis.Redis.from_url(get_redis_url())
+
+
 @pytest.fixture
-async def middleware():
+async def redis_client():
+    """Create and yield a Redis client, cleaning up after."""
+    client = create_redis_client()
+    yield client
+    await client.aclose()
+
+
+@pytest.fixture
+async def middleware(redis_client):
     """Create and start middleware with real Redis connection."""
-    mw = DistributedRateLimitMiddleware(get_redis_url())
+    mw = DistributedRateLimitMiddleware(redis_client=redis_client)
     await mw.startup()
     yield mw
     await mw.shutdown()
@@ -103,19 +117,15 @@ class TestDistributedRateLimitMiddlewareIntegration:
     """Integration tests for DistributedRateLimitMiddleware."""
 
     @pytest.mark.asyncio
-    async def test_startup_creates_redis_connection(self):
-        """Verify startup creates a working Redis connection."""
-        mw = DistributedRateLimitMiddleware(get_redis_url())
-        assert mw._redis is None
-
-        await mw.startup()
-        assert mw._redis is not None
+    async def test_middleware_uses_shared_redis_client(self):
+        """Verify middleware uses the shared Redis client for operations."""
+        client = create_redis_client()
+        mw = DistributedRateLimitMiddleware(redis_client=client)
 
         pong = await mw._redis.ping()
         assert pong is True
 
-        await mw.shutdown()
-        assert mw._redis is None
+        await client.aclose()
 
     @pytest.mark.asyncio
     async def test_get_semaphore_creates_real_semaphore(self, middleware):
@@ -129,14 +139,6 @@ class TestDistributedRateLimitMiddlewareIntegration:
 
         async with semaphore:
             pass
-
-    @pytest.mark.asyncio
-    async def test_get_semaphore_raises_before_startup(self):
-        """Verify _get_semaphore raises if middleware not started."""
-        mw = DistributedRateLimitMiddleware(get_redis_url())
-
-        with pytest.raises(RuntimeError, match="Middleware not started"):
-            mw._get_semaphore(name="test:error", capacity=1)
 
     @pytest.mark.asyncio
     async def test_pre_execute_acquires_real_semaphore(self, middleware):
@@ -613,54 +615,20 @@ class TestRedisUnavailableHandling:
     """Tests for graceful handling when Redis unavailable (AC#3)."""
 
     @pytest.mark.asyncio
-    async def test_raises_runtime_error_when_not_started(self):
-        """Verify RuntimeError is raised when middleware not started."""
-        mw = DistributedRateLimitMiddleware(get_redis_url())
+    async def test_tasks_without_rate_limit_work_normally(self):
+        """Verify tasks without rate_limit_name still work.
 
-        message = create_message(
-            {
-                RATE_LIMIT_NAME: "test:redis:unavailable",
-                RATE_LIMIT_CAPACITY: "1",
-            }
-        )
-
-        with pytest.raises(RuntimeError, match="Middleware not started"):
-            await mw.pre_execute(message)
-
-    @pytest.mark.asyncio
-    async def test_shutdown_clears_redis_connection(self):
-        """Verify shutdown properly clears Redis connection."""
-        mw = DistributedRateLimitMiddleware(get_redis_url())
-        await mw.startup()
-
-        assert mw._redis is not None
-
-        await mw.shutdown()
-
-        assert mw._redis is None
-
-        message = create_message(
-            {
-                RATE_LIMIT_NAME: "test:redis:after_shutdown",
-                RATE_LIMIT_CAPACITY: "1",
-            }
-        )
-
-        with pytest.raises(RuntimeError, match="Middleware not started"):
-            await mw.pre_execute(message)
-
-    @pytest.mark.asyncio
-    async def test_tasks_without_rate_limit_work_even_before_startup(self):
-        """Verify tasks without rate_limit_name still work when Redis unavailable.
-
-        Tasks that don't use rate limiting should not be affected by Redis availability.
+        Tasks that don't use rate limiting should pass through the middleware.
         """
-        mw = DistributedRateLimitMiddleware(get_redis_url())
+        client = create_redis_client()
+        mw = DistributedRateLimitMiddleware(redis_client=client)
 
         message = create_message({"component": "test"})
 
         result = await mw.pre_execute(message)
         assert result == message
+
+        await client.aclose()
 
 
 class TestMiddlewareConcurrencyForBatchJobs:

@@ -70,9 +70,9 @@ class TestDistributedRateLimitMiddleware:
 
     @pytest.fixture
     def middleware(self):
-        """Create middleware instance."""
-        redis_url = "redis://localhost:6379"
-        return DistributedRateLimitMiddleware(redis_url)
+        """Create middleware instance with mock Redis client."""
+        mock_redis = MagicMock()
+        return DistributedRateLimitMiddleware(redis_client=mock_redis)
 
     @pytest.mark.asyncio
     async def test_pre_execute_acquires_semaphore_when_labels_present(self, middleware):
@@ -145,9 +145,9 @@ class TestRateLimitNameTemplateInterpolation:
 
     @pytest.fixture
     def middleware(self):
-        """Create middleware instance."""
-        redis_url = "redis://localhost:6379"
-        return DistributedRateLimitMiddleware(redis_url)
+        """Create middleware instance with mock Redis client."""
+        mock_redis = MagicMock()
+        return DistributedRateLimitMiddleware(redis_client=mock_redis)
 
     @pytest.mark.asyncio
     async def test_template_variable_is_interpolated_from_kwargs(self, middleware):
@@ -271,8 +271,8 @@ class TestSemaphoreReleaseRetry:
     @pytest.fixture
     def middleware(self):
         """Create middleware instance."""
-        redis_url = "redis://localhost:6379"
-        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+        mock_redis = MagicMock()
+        return DistributedRateLimitMiddleware(redis_client=mock_redis, instance_id="test")
 
     @pytest.mark.asyncio
     async def test_release_with_retry_succeeds_first_attempt(self, middleware):
@@ -385,8 +385,8 @@ class TestMiddlewareBasedLockRelease:
     @pytest.fixture
     def middleware(self):
         """Create middleware instance."""
-        redis_url = "redis://localhost:6379"
-        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+        mock_redis = MagicMock()
+        return DistributedRateLimitMiddleware(redis_client=mock_redis, instance_id="test")
 
     @pytest.mark.asyncio
     async def test_semaphore_released_on_success_path(self, middleware):
@@ -502,8 +502,8 @@ class TestRateLimitExpiryLabel:
     @pytest.fixture
     def middleware(self):
         """Create middleware instance."""
-        redis_url = "redis://localhost:6379"
-        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+        mock_redis = MagicMock()
+        return DistributedRateLimitMiddleware(redis_client=mock_redis, instance_id="test")
 
     @pytest.mark.asyncio
     async def test_expiry_label_passed_to_semaphore(self, middleware):
@@ -562,8 +562,8 @@ class TestSemaphoreLeakPrevention:
     @pytest.fixture
     def middleware(self):
         """Create middleware instance."""
-        redis_url = "redis://localhost:6379"
-        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+        mock_redis = MagicMock()
+        return DistributedRateLimitMiddleware(redis_client=mock_redis, instance_id="test")
 
     @pytest.mark.asyncio
     async def test_pre_execute_skips_tracking_when_task_id_exists(self, middleware):

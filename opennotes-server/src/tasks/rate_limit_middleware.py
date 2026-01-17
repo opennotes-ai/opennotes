@@ -137,28 +137,27 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
         - The metric semaphore_release_failures_total provides aggregate visibility
 
     Attributes:
-        _redis_url: Redis connection URL.
-        _redis: Async Redis client instance.
+        _redis: Async Redis client instance (shared with result backend).
+        _owns_redis: Whether this middleware owns the Redis client lifecycle.
         _active_semaphores: Maps task_id -> AsyncSemaphore for cleanup.
         _instance_id: Worker instance identifier for metrics.
         _consecutive_release_failures: Per-instance failure counter for alerting.
     """
 
-    def __init__(self, redis_url: str, instance_id: str = "default") -> None:
-        self._redis_url = redis_url
-        self._redis: Redis | None = None
+    def __init__(
+        self,
+        redis_client: Redis,
+        instance_id: str = "default",
+    ) -> None:
+        self._redis: Redis = redis_client
         self._active_semaphores: dict[str, AsyncSemaphore] = {}
         self._instance_id = instance_id
         self._consecutive_release_failures: int = 0
 
     async def startup(self) -> None:
-        self._redis = Redis.from_url(self._redis_url)
-        logger.info("DistributedRateLimitMiddleware started")
+        logger.info("DistributedRateLimitMiddleware started (using shared Redis client)")
 
     async def shutdown(self) -> None:
-        if self._redis:
-            await self._redis.aclose()
-            self._redis = None
         logger.info("DistributedRateLimitMiddleware stopped")
 
     def _get_semaphore(
@@ -168,9 +167,6 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
         max_sleep: int = DEFAULT_MAX_SLEEP,
         expiry: int = DEFAULT_EXPIRY,
     ) -> AsyncSemaphore:
-        if self._redis is None:
-            raise RuntimeError("Middleware not started - call startup() first")
-
         return AsyncSemaphore(
             name=name,
             capacity=capacity,
