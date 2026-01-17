@@ -3,17 +3,21 @@
 Exposes the import pipeline functionality via REST API for programmatic access.
 Import operations run asynchronously via BatchJob infrastructure.
 
-Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
-not by these endpoints. The middleware enforces one active job per type.
+Concurrent job prevention uses dual-layer defense:
+1. DistributedRateLimitMiddleware: Blocks duplicate requests at API boundary
+2. Service-level ActiveJobExistsError: Database check before job creation
+
+Both layers return HTTP 429 when a job of the same type is already active.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
+from src.batch_jobs import ActiveJobExistsError
 from src.batch_jobs.import_service import ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.database import get_db
@@ -213,8 +217,11 @@ async def scrape_candidates_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual scraping runs asynchronously as a background task.
 
-    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
-    If a scrape job is already running, the middleware returns 429 Too Many Requests.
+    Concurrent job prevention uses dual-layer defense:
+    1. DistributedRateLimitMiddleware blocks duplicate requests at API boundary
+    2. Service-level ActiveJobExistsError provides database-level check
+
+    Both return HTTP 429 when a scrape job is already active.
 
     Poll the job status at:
     - GET /api/v1/batch-jobs/{job_id} - Full job status
@@ -227,6 +234,9 @@ async def scrape_candidates_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 429 if a scrape job is already active.
     """
     logger.info(
         "Starting scrape candidates job",
@@ -237,11 +247,17 @@ async def scrape_candidates_endpoint(
         },
     )
 
-    job = await service.start_scrape_job(
-        batch_size=request.batch_size,
-        dry_run=request.dry_run,
-        user_id=str(current_user.id),
-    )
+    try:
+        job = await service.start_scrape_job(
+            batch_size=request.batch_size,
+            dry_run=request.dry_run,
+            user_id=str(current_user.id),
+        )
+    except ActiveJobExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
 
     logger.info(
         "Scrape candidates job created",
@@ -278,8 +294,11 @@ async def promote_candidates_endpoint(
     This endpoint returns immediately with a BatchJob in PENDING status.
     The actual promotion runs asynchronously as a background task.
 
-    Note: Concurrent job rate limiting is handled by DistributedRateLimitMiddleware.
-    If a promotion job is already running, the middleware returns 429 Too Many Requests.
+    Concurrent job prevention uses dual-layer defense:
+    1. DistributedRateLimitMiddleware blocks duplicate requests at API boundary
+    2. Service-level ActiveJobExistsError provides database-level check
+
+    Both return HTTP 429 when a promotion job is already active.
 
     Poll the job status at:
     - GET /api/v1/batch-jobs/{job_id} - Full job status
@@ -292,6 +311,9 @@ async def promote_candidates_endpoint(
 
     Returns:
         BatchJobResponse with job ID for status polling.
+
+    Raises:
+        HTTPException: 429 if a promotion job is already active.
     """
     logger.info(
         "Starting promote candidates job",
@@ -302,11 +324,17 @@ async def promote_candidates_endpoint(
         },
     )
 
-    job = await service.start_promotion_job(
-        batch_size=request.batch_size,
-        dry_run=request.dry_run,
-        user_id=str(current_user.id),
-    )
+    try:
+        job = await service.start_promotion_job(
+            batch_size=request.batch_size,
+            dry_run=request.dry_run,
+            user_id=str(current_user.id),
+        )
+    except ActiveJobExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
 
     logger.info(
         "Promote candidates job created",

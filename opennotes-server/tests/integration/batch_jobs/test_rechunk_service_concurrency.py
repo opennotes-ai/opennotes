@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from src.batch_jobs.constants import RECHUNK_FACT_CHECK_JOB_TYPE
 from src.batch_jobs.models import BatchJob
@@ -111,6 +111,9 @@ class TestRechunkServiceConcurrencyControl:
                 "Concurrent job creation may have bypassed the check."
             )
 
+            await cleanup_session.execute(delete(BatchJob).where(BatchJob.id == active_job_id))
+            await cleanup_session.commit()
+
     @pytest.mark.asyncio
     @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
     async def test_concurrent_job_creation_with_pending_job_blocked(
@@ -178,3 +181,7 @@ class TestRechunkServiceConcurrencyControl:
 
         for _, error in failures:
             assert error.active_job_id == pending_job_id
+
+        async with get_session_maker()() as cleanup_session:
+            await cleanup_session.execute(delete(BatchJob).where(BatchJob.id == pending_job_id))
+            await cleanup_session.commit()

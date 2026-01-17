@@ -163,6 +163,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
 
     rate_limit_middleware = DistributedRateLimitMiddleware(
         redis_url=settings.REDIS_URL,
+        instance_id=settings.INSTANCE_ID,
     )
 
     connection_kwargs: dict[str, Any] = {}
@@ -180,13 +181,13 @@ def _create_broker() -> PullBasedJetStreamBroker:
         )
         .with_result_backend(result_backend)
         .with_middlewares(
-            tracing_middleware, metrics_middleware, rate_limit_middleware, retry_middleware
+            tracing_middleware, rate_limit_middleware, metrics_middleware, retry_middleware
         )
     )
 
     logger.info(
-        "Taskiq broker configured with RetryWithFinalCallbackMiddleware, "
-        "SafeOpenTelemetryMiddleware, DistributedRateLimitMiddleware, and Prometheus metrics"
+        "Taskiq broker configured with middlewares: "
+        "tracing, rate_limit, metrics, retry (in execution order)"
     )
 
     return new_broker

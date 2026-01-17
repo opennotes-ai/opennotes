@@ -25,6 +25,44 @@ from src.fact_checking.import_pipeline.schemas import ClaimReviewRow, Normalized
 
 logger = logging.getLogger(__name__)
 
+
+class RowCountMismatchError(ValueError):
+    """Exception raised when input/output row counts don't match in batch validation.
+
+    This indicates potential silent data loss during validation - every input row
+    should either become a valid candidate or generate an error message.
+
+    Attributes:
+        input_count: Number of rows passed to validation
+        output_count: Sum of candidates + errors (should equal input_count)
+        candidates_count: Number of successfully validated candidates
+        errors_count: Number of validation errors
+        batch_num: Optional batch number for diagnostic context
+    """
+
+    def __init__(
+        self,
+        input_count: int,
+        output_count: int,
+        candidates_count: int,
+        errors_count: int,
+        batch_num: int | None = None,
+    ) -> None:
+        self.input_count = input_count
+        self.output_count = output_count
+        self.candidates_count = candidates_count
+        self.errors_count = errors_count
+        self.batch_num = batch_num
+
+        batch_info = f" (batch {batch_num})" if batch_num is not None else ""
+        message = (
+            f"Row count mismatch{batch_info}: "
+            f"input={input_count}, output={output_count} "
+            f"(candidates={candidates_count}, errors={errors_count})"
+        )
+        super().__init__(message)
+
+
 HUGGINGFACE_DATASET_URL = (
     "https://huggingface.co/datasets/NaughtyConstrictor/fact-check-bureau/"
     "resolve/main/claim_reviews.csv"
@@ -101,6 +139,13 @@ def validate_and_normalize_batch(
             len(candidates),
             len(errors),
             batch_num,
+        )
+        raise RowCountMismatchError(
+            input_count=input_count,
+            output_count=output_count,
+            candidates_count=len(candidates),
+            errors_count=len(errors),
+            batch_num=batch_num,
         )
 
     return candidates, errors

@@ -1,4 +1,54 @@
-"""Unit tests for DistributedRateLimitMiddleware."""
+"""Unit tests for DistributedRateLimitMiddleware.
+
+Coverage Mapping: Lock Manager Tests → Middleware Tests
+=========================================================
+
+This module provides equivalent test coverage for the removed RechunkLockManager
+and related lock test classes. The lock management was consolidated into the
+DistributedRateLimitMiddleware, and these tests verify the middleware provides
+equivalent functionality.
+
+Removed Tests                           | Middleware Equivalents
+----------------------------------------|-----------------------------------------------
+TestRechunkLockManager:                 |
+  - test_lock_acquire_success           | TestDistributedRateLimitMiddleware:
+                                        |   test_pre_execute_acquires_semaphore_when_labels_present
+  - test_lock_acquire_with_resource_id  | TestRateLimitNameTemplateInterpolation:
+                                        |   test_template_variable_is_interpolated_from_kwargs
+  - test_lock_timeout                   | TestMiddlewareBasedLockRelease:
+                                        |   test_semaphore_not_leaked_on_pre_execute_timeout
+  - test_lock_release_success           | TestDistributedRateLimitMiddleware:
+                                        |   test_post_execute_releases_semaphore
+  - test_lock_release_on_error          | TestDistributedRateLimitMiddleware:
+                                        |   test_on_error_releases_semaphore
+  - test_graceful_redis_failure         | Integration: TestRedisUnavailableHandling
+
+TestRechunkTaskLockRelease:             |
+  - test_lock_released_on_success       | TestMiddlewareBasedLockRelease:
+                                        |   test_semaphore_released_on_success_path
+  - test_lock_released_on_failure       | TestMiddlewareBasedLockRelease:
+                                        |   test_semaphore_released_on_error_path
+
+TestRechunkConcurrencyControl:          |
+  - test_concurrent_tasks_serialized    | Integration: TestMiddlewareConcurrencyForBatchJobs:
+                                        |   test_concurrent_tasks_with_same_lock_serialized
+  - test_different_resources_parallel   | Integration: TestMiddlewareConcurrencyForBatchJobs:
+                                        |   test_concurrent_tasks_with_different_locks_parallel
+  - test_failure_releases_for_next      | Integration: TestMiddlewareConcurrencyForBatchJobs:
+                                        |   test_task_failure_releases_lock_for_next_task
+
+TestRechunkKiqFailure:                  |
+  - test_kiq_failure_cleanup            | N/A - kiq-specific retry behavior not replicated
+                                        |   (middleware handles semaphore cleanup via on_error)
+
+Additional coverage provided by middleware tests:
+  - Template variable validation (fail-fast on missing kwargs)
+  - Expiry label propagation to AsyncSemaphore
+  - Semaphore leak prevention (duplicate task_id handling)
+  - Release retry with exponential backoff
+  - Consecutive failure alerting (ERROR logs at threshold)
+  - Prometheus metrics for release failures
+"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,9 +56,11 @@ import pytest
 
 from src.tasks.rate_limit_middleware import (
     RATE_LIMIT_CAPACITY,
+    RATE_LIMIT_EXPIRY,
     RATE_LIMIT_MAX_SLEEP,
     RATE_LIMIT_NAME,
     DistributedRateLimitMiddleware,
+    RateLimitConfigurationError,
     RateLimitExceededError,
 )
 
@@ -142,21 +194,22 @@ class TestRateLimitNameTemplateInterpolation:
         assert actual_name == expected_name
 
     @pytest.mark.asyncio
-    async def test_missing_template_variable_raises_rate_limit_error(self, middleware):
-        """Missing template variables raise RateLimitExceededError (fail-fast)."""
+    async def test_missing_template_variable_raises_configuration_error(self, middleware):
+        """Missing template variables raise RateLimitConfigurationError (fail-fast)."""
         message = MagicMock()
         message.task_id = "test-task-123"
-        message.kwargs = {}
+        message.kwargs = {"other_var": "value"}
         message.labels = {
             RATE_LIMIT_NAME: "task:{missing_var}",
             RATE_LIMIT_CAPACITY: "1",
         }
 
-        with pytest.raises(RateLimitExceededError) as exc_info:
+        with pytest.raises(RateLimitConfigurationError) as exc_info:
             await middleware.pre_execute(message)
 
         assert exc_info.value.rate_limit_name == "task:{missing_var}"
-        assert exc_info.value.max_sleep == 0
+        assert exc_info.value.missing_vars == ["missing_var"]
+        assert exc_info.value.available_kwargs == ["other_var"]
 
     @pytest.mark.asyncio
     async def test_no_template_variable_unchanged(self, middleware):
@@ -303,6 +356,204 @@ class TestSemaphoreReleaseRetry:
 
         assert "ALERT:" in caplog.text
         assert "3 consecutive semaphore release failures" in caplog.text
+
+    def test_calculate_backoff_delay_returns_non_negative(self, middleware):
+        """Backoff delay is always non-negative."""
+        for attempt in range(10):
+            delay = middleware._calculate_backoff_delay(attempt)
+            assert delay >= 0.0, f"Delay should be non-negative, got {delay}"
+
+    def test_calculate_backoff_delay_respects_max(self, middleware):
+        """Backoff delay respects RELEASE_MAX_DELAY."""
+        from src.tasks.rate_limit_middleware import RELEASE_JITTER, RELEASE_MAX_DELAY
+
+        delay = middleware._calculate_backoff_delay(100)
+        max_with_jitter = RELEASE_MAX_DELAY * (1 + RELEASE_JITTER)
+        assert delay <= max_with_jitter, f"Delay {delay} exceeds max {max_with_jitter}"
+
+
+class TestMiddlewareBasedLockRelease:
+    """Tests for middleware-based lock release behavior.
+
+    Coverage mapping from removed RechunkLockManager tests:
+    - Lock release on success path → test_semaphore_released_on_success_path
+    - Lock release on error path → test_semaphore_released_on_error_path
+    - No semaphore leak on acquisition timeout → test_semaphore_not_leaked_on_pre_execute_timeout
+    - Metrics updated on failure → test_release_failure_increments_prometheus_metrics
+    """
+
+    @pytest.fixture
+    def middleware(self):
+        """Create middleware instance."""
+        redis_url = "redis://localhost:6379"
+        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+
+    @pytest.mark.asyncio
+    async def test_semaphore_released_on_success_path(self, middleware):
+        """Verify semaphore cleanup after normal task completion."""
+        message = MagicMock()
+        message.task_id = "success-task-123"
+        message.task_name = "test_task"
+        message.kwargs = {}
+        message.labels = {
+            RATE_LIMIT_NAME: "test:lock:success",
+            RATE_LIMIT_CAPACITY: "1",
+        }
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aenter__ = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(middleware, "_get_semaphore", return_value=mock_semaphore):
+            await middleware.pre_execute(message)
+            assert message.task_id in middleware._active_semaphores
+
+            result = MagicMock()
+            await middleware.post_execute(message, result)
+
+        mock_semaphore.__aexit__.assert_called_once()
+        assert message.task_id not in middleware._active_semaphores
+
+    @pytest.mark.asyncio
+    async def test_semaphore_released_on_error_path(self, middleware):
+        """Verify semaphore cleanup after task exception."""
+        message = MagicMock()
+        message.task_id = "error-task-123"
+        message.task_name = "test_task"
+        message.kwargs = {}
+        message.labels = {
+            RATE_LIMIT_NAME: "test:lock:error",
+            RATE_LIMIT_CAPACITY: "1",
+        }
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aenter__ = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(middleware, "_get_semaphore", return_value=mock_semaphore):
+            await middleware.pre_execute(message)
+            assert message.task_id in middleware._active_semaphores
+
+            error = ValueError("Task failed with exception")
+            result = MagicMock()
+            await middleware.on_error(message, result, error)
+
+        mock_semaphore.__aexit__.assert_called_once()
+        assert message.task_id not in middleware._active_semaphores
+
+    @pytest.mark.asyncio
+    async def test_semaphore_not_leaked_on_pre_execute_timeout(self, middleware):
+        """Verify no semaphore leak when acquisition times out."""
+        from limiters import MaxSleepExceededError
+
+        message = MagicMock()
+        message.task_id = "timeout-task-123"
+        message.task_name = "test_task"
+        message.kwargs = {}
+        message.labels = {
+            RATE_LIMIT_NAME: "test:lock:timeout",
+            RATE_LIMIT_CAPACITY: "1",
+            RATE_LIMIT_MAX_SLEEP: "1",
+        }
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aenter__ = AsyncMock(side_effect=MaxSleepExceededError())
+
+        with (
+            patch.object(middleware, "_get_semaphore", return_value=mock_semaphore),
+            pytest.raises(RateLimitExceededError),
+        ):
+            await middleware.pre_execute(message)
+
+        assert message.task_id not in middleware._active_semaphores
+
+    @pytest.mark.asyncio
+    async def test_release_failure_increments_prometheus_metrics(self, middleware):
+        """Verify Prometheus metrics updated on release failure."""
+        message = MagicMock()
+        message.task_id = "metrics-task-123"
+        message.task_name = "test_task"
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(side_effect=Exception("Redis unavailable"))
+
+        middleware._active_semaphores[message.task_id] = mock_semaphore
+
+        with (
+            patch("src.tasks.rate_limit_middleware.asyncio.sleep", new_callable=AsyncMock),
+            patch(
+                "src.tasks.rate_limit_middleware.semaphore_release_failures_total"
+            ) as mock_metric,
+        ):
+            mock_counter = MagicMock()
+            mock_metric.labels.return_value = mock_counter
+            await middleware._release_semaphore(message)
+
+            mock_metric.labels.assert_called_once_with(
+                task_name="test_task",
+                instance_id="test",
+            )
+            mock_counter.inc.assert_called_once()
+
+
+class TestRateLimitExpiryLabel:
+    """Tests for rate_limit_expiry label propagation to AsyncSemaphore."""
+
+    @pytest.fixture
+    def middleware(self):
+        """Create middleware instance."""
+        redis_url = "redis://localhost:6379"
+        return DistributedRateLimitMiddleware(redis_url, instance_id="test")
+
+    @pytest.mark.asyncio
+    async def test_expiry_label_passed_to_semaphore(self, middleware):
+        """Verify rate_limit_expiry propagates to AsyncSemaphore."""
+        message = MagicMock()
+        message.task_id = "expiry-task-123"
+        message.kwargs = {}
+        message.labels = {
+            RATE_LIMIT_NAME: "test:lock:expiry",
+            RATE_LIMIT_CAPACITY: "2",
+            RATE_LIMIT_MAX_SLEEP: "15",
+            RATE_LIMIT_EXPIRY: "3600",
+        }
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aenter__ = AsyncMock()
+
+        with patch.object(middleware, "_get_semaphore", return_value=mock_semaphore) as mock_get:
+            await middleware.pre_execute(message)
+
+        mock_get.assert_called_once_with(
+            "test:lock:expiry",
+            2,
+            15,
+            3600,
+        )
+
+    @pytest.mark.asyncio
+    async def test_default_expiry_when_label_not_provided(self, middleware):
+        """Verify default expiry (1800) used when rate_limit_expiry not provided."""
+        message = MagicMock()
+        message.task_id = "default-expiry-task-123"
+        message.kwargs = {}
+        message.labels = {
+            RATE_LIMIT_NAME: "test:lock:default_expiry",
+            RATE_LIMIT_CAPACITY: "1",
+        }
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aenter__ = AsyncMock()
+
+        with patch.object(middleware, "_get_semaphore", return_value=mock_semaphore) as mock_get:
+            await middleware.pre_execute(message)
+
+        mock_get.assert_called_once_with(
+            "test:lock:default_expiry",
+            1,
+            30,
+            1800,
+        )
 
 
 class TestSemaphoreLeakPrevention:

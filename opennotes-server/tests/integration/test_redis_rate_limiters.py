@@ -18,9 +18,24 @@ def get_redis_url() -> str:
 
 @pytest.fixture
 async def redis_client():
-    """Create Redis client for testing."""
+    """Create Redis client for testing.
+
+    Cleans up any test keys (matching "test:*") before and after tests.
+    """
     client = Redis.from_url(get_redis_url())
+
+    async def cleanup_test_keys():
+        cursor = 0
+        while True:
+            cursor, keys = await client.scan(cursor, match="test:*", count=100)
+            if keys:
+                await client.delete(*keys)
+            if cursor == 0:
+                break
+
+    await cleanup_test_keys()
     yield client
+    await cleanup_test_keys()
     await client.aclose()
 
 

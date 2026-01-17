@@ -10,6 +10,7 @@ and poll GET /api/v1/batch-jobs/{job_id} for status.
 
 from src.fact_checking.import_pipeline.importer import (
     ImportStats,
+    RowCountMismatchError,
     import_fact_check_bureau,
     upsert_candidates,
     validate_and_normalize_batch,
@@ -34,6 +35,7 @@ __all__ = [
     "ImportFactCheckBureauRequest",
     "ImportStats",
     "NormalizedCandidate",
+    "RowCountMismatchError",
     "bulk_promote_scraped",
     "enqueue_scrape_batch",
     "import_fact_check_bureau",

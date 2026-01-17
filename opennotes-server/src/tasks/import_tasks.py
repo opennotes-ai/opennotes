@@ -50,6 +50,7 @@ _tracer = trace.get_tracer(__name__)
 MAX_STORED_ERRORS = 50
 SCRAPING_TIMEOUT_MINUTES = 120  # 2 hours - allows ~1400 candidates at 5s each
 PROMOTING_TIMEOUT_MINUTES = 120  # 2 hours - allows large batch promotion
+PROGRESS_UPDATE_INTERVAL = 100  # Update progress at least every N items
 
 
 def _check_row_accounting(
@@ -641,6 +642,14 @@ async def process_scrape_batch(  # noqa: PLR0912
 
     Rate limiting is handled by TaskIQ middleware via @register_task labels.
 
+    Connection Pool Considerations:
+        Each concurrent scrape acquires a session from the pool when updating the
+        database. With DEFAULT_SCRAPE_CONCURRENCY=10, DB_POOL_SIZE=5, and
+        DB_POOL_MAX_OVERFLOW=10, the total available connections (15) exceed
+        concurrency, preventing pool exhaustion. The main task also uses connections
+        for progress updates, but session-per-operation pattern with quick commits
+        ensures connections are returned promptly.
+
     Args:
         job_id: UUID string of the BatchJob for status tracking
         batch_size: Number of candidates to process per batch
@@ -690,7 +699,14 @@ async def process_scrape_batch(  # noqa: PLR0912
                 count_query = (
                     select(func.count())
                     .select_from(FactCheckedItemCandidate)
-                    .where(FactCheckedItemCandidate.status == CandidateStatus.PENDING.value)
+                    .where(
+                        FactCheckedItemCandidate.status.in_(
+                            [
+                                CandidateStatus.PENDING.value,
+                                CandidateStatus.SCRAPING.value,
+                            ]
+                        )
+                    )
                     .where(FactCheckedItemCandidate.content.is_(None))
                 )
                 count_result = await db.execute(count_query)
@@ -787,7 +803,7 @@ async def process_scrape_batch(  # noqa: PLR0912
                         )
                         return (False, "Scrape failed")
 
-            progress_interval = max(1, batch_size)
+            progress_interval = max(1, min(batch_size, PROGRESS_UPDATE_INTERVAL))
 
             while True:
                 async with async_session() as db:
@@ -1034,7 +1050,14 @@ async def process_promotion_batch(
                 count_query = (
                     select(func.count())
                     .select_from(FactCheckedItemCandidate)
-                    .where(FactCheckedItemCandidate.status == CandidateStatus.SCRAPED.value)
+                    .where(
+                        FactCheckedItemCandidate.status.in_(
+                            [
+                                CandidateStatus.SCRAPED.value,
+                                CandidateStatus.PROMOTING.value,
+                            ]
+                        )
+                    )
                     .where(FactCheckedItemCandidate.content.is_not(None))
                     .where(FactCheckedItemCandidate.content != "")
                     .where(FactCheckedItemCandidate.rating.is_not(None))
@@ -1084,7 +1107,7 @@ async def process_promotion_batch(
 
                 return {"status": "completed", **final_stats}
 
-            progress_interval = max(1, batch_size)
+            progress_interval = max(1, min(batch_size, PROGRESS_UPDATE_INTERVAL))
             while True:
                 async with async_session() as db:
                     subquery = (

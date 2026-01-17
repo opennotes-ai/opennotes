@@ -17,9 +17,9 @@ Label Configuration:
 
 Template Variable Requirements:
     Template variables in rate_limit_name MUST be provided as task kwargs.
-    If a required variable is missing, RateLimitExceededError is raised
-    immediately (fail-fast behavior) with max_sleep=0 to indicate a
-    configuration error rather than a timeout.
+    If a required variable is missing, RateLimitConfigurationError is raised
+    immediately (fail-fast behavior). This exception type clearly indicates
+    a configuration error vs. a timeout, allowing different retry behavior.
 
     Known templates and their required kwargs:
     - "rechunk:previously_seen:{community_server_id}" requires: community_server_id
@@ -75,6 +75,25 @@ class RateLimitExceededError(Exception):
         )
 
 
+class RateLimitConfigurationError(Exception):
+    """Raised when rate limit configuration is invalid (e.g., missing template variables).
+
+    This is a configuration error, not a timeout. The task should not be retried
+    without fixing the configuration.
+    """
+
+    def __init__(
+        self, rate_limit_name: str, missing_vars: list[str], available_kwargs: list[str]
+    ) -> None:
+        self.rate_limit_name = rate_limit_name
+        self.missing_vars = missing_vars
+        self.available_kwargs = available_kwargs
+        super().__init__(
+            f"Rate limit template '{rate_limit_name}' has undefined variables: {missing_vars}. "
+            f"Available kwargs: {available_kwargs}"
+        )
+
+
 RATE_LIMIT_NAME = "rate_limit_name"
 RATE_LIMIT_CAPACITY = "rate_limit_capacity"
 RATE_LIMIT_MAX_SLEEP = "rate_limit_max_sleep"
@@ -92,7 +111,38 @@ CONSECUTIVE_FAILURES_ALERT_THRESHOLD = 3
 
 
 class DistributedRateLimitMiddleware(TaskiqMiddleware):
-    """TaskIQ middleware for distributed rate limiting using redis-rate-limiters."""
+    """TaskIQ middleware for distributed rate limiting using redis-rate-limiters.
+
+    Semaphore Lifecycle (_active_semaphores):
+        This dict tracks in-flight semaphores for proper cleanup. Entries are:
+        - Added in pre_execute() after successful semaphore.__aenter__()
+        - Removed in _release_semaphore() via pop() during post_execute/on_error
+
+        Leak Prevention:
+        - If the same task_id appears twice (e.g., retry before cleanup), we preserve
+          the original semaphore reference to avoid orphaning it. The duplicate
+          detection at lines 173-182 prevents this edge case.
+        - If a catastrophic failure prevents _release_semaphore() from running,
+          dict entries remain but the Redis key TTL (default 1800s) ensures the
+          actual lock eventually expires. This is acceptable because:
+          a) Task IDs are unique UUIDs - no key reuse conflicts
+          b) Dict size is bounded by max concurrent tasks (typically hundreds)
+          c) Process restart naturally clears in-memory dict
+
+    Failure Tracking (_consecutive_release_failures):
+        This counter is intentionally per-worker-instance, not cross-worker:
+        - Cross-worker tracking via Redis would add latency to every release
+        - Per-worker alerts (threshold=3) still effectively detect Redis issues
+        - Each worker independently monitors its own connectivity health
+        - The metric semaphore_release_failures_total provides aggregate visibility
+
+    Attributes:
+        _redis_url: Redis connection URL.
+        _redis: Async Redis client instance.
+        _active_semaphores: Maps task_id -> AsyncSemaphore for cleanup.
+        _instance_id: Worker instance identifier for metrics.
+        _consecutive_release_failures: Per-instance failure counter for alerting.
+    """
 
     def __init__(self, redis_url: str, instance_id: str = "default") -> None:
         self._redis_url = redis_url
@@ -140,11 +190,15 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
             try:
                 rate_limit_name = rate_limit_name.format_map(message.kwargs)
             except KeyError as e:
+                missing_var = str(e).strip("'\"")
+                available = list(message.kwargs.keys())
                 logger.error(
-                    f"Missing required template variable for rate_limit_name '{rate_limit_name}': {e}. "
-                    f"Available kwargs: {list(message.kwargs.keys())}"
+                    f"Rate limit configuration error: template '{rate_limit_name}' "
+                    f"requires variable '{missing_var}' but available kwargs are: {available}"
                 )
-                raise RateLimitExceededError(rate_limit_name, max_sleep=0)
+                raise RateLimitConfigurationError(
+                    rate_limit_name, missing_vars=[missing_var], available_kwargs=available
+                )
 
         capacity = int(labels.get(RATE_LIMIT_CAPACITY, DEFAULT_CAPACITY))
         max_sleep = int(labels.get(RATE_LIMIT_MAX_SLEEP, DEFAULT_MAX_SLEEP))
@@ -188,6 +242,22 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
     ) -> None:
         await self._release_semaphore(message)
 
+    def _calculate_backoff_delay(self, attempt: int) -> float:
+        """Calculate exponential backoff delay with jitter.
+
+        Args:
+            attempt: Zero-based attempt number.
+
+        Returns:
+            Delay in seconds, guaranteed to be non-negative.
+        """
+        base_delay = max(0.0, RELEASE_BASE_DELAY)
+        delay = min(base_delay * (2**attempt), RELEASE_MAX_DELAY)
+        if RELEASE_JITTER > 0 and delay > 0:
+            jitter = delay * random.uniform(-RELEASE_JITTER, RELEASE_JITTER)
+            delay = max(0.0, delay + jitter)
+        return delay
+
     async def _release_with_retry(self, semaphore: AsyncSemaphore, task_name: str) -> bool:
         """Release semaphore with retry logic and exponential backoff.
 
@@ -205,9 +275,7 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
                 return True
             except Exception as e:
                 if attempt < RELEASE_MAX_ATTEMPTS - 1:
-                    delay = min(RELEASE_BASE_DELAY * (2**attempt), RELEASE_MAX_DELAY)
-                    jitter = delay * random.uniform(-RELEASE_JITTER, RELEASE_JITTER)
-                    wait_time = delay + jitter
+                    wait_time = self._calculate_backoff_delay(attempt)
                     logger.debug(
                         f"Semaphore release attempt {attempt + 1}/{RELEASE_MAX_ATTEMPTS} "
                         f"failed for {task_name}: {e}. Retrying in {wait_time:.3f}s"

@@ -115,12 +115,18 @@ class ImportBatchJobService:
                 redis_url=settings.REDIS_URL,
             )
         except Exception as e:
-            await self._batch_job_service.fail_job(
-                job.id,
-                error_summary={"error": str(e), "stage": "task_dispatch"},
-            )
-            await self._session.commit()
-            await self._session.refresh(job)
+            try:
+                await self._batch_job_service.fail_job(
+                    job.id,
+                    error_summary={"error": str(e), "stage": "task_dispatch"},
+                )
+                await self._session.commit()
+                await self._session.refresh(job)
+            except Exception:
+                logger.exception(
+                    "Failed to mark job as failed after task dispatch error",
+                    extra={"job_id": str(job.id)},
+                )
             raise
 
         return job
@@ -197,12 +203,18 @@ class ImportBatchJobService:
                 concurrency=DEFAULT_SCRAPE_CONCURRENCY,
             )
         except Exception as e:
-            await self._batch_job_service.fail_job(
-                job.id,
-                error_summary={"error": str(e), "stage": "task_dispatch"},
-            )
-            await self._session.commit()
-            await self._session.refresh(job)
+            try:
+                await self._batch_job_service.fail_job(
+                    job.id,
+                    error_summary={"error": str(e), "stage": "task_dispatch"},
+                )
+                await self._session.commit()
+                await self._session.refresh(job)
+            except Exception:
+                logger.exception(
+                    "Failed to mark job as failed after task dispatch error",
+                    extra={"job_id": str(job.id)},
+                )
             raise
 
         return job
@@ -266,12 +278,18 @@ class ImportBatchJobService:
                 redis_url=settings.REDIS_URL,
             )
         except Exception as e:
-            await self._batch_job_service.fail_job(
-                job.id,
-                error_summary={"error": str(e), "stage": "task_dispatch"},
-            )
-            await self._session.commit()
-            await self._session.refresh(job)
+            try:
+                await self._batch_job_service.fail_job(
+                    job.id,
+                    error_summary={"error": str(e), "stage": "task_dispatch"},
+                )
+                await self._session.commit()
+                await self._session.refresh(job)
+            except Exception:
+                logger.exception(
+                    "Failed to mark job as failed after task dispatch error",
+                    extra={"job_id": str(job.id)},
+                )
             raise
 
         return job

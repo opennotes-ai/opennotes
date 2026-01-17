@@ -10,6 +10,43 @@ Test coverage includes:
 - Different communities can run concurrent rechunk jobs
 - Graceful handling when Redis unavailable
 - Proper cleanup when task fails
+
+Coverage Mapping: Lock Integration Tests → Middleware Integration Tests
+========================================================================
+
+This module provides integration test coverage equivalent to the removed
+lock manager tests, verifying real Redis behavior.
+
+Removed Tests                           | Middleware Equivalents
+----------------------------------------|-----------------------------------------------
+TestRechunkLockIntegration:             |
+  - test_real_redis_lock                | TestDistributedRateLimitMiddlewareIntegration:
+                                        |   test_pre_execute_acquires_real_semaphore
+  - test_lock_timeout_with_redis        | TestMiddleware429Behavior:
+                                        |   test_rate_limit_exceeded_when_semaphore_unavailable
+  - test_concurrent_lock_contention     | TestMiddlewareConcurrencyForBatchJobs:
+                                        |   test_concurrent_tasks_with_same_lock_serialized
+
+TestRechunkConcurrencyIntegration:      |
+  - test_per_community_isolation        | TestConcurrentRechunkForDifferentCommunities:
+                                        |   test_different_communities_can_run_concurrent_rechunk
+  - test_same_community_blocked         | TestConcurrentRechunkForDifferentCommunities:
+                                        |   test_same_community_blocked_when_rechunk_in_progress
+  - test_parallel_timing                | TestConcurrentRechunkForDifferentCommunities:
+                                        |   test_concurrent_execution_timing_for_different_communities
+
+TestRedisFailureHandling:               |
+  - test_startup_required               | TestRedisUnavailableHandling:
+                                        |   test_raises_runtime_error_when_not_started
+  - test_shutdown_clears_connection     | TestRedisUnavailableHandling:
+                                        |   test_shutdown_clears_redis_connection
+  - test_non_rate_limited_unaffected    | TestRedisUnavailableHandling:
+                                        |   test_tasks_without_rate_limit_work_even_before_startup
+
+Additional integration coverage:
+  - TestMiddlewareConcurrencyForBatchJobs: Real semaphore serialization
+  - TestConsecutiveFailureAlerts: Alert logging at failure threshold
+  - TestCleanupOnTaskFailure: Semaphore release on task errors
 """
 
 import asyncio
@@ -25,6 +62,7 @@ from src.tasks.rate_limit_middleware import (
     RATE_LIMIT_MAX_SLEEP,
     RATE_LIMIT_NAME,
     DistributedRateLimitMiddleware,
+    RateLimitConfigurationError,
     RateLimitExceededError,
 )
 
@@ -148,7 +186,7 @@ class TestDistributedRateLimitMiddlewareIntegration:
         assert message.task_id in middleware._active_semaphores
 
         error = ValueError("test error")
-        await middleware.on_error(message, error, error)
+        await middleware.on_error(message, MagicMock(), error)
         assert message.task_id not in middleware._active_semaphores
 
     @pytest.mark.asyncio
@@ -412,8 +450,8 @@ class TestTemplateVariableFailFast:
     """Tests for fail-fast behavior when template variables are missing."""
 
     @pytest.mark.asyncio
-    async def test_missing_template_variable_raises_error_immediately(self, middleware):
-        """Verify RateLimitExceededError is raised immediately when template variable missing.
+    async def test_missing_template_variable_raises_configuration_error(self, middleware):
+        """Verify RateLimitConfigurationError is raised when template variable missing.
 
         This ensures fail-fast behavior: tasks with missing template variables
         fail immediately rather than continuing with un-interpolated lock names.
@@ -427,11 +465,11 @@ class TestTemplateVariableFailFast:
             kwargs={},
         )
 
-        with pytest.raises(RateLimitExceededError) as exc_info:
+        with pytest.raises(RateLimitConfigurationError) as exc_info:
             await middleware.pre_execute(message)
 
         assert exc_info.value.rate_limit_name == "rechunk:previously_seen:{community_server_id}"
-        assert exc_info.value.max_sleep == 0
+        assert exc_info.value.missing_vars == ["community_server_id"]
 
     @pytest.mark.asyncio
     async def test_missing_one_of_multiple_template_variables_raises_error(self, middleware):
@@ -444,11 +482,12 @@ class TestTemplateVariableFailFast:
             kwargs={"job_type": "rechunk"},
         )
 
-        with pytest.raises(RateLimitExceededError) as exc_info:
+        with pytest.raises(RateLimitConfigurationError) as exc_info:
             await middleware.pre_execute(message)
 
         assert exc_info.value.rate_limit_name == "task:{job_type}:{community_id}"
-        assert exc_info.value.max_sleep == 0
+        assert exc_info.value.missing_vars == ["community_id"]
+        assert exc_info.value.available_kwargs == ["job_type"]
 
 
 class TestConcurrentRechunkForDifferentCommunities:
@@ -622,6 +661,182 @@ class TestRedisUnavailableHandling:
 
         result = await mw.pre_execute(message)
         assert result == message
+
+
+class TestMiddlewareConcurrencyForBatchJobs:
+    """Tests for middleware-based concurrency control for batch jobs.
+
+    Coverage mapping from removed RechunkTaskLockRelease tests:
+    - Concurrent tasks with same lock serialized → test_concurrent_tasks_with_same_lock_serialized
+    - Concurrent tasks with different locks parallel → test_concurrent_tasks_with_different_locks_parallel
+    - Task failure releases lock for next task → test_task_failure_releases_lock_for_next_task
+    """
+
+    @pytest.mark.asyncio
+    async def test_concurrent_tasks_with_same_lock_serialized(self, middleware):
+        """Verify capacity=1 serializes tasks with the same lock name."""
+        lock_name = f"test:batch:serialize:{uuid.uuid4()}"
+        execution_order = []
+
+        async def batch_task(task_num: int, delay: float):
+            message = create_message(
+                {
+                    RATE_LIMIT_NAME: lock_name,
+                    RATE_LIMIT_CAPACITY: "1",
+                    RATE_LIMIT_MAX_SLEEP: "10",
+                }
+            )
+            await middleware.pre_execute(message)
+            try:
+                execution_order.append(f"start_{task_num}")
+                await asyncio.sleep(delay)
+                execution_order.append(f"end_{task_num}")
+            finally:
+                await middleware.post_execute(message, MagicMock())
+
+        await asyncio.gather(
+            batch_task(1, 0.05),
+            batch_task(2, 0.05),
+            batch_task(3, 0.05),
+        )
+
+        start_count = sum(1 for e in execution_order if e.startswith("start"))
+        end_count = sum(1 for e in execution_order if e.startswith("end"))
+        assert start_count == 3
+        assert end_count == 3
+
+        for i in range(0, len(execution_order) - 1, 2):
+            if execution_order[i].startswith("start"):
+                expected_end = execution_order[i].replace("start", "end")
+                assert execution_order[i + 1] == expected_end
+
+    @pytest.mark.asyncio
+    async def test_concurrent_tasks_with_different_locks_parallel(self, middleware):
+        """Verify isolation between different lock names (communities)."""
+        lock_base = f"test:batch:parallel:{uuid.uuid4()}"
+        execution_times = {}
+
+        async def batch_task(lock_suffix: str, delay: float):
+            message = create_message(
+                {
+                    RATE_LIMIT_NAME: f"{lock_base}:{lock_suffix}",
+                    RATE_LIMIT_CAPACITY: "1",
+                    RATE_LIMIT_MAX_SLEEP: "10",
+                }
+            )
+            import time
+
+            start_time = time.time()
+            await middleware.pre_execute(message)
+            try:
+                await asyncio.sleep(delay)
+            finally:
+                await middleware.post_execute(message, MagicMock())
+            execution_times[lock_suffix] = time.time() - start_time
+
+        import time
+
+        total_start = time.time()
+        await asyncio.gather(
+            batch_task("lock_a", 0.1),
+            batch_task("lock_b", 0.1),
+            batch_task("lock_c", 0.1),
+        )
+        total_time = time.time() - total_start
+
+        assert total_time < 0.3, f"Expected parallel execution (<0.3s), got {total_time}s"
+
+    @pytest.mark.asyncio
+    async def test_task_failure_releases_lock_for_next_task(self, middleware):
+        """Verify cleanup enables subsequent task after failure."""
+        lock_name = f"test:batch:failure_release:{uuid.uuid4()}"
+
+        message1 = create_message(
+            {
+                RATE_LIMIT_NAME: lock_name,
+                RATE_LIMIT_CAPACITY: "1",
+                RATE_LIMIT_MAX_SLEEP: "5",
+            }
+        )
+
+        await middleware.pre_execute(message1)
+        error = ValueError("Simulated task failure")
+        await middleware.on_error(message1, MagicMock(), error)
+
+        message2 = create_message(
+            {
+                RATE_LIMIT_NAME: lock_name,
+                RATE_LIMIT_CAPACITY: "1",
+                RATE_LIMIT_MAX_SLEEP: "2",
+            }
+        )
+        await middleware.pre_execute(message2)
+        assert message2.task_id in middleware._active_semaphores
+
+        await middleware.post_execute(message2, MagicMock())
+
+
+class TestConsecutiveFailureAlerts:
+    """Tests for consecutive release failure alerts.
+
+    Coverage mapping from removed RechunkConcurrencyControl tests:
+    - Consecutive release failures log alert → test_consecutive_release_failures_log_alert
+    - Success resets counter → test_success_resets_consecutive_failure_counter
+    """
+
+    @pytest.mark.asyncio
+    async def test_consecutive_release_failures_log_alert(self, middleware, caplog):
+        """Verify ERROR log at threshold (3 consecutive failures)."""
+        import logging
+        from unittest.mock import AsyncMock, patch
+
+        message = MagicMock()
+        message.task_id = "alert-test-task"
+        message.task_name = "test_task"
+
+        mock_semaphore = AsyncMock()
+        mock_semaphore.__aexit__ = AsyncMock(side_effect=Exception("Redis error"))
+
+        with (
+            patch("src.tasks.rate_limit_middleware.asyncio.sleep", new_callable=AsyncMock),
+            caplog.at_level(logging.ERROR),
+        ):
+            for i in range(3):
+                middleware._active_semaphores[f"alert-task-{i}"] = mock_semaphore
+                message.task_id = f"alert-task-{i}"
+                await middleware._release_semaphore(message)
+
+        assert "ALERT:" in caplog.text
+        assert "3 consecutive semaphore release failures" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_success_resets_consecutive_failure_counter(self, middleware):
+        """Verify counter reset on success."""
+        from unittest.mock import AsyncMock, patch
+
+        message = MagicMock()
+        message.task_name = "test_task"
+
+        fail_semaphore = AsyncMock()
+        fail_semaphore.__aexit__ = AsyncMock(side_effect=Exception("error"))
+        success_semaphore = AsyncMock()
+        success_semaphore.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("src.tasks.rate_limit_middleware.asyncio.sleep", new_callable=AsyncMock):
+            middleware._active_semaphores["fail-task-1"] = fail_semaphore
+            message.task_id = "fail-task-1"
+            await middleware._release_semaphore(message)
+            assert middleware._consecutive_release_failures == 1
+
+            middleware._active_semaphores["fail-task-2"] = fail_semaphore
+            message.task_id = "fail-task-2"
+            await middleware._release_semaphore(message)
+            assert middleware._consecutive_release_failures == 2
+
+            middleware._active_semaphores["success-task"] = success_semaphore
+            message.task_id = "success-task"
+            await middleware._release_semaphore(message)
+            assert middleware._consecutive_release_failures == 0
 
 
 class TestCleanupOnTaskFailure:

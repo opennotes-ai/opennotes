@@ -442,3 +442,198 @@ class TestKiqDispatchFailure:
 
         assert mock_session.commit.call_count == 2  # Once for create, once for fail
         mock_session.refresh.assert_called_once_with(mock_job)
+
+
+@pytest.mark.unit
+class TestExceptionHandlingDuringJobFailure:
+    """Tests for exception handling when fail_job itself raises.
+
+    These tests verify that when marking a job as failed also fails,
+    the original exception is preserved and re-raised.
+    """
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.import_service.logger")
+    @patch("src.tasks.import_tasks.process_fact_check_import")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_import_job_preserves_original_exception_when_fail_job_raises(
+        self,
+        mock_get_settings,
+        mock_task,
+        mock_logger,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_import_job re-raises original exception even if fail_job raises."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        original_error = RuntimeError("NATS connection failed")
+        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
+
+        with pytest.raises(RuntimeError, match="NATS connection failed"):
+            await import_service.start_import_job()
+
+        mock_logger.exception.assert_called_once()
+        call_args = mock_logger.exception.call_args
+        assert "Failed to mark job as failed" in call_args[0][0]
+        assert call_args[1]["extra"]["job_id"] == str(job_id)
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.import_service.logger")
+    @patch("src.tasks.import_tasks.process_scrape_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_scrape_job_preserves_original_exception_when_fail_job_raises(
+        self,
+        mock_get_settings,
+        mock_task,
+        mock_logger,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_scrape_job re-raises original exception even if fail_job raises."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        original_error = RuntimeError("NATS connection failed")
+        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
+
+        with pytest.raises(RuntimeError, match="NATS connection failed"):
+            await import_service.start_scrape_job()
+
+        mock_logger.exception.assert_called_once()
+        call_args = mock_logger.exception.call_args
+        assert "Failed to mark job as failed" in call_args[0][0]
+        assert call_args[1]["extra"]["job_id"] == str(job_id)
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.import_service.logger")
+    @patch("src.tasks.import_tasks.process_promotion_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_promotion_job_preserves_original_exception_when_fail_job_raises(
+        self,
+        mock_get_settings,
+        mock_task,
+        mock_logger,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_promotion_job re-raises original exception even if fail_job raises."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        original_error = ConnectionError("Redis unavailable")
+        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
+
+        with pytest.raises(ConnectionError, match="Redis unavailable"):
+            await import_service.start_promotion_job()
+
+        mock_logger.exception.assert_called_once()
+        call_args = mock_logger.exception.call_args
+        assert "Failed to mark job as failed" in call_args[0][0]
+        assert call_args[1]["extra"]["job_id"] == str(job_id)
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.import_service.logger")
+    @patch("src.tasks.import_tasks.process_scrape_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_scrape_job_preserves_original_exception_when_commit_raises(
+        self,
+        mock_get_settings,
+        mock_task,
+        mock_logger,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_scrape_job re-raises original exception even if commit raises during failure handling."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        original_error = RuntimeError("NATS connection failed")
+        mock_task.kiq = AsyncMock(side_effect=original_error)
+
+        commit_call_count = 0
+
+        async def commit_side_effect():
+            nonlocal commit_call_count
+            commit_call_count += 1
+            if commit_call_count == 2:
+                raise ValueError("Commit failed after fail_job")
+
+        mock_session.commit = AsyncMock(side_effect=commit_side_effect)
+
+        with pytest.raises(RuntimeError, match="NATS connection failed"):
+            await import_service.start_scrape_job()
+
+        mock_logger.exception.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.import_service.logger")
+    @patch("src.tasks.import_tasks.process_promotion_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_exception_type_preserved_not_wrapped(
+        self,
+        mock_get_settings,
+        mock_task,
+        mock_logger,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """Verify the exact exception type is preserved, not wrapped in another exception."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        class CustomTaskError(Exception):
+            pass
+
+        original_error = CustomTaskError("Task dispatch failed")
+        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("Nested failure"))
+
+        caught_exception = None
+        try:
+            await import_service.start_promotion_job()
+        except Exception as e:
+            caught_exception = e
+
+        assert caught_exception is original_error
+        assert type(caught_exception) is CustomTaskError
+        assert str(caught_exception) == "Task dispatch failed"

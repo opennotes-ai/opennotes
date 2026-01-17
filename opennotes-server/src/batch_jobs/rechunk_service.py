@@ -15,11 +15,12 @@ Orphan Recovery:
     PENDING/IN_PROGRESS due to worker crashes). Consider running periodically.
 """
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.batch_jobs.constants import (
@@ -43,6 +44,23 @@ from src.tasks.rechunk_tasks import (
 logger = get_logger(__name__)
 
 DEFAULT_STALE_JOB_THRESHOLD_HOURS = 2
+
+
+def _job_type_lock_key(job_type: str) -> int:
+    """
+    Generate a deterministic int64 lock key from a job_type string.
+
+    Uses MD5 hash (first 8 bytes interpreted as signed int64) to generate
+    a consistent lock key for pg_advisory_xact_lock.
+
+    Args:
+        job_type: The job type string (e.g., "rechunk:fact_check")
+
+    Returns:
+        A signed 64-bit integer suitable for PostgreSQL advisory locks
+    """
+    hash_bytes = hashlib.md5(job_type.encode()).digest()[:8]
+    return int.from_bytes(hash_bytes, byteorder="big", signed=True)
 
 
 class ActiveJobExistsError(Exception):
@@ -91,9 +109,26 @@ class RechunkBatchJobService:
         This prevents creating orphaned jobs by ensuring we don't create a new
         job when one is already pending or running.
 
-        Uses SELECT FOR UPDATE to acquire a row-level lock on any active job found,
-        preventing TOCTOU race conditions where concurrent requests could both pass
-        the check before either creates a new job.
+        Concurrency Control:
+            This method uses a two-layer locking strategy:
+
+            1. **Advisory Lock (Primary)**: pg_advisory_xact_lock acquires an
+               exclusive transaction-level lock keyed by job_type. This prevents
+               TOCTOU race conditions even when no active job rows exist yet.
+               The lock is automatically released when the transaction commits
+               or rolls back.
+
+            2. **SELECT FOR UPDATE (Secondary)**: Defense-in-depth check that
+               locks any existing active job row. This provides additional
+               safety against edge cases and makes the intent explicit.
+
+        Global Serialization:
+            The advisory lock is global per job_type, meaning all job creation
+            requests for the same job_type are serialized across the entire
+            system, regardless of community_server_id. This is intentional:
+            - Prevents system overload from concurrent batch operations
+            - Simplifies resource management and capacity planning
+            - Matches the "one active job per type" business rule
 
         Args:
             job_type: The job type to check
@@ -101,6 +136,11 @@ class RechunkBatchJobService:
         Raises:
             ActiveJobExistsError: If an active job exists for this type
         """
+        lock_key = _job_type_lock_key(job_type)
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=lock_key)
+        )
+
         query = (
             select(BatchJob)
             .where(
@@ -210,6 +250,14 @@ class RechunkBatchJobService:
         Checks for active jobs first, then creates a BatchJob and dispatches
         the TaskIQ task.
 
+        Global Serialization:
+            Jobs of this type are serialized globally across all community servers.
+            Even though community_server_id is provided, only one previously_seen
+            rechunk job can run at a time system-wide. This is intentional:
+            - Prevents system overload from concurrent batch operations
+            - Simplifies resource management and capacity planning
+            - Ensures predictable system behavior under load
+
         Args:
             community_server_id: Community server ID for LLM credentials
             batch_size: Number of items to process per batch
@@ -219,6 +267,7 @@ class RechunkBatchJobService:
 
         Raises:
             ActiveJobExistsError: If a previously seen rechunk job is already active
+                (regardless of community_server_id)
         """
         await self._check_no_active_job(RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE)
 
@@ -314,12 +363,19 @@ class RechunkBatchJobService:
         Mark stale jobs as failed.
 
         Jobs are considered stale if they have been in PENDING or IN_PROGRESS status
-        for longer than the specified threshold. This recovers from scenarios like
-        worker crashes or network failures that left jobs in a non-terminal state.
+        for longer than the specified threshold (based on updated_at). This recovers
+        from scenarios like worker crashes or network failures that left jobs in a
+        non-terminal state.
+
+        Note:
+            Uses updated_at (not created_at) to determine staleness. This ensures
+            that jobs actively reporting progress are not incorrectly marked as stale,
+            even if they were created long ago. A job is only considered stale if it
+            has stopped updating for the threshold period.
 
         Args:
             stale_threshold_hours: Hours after which a non-terminal job is considered
-                stale. Defaults to 2 hours.
+                stale (based on last update). Defaults to 2 hours.
 
         Returns:
             List of jobs that were marked as failed
@@ -339,7 +395,7 @@ class RechunkBatchJobService:
                 BatchJob.status == BatchJobStatus.PENDING.value,
                 BatchJob.status == BatchJobStatus.IN_PROGRESS.value,
             ),
-            BatchJob.created_at < cutoff_time,
+            BatchJob.updated_at < cutoff_time,
         )
         result = await self._session.execute(query)
         stale_jobs = list(result.scalars().all())
