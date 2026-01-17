@@ -136,21 +136,22 @@ def _create_broker() -> PullBasedJetStreamBroker:
     )
 
     redis_kwargs = get_redis_connection_kwargs(settings.REDIS_URL)
-    ssl_context = redis_kwargs.get("ssl_context")
+    ssl_ca_certs = redis_kwargs.get("ssl_ca_certs")
 
     result_backend_kwargs: dict[str, Any] = {
         "redis_url": settings.REDIS_URL,
         "result_ex_time": settings.TASKIQ_RESULT_EXPIRY,
     }
-    if ssl_context is not None:
-        result_backend_kwargs["ssl_context"] = ssl_context
-        logger.info("TaskIQ Redis result backend configured with SSL context (CA cert)")
+    if ssl_ca_certs is not None:
+        result_backend_kwargs["ssl_ca_certs"] = ssl_ca_certs
+        result_backend_kwargs["ssl_cert_reqs"] = redis_kwargs.get("ssl_cert_reqs", "required")
+        logger.info("TaskIQ Redis result backend configured with SSL CA cert")
 
     result_backend: RedisAsyncResultBackend = RedisAsyncResultBackend(**result_backend_kwargs)
 
     shared_redis_client = aioredis.Redis.from_url(settings.REDIS_URL, **redis_kwargs)
-    if ssl_context is not None:
-        logger.info("Shared Redis client configured with SSL context (CA cert)")
+    if ssl_ca_certs is not None:
+        logger.info("Shared Redis client configured with SSL CA cert")
 
     retry_middleware = RetryWithFinalCallbackMiddleware(
         default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,

@@ -1,6 +1,5 @@
 import logging
 import os
-import ssl
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -72,8 +71,8 @@ def get_redis_connection_kwargs(
                     "Download it from GCP Console or via: "
                     "gcloud redis instances describe INSTANCE_ID --region=REGION"
                 )
-            ssl_context = ssl.create_default_context(cafile=str(ca_path))
-            kwargs["ssl_context"] = ssl_context
+            kwargs["ssl_ca_certs"] = str(ca_path)
+            kwargs["ssl_cert_reqs"] = "required"
         else:
             raise ValueError(
                 "REDIS_CA_CERT_PATH must be set for TLS connections (rediss://). "

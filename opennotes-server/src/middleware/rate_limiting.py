@@ -1,5 +1,4 @@
 import logging
-import ssl
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +18,7 @@ def _get_storage_options() -> dict[str, Any]:
         if settings.REDIS_CA_CERT_PATH:
             ca_path = Path(settings.REDIS_CA_CERT_PATH)
             if ca_path.exists():
-                ssl_context = ssl.create_default_context(cafile=str(ca_path))
-                return {"ssl_context": ssl_context}
+                return {"ssl_ca_certs": str(ca_path), "ssl_cert_reqs": "required"}
             logger.warning(f"Redis CA cert not found at {settings.REDIS_CA_CERT_PATH}")
         else:
             logger.warning("REDIS_CA_CERT_PATH not set for TLS connection")

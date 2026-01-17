@@ -26,7 +26,7 @@ class TestRedisTLSConfiguration:
             patch("src.cache.redis_client.settings.REDIS_REQUIRE_TLS", True),
         ):
             kwargs = get_redis_connection_kwargs("redis://localhost:6379")
-            assert "ssl_context" not in kwargs
+            assert "ssl_ca_certs" not in kwargs
 
     def test_tls_requires_ca_cert_path(self) -> None:
         """TLS connections require REDIS_CA_CERT_PATH to be set."""
@@ -51,26 +51,21 @@ class TestRedisTLSConfiguration:
         ):
             get_redis_connection_kwargs("rediss://secure-redis:6380")
 
-    def test_tls_configures_ssl_context_with_ca_cert(self) -> None:
-        """TLS connections configure SSL context with CA certificate."""
+    def test_tls_configures_ssl_ca_certs_with_ca_cert(self) -> None:
+        """TLS connections configure ssl_ca_certs with CA certificate path."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".crt", delete=False) as ca_file:
             ca_file.write("placeholder")
             ca_path = ca_file.name
 
         try:
-            mock_ssl_context = object()
             with (
                 patch("src.cache.redis_client.settings.ENVIRONMENT", "production"),
                 patch("src.cache.redis_client.settings.REDIS_REQUIRE_TLS", True),
                 patch("src.cache.redis_client.settings.REDIS_CA_CERT_PATH", ca_path),
-                patch(
-                    "src.cache.redis_client.ssl.create_default_context",
-                    return_value=mock_ssl_context,
-                ) as mock_create_ctx,
             ):
                 kwargs = get_redis_connection_kwargs("rediss://secure-redis:6380")
-                assert kwargs["ssl_context"] is mock_ssl_context
-                mock_create_ctx.assert_called_once_with(cafile=ca_path)
+                assert kwargs["ssl_ca_certs"] == ca_path
+                assert kwargs["ssl_cert_reqs"] == "required"
         finally:
             Path(ca_path).unlink()
 
@@ -81,4 +76,4 @@ class TestRedisTLSConfiguration:
             patch("src.cache.redis_client.settings.REDIS_REQUIRE_TLS", False),
         ):
             kwargs = get_redis_connection_kwargs("redis://localhost:6379")
-            assert "ssl_context" not in kwargs
+            assert "ssl_ca_certs" not in kwargs
