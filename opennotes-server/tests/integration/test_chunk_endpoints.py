@@ -230,7 +230,7 @@ class TestFactCheckRechunkEndpoint:
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_service_account_can_initiate_rechunk(
         self,
         mock_task,
@@ -281,7 +281,7 @@ class TestFactCheckRechunkEndpoint:
             assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_batch_size_parameter_accepted(
         self,
         mock_task,
@@ -353,7 +353,7 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
     async def test_service_account_can_initiate_rechunk(
         self,
         mock_task,
@@ -409,7 +409,7 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
     async def test_batch_size_parameter_accepted(
         self,
         mock_task,
@@ -469,7 +469,7 @@ class TestRechunkEndpointDatabaseIntegration:
     """
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_fact_check_rechunk_creates_batch_job_record(
         self,
         mock_task,
@@ -508,7 +508,7 @@ class TestRechunkEndpointDatabaseIntegration:
             assert job.metadata_.get("community_server_id") == str(server.id)
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
     async def test_previously_seen_rechunk_creates_batch_job_record(
         self,
         mock_task,
@@ -547,7 +547,7 @@ class TestRechunkEndpointDatabaseIntegration:
             assert job.metadata_.get("community_server_id") == str(server.id)
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_batch_job_has_correct_total_tasks_count(
         self,
         mock_task,

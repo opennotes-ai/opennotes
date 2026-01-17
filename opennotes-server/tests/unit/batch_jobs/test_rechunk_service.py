@@ -82,7 +82,7 @@ class TestRechunkServiceNullCommunityServerId:
     """Tests for null community_server_id handling (task-896 regression)."""
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_start_fact_check_rechunk_job_with_null_community_server_id(
         self,
         mock_task,
@@ -142,7 +142,7 @@ class TestRechunkServiceMetadataSerialization:
     """Tests for metadata serialization (task-898 regression)."""
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_metadata_stores_null_not_string_none(
         self,
         mock_task,
@@ -199,7 +199,7 @@ class TestRechunkServiceWithCommunityServerId:
     """Tests for previously_seen rechunk with community_server_id."""
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
     async def test_start_previously_seen_rechunk_job_stores_community_server_id_as_string(
         self,
         mock_task,
@@ -258,7 +258,7 @@ class TestRechunkServiceTaskDispatchFailure:
     """Tests for task dispatch failure scenarios."""
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_job_marked_failed_on_task_dispatch_failure(
         self,
         mock_task,
@@ -341,7 +341,7 @@ class TestRechunkServiceActiveJobCheck:
     """Tests for active job check before creating new jobs (task-1010.04)."""
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_fact_check_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_active_job_blocks_new_fact_check_job(
         self,
         mock_task,
@@ -375,7 +375,7 @@ class TestRechunkServiceActiveJobCheck:
         mock_batch_job_service.create_job.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.process_previously_seen_rechunk_task")
+    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
     async def test_active_job_blocks_new_previously_seen_job(
         self,
         mock_task,
