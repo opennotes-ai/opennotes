@@ -22,17 +22,26 @@ class TestApplyPredictedRatingIfAvailable:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_candidate_has_rating(self):
-        """Returns None when candidate already has a rating set."""
+        """Returns None when candidate already has a rating set.
+
+        The function uses atomic UPDATE with WHERE rating IS NULL to prevent TOCTOU races.
+        When a candidate already has a rating, the UPDATE returns rowcount=0 and the
+        function returns None.
+        """
         mock_session = AsyncMock()
         mock_candidate = MagicMock(spec=FactCheckedItemCandidate)
         mock_candidate.id = uuid4()
         mock_candidate.rating = "false"
         mock_candidate.predicted_ratings = {"false": 1.0}
 
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+        mock_session.execute.return_value = mock_result
+
         result = await apply_predicted_rating_if_available(mock_session, mock_candidate)
 
         assert result is None
-        mock_session.execute.assert_not_called()
+        mock_session.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_predicted_ratings(self):

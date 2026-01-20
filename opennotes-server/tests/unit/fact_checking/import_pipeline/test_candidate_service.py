@@ -4,7 +4,7 @@ Tests the service layer functions for candidate listing, rating, and bulk approv
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -236,35 +236,38 @@ class TestGetCandidateByIdUnit:
 
 @pytest.mark.unit
 class TestSetCandidateRatingUnit:
-    """Unit tests for set_candidate_rating function."""
+    """Unit tests for set_candidate_rating function.
+
+    Note: set_candidate_rating uses UPDATE...RETURNING for atomic updates.
+    Tests mock the database session to simulate this behavior.
+    """
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_candidate_not_found(self, mocker):
-        """Returns (None, False) when candidate doesn't exist."""
+    async def test_returns_none_when_candidate_not_found(self):
+        """Returns (None, False) when UPDATE...RETURNING finds no matching row."""
         mock_session = AsyncMock()
 
-        mocker.patch(
-            "src.fact_checking.import_pipeline.candidate_service.get_candidate_by_id",
-            return_value=None,
-        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
 
         result, promoted = await set_candidate_rating(mock_session, uuid4(), rating="false")
 
         assert result is None
         assert promoted is False
+        mock_session.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_updates_rating_without_promotion(self, mocker):
+    async def test_updates_rating_without_promotion(self):
         """Updates rating and returns candidate without promotion when auto_promote=False."""
         mock_session = AsyncMock()
         mock_candidate = MagicMock(spec=FactCheckedItemCandidate)
         mock_candidate.id = uuid4()
         mock_candidate.rating = "false"
 
-        mocker.patch(
-            "src.fact_checking.import_pipeline.candidate_service.get_candidate_by_id",
-            return_value=mock_candidate,
-        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_candidate
+        mock_session.execute.return_value = mock_result
 
         result, promoted = await set_candidate_rating(
             mock_session, mock_candidate.id, rating="false", auto_promote=False
@@ -276,24 +279,24 @@ class TestSetCandidateRatingUnit:
         mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_updates_rating_with_promotion(self, mocker):
+    async def test_updates_rating_with_promotion(self):
         """Updates rating and triggers promotion when auto_promote=True."""
         mock_session = AsyncMock()
         mock_candidate = MagicMock(spec=FactCheckedItemCandidate)
         mock_candidate.id = uuid4()
 
-        mocker.patch(
-            "src.fact_checking.import_pipeline.candidate_service.get_candidate_by_id",
-            return_value=mock_candidate,
-        )
-        mock_promote = mocker.patch(
-            "src.fact_checking.import_pipeline.candidate_service.promote_candidate",
-            return_value=True,
-        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_candidate
+        mock_session.execute.return_value = mock_result
 
-        result, promoted = await set_candidate_rating(
-            mock_session, mock_candidate.id, rating="false", auto_promote=True
-        )
+        with patch(
+            "src.fact_checking.import_pipeline.candidate_service.promote_candidate",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_promote:
+            result, promoted = await set_candidate_rating(
+                mock_session, mock_candidate.id, rating="false", auto_promote=True
+            )
 
         assert result == mock_candidate
         assert promoted is True
@@ -302,29 +305,34 @@ class TestSetCandidateRatingUnit:
 
 @pytest.mark.unit
 class TestBulkApproveFromPredictionsUnit:
-    """Unit tests for bulk_approve_from_predictions function."""
+    """Unit tests for bulk_approve_from_predictions function.
+
+    Note: bulk_approve_from_predictions uses async iteration with batching.
+    Tests mock _iter_candidates_for_bulk_approval to provide test data.
+    """
 
     @pytest.mark.asyncio
-    async def test_returns_zero_when_no_candidates_match(self, mocker):
+    async def test_returns_zero_when_no_candidates_match(self):
         """Returns (0, None) when no candidates have high-confidence predictions."""
         mock_session = AsyncMock()
 
-        mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = []
-        mock_result.scalars.return_value = mock_scalars
-        mock_session.execute.return_value = mock_result
+        async def empty_iter(_session, _filters, _batch_size=100):  # pyright: ignore[reportUnusedParameter]
+            return
+            yield []  # pyright: ignore[reportUnreachable] - makes this an async generator
 
-        updated, promoted = await bulk_approve_from_predictions(
-            mock_session, threshold=1.0, auto_promote=False
-        )
+        with patch(
+            "src.fact_checking.import_pipeline.candidate_service._iter_candidates_for_bulk_approval",
+            side_effect=empty_iter,
+        ):
+            updated, promoted = await bulk_approve_from_predictions(
+                mock_session, threshold=1.0, auto_promote=False
+            )
 
         assert updated == 0
         assert promoted is None
-        mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_updates_candidates_with_high_confidence_predictions(self, mocker):
+    async def test_updates_candidates_with_high_confidence_predictions(self):
         """Updates candidates whose predicted_ratings meet threshold."""
         mock_session = AsyncMock()
 
@@ -332,22 +340,24 @@ class TestBulkApproveFromPredictionsUnit:
         mock_candidate.id = uuid4()
         mock_candidate.predicted_ratings = {"false": 1.0}
 
-        mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = [mock_candidate]
-        mock_result.scalars.return_value = mock_scalars
-        mock_session.execute.return_value = mock_result
+        async def mock_iter(_session, _filters, _batch_size=100):  # pyright: ignore[reportUnusedParameter]
+            yield [mock_candidate]
 
-        updated, promoted = await bulk_approve_from_predictions(
-            mock_session, threshold=1.0, auto_promote=False
-        )
+        with patch(
+            "src.fact_checking.import_pipeline.candidate_service._iter_candidates_for_bulk_approval",
+            side_effect=mock_iter,
+        ):
+            updated, promoted = await bulk_approve_from_predictions(
+                mock_session, threshold=1.0, auto_promote=False
+            )
 
         assert updated == 1
         assert promoted is None
-        assert mock_session.execute.call_count == 2
+        mock_session.execute.assert_called_once()
+        mock_session.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_auto_promote_triggers_promotion(self, mocker):
+    async def test_auto_promote_triggers_promotion(self):
         """auto_promote=True triggers promotion for updated candidates."""
         mock_session = AsyncMock()
 
@@ -355,20 +365,23 @@ class TestBulkApproveFromPredictionsUnit:
         mock_candidate.id = uuid4()
         mock_candidate.predicted_ratings = {"false": 1.0}
 
-        mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = [mock_candidate]
-        mock_result.scalars.return_value = mock_scalars
-        mock_session.execute.return_value = mock_result
+        async def mock_iter(_session, _filters, _batch_size=100):  # pyright: ignore[reportUnusedParameter]
+            yield [mock_candidate]
 
-        mock_promote = mocker.patch(
-            "src.fact_checking.import_pipeline.candidate_service.promote_candidate",
-            return_value=True,
-        )
-
-        updated, promoted = await bulk_approve_from_predictions(
-            mock_session, threshold=1.0, auto_promote=True
-        )
+        with (
+            patch(
+                "src.fact_checking.import_pipeline.candidate_service._iter_candidates_for_bulk_approval",
+                side_effect=mock_iter,
+            ),
+            patch(
+                "src.fact_checking.import_pipeline.candidate_service.promote_candidate",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as mock_promote,
+        ):
+            updated, promoted = await bulk_approve_from_predictions(
+                mock_session, threshold=1.0, auto_promote=True
+            )
 
         assert updated == 1
         assert promoted == 1
