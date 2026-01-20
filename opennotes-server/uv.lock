@@ -1359,33 +1359,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastapi-filter"
-version = "2.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/43/ed/c36cfcd849519fd2d23051ad81a91fc5e8cfa7109496fc8a10ad565a5fe9/fastapi_filter-2.0.1.tar.gz", hash = "sha256:cffda370097af7e404f1eb188aca58b199084bfaf7cec881e40b404adf12566e", size = 9857, upload-time = "2024-12-07T17:30:06.343Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/88/afc022ad64d12f730141fc50758ecf9d60de5fed11335dc16e3127617f05/fastapi_filter-2.0.1-py3-none-any.whl", hash = "sha256:711d48707ec62f7c9e12a7713fc0f6a99858a9e3741b4d108102d5599e77197d", size = 11586, upload-time = "2024-12-07T17:30:05.375Z" },
-]
-
-[[package]]
-name = "fastapi-jsonapi"
-version = "3.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "orjson" },
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9b/18/2690d07da5e7246fd790433981b30da3053d7e4a5a21eb042a5765ac1618/fastapi_jsonapi-3.0.0.tar.gz", hash = "sha256:0aad95320c7e5ce0b685d12e5bf48c2bd130e43b34d1c9ede8fe2176f0dc5fb8", size = 53753, upload-time = "2025-03-13T11:40:06.616Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/ee/c4a67cad01be70fbe25401d88319fa8c16e904814b5a4379e4c4a2bce439/fastapi_jsonapi-3.0.0-py2.py3-none-any.whl", hash = "sha256:f0ca361181a446ecc2917e15b5b979bbfbcb8d6c2b948b73d6573124cb8e5735", size = 64141, upload-time = "2025-03-13T11:40:05.181Z" },
-]
-
-[[package]]
 name = "fastuuid"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3254,8 +3227,6 @@ dependencies = [
     { name = "dbos", extra = ["otel"] },
     { name = "dspy" },
     { name = "fastapi" },
-    { name = "fastapi-filter" },
-    { name = "fastapi-jsonapi" },
     { name = "httpx" },
     { name = "joblib" },
     { name = "litellm" },
@@ -3377,8 +3348,6 @@ requires-dist = [
     { name = "docker", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "dspy", specifier = ">=3.0.0" },
     { name = "fastapi", specifier = ">=0.104.1" },
-    { name = "fastapi-filter", specifier = ">=2.0.1" },
-    { name = "fastapi-jsonapi", specifier = ">=3.0.0" },
     { name = "httpx", specifier = ">=0.25.2" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25.2" },
     { name = "joblib", specifier = ">=1.3.0" },
