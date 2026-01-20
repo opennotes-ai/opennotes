@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Open Notes Scoring API",
+    "title": "Open Notes Server",
     "version": "0.0.1"
   },
   "paths": {
@@ -7788,16 +7788,6 @@
         ],
         "parameters": [
           {
-            "name": "batch_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 100,
-              "title": "Batch Size"
-            }
-          },
-          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,
@@ -7814,6 +7804,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeProcessingRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7874,7 +7874,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BatchProcessingRequest"
+                "$ref": "#/components/schemas/ScrapeProcessingRequest"
               }
             }
           }
@@ -9624,7 +9624,7 @@
         },
         "type": "object",
         "title": "BatchProcessingRequest",
-        "description": "Shared request parameters for batch processing operations (scrape, promote)."
+        "description": "Request parameters for batch processing operations without rate limiting (e.g., promote)."
       },
       "BatchScoreRequest": {
         "properties": {
@@ -17352,6 +17352,35 @@
         ],
         "title": "ScoringStatusResource",
         "description": "JSON:API resource object for scoring status."
+      },
+      "ScrapeProcessingRequest": {
+        "properties": {
+          "batch_size": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Maximum number of candidates to process in this batch",
+            "default": 1000
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "Count candidates only, do not perform operation",
+            "default": false
+          },
+          "base_delay": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 0.1,
+            "title": "Base Delay",
+            "description": "Minimum delay in seconds between requests to the same domain",
+            "default": 1.0
+          }
+        },
+        "type": "object",
+        "title": "ScrapeProcessingRequest",
+        "description": "Request parameters for scraping operations with rate limiting support."
       },
       "ServiceStatus": {
         "properties": {
