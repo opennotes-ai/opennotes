@@ -27,6 +27,8 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 USER_ID_KEY = "user_id"
+MIN_BASE_DELAY = 0.1
+MAX_BASE_DELAY = 30.0
 
 
 class ImportBatchJobService:
@@ -148,6 +150,7 @@ class ImportBatchJobService:
         batch_size: int = 1000,
         dry_run: bool = False,
         user_id: str | None = None,
+        base_delay: float = 1.0,
     ) -> BatchJob:
         """
         Start a new candidate scrape job.
@@ -160,10 +163,21 @@ class ImportBatchJobService:
             batch_size: Number of candidates to process per batch (default 1000)
             dry_run: If True, count candidates but don't scrape
             user_id: ID of the user who started the job (for audit trail)
+            base_delay: Minimum delay in seconds between requests to same domain
+                (must be between 0.1 and 30.0)
 
         Returns:
             The created BatchJob (in PENDING status)
+
+        Raises:
+            ValueError: If base_delay is outside [0.1, 30.0] range
         """
+        if not (MIN_BASE_DELAY <= base_delay <= MAX_BASE_DELAY):
+            raise ValueError(
+                f"base_delay must be between {MIN_BASE_DELAY} and {MAX_BASE_DELAY}, "
+                f"got {base_delay}"
+            )
+
         from src.tasks.import_tasks import process_scrape_batch  # noqa: PLC0415
 
         settings = get_settings()
@@ -171,6 +185,7 @@ class ImportBatchJobService:
         metadata = {
             "batch_size": batch_size,
             "dry_run": dry_run,
+            "base_delay": base_delay,
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -201,6 +216,7 @@ class ImportBatchJobService:
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
                 concurrency=DEFAULT_SCRAPE_CONCURRENCY,
+                base_delay=base_delay,
             )
         except Exception as e:
             try:

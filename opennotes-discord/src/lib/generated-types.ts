@@ -3506,7 +3506,7 @@ export interface components {
         BatchJobStatus: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
         /**
          * BatchProcessingRequest
-         * @description Shared request parameters for batch processing operations (scrape, promote).
+         * @description Request parameters for batch processing operations without rate limiting (e.g., promote).
          */
         BatchProcessingRequest: {
             /**
@@ -7498,6 +7498,30 @@ export interface components {
              */
             id: string;
             attributes: components["schemas"]["ScoringStatusAttributes"];
+        };
+        /**
+         * ScrapeProcessingRequest
+         * @description Request parameters for scraping operations with rate limiting support.
+         */
+        ScrapeProcessingRequest: {
+            /**
+             * Batch Size
+             * @description Maximum number of candidates to process in this batch
+             * @default 1000
+             */
+            batch_size: number;
+            /**
+             * Dry Run
+             * @description Count candidates only, do not perform operation
+             * @default false
+             */
+            dry_run: boolean;
+            /**
+             * Base Delay
+             * @description Minimum delay in seconds between requests to the same domain
+             * @default 1
+             */
+            base_delay: number;
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -12158,16 +12182,18 @@ export interface operations {
     };
     enqueue_scrapes_endpoint_api_v1_fact_checking_import_enqueue_scrapes_post: {
         parameters: {
-            query?: {
-                batch_size?: number;
-            };
+            query?: never;
             header?: {
                 "X-API-Key"?: string | null;
             };
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScrapeProcessingRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -12200,7 +12226,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BatchProcessingRequest"];
+                "application/json": components["schemas"]["ScrapeProcessingRequest"];
             };
         };
         responses: {

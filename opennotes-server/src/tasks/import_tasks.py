@@ -39,7 +39,8 @@ from src.fact_checking.import_pipeline.importer import (
 from src.fact_checking.import_pipeline.promotion import promote_candidate
 from src.fact_checking.import_pipeline.scrape_tasks import (
     enqueue_scrape_batch,
-    scrape_url_content,
+    extract_domain,
+    fetch_url_content,
 )
 from src.monitoring import get_logger
 from src.tasks.broker import register_task
@@ -580,38 +581,6 @@ async def process_fact_check_import(
             await engine.dispose()
 
 
-async def _scrape_single_url(
-    url: str,
-    timeout_seconds: float = SCRAPE_URL_TIMEOUT_SECONDS,
-) -> str | None:
-    """Scrape a single URL with timeout protection.
-
-    Args:
-        url: The URL to scrape
-        timeout_seconds: Maximum time to wait for scrape
-
-    Returns:
-        Scraped content on success, None on timeout or error.
-    """
-    try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(scrape_url_content, url),
-            timeout=timeout_seconds,
-        )
-    except TimeoutError:
-        logger.warning(
-            "Scrape timeout for URL",
-            extra={"url": url, "timeout_seconds": timeout_seconds},
-        )
-        return None
-    except Exception as e:
-        logger.error(
-            "Scrape error for URL",
-            extra={"url": url, "error": str(e), "error_type": type(e).__name__},
-        )
-        return None
-
-
 @register_task(
     task_name="scrape:candidates",
     component="import_pipeline",
@@ -626,6 +595,7 @@ async def process_scrape_batch(  # noqa: PLR0912
     db_url: str,
     redis_url: str,
     concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
+    base_delay: float = 1.0,
 ) -> dict[str, Any]:
     """
     TaskIQ task to process scraping of pending candidates.
@@ -657,6 +627,8 @@ async def process_scrape_batch(  # noqa: PLR0912
         db_url: Database connection URL
         redis_url: Redis connection URL for progress tracking
         concurrency: Max concurrent URL scrapes (default: DEFAULT_SCRAPE_CONCURRENCY)
+        base_delay: Minimum delay in seconds between requests to same domain, passed to
+            the rate-limited fetch_url_content task for politeness
 
     Returns:
         dict with status and scrape stats
@@ -761,9 +733,37 @@ async def process_scrape_batch(  # noqa: PLR0912
                 candidate_id: UUID,
                 source_url: str,
             ) -> tuple[bool, str | None]:
-                """Process a single candidate with semaphore-bounded concurrency."""
+                """Process a single candidate with semaphore-bounded concurrency.
+
+                Uses the rate-limited fetch_url_content task to respect per-domain
+                politeness delays via TaskIQ middleware.
+                """
                 async with semaphore:
-                    content = await _scrape_single_url(source_url, SCRAPE_URL_TIMEOUT_SECONDS)
+                    domain = extract_domain(source_url)
+                    fetch_task = await fetch_url_content.kiq(
+                        url=source_url,
+                        domain=domain,
+                        base_delay=base_delay,
+                    )
+                    try:
+                        fetch_result = await fetch_task.wait_result(
+                            timeout=SCRAPE_URL_TIMEOUT_SECONDS
+                        )
+                        content = (
+                            fetch_result.return_value.get("content")
+                            if fetch_result.return_value
+                            else None
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Fetch task failed or timed out",
+                            extra={
+                                "url": source_url,
+                                "domain": domain,
+                                "error": str(e),
+                            },
+                        )
+                        content = None
 
                     async with async_session() as db:
                         if content:

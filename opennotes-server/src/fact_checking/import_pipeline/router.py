@@ -53,7 +53,7 @@ class ImportFactCheckBureauRequest(BaseModel):
 
 
 class BatchProcessingRequest(BaseModel):
-    """Shared request parameters for batch processing operations (scrape, promote)."""
+    """Request parameters for batch processing operations without rate limiting (e.g., promote)."""
 
     batch_size: int = Field(
         default=1000,
@@ -64,6 +64,17 @@ class BatchProcessingRequest(BaseModel):
     dry_run: bool = Field(
         default=False,
         description="Count candidates only, do not perform operation",
+    )
+
+
+class ScrapeProcessingRequest(BatchProcessingRequest):
+    """Request parameters for scraping operations with rate limiting support."""
+
+    base_delay: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=30.0,
+        description="Minimum delay in seconds between requests to the same domain",
     )
 
 
@@ -158,8 +169,8 @@ async def import_fact_check_bureau_endpoint(
     "This is a synchronous operation that returns the count of enqueued tasks.",
 )
 async def enqueue_scrapes_endpoint(
+    request: ScrapeProcessingRequest,
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
-    batch_size: int = 100,
 ) -> EnqueueScrapeResponse:
     """Enqueue scrape tasks for pending candidates.
 
@@ -167,8 +178,8 @@ async def enqueue_scrapes_endpoint(
     then enqueues scrape tasks for each.
 
     Args:
+        request: Scrape configuration parameters including batch_size and base_delay.
         current_user: Authenticated user (via API key or JWT).
-        batch_size: Maximum number of candidates to enqueue (default 100).
 
     Returns:
         Count of enqueued tasks.
@@ -177,11 +188,15 @@ async def enqueue_scrapes_endpoint(
         "Enqueue scrapes request",
         extra={
             "user_id": str(current_user.id),
-            "batch_size": batch_size,
+            "batch_size": request.batch_size,
+            "base_delay": request.base_delay,
         },
     )
 
-    result = await enqueue_scrape_batch(batch_size=batch_size)
+    result = await enqueue_scrape_batch(
+        batch_size=request.batch_size,
+        base_delay=request.base_delay,
+    )
 
     logger.info(
         "Scrape tasks enqueued",
@@ -206,7 +221,7 @@ async def enqueue_scrapes_endpoint(
     },
 )
 async def scrape_candidates_endpoint(
-    request: BatchProcessingRequest,
+    request: ScrapeProcessingRequest,
     service: Annotated[ImportBatchJobService, Depends(get_import_service)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
 ) -> BatchJobResponse:
@@ -252,6 +267,7 @@ async def scrape_candidates_endpoint(
             batch_size=request.batch_size,
             dry_run=request.dry_run,
             user_id=str(current_user.id),
+            base_delay=request.base_delay,
         )
     except ActiveJobExistsError as e:
         raise HTTPException(

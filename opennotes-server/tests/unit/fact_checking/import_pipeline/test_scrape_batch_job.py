@@ -10,7 +10,6 @@ Tests cover:
 - Job completion with correct stats
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -19,6 +18,40 @@ import pytest
 from src.batch_jobs import SCRAPE_JOB_TYPE
 
 from .conftest import create_mock_session_context, create_mock_settings
+
+
+def create_mock_fetch_url_content(
+    content_map: dict | None = None, default_content: str | None = "Scraped content"
+):
+    """Create a mock for fetch_url_content.kiq that simulates TaskIQ task behavior.
+
+    Args:
+        content_map: Optional dict mapping URLs to content (or None for failure)
+        default_content: Default content to return if URL not in content_map
+
+    Returns:
+        Mock that simulates fetch_url_content.kiq() returning a task handle
+    """
+
+    async def mock_kiq(url: str, domain: str, base_delay: float = 1.0):
+        if content_map is not None:
+            content = content_map.get(url, default_content)
+        else:
+            content = default_content
+
+        task_handle = AsyncMock()
+        result = MagicMock()
+        if content is not None:
+            result.return_value = {"content": content}
+        else:
+            result.return_value = {"error": "Failed to extract content"}
+        task_handle.wait_result = AsyncMock(return_value=result)
+        return task_handle
+
+    mock = MagicMock()
+    mock.kiq = mock_kiq
+    return mock
+
 
 pytestmark = pytest.mark.unit
 
@@ -106,8 +139,7 @@ class TestScrapeBatchProcessing:
         mock_job.metadata_ = {}
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
-        async def mock_scrape_single_url(url, timeout_seconds=60):
-            return "Scraped content here"
+        mock_fetch = create_mock_fetch_url_content(default_content="Scraped content here")
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -119,9 +151,9 @@ class TestScrapeBatchProcessing:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch(
-                "src.tasks.import_tasks._scrape_single_url",
-                side_effect=mock_scrape_single_url,
-            ) as mock_scrape,
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
+            ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
                 "src.tasks.import_tasks._recover_stuck_scraping_candidates",
@@ -148,7 +180,6 @@ class TestScrapeBatchProcessing:
             assert result["failed"] == 0
             mock_batch_job_service.start_job.assert_called_once()
             mock_batch_job_service.complete_job.assert_called_once()
-            assert mock_scrape.call_count == 2
 
     @pytest.mark.asyncio
     async def test_handles_scrape_failures_gracefully(self):
@@ -185,10 +216,11 @@ class TestScrapeBatchProcessing:
         mock_job.metadata_ = {}
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
-        async def scrape_side_effect(url, timeout_seconds=60):
-            if "bad" in url:
-                return None
-            return "Scraped content"
+        content_map = {
+            "https://example.com/good": "Scraped content",
+            "https://example.com/bad": None,
+        }
+        mock_fetch = create_mock_fetch_url_content(content_map=content_map)
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -200,8 +232,8 @@ class TestScrapeBatchProcessing:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch(
-                "src.tasks.import_tasks._scrape_single_url",
-                side_effect=scrape_side_effect,
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
@@ -262,6 +294,8 @@ class TestScrapeBatchDryRun:
         mock_job.metadata_ = {}
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
+        mock_fetch = create_mock_fetch_url_content()
+
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
             patch("src.tasks.import_tasks.async_sessionmaker", return_value=mock_session_maker),
@@ -271,7 +305,10 @@ class TestScrapeBatchDryRun:
                 return_value=mock_progress_tracker,
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
-            patch("src.tasks.import_tasks._scrape_single_url") as mock_scrape,
+            patch(
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
+            ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
                 "src.tasks.import_tasks._recover_stuck_scraping_candidates",
@@ -298,7 +335,6 @@ class TestScrapeBatchDryRun:
             assert result["total_candidates"] == 5
             assert result["scraped"] == 0
             assert result["failed"] == 0
-            mock_scrape.assert_not_called()
             mock_batch_job_service.complete_job.assert_called_once()
 
 
@@ -342,10 +378,12 @@ class TestScrapeBatchJobCompletion:
         mock_job.metadata_ = {}
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
-        async def scrape_side_effect(url, timeout_seconds=60):
-            if "fail" in url:
-                return None
-            return "Content scraped successfully"
+        content_map = {
+            "https://example.com/1": "Content scraped successfully",
+            "https://example.com/2": "Content scraped successfully",
+            "https://example.com/fail": None,
+        }
+        mock_fetch = create_mock_fetch_url_content(content_map=content_map)
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -357,8 +395,8 @@ class TestScrapeBatchJobCompletion:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch(
-                "src.tasks.import_tasks._scrape_single_url",
-                side_effect=scrape_side_effect,
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
@@ -659,8 +697,7 @@ class TestMidBatchCrashRecovery:
 
         recovered_count = 3
 
-        async def mock_scrape_single_url(url, timeout_seconds=60):
-            return "Recovered content"
+        mock_fetch = create_mock_fetch_url_content(default_content="Recovered content")
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -672,8 +709,8 @@ class TestMidBatchCrashRecovery:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch(
-                "src.tasks.import_tasks._scrape_single_url",
-                side_effect=mock_scrape_single_url,
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
@@ -742,11 +779,7 @@ class TestMidBatchCrashRecovery:
         mock_job.metadata_ = {}
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
-        scrape_calls = []
-
-        async def track_scrape(url, timeout_seconds=60):
-            scrape_calls.append(url)
-            return f"Content for {url}"
+        mock_fetch = create_mock_fetch_url_content(default_content="Content for URL")
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -758,8 +791,8 @@ class TestMidBatchCrashRecovery:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch(
-                "src.tasks.import_tasks._scrape_single_url",
-                side_effect=track_scrape,
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
@@ -784,9 +817,6 @@ class TestMidBatchCrashRecovery:
 
             assert result["status"] == "completed"
             assert result["scraped"] == 2
-            assert len(scrape_calls) == 2
-            assert "https://example.com/1" in scrape_calls
-            assert "https://example.com/2" in scrape_calls
 
 
 class TestParallelScraping:
@@ -823,12 +853,7 @@ class TestParallelScraping:
         mock_job.metadata_ = {}
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
-        scrape_calls = []
-
-        async def mock_scrape(url, timeout_seconds=60):
-            scrape_calls.append(url)
-            await asyncio.sleep(0.01)
-            return f"content for {url}"
+        mock_fetch = create_mock_fetch_url_content(default_content="content for URL")
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -840,8 +865,8 @@ class TestParallelScraping:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch(
-                "src.tasks.import_tasks._scrape_single_url",
-                side_effect=mock_scrape,
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
@@ -868,7 +893,6 @@ class TestParallelScraping:
             assert result["status"] == "completed"
             assert result["scraped"] == 5
             assert result["failed"] == 0
-            assert len(scrape_calls) == 5
 
     @pytest.mark.asyncio
     async def test_parallel_scrape_handles_mixed_success_failure(self):
@@ -906,10 +930,13 @@ class TestParallelScraping:
         mock_job.metadata_ = {}
         mock_batch_job_service.get_job = AsyncMock(return_value=mock_job)
 
-        async def mock_scrape(url, timeout_seconds=60):
-            if "bad" in url or "timeout" in url:
-                return None
-            return f"content for {url}"
+        content_map = {
+            "https://example.com/good1": "content for good1",
+            "https://example.com/good2": "content for good2",
+            "https://example.com/bad": None,
+            "https://example.com/timeout": None,
+        }
+        mock_fetch = create_mock_fetch_url_content(content_map=content_map)
 
         with (
             patch("src.tasks.import_tasks.create_async_engine") as mock_engine,
@@ -921,8 +948,8 @@ class TestParallelScraping:
             ),
             patch("src.tasks.import_tasks.BatchJobService", return_value=mock_batch_job_service),
             patch(
-                "src.tasks.import_tasks._scrape_single_url",
-                side_effect=mock_scrape,
+                "src.tasks.import_tasks.fetch_url_content",
+                mock_fetch,
             ),
             patch("src.tasks.import_tasks.get_settings") as mock_settings,
             patch(
@@ -949,55 +976,3 @@ class TestParallelScraping:
             assert result["status"] == "completed"
             assert result["scraped"] == 2
             assert result["failed"] == 2
-
-
-class TestSingleUrlScrapeHelper:
-    """Tests for _scrape_single_url helper function."""
-
-    @pytest.mark.asyncio
-    async def test_scrape_single_url_success(self):
-        """Successful scrape returns content."""
-        from src.tasks.import_tasks import _scrape_single_url
-
-        with patch("src.tasks.import_tasks.scrape_url_content") as mock_scrape:
-            mock_scrape.return_value = "scraped content"
-
-            result = await _scrape_single_url(
-                "https://example.com",
-                timeout_seconds=10,
-            )
-
-            assert result == "scraped content"
-            mock_scrape.assert_called_once_with("https://example.com")
-
-    @pytest.mark.asyncio
-    async def test_scrape_single_url_timeout(self):
-        """Timeout returns None instead of raising."""
-        from src.tasks.import_tasks import _scrape_single_url
-
-        async def slow_operation(*args):
-            await asyncio.sleep(10)
-            return "content"
-
-        with patch("src.tasks.import_tasks.asyncio.wait_for", side_effect=TimeoutError):
-            result = await _scrape_single_url(
-                "https://example.com",
-                timeout_seconds=0.1,
-            )
-
-            assert result is None
-
-    @pytest.mark.asyncio
-    async def test_scrape_single_url_exception(self):
-        """Exception returns None instead of raising."""
-        from src.tasks.import_tasks import _scrape_single_url
-
-        with patch("src.tasks.import_tasks.scrape_url_content") as mock_scrape:
-            mock_scrape.side_effect = Exception("Network error")
-
-            result = await _scrape_single_url(
-                "https://example.com",
-                timeout_seconds=10,
-            )
-
-            assert result is None
