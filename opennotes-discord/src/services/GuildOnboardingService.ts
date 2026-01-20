@@ -1,7 +1,7 @@
 import { logger } from '../logger.js';
 import { Collection, ComponentType, Guild, Message, MessageType, TextChannel, User } from 'discord.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
-import { buildWelcomeContainer, WELCOME_MESSAGE_REVISION, extractRevisionFromMessage } from '../lib/welcome-content.js';
+import { buildWelcomeContainer, buildWelcomeText, WELCOME_MESSAGE_REVISION, extractRevisionFromMessage } from '../lib/welcome-content.js';
 import { sendVibeCheckPrompt } from '../lib/vibecheck-prompt.js';
 import { apiClient } from '../api-client.js';
 import { getUpgradeUrl } from '../lib/oauth2-urls.js';
@@ -411,7 +411,8 @@ export class GuildOnboardingService {
       });
     }
 
-    const welcomeContent = this.buildWelcomeDMContent(guild.name, mode, guildId);
+    // Send the welcome DM (same content as channel welcome, with prefix)
+    const welcomeContent = buildWelcomeText(guild.name);
 
     try {
       await owner.send(welcomeContent);
@@ -423,44 +424,51 @@ export class GuildOnboardingService {
         mode,
       });
     } catch (error) {
-      logger.warn('Failed to send welcome DM to server owner', {
+      logger.error('Failed to send welcome DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't send permissions DM if welcome DM failed (owner has DMs disabled)
+      return;
+    }
+
+    // Send separate "increase permissions" DM for minimal mode
+    if (mode === 'minimal') {
+      await this.sendIncreasePermissionsDM(owner, guild);
+    }
+  }
+
+  private async sendIncreasePermissionsDM(owner: User, guild: Guild): Promise<void> {
+    const guildId = guild.id;
+    const permissionsUrl = getUpgradeUrl(guildId);
+
+    const content = `**Increase Permissions for ${guild.name}**
+
+You've installed Open Notes with minimal permissions. For a cleaner experience, consider increasing permissions to get:
+
+• **Dedicated bot channel** - Keeps bot interactions organized
+• **Pinned welcome message** - Easy reference for your members
+• **Cleaner UX** - Commands redirect to the bot channel
+
+[Increase permissions](${permissionsUrl})`;
+
+    try {
+      await owner.send(content);
+
+      logger.info('Sent increase permissions DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+      });
+    } catch (error) {
+      logger.warn('Failed to send increase permissions DM to server owner', {
         guildId,
         guildName: guild.name,
         ownerId: owner.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }
-
-  private buildWelcomeDMContent(guildName: string, mode: InstallationMode, guildId: string): string {
-    const baseContent = `## OpenNotes has joined ${guildName}!
-
-**About OpenNotes**
-OpenNotes helps your community add context to messages through community notes. Members can write notes, rate their helpfulness, and surface the best context.
-
-**Quick Start**
-• \`/note write <message-id>\` - Write a community note
-• \`/note request <message-id>\` - Request a note on a message
-• \`/list notes\` - Browse notes awaiting your rating
-• \`/vibecheck\` - Analyze your community's message activity
-
-Use these commands in any channel where the bot has access.`;
-
-    if (mode === 'minimal') {
-      const upgradeUrl = getUpgradeUrl(guildId);
-      return `${baseContent}
-
----
-
-**Upgrade to Full Experience**
-You've installed OpenNotes with minimal permissions. For the best experience, consider upgrading to get:
-• **Dedicated bot channel** - Keeps bot interactions organized
-• **Pinned welcome message** - Easy reference for your members
-• **Cleaner UX** - Commands redirect to the bot channel
-
-[Upgrade permissions](${upgradeUrl})`;
-    }
-
-    return baseContent;
   }
 }

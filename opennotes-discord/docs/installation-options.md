@@ -18,9 +18,9 @@ OpenNotes supports two installation modes based on your permission preferences.
 - Welcome message pinned in bot channel
 - Commands redirect users to bot channel for cleaner organization
 
-## Upgrading from Minimal to Full
+## Increasing Permissions from Minimal to Full
 
-Server owners receive a DM with an upgrade link when installing with minimal permissions. Click the link to re-authorize with full permissions. The bot will automatically create the bot channel on next startup.
+Server owners receive a separate DM with an "Increase permissions" link when installing with minimal permissions. Click the link to re-authorize with full permissions. The bot will automatically create the bot channel on next startup.
 
 ## Permission Details
 
