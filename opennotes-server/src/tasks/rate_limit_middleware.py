@@ -5,6 +5,11 @@ allowing task-level concurrency control via labels.
 
 Designed to be extractable as a standalone package (taskiq-redis-ratelimit).
 
+TODO: Consider transitioning from AsyncSemaphore to TokenBucket for rate limiting.
+TokenBucket would provide built-in delay between requests rather than just concurrency control.
+Current workaround: tasks add explicit sleep(base_delay + jitter) after semaphore acquisition.
+See fetch_url_content in scrape_tasks.py for the current implementation pattern.
+
 Label Configuration:
     rate_limit_name: Required. Lock signature/name (e.g., "import:fact_check").
         Supports template variables using Python format syntax, which are

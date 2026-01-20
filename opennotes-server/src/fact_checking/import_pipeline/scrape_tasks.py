@@ -5,9 +5,14 @@ Uses Trafilatura for robust web content extraction with:
 - HTML to clean text extraction
 - Language detection
 - Comment filtering
+- Per-domain rate limiting for politeness
+- User agent rotation for believable requests
 """
 
+import asyncio
 import logging
+import random
+from urllib.parse import urlparse
 from uuid import UUID
 
 import trafilatura
@@ -24,10 +29,45 @@ from src.tasks.broker import register_task
 
 logger = logging.getLogger(__name__)
 
-# Threshold for auto-applying predicted ratings.
-# A value of 1.0 means only apply ratings with 100% confidence.
-# This aligns with bulk_approve_from_predictions() default behavior.
 AUTO_PROMOTE_PREDICTION_THRESHOLD: float = 1.0
+
+DEFAULT_BASE_DELAY = 1.0
+DEFAULT_JITTER_MAX = 0.5
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+]
+
+
+def extract_domain(url: str) -> str:
+    """Extract normalized domain from a URL for rate limiting.
+
+    Args:
+        url: The URL to extract domain from.
+
+    Returns:
+        Normalized domain string (lowercase, www. prefix stripped).
+        Returns 'unknown' if URL cannot be parsed.
+    """
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def get_random_user_agent() -> str:
+    """Get a random user agent from the rotation list."""
+    return random.choice(USER_AGENTS)
 
 
 async def get_candidate(
@@ -100,8 +140,6 @@ async def apply_predicted_rating_if_available(
     if rating is None:
         return None
 
-    # Use atomic UPDATE with WHERE rating IS NULL to prevent TOCTOU race.
-    # If another worker already set the rating, rowcount will be 0.
     result: CursorResult = await session.execute(  # type: ignore[type-arg]
         update(FactCheckedItemCandidate)
         .where(FactCheckedItemCandidate.id == candidate.id)
@@ -123,7 +161,7 @@ async def apply_predicted_rating_if_available(
     return rating
 
 
-def scrape_url_content(url: str) -> str | None:
+def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
     """Scrape and extract main content from a URL using Trafilatura.
 
     Trafilatura is designed for:
@@ -133,12 +171,19 @@ def scrape_url_content(url: str) -> str | None:
 
     Args:
         url: The URL to scrape.
+        user_agent: Optional custom user agent. If None, uses a random one from rotation.
 
     Returns:
         Extracted text content, or None if extraction failed.
     """
     try:
-        downloaded = trafilatura.fetch_url(url)
+        if user_agent is None:
+            user_agent = get_random_user_agent()
+
+        config = trafilatura.settings.use_config()  # type: ignore[attr-defined]
+        config.set("DEFAULT", "USER_AGENT", user_agent)
+
+        downloaded = trafilatura.fetch_url(url, config=config)
         if not downloaded:
             logger.warning(f"Failed to download URL: {url}")
             return None
@@ -163,23 +208,90 @@ def scrape_url_content(url: str) -> str | None:
 
 
 @register_task(
+    task_name="fact_check:fetch_url_content",
+    component="import_pipeline",
+    task_type="scrape",
+    rate_limit_name="scrape:domain:{domain}",
+    rate_limit_capacity="1",
+)
+async def fetch_url_content(
+    url: str,
+    domain: str,
+    base_delay: float = DEFAULT_BASE_DELAY,
+) -> dict:
+    """Fetch URL content with per-domain rate limiting.
+
+    This task is rate-limited per domain to ensure politeness when scraping.
+    After acquiring the semaphore (handled by middleware), it adds an explicit
+    delay with jitter before making the request.
+
+    Args:
+        url: The URL to fetch content from.
+        domain: The domain for rate limiting (used in rate_limit_name template).
+        base_delay: Minimum delay in seconds between requests to same domain.
+
+    Returns:
+        Dict with 'content' key containing extracted text, or 'error' on failure.
+    """
+    jitter = random.uniform(0, DEFAULT_JITTER_MAX)
+    total_delay = base_delay + jitter
+
+    logger.debug(
+        "Applying politeness delay before fetch",
+        extra={
+            "url": url,
+            "domain": domain,
+            "base_delay": base_delay,
+            "jitter": jitter,
+            "total_delay": total_delay,
+        },
+    )
+    await asyncio.sleep(total_delay)
+
+    user_agent = get_random_user_agent()
+    content = await asyncio.to_thread(scrape_url_content, url, user_agent)
+
+    if content:
+        logger.info(
+            "Successfully fetched URL content",
+            extra={
+                "url": url,
+                "domain": domain,
+                "content_length": len(content),
+            },
+        )
+        return {"content": content}
+
+    logger.warning(
+        "Failed to fetch URL content",
+        extra={"url": url, "domain": domain},
+    )
+    return {"error": "Failed to extract content from URL"}
+
+
+@register_task(
     task_name="fact_check:scrape_candidate",
     component="import_pipeline",
     task_type="scrape",
 )
-async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True) -> dict:
+async def scrape_candidate_content(
+    candidate_id: str,
+    auto_promote: bool = True,
+    base_delay: float = DEFAULT_BASE_DELAY,
+) -> dict:
     """Scrape article content for a candidate and optionally promote.
 
     This task:
     1. Fetches the candidate from the database
     2. Sets status to SCRAPING
-    3. Scrapes content using Trafilatura
+    3. Dispatches to fetch_url_content task (rate-limited per domain)
     4. Updates candidate with content or error
     5. Optionally promotes to fact_check_items if successful
 
     Args:
         candidate_id: UUID of the candidate to scrape.
         auto_promote: If True, automatically promote after successful scrape.
+        base_delay: Minimum delay in seconds between requests to same domain.
 
     Returns:
         Dict with status and any relevant details.
@@ -212,7 +324,15 @@ async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True)
 
         await update_candidate_status(session, cid, CandidateStatus.SCRAPING)
 
-        content = scrape_url_content(candidate.source_url)
+        domain = extract_domain(candidate.source_url)
+        fetch_task = await fetch_url_content.kiq(
+            url=candidate.source_url,
+            domain=domain,
+            base_delay=base_delay,
+        )
+        fetch_result = await fetch_task.wait_result(timeout=120)
+
+        content = fetch_result.return_value.get("content") if fetch_result.return_value else None
 
         if content:
             await update_candidate_status(session, cid, CandidateStatus.SCRAPED, content=content)
@@ -228,7 +348,11 @@ async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True)
             else:
                 result = {"status": "scraped", "content_length": len(content)}
         else:
-            error_msg = "Failed to extract content from URL"
+            error_msg = (
+                fetch_result.return_value.get("error", "Failed to extract content from URL")
+                if fetch_result.return_value
+                else "Failed to extract content from URL"
+            )
             await update_candidate_status(
                 session, cid, CandidateStatus.SCRAPE_FAILED, error_message=error_msg
             )
@@ -244,7 +368,10 @@ async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True)
     component="import_pipeline",
     task_type="batch",
 )
-async def enqueue_scrape_batch(batch_size: int = 100) -> dict:
+async def enqueue_scrape_batch(
+    batch_size: int = 100,
+    base_delay: float = DEFAULT_BASE_DELAY,
+) -> dict:
     """Enqueue scrape tasks for pending candidates.
 
     Finds candidates with status=pending and no content,
@@ -252,6 +379,7 @@ async def enqueue_scrape_batch(batch_size: int = 100) -> dict:
 
     Args:
         batch_size: Maximum number of candidates to enqueue.
+        base_delay: Minimum delay in seconds between requests to same domain.
 
     Returns:
         Dict with count of enqueued tasks.
@@ -272,7 +400,7 @@ async def enqueue_scrape_batch(batch_size: int = 100) -> dict:
             break
 
         for cid in candidate_ids:
-            await scrape_candidate_content.kiq(str(cid))
+            await scrape_candidate_content.kiq(str(cid), base_delay=base_delay)
 
         logger.info(f"Enqueued {len(candidate_ids)} scrape tasks")
         enqueue_result = {"enqueued": len(candidate_ids)}

@@ -126,6 +126,7 @@ class TestStartScrapeJob:
             db_url="postgresql://test",
             redis_url="redis://test",
             concurrency=10,
+            base_delay=1.0,
         )
 
     @pytest.mark.asyncio

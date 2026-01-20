@@ -65,6 +65,12 @@ class BatchProcessingRequest(BaseModel):
         default=False,
         description="Count candidates only, do not perform operation",
     )
+    base_delay: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=30.0,
+        description="Minimum delay in seconds between requests to the same domain (for scraping)",
+    )
 
 
 class EnqueueScrapeResponse(BaseModel):
@@ -252,6 +258,7 @@ async def scrape_candidates_endpoint(
             batch_size=request.batch_size,
             dry_run=request.dry_run,
             user_id=str(current_user.id),
+            base_delay=request.base_delay,
         )
     except ActiveJobExistsError as e:
         raise HTTPException(

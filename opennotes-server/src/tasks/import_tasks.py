@@ -626,6 +626,7 @@ async def process_scrape_batch(  # noqa: PLR0912
     db_url: str,
     redis_url: str,
     concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
+    base_delay: float = 1.0,
 ) -> dict[str, Any]:
     """
     TaskIQ task to process scraping of pending candidates.
@@ -657,6 +658,7 @@ async def process_scrape_batch(  # noqa: PLR0912
         db_url: Database connection URL
         redis_url: Redis connection URL for progress tracking
         concurrency: Max concurrent URL scrapes (default: DEFAULT_SCRAPE_CONCURRENCY)
+        base_delay: Minimum delay in seconds between requests (stored in metadata)
 
     Returns:
         dict with status and scrape stats
