@@ -3621,11 +3621,8 @@ export interface components {
              * @default false
              */
             auto_promote: boolean;
-            /**
-             * Status
-             * @description Filter by candidate status
-             */
-            status?: string | null;
+            /** @description Filter by candidate status */
+            status?: components["schemas"]["CandidateStatus"] | null;
             /**
              * Dataset Name
              * @description Filter by dataset name (exact match)
@@ -3967,8 +3964,9 @@ export interface components {
             /**
              * Type
              * @default fact-check-candidates
+             * @constant
              */
-            type: string;
+            type: "fact-check-candidates";
             /** Id */
             id: string;
             attributes: components["schemas"]["CandidateAttributes"];
@@ -3990,6 +3988,12 @@ export interface components {
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
+        /**
+         * CandidateStatus
+         * @description Status values for fact-checked item candidates.
+         * @enum {string}
+         */
+        CandidateStatus: "pending" | "scraping" | "scraped" | "scrape_failed" | "promoting" | "promoted";
         /**
          * ClearPreviewResponse
          * @description Response for clear preview (dry run) operations.
@@ -12336,6 +12340,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CandidateSingleResponse"];
                 };
+            };
+            /** @description Candidate not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

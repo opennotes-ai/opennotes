@@ -1,6 +1,8 @@
 import base64
 import json
 import math
+import os
+import warnings
 from collections import Counter
 from typing import Any, Literal, cast
 
@@ -480,11 +482,26 @@ class Settings(BaseSettings):
         "When set to DEBUG, enables verbose logging for exporters and SDK internals.",
     )
     TRACING_SAMPLE_RATE: float = Field(
-        default=1.0,
-        description="Trace sampling rate (0.0-1.0). 1.0 = 100% of traces sampled.",
+        default=0.1,
+        description="Trace sampling rate (0.0-1.0). 0.1 = 10% of traces sampled (production default). "
+        "Set to 1.0 for development/debugging to capture all traces.",
         ge=0.0,
         le=1.0,
+        validation_alias=AliasChoices("TRACING_SAMPLE_RATE", "TRACE_SAMPLE_RATE"),
     )
+
+    @field_validator("TRACING_SAMPLE_RATE", mode="before")
+    @classmethod
+    def warn_deprecated_trace_sample_rate(cls, v: Any) -> Any:
+        if os.getenv("TRACE_SAMPLE_RATE") and not os.getenv("TRACING_SAMPLE_RATE"):
+            warnings.warn(
+                "TRACE_SAMPLE_RATE is deprecated and will be removed in a future version. "
+                "Please use TRACING_SAMPLE_RATE instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return v
+
     OTLP_HEADERS: str | None = Field(
         default=None,
         description="OTLP exporter headers in 'key=value,key2=value2' format for authentication",

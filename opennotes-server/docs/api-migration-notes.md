@@ -2,6 +2,36 @@
 
 This document tracks breaking changes and migration guidance for API consumers.
 
+## 2026-01-20: TRACE_SAMPLE_RATE Environment Variable Renamed
+
+### Change Summary
+
+The environment variable `TRACE_SAMPLE_RATE` has been renamed to `TRACING_SAMPLE_RATE` for consistency with the `ENABLE_TRACING` variable.
+
+**IMPORTANT**: The default value has been restored to `0.1` (10% sampling). If you were relying on the temporary default of `1.0` (100% sampling), you will need to explicitly set `TRACING_SAMPLE_RATE=1.0`.
+
+### Backwards Compatibility
+
+The old `TRACE_SAMPLE_RATE` environment variable is still supported but deprecated. A deprecation warning will be logged when the old variable is used. Update your configuration to use `TRACING_SAMPLE_RATE` before the next major release.
+
+### Migration Guide
+
+**Before:**
+```bash
+export TRACE_SAMPLE_RATE=0.2
+```
+
+**After:**
+```bash
+export TRACING_SAMPLE_RATE=0.2
+```
+
+### Default Value
+
+The default sampling rate is `0.1` (10% of traces). This is appropriate for production environments to control tracing costs. For development or debugging, set `TRACING_SAMPLE_RATE=1.0` to capture all traces.
+
+---
+
 ## 2026-01-16: Batch Job Concurrency Response Code Change
 
 ### Change Summary

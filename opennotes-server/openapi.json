@@ -8233,6 +8233,9 @@
               }
             }
           },
+          "404": {
+            "description": "Candidate not found"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -9815,13 +9818,12 @@
           "status": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/CandidateStatus"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Status",
             "description": "Filter by candidate status"
           },
           "dataset_name": {
@@ -10443,6 +10445,7 @@
         "properties": {
           "type": {
             "type": "string",
+            "const": "fact-check-candidates",
             "title": "Type",
             "default": "fact-check-candidates"
           },
@@ -10494,6 +10497,19 @@
         ],
         "title": "CandidateSingleResponse",
         "description": "JSON:API response for a single candidate."
+      },
+      "CandidateStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "scraping",
+          "scraped",
+          "scrape_failed",
+          "promoting",
+          "promoted"
+        ],
+        "title": "CandidateStatus",
+        "description": "Status values for fact-checked item candidates."
       },
       "ClearPreviewResponse": {
         "properties": {

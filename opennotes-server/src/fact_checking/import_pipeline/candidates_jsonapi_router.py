@@ -28,7 +28,7 @@ from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
 from src.database import get_db
-from src.fact_checking.candidate_models import FactCheckedItemCandidate
+from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.candidate_schemas import (
     BulkApproveRequest,
     BulkApproveResponse,
@@ -98,6 +98,29 @@ def create_pagination_links_from_request(
     )
 
 
+def validate_status_filter(filter_status: str | None) -> str | None:
+    """Validate status filter against CandidateStatus enum values.
+
+    Args:
+        filter_status: The status filter value from the request.
+
+    Returns:
+        The validated status string, or None if no filter provided.
+
+    Raises:
+        ValueError: If the status value is not a valid CandidateStatus.
+    """
+    if filter_status is None:
+        return None
+    valid_statuses = [s.value for s in CandidateStatus]
+    if filter_status not in valid_statuses:
+        raise ValueError(
+            f"Invalid status value: '{filter_status}'. "
+            f"Valid values are: {', '.join(valid_statuses)}"
+        )
+    return filter_status
+
+
 def create_error_response(
     status_code: int,
     title: str,
@@ -153,11 +176,20 @@ async def list_candidates_jsonapi(
     - filter[published_date_to]: Filter by published_date <= datetime
     """
     try:
+        validated_status = validate_status_filter(filter_status)
+    except ValueError as e:
+        return create_error_response(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Invalid Filter Value",
+            str(e),
+        )
+
+    try:
         candidates, total = await list_candidates(
             session=db,
             page=page_number,
             page_size=page_size,
-            status=filter_status,
+            status=validated_status,
             dataset_name=filter_dataset_name,
             dataset_tags=filter_dataset_tags,
             rating_filter=filter_rating,
@@ -192,6 +224,9 @@ async def list_candidates_jsonapi(
     "/{candidate_id}/rating",
     response_class=JSONResponse,
     response_model=CandidateSingleResponse,
+    responses={
+        404: {"description": "Candidate not found"},
+    },
 )
 async def set_rating_jsonapi(
     candidate_id: UUID,
@@ -292,7 +327,7 @@ async def bulk_approve_predicted_jsonapi(
             session=db,
             threshold=body.threshold,
             auto_promote=body.auto_promote,
-            status=body.status,
+            status=body.status.value if body.status else None,
             dataset_name=body.dataset_name,
             dataset_tags=body.dataset_tags,
             has_content=body.has_content,

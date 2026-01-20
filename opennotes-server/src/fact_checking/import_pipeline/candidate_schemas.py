@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.base_schemas import StrictInputSchema
 from src.common.jsonapi import JSONAPILinks, JSONAPIMeta
+from src.fact_checking.candidate_models import CandidateStatus
 
 
 class CandidateAttributes(BaseModel):
@@ -42,7 +43,7 @@ class CandidateResource(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    type: str = "fact-check-candidates"
+    type: Literal["fact-check-candidates"] = "fact-check-candidates"
     id: str
     attributes: CandidateAttributes
 
@@ -111,7 +112,7 @@ class BulkApproveRequest(StrictInputSchema):
         default=False,
         description="Whether to promote approved candidates that are ready",
     )
-    status: str | None = Field(
+    status: CandidateStatus | None = Field(
         None,
         description="Filter by candidate status",
     )

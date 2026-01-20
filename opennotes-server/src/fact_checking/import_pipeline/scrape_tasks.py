@@ -24,6 +24,11 @@ from src.tasks.broker import register_task
 
 logger = logging.getLogger(__name__)
 
+# Threshold for auto-applying predicted ratings.
+# A value of 1.0 means only apply ratings with 100% confidence.
+# This aligns with bulk_approve_from_predictions() default behavior.
+AUTO_PROMOTE_PREDICTION_THRESHOLD: float = 1.0
+
 
 async def get_candidate(
     session: AsyncSession, candidate_id: UUID
@@ -65,36 +70,52 @@ async def update_candidate_status(
 async def apply_predicted_rating_if_available(
     session: AsyncSession,
     candidate: FactCheckedItemCandidate,
+    threshold: float = AUTO_PROMOTE_PREDICTION_THRESHOLD,
 ) -> str | None:
     """Apply high-confidence predicted rating to candidate if eligible.
 
     When auto_promote is enabled and candidate has no rating but has
-    predicted_ratings with a value >= 1.0, this copies the predicted
+    predicted_ratings with a value >= threshold, this copies the predicted
     rating to the rating field to enable promotion.
+
+    Uses atomic UPDATE with WHERE rating IS NULL to prevent TOCTOU race conditions
+    when multiple workers process the same candidate concurrently.
 
     Args:
         session: Database session.
-        candidate: The candidate to potentially update.
+        candidate: The candidate to potentially update. Note: This object becomes
+            stale after the update and should be refreshed if further ORM operations
+            are needed.
+        threshold: Minimum confidence value for a predicted rating to be applied.
+            Defaults to AUTO_PROMOTE_PREDICTION_THRESHOLD (1.0).
 
     Returns:
-        The rating applied, or None if no rating was applied.
+        The rating applied, or None if no rating was applied (either no eligible
+        prediction or another process already set a rating).
     """
-    if candidate.rating is not None:
-        return None
-
     if not candidate.predicted_ratings:
         return None
 
-    rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold=1.0)
+    rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold=threshold)
     if rating is None:
         return None
 
-    await session.execute(
+    # Use atomic UPDATE with WHERE rating IS NULL to prevent TOCTOU race.
+    # If another worker already set the rating, rowcount will be 0.
+    result = await session.execute(
         update(FactCheckedItemCandidate)
         .where(FactCheckedItemCandidate.id == candidate.id)
+        .where(FactCheckedItemCandidate.rating.is_(None))
         .values(rating=rating, updated_at=func.now())
     )
     await session.commit()
+
+    if result.rowcount == 0:
+        logger.debug(
+            f"Skipped auto-applying rating for candidate {candidate.id}: "
+            "rating already set by another process"
+        )
+        return None
 
     logger.info(
         f"Auto-applied rating '{rating}' from predicted_ratings for candidate {candidate.id}"

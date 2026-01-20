@@ -5,6 +5,7 @@ fact-check candidates.
 """
 
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime
 from uuid import UUID
 
@@ -18,22 +19,27 @@ from src.fact_checking.import_pipeline.promotion import promote_candidate
 
 logger = logging.getLogger(__name__)
 
+BATCH_SIZE = 1000
+
 
 def extract_high_confidence_rating(
     predicted_ratings: dict[str, float | int] | None,
     threshold: float = 1.0,
 ) -> str | None:
-    """Extract rating from predicted_ratings where value >= threshold.
+    """Extract highest-probability rating from predicted_ratings where value >= threshold.
 
     Handles both integer and float values since JSON may deserialize
     whole numbers as integers (1) rather than floats (1.0).
+
+    When multiple ratings meet the threshold, returns the one with the highest
+    probability. This ensures deterministic behavior regardless of dict ordering.
 
     Args:
         predicted_ratings: Dictionary mapping rating keys to probability values.
         threshold: Minimum value for a rating to be considered high-confidence.
 
     Returns:
-        First rating key where value >= threshold, or None if no match.
+        Rating key with highest probability >= threshold, or None if no match.
 
     Examples:
         >>> extract_high_confidence_rating({"false": 1.0}, 1.0)
@@ -44,11 +50,19 @@ def extract_high_confidence_rating(
         None
         >>> extract_high_confidence_rating(None, 1.0)
         None
+        >>> extract_high_confidence_rating({"a": 0.9, "b": 0.95}, 0.85)  # returns highest
+        'b'
     """
     if not predicted_ratings:
         return None
 
-    for rating_key, probability in predicted_ratings.items():
+    sorted_ratings = sorted(
+        predicted_ratings.items(),
+        key=lambda x: float(x[1]),
+        reverse=True,
+    )
+
+    for rating_key, probability in sorted_ratings:
         if float(probability) >= threshold:
             return rating_key
 
@@ -183,6 +197,9 @@ async def set_candidate_rating(
 ) -> tuple[FactCheckedItemCandidate | None, bool]:
     """Set rating on a candidate and optionally promote.
 
+    Uses atomic UPDATE...RETURNING to avoid TOCTOU race conditions.
+    The candidate is updated and returned in a single database operation.
+
     Args:
         session: Database session.
         candidate_id: ID of the candidate to update.
@@ -193,13 +210,7 @@ async def set_candidate_rating(
     Returns:
         Tuple of (updated_candidate, was_promoted).
     """
-    candidate = await get_candidate_by_id(session, candidate_id)
-
-    if not candidate:
-        logger.warning(f"Candidate not found for rating: {candidate_id}")
-        return None, False
-
-    await session.execute(
+    stmt = (
         update(FactCheckedItemCandidate)
         .where(FactCheckedItemCandidate.id == candidate_id)
         .values(
@@ -207,10 +218,17 @@ async def set_candidate_rating(
             rating_details=rating_details,
             updated_at=func.now(),
         )
+        .returning(FactCheckedItemCandidate)
     )
-    await session.commit()
 
-    await session.refresh(candidate)
+    result = await session.execute(stmt)
+    candidate = result.scalar_one_or_none()
+
+    if not candidate:
+        logger.warning(f"Candidate not found for rating: {candidate_id}")
+        return None, False
+
+    await session.commit()
 
     promoted = False
     if auto_promote:
@@ -224,6 +242,46 @@ async def set_candidate_rating(
     )
 
     return candidate, promoted
+
+
+async def _iter_candidates_for_bulk_approval(
+    session: AsyncSession,
+    filters: list,
+    batch_size: int = BATCH_SIZE,
+) -> AsyncIterator[list[FactCheckedItemCandidate]]:
+    """Iterate candidates in batches using FOR UPDATE SKIP LOCKED to prevent TOCTOU.
+
+    Uses explicit pagination instead of .all() to avoid loading all candidates
+    into memory at once. Each batch is locked with FOR UPDATE SKIP LOCKED to
+    prevent concurrent modification.
+
+    Args:
+        session: Database session.
+        filters: SQLAlchemy filter conditions.
+        batch_size: Number of candidates per batch.
+
+    Yields:
+        Batches of locked candidates.
+    """
+    offset = 0
+    while True:
+        query = (
+            select(FactCheckedItemCandidate)
+            .where(and_(*filters))
+            .order_by(FactCheckedItemCandidate.id)
+            .limit(batch_size)
+            .offset(offset)
+            .with_for_update(skip_locked=True)
+        )
+
+        result = await session.execute(query)
+        batch = list(result.scalars().all())
+
+        if not batch:
+            break
+
+        yield batch
+        offset += batch_size
 
 
 async def bulk_approve_from_predictions(
@@ -243,7 +301,9 @@ async def bulk_approve_from_predictions(
     - Have no rating set
     - Have a predicted_ratings entry with value >= threshold
 
-    For each matching candidate, sets rating to the first key with value >= threshold.
+    For each matching candidate, sets rating to the highest-probability key
+    that meets the threshold. Uses batching with FOR UPDATE SKIP LOCKED to
+    prevent TOCTOU races and avoid memory issues with large datasets.
 
     Args:
         session: Database session.
@@ -271,34 +331,38 @@ async def bulk_approve_from_predictions(
 
     filters.append(FactCheckedItemCandidate.predicted_ratings.is_not(None))
 
-    query = select(FactCheckedItemCandidate).where(and_(*filters))
-
-    result = await session.execute(query)
-    candidates = result.scalars().all()
-
     updated_count = 0
     promoted_count = 0 if auto_promote else None
 
-    for candidate in candidates:
-        rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold)
-        if rating is None:
-            continue
+    async for batch in _iter_candidates_for_bulk_approval(session, filters):
+        batch_updates: list[tuple[UUID, str]] = []
+        candidates_to_promote: list[UUID] = []
 
-        await session.execute(
-            update(FactCheckedItemCandidate)
-            .where(FactCheckedItemCandidate.id == candidate.id)
-            .values(rating=rating, updated_at=func.now())
-        )
-        updated_count += 1
+        for candidate in batch:
+            rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold)
+            if rating is None:
+                continue
+
+            batch_updates.append((candidate.id, rating))
+            if auto_promote:
+                candidates_to_promote.append(candidate.id)
+
+        for candidate_id, rating in batch_updates:
+            await session.execute(
+                update(FactCheckedItemCandidate)
+                .where(FactCheckedItemCandidate.id == candidate_id)
+                .where(FactCheckedItemCandidate.rating.is_(None))
+                .values(rating=rating, updated_at=func.now())
+            )
+            updated_count += 1
+
+        await session.commit()
 
         if auto_promote and promoted_count is not None:
-            await session.commit()
-            promoted = await promote_candidate(session, candidate.id)
-            if promoted:
-                promoted_count += 1
-
-    if not auto_promote or updated_count == 0:
-        await session.commit()
+            for candidate_id in candidates_to_promote:
+                promoted = await promote_candidate(session, candidate_id)
+                if promoted:
+                    promoted_count += 1
 
     logger.info(
         f"Bulk approved {updated_count} candidates from predictions "
