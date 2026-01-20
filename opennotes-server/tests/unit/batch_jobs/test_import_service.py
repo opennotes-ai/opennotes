@@ -91,6 +91,7 @@ class TestStartScrapeJob:
         assert job_create.total_tasks == 0
         assert job_create.metadata_["batch_size"] == 500
         assert job_create.metadata_["dry_run"] is False
+        assert job_create.metadata_["base_delay"] == 1.0
 
     @pytest.mark.asyncio
     @patch("src.tasks.import_tasks.process_scrape_batch")
@@ -117,6 +118,7 @@ class TestStartScrapeJob:
         await import_service.start_scrape_job(
             batch_size=500,
             dry_run=True,
+            base_delay=2.5,
         )
 
         mock_task.kiq.assert_called_once_with(
@@ -126,7 +128,7 @@ class TestStartScrapeJob:
             db_url="postgresql://test",
             redis_url="redis://test",
             concurrency=10,
-            base_delay=1.0,
+            base_delay=2.5,
         )
 
     @pytest.mark.asyncio
@@ -196,6 +198,112 @@ class TestStartScrapeJob:
         create_call = mock_batch_job_service.create_job.call_args
         job_create = create_call[0][0]
         assert job_create.metadata_["batch_size"] == 1000
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_scrape_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_scrape_job_stores_custom_base_delay_in_metadata(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_scrape_job stores custom base_delay in job metadata and passes to task."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service.start_scrape_job(
+            batch_size=500,
+            dry_run=False,
+            base_delay=5.0,
+        )
+
+        create_call = mock_batch_job_service.create_job.call_args
+        job_create = create_call[0][0]
+        assert job_create.metadata_["base_delay"] == 5.0
+
+        mock_task.kiq.assert_called_once_with(
+            job_id=str(job_id),
+            batch_size=500,
+            dry_run=False,
+            db_url="postgresql://test",
+            redis_url="redis://test",
+            concurrency=10,
+            base_delay=5.0,
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_scrape_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_scrape_job_with_minimum_base_delay(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_scrape_job accepts minimum base_delay of 0.1."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service.start_scrape_job(base_delay=0.1)
+
+        create_call = mock_batch_job_service.create_job.call_args
+        job_create = create_call[0][0]
+        assert job_create.metadata_["base_delay"] == 0.1
+
+        mock_task.kiq.assert_called_once()
+        kiq_call = mock_task.kiq.call_args
+        assert kiq_call.kwargs["base_delay"] == 0.1
+
+    @pytest.mark.asyncio
+    @patch("src.tasks.import_tasks.process_scrape_batch")
+    @patch("src.batch_jobs.import_service.get_settings")
+    async def test_start_scrape_job_with_maximum_base_delay(
+        self,
+        mock_get_settings,
+        mock_task,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_scrape_job accepts maximum base_delay of 30.0."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_task.kiq = AsyncMock()
+        mock_get_settings.return_value = MagicMock(
+            DATABASE_URL="postgresql://test",
+            REDIS_URL="redis://test",
+        )
+
+        await import_service.start_scrape_job(base_delay=30.0)
+
+        create_call = mock_batch_job_service.create_job.call_args
+        job_create = create_call[0][0]
+        assert job_create.metadata_["base_delay"] == 30.0
+
+        mock_task.kiq.assert_called_once()
+        kiq_call = mock_task.kiq.call_args
+        assert kiq_call.kwargs["base_delay"] == 30.0
 
 
 @pytest.mark.unit

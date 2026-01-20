@@ -10,6 +10,7 @@ Uses Trafilatura for robust web content extraction with:
 """
 
 import asyncio
+import hashlib
 import logging
 import random
 from urllib.parse import urlparse
@@ -18,6 +19,7 @@ from uuid import UUID
 import trafilatura
 from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from taskiq import TaskiqResultTimeoutError
 
 from src.database import get_db
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
@@ -32,16 +34,17 @@ logger = logging.getLogger(__name__)
 AUTO_PROMOTE_PREDICTION_THRESHOLD: float = 1.0
 
 DEFAULT_BASE_DELAY = 1.0
-DEFAULT_JITTER_MAX = 0.5
+DEFAULT_JITTER_RATIO = 0.5
+DEFAULT_SCRAPE_TIMEOUT = 120
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
 ]
 
 
@@ -53,16 +56,29 @@ def extract_domain(url: str) -> str:
 
     Returns:
         Normalized domain string (lowercase, www. prefix stripped).
-        Returns 'unknown' if URL cannot be parsed.
+        For unparseable URLs, returns a hash of the URL prefix to avoid
+        conflating all unknown domains into a single rate limit bucket.
     """
     try:
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
         if domain.startswith("www."):
             domain = domain[4:]
-        return domain or "unknown"
+        if domain:
+            return domain
+        url_hash = hashlib.sha256(url[:100].encode()).hexdigest()[:16]
+        logger.warning(
+            "Unable to extract domain from URL, using hash for rate limiting",
+            extra={"url": url[:100], "domain_hash": url_hash},
+        )
+        return f"unknown-{url_hash}"
     except Exception:
-        return "unknown"
+        url_hash = hashlib.sha256(url[:100].encode()).hexdigest()[:16]
+        logger.warning(
+            "Error parsing URL, using hash for rate limiting",
+            extra={"url": url[:100], "domain_hash": url_hash},
+        )
+        return f"unknown-{url_hash}"
 
 
 def get_random_user_agent() -> str:
@@ -169,6 +185,10 @@ def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
     - Clean main content extraction (no boilerplate)
     - Handling various HTML structures
 
+    Note on thread safety: trafilatura.settings.use_config() creates a fresh
+    ConfigParser instance on each call (verified in trafilatura/settings.py),
+    so mutating the config here is thread-safe.
+
     Args:
         url: The URL to scrape.
         user_agent: Optional custom user agent. If None, uses a random one from rotation.
@@ -229,11 +249,19 @@ async def fetch_url_content(
         url: The URL to fetch content from.
         domain: The domain for rate limiting (used in rate_limit_name template).
         base_delay: Minimum delay in seconds between requests to same domain.
+            Must be non-negative (negative values will be clamped to 0).
 
     Returns:
         Dict with 'content' key containing extracted text, or 'error' on failure.
     """
-    jitter = random.uniform(0, DEFAULT_JITTER_MAX)
+    if base_delay < 0:
+        logger.warning(
+            "Negative base_delay provided, clamping to 0",
+            extra={"url": url, "domain": domain, "original_base_delay": base_delay},
+        )
+        base_delay = 0.0
+
+    jitter = random.uniform(0, base_delay * DEFAULT_JITTER_RATIO)
     total_delay = base_delay + jitter
 
     logger.debug(
@@ -269,6 +297,88 @@ async def fetch_url_content(
     return {"error": "Failed to extract content from URL"}
 
 
+async def _mark_scrape_failed(cid: UUID, error_message: str) -> dict:
+    """Update candidate status to SCRAPE_FAILED and return error result."""
+    async for session in get_db():
+        await update_candidate_status(
+            session, cid, CandidateStatus.SCRAPE_FAILED, error_message=error_message
+        )
+        break
+    return {"status": "scrape_failed", "message": error_message}
+
+
+async def _process_scrape_result(
+    cid: UUID, candidate_id: str, fetch_result, auto_promote: bool
+) -> dict:
+    """Process fetch result and update candidate accordingly."""
+    content = fetch_result.return_value.get("content") if fetch_result.return_value else None
+
+    async for session in get_db():
+        if content:
+            await update_candidate_status(session, cid, CandidateStatus.SCRAPED, content=content)
+            logger.info(f"Successfully scraped candidate: {candidate_id} ({len(content)} chars)")
+
+            if auto_promote:
+                promoted = await promote_candidate(session, cid)
+                return {
+                    "status": "promoted" if promoted else "scraped",
+                    "content_length": len(content),
+                }
+            return {"status": "scraped", "content_length": len(content)}
+
+        error_msg = (
+            fetch_result.return_value.get("error", "Failed to extract content from URL")
+            if fetch_result.return_value
+            else "Failed to extract content from URL"
+        )
+        await update_candidate_status(
+            session, cid, CandidateStatus.SCRAPE_FAILED, error_message=error_msg
+        )
+        logger.warning(f"Failed to scrape candidate: {candidate_id}")
+        return {"status": "scrape_failed", "message": error_msg}
+
+    return {"status": "error", "message": "Failed to process scrape result"}
+
+
+async def _validate_and_dispatch_scrape(
+    cid: UUID, candidate_id: str, base_delay: float, auto_promote: bool
+) -> tuple[dict | None, object | None, str | None]:
+    """Validate candidate and dispatch fetch task if needed.
+
+    Returns:
+        (early_return, fetch_task, source_url) - early_return is result dict if
+        we should return early, otherwise None.
+    """
+    async for session in get_db():
+        candidate = await get_candidate(session, cid)
+
+        if not candidate:
+            logger.error(f"Candidate not found: {candidate_id}")
+            return {"status": "error", "message": "Candidate not found"}, None, None
+
+        if candidate.status == CandidateStatus.PROMOTED.value:
+            logger.info(f"Candidate already promoted: {candidate_id}")
+            return {"status": "skipped", "message": "Already promoted"}, None, None
+
+        if candidate.content:
+            logger.info(f"Candidate already has content: {candidate_id}")
+            if auto_promote:
+                promoted = await promote_candidate(session, cid)
+                return {"status": "promoted" if promoted else "promotion_failed"}, None, None
+            return {"status": "skipped", "message": "Already scraped"}, None, None
+
+        await update_candidate_status(session, cid, CandidateStatus.SCRAPING)
+        source_url = candidate.source_url
+
+        domain = extract_domain(source_url)
+        fetch_task = await fetch_url_content.kiq(
+            url=source_url, domain=domain, base_delay=base_delay
+        )
+        return None, fetch_task, source_url
+
+    return {"status": "error", "message": "No database session available"}, None, None
+
+
 @register_task(
     task_name="fact_check:scrape_candidate",
     component="import_pipeline",
@@ -278,6 +388,7 @@ async def scrape_candidate_content(
     candidate_id: str,
     auto_promote: bool = True,
     base_delay: float = DEFAULT_BASE_DELAY,
+    scrape_timeout: int = DEFAULT_SCRAPE_TIMEOUT,
 ) -> dict:
     """Scrape article content for a candidate and optionally promote.
 
@@ -292,75 +403,42 @@ async def scrape_candidate_content(
         candidate_id: UUID of the candidate to scrape.
         auto_promote: If True, automatically promote after successful scrape.
         base_delay: Minimum delay in seconds between requests to same domain.
+        scrape_timeout: Timeout in seconds for waiting on fetch task result.
+            Reasonable range is 30-300 seconds.
 
     Returns:
         Dict with status and any relevant details.
     """
     cid = UUID(candidate_id)
-    result: dict = {"status": "error", "message": "No database session available"}
 
-    async for session in get_db():
-        candidate = await get_candidate(session, cid)
+    early_return, fetch_task, source_url = await _validate_and_dispatch_scrape(
+        cid, candidate_id, base_delay, auto_promote
+    )
+    if early_return is not None:
+        return early_return
 
-        if not candidate:
-            logger.error(f"Candidate not found: {candidate_id}")
-            result = {"status": "error", "message": "Candidate not found"}
-            break
-
-        if candidate.status == CandidateStatus.PROMOTED.value:
-            logger.info(f"Candidate already promoted: {candidate_id}")
-            result = {"status": "skipped", "message": "Already promoted"}
-            break
-
-        if candidate.content:
-            logger.info(f"Candidate already has content: {candidate_id}")
-            if auto_promote:
-                await apply_predicted_rating_if_available(session, candidate)
-                promoted = await promote_candidate(session, cid)
-                result = {"status": "promoted" if promoted else "promotion_failed"}
-            else:
-                result = {"status": "skipped", "message": "Already scraped"}
-            break
-
-        await update_candidate_status(session, cid, CandidateStatus.SCRAPING)
-
-        domain = extract_domain(candidate.source_url)
-        fetch_task = await fetch_url_content.kiq(
-            url=candidate.source_url,
-            domain=domain,
-            base_delay=base_delay,
+    try:
+        fetch_result = await fetch_task.wait_result(timeout=scrape_timeout)
+    except TaskiqResultTimeoutError:
+        msg = f"Fetch task timed out after {scrape_timeout}s"
+        logger.error(msg, extra={"candidate_id": candidate_id, "url": source_url})
+        return await _mark_scrape_failed(cid, msg)
+    except Exception as e:
+        msg = f"Unexpected error: {str(e)[:200]}"
+        logger.exception(
+            f"Unexpected error waiting for fetch task: {e}",
+            extra={"candidate_id": candidate_id, "url": source_url},
         )
-        fetch_result = await fetch_task.wait_result(timeout=120)
+        return await _mark_scrape_failed(cid, msg)
 
-        content = fetch_result.return_value.get("content") if fetch_result.return_value else None
+    if fetch_result is None:
+        logger.error(
+            "Fetch result is None (task may have failed)",
+            extra={"candidate_id": candidate_id, "url": source_url},
+        )
+        return await _mark_scrape_failed(cid, "Fetch task returned no result")
 
-        if content:
-            await update_candidate_status(session, cid, CandidateStatus.SCRAPED, content=content)
-            logger.info(f"Successfully scraped candidate: {candidate_id} ({len(content)} chars)")
-
-            if auto_promote:
-                await apply_predicted_rating_if_available(session, candidate)
-                promoted = await promote_candidate(session, cid)
-                result = {
-                    "status": "promoted" if promoted else "scraped",
-                    "content_length": len(content),
-                }
-            else:
-                result = {"status": "scraped", "content_length": len(content)}
-        else:
-            error_msg = (
-                fetch_result.return_value.get("error", "Failed to extract content from URL")
-                if fetch_result.return_value
-                else "Failed to extract content from URL"
-            )
-            await update_candidate_status(
-                session, cid, CandidateStatus.SCRAPE_FAILED, error_message=error_msg
-            )
-            logger.warning(f"Failed to scrape candidate: {candidate_id}")
-            result = {"status": "scrape_failed", "message": error_msg}
-        break
-
-    return result
+    return await _process_scrape_result(cid, candidate_id, fetch_result, auto_promote)
 
 
 @register_task(
@@ -371,6 +449,7 @@ async def scrape_candidate_content(
 async def enqueue_scrape_batch(
     batch_size: int = 100,
     base_delay: float = DEFAULT_BASE_DELAY,
+    scrape_timeout: int = DEFAULT_SCRAPE_TIMEOUT,
 ) -> dict:
     """Enqueue scrape tasks for pending candidates.
 
@@ -380,6 +459,7 @@ async def enqueue_scrape_batch(
     Args:
         batch_size: Maximum number of candidates to enqueue.
         base_delay: Minimum delay in seconds between requests to same domain.
+        scrape_timeout: Timeout in seconds for each scrape task.
 
     Returns:
         Dict with count of enqueued tasks.
@@ -400,7 +480,9 @@ async def enqueue_scrape_batch(
             break
 
         for cid in candidate_ids:
-            await scrape_candidate_content.kiq(str(cid), base_delay=base_delay)
+            await scrape_candidate_content.kiq(
+                str(cid), base_delay=base_delay, scrape_timeout=scrape_timeout
+            )
 
         logger.info(f"Enqueued {len(candidate_ids)} scrape tasks")
         enqueue_result = {"enqueued": len(candidate_ids)}
