@@ -19,7 +19,7 @@ export class PermissionModeService {
 
     const mode: InstallationMode = hasManageChannels && hasManageMessages ? 'full' : 'minimal';
 
-    logger.info('Detected installation mode', {
+    logger.debug('Detected installation mode', {
       guildId: guild.id,
       mode,
       hasManageChannels,

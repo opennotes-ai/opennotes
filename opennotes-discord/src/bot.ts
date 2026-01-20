@@ -458,11 +458,13 @@ export class Bot {
         const mode = this.permissionModeService.detectMode(guild);
 
         if (mode === 'minimal') {
+          // In minimal mode, DM is the only option - no channel fallback because
+          // minimal mode means we don't have channel creation permissions
           try {
             const owner = await guild.fetchOwner();
             await this.guildOnboardingService.sendWelcomeDM(guild, owner.user, mode);
           } catch (ownerError) {
-            logger.warn('Failed to send welcome DM to guild owner in minimal mode', {
+            logger.error('Failed to send welcome DM to guild owner in minimal mode', {
               guildId: guild.id,
               guildName: guild.name,
               error: ownerError instanceof Error ? ownerError.message : String(ownerError),

@@ -31,8 +31,8 @@ describe('oauth2-urls', () => {
       expect(url).toContain('scope=bot%20applications.commands');
     });
 
-    it('should have higher permission value than minimal', () => {
-      expect(PERMISSION_VALUES.full).toBeGreaterThan(PERMISSION_VALUES.minimal);
+    it('full permissions should include all minimal permissions', () => {
+      expect((PERMISSION_VALUES.full & PERMISSION_VALUES.minimal) === PERMISSION_VALUES.minimal).toBe(true);
     });
   });
 
@@ -44,6 +44,14 @@ describe('oauth2-urls', () => {
       expect(url).toContain(`permissions=${PERMISSION_VALUES.full}`);
       expect(url).toContain('guild_id=guild-456');
       expect(url).toContain('disable_guild_select=true');
+    });
+
+    it('should throw if guildId is empty', () => {
+      expect(() => getUpgradeUrl('')).toThrow('guildId is required and cannot be empty or whitespace');
+    });
+
+    it('should throw if guildId is whitespace only', () => {
+      expect(() => getUpgradeUrl('   ')).toThrow('guildId is required and cannot be empty or whitespace');
     });
   });
 

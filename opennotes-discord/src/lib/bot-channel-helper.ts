@@ -1,27 +1,14 @@
 import {
   ChatInputCommandInteraction,
   Guild,
-  PermissionFlagsBits,
   TextChannel,
   MessageFlags,
 } from 'discord.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { GuildConfigService } from '../services/GuildConfigService.js';
+import { PermissionModeService } from '../services/PermissionModeService.js';
 import { ConfigKey } from './config-schema.js';
 import { logger } from '../logger.js';
-import type { InstallationMode } from '../services/PermissionModeService.js';
-
-function detectInstallationMode(guild: Guild): InstallationMode {
-  const botMember = guild.members.me;
-  if (!botMember) {
-    return 'minimal';
-  }
-
-  const hasManageChannels = botMember.permissions.has(PermissionFlagsBits.ManageChannels);
-  const hasManageMessages = botMember.permissions.has(PermissionFlagsBits.ManageMessages);
-
-  return hasManageChannels && hasManageMessages ? 'full' : 'minimal';
-}
 
 async function replyToInteraction(
   interaction: ChatInputCommandInteraction,
@@ -102,7 +89,8 @@ export interface BotChannelRedirectResult {
 export async function getBotChannelOrRedirect(
   interaction: ChatInputCommandInteraction,
   botChannelService: BotChannelService,
-  guildConfigService: GuildConfigService
+  guildConfigService: GuildConfigService,
+  permissionModeService: PermissionModeService
 ): Promise<BotChannelRedirectResult> {
   const { isInBotChannel, botChannel, botChannelName } = await checkBotChannel(
     interaction,
@@ -137,7 +125,7 @@ export async function getBotChannelOrRedirect(
 
   const guild = interaction.guild;
   if (guild) {
-    const mode = detectInstallationMode(guild);
+    const mode = permissionModeService.detectMode(guild);
 
     if (mode === 'minimal') {
       logger.debug('No bot channel in minimal mode, allowing command in current channel', {

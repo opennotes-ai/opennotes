@@ -48,7 +48,7 @@ describe('PermissionModeService', () => {
       const mode = service.detectMode(guild as any);
 
       expect(mode).toBe('full');
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         'Detected installation mode',
         expect.objectContaining({
           guildId: 'guild-123',
@@ -82,7 +82,7 @@ describe('PermissionModeService', () => {
       const mode = service.detectMode(guild as any);
 
       expect(mode).toBe('minimal');
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         'Detected installation mode',
         expect.objectContaining({
           guildId: 'guild-456',

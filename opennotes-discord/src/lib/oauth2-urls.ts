@@ -25,6 +25,9 @@ export function getFullInstallUrl(): string {
 }
 
 export function getUpgradeUrl(guildId: string): string {
+  if (!guildId || !guildId.trim()) {
+    throw new Error('guildId is required and cannot be empty or whitespace');
+  }
   return `https://discord.com/api/oauth2/authorize?client_id=${config.clientId}&permissions=${FULL_PERMISSIONS}&scope=${OAUTH2_SCOPES}&guild_id=${guildId}&disable_guild_select=true`;
 }
 

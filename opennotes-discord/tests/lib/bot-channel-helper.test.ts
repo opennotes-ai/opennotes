@@ -19,9 +19,11 @@ const { checkBotChannel, getBotChannelOrRedirect, ensureBotChannel } = await imp
   '../../src/lib/bot-channel-helper.js'
 );
 const { BotChannelService } = await import('../../src/services/BotChannelService.js');
+const { PermissionModeService } = await import('../../src/services/PermissionModeService.js');
 
 describe('bot-channel-helper', () => {
   let botChannelService: InstanceType<typeof BotChannelService>;
+  let permissionModeService: InstanceType<typeof PermissionModeService>;
   let mockGuildConfigService: any;
 
   function createMockBotChannel(id = 'bot-channel-123', name = 'open-notes') {
@@ -108,6 +110,7 @@ describe('bot-channel-helper', () => {
 
   beforeEach(() => {
     botChannelService = new BotChannelService();
+    permissionModeService = new PermissionModeService();
     mockGuildConfigService = {
       get: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue('open-notes'),
     };
@@ -206,7 +209,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(true);
@@ -222,7 +226,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -245,7 +250,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -268,7 +274,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -289,7 +296,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -307,7 +315,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -325,7 +334,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(true);
@@ -341,7 +351,8 @@ describe('bot-channel-helper', () => {
       await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(mockLogger.info).toHaveBeenCalledWith(
@@ -361,7 +372,8 @@ describe('bot-channel-helper', () => {
       await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -381,7 +393,8 @@ describe('bot-channel-helper', () => {
       await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -401,7 +414,7 @@ describe('bot-channel-helper', () => {
       mockInteraction.reply.mockRejectedValue(replyError);
 
       await expect(
-        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService, permissionModeService)
       ).rejects.toThrow('Discord API error');
 
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -425,7 +438,7 @@ describe('bot-channel-helper', () => {
       mockInteraction.editReply.mockRejectedValue(editError);
 
       await expect(
-        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService, permissionModeService)
       ).rejects.toThrow('Interaction expired');
 
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -449,7 +462,7 @@ describe('bot-channel-helper', () => {
       mockInteraction.reply.mockRejectedValue(replyError);
 
       await expect(
-        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService, permissionModeService)
       ).rejects.toThrow('API timeout');
 
       expect(mockLogger.error).toHaveBeenCalledWith(

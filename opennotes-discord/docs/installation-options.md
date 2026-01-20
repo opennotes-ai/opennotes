@@ -20,7 +20,7 @@ OpenNotes supports two installation modes based on your permission preferences.
 
 ## Upgrading from Minimal to Full
 
-Server owners receive a DM with an upgrade link when installing with minimal permissions. Click the link to re-authorize with full permissions. The bot will automatically create the bot channel on next startup or guild event.
+Server owners receive a DM with an upgrade link when installing with minimal permissions. Click the link to re-authorize with full permissions. The bot will automatically create the bot channel on next startup.
 
 ## Permission Details
 
