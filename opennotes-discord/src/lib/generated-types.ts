@@ -2760,6 +2760,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fact-checking/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Candidates Jsonapi
+         * @description List fact-check candidates with filtering and pagination.
+         *
+         *     Returns a JSON:API formatted paginated list of candidates.
+         *
+         *     Query Parameters:
+         *     - page[number]: Page number (default: 1)
+         *     - page[size]: Page size (default: 20, max: 100)
+         *
+         *     Filter Parameters:
+         *     - filter[status]: Filter by candidate status (exact match)
+         *     - filter[dataset_name]: Filter by dataset name (exact match)
+         *     - filter[dataset_tags]: Filter by dataset tags (array overlap)
+         *     - filter[rating]: Filter by rating - "null", "not_null", or exact value
+         *     - filter[has_content]: Filter by whether content exists (true/false)
+         *     - filter[published_date_from]: Filter by published_date >= datetime
+         *     - filter[published_date_to]: Filter by published_date <= datetime
+         */
+        get: operations["list_candidates_jsonapi_api_v1_fact_checking_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fact-checking/candidates/{candidate_id}/rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Rating Jsonapi
+         * @description Set rating for a specific candidate.
+         *
+         *     Sets the human-approved rating on a candidate. Optionally triggers
+         *     promotion if the candidate is ready (has content and rating).
+         *
+         *     Args:
+         *         candidate_id: UUID of the candidate to update.
+         *         body: JSON:API request with rating attributes.
+         *
+         *     Returns:
+         *         JSON:API response with updated candidate resource.
+         */
+        post: operations["set_rating_jsonapi_api_v1_fact_checking_candidates__candidate_id__rating_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fact-checking/candidates/approve-predicted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Approve Predicted Jsonapi
+         * @description Bulk approve candidates from predicted_ratings.
+         *
+         *     Sets rating from predicted_ratings where any prediction >= threshold.
+         *     Accepts the same filters as the list endpoint.
+         *
+         *     For each matching candidate without a rating:
+         *     1. Find the first predicted_rating entry >= threshold
+         *     2. Set that as the candidate's rating
+         *     3. Optionally promote if auto_promote=True
+         *
+         *     Args:
+         *         body: Bulk approve request with threshold and filters.
+         *
+         *     Returns:
+         *         JSON:API response with counts of updated and promoted candidates.
+         */
+        post: operations["bulk_approve_predicted_jsonapi_api_v1_fact_checking_candidates_approve_predicted_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/batch-jobs": {
         parameters: {
             query?: never;
@@ -3503,6 +3602,87 @@ export interface components {
             client_secret?: string | null;
         };
         /**
+         * BulkApproveRequest
+         * @description Request body for bulk approval from predicted_ratings.
+         *
+         *     Note: This is not wrapped in JSON:API data envelope since it's an action
+         *     endpoint that accepts filter parameters, not a resource creation.
+         */
+        BulkApproveRequest: {
+            /**
+             * Threshold
+             * @description Predictions >= threshold get approved
+             * @default 1
+             */
+            threshold: number;
+            /**
+             * Auto Promote
+             * @description Whether to promote approved candidates that are ready
+             * @default false
+             */
+            auto_promote: boolean;
+            /** @description Filter by candidate status */
+            status?: components["schemas"]["CandidateStatus"] | null;
+            /**
+             * Dataset Name
+             * @description Filter by dataset name (exact match)
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Tags
+             * @description Filter by dataset tags (array overlap)
+             */
+            dataset_tags?: string[] | null;
+            /**
+             * Has Content
+             * @description Filter by whether candidate has content
+             */
+            has_content?: boolean | null;
+            /**
+             * Published Date From
+             * @description Filter by published_date >= this value
+             */
+            published_date_from?: string | null;
+            /**
+             * Published Date To
+             * @description Filter by published_date <= this value
+             */
+            published_date_to?: string | null;
+        };
+        /**
+         * BulkApproveResponse
+         * @description JSON:API response for bulk approval action.
+         */
+        BulkApproveResponse: {
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            meta: components["schemas"]["BulkApproveResponseMeta"];
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
+         * BulkApproveResponseMeta
+         * @description Meta object for bulk approve response.
+         */
+        BulkApproveResponseMeta: {
+            /**
+             * Updated Count
+             * @description Number of candidates updated
+             */
+            updated_count: number;
+            /**
+             * Promoted Count
+             * @description Number of candidates promoted (if auto_promote=True)
+             */
+            promoted_count?: number | null;
+        };
+        /**
          * BulkScanAttributes
          * @description Attributes for a bulk scan resource.
          */
@@ -3672,6 +3852,148 @@ export interface components {
             };
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
+        /**
+         * CandidateAttributes
+         * @description JSON:API attributes for a fact-check candidate.
+         */
+        CandidateAttributes: {
+            /**
+             * Source Url
+             * @description URL to the original article
+             */
+            source_url: string;
+            /**
+             * Title
+             * @description Article title from source
+             */
+            title: string;
+            /**
+             * Content
+             * @description Scraped article body
+             */
+            content?: string | null;
+            /**
+             * Summary
+             * @description Optional summary
+             */
+            summary?: string | null;
+            /**
+             * Rating
+             * @description Human-approved fact-check verdict
+             */
+            rating?: string | null;
+            /**
+             * Rating Details
+             * @description Original rating before normalization
+             */
+            rating_details?: string | null;
+            /**
+             * Predicted Ratings
+             * @description ML/AI predicted ratings as {rating: probability}
+             */
+            predicted_ratings?: {
+                [key: string]: number;
+            } | null;
+            /**
+             * Published Date
+             * @description Publication date
+             */
+            published_date?: string | null;
+            /**
+             * Dataset Name
+             * @description Source dataset identifier
+             */
+            dataset_name: string;
+            /**
+             * Dataset Tags
+             * @description Tags for filtering
+             */
+            dataset_tags?: string[];
+            /**
+             * Original Id
+             * @description ID from source dataset
+             */
+            original_id?: string | null;
+            /**
+             * Status
+             * @description Processing status
+             */
+            status: string;
+            /**
+             * Error Message
+             * @description Error details if failed
+             */
+            error_message?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Record creation timestamp
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             * @description Last update timestamp
+             */
+            updated_at: string;
+        };
+        /**
+         * CandidateListResponse
+         * @description JSON:API response for a list of candidates with pagination.
+         */
+        CandidateListResponse: {
+            /** Data */
+            data: components["schemas"]["CandidateResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /**
+         * CandidateResource
+         * @description JSON:API resource object for a fact-check candidate.
+         */
+        CandidateResource: {
+            /**
+             * Type
+             * @default fact-check-candidates
+             * @constant
+             */
+            type: "fact-check-candidates";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["CandidateAttributes"];
+        };
+        /**
+         * CandidateSingleResponse
+         * @description JSON:API response for a single candidate.
+         */
+        CandidateSingleResponse: {
+            data: components["schemas"]["CandidateResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
+         * CandidateStatus
+         * @description Status values for fact-checked item candidates.
+         * @enum {string}
+         */
+        CandidateStatus: "pending" | "scraping" | "scraped" | "scrape_failed" | "promoting" | "promoted";
         /**
          * ClearPreviewResponse
          * @description Response for clear preview (dry run) operations.
@@ -7214,6 +7536,48 @@ export interface components {
              * @description Configuration value (stringified)
              */
             value: string;
+        };
+        /**
+         * SetRatingAttributes
+         * @description Attributes for setting rating on a candidate via JSON:API.
+         */
+        SetRatingAttributes: {
+            /**
+             * Rating
+             * @description The rating to set
+             */
+            rating: string;
+            /**
+             * Rating Details
+             * @description Original rating value if normalized
+             */
+            rating_details?: string | null;
+            /**
+             * Auto Promote
+             * @description Whether to trigger promotion if candidate is ready
+             * @default false
+             */
+            auto_promote: boolean;
+        };
+        /**
+         * SetRatingData
+         * @description JSON:API data object for setting rating.
+         */
+        SetRatingData: {
+            /**
+             * Type
+             * @description Resource type must be 'fact-check-candidates'
+             * @constant
+             */
+            type: "fact-check-candidates";
+            attributes: components["schemas"]["SetRatingAttributes"];
+        };
+        /**
+         * SetRatingRequest
+         * @description JSON:API request body for setting rating on a candidate.
+         */
+        SetRatingRequest: {
+            data: components["schemas"]["SetRatingData"];
         };
         /**
          * SimilarityMatch
@@ -11906,6 +12270,127 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_candidates_jsonapi_api_v1_fact_checking_candidates_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+                "filter[status]"?: string | null;
+                "filter[dataset_name]"?: string | null;
+                "filter[dataset_tags]"?: string[] | null;
+                /** @description Filter by rating: 'null', 'not_null', or exact value */
+                "filter[rating]"?: string | null;
+                "filter[has_content]"?: boolean | null;
+                "filter[published_date_from]"?: string | null;
+                "filter[published_date_to]"?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_rating_jsonapi_api_v1_fact_checking_candidates__candidate_id__rating_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetRatingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateSingleResponse"];
+                };
+            };
+            /** @description Candidate not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_approve_predicted_jsonapi_api_v1_fact_checking_candidates_approve_predicted_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkApproveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

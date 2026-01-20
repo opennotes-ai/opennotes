@@ -7974,6 +7974,346 @@
         }
       }
     },
+    "/api/v1/fact-checking/candidates": {
+      "get": {
+        "tags": [
+          "fact-checking-candidates"
+        ],
+        "summary": "List Candidates Jsonapi",
+        "description": "List fact-check candidates with filtering and pagination.\n\nReturns a JSON:API formatted paginated list of candidates.\n\nQuery Parameters:\n- page[number]: Page number (default: 1)\n- page[size]: Page size (default: 20, max: 100)\n\nFilter Parameters:\n- filter[status]: Filter by candidate status (exact match)\n- filter[dataset_name]: Filter by dataset name (exact match)\n- filter[dataset_tags]: Filter by dataset tags (array overlap)\n- filter[rating]: Filter by rating - \"null\", \"not_null\", or exact value\n- filter[has_content]: Filter by whether content exists (true/false)\n- filter[published_date_from]: Filter by published_date >= datetime\n- filter[published_date_to]: Filter by published_date <= datetime",
+        "operationId": "list_candidates_jsonapi_api_v1_fact_checking_candidates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page[number]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page[Number]"
+            }
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page[Size]"
+            }
+          },
+          {
+            "name": "filter[status]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Status]"
+            }
+          },
+          {
+            "name": "filter[dataset_name]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Dataset Name]"
+            }
+          },
+          {
+            "name": "filter[dataset_tags]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Dataset Tags]"
+            }
+          },
+          {
+            "name": "filter[rating]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by rating: 'null', 'not_null', or exact value",
+              "title": "Filter[Rating]"
+            },
+            "description": "Filter by rating: 'null', 'not_null', or exact value"
+          },
+          {
+            "name": "filter[has_content]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Has Content]"
+            }
+          },
+          {
+            "name": "filter[published_date_from]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Published Date From]"
+            }
+          },
+          {
+            "name": "filter[published_date_to]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter[Published Date To]"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fact-checking/candidates/{candidate_id}/rating": {
+      "post": {
+        "tags": [
+          "fact-checking-candidates"
+        ],
+        "summary": "Set Rating Jsonapi",
+        "description": "Set rating for a specific candidate.\n\nSets the human-approved rating on a candidate. Optionally triggers\npromotion if the candidate is ready (has content and rating).\n\nArgs:\n    candidate_id: UUID of the candidate to update.\n    body: JSON:API request with rating attributes.\n\nReturns:\n    JSON:API response with updated candidate resource.",
+        "operationId": "set_rating_jsonapi_api_v1_fact_checking_candidates__candidate_id__rating_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRatingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateSingleResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Candidate not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fact-checking/candidates/approve-predicted": {
+      "post": {
+        "tags": [
+          "fact-checking-candidates"
+        ],
+        "summary": "Bulk Approve Predicted Jsonapi",
+        "description": "Bulk approve candidates from predicted_ratings.\n\nSets rating from predicted_ratings where any prediction >= threshold.\nAccepts the same filters as the list endpoint.\n\nFor each matching candidate without a rating:\n1. Find the first predicted_rating entry >= threshold\n2. Set that as the candidate's rating\n3. Optionally promote if auto_promote=True\n\nArgs:\n    body: Bulk approve request with threshold and filters.\n\nReturns:\n    JSON:API response with counts of updated and promoted candidates.",
+        "operationId": "bulk_approve_predicted_jsonapi_api_v1_fact_checking_candidates_approve_predicted_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkApproveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkApproveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/batch-jobs": {
       "post": {
         "tags": [
@@ -9459,6 +9799,164 @@
         ],
         "title": "Body_login_email_api_v1_profile_auth_login_email_post"
       },
+      "BulkApproveRequest": {
+        "properties": {
+          "threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Threshold",
+            "description": "Predictions >= threshold get approved",
+            "default": 1.0
+          },
+          "auto_promote": {
+            "type": "boolean",
+            "title": "Auto Promote",
+            "description": "Whether to promote approved candidates that are ready",
+            "default": false
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filter by candidate status"
+          },
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Name",
+            "description": "Filter by dataset name (exact match)"
+          },
+          "dataset_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Tags",
+            "description": "Filter by dataset tags (array overlap)"
+          },
+          "has_content": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Content",
+            "description": "Filter by whether candidate has content"
+          },
+          "published_date_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Date From",
+            "description": "Filter by published_date >= this value"
+          },
+          "published_date_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Date To",
+            "description": "Filter by published_date <= this value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BulkApproveRequest",
+        "description": "Request body for bulk approval from predicted_ratings.\n\nNote: This is not wrapped in JSON:API data envelope since it's an action\nendpoint that accepts filter parameters, not a resource creation."
+      },
+      "BulkApproveResponse": {
+        "properties": {
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/BulkApproveResponseMeta"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "meta"
+        ],
+        "title": "BulkApproveResponse",
+        "description": "JSON:API response for bulk approval action."
+      },
+      "BulkApproveResponseMeta": {
+        "properties": {
+          "updated_count": {
+            "type": "integer",
+            "title": "Updated Count",
+            "description": "Number of candidates updated"
+          },
+          "promoted_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted Count",
+            "description": "Number of candidates promoted (if auto_promote=True)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_count"
+        ],
+        "title": "BulkApproveResponseMeta",
+        "description": "Meta object for bulk approve response."
+      },
       "BulkScanAttributes": {
         "properties": {
           "status": {
@@ -9740,6 +10238,278 @@
         ],
         "title": "BulkScanSingleResponse",
         "description": "JSON:API response for a single bulk scan resource."
+      },
+      "CandidateAttributes": {
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "title": "Source Url",
+            "description": "URL to the original article"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Article title from source"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content",
+            "description": "Scraped article body"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary",
+            "description": "Optional summary"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating",
+            "description": "Human-approved fact-check verdict"
+          },
+          "rating_details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating Details",
+            "description": "Original rating before normalization"
+          },
+          "predicted_ratings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Ratings",
+            "description": "ML/AI predicted ratings as {rating: probability}"
+          },
+          "published_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Date",
+            "description": "Publication date"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name",
+            "description": "Source dataset identifier"
+          },
+          "dataset_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Tags",
+            "description": "Tags for filtering"
+          },
+          "original_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Id",
+            "description": "ID from source dataset"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Processing status"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message",
+            "description": "Error details if failed"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Record creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Last update timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_url",
+          "title",
+          "dataset_name",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CandidateAttributes",
+        "description": "JSON:API attributes for a fact-check candidate."
+      },
+      "CandidateListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CandidateListResponse",
+        "description": "JSON:API response for a list of candidates with pagination."
+      },
+      "CandidateResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "fact-check-candidates",
+            "title": "Type",
+            "default": "fact-check-candidates"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/CandidateAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "CandidateResource",
+        "description": "JSON:API resource object for a fact-check candidate."
+      },
+      "CandidateSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CandidateResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "CandidateSingleResponse",
+        "description": "JSON:API response for a single candidate."
+      },
+      "CandidateStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "scraping",
+          "scraped",
+          "scrape_failed",
+          "promoting",
+          "promoted"
+        ],
+        "title": "CandidateStatus",
+        "description": "Status values for fact-checked item candidates."
       },
       "ClearPreviewResponse": {
         "properties": {
@@ -16650,6 +17420,74 @@
           "value"
         ],
         "title": "SetConfigRequest"
+      },
+      "SetRatingAttributes": {
+        "properties": {
+          "rating": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Rating",
+            "description": "The rating to set"
+          },
+          "rating_details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating Details",
+            "description": "Original rating value if normalized"
+          },
+          "auto_promote": {
+            "type": "boolean",
+            "title": "Auto Promote",
+            "description": "Whether to trigger promotion if candidate is ready",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rating"
+        ],
+        "title": "SetRatingAttributes",
+        "description": "Attributes for setting rating on a candidate via JSON:API."
+      },
+      "SetRatingData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "fact-check-candidates",
+            "title": "Type",
+            "description": "Resource type must be 'fact-check-candidates'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SetRatingAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "SetRatingData",
+        "description": "JSON:API data object for setting rating."
+      },
+      "SetRatingRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SetRatingData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SetRatingRequest",
+        "description": "JSON:API request body for setting rating on a candidate."
       },
       "SimilarityMatch": {
         "properties": {

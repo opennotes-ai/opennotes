@@ -22,7 +22,9 @@ if _otel_enabled and not _testing:
     _environment = os.getenv("ENVIRONMENT", "development")
     _otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTLP_ENDPOINT")
     _otlp_headers = os.getenv("OTEL_EXPORTER_OTLP_HEADERS") or os.getenv("OTLP_HEADERS")
-    _sample_rate = float(os.getenv("TRACING_SAMPLE_RATE", "1.0"))
+    _sample_rate = float(
+        os.getenv("TRACING_SAMPLE_RATE") or os.getenv("TRACE_SAMPLE_RATE") or "1.0"
+    )
     _console_export = os.getenv("ENABLE_CONSOLE_TRACING", "false").lower() == "true"
 
     setup_otel(
@@ -59,6 +61,9 @@ from src.fact_checking.embeddings_jsonapi_router import (
 )
 from src.fact_checking.hybrid_searches_jsonapi_router import (
     router as hybrid_searches_jsonapi_router,
+)
+from src.fact_checking.import_pipeline.candidates_jsonapi_router import (
+    router as candidates_jsonapi_router,
 )
 from src.fact_checking.import_pipeline.router import router as fact_check_import_router
 from src.fact_checking.monitored_channels_jsonapi_router import (
@@ -503,6 +508,7 @@ app.include_router(community_clear_router, prefix=settings.API_V2_PREFIX)
 app.include_router(llm_config_router, prefix=settings.API_V1_PREFIX)
 app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
+app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
 
 # Health routes

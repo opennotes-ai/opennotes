@@ -11,15 +11,23 @@ import logging
 from uuid import UUID
 
 import trafilatura
-from sqlalchemy import func, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
+from src.fact_checking.import_pipeline.candidate_service import (
+    extract_high_confidence_rating,
+)
 from src.fact_checking.import_pipeline.promotion import promote_candidate
 from src.tasks.broker import register_task
 
 logger = logging.getLogger(__name__)
+
+# Threshold for auto-applying predicted ratings.
+# A value of 1.0 means only apply ratings with 100% confidence.
+# This aligns with bulk_approve_from_predictions() default behavior.
+AUTO_PROMOTE_PREDICTION_THRESHOLD: float = 1.0
 
 
 async def get_candidate(
@@ -57,6 +65,62 @@ async def update_candidate_status(
         .values(**values)
     )
     await session.commit()
+
+
+async def apply_predicted_rating_if_available(
+    session: AsyncSession,
+    candidate: FactCheckedItemCandidate,
+    threshold: float = AUTO_PROMOTE_PREDICTION_THRESHOLD,
+) -> str | None:
+    """Apply high-confidence predicted rating to candidate if eligible.
+
+    When auto_promote is enabled and candidate has no rating but has
+    predicted_ratings with a value >= threshold, this copies the predicted
+    rating to the rating field to enable promotion.
+
+    Uses atomic UPDATE with WHERE rating IS NULL to prevent TOCTOU race conditions
+    when multiple workers process the same candidate concurrently.
+
+    Args:
+        session: Database session.
+        candidate: The candidate to potentially update. Note: This object becomes
+            stale after the update and should be refreshed if further ORM operations
+            are needed.
+        threshold: Minimum confidence value for a predicted rating to be applied.
+            Defaults to AUTO_PROMOTE_PREDICTION_THRESHOLD (1.0).
+
+    Returns:
+        The rating applied, or None if no rating was applied (either no eligible
+        prediction or another process already set a rating).
+    """
+    if not candidate.predicted_ratings:
+        return None
+
+    rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold=threshold)
+    if rating is None:
+        return None
+
+    # Use atomic UPDATE with WHERE rating IS NULL to prevent TOCTOU race.
+    # If another worker already set the rating, rowcount will be 0.
+    result: CursorResult = await session.execute(  # type: ignore[type-arg]
+        update(FactCheckedItemCandidate)
+        .where(FactCheckedItemCandidate.id == candidate.id)
+        .where(FactCheckedItemCandidate.rating.is_(None))
+        .values(rating=rating, updated_at=func.now())
+    )
+    await session.commit()
+
+    if result.rowcount == 0:
+        logger.debug(
+            f"Skipped auto-applying rating for candidate {candidate.id}: "
+            "rating already set by another process"
+        )
+        return None
+
+    logger.info(
+        f"Auto-applied rating '{rating}' from predicted_ratings for candidate {candidate.id}"
+    )
+    return rating
 
 
 def scrape_url_content(url: str) -> str | None:
@@ -139,6 +203,7 @@ async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True)
         if candidate.content:
             logger.info(f"Candidate already has content: {candidate_id}")
             if auto_promote:
+                await apply_predicted_rating_if_available(session, candidate)
                 promoted = await promote_candidate(session, cid)
                 result = {"status": "promoted" if promoted else "promotion_failed"}
             else:
@@ -154,6 +219,7 @@ async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True)
             logger.info(f"Successfully scraped candidate: {candidate_id} ({len(content)} chars)")
 
             if auto_promote:
+                await apply_predicted_rating_if_available(session, candidate)
                 promoted = await promote_candidate(session, cid)
                 result = {
                     "status": "promoted" if promoted else "scraped",
