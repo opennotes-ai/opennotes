@@ -23,6 +23,12 @@ OpenNotes supports two installation modes based on your permission preferences.
 
 Server owners receive a separate DM with an "Increase permissions" link when installing with minimal permissions. Click the link to re-authorize with full permissions. The bot will automatically create the bot channel on next startup.
 
+### Migration Note (January 2026)
+
+If your server was previously running in full mode but now shows as minimal mode, this is because the **Manage Roles** permission was added as a new requirement for full mode. This permission enables the bot to configure channel permission overwrites for the dedicated bot channel.
+
+To restore full functionality, re-authorize the bot using the "Increase permissions" link that the server owner will receive via DM. The bot will then have all 9 required permissions and can create or configure the dedicated bot channel.
+
 ## Permission Details
 
 | Permission | Minimal | Full | Purpose |
