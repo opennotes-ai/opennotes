@@ -11,7 +11,7 @@ import logging
 from uuid import UUID
 
 import trafilatura
-from sqlalchemy import func, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -102,7 +102,7 @@ async def apply_predicted_rating_if_available(
 
     # Use atomic UPDATE with WHERE rating IS NULL to prevent TOCTOU race.
     # If another worker already set the rating, rowcount will be 0.
-    result = await session.execute(
+    result: CursorResult = await session.execute(  # type: ignore[type-arg]
         update(FactCheckedItemCandidate)
         .where(FactCheckedItemCandidate.id == candidate.id)
         .where(FactCheckedItemCandidate.rating.is_(None))

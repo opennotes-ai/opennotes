@@ -9,6 +9,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -553,59 +554,63 @@ class TestAutoPromoteFeature:
 
     @pytest.mark.asyncio
     async def test_set_rating_with_auto_promote_true(
-        self, api_key_headers, promotable_candidates, db_session, mocker
+        self, api_key_headers, promotable_candidates, db_session
     ):
         """Setting rating with auto_promote=True triggers promotion."""
         candidate = promotable_candidates[0]
 
-        mock_promote = mocker.patch(
+        with patch(
             "src.fact_checking.import_pipeline.candidate_service.promote_candidate",
+            new_callable=AsyncMock,
             return_value=True,
-        )
+        ) as mock_promote:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    f"/api/v1/fact-checking/candidates/{candidate.id}/rating",
+                    json={
+                        "data": {
+                            "type": "fact-check-candidates",
+                            "attributes": {
+                                "rating": "false",
+                                "auto_promote": True,
+                            },
+                        }
+                    },
+                    headers=api_key_headers,
+                )
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                f"/api/v1/fact-checking/candidates/{candidate.id}/rating",
-                json={
-                    "data": {
-                        "type": "fact-check-candidates",
-                        "attributes": {
-                            "rating": "false",
-                            "auto_promote": True,
-                        },
-                    }
-                },
-                headers=api_key_headers,
-            )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["data"]["attributes"]["rating"] == "false"
-        mock_promote.assert_called_once()
+            assert response.status_code == 200
+            data = response.json()
+            assert data["data"]["attributes"]["rating"] == "false"
+            mock_promote.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_bulk_approve_with_auto_promote_true(
-        self, api_key_headers, promotable_candidates, db_session, mocker
+        self, api_key_headers, promotable_candidates, db_session
     ):
         """Bulk approve with auto_promote=True triggers promotion for updated candidates."""
-        mock_promote = mocker.patch(
+        with patch(
             "src.fact_checking.import_pipeline.candidate_service.promote_candidate",
+            new_callable=AsyncMock,
             return_value=True,
-        )
+        ) as mock_promote:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/candidates/approve-predicted",
+                    json={
+                        "threshold": 1.0,
+                        "auto_promote": True,
+                        "dataset_name": "promotable_dataset",
+                    },
+                    headers=api_key_headers,
+                )
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/candidates/approve-predicted",
-                json={
-                    "threshold": 1.0,
-                    "auto_promote": True,
-                    "dataset_name": "promotable_dataset",
-                },
-                headers=api_key_headers,
-            )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["meta"]["updated_count"] == 2
-        assert data["meta"]["promoted_count"] == 2
-        assert mock_promote.call_count == 2
+            assert response.status_code == 200
+            data = response.json()
+            assert data["meta"]["updated_count"] == 2
+            assert data["meta"]["promoted_count"] == 2
+            assert mock_promote.call_count == 2

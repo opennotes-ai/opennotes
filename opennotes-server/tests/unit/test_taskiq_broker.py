@@ -67,7 +67,7 @@ class TestBrokerConfiguration:
             assert "on_error_last_retry" in call_kwargs
 
     def test_broker_passes_ssl_cert_reqs_for_rediss_url(self) -> None:
-        """Verify broker passes ssl_cert_reqs when using rediss:// URL."""
+        """Verify broker passes ssl_cert_reqs when using rediss:// URL with CA cert."""
         with (
             patch("src.tasks.broker._broker_instance", None),
             patch("src.tasks.broker._registered_task_objects", {}),
@@ -76,6 +76,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
             patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
+            patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -85,8 +86,12 @@ class TestBrokerConfiguration:
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
+            settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
-            mock_redis_kwargs.return_value = {"ssl_cert_reqs": "none"}
+            mock_redis_kwargs.return_value = {
+                "ssl_ca_certs": "/path/to/ca.crt",
+                "ssl_cert_reqs": "required",
+            }
 
             mock_broker_instance = MagicMock()
             mock_broker_instance.with_result_backend.return_value = mock_broker_instance
@@ -100,7 +105,8 @@ class TestBrokerConfiguration:
             mock_redis.assert_called_once_with(
                 redis_url="rediss://secure-redis:6380",
                 result_ex_time=3600,
-                ssl_cert_reqs="none",
+                ssl_ca_certs="/path/to/ca.crt",
+                ssl_cert_reqs="required",
             )
 
     def test_broker_does_not_pass_ssl_for_redis_url(self) -> None:
