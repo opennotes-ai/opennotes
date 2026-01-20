@@ -50,6 +50,7 @@ import { GuildSetupService } from './services/GuildSetupService.js';
 import { GuildOnboardingService } from './services/GuildOnboardingService.js';
 import { BotChannelService } from './services/BotChannelService.js';
 import { GuildConfigService } from './services/GuildConfigService.js';
+import { PermissionModeService } from './services/PermissionModeService.js';
 import { ConfigKey } from './lib/config-schema.js';
 import { VibecheckProgressService } from './services/VibecheckProgressService.js';
 import { apiClient } from './api-client.js';
@@ -72,6 +73,7 @@ export class Bot {
   private guildOnboardingService?: GuildOnboardingService;
   private botChannelService?: BotChannelService;
   private guildConfigService?: GuildConfigService;
+  private permissionModeService?: PermissionModeService;
   private vibecheckProgressService?: VibecheckProgressService;
   private healthCheckServer?: Express;
   private healthCheckPort?: number;
@@ -167,6 +169,7 @@ export class Bot {
 
     this.botChannelService = new BotChannelService();
     this.guildConfigService = new GuildConfigService(apiClient);
+    this.permissionModeService = new PermissionModeService();
     logger.info('Bot channel service initialized');
 
     const serverReadiness = await this.waitForServerReady();
@@ -396,8 +399,8 @@ export class Bot {
   }
 
   private async ensureBotChannelsForAllGuilds(): Promise<void> {
-    if (!this.botChannelService || !this.guildConfigService || !this.guildOnboardingService) {
-      logger.warn('Bot channel services not initialized, skipping channel check');
+    if (!this.guildOnboardingService || !this.permissionModeService) {
+      logger.warn('Services not initialized, skipping channel check');
       return;
     }
 
@@ -407,6 +410,23 @@ export class Bot {
 
     for (const guild of this.client.guilds.cache.values()) {
       try {
+        const mode = this.permissionModeService.detectMode(guild);
+
+        if (mode === 'minimal') {
+          logger.debug('Guild in minimal mode, skipping bot channel creation on startup', {
+            guildId: guild.id,
+            guildName: guild.name,
+          });
+          continue;
+        }
+
+        if (!this.botChannelService || !this.guildConfigService) {
+          logger.warn('Bot channel services not initialized for full mode guild', {
+            guildId: guild.id,
+          });
+          continue;
+        }
+
         const result = await this.botChannelService.ensureChannelExists(
           guild,
           this.guildConfigService
@@ -434,35 +454,54 @@ export class Bot {
         memberCount: guild.memberCount,
       });
 
-      if (this.botChannelService && this.guildConfigService && this.guildOnboardingService) {
-        try {
-          const result = await this.botChannelService.ensureChannelExists(
-            guild,
-            this.guildConfigService
-          );
+      if (this.permissionModeService && this.guildOnboardingService) {
+        const mode = this.permissionModeService.detectMode(guild);
 
+        if (mode === 'minimal') {
           try {
             const owner = await guild.fetchOwner();
-            await this.guildOnboardingService.postWelcomeToChannel(result.channel, {
-              admin: owner.user,
-            });
+            await this.guildOnboardingService.sendWelcomeDM(guild, owner.user, mode);
           } catch (ownerError) {
-            logger.debug('Failed to fetch guild owner for vibe check prompt, skipping', {
+            logger.warn('Failed to send welcome DM to guild owner in minimal mode', {
               guildId: guild.id,
+              guildName: guild.name,
               error: ownerError instanceof Error ? ownerError.message : String(ownerError),
             });
-            await this.guildOnboardingService.postWelcomeToChannel(result.channel);
           }
-        } catch (error) {
-          logger.error('Failed to create bot channel for new guild', {
+        } else if (this.botChannelService && this.guildConfigService) {
+          try {
+            const result = await this.botChannelService.ensureChannelExists(
+              guild,
+              this.guildConfigService
+            );
+
+            try {
+              const owner = await guild.fetchOwner();
+              await this.guildOnboardingService.postWelcomeToChannel(result.channel, {
+                admin: owner.user,
+              });
+            } catch (ownerError) {
+              logger.debug('Failed to fetch guild owner for vibe check prompt, skipping', {
+                guildId: guild.id,
+                error: ownerError instanceof Error ? ownerError.message : String(ownerError),
+              });
+              await this.guildOnboardingService.postWelcomeToChannel(result.channel);
+            }
+          } catch (error) {
+            logger.error('Failed to create bot channel for new guild', {
+              guildId: guild.id,
+              guildName: guild.name,
+              error: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+            });
+          }
+        } else {
+          logger.warn('Bot channel services not initialized for new guild in full mode', {
             guildId: guild.id,
-            guildName: guild.name,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
           });
         }
       } else {
-        logger.warn('Bot channel services not initialized for new guild', {
+        logger.warn('Services not initialized for new guild', {
           guildId: guild.id,
         });
       }

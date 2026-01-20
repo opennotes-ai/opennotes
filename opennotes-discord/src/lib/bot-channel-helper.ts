@@ -1,6 +1,7 @@
 import {
   ChatInputCommandInteraction,
   Guild,
+  PermissionFlagsBits,
   TextChannel,
   MessageFlags,
 } from 'discord.js';
@@ -8,6 +9,19 @@ import { BotChannelService } from '../services/BotChannelService.js';
 import { GuildConfigService } from '../services/GuildConfigService.js';
 import { ConfigKey } from './config-schema.js';
 import { logger } from '../logger.js';
+import type { InstallationMode } from '../services/PermissionModeService.js';
+
+function detectInstallationMode(guild: Guild): InstallationMode {
+  const botMember = guild.members.me;
+  if (!botMember) {
+    return 'minimal';
+  }
+
+  const hasManageChannels = botMember.permissions.has(PermissionFlagsBits.ManageChannels);
+  const hasManageMessages = botMember.permissions.has(PermissionFlagsBits.ManageMessages);
+
+  return hasManageChannels && hasManageMessages ? 'full' : 'minimal';
+}
 
 async function replyToInteraction(
   interaction: ChatInputCommandInteraction,
@@ -121,7 +135,26 @@ export async function getBotChannelOrRedirect(
     };
   }
 
-  logger.warn('Bot channel not found for guild', {
+  const guild = interaction.guild;
+  if (guild) {
+    const mode = detectInstallationMode(guild);
+
+    if (mode === 'minimal') {
+      logger.debug('No bot channel in minimal mode, allowing command in current channel', {
+        userId: interaction.user.id,
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        command: interaction.commandName,
+      });
+
+      return {
+        shouldProceed: true,
+        botChannel: null,
+      };
+    }
+  }
+
+  logger.warn('Bot channel not found for guild in full mode', {
     userId: interaction.user.id,
     guildId: interaction.guildId,
     expectedChannelName: botChannelName,

@@ -1,9 +1,11 @@
 import { logger } from '../logger.js';
-import { Collection, ComponentType, Message, MessageType, TextChannel, User } from 'discord.js';
+import { Collection, ComponentType, Guild, Message, MessageType, TextChannel, User } from 'discord.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
 import { buildWelcomeContainer, WELCOME_MESSAGE_REVISION, extractRevisionFromMessage } from '../lib/welcome-content.js';
 import { sendVibeCheckPrompt } from '../lib/vibecheck-prompt.js';
 import { apiClient } from '../api-client.js';
+import { getUpgradeUrl } from '../lib/oauth2-urls.js';
+import type { InstallationMode } from './PermissionModeService.js';
 
 export interface PostWelcomeOptions {
   admin?: User;
@@ -395,5 +397,70 @@ export class GuildOnboardingService {
         stack: error instanceof Error ? error.stack : undefined,
       });
     }
+  }
+
+  async sendWelcomeDM(guild: Guild, owner: User, mode: InstallationMode): Promise<void> {
+    const guildId = guild.id;
+
+    try {
+      await apiClient.getCommunityServerByPlatformId(guildId);
+    } catch (error) {
+      logger.warn('Failed to ensure community server exists for DM welcome', {
+        guildId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const welcomeContent = this.buildWelcomeDMContent(guild.name, mode, guildId);
+
+    try {
+      await owner.send(welcomeContent);
+
+      logger.info('Sent welcome DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+        mode,
+      });
+    } catch (error) {
+      logger.warn('Failed to send welcome DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildWelcomeDMContent(guildName: string, mode: InstallationMode, guildId: string): string {
+    const baseContent = `## OpenNotes has joined ${guildName}!
+
+**About OpenNotes**
+OpenNotes helps your community add context to messages through community notes. Members can write notes, rate their helpfulness, and surface the best context.
+
+**Quick Start**
+• \`/note write <message-id>\` - Write a community note
+• \`/note request <message-id>\` - Request a note on a message
+• \`/list notes\` - Browse notes awaiting your rating
+• \`/vibecheck\` - Analyze your community's message activity
+
+Use these commands in any channel where the bot has access.`;
+
+    if (mode === 'minimal') {
+      const upgradeUrl = getUpgradeUrl(guildId);
+      return `${baseContent}
+
+---
+
+**Upgrade to Full Experience**
+You've installed OpenNotes with minimal permissions. For the best experience, consider upgrading to get:
+• **Dedicated bot channel** - Keeps bot interactions organized
+• **Pinned welcome message** - Easy reference for your members
+• **Cleaner UX** - Commands redirect to the bot channel
+
+[Upgrade permissions](${upgradeUrl})`;
+    }
+
+    return baseContent;
   }
 }
