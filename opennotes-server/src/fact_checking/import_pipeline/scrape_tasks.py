@@ -16,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
+from src.fact_checking.import_pipeline.candidate_service import (
+    extract_high_confidence_rating,
+)
 from src.fact_checking.import_pipeline.promotion import promote_candidate
 from src.tasks.broker import register_task
 
@@ -57,6 +60,46 @@ async def update_candidate_status(
         .values(**values)
     )
     await session.commit()
+
+
+async def apply_predicted_rating_if_available(
+    session: AsyncSession,
+    candidate: FactCheckedItemCandidate,
+) -> str | None:
+    """Apply high-confidence predicted rating to candidate if eligible.
+
+    When auto_promote is enabled and candidate has no rating but has
+    predicted_ratings with a value >= 1.0, this copies the predicted
+    rating to the rating field to enable promotion.
+
+    Args:
+        session: Database session.
+        candidate: The candidate to potentially update.
+
+    Returns:
+        The rating applied, or None if no rating was applied.
+    """
+    if candidate.rating is not None:
+        return None
+
+    if not candidate.predicted_ratings:
+        return None
+
+    rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold=1.0)
+    if rating is None:
+        return None
+
+    await session.execute(
+        update(FactCheckedItemCandidate)
+        .where(FactCheckedItemCandidate.id == candidate.id)
+        .values(rating=rating, updated_at=func.now())
+    )
+    await session.commit()
+
+    logger.info(
+        f"Auto-applied rating '{rating}' from predicted_ratings for candidate {candidate.id}"
+    )
+    return rating
 
 
 def scrape_url_content(url: str) -> str | None:
@@ -139,6 +182,7 @@ async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True)
         if candidate.content:
             logger.info(f"Candidate already has content: {candidate_id}")
             if auto_promote:
+                await apply_predicted_rating_if_available(session, candidate)
                 promoted = await promote_candidate(session, cid)
                 result = {"status": "promoted" if promoted else "promotion_failed"}
             else:
@@ -154,6 +198,7 @@ async def scrape_candidate_content(candidate_id: str, auto_promote: bool = True)
             logger.info(f"Successfully scraped candidate: {candidate_id} ({len(content)} chars)")
 
             if auto_promote:
+                await apply_predicted_rating_if_available(session, candidate)
                 promoted = await promote_candidate(session, cid)
                 result = {
                     "status": "promoted" if promoted else "scraped",
