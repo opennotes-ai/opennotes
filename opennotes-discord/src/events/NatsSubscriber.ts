@@ -31,7 +31,12 @@ export class NatsSubscriber {
   private isConsumerNotFoundError(error: unknown): boolean {
     if (error instanceof NatsError) {
       const message = error.message?.toLowerCase() || '';
-      if (message.includes('consumer not found')) {
+      // Check for various "not found" error messages from NATS
+      if (
+        message.includes('consumer not found') ||
+        message.includes("doesn't exist") ||
+        message.includes('does not exist')
+      ) {
         return true;
       }
       if (error.isJetStreamError()) {
