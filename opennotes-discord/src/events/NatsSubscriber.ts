@@ -77,30 +77,15 @@ export class NatsSubscriber {
       const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
       const streamName = 'OPENNOTES';
 
-      // Delete existing consumer by name first (may have different config)
+      // Use bind-or-create pattern to avoid race conditions when multiple instances start
+      // Never delete existing consumers - that causes TIMEOUT errors in multi-instance deployments
+      let consumerExists = false;
       try {
-        await jsm.consumers.delete(streamName, durableName);
-        logger.info('Deleted existing consumer', { consumerName: durableName });
+        await jsm.consumers.info(streamName, durableName);
+        consumerExists = true;
+        logger.info('Consumer exists, binding to queue group', { consumerName: durableName });
       } catch {
-        // Consumer doesn't exist, which is fine
-      }
-
-      // Also delete any other consumers with same filter subject
-      try {
-        const consumers = await jsm.consumers.list(streamName).next();
-        for (const consumer of consumers) {
-          if (consumer.config.filter_subject === subject) {
-            logger.warn('Deleting conflicting consumer', {
-              consumerName: consumer.name,
-              filterSubject: consumer.config.filter_subject,
-            });
-            await jsm.consumers.delete(streamName, consumer.name);
-          }
-        }
-      } catch (cleanupError) {
-        logger.warn('Error cleaning up existing consumers', {
-          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-        });
+        logger.info('Consumer does not exist, will create', { consumerName: durableName });
       }
 
       // Use durable consumer with deliver group for queue subscription
@@ -108,17 +93,24 @@ export class NatsSubscriber {
       // deliverTo is required for push consumers with deliver_group
       // WorkQueue streams require deliverAll (messages are consumed once then removed)
       const deliverSubject = `_DELIVER.${durableName}`;
-      const opts = consumerOpts()
-        .durable(durableName)
-        .deliverGroup(durableName)
-        .deliverTo(deliverSubject)
-        .deliverAll()
-        .ackExplicit()
-        .ackWait(30_000)
-        .maxDeliver(3);
 
-      // Create the JetStream consumer with durable name
-      this.consumerIterator = await js.subscribe(subject, opts);
+      if (consumerExists) {
+        // Bind to existing consumer - join the queue group
+        const opts = consumerOpts()
+          .bind(streamName, durableName);
+        this.consumerIterator = await js.subscribe(subject, opts);
+      } else {
+        // Create new consumer with full config
+        const opts = consumerOpts()
+          .durable(durableName)
+          .deliverGroup(durableName)
+          .deliverTo(deliverSubject)
+          .deliverAll()
+          .ackExplicit()
+          .ackWait(30_000)
+          .maxDeliver(3);
+        this.consumerIterator = await js.subscribe(subject, opts);
+      }
 
       logger.info('Subscribed to score update events with JetStream consumer group', {
         subject,
@@ -218,24 +210,37 @@ export class NatsSubscriber {
       const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
       const streamName = 'OPENNOTES';
 
+      // Use bind-or-create pattern to avoid race conditions when multiple instances start
+      // Never delete existing consumers - that causes TIMEOUT errors in multi-instance deployments
+      let consumerExists = false;
       try {
-        await jsm.consumers.delete(streamName, durableName);
-        logger.info('Deleted existing progress consumer', { consumerName: durableName });
+        await jsm.consumers.info(streamName, durableName);
+        consumerExists = true;
+        logger.info('Progress consumer exists, binding to queue group', { consumerName: durableName });
       } catch {
-        // Consumer doesn't exist, which is fine
+        logger.info('Progress consumer does not exist, will create', { consumerName: durableName });
       }
 
       const deliverSubject = `_DELIVER.${durableName}`;
-      const opts = consumerOpts()
-        .durable(durableName)
-        .deliverGroup(durableName)
-        .deliverTo(deliverSubject)
-        .deliverAll()
-        .ackExplicit()
-        .ackWait(30_000)
-        .maxDeliver(3);
+      let progressIterator;
 
-      const progressIterator = await js.subscribe(subject, opts);
+      if (consumerExists) {
+        // Bind to existing consumer - join the queue group
+        const opts = consumerOpts()
+          .bind(streamName, durableName);
+        progressIterator = await js.subscribe(subject, opts);
+      } else {
+        // Create new consumer with full config
+        const opts = consumerOpts()
+          .durable(durableName)
+          .deliverGroup(durableName)
+          .deliverTo(deliverSubject)
+          .deliverAll()
+          .ackExplicit()
+          .ackWait(30_000)
+          .maxDeliver(3);
+        progressIterator = await js.subscribe(subject, opts);
+      }
 
       logger.info('Subscribed to bulk scan progress events', {
         subject,

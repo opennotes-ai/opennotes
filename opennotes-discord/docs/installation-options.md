@@ -12,11 +12,12 @@ OpenNotes supports two installation modes based on your permission preferences.
 
 ## Full Installation (Recommended)
 
-**8 permissions:** All minimal permissions + Manage Channels, Manage Messages
+**9 permissions:** All minimal permissions + Manage Channels, Manage Messages, Manage Roles
 
 - Dedicated `#open-notes` bot channel created automatically
 - Welcome message pinned in bot channel
 - Commands redirect users to bot channel for cleaner organization
+- Channel permission overwrites configured for bot access
 
 ## Increasing Permissions from Minimal to Full
 
@@ -34,3 +35,4 @@ Server owners receive a separate DM with an "Increase permissions" link when ins
 | Send Messages in Threads | ✓ | ✓ | Thread posting |
 | Manage Channels | | ✓ | Bot channel creation |
 | Manage Messages | | ✓ | Pin management |
+| Manage Roles | | ✓ | Channel permission overwrites |
