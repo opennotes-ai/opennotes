@@ -19,7 +19,7 @@ from uuid import UUID
 import trafilatura
 from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from taskiq import TaskiqResultTimeoutError
+from taskiq import AsyncTaskiqTask, TaskiqResultTimeoutError
 
 from src.database import get_db
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
@@ -342,7 +342,7 @@ async def _process_scrape_result(
 
 async def _validate_and_dispatch_scrape(
     cid: UUID, candidate_id: str, base_delay: float, auto_promote: bool
-) -> tuple[dict | None, object | None, str | None]:
+) -> tuple[dict | None, AsyncTaskiqTask[dict] | None, str | None]:
     """Validate candidate and dispatch fetch task if needed.
 
     Returns:
@@ -416,6 +416,8 @@ async def scrape_candidate_content(
     )
     if early_return is not None:
         return early_return
+
+    assert fetch_task is not None, "fetch_task must be set when early_return is None"
 
     try:
         fetch_result = await fetch_task.wait_result(timeout=scrape_timeout)
