@@ -482,9 +482,9 @@ class Settings(BaseSettings):
         "When set to DEBUG, enables verbose logging for exporters and SDK internals.",
     )
     TRACING_SAMPLE_RATE: float = Field(
-        default=0.1,
-        description="Trace sampling rate (0.0-1.0). 0.1 = 10% of traces sampled (production default). "
-        "Set to 1.0 for development/debugging to capture all traces.",
+        default=1.0,
+        description="Trace sampling rate (0.0-1.0). 1.0 = 100% of traces sampled (full observability). "
+        "Set to lower value (e.g., 0.1) in high-volume production to reduce costs.",
         ge=0.0,
         le=1.0,
         validation_alias=AliasChoices("TRACING_SAMPLE_RATE", "TRACE_SAMPLE_RATE"),
