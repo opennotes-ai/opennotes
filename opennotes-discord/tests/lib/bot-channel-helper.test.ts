@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { Collection, ChannelType, MessageFlags } from 'discord.js';
+import { Collection, ChannelType, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import {
   discordChannelFactory,
   discordGuildFactory,
+  discordMemberFactory,
+  discordUserFactory,
   chatInputCommandInteractionFactory,
   loggerFactory,
 } from '../factories/index.js';
@@ -17,9 +19,11 @@ const { checkBotChannel, getBotChannelOrRedirect, ensureBotChannel } = await imp
   '../../src/lib/bot-channel-helper.js'
 );
 const { BotChannelService } = await import('../../src/services/BotChannelService.js');
+const { PermissionModeService } = await import('../../src/services/PermissionModeService.js');
 
 describe('bot-channel-helper', () => {
   let botChannelService: InstanceType<typeof BotChannelService>;
+  let permissionModeService: InstanceType<typeof PermissionModeService>;
   let mockGuildConfigService: any;
 
   function createMockBotChannel(id = 'bot-channel-123', name = 'open-notes') {
@@ -33,8 +37,39 @@ describe('bot-channel-helper', () => {
     };
   }
 
-  function createMockGuild(id = 'guild-123', name = 'Test Guild', channels: any[] = []) {
-    const guild = discordGuildFactory.build({ id, name });
+  function createMockGuild(
+    id = 'guild-123',
+    name = 'Test Guild',
+    channels: any[] = [],
+    options: { fullMode?: boolean } = {}
+  ) {
+    const { fullMode = false } = options;
+
+    const botMember = fullMode
+      ? discordMemberFactory.build(
+          {},
+          {
+            transient: {
+              permissionOverrides: {
+                [PermissionFlagsBits.ManageChannels.toString()]: true,
+                [PermissionFlagsBits.ManageMessages.toString()]: true,
+              },
+            },
+            associations: {
+              user: discordUserFactory.build({
+                id: 'bot-user',
+                username: 'OpenNotesBot',
+                bot: true,
+              }),
+            },
+          }
+        )
+      : undefined;
+
+    const guild = discordGuildFactory.build(
+      { id, name },
+      { transient: { botMember } }
+    );
     for (const channel of channels) {
       guild.channels.cache.set(channel.id, channel);
     }
@@ -75,6 +110,7 @@ describe('bot-channel-helper', () => {
 
   beforeEach(() => {
     botChannelService = new BotChannelService();
+    permissionModeService = new PermissionModeService();
     mockGuildConfigService = {
       get: jest.fn<(...args: any[]) => Promise<any>>().mockResolvedValue('open-notes'),
     };
@@ -173,7 +209,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(true);
@@ -189,7 +226,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -212,7 +250,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -235,7 +274,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -245,8 +285,8 @@ describe('bot-channel-helper', () => {
       expect(mockInteraction.reply).not.toHaveBeenCalled();
     });
 
-    it('should use editReply for bot channel not found when interaction is replied', async () => {
-      const mockGuild = createMockGuild('guild-123', 'Test Guild', []);
+    it('should use editReply for bot channel not found when interaction is replied (full mode)', async () => {
+      const mockGuild = createMockGuild('guild-123', 'Test Guild', [], { fullMode: true });
       const mockInteraction = createMockInteraction({
         guild: mockGuild,
         isReplied: true,
@@ -256,7 +296,8 @@ describe('bot-channel-helper', () => {
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -267,14 +308,15 @@ describe('bot-channel-helper', () => {
       expect(mockInteraction.reply).not.toHaveBeenCalled();
     });
 
-    it('should show error when bot channel not found', async () => {
-      const mockGuild = createMockGuild('guild-123', 'Test Guild', []);
+    it('should show error when bot channel not found (full mode)', async () => {
+      const mockGuild = createMockGuild('guild-123', 'Test Guild', [], { fullMode: true });
       const mockInteraction = createMockInteraction({ guild: mockGuild });
 
       const result = await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(result.shouldProceed).toBe(false);
@@ -285,6 +327,22 @@ describe('bot-channel-helper', () => {
       });
     });
 
+    it('should allow command to proceed when bot channel not found (minimal mode)', async () => {
+      const mockGuild = createMockGuild('guild-123', 'Test Guild', []);
+      const mockInteraction = createMockInteraction({ guild: mockGuild });
+
+      const result = await getBotChannelOrRedirect(
+        mockInteraction,
+        botChannelService,
+        mockGuildConfigService,
+        permissionModeService
+      );
+
+      expect(result.shouldProceed).toBe(true);
+      expect(result.botChannel).toBeNull();
+      expect(mockInteraction.reply).not.toHaveBeenCalled();
+    });
+
     it('should log when redirecting user', async () => {
       const mockBotChannel = createMockBotChannel();
       const mockGuild = createMockGuild('guild-123', 'Test Guild', [mockBotChannel]);
@@ -293,7 +351,8 @@ describe('bot-channel-helper', () => {
       await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(mockLogger.info).toHaveBeenCalledWith(
@@ -306,14 +365,15 @@ describe('bot-channel-helper', () => {
       );
     });
 
-    it('should warn when bot channel not found', async () => {
-      const mockGuild = createMockGuild('guild-123', 'Test Guild', []);
+    it('should warn when bot channel not found (full mode)', async () => {
+      const mockGuild = createMockGuild('guild-123', 'Test Guild', [], { fullMode: true });
       const mockInteraction = createMockInteraction({ guild: mockGuild });
 
       await getBotChannelOrRedirect(
         mockInteraction,
         botChannelService,
-        mockGuildConfigService
+        mockGuildConfigService,
+        permissionModeService
       );
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -326,6 +386,26 @@ describe('bot-channel-helper', () => {
       );
     });
 
+    it('should log debug when allowing command in minimal mode without bot channel', async () => {
+      const mockGuild = createMockGuild('guild-123', 'Test Guild', []);
+      const mockInteraction = createMockInteraction({ guild: mockGuild });
+
+      await getBotChannelOrRedirect(
+        mockInteraction,
+        botChannelService,
+        mockGuildConfigService,
+        permissionModeService
+      );
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('minimal mode'),
+        expect.objectContaining({
+          userId: mockInteraction.user.id,
+          guildId: 'guild-123',
+        })
+      );
+    });
+
     it('should log error and re-throw when reply fails', async () => {
       const mockBotChannel = createMockBotChannel();
       const mockGuild = createMockGuild('guild-123', 'Test Guild', [mockBotChannel]);
@@ -334,7 +414,7 @@ describe('bot-channel-helper', () => {
       mockInteraction.reply.mockRejectedValue(replyError);
 
       await expect(
-        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService, permissionModeService)
       ).rejects.toThrow('Discord API error');
 
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -358,7 +438,7 @@ describe('bot-channel-helper', () => {
       mockInteraction.editReply.mockRejectedValue(editError);
 
       await expect(
-        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService, permissionModeService)
       ).rejects.toThrow('Interaction expired');
 
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -382,7 +462,7 @@ describe('bot-channel-helper', () => {
       mockInteraction.reply.mockRejectedValue(replyError);
 
       await expect(
-        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService)
+        getBotChannelOrRedirect(mockInteraction, botChannelService, mockGuildConfigService, permissionModeService)
       ).rejects.toThrow('API timeout');
 
       expect(mockLogger.error).toHaveBeenCalledWith(

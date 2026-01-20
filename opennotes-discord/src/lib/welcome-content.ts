@@ -8,6 +8,49 @@ import {
 
 export const WELCOME_MESSAGE_REVISION = '2025-12-24.1';
 
+/**
+ * Plain text welcome content for DMs.
+ * This should match the channel welcome message content.
+ */
+export function buildWelcomeText(guildName?: string): string {
+  const prefix = guildName ? `## Open Notes has joined ${guildName}!\n\n` : '';
+
+  return `${prefix}**About Open Notes**
+Open Notes is a community moderation tool that helps identify and surface helpful context about potentially misleading content.
+
+**:pencil: How It Works**
+- Community members can write notes providing context on messages
+- Notes are scored based on helpfulness and accuracy
+- High-quality notes are surfaced to help others understand context
+
+**:star: Note Submission**
+**Request a note:** Right-click a message > **Apps** > **Request Note** (or \`/note request <message-id>\`)
+**Write a note:** Use \`/note write <message-id>\` to add context to a message
+
+Good notes should:
+- Provide factual context
+- Be helpful and constructive
+- Cite sources when possible
+
+**:clipboard: Commands**
+\`/note write <message-id>\` - Write a community note
+\`/note request <message-id>\` - Request a note on a message
+\`/note view <message-id>\` - View notes for a message
+\`/note rate <note-id> <helpful>\` - Rate a note
+\`/note score <note-id>\` - View a note's score
+\`/list notes\` - Browse notes awaiting your rating
+\`/list requests\` - Browse pending note requests
+\`/list top-notes\` - View highest-scored notes
+
+**:dart: Scoring System**
+Community members rate notes as helpful or not helpful. Notes with high ratings are more visible and help moderate content collaboratively.
+
+**:shield: Community Moderation**
+Open Notes empowers communities to self-moderate by surfacing context rather than removing content. This promotes transparency and informed discussion.
+
+*Open Notes - Community-powered context*`;
+}
+
 export function buildWelcomeContainer(): ContainerBuilder {
   return createContainer(V2_COLORS.PRIMARY)
     .addTextDisplayComponents(

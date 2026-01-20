@@ -1,9 +1,11 @@
 import { logger } from '../logger.js';
-import { Collection, ComponentType, Message, MessageType, TextChannel, User } from 'discord.js';
+import { Collection, ComponentType, Guild, Message, MessageType, TextChannel, User } from 'discord.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
-import { buildWelcomeContainer, WELCOME_MESSAGE_REVISION, extractRevisionFromMessage } from '../lib/welcome-content.js';
+import { buildWelcomeContainer, buildWelcomeText, WELCOME_MESSAGE_REVISION, extractRevisionFromMessage } from '../lib/welcome-content.js';
 import { sendVibeCheckPrompt } from '../lib/vibecheck-prompt.js';
 import { apiClient } from '../api-client.js';
+import { getUpgradeUrl } from '../lib/oauth2-urls.js';
+import type { InstallationMode } from './PermissionModeService.js';
 
 export interface PostWelcomeOptions {
   admin?: User;
@@ -393,6 +395,79 @@ export class GuildOnboardingService {
         adminId: admin.id,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  }
+
+  async sendWelcomeDM(guild: Guild, owner: User, mode: InstallationMode): Promise<void> {
+    const guildId = guild.id;
+
+    try {
+      await apiClient.getCommunityServerByPlatformId(guildId);
+    } catch (error) {
+      logger.warn('Failed to ensure community server exists for DM welcome', {
+        guildId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Send the welcome DM (same content as channel welcome, with prefix)
+    const welcomeContent = buildWelcomeText(guild.name);
+
+    try {
+      await owner.send(welcomeContent);
+
+      logger.info('Sent welcome DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+        mode,
+      });
+    } catch (error) {
+      logger.error('Failed to send welcome DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't send permissions DM if welcome DM failed (owner has DMs disabled)
+      return;
+    }
+
+    // Send separate "increase permissions" DM for minimal mode
+    if (mode === 'minimal') {
+      await this.sendIncreasePermissionsDM(owner, guild);
+    }
+  }
+
+  private async sendIncreasePermissionsDM(owner: User, guild: Guild): Promise<void> {
+    const guildId = guild.id;
+    const permissionsUrl = getUpgradeUrl(guildId);
+
+    const content = `**Increase Permissions for ${guild.name}**
+
+You've installed Open Notes with minimal permissions. For a cleaner experience, consider increasing permissions to get:
+
+• **Dedicated bot channel** - Keeps bot interactions organized
+• **Pinned welcome message** - Easy reference for your members
+• **Cleaner UX** - Commands redirect to the bot channel
+
+[Increase permissions](${permissionsUrl})`;
+
+    try {
+      await owner.send(content);
+
+      logger.info('Sent increase permissions DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+      });
+    } catch (error) {
+      logger.warn('Failed to send increase permissions DM to server owner', {
+        guildId,
+        guildName: guild.name,
+        ownerId: owner.id,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }

@@ -18,6 +18,7 @@ import { ConfigCache } from '../lib/config-cache.js';
 import { logger } from '../logger.js';
 import { getBotChannelOrRedirect } from '../lib/bot-channel-helper.js';
 import { BotChannelService } from '../services/BotChannelService.js';
+import { PermissionModeService } from '../services/PermissionModeService.js';
 import { v2MessageFlags } from '../utils/v2-components.js';
 import { LIST_COMMAND_LIMITS } from '../lib/constants.js';
 import {
@@ -246,10 +247,12 @@ async function handleNotesSubcommand(interaction: ChatInputCommandInteraction): 
 
     const botChannelService = new BotChannelService();
     const guildConfigService = serviceProvider.getGuildConfigService();
+    const permissionModeService = new PermissionModeService();
     const { shouldProceed } = await getBotChannelOrRedirect(
       interaction,
       botChannelService,
-      guildConfigService
+      guildConfigService,
+      permissionModeService
     );
 
     if (!shouldProceed) {
@@ -389,10 +392,12 @@ async function handleRequestsSubcommand(interaction: ChatInputCommandInteraction
 
     const botChannelService = new BotChannelService();
     const guildConfigService = serviceProvider.getGuildConfigService();
+    const permissionModeService = new PermissionModeService();
     const { shouldProceed } = await getBotChannelOrRedirect(
       interaction,
       botChannelService,
-      guildConfigService
+      guildConfigService,
+      permissionModeService
     );
 
     if (!shouldProceed) {
@@ -508,10 +513,12 @@ async function handleTopNotesSubcommand(interaction: ChatInputCommandInteraction
 
     const botChannelService = new BotChannelService();
     const guildConfigService = serviceProvider.getGuildConfigService();
+    const permissionModeService = new PermissionModeService();
     const { shouldProceed } = await getBotChannelOrRedirect(
       interaction,
       botChannelService,
-      guildConfigService
+      guildConfigService,
+      permissionModeService
     );
 
     if (!shouldProceed) {

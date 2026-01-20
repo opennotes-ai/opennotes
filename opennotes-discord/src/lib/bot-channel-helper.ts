@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { BotChannelService } from '../services/BotChannelService.js';
 import { GuildConfigService } from '../services/GuildConfigService.js';
+import { PermissionModeService } from '../services/PermissionModeService.js';
 import { ConfigKey } from './config-schema.js';
 import { logger } from '../logger.js';
 
@@ -88,7 +89,8 @@ export interface BotChannelRedirectResult {
 export async function getBotChannelOrRedirect(
   interaction: ChatInputCommandInteraction,
   botChannelService: BotChannelService,
-  guildConfigService: GuildConfigService
+  guildConfigService: GuildConfigService,
+  permissionModeService: PermissionModeService
 ): Promise<BotChannelRedirectResult> {
   const { isInBotChannel, botChannel, botChannelName } = await checkBotChannel(
     interaction,
@@ -121,7 +123,26 @@ export async function getBotChannelOrRedirect(
     };
   }
 
-  logger.warn('Bot channel not found for guild', {
+  const guild = interaction.guild;
+  if (guild) {
+    const mode = permissionModeService.detectMode(guild);
+
+    if (mode === 'minimal') {
+      logger.debug('No bot channel in minimal mode, allowing command in current channel', {
+        userId: interaction.user.id,
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        command: interaction.commandName,
+      });
+
+      return {
+        shouldProceed: true,
+        botChannel: null,
+      };
+    }
+  }
+
+  logger.warn('Bot channel not found for guild in full mode', {
     userId: interaction.user.id,
     guildId: interaction.guildId,
     expectedChannelName: botChannelName,
