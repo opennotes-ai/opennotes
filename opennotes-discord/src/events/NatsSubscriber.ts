@@ -28,29 +28,6 @@ export class NatsSubscriber {
     this.reconnectWait = parseInt(process.env.NATS_RECONNECT_WAIT || '2', 10) * 1000;
   }
 
-  private isConsumerNotFoundError(error: unknown): boolean {
-    // Check message content for any Error type
-    if (error instanceof Error) {
-      const message = error.message?.toLowerCase() || '';
-      // Check for various "not found" error messages from NATS
-      if (
-        message.includes('consumer not found') ||
-        message.includes("doesn't exist") ||
-        message.includes('does not exist')
-      ) {
-        return true;
-      }
-    }
-    // Additional checks for NatsError-specific properties
-    if (error instanceof NatsError && error.isJetStreamError()) {
-      const apiError = error.api_error;
-      if (apiError?.code === 404) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private isConsumerAlreadyExistsError(error: unknown): boolean {
     // Check message content for any Error type
     if (error instanceof Error) {
@@ -79,55 +56,53 @@ export class NatsSubscriber {
     subject: string,
     deliverSubject: string
   ): Promise<JetStreamSubscription> {
+    // Try bind first - if consumer exists, this is the fastest path
     try {
       const bindOpts = consumerOpts().bind(streamName, durableName);
       const subscription = await js.subscribe(subject, bindOpts);
       logger.info('Bound to existing consumer', { consumerName: durableName, streamName });
       return subscription;
     } catch (bindError) {
-      if (!this.isConsumerNotFoundError(bindError)) {
-        logger.error('Unexpected error binding to consumer', {
-          consumerName: durableName,
-          streamName,
-          error: bindError instanceof Error ? bindError.message : String(bindError),
-        });
-        throw bindError;
-      }
-
-      logger.info('Consumer not found, creating new consumer', {
+      // Log the bind error but don't throw yet - we'll try to create
+      // This handles both "consumer not found" AND "stream not found" errors
+      logger.info('Bind failed, attempting to create consumer', {
         consumerName: durableName,
         streamName,
+        bindError: bindError instanceof Error ? bindError.message : String(bindError),
       });
+    }
 
-      try {
-        const createOpts = consumerOpts()
-          .durable(durableName)
-          .deliverGroup(durableName)
-          .deliverTo(deliverSubject)
-          .deliverAll()
-          .ackExplicit()
-          .ackWait(30_000)
-          .maxDeliver(3);
-        const subscription = await js.subscribe(subject, createOpts);
-        logger.info('Created new consumer', { consumerName: durableName, streamName });
-        return subscription;
-      } catch (createError) {
-        if (this.isConsumerAlreadyExistsError(createError)) {
-          logger.info('Consumer was created by another instance, retrying bind', {
-            consumerName: durableName,
-            streamName,
-          });
-          const retryBindOpts = consumerOpts().bind(streamName, durableName);
-          return await js.subscribe(subject, retryBindOpts);
-        }
-
-        logger.error('Failed to create consumer', {
+    // Bind failed, try to create the consumer
+    try {
+      const createOpts = consumerOpts()
+        .durable(durableName)
+        .deliverGroup(durableName)
+        .deliverTo(deliverSubject)
+        .deliverAll()
+        .ackExplicit()
+        .ackWait(30_000)
+        .maxDeliver(3);
+      const subscription = await js.subscribe(subject, createOpts);
+      logger.info('Created new consumer', { consumerName: durableName, streamName });
+      return subscription;
+    } catch (createError) {
+      // If consumer already exists (race condition), retry bind
+      if (this.isConsumerAlreadyExistsError(createError)) {
+        logger.info('Consumer was created by another instance, retrying bind', {
           consumerName: durableName,
           streamName,
-          error: createError instanceof Error ? createError.message : String(createError),
         });
-        throw createError;
+        const retryBindOpts = consumerOpts().bind(streamName, durableName);
+        return await js.subscribe(subject, retryBindOpts);
       }
+
+      // For any other error, log and throw
+      logger.error('Failed to create consumer', {
+        consumerName: durableName,
+        streamName,
+        error: createError instanceof Error ? createError.message : String(createError),
+      });
+      throw createError;
     }
   }
 
