@@ -136,6 +136,12 @@ class BulkApproveRequest(StrictInputSchema):
         None,
         description="Filter by published_date <= this value",
     )
+    limit: int = Field(
+        default=200,
+        ge=1,
+        le=10000,
+        description="Maximum number of candidates to approve (default 200)",
+    )
 
 
 class BulkApproveResponseMeta(BaseModel):

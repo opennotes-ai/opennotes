@@ -294,6 +294,7 @@ async def bulk_approve_from_predictions(
     has_content: bool | None = None,
     published_date_from: datetime | None = None,
     published_date_to: datetime | None = None,
+    limit: int = 200,
 ) -> tuple[int, int | None]:
     """Bulk set ratings from predicted_ratings where prediction >= threshold.
 
@@ -315,6 +316,7 @@ async def bulk_approve_from_predictions(
         has_content: Filter by whether content exists.
         published_date_from: Filter by published_date >= this value.
         published_date_to: Filter by published_date <= this value.
+        limit: Maximum number of candidates to approve (default 200).
 
     Returns:
         Tuple of (updated_count, promoted_count). promoted_count is None if auto_promote=False.
@@ -333,12 +335,16 @@ async def bulk_approve_from_predictions(
 
     updated_count = 0
     promoted_count = 0 if auto_promote else None
+    remaining = limit
 
     async for batch in _iter_candidates_for_bulk_approval(session, filters):
         batch_updates: list[tuple[UUID, str]] = []
         candidates_to_promote: list[UUID] = []
 
         for candidate in batch:
+            if remaining <= 0:
+                break
+
             rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold)
             if rating is None:
                 continue
@@ -346,6 +352,7 @@ async def bulk_approve_from_predictions(
             batch_updates.append((candidate.id, rating))
             if auto_promote:
                 candidates_to_promote.append(candidate.id)
+            remaining -= 1
 
         for candidate_id, rating in batch_updates:
             await session.execute(
@@ -364,9 +371,12 @@ async def bulk_approve_from_predictions(
                 if promoted:
                     promoted_count += 1
 
+        if remaining <= 0:
+            break
+
     logger.info(
         f"Bulk approved {updated_count} candidates from predictions "
-        f"(threshold={threshold}, auto_promote={auto_promote}, promoted={promoted_count})"
+        f"(threshold={threshold}, auto_promote={auto_promote}, promoted={promoted_count}, limit={limit})"
     )
 
     return updated_count, promoted_count

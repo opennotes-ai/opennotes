@@ -333,6 +333,7 @@ async def bulk_approve_predicted_jsonapi(
             has_content=body.has_content,
             published_date_from=body.published_date_from,
             published_date_to=body.published_date_to,
+            limit=body.limit,
         )
 
         logger.info(

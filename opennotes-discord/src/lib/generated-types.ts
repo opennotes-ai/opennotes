@@ -3648,6 +3648,12 @@ export interface components {
              * @description Filter by published_date <= this value
              */
             published_date_to?: string | null;
+            /**
+             * Limit
+             * @description Maximum number of candidates to approve (default 200)
+             * @default 200
+             */
+            limit: number;
         };
         /**
          * BulkApproveResponse

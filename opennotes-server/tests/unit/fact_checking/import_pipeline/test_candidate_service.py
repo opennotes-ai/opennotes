@@ -386,3 +386,30 @@ class TestBulkApproveFromPredictionsUnit:
         assert updated == 1
         assert promoted == 1
         mock_promote.assert_called_once_with(mock_session, mock_candidate.id)
+
+    @pytest.mark.asyncio
+    async def test_limit_restricts_number_of_approvals(self):
+        """limit parameter restricts how many candidates are approved."""
+        mock_session = AsyncMock()
+
+        mock_candidates = []
+        for _ in range(5):
+            mock_candidate = MagicMock(spec=FactCheckedItemCandidate)
+            mock_candidate.id = uuid4()
+            mock_candidate.predicted_ratings = {"false": 1.0}
+            mock_candidates.append(mock_candidate)
+
+        async def mock_iter(_session, _filters, _batch_size=100):  # pyright: ignore[reportUnusedParameter]
+            yield mock_candidates
+
+        with patch(
+            "src.fact_checking.import_pipeline.candidate_service._iter_candidates_for_bulk_approval",
+            side_effect=mock_iter,
+        ):
+            updated, promoted = await bulk_approve_from_predictions(
+                mock_session, threshold=1.0, auto_promote=False, limit=2
+            )
+
+        assert updated == 2
+        assert promoted is None
+        assert mock_session.execute.call_count == 2

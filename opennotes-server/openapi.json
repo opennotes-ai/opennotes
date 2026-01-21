@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Open Notes Server",
+    "title": "Open Notes Scoring API",
     "version": "0.0.1"
   },
   "paths": {
@@ -9890,6 +9890,14 @@
             ],
             "title": "Published Date To",
             "description": "Filter by published_date <= this value"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "description": "Maximum number of candidates to approve (default 200)",
+            "default": 200
           }
         },
         "additionalProperties": false,

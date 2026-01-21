@@ -503,6 +503,24 @@ class TestBulkApproveJSONAPI:
         assert "detail" in data
         assert any("status" in str(err).lower() for err in data["detail"])
 
+    @pytest.mark.asyncio
+    async def test_bulk_approve_respects_limit(self, api_key_headers, test_candidates):
+        """Bulk approve respects limit parameter and stops after reaching it."""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/fact-checking/candidates/approve-predicted",
+                json={
+                    "threshold": 1.0,
+                    "auto_promote": False,
+                    "limit": 1,
+                },
+                headers=api_key_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["meta"]["updated_count"] == 1
+
 
 @pytest.fixture
 async def promotable_candidates(db_session: AsyncSession) -> list[FactCheckedItemCandidate]:
