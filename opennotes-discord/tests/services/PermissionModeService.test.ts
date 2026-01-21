@@ -24,7 +24,7 @@ describe('PermissionModeService', () => {
   });
 
   describe('detectMode', () => {
-    it('should return "full" when bot has both ManageChannels and ManageMessages', () => {
+    it('should return "full" when bot has ManageChannels, ManageMessages, and ManageRoles', () => {
       const botMember = discordMemberFactory.build(
         {},
         {
@@ -32,6 +32,7 @@ describe('PermissionModeService', () => {
             permissionOverrides: {
               [PermissionFlagsBits.ManageChannels.toString()]: true,
               [PermissionFlagsBits.ManageMessages.toString()]: true,
+              [PermissionFlagsBits.ManageRoles.toString()]: true,
             },
           },
           associations: {
@@ -55,6 +56,7 @@ describe('PermissionModeService', () => {
           mode: 'full',
           hasManageChannels: true,
           hasManageMessages: true,
+          hasManageRoles: true,
         })
       );
     });
@@ -163,6 +165,7 @@ describe('PermissionModeService', () => {
             permissionOverrides: {
               [PermissionFlagsBits.ManageChannels.toString()]: true,
               [PermissionFlagsBits.ManageMessages.toString()]: true,
+              [PermissionFlagsBits.ManageRoles.toString()]: true,
             },
           },
           associations: {
