@@ -29,7 +29,8 @@ export class NatsSubscriber {
   }
 
   private isConsumerNotFoundError(error: unknown): boolean {
-    if (error instanceof NatsError) {
+    // Check message content for any Error type
+    if (error instanceof Error) {
       const message = error.message?.toLowerCase() || '';
       // Check for various "not found" error messages from NATS
       if (
@@ -39,18 +40,20 @@ export class NatsSubscriber {
       ) {
         return true;
       }
-      if (error.isJetStreamError()) {
-        const apiError = error.api_error;
-        if (apiError?.code === 404) {
-          return true;
-        }
+    }
+    // Additional checks for NatsError-specific properties
+    if (error instanceof NatsError && error.isJetStreamError()) {
+      const apiError = error.api_error;
+      if (apiError?.code === 404) {
+        return true;
       }
     }
     return false;
   }
 
   private isConsumerAlreadyExistsError(error: unknown): boolean {
-    if (error instanceof NatsError) {
+    // Check message content for any Error type
+    if (error instanceof Error) {
       const message = error.message?.toLowerCase() || '';
       if (
         message.includes('consumer name already in use') ||
@@ -58,11 +61,12 @@ export class NatsSubscriber {
       ) {
         return true;
       }
-      if (error.isJetStreamError()) {
-        const apiError = error.api_error;
-        if (apiError?.err_code === 10059 || apiError?.err_code === 10148) {
-          return true;
-        }
+    }
+    // Additional checks for NatsError-specific properties
+    if (error instanceof NatsError && error.isJetStreamError()) {
+      const apiError = error.api_error;
+      if (apiError?.err_code === 10059 || apiError?.err_code === 10148) {
+        return true;
       }
     }
     return false;
