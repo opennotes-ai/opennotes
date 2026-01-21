@@ -14,6 +14,7 @@ Raw X-Discord-* headers are stripped by HeaderStrippingMiddleware
 to prevent spoofing attacks.
 """
 
+import re
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
@@ -100,6 +101,12 @@ async def _get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None
     return None
 
 
+def _is_uuid_format(value: str) -> bool:
+    """Check if a string looks like a UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)."""
+    uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    return bool(re.match(uuid_pattern, value.lower()))
+
+
 async def get_community_server_by_platform_id(
     db: AsyncSession, community_server_id: str, platform: str = "discord", auto_create: bool = True
 ) -> CommunityServer | None:
@@ -108,13 +115,24 @@ async def get_community_server_by_platform_id(
 
     Args:
         db: Database session
-        community_server_id: Platform-specific community ID
+        community_server_id: Platform-specific community ID (must be platform-native format)
         platform: Platform type (default: "discord")
         auto_create: If True, automatically create the community server if it doesn't exist
 
     Returns:
         CommunityServer instance, or None if not found and auto_create=False
+
+    Raises:
+        HTTPException: 400 if community_server_id format is invalid for the platform
     """
+    if platform == "discord" and _is_uuid_format(community_server_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid Discord community server ID: '{community_server_id}'. "
+            "Discord IDs are numeric snowflakes, not UUIDs. "
+            "Use the Discord guild ID, not the internal community server UUID.",
+        )
+
     result = await db.execute(
         select(CommunityServer).where(
             CommunityServer.platform_community_server_id == community_server_id,
