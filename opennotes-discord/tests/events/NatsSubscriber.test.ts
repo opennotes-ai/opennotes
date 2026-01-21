@@ -29,6 +29,7 @@ const createMockConsumerOpts = () => {
   builder.ackWait = jest.fn().mockReturnValue(builder);
   builder.maxDeliver = jest.fn().mockReturnValue(builder);
   builder.deliverTo = jest.fn().mockReturnValue(builder);
+  builder.bind = jest.fn().mockReturnValue(builder);
   return builder;
 };
 
@@ -45,10 +46,26 @@ let mockCodec: {
 
 const mockLogger = loggerFactory.build();
 
+// Mock NatsError class for error type checking
+class MockNatsError extends Error {
+  public api_error?: { code?: number; err_code?: number };
+
+  constructor(message: string, apiError?: { code?: number; err_code?: number }) {
+    super(message);
+    this.name = 'NatsError';
+    this.api_error = apiError;
+  }
+
+  isJetStreamError(): boolean {
+    return this.api_error !== undefined;
+  }
+}
+
 jest.unstable_mockModule('nats', () => ({
   connect: mockConnect,
   StringCodec: mockStringCodec,
   consumerOpts: mockConsumerOpts,
+  NatsError: MockNatsError,
 }));
 
 jest.unstable_mockModule('../../src/logger.js', () => ({

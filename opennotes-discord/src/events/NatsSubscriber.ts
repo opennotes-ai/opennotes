@@ -1,4 +1,13 @@
-import { connect, NatsConnection, JsMsg, StringCodec, consumerOpts } from 'nats';
+import {
+  connect,
+  NatsConnection,
+  JsMsg,
+  StringCodec,
+  consumerOpts,
+  NatsError,
+  JetStreamClient,
+  JetStreamSubscription,
+} from 'nats';
 import { logger } from '../logger.js';
 import { sanitizeConnectionUrl } from '../utils/url-sanitizer.js';
 import { safeJSONParse } from '../utils/safe-json.js';
@@ -17,6 +26,109 @@ export class NatsSubscriber {
   constructor() {
     this.maxReconnectAttempts = parseInt(process.env.NATS_MAX_RECONNECT_ATTEMPTS || '10', 10);
     this.reconnectWait = parseInt(process.env.NATS_RECONNECT_WAIT || '2', 10) * 1000;
+  }
+
+  private isConsumerNotFoundError(error: unknown): boolean {
+    // Check message content for any Error type
+    if (error instanceof Error) {
+      const message = error.message?.toLowerCase() || '';
+      // Check for various "not found" error messages from NATS
+      if (
+        message.includes('consumer not found') ||
+        message.includes("doesn't exist") ||
+        message.includes('does not exist')
+      ) {
+        return true;
+      }
+    }
+    // Additional checks for NatsError-specific properties
+    if (error instanceof NatsError && error.isJetStreamError()) {
+      const apiError = error.api_error;
+      if (apiError?.code === 404) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isConsumerAlreadyExistsError(error: unknown): boolean {
+    // Check message content for any Error type
+    if (error instanceof Error) {
+      const message = error.message?.toLowerCase() || '';
+      if (
+        message.includes('consumer name already in use') ||
+        message.includes('consumer already exists')
+      ) {
+        return true;
+      }
+    }
+    // Additional checks for NatsError-specific properties
+    if (error instanceof NatsError && error.isJetStreamError()) {
+      const apiError = error.api_error;
+      if (apiError?.err_code === 10059 || apiError?.err_code === 10148) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async bindOrCreateConsumer(
+    js: JetStreamClient,
+    streamName: string,
+    durableName: string,
+    subject: string,
+    deliverSubject: string
+  ): Promise<JetStreamSubscription> {
+    try {
+      const bindOpts = consumerOpts().bind(streamName, durableName);
+      const subscription = await js.subscribe(subject, bindOpts);
+      logger.info('Bound to existing consumer', { consumerName: durableName, streamName });
+      return subscription;
+    } catch (bindError) {
+      if (!this.isConsumerNotFoundError(bindError)) {
+        logger.error('Unexpected error binding to consumer', {
+          consumerName: durableName,
+          streamName,
+          error: bindError instanceof Error ? bindError.message : String(bindError),
+        });
+        throw bindError;
+      }
+
+      logger.info('Consumer not found, creating new consumer', {
+        consumerName: durableName,
+        streamName,
+      });
+
+      try {
+        const createOpts = consumerOpts()
+          .durable(durableName)
+          .deliverGroup(durableName)
+          .deliverTo(deliverSubject)
+          .deliverAll()
+          .ackExplicit()
+          .ackWait(30_000)
+          .maxDeliver(3);
+        const subscription = await js.subscribe(subject, createOpts);
+        logger.info('Created new consumer', { consumerName: durableName, streamName });
+        return subscription;
+      } catch (createError) {
+        if (this.isConsumerAlreadyExistsError(createError)) {
+          logger.info('Consumer was created by another instance, retrying bind', {
+            consumerName: durableName,
+            streamName,
+          });
+          const retryBindOpts = consumerOpts().bind(streamName, durableName);
+          return await js.subscribe(subject, retryBindOpts);
+        }
+
+        logger.error('Failed to create consumer', {
+          consumerName: durableName,
+          streamName,
+          error: createError instanceof Error ? createError.message : String(createError),
+        });
+        throw createError;
+      }
+    }
   }
 
   async connect(url?: string): Promise<void> {
@@ -70,55 +182,18 @@ export class NatsSubscriber {
 
     try {
       const js = this.nc.jetstream();
-      const jsm = await this.nc.jetstreamManager();
 
-      // Generate durable name from subject for consistent consumer across restarts
-      // This allows multiple instances to share the same consumer on WorkQueue streams
       const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
       const streamName = 'OPENNOTES';
-
-      // Delete existing consumer by name first (may have different config)
-      try {
-        await jsm.consumers.delete(streamName, durableName);
-        logger.info('Deleted existing consumer', { consumerName: durableName });
-      } catch {
-        // Consumer doesn't exist, which is fine
-      }
-
-      // Also delete any other consumers with same filter subject
-      try {
-        const consumers = await jsm.consumers.list(streamName).next();
-        for (const consumer of consumers) {
-          if (consumer.config.filter_subject === subject) {
-            logger.warn('Deleting conflicting consumer', {
-              consumerName: consumer.name,
-              filterSubject: consumer.config.filter_subject,
-            });
-            await jsm.consumers.delete(streamName, consumer.name);
-          }
-        }
-      } catch (cleanupError) {
-        logger.warn('Error cleaning up existing consumers', {
-          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-        });
-      }
-
-      // Use durable consumer with deliver group for queue subscription
-      // This allows multiple instances to share the consumer
-      // deliverTo is required for push consumers with deliver_group
-      // WorkQueue streams require deliverAll (messages are consumed once then removed)
       const deliverSubject = `_DELIVER.${durableName}`;
-      const opts = consumerOpts()
-        .durable(durableName)
-        .deliverGroup(durableName)
-        .deliverTo(deliverSubject)
-        .deliverAll()
-        .ackExplicit()
-        .ackWait(30_000)
-        .maxDeliver(3);
 
-      // Create the JetStream consumer with durable name
-      this.consumerIterator = await js.subscribe(subject, opts);
+      this.consumerIterator = await this.bindOrCreateConsumer(
+        js,
+        streamName,
+        durableName,
+        subject,
+        deliverSubject
+      );
 
       logger.info('Subscribed to score update events with JetStream consumer group', {
         subject,
@@ -213,29 +288,18 @@ export class NatsSubscriber {
 
     try {
       const js = this.nc.jetstream();
-      const jsm = await this.nc.jetstreamManager();
 
       const durableName = `discord-bot-${subject.replace(/\./g, '_')}`;
       const streamName = 'OPENNOTES';
-
-      try {
-        await jsm.consumers.delete(streamName, durableName);
-        logger.info('Deleted existing progress consumer', { consumerName: durableName });
-      } catch {
-        // Consumer doesn't exist, which is fine
-      }
-
       const deliverSubject = `_DELIVER.${durableName}`;
-      const opts = consumerOpts()
-        .durable(durableName)
-        .deliverGroup(durableName)
-        .deliverTo(deliverSubject)
-        .deliverAll()
-        .ackExplicit()
-        .ackWait(30_000)
-        .maxDeliver(3);
 
-      const progressIterator = await js.subscribe(subject, opts);
+      const progressIterator = await this.bindOrCreateConsumer(
+        js,
+        streamName,
+        durableName,
+        subject,
+        deliverSubject
+      );
 
       logger.info('Subscribed to bulk scan progress events', {
         subject,

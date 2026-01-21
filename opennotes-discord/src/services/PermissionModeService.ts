@@ -16,14 +16,17 @@ export class PermissionModeService {
 
     const hasManageChannels = botMember.permissions.has(PermissionFlagsBits.ManageChannels);
     const hasManageMessages = botMember.permissions.has(PermissionFlagsBits.ManageMessages);
+    const hasManageRoles = botMember.permissions.has(PermissionFlagsBits.ManageRoles);
 
-    const mode: InstallationMode = hasManageChannels && hasManageMessages ? 'full' : 'minimal';
+    const mode: InstallationMode =
+      hasManageChannels && hasManageMessages && hasManageRoles ? 'full' : 'minimal';
 
     logger.debug('Detected installation mode', {
       guildId: guild.id,
       mode,
       hasManageChannels,
       hasManageMessages,
+      hasManageRoles,
     });
 
     return mode;

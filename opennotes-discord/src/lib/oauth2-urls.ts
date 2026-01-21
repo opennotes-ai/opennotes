@@ -12,7 +12,8 @@ const MINIMAL_PERMISSIONS =
 const FULL_PERMISSIONS =
   MINIMAL_PERMISSIONS |
   PermissionFlagsBits.ManageChannels |
-  PermissionFlagsBits.ManageMessages;
+  PermissionFlagsBits.ManageMessages |
+  PermissionFlagsBits.ManageRoles;
 
 const OAUTH2_SCOPES = 'bot%20applications.commands';
 

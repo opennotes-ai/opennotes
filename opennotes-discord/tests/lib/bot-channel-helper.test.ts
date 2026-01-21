@@ -53,6 +53,7 @@ describe('bot-channel-helper', () => {
               permissionOverrides: {
                 [PermissionFlagsBits.ManageChannels.toString()]: true,
                 [PermissionFlagsBits.ManageMessages.toString()]: true,
+                [PermissionFlagsBits.ManageRoles.toString()]: true,
               },
             },
             associations: {
