@@ -6,6 +6,25 @@ that run asynchronously via TaskIQ background tasks.
 
 Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
 not by this service. The middleware enforces one active job per type.
+
+Orphaned Job Cleanup Strategy
+-----------------------------
+If TaskIQ dispatch (.kiq()) fails AND the subsequent fail_job() call also fails
+(double-failure scenario), the job remains in PENDING status indefinitely.
+
+This is handled by a cleanup mechanism rather than immediate deletion because:
+1. Multiple start_*_job methods share this pattern
+2. Deletion could race with legitimate job pickup
+3. PENDING jobs should be rare; cleanup is sufficient
+
+Cleanup approach:
+- A scheduled task should periodically scan for PENDING jobs where:
+  - updated_at < (now - STALE_PENDING_JOB_THRESHOLD_MINUTES)
+  - No corresponding TaskIQ task is running
+- Such jobs should be marked FAILED with error_summary indicating "orphaned"
+- Double-failure cases are logged with ORPHANED_JOB_MARKER for monitoring alerts
+
+See: batch_jobs/cleanup.py for the cleanup implementation (TODO if not exists).
 """
 
 from datetime import datetime
@@ -31,6 +50,8 @@ logger = get_logger(__name__)
 USER_ID_KEY = "user_id"
 MIN_BASE_DELAY = 0.1
 MAX_BASE_DELAY = 30.0
+STALE_PENDING_JOB_THRESHOLD_MINUTES = 5
+ORPHANED_JOB_MARKER = "POTENTIAL_ORPHANED_JOB"
 
 
 class ImportBatchJobService:
@@ -118,19 +139,11 @@ class ImportBatchJobService:
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
             )
+        except (ConnectionError, TimeoutError, OSError) as e:
+            await self._handle_dispatch_failure(job, e, "connection_error")
+            raise
         except Exception as e:
-            try:
-                await self._batch_job_service.fail_job(
-                    job.id,
-                    error_summary={"error": str(e), "stage": "task_dispatch"},
-                )
-                await self._session.commit()
-                await self._session.refresh(job)
-            except Exception:
-                logger.exception(
-                    "Failed to mark job as failed after task dispatch error",
-                    extra={"job_id": str(job.id)},
-                )
+            await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
 
         return job
@@ -220,19 +233,11 @@ class ImportBatchJobService:
                 concurrency=DEFAULT_SCRAPE_CONCURRENCY,
                 base_delay=base_delay,
             )
+        except (ConnectionError, TimeoutError, OSError) as e:
+            await self._handle_dispatch_failure(job, e, "connection_error")
+            raise
         except Exception as e:
-            try:
-                await self._batch_job_service.fail_job(
-                    job.id,
-                    error_summary={"error": str(e), "stage": "task_dispatch"},
-                )
-                await self._session.commit()
-                await self._session.refresh(job)
-            except Exception:
-                logger.exception(
-                    "Failed to mark job as failed after task dispatch error",
-                    extra={"job_id": str(job.id)},
-                )
+            await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
 
         return job
@@ -295,19 +300,11 @@ class ImportBatchJobService:
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
             )
+        except (ConnectionError, TimeoutError, OSError) as e:
+            await self._handle_dispatch_failure(job, e, "connection_error")
+            raise
         except Exception as e:
-            try:
-                await self._batch_job_service.fail_job(
-                    job.id,
-                    error_summary={"error": str(e), "stage": "task_dispatch"},
-                )
-                await self._session.commit()
-                await self._session.refresh(job)
-            except Exception:
-                logger.exception(
-                    "Failed to mark job as failed after task dispatch error",
-                    extra={"job_id": str(job.id)},
-                )
+            await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
 
         return job
@@ -401,22 +398,52 @@ class ImportBatchJobService:
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
             )
+        except (ConnectionError, TimeoutError, OSError) as e:
+            await self._handle_dispatch_failure(job, e, "connection_error")
+            raise
         except Exception as e:
-            try:
-                await self._batch_job_service.fail_job(
-                    job.id,
-                    error_summary={"error": str(e), "stage": "task_dispatch"},
-                )
-                await self._session.commit()
-                await self._session.refresh(job)
-            except Exception:
-                logger.exception(
-                    "Failed to mark job as failed after task dispatch error",
-                    extra={"job_id": str(job.id)},
-                )
+            await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
 
         return job
+
+    async def _handle_dispatch_failure(
+        self,
+        job: BatchJob,
+        error: Exception,
+        stage: str,
+    ) -> None:
+        """
+        Handle task dispatch failure by marking the job as failed.
+
+        If marking the job as failed also fails (double-failure), logs with
+        ORPHANED_JOB_MARKER for monitoring alerts. Such jobs will be cleaned
+        up by the stale PENDING job cleanup mechanism.
+
+        Args:
+            job: The BatchJob that failed to dispatch
+            error: The exception that occurred during dispatch
+            stage: Error stage identifier (e.g., "connection_error", "task_dispatch")
+        """
+        try:
+            await self._batch_job_service.fail_job(
+                job.id,
+                error_summary={"error": str(error), "stage": stage},
+            )
+            await self._session.commit()
+            await self._session.refresh(job)
+        except Exception:
+            logger.exception(
+                f"{ORPHANED_JOB_MARKER}: Failed to mark job as failed after "
+                "task dispatch error. Job may remain in PENDING status and "
+                f"require cleanup after {STALE_PENDING_JOB_THRESHOLD_MINUTES} minutes.",
+                extra={
+                    "job_id": str(job.id),
+                    "job_type": job.job_type,
+                    "original_error": str(error),
+                    "original_stage": stage,
+                },
+            )
 
 
 def get_import_batch_job_service(

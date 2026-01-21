@@ -210,8 +210,8 @@ async def list_candidates_jsonapi(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to list candidates (JSON:API): {e}")
+    except Exception:
+        logger.exception("Failed to list candidates (JSON:API)")
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
@@ -284,8 +284,8 @@ async def set_rating_jsonapi(
             media_type=JSONAPI_CONTENT_TYPE,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to set rating (JSON:API): {e}")
+    except Exception:
+        logger.exception("Failed to set rating (JSON:API)")
         await db.rollback()
         return create_error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -13,6 +13,28 @@ import {
 } from '../factories/index.js';
 import type { JetStreamSubscription } from 'nats';
 
+/**
+ * Polls until an assertion passes or timeout is reached.
+ * More robust than fixed setTimeout delays for async operations.
+ */
+async function waitFor(
+  assertion: () => void | Promise<void>,
+  { timeout = 1000, interval = 10 } = {}
+): Promise<void> {
+  const start = Date.now();
+  let lastError: Error | undefined;
+  while (Date.now() - start < timeout) {
+    try {
+      await assertion();
+      return;
+    } catch (error) {
+      lastError = error as Error;
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
+  }
+  throw lastError || new Error('waitFor timeout');
+}
+
 const mockConnect = jest.fn<(...args: any[]) => Promise<any>>();
 const mockStringCodec = jest.fn(() => ({
   decode: jest.fn<(data: Uint8Array) => string>(),
@@ -300,11 +322,12 @@ describe('NatsSubscriber', () => {
 
       await subscriber.subscribeToScoreUpdates(handler);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitFor(() => {
+        expect(mockMessage.ack).toHaveBeenCalled();
+      });
 
       expect(mockCodec.decode).toHaveBeenCalledWith(messageData);
       expect(handler).toHaveBeenCalledWith(testEvent);
-      expect(mockMessage.ack).toHaveBeenCalled();
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Received score update event',
@@ -334,10 +357,11 @@ describe('NatsSubscriber', () => {
 
       await subscriber.subscribeToScoreUpdates(handler);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitFor(() => {
+        expect(mockMessage.nak).toHaveBeenCalled();
+      });
 
       expect(handler).not.toHaveBeenCalled();
-      expect(mockMessage.nak).toHaveBeenCalled();
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Error processing score update event',
         expect.objectContaining({
@@ -376,10 +400,11 @@ describe('NatsSubscriber', () => {
 
       await subscriber.subscribeToScoreUpdates(handler);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitFor(() => {
+        expect(mockMessage.nak).toHaveBeenCalled();
+      });
 
       expect(handler).toHaveBeenCalled();
-      expect(mockMessage.nak).toHaveBeenCalled();
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Error processing score update event',
         expect.objectContaining({
@@ -416,7 +441,9 @@ describe('NatsSubscriber', () => {
 
       await subscriber.subscribeToScoreUpdates(handler);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitFor(() => {
+        expect(handler).toHaveBeenCalled();
+      });
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Received score update event',
@@ -487,9 +514,9 @@ describe('NatsSubscriber', () => {
 
       await subscriber.connect();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(mockLogger.warn).toHaveBeenCalledWith('Disconnected from NATS server');
+      await waitFor(() => {
+        expect(mockLogger.warn).toHaveBeenCalledWith('Disconnected from NATS server');
+      });
     });
 
     it('should log reconnect events', async () => {
@@ -499,10 +526,10 @@ describe('NatsSubscriber', () => {
 
       await subscriber.connect();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(mockLogger.info).toHaveBeenCalledWith('Reconnected to NATS server', {
-        server: 'nats://localhost:4222',
+      await waitFor(() => {
+        expect(mockLogger.info).toHaveBeenCalledWith('Reconnected to NATS server', {
+          server: 'nats://localhost:4222',
+        });
       });
     });
 
@@ -513,10 +540,10 @@ describe('NatsSubscriber', () => {
 
       await subscriber.connect();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(mockLogger.warn).toHaveBeenCalledWith('Attempting to reconnect to NATS...', {
-        attempt: 3,
+      await waitFor(() => {
+        expect(mockLogger.warn).toHaveBeenCalledWith('Attempting to reconnect to NATS...', {
+          attempt: 3,
+        });
       });
     });
 
@@ -527,10 +554,10 @@ describe('NatsSubscriber', () => {
 
       await subscriber.connect();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(mockLogger.error).toHaveBeenCalledWith('NATS connection error', {
-        error: 'Connection timeout',
+      await waitFor(() => {
+        expect(mockLogger.error).toHaveBeenCalledWith('NATS connection error', {
+          error: 'Connection timeout',
+        });
       });
     });
 
@@ -545,14 +572,15 @@ describe('NatsSubscriber', () => {
 
       await subscriber.connect();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitFor(() => {
+        expect(mockLogger.info).toHaveBeenCalledWith('Reconnected to NATS server', {
+          server: 'nats://localhost:4222',
+        });
+      });
 
       expect(mockLogger.warn).toHaveBeenCalledWith('Disconnected from NATS server');
       expect(mockLogger.warn).toHaveBeenCalledWith('Attempting to reconnect to NATS...', {
         attempt: 1,
-      });
-      expect(mockLogger.info).toHaveBeenCalledWith('Reconnected to NATS server', {
-        server: 'nats://localhost:4222',
       });
     });
   });

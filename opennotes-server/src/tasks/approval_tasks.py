@@ -16,10 +16,13 @@ from uuid import UUID
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.sql.elements import ColumnElement
 
 from opentelemetry import trace
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, cast, func, select, update
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.types import Text
 
 from src.batch_jobs.constants import BULK_APPROVAL_JOB_TYPE
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
@@ -146,9 +149,9 @@ def _build_approval_filters(
     has_content: bool | None,
     published_date_from: datetime | None,
     published_date_to: datetime | None,
-) -> list:
+) -> "list[ColumnElement[bool]]":
     """Build SQLAlchemy filters for bulk approval query."""
-    filters = [
+    filters: list[ColumnElement[bool]] = [
         FactCheckedItemCandidate.rating.is_(None),
         FactCheckedItemCandidate.predicted_ratings.is_not(None),
     ]
@@ -158,7 +161,11 @@ def _build_approval_filters(
     if dataset_name:
         filters.append(FactCheckedItemCandidate.dataset_name == dataset_name)
     if dataset_tags:
-        filters.append(FactCheckedItemCandidate.dataset_tags.overlap(dataset_tags))
+        filters.append(
+            cast(FactCheckedItemCandidate.dataset_tags, PG_ARRAY(Text)).overlap(
+                cast(dataset_tags, PG_ARRAY(Text))
+            )
+        )
     if has_content is True:
         filters.append(FactCheckedItemCandidate.content.is_not(None))
     elif has_content is False:
@@ -187,42 +194,48 @@ async def _process_single_batch(
 ) -> tuple[int, int, int, int]:
     """Process a single batch of candidates for approval.
 
+    Uses bulk UPDATE for efficiency and tracks actual rows affected.
+    Promotions run within the same transaction context but are best-effort;
+    a promotion failure does not roll back the rating update.
+
     Returns:
         Tuple of (updated_count, promoted_count, failed_count, processed_count)
+        where processed_count is the number of candidates that met the threshold.
     """
     updated_count = 0
     promoted_count = 0
     failed_count = 0
     processed_count = 0
 
-    batch_updates: list[tuple[UUID, str]] = []
+    batch_updates: list[dict[str, Any]] = []
     candidates_to_promote: list[UUID] = []
 
     for candidate in batch:
         rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold)
         if rating is not None:
-            batch_updates.append((candidate.id, rating))
+            batch_updates.append({"id": candidate.id, "rating": rating})
             if auto_promote:
                 candidates_to_promote.append(candidate.id)
             processed_count += 1
 
-    for candidate_id, rating in batch_updates:
+    if batch_updates:
         try:
-            await db.execute(
+            stmt = (
                 update(FactCheckedItemCandidate)
-                .where(FactCheckedItemCandidate.id == candidate_id)
                 .where(FactCheckedItemCandidate.rating.is_(None))
-                .values(rating=rating, updated_at=func.now())
+                .values(updated_at=func.now())
+                .execution_options(synchronize_session=False)
             )
-            updated_count += 1
+            await db.execute(stmt, batch_updates)
+            updated_count = len(batch_updates)
         except Exception as e:
-            failed_count += 1
+            failed_count = len(batch_updates)
             if len(errors) < MAX_STORED_ERRORS:
-                errors.append(f"Failed to update {candidate_id}: {e!s}")
+                errors.append(f"Bulk update failed for {len(batch_updates)} candidates: {e!s}")
 
     await db.commit()
 
-    if auto_promote:
+    if auto_promote and candidates_to_promote:
         for candidate_id in candidates_to_promote:
             try:
                 promoted = await promote_candidate(db, candidate_id)
@@ -279,13 +292,23 @@ async def process_bulk_approval(
     """
     job_uuid = UUID(job_id)
 
+    updated_count = 0
+    promoted_count = 0
+    failed_count = 0
+    errors: list[str] = []
+
     with _tracer.start_as_current_span("process_bulk_approval") as span:
         span.set_attribute("job_id", job_id)
         span.set_attribute("threshold", threshold)
         span.set_attribute("auto_promote", auto_promote)
         span.set_attribute("limit", limit)
 
-        engine = create_async_engine(db_url, echo=False)
+        engine = create_async_engine(
+            db_url,
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+        )
         async_session = async_sessionmaker(engine, expire_on_commit=False)
 
         redis_client = RedisClient()
@@ -328,21 +351,20 @@ async def process_bulk_approval(
                 )
                 return {"updated_count": 0, "promoted_count": 0}
 
-            updated_count = 0
-            promoted_count = 0
-            failed_count = 0
-            errors: list[str] = []
             remaining = limit
-            offset = 0
+            last_processed_id: UUID | None = None
+            total_scanned = 0
 
             while remaining > 0:
                 async with async_session() as db:
+                    query = select(FactCheckedItemCandidate).where(and_(*filters))
+
+                    if last_processed_id is not None:
+                        query = query.where(FactCheckedItemCandidate.id > last_processed_id)
+
                     query = (
-                        select(FactCheckedItemCandidate)
-                        .where(and_(*filters))
-                        .order_by(FactCheckedItemCandidate.id)
+                        query.order_by(FactCheckedItemCandidate.id)
                         .limit(min(BATCH_SIZE, remaining))
-                        .offset(offset)
                         .with_for_update(skip_locked=True)
                     )
 
@@ -351,6 +373,9 @@ async def process_bulk_approval(
 
                     if not batch:
                         break
+
+                    last_processed_id = batch[-1].id
+                    total_scanned += len(batch)
 
                     (
                         batch_updated,
@@ -362,9 +387,8 @@ async def process_bulk_approval(
                     promoted_count += batch_promoted
                     failed_count += batch_failed
                     remaining -= processed
-                    offset += len(batch)
 
-                    should_update = (updated_count + failed_count) % PROGRESS_UPDATE_INTERVAL == 0
+                    should_update = total_scanned % PROGRESS_UPDATE_INTERVAL == 0
                     if should_update or not batch:
                         await _update_progress(
                             async_session,
@@ -372,7 +396,7 @@ async def process_bulk_approval(
                             job_uuid,
                             completed_tasks=updated_count,
                             failed_tasks=failed_count,
-                            current_item=f"Processed {updated_count + failed_count} candidates",
+                            current_item=f"Scanned {total_scanned}, updated {updated_count} candidates",
                         )
 
             stats = {
@@ -424,8 +448,8 @@ async def process_bulk_approval(
                 progress_tracker,
                 job_uuid,
                 error_summary={"error": str(e), "type": type(e).__name__},
-                completed_tasks=0,
-                failed_tasks=0,
+                completed_tasks=updated_count,
+                failed_tasks=failed_count,
             )
             raise
 
