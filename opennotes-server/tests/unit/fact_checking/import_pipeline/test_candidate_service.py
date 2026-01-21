@@ -76,6 +76,39 @@ class TestExtractHighConfidenceRating:
         result = extract_high_confidence_rating(predicted_ratings, threshold=0.9)
         assert result is None
 
+    def test_invalid_rating_key_skipped(self):
+        """Non-canonical rating keys are skipped even when above threshold."""
+        predicted_ratings = {
+            "this_is_not_a_valid_rating": 1.0,
+        }
+        result = extract_high_confidence_rating(predicted_ratings, threshold=1.0)
+        assert result is None
+
+    def test_invalid_rating_key_with_valid_fallback(self):
+        """Returns valid rating when invalid key is skipped."""
+        predicted_ratings = {
+            "invalid_explanation_text": 1.0,
+            "false": 0.95,
+        }
+        result = extract_high_confidence_rating(predicted_ratings, threshold=0.9)
+        assert result == "false"
+
+    def test_all_invalid_rating_keys(self):
+        """Returns None when all rating keys are invalid."""
+        predicted_ratings = {
+            "explanation_text_here": 1.0,
+            "another_invalid_key": 0.9,
+        }
+        result = extract_high_confidence_rating(predicted_ratings, threshold=0.5)
+        assert result is None
+
+    def test_long_invalid_rating_key(self):
+        """Long explanation text (>100 chars) as rating key is skipped."""
+        long_key = "this_claim_has_never_been_properly_justified_even_when_the_national_audit_office_and_mps_have_tried_to_check_it"
+        predicted_ratings = {long_key: 1.0, "true": 0.8}
+        result = extract_high_confidence_rating(predicted_ratings, threshold=0.8)
+        assert result == "true"
+
 
 @pytest.mark.unit
 class TestBuildFilters:

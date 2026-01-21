@@ -16,6 +16,7 @@ from sqlalchemy.types import Text
 
 from src.fact_checking.candidate_models import FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.promotion import promote_candidate
+from src.fact_checking.import_pipeline.rating_normalizer import CANONICAL_RATINGS
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,12 @@ def extract_high_confidence_rating(
 
     for rating_key, probability in sorted_ratings:
         if float(probability) >= threshold:
+            if rating_key not in CANONICAL_RATINGS:
+                logger.warning(
+                    "Invalid rating key '%s' in predicted_ratings (not in CANONICAL_RATINGS), skipping",
+                    rating_key,
+                )
+                continue
             return rating_key
 
     return None
