@@ -204,13 +204,8 @@ class TestMonitoredChannelPlatformIdValidation:
     """Integration tests for monitored channel creation with platform ID validation.
 
     Task-1028: Tests that passing a community_server UUID (primary key) as the
-    platform ID is properly rejected, preventing duplicate community server creation.
-
-    NOTE: The monitored-channels JSON:API router has a generic exception handler
-    that converts HTTPException(400) to a 500 response. The validation correctly
-    raises 400, but the router swallows it. The lookup endpoint tests verify the
-    validation logic works. A follow-up task should fix the router's exception
-    handling to properly propagate HTTPException status codes.
+    platform ID is properly rejected with 400 error, preventing duplicate
+    community server creation.
     """
 
     async def test_create_monitored_channel_with_existing_uuid_is_rejected(
@@ -220,10 +215,7 @@ class TestMonitoredChannelPlatformIdValidation:
 
         This tests the bug scenario where a client accidentally passes the community_server
         UUID (internal PK) instead of the Discord guild ID (platform_community_server_id).
-
-        Note: Due to the router's generic exception handling, the HTTPException(400)
-        is caught and converted to 500. The validation IS working correctly (the error
-        is logged with the proper message), but the response status is 500.
+        The API returns 400 with an error explaining the circular reference issue.
         """
         from src.database import get_session_maker
         from src.main import app
@@ -264,7 +256,12 @@ class TestMonitoredChannelPlatformIdValidation:
                     },
                 )
 
-                assert response.status_code in (400, 500)
+                assert response.status_code == 400
+                response_data = response.json()
+                assert "errors" in response_data
+                error_detail = response_data["errors"][0]["detail"]
+                assert "matches an existing community server's internal UUID" in error_detail
+                assert community_uuid in error_detail
 
         finally:
             async with async_session_maker() as db:

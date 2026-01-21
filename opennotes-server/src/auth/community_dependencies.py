@@ -14,7 +14,6 @@ Raw X-Discord-* headers are stripped by HeaderStrippingMiddleware
 to prevent spoofing attacks.
 """
 
-import re
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
@@ -99,12 +98,6 @@ async def _get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None
         return profile.id
 
     return None
-
-
-def _is_uuid_format(value: str) -> bool:
-    """Check if a string looks like a UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)."""
-    uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-    return bool(re.match(uuid_pattern, value.lower()))
 
 
 async def _check_circular_reference(db: AsyncSession, community_server_id: str) -> None:

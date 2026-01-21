@@ -20,9 +20,11 @@ This migration:
 5. Reassigns requests from duplicate to correct community_server (SET NULL FK - preserve data)
 6. Updates webhooks storing the UUID to use the correct Discord snowflake
 7. Updates interactions storing the UUID to use the correct Discord snowflake
-8. Deletes the duplicate community_servers rows (community_members cascades)
-9. Detects orphaned duplicates where the "correct" row was deleted
-10. Verifies no UUID-format platform_community_server_ids remain
+8. Reassigns bulk_content_scan_logs from duplicate to correct community_server (CASCADE FK - preserve data)
+9. Migrates community_config from duplicate to correct (most recent updated_at wins for conflicts)
+10. Deletes the duplicate community_servers rows (community_members cascades)
+11. Detects orphaned duplicates where the "correct" row was deleted
+12. Verifies no UUID-format platform_community_server_ids remain
 
 Revision ID: c1bd549e69ec
 Revises: task_1009_rating_len
@@ -78,6 +80,39 @@ def upgrade() -> None:
         return
 
     print(f"Found {len(duplicates)} duplicate community_servers to fix")
+
+    # Pre-processing detection: Count affected rows in CASCADE tables
+    # This helps understand the scope of data that will be migrated/preserved
+    duplicate_ids = [dup.duplicate_id for dup in duplicates]
+
+    total_bulk_scan_count = 0
+    total_config_count = 0
+    for dup_id in duplicate_ids:
+        bulk_scan_count = conn.execute(
+            sa.text("""
+                SELECT COUNT(*) as count
+                FROM bulk_content_scan_logs
+                WHERE community_server_id = :dup_id
+            """),
+            {"dup_id": dup_id},
+        ).scalar()
+        total_bulk_scan_count += bulk_scan_count
+
+        config_count = conn.execute(
+            sa.text("""
+                SELECT COUNT(*) as count
+                FROM community_config
+                WHERE community_server_id = :dup_id
+            """),
+            {"dup_id": dup_id},
+        ).scalar()
+        total_config_count += config_count
+
+    print(f"  bulk_content_scan_logs rows referencing duplicates: {total_bulk_scan_count}")
+    print(f"  community_config rows referencing duplicates: {total_config_count}")
+
+    if total_bulk_scan_count > 0 or total_config_count > 0:
+        print("  These rows will be migrated to correct community_servers (not lost)")
 
     for dup in duplicates:
         duplicate_id = dup.duplicate_id
@@ -163,6 +198,102 @@ def upgrade() -> None:
             },
         )
         print(f"    Updated {result.rowcount} interactions rows")
+
+        # Step 3e: Reassign bulk_content_scan_logs from duplicate to correct community_server
+        # bulk_content_scan_logs.community_server_id has ondelete="CASCADE" but we preserve data
+        result = conn.execute(
+            sa.text("""
+                UPDATE bulk_content_scan_logs
+                SET community_server_id = :correct_id
+                WHERE community_server_id = :duplicate_id
+            """),
+            {
+                "correct_id": correct_id,
+                "duplicate_id": duplicate_id,
+            },
+        )
+        print(
+            f"    Reassigned {result.rowcount} bulk_content_scan_logs to correct community_server"
+        )
+
+        # Step 3f: Migrate community_config from duplicate to correct
+        # community_config has composite PK (community_server_id, config_key) with CASCADE delete
+        # Strategy: migrate unique configs, update overlapping if duplicate is newer
+
+        # First, migrate configs that exist ONLY in duplicate (not in correct)
+        result = conn.execute(
+            sa.text("""
+                UPDATE community_config
+                SET community_server_id = :correct_id
+                WHERE community_server_id = :duplicate_id
+                  AND config_key NOT IN (
+                      SELECT config_key FROM community_config WHERE community_server_id = :correct_id
+                  )
+            """),
+            {
+                "correct_id": correct_id,
+                "duplicate_id": duplicate_id,
+            },
+        )
+        migrated_unique_configs = result.rowcount
+        print(
+            f"    Migrated {migrated_unique_configs} unique community_config entries from duplicate"
+        )
+
+        # For overlapping config_keys, update correct's config if duplicate has newer updated_at
+        # Log which configs will be updated vs discarded
+        overlapping = conn.execute(
+            sa.text("""
+                SELECT
+                    dup.config_key,
+                    dup.updated_at AS dup_updated_at,
+                    correct.updated_at AS correct_updated_at,
+                    CASE WHEN dup.updated_at > correct.updated_at THEN 'duplicate' ELSE 'correct' END AS kept
+                FROM community_config dup
+                JOIN community_config correct
+                    ON correct.config_key = dup.config_key
+                    AND correct.community_server_id = :correct_id
+                WHERE dup.community_server_id = :duplicate_id
+            """),
+            {
+                "correct_id": correct_id,
+                "duplicate_id": duplicate_id,
+            },
+        ).fetchall()
+
+        if overlapping:
+            kept_from_duplicate = sum(1 for row in overlapping if row.kept == "duplicate")
+            kept_from_correct = sum(1 for row in overlapping if row.kept == "correct")
+            print(f"    Found {len(overlapping)} overlapping config keys:")
+            print(f"      - {kept_from_duplicate} will be updated from duplicate (newer)")
+            print(f"      - {kept_from_correct} will be kept from correct (newer or equal)")
+            for row in overlapping:
+                print(
+                    f"      config_key={row.config_key}: kept {row.kept} "
+                    f"(dup={row.dup_updated_at}, correct={row.correct_updated_at})"
+                )
+
+        # Update correct's configs where duplicate has newer updated_at
+        result = conn.execute(
+            sa.text("""
+                UPDATE community_config AS target
+                SET config_value = source.config_value,
+                    updated_at = source.updated_at,
+                    updated_by = source.updated_by
+                FROM community_config AS source
+                WHERE target.community_server_id = :correct_id
+                  AND source.community_server_id = :duplicate_id
+                  AND target.config_key = source.config_key
+                  AND source.updated_at > target.updated_at
+            """),
+            {
+                "correct_id": correct_id,
+                "duplicate_id": duplicate_id,
+            },
+        )
+        print(
+            f"    Updated {result.rowcount} community_config entries with newer values from duplicate"
+        )
 
         # Step 4: Delete the duplicate community_server row
         # community_members will CASCADE delete automatically
