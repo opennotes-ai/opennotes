@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from sqlalchemy.sql.elements import ColumnElement
 
 from opentelemetry import trace
-from sqlalchemy import and_, cast, func, select, update
+from sqlalchemy import and_, bindparam, cast, func, select, update
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.types import Text
@@ -198,6 +198,10 @@ async def _process_single_batch(
     Promotions run within the same transaction context but are best-effort;
     a promotion failure does not roll back the rating update.
 
+    The commit is deferred until after all promotions complete to maintain
+    row locks throughout the entire batch operation. This prevents concurrent
+    jobs from selecting the same rows via skip_locked.
+
     Returns:
         Tuple of (updated_count, promoted_count, failed_count, processed_count)
         where processed_count is the number of candidates that met the threshold.
@@ -222,8 +226,9 @@ async def _process_single_batch(
         try:
             stmt = (
                 update(FactCheckedItemCandidate)
+                .where(FactCheckedItemCandidate.id == bindparam("id"))
                 .where(FactCheckedItemCandidate.rating.is_(None))
-                .values(updated_at=func.now())
+                .values(rating=bindparam("rating"), updated_at=func.now())
                 .execution_options(synchronize_session=False)
             )
             await db.execute(stmt, batch_updates)
@@ -233,8 +238,6 @@ async def _process_single_batch(
             if len(errors) < MAX_STORED_ERRORS:
                 errors.append(f"Bulk update failed for {len(batch_updates)} candidates: {e!s}")
 
-    await db.commit()
-
     if auto_promote and candidates_to_promote:
         for candidate_id in candidates_to_promote:
             try:
@@ -242,8 +245,11 @@ async def _process_single_batch(
                 if promoted:
                     promoted_count += 1
             except Exception as e:
+                failed_count += 1
                 if len(errors) < MAX_STORED_ERRORS:
                     errors.append(f"Failed to promote {candidate_id}: {e!s}")
+
+    await db.commit()
 
     return updated_count, promoted_count, failed_count, processed_count
 
@@ -273,11 +279,22 @@ async def process_bulk_approval(
 
     This task runs asynchronously and updates progress via BatchJob infrastructure.
 
+    Limit Semantics:
+        The `limit` parameter controls the maximum number of candidates that will
+        be *approved* (i.e., have their rating set from predicted_ratings). This is
+        distinct from the number of candidates *scanned*: if many candidates have
+        predictions below the threshold, the job may scan more rows than it approves.
+
+        The loop terminates when either:
+        - `limit` candidates have been approved (met the threshold)
+        - No more candidates match the filters
+        - Maximum iterations reached (safety guard against infinite loops)
+
     Args:
         job_id: UUID of the BatchJob tracking this operation
         threshold: Minimum prediction probability to approve (0.0-1.0)
         auto_promote: Whether to promote approved candidates
-        limit: Maximum number of candidates to process
+        limit: Maximum number of candidates to *approve* (not scan)
         status: Filter by candidate status
         dataset_name: Filter by dataset name
         dataset_tags: Filter by dataset tags
@@ -354,8 +371,11 @@ async def process_bulk_approval(
             remaining = limit
             last_processed_id: UUID | None = None
             total_scanned = 0
+            max_iterations = (limit // BATCH_SIZE) + 10
+            iteration_count = 0
 
-            while remaining > 0:
+            while remaining > 0 and iteration_count < max_iterations:
+                iteration_count += 1
                 async with async_session() as db:
                     query = select(FactCheckedItemCandidate).where(and_(*filters))
 
@@ -399,10 +419,24 @@ async def process_bulk_approval(
                             current_item=f"Scanned {total_scanned}, updated {updated_count} candidates",
                         )
 
+            if iteration_count >= max_iterations:
+                logger.warning(
+                    "Bulk approval reached max iterations",
+                    extra={
+                        "job_id": job_id,
+                        "iteration_count": iteration_count,
+                        "max_iterations": max_iterations,
+                        "remaining": remaining,
+                        "total_scanned": total_scanned,
+                    },
+                )
+
             stats = {
                 "updated_count": updated_count,
                 "promoted_count": promoted_count if auto_promote else None,
                 "threshold": threshold,
+                "total_scanned": total_scanned,
+                "iterations": iteration_count,
             }
 
             if errors:
