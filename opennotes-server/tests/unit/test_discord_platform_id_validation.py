@@ -112,6 +112,30 @@ class TestDiscordPlatformIdValidation:
         assert result is None
         mock_db.execute.assert_called_once()
 
+    async def test_discord_snowflake_auto_create_enabled(self):
+        """Valid Discord snowflake with auto_create=True should create new server."""
+        from src.auth.community_dependencies import get_community_server_by_platform_id
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
+
+        snowflake_id = "738146839441965267"
+
+        result = await get_community_server_by_platform_id(
+            db=mock_db,
+            community_server_id=snowflake_id,
+            platform="discord",
+            auto_create=True,
+        )
+
+        mock_db.execute.assert_called_once()
+        mock_db.add.assert_called_once()
+        mock_db.flush.assert_called_once()
+        mock_db.refresh.assert_called_once()
+        assert result is not None
+
 
 @pytest.mark.unit
 class TestIsUuidFormat:
@@ -158,3 +182,39 @@ class TestIsUuidFormat:
         from src.auth.community_dependencies import _is_uuid_format
 
         assert _is_uuid_format("1ca684bc-1d2b-4266") is False
+
+    def test_uuid_with_whitespace_not_detected(self):
+        """UUID with leading/trailing whitespace should not be detected."""
+        from src.auth.community_dependencies import _is_uuid_format
+
+        assert _is_uuid_format(" 1ca684bc-1d2b-4266-b7a5-d1296ee71c65 ") is False
+
+    def test_uuid_with_prefix_not_detected(self):
+        """UUID with prefix text should not be detected."""
+        from src.auth.community_dependencies import _is_uuid_format
+
+        assert _is_uuid_format("prefix-1ca684bc-1d2b-4266-b7a5-d1296ee71c65") is False
+
+    def test_uuid_with_suffix_not_detected(self):
+        """UUID with suffix text should not be detected."""
+        from src.auth.community_dependencies import _is_uuid_format
+
+        assert _is_uuid_format("1ca684bc-1d2b-4266-b7a5-d1296ee71c65-suffix") is False
+
+    def test_uuid_with_invalid_hex_not_detected(self):
+        """UUID with non-hex characters (gg) should not be detected."""
+        from src.auth.community_dependencies import _is_uuid_format
+
+        assert _is_uuid_format("1ca684bc-1d2b-42gg-b7a5-d1296ee71c65") is False
+
+    def test_uuid_wrong_segment_length_not_detected(self):
+        """UUID with wrong segment length should not be detected."""
+        from src.auth.community_dependencies import _is_uuid_format
+
+        assert _is_uuid_format("1ca684bc-1d2b-42666-b7a5-d1296ee71c65") is False
+
+    def test_uuid_extra_segment_not_detected(self):
+        """UUID with extra segment should not be detected."""
+        from src.auth.community_dependencies import _is_uuid_format
+
+        assert _is_uuid_format("1ca684bc-1d2b-4266-b7a5-d1296ee71c65-aaaa") is False

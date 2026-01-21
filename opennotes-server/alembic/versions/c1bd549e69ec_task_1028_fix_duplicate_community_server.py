@@ -16,7 +16,10 @@ This migration:
 1. Detects Discord community_servers where platform_community_server_id is a UUID
 2. Finds the "correct" row that the UUID references
 3. Updates monitored_channels storing the UUID to use the correct Discord snowflake
-4. Deletes the duplicate community_servers rows (community_members cascades)
+4. Reassigns notes from duplicate to correct community_server (RESTRICT FK requires this)
+5. Deletes the duplicate community_servers rows (community_members cascades)
+6. Detects orphaned duplicates where the "correct" row was deleted
+7. Verifies no UUID-format platform_community_server_ids remain
 
 Revision ID: c1bd549e69ec
 Revises: task_1009_rating_len
@@ -74,11 +77,13 @@ def upgrade() -> None:
 
     for dup in duplicates:
         duplicate_id = dup.duplicate_id
+        correct_id = dup.correct_id
         incorrect_platform_id = dup.incorrect_platform_id
         correct_snowflake = dup.correct_snowflake
 
         print(f"  Fixing duplicate {duplicate_id}:")
         print(f"    incorrect platform_community_server_id: {incorrect_platform_id}")
+        print(f"    correct community_server.id: {correct_id}")
         print(f"    correct Discord snowflake: {correct_snowflake}")
 
         # Step 2: Fix monitored_channels that have the UUID instead of Discord snowflake
@@ -95,7 +100,22 @@ def upgrade() -> None:
         )
         print(f"    Updated {result.rowcount} monitored_channels rows")
 
-        # Step 3: Delete the duplicate community_server row
+        # Step 3: Reassign notes from duplicate to correct community_server
+        # notes.community_server_id has ondelete="RESTRICT" so we must update before delete
+        result = conn.execute(
+            sa.text("""
+                UPDATE notes
+                SET community_server_id = :correct_id
+                WHERE community_server_id = :duplicate_id
+            """),
+            {
+                "correct_id": correct_id,
+                "duplicate_id": duplicate_id,
+            },
+        )
+        print(f"    Reassigned {result.rowcount} notes to correct community_server")
+
+        # Step 4: Delete the duplicate community_server row
         # community_members will CASCADE delete automatically
         result = conn.execute(
             sa.text("""
@@ -110,6 +130,55 @@ def upgrade() -> None:
             },
         )
         print(f"    Deleted {result.rowcount} duplicate community_servers rows")
+
+    # Step 5: Detect orphaned duplicates (UUID-format platform_id with no matching correct row)
+    # This handles edge cases where the "correct" row was somehow deleted
+    orphans = conn.execute(
+        sa.text("""
+            SELECT
+                dup.id AS orphan_id,
+                dup.platform_community_server_id AS orphan_platform_id
+            FROM community_servers dup
+            WHERE dup.platform = 'discord'
+              AND dup.platform_community_server_id ~ :uuid_pattern
+              AND NOT EXISTS (
+                  SELECT 1 FROM community_servers correct
+                  WHERE correct.id::text = dup.platform_community_server_id
+              )
+        """),
+        {"uuid_pattern": UUID_PATTERN},
+    ).fetchall()
+
+    if orphans:
+        print(f"WARNING: Found {len(orphans)} orphaned duplicates (correct row was deleted):")
+        for orphan in orphans:
+            print(
+                f"  - id={orphan.orphan_id}, platform_community_server_id={orphan.orphan_platform_id}"
+            )
+        print(
+            "  These need manual investigation - the referenced community_server no longer exists"
+        )
+
+    # Step 6: Post-migration verification - confirm no UUID-format platform_community_server_ids remain
+    remaining = conn.execute(
+        sa.text("""
+            SELECT COUNT(*) as count
+            FROM community_servers
+            WHERE platform = 'discord'
+              AND platform_community_server_id ~ :uuid_pattern
+        """),
+        {"uuid_pattern": UUID_PATTERN},
+    ).scalar()
+
+    if remaining == 0:
+        print(
+            "Verification passed: No community_servers with UUID-format platform_community_server_id remain"
+        )
+    else:
+        print(
+            f"WARNING: {remaining} community_servers still have UUID-format platform_community_server_id"
+        )
+        print("  This may indicate orphaned duplicates that need manual investigation")
 
 
 def downgrade() -> None:
