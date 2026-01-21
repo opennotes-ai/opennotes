@@ -427,62 +427,97 @@ class TestSetRatingJSONAPI:
 
 
 class TestBulkApproveJSONAPI:
-    """Tests for POST /api/v1/fact-checking/candidates/approve-predicted endpoint."""
+    """Tests for POST /api/v1/fact-checking/candidates/approve-predicted endpoint.
+
+    The endpoint now returns a BatchJob immediately and processes approval
+    asynchronously via TaskIQ background tasks.
+    """
 
     @pytest.mark.asyncio
-    async def test_bulk_approve_from_predictions(
+    async def test_bulk_approve_starts_background_job(
         self, api_key_headers, test_candidates, db_session
     ):
-        """Bulk approve sets rating from high-confidence predictions."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/candidates/approve-predicted",
-                json={
-                    "threshold": 1.0,
-                    "auto_promote": False,
-                },
-                headers=api_key_headers,
-            )
+        """Bulk approve endpoint creates a BatchJob and returns 201."""
+        with patch(
+            "src.tasks.approval_tasks.process_bulk_approval.kiq",
+            new_callable=AsyncMock,
+        ) as mock_kiq:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/candidates/approve-predicted",
+                    json={
+                        "threshold": 1.0,
+                        "auto_promote": False,
+                    },
+                    headers=api_key_headers,
+                )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["meta"]["updated_count"] == 2
-        assert data["meta"]["promoted_count"] is None
-
-    @pytest.mark.asyncio
-    async def test_bulk_approve_with_filters(self, api_key_headers, test_candidates, db_session):
-        """Bulk approve respects filter parameters."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/candidates/approve-predicted",
-                json={
-                    "threshold": 1.0,
-                    "auto_promote": False,
-                    "dataset_name": "test_dataset",
-                },
-                headers=api_key_headers,
-            )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["meta"]["updated_count"] == 2
+            assert response.status_code == 201
+            data = response.json()
+            assert "id" in data
+            assert data["job_type"] == "approve:candidates"
+            assert data["status"] == "pending"
+            mock_kiq.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_bulk_approve_handles_int_predictions(self, api_key_headers, test_candidates):
-        """Bulk approve handles integer prediction values (JSON deserializes 1 as int)."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/candidates/approve-predicted",
-                json={
-                    "threshold": 1.0,
-                    "auto_promote": False,
-                },
-                headers=api_key_headers,
-            )
+    async def test_bulk_approve_with_filters_passes_to_task(
+        self, api_key_headers, test_candidates, db_session
+    ):
+        """Bulk approve respects filter parameters and passes them to the task."""
+        with patch(
+            "src.tasks.approval_tasks.process_bulk_approval.kiq",
+            new_callable=AsyncMock,
+        ) as mock_kiq:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/candidates/approve-predicted",
+                    json={
+                        "threshold": 0.9,
+                        "auto_promote": True,
+                        "dataset_name": "test_dataset",
+                        "limit": 100,
+                    },
+                    headers=api_key_headers,
+                )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["meta"]["updated_count"] >= 1
+            assert response.status_code == 201
+            mock_kiq.assert_called_once()
+            call_kwargs = mock_kiq.call_args[1]
+            assert call_kwargs["threshold"] == 0.9
+            assert call_kwargs["auto_promote"] is True
+            assert call_kwargs["dataset_name"] == "test_dataset"
+            assert call_kwargs["limit"] == 100
+
+    @pytest.mark.asyncio
+    async def test_bulk_approve_returns_batch_job_response(self, api_key_headers, test_candidates):
+        """Bulk approve returns a valid BatchJob response structure."""
+        with patch(
+            "src.tasks.approval_tasks.process_bulk_approval.kiq",
+            new_callable=AsyncMock,
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/candidates/approve-predicted",
+                    json={
+                        "threshold": 1.0,
+                        "auto_promote": False,
+                    },
+                    headers=api_key_headers,
+                )
+
+            assert response.status_code == 201
+            data = response.json()
+            assert "id" in data
+            assert "job_type" in data
+            assert "status" in data
+            assert "created_at" in data
+            assert data["job_type"] == "approve:candidates"
 
     @pytest.mark.asyncio
     async def test_bulk_approve_invalid_status_returns_422(self, api_key_headers):
@@ -504,22 +539,31 @@ class TestBulkApproveJSONAPI:
         assert any("status" in str(err).lower() for err in data["detail"])
 
     @pytest.mark.asyncio
-    async def test_bulk_approve_respects_limit(self, api_key_headers, test_candidates):
-        """Bulk approve respects limit parameter and stops after reaching it."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/fact-checking/candidates/approve-predicted",
-                json={
-                    "threshold": 1.0,
-                    "auto_promote": False,
-                    "limit": 1,
-                },
-                headers=api_key_headers,
-            )
+    async def test_bulk_approve_stores_metadata_in_job(self, api_key_headers, test_candidates):
+        """Bulk approve stores request parameters in job metadata."""
+        with patch(
+            "src.tasks.approval_tasks.process_bulk_approval.kiq",
+            new_callable=AsyncMock,
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/api/v1/fact-checking/candidates/approve-predicted",
+                    json={
+                        "threshold": 0.85,
+                        "auto_promote": True,
+                        "limit": 500,
+                    },
+                    headers=api_key_headers,
+                )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["meta"]["updated_count"] == 1
+            assert response.status_code == 201
+            data = response.json()
+            assert "metadata" in data
+            assert data["metadata"]["threshold"] == 0.85
+            assert data["metadata"]["auto_promote"] is True
+            assert data["metadata"]["limit"] == 500
 
 
 @pytest.fixture
@@ -605,15 +649,14 @@ class TestAutoPromoteFeature:
             mock_promote.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_bulk_approve_with_auto_promote_true(
+    async def test_bulk_approve_with_auto_promote_passes_flag_to_task(
         self, api_key_headers, promotable_candidates, db_session
     ):
-        """Bulk approve with auto_promote=True triggers promotion for updated candidates."""
+        """Bulk approve with auto_promote=True passes flag to background task."""
         with patch(
-            "src.fact_checking.import_pipeline.candidate_service.promote_candidate",
+            "src.tasks.approval_tasks.process_bulk_approval.kiq",
             new_callable=AsyncMock,
-            return_value=True,
-        ) as mock_promote:
+        ) as mock_kiq:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -627,8 +670,10 @@ class TestAutoPromoteFeature:
                     headers=api_key_headers,
                 )
 
-            assert response.status_code == 200
+            assert response.status_code == 201
             data = response.json()
-            assert data["meta"]["updated_count"] == 2
-            assert data["meta"]["promoted_count"] == 2
-            assert mock_promote.call_count == 2
+            assert data["job_type"] == "approve:candidates"
+            assert data["metadata"]["auto_promote"] is True
+            mock_kiq.assert_called_once()
+            call_kwargs = mock_kiq.call_args[1]
+            assert call_kwargs["auto_promote"] is True

@@ -521,7 +521,7 @@ class TestKiqDispatchFailure:
         fail_call = mock_batch_job_service.fail_job.call_args
         assert fail_call[0][0] == job_id
         assert "Redis unavailable" in fail_call[1]["error_summary"]["error"]
-        assert fail_call[1]["error_summary"]["stage"] == "task_dispatch"
+        assert fail_call[1]["error_summary"]["stage"] == "connection_error"
 
     @pytest.mark.asyncio
     @patch("src.tasks.import_tasks.process_scrape_batch")

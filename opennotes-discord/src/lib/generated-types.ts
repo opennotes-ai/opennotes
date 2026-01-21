@@ -2835,22 +2835,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Bulk Approve Predicted Jsonapi
-         * @description Bulk approve candidates from predicted_ratings.
-         *
-         *     Sets rating from predicted_ratings where any prediction >= threshold.
-         *     Accepts the same filters as the list endpoint.
-         *
-         *     For each matching candidate without a rating:
-         *     1. Find the first predicted_rating entry >= threshold
-         *     2. Set that as the candidate's rating
-         *     3. Optionally promote if auto_promote=True
-         *
-         *     Args:
-         *         body: Bulk approve request with threshold and filters.
-         *
-         *     Returns:
-         *         JSON:API response with counts of updated and promoted candidates.
+         * Start bulk approval job from predicted ratings
+         * @description Start an asynchronous bulk approval job that processes candidates with predicted ratings above the threshold. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.
          */
         post: operations["bulk_approve_predicted_jsonapi_api_v1_fact_checking_candidates_approve_predicted_post"];
         delete?: never;
@@ -3654,39 +3640,6 @@ export interface components {
              * @default 200
              */
             limit: number;
-        };
-        /**
-         * BulkApproveResponse
-         * @description JSON:API response for bulk approval action.
-         */
-        BulkApproveResponse: {
-            /**
-             * Jsonapi
-             * @default {
-             *       "version": "1.1"
-             *     }
-             */
-            jsonapi: {
-                [key: string]: string;
-            };
-            meta: components["schemas"]["BulkApproveResponseMeta"];
-            links?: components["schemas"]["JSONAPILinks"] | null;
-        };
-        /**
-         * BulkApproveResponseMeta
-         * @description Meta object for bulk approve response.
-         */
-        BulkApproveResponseMeta: {
-            /**
-             * Updated Count
-             * @description Number of candidates updated
-             */
-            updated_count: number;
-            /**
-             * Promoted Count
-             * @description Number of candidates promoted (if auto_promote=True)
-             */
-            promoted_count?: number | null;
         };
         /**
          * BulkScanAttributes
@@ -12407,12 +12360,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BulkApproveResponse"];
+                    "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12423,6 +12376,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description A bulk approval job is already in progress (rate limited) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
