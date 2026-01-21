@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -422,6 +422,14 @@ async def create_monitored_channel_jsonapi(
             status_code=status.HTTP_201_CREATED,
             content=response.model_dump(by_alias=True, mode="json"),
             media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException as e:
+        await db.rollback()
+        return create_error_response(
+            e.status_code,
+            e.detail if isinstance(e.detail, str) else "Bad Request",
+            e.detail if isinstance(e.detail, str) else str(e.detail),
         )
 
     except Exception as e:

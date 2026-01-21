@@ -1,12 +1,13 @@
 """
-Unit tests for Discord platform ID validation in get_community_server_by_platform_id.
+Unit tests for community server platform ID validation in get_community_server_by_platform_id.
 
-Task-1028: Validates that UUIDs are rejected for Discord platform since Discord IDs
-are numeric snowflakes, not UUIDs. This prevents duplicate community server rows
-caused by accidentally passing a UUID instead of the Discord guild ID.
+Task-1028: Validates that existing CommunityServer UUIDs are rejected when passed as
+platform IDs. This prevents circular reference bugs where the internal UUID is
+accidentally used instead of the platform-specific ID (e.g., Discord guild snowflake).
 """
 
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
@@ -14,66 +15,101 @@ from fastapi import HTTPException
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestDiscordPlatformIdValidation:
-    """Unit tests for Discord platform ID validation."""
+class TestCircularReferenceValidation:
+    """Unit tests for circular reference prevention in platform ID validation."""
 
-    async def test_uuid_rejected_for_discord_platform(self):
-        """UUID format should be rejected for Discord platform."""
+    async def test_existing_community_uuid_rejected(self):
+        """UUID matching existing CommunityServer PK should be rejected."""
         from src.auth.community_dependencies import get_community_server_by_platform_id
 
         mock_db = AsyncMock()
-        uuid_value = "1ca684bc-1d2b-4266-b7a5-d1296ee71c65"
+        existing_uuid = "1ca684bc-1d2b-4266-b7a5-d1296ee71c65"
+
+        mock_circular_check_result = MagicMock()
+        mock_circular_check_result.scalar_one_or_none.return_value = UUID(existing_uuid)
+        mock_db.execute.return_value = mock_circular_check_result
 
         with pytest.raises(HTTPException) as exc_info:
             await get_community_server_by_platform_id(
                 db=mock_db,
-                community_server_id=uuid_value,
+                community_server_id=existing_uuid,
                 platform="discord",
                 auto_create=True,
             )
 
         assert exc_info.value.status_code == 400
-        assert "Invalid Discord community server ID" in exc_info.value.detail
-        assert "numeric snowflakes" in exc_info.value.detail
-        mock_db.execute.assert_not_called()
+        assert "matches an existing community server's internal UUID" in exc_info.value.detail
+        assert existing_uuid in exc_info.value.detail
 
-    async def test_uuid_rejected_regardless_of_auto_create(self):
-        """UUID should be rejected even with auto_create=False."""
+    async def test_existing_uuid_rejected_regardless_of_auto_create(self):
+        """Existing UUID should be rejected even with auto_create=False."""
         from src.auth.community_dependencies import get_community_server_by_platform_id
 
         mock_db = AsyncMock()
-        uuid_value = "9194ebfb-b07c-4c1b-9b35-85c624f1625c"
+        existing_uuid = "9194ebfb-b07c-4c1b-9b35-85c624f1625c"
+
+        mock_circular_check_result = MagicMock()
+        mock_circular_check_result.scalar_one_or_none.return_value = UUID(existing_uuid)
+        mock_db.execute.return_value = mock_circular_check_result
 
         with pytest.raises(HTTPException) as exc_info:
             await get_community_server_by_platform_id(
                 db=mock_db,
-                community_server_id=uuid_value,
+                community_server_id=existing_uuid,
                 platform="discord",
                 auto_create=False,
             )
 
         assert exc_info.value.status_code == 400
-        mock_db.execute.assert_not_called()
+        assert "matches an existing community server's internal UUID" in exc_info.value.detail
 
-    async def test_uppercase_uuid_also_rejected(self):
-        """Uppercase UUID should also be rejected."""
+    async def test_uppercase_existing_uuid_also_rejected(self):
+        """Uppercase UUID matching existing CommunityServer PK should also be rejected."""
         from src.auth.community_dependencies import get_community_server_by_platform_id
 
         mock_db = AsyncMock()
-        uuid_value = "1CA684BC-1D2B-4266-B7A5-D1296EE71C65"
+        existing_uuid = "1CA684BC-1D2B-4266-B7A5-D1296EE71C65"
+
+        mock_circular_check_result = MagicMock()
+        mock_circular_check_result.scalar_one_or_none.return_value = UUID(existing_uuid)
+        mock_db.execute.return_value = mock_circular_check_result
 
         with pytest.raises(HTTPException) as exc_info:
             await get_community_server_by_platform_id(
                 db=mock_db,
-                community_server_id=uuid_value,
+                community_server_id=existing_uuid,
                 platform="discord",
                 auto_create=True,
             )
 
         assert exc_info.value.status_code == 400
+        assert "matches an existing community server's internal UUID" in exc_info.value.detail
+
+    async def test_non_existing_uuid_allowed(self):
+        """UUID that doesn't match any existing CommunityServer PK should be allowed."""
+        from src.auth.community_dependencies import get_community_server_by_platform_id
+
+        mock_db = AsyncMock()
+        non_existing_uuid = "1ca684bc-1d2b-4266-b7a5-d1296ee71c65"
+
+        mock_circular_check_result = MagicMock()
+        mock_circular_check_result.scalar_one_or_none.return_value = None
+        mock_platform_lookup_result = MagicMock()
+        mock_platform_lookup_result.scalar_one_or_none.return_value = None
+        mock_db.execute.side_effect = [mock_circular_check_result, mock_platform_lookup_result]
+
+        result = await get_community_server_by_platform_id(
+            db=mock_db,
+            community_server_id=non_existing_uuid,
+            platform="slack",
+            auto_create=False,
+        )
+
+        assert result is None
+        assert mock_db.execute.call_count == 2
 
     async def test_discord_snowflake_accepted(self):
-        """Valid Discord snowflake should be accepted."""
+        """Valid Discord snowflake should be accepted (not a valid UUID)."""
         from src.auth.community_dependencies import get_community_server_by_platform_id
 
         mock_db = AsyncMock()
@@ -85,27 +121,6 @@ class TestDiscordPlatformIdValidation:
             db=mock_db,
             community_server_id="738146839441965267",
             platform="discord",
-            auto_create=False,
-        )
-
-        assert result is None
-        mock_db.execute.assert_called_once()
-
-    async def test_uuid_allowed_for_non_discord_platform(self):
-        """UUID should be allowed for non-Discord platforms (future compatibility)."""
-        from src.auth.community_dependencies import get_community_server_by_platform_id
-
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
-
-        uuid_value = "1ca684bc-1d2b-4266-b7a5-d1296ee71c65"
-
-        result = await get_community_server_by_platform_id(
-            db=mock_db,
-            community_server_id=uuid_value,
-            platform="slack",
             auto_create=False,
         )
 
@@ -136,10 +151,32 @@ class TestDiscordPlatformIdValidation:
         mock_db.refresh.assert_called_once()
         assert result is not None
 
+    async def test_existing_uuid_rejected_for_any_platform(self):
+        """Existing UUID should be rejected regardless of platform (not just discord)."""
+        from src.auth.community_dependencies import get_community_server_by_platform_id
+
+        mock_db = AsyncMock()
+        existing_uuid = "1ca684bc-1d2b-4266-b7a5-d1296ee71c65"
+
+        mock_circular_check_result = MagicMock()
+        mock_circular_check_result.scalar_one_or_none.return_value = UUID(existing_uuid)
+        mock_db.execute.return_value = mock_circular_check_result
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_community_server_by_platform_id(
+                db=mock_db,
+                community_server_id=existing_uuid,
+                platform="slack",
+                auto_create=True,
+            )
+
+        assert exc_info.value.status_code == 400
+        assert "matches an existing community server's internal UUID" in exc_info.value.detail
+
 
 @pytest.mark.unit
 class TestIsUuidFormat:
-    """Unit tests for _is_uuid_format helper function."""
+    """Unit tests for _is_uuid_format helper function (kept for migration use)."""
 
     def test_valid_uuid_lowercase(self):
         """Valid lowercase UUID should be detected."""

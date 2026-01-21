@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { ChannelType, Collection } from 'discord.js';
+import { ApiError } from '@opennotes/shared-types';
 
 const mockCreateMonitoredChannel = jest.fn<(...args: any[]) => any>();
 
@@ -171,6 +172,39 @@ describe('GuildSetupService', () => {
       await service.autoRegisterChannels(mockGuild);
 
       expect(mockCreateMonitoredChannel).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle 400 Bad Request error and log HTTP status code', async () => {
+      const mockChannels = new Collection();
+      mockChannels.set('channel1', {
+        id: 'channel1',
+        name: 'general',
+        type: ChannelType.GuildText,
+      } as any);
+
+      (mockGuild.channels.fetch as any).mockResolvedValue(mockChannels);
+
+      const apiError = new ApiError(
+        'Invalid community server ID',
+        '/api/v2/monitored-channels',
+        400,
+        { detail: 'Community server not found' }
+      );
+      mockCreateMonitoredChannel.mockRejectedValueOnce(apiError);
+
+      await service.autoRegisterChannels(mockGuild);
+
+      expect(mockCreateMonitoredChannel).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register channel',
+        expect.objectContaining({
+          channelId: 'channel1',
+          channelName: 'general',
+          guildId: TEST_GUILD_ID,
+          error: 'Invalid community server ID',
+          statusCode: 400,
+        })
+      );
     });
 
     it('should handle empty channel list', async () => {

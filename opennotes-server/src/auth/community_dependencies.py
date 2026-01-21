@@ -107,6 +107,35 @@ def _is_uuid_format(value: str) -> bool:
     return bool(re.match(uuid_pattern, value.lower()))
 
 
+async def _check_circular_reference(db: AsyncSession, community_server_id: str) -> None:
+    """
+    Check if the provided ID matches an existing CommunityServer's UUID primary key.
+
+    This prevents circular reference bugs where someone accidentally passes an internal
+    UUID instead of the platform-specific ID (e.g., Discord guild ID snowflake).
+
+    Args:
+        db: Database session
+        community_server_id: The ID to check
+
+    Raises:
+        HTTPException: 400 if the ID matches an existing CommunityServer's UUID PK
+    """
+    try:
+        uuid_value = UUID(community_server_id)
+    except ValueError:
+        return
+
+    result = await db.execute(select(CommunityServer.id).where(CommunityServer.id == uuid_value))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid community server ID: '{community_server_id}'. "
+            "This value matches an existing community server's internal UUID. "
+            "Use the platform-specific ID (e.g., Discord guild ID snowflake), not the internal UUID.",
+        )
+
+
 async def get_community_server_by_platform_id(
     db: AsyncSession, community_server_id: str, platform: str = "discord", auto_create: bool = True
 ) -> CommunityServer | None:
@@ -123,15 +152,9 @@ async def get_community_server_by_platform_id(
         CommunityServer instance, or None if not found and auto_create=False
 
     Raises:
-        HTTPException: 400 if community_server_id format is invalid for the platform
+        HTTPException: 400 if community_server_id matches an existing CommunityServer's UUID PK
     """
-    if platform == "discord" and _is_uuid_format(community_server_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid Discord community server ID: '{community_server_id}'. "
-            "Discord IDs are numeric snowflakes, not UUIDs. "
-            "Use the Discord guild ID, not the internal community server UUID.",
-        )
+    await _check_circular_reference(db, community_server_id)
 
     result = await db.execute(
         select(CommunityServer).where(

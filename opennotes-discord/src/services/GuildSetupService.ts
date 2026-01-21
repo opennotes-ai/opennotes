@@ -3,6 +3,7 @@ import { apiClient } from '../api-client.js';
 import { logger } from '../logger.js';
 import type { MonitoredChannelCreate } from '../lib/api-client.js';
 import { config } from '../config.js';
+import { ApiError } from '../lib/errors.js';
 
 export class GuildSetupService {
   async autoRegisterChannels(guild: Guild): Promise<void> {
@@ -103,12 +104,16 @@ export class GuildSetupService {
         }
       } catch (error) {
         failed++;
-        logger.error('Failed to register channel', {
+        const logContext: Record<string, unknown> = {
           channelId: channel.id,
           channelName: channel.name,
           guildId,
           error: error instanceof Error ? error.message : String(error),
-        });
+        };
+        if (error instanceof ApiError) {
+          logContext.statusCode = error.statusCode;
+        }
+        logger.error('Failed to register channel', logContext);
       }
     });
 

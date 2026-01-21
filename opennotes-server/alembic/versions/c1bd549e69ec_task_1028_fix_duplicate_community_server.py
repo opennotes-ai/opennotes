@@ -13,13 +13,16 @@ Pattern detected:
 - Row B (buggy):   id=<uuid-B>, platform_community_server_id=<uuid-A> (UUID instead of snowflake!)
 
 This migration:
-1. Detects Discord community_servers where platform_community_server_id is a UUID
+1. Detects Discord community_servers where platform_community_server_id is a UUID (case-insensitive)
 2. Finds the "correct" row that the UUID references
 3. Updates monitored_channels storing the UUID to use the correct Discord snowflake
 4. Reassigns notes from duplicate to correct community_server (RESTRICT FK requires this)
-5. Deletes the duplicate community_servers rows (community_members cascades)
-6. Detects orphaned duplicates where the "correct" row was deleted
-7. Verifies no UUID-format platform_community_server_ids remain
+5. Reassigns requests from duplicate to correct community_server (SET NULL FK - preserve data)
+6. Updates webhooks storing the UUID to use the correct Discord snowflake
+7. Updates interactions storing the UUID to use the correct Discord snowflake
+8. Deletes the duplicate community_servers rows (community_members cascades)
+9. Detects orphaned duplicates where the "correct" row was deleted
+10. Verifies no UUID-format platform_community_server_ids remain
 
 Revision ID: c1bd549e69ec
 Revises: task_1009_rating_len
@@ -39,7 +42,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 # UUID v4 pattern (matches UUIDs used as platform_community_server_id by mistake)
-UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+# Using case-insensitive pattern to catch both lowercase and uppercase UUIDs
+UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 
 def upgrade() -> None:
@@ -64,7 +68,7 @@ def upgrade() -> None:
                 ON correct.id::text = dup.platform_community_server_id
                 AND correct.platform = 'discord'
             WHERE dup.platform = 'discord'
-              AND dup.platform_community_server_id ~ :uuid_pattern
+              AND dup.platform_community_server_id ~* :uuid_pattern
         """),
         {"uuid_pattern": UUID_PATTERN},
     ).fetchall()
@@ -115,6 +119,51 @@ def upgrade() -> None:
         )
         print(f"    Reassigned {result.rowcount} notes to correct community_server")
 
+        # Step 3b: Reassign requests from duplicate to correct community_server
+        # requests.community_server_id has ondelete="SET NULL" but we want to preserve the FK
+        result = conn.execute(
+            sa.text("""
+                UPDATE requests
+                SET community_server_id = :correct_id
+                WHERE community_server_id = :duplicate_id
+            """),
+            {
+                "correct_id": correct_id,
+                "duplicate_id": duplicate_id,
+            },
+        )
+        print(f"    Reassigned {result.rowcount} requests to correct community_server")
+
+        # Step 3c: Fix webhooks that may have stored the buggy UUID instead of Discord snowflake
+        # webhooks.community_server_id is a String(50) storing platform IDs
+        result = conn.execute(
+            sa.text("""
+                UPDATE webhooks
+                SET community_server_id = :correct_snowflake
+                WHERE community_server_id = :incorrect_uuid
+            """),
+            {
+                "correct_snowflake": correct_snowflake,
+                "incorrect_uuid": incorrect_platform_id,
+            },
+        )
+        print(f"    Updated {result.rowcount} webhooks rows")
+
+        # Step 3d: Fix interactions that may have stored the buggy UUID instead of Discord snowflake
+        # interactions.community_server_id is a String(50) storing platform IDs
+        result = conn.execute(
+            sa.text("""
+                UPDATE interactions
+                SET community_server_id = :correct_snowflake
+                WHERE community_server_id = :incorrect_uuid
+            """),
+            {
+                "correct_snowflake": correct_snowflake,
+                "incorrect_uuid": incorrect_platform_id,
+            },
+        )
+        print(f"    Updated {result.rowcount} interactions rows")
+
         # Step 4: Delete the duplicate community_server row
         # community_members will CASCADE delete automatically
         result = conn.execute(
@@ -122,7 +171,7 @@ def upgrade() -> None:
                 DELETE FROM community_servers
                 WHERE id = :duplicate_uuid
                   AND platform = 'discord'
-                  AND platform_community_server_id ~ :uuid_pattern
+                  AND platform_community_server_id ~* :uuid_pattern
             """),
             {
                 "duplicate_uuid": duplicate_id,
@@ -140,7 +189,7 @@ def upgrade() -> None:
                 dup.platform_community_server_id AS orphan_platform_id
             FROM community_servers dup
             WHERE dup.platform = 'discord'
-              AND dup.platform_community_server_id ~ :uuid_pattern
+              AND dup.platform_community_server_id ~* :uuid_pattern
               AND NOT EXISTS (
                   SELECT 1 FROM community_servers correct
                   WHERE correct.id::text = dup.platform_community_server_id
@@ -165,7 +214,7 @@ def upgrade() -> None:
             SELECT COUNT(*) as count
             FROM community_servers
             WHERE platform = 'discord'
-              AND platform_community_server_id ~ :uuid_pattern
+              AND platform_community_server_id ~* :uuid_pattern
         """),
         {"uuid_pattern": UUID_PATTERN},
     ).scalar()
