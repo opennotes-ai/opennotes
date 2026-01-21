@@ -8,11 +8,13 @@ Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
 not by this service. The middleware enforces one active job per type.
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.batch_jobs.constants import (
+    BULK_APPROVAL_JOB_TYPE,
     DEFAULT_SCRAPE_CONCURRENCY,
     IMPORT_JOB_TYPE,
     PROMOTION_JOB_TYPE,
@@ -290,6 +292,112 @@ class ImportBatchJobService:
                 job_id=str(job.id),
                 batch_size=batch_size,
                 dry_run=dry_run,
+                db_url=settings.DATABASE_URL,
+                redis_url=settings.REDIS_URL,
+            )
+        except Exception as e:
+            try:
+                await self._batch_job_service.fail_job(
+                    job.id,
+                    error_summary={"error": str(e), "stage": "task_dispatch"},
+                )
+                await self._session.commit()
+                await self._session.refresh(job)
+            except Exception:
+                logger.exception(
+                    "Failed to mark job as failed after task dispatch error",
+                    extra={"job_id": str(job.id)},
+                )
+            raise
+
+        return job
+
+    async def start_bulk_approval_job(
+        self,
+        threshold: float = 1.0,
+        auto_promote: bool = False,
+        limit: int = 200,
+        status: str | None = None,
+        dataset_name: str | None = None,
+        dataset_tags: list[str] | None = None,
+        has_content: bool | None = None,
+        published_date_from: datetime | None = None,
+        published_date_to: datetime | None = None,
+        user_id: str | None = None,
+    ) -> BatchJob:
+        """
+        Start a new bulk approval job.
+
+        Creates a BatchJob in PENDING status and dispatches a TaskIQ
+        background task to approve candidates from predictions. Returns immediately
+        without blocking the HTTP connection.
+
+        Args:
+            threshold: Minimum prediction probability to approve (0.0-1.0)
+            auto_promote: Whether to promote approved candidates
+            limit: Maximum number of candidates to process
+            status: Filter by candidate status
+            dataset_name: Filter by dataset name
+            dataset_tags: Filter by dataset tags
+            has_content: Filter by content presence
+            published_date_from: Filter by published date
+            published_date_to: Filter by published date
+            user_id: ID of the user who started the job (for audit trail)
+
+        Returns:
+            The created BatchJob (in PENDING status)
+        """
+        from src.tasks.approval_tasks import process_bulk_approval  # noqa: PLC0415
+
+        settings = get_settings()
+
+        metadata = {
+            "threshold": threshold,
+            "auto_promote": auto_promote,
+            "limit": limit,
+            "status": status,
+            "dataset_name": dataset_name,
+            "dataset_tags": dataset_tags,
+            "has_content": has_content,
+            "published_date_from": published_date_from.isoformat() if published_date_from else None,
+            "published_date_to": published_date_to.isoformat() if published_date_to else None,
+        }
+        if user_id is not None:
+            metadata[USER_ID_KEY] = user_id
+
+        job_data = BatchJobCreate(
+            job_type=BULK_APPROVAL_JOB_TYPE,
+            total_tasks=0,
+            metadata=metadata,
+        )
+
+        job = await self._batch_job_service.create_job(job_data)
+        await self._session.commit()
+
+        logger.info(
+            "Created bulk approval batch job, dispatching background task",
+            extra={
+                "job_id": str(job.id),
+                "threshold": threshold,
+                "auto_promote": auto_promote,
+                "limit": limit,
+            },
+        )
+
+        try:
+            await process_bulk_approval.kiq(
+                job_id=str(job.id),
+                threshold=threshold,
+                auto_promote=auto_promote,
+                limit=limit,
+                status=status,
+                dataset_name=dataset_name,
+                dataset_tags=dataset_tags,
+                has_content=has_content,
+                published_date_from=published_date_from.isoformat()
+                if published_date_from
+                else None,
+                published_date_to=published_date_to.isoformat() if published_date_to else None,
                 db_url=settings.DATABASE_URL,
                 redis_url=settings.REDIS_URL,
             )

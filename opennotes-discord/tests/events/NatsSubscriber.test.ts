@@ -251,7 +251,7 @@ describe('NatsSubscriber', () => {
 
     it('should handle subscription errors', async () => {
       const subscriptionError = new Error('Subscription failed');
-      mockJetStream.subscribe.mockRejectedValueOnce(subscriptionError);
+      mockJetStream.subscribe.mockRejectedValue(subscriptionError);
 
       const handler = jest.fn<(event: ScoreUpdateEvent) => Promise<void>>();
 

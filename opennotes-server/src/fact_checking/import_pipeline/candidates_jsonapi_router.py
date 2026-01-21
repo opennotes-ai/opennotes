@@ -18,6 +18,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
+from src.batch_jobs.import_service import ImportBatchJobService
+from src.batch_jobs.schemas import BatchJobResponse
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -31,8 +33,6 @@ from src.database import get_db
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.candidate_schemas import (
     BulkApproveRequest,
-    BulkApproveResponse,
-    BulkApproveResponseMeta,
     CandidateAttributes,
     CandidateListResponse,
     CandidateResource,
@@ -40,7 +40,6 @@ from src.fact_checking.import_pipeline.candidate_schemas import (
     SetRatingRequest,
 )
 from src.fact_checking.import_pipeline.candidate_service import (
-    bulk_approve_from_predictions,
     list_candidates,
     set_candidate_rating,
 )
@@ -297,74 +296,77 @@ async def set_rating_jsonapi(
 
 @router.post(
     "/approve-predicted",
-    response_class=JSONResponse,
-    response_model=BulkApproveResponse,
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Start bulk approval job from predicted ratings",
+    description="Start an asynchronous bulk approval job that processes candidates "
+    "with predicted ratings above the threshold. Returns immediately with a BatchJob "
+    "that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
+    responses={
+        429: {"description": "A bulk approval job is already in progress (rate limited)"},
+    },
 )
 async def bulk_approve_predicted_jsonapi(
-    request: HTTPRequest,
     body: BulkApproveRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
-) -> JSONResponse:
-    """Bulk approve candidates from predicted_ratings.
+) -> BatchJobResponse:
+    """Start bulk approval of candidates from predicted_ratings.
 
     Sets rating from predicted_ratings where any prediction >= threshold.
     Accepts the same filters as the list endpoint.
+
+    This endpoint returns immediately with a BatchJob in PENDING status.
+    The actual approval runs asynchronously as a background task.
 
     For each matching candidate without a rating:
     1. Find the first predicted_rating entry >= threshold
     2. Set that as the candidate's rating
     3. Optionally promote if auto_promote=True
 
+    Poll the job status at:
+    - GET /api/v1/batch-jobs/{job_id} - Full job status
+    - GET /api/v1/batch-jobs/{job_id}/progress - Real-time progress
+
     Args:
         body: Bulk approve request with threshold and filters.
+        db: Database session.
+        current_user: Authenticated user.
 
     Returns:
-        JSON:API response with counts of updated and promoted candidates.
+        BatchJobResponse with job ID for status polling.
     """
-    try:
-        updated_count, promoted_count = await bulk_approve_from_predictions(
-            session=db,
-            threshold=body.threshold,
-            auto_promote=body.auto_promote,
-            status=body.status.value if body.status else None,
-            dataset_name=body.dataset_name,
-            dataset_tags=body.dataset_tags,
-            has_content=body.has_content,
-            published_date_from=body.published_date_from,
-            published_date_to=body.published_date_to,
-            limit=body.limit,
-        )
+    service = ImportBatchJobService(db)
 
-        logger.info(
-            f"Bulk approved candidates via JSON:API by user {current_user.id}",
-            extra={
-                "user_id": str(current_user.id),
-                "threshold": body.threshold,
-                "updated_count": updated_count,
-                "promoted_count": promoted_count,
-                "auto_promote": body.auto_promote,
-            },
-        )
+    logger.info(
+        "Starting bulk approval job",
+        extra={
+            "user_id": str(current_user.id),
+            "threshold": body.threshold,
+            "auto_promote": body.auto_promote,
+            "limit": body.limit,
+        },
+    )
 
-        response = BulkApproveResponse(
-            meta=BulkApproveResponseMeta(
-                updated_count=updated_count,
-                promoted_count=promoted_count,
-            ),
-            links=JSONAPILinks(self_=str(request.url)),
-        )
+    job = await service.start_bulk_approval_job(
+        threshold=body.threshold,
+        auto_promote=body.auto_promote,
+        limit=body.limit,
+        status=body.status.value if body.status else None,
+        dataset_name=body.dataset_name,
+        dataset_tags=body.dataset_tags,
+        has_content=body.has_content,
+        published_date_from=body.published_date_from,
+        published_date_to=body.published_date_to,
+        user_id=str(current_user.id),
+    )
 
-        return JSONResponse(
-            content=response.model_dump(by_alias=True, mode="json"),
-            media_type=JSONAPI_CONTENT_TYPE,
-        )
+    logger.info(
+        "Bulk approval job created",
+        extra={
+            "job_id": str(job.id),
+            "user_id": str(current_user.id),
+        },
+    )
 
-    except Exception as e:
-        logger.exception(f"Failed to bulk approve (JSON:API): {e}")
-        await db.rollback()
-        return create_error_response(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "Internal Server Error",
-            "Failed to bulk approve candidates",
-        )
+    return BatchJobResponse.model_validate(job)

@@ -8254,8 +8254,8 @@
         "tags": [
           "fact-checking-candidates"
         ],
-        "summary": "Bulk Approve Predicted Jsonapi",
-        "description": "Bulk approve candidates from predicted_ratings.\n\nSets rating from predicted_ratings where any prediction >= threshold.\nAccepts the same filters as the list endpoint.\n\nFor each matching candidate without a rating:\n1. Find the first predicted_rating entry >= threshold\n2. Set that as the candidate's rating\n3. Optionally promote if auto_promote=True\n\nArgs:\n    body: Bulk approve request with threshold and filters.\n\nReturns:\n    JSON:API response with counts of updated and promoted candidates.",
+        "summary": "Start bulk approval job from predicted ratings",
+        "description": "Start an asynchronous bulk approval job that processes candidates with predicted ratings above the threshold. Returns immediately with a BatchJob that can be polled for status. Use GET /api/v1/batch-jobs/{job_id} to check progress.",
         "operationId": "bulk_approve_predicted_jsonapi_api_v1_fact_checking_candidates_approve_predicted_post",
         "security": [
           {
@@ -8291,15 +8291,18 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BulkApproveResponse"
+                  "$ref": "#/components/schemas/BatchJobResponse"
                 }
               }
             }
+          },
+          "429": {
+            "description": "A bulk approval job is already in progress (rate limited)"
           },
           "422": {
             "description": "Validation Error",
@@ -9904,66 +9907,6 @@
         "type": "object",
         "title": "BulkApproveRequest",
         "description": "Request body for bulk approval from predicted_ratings.\n\nNote: This is not wrapped in JSON:API data envelope since it's an action\nendpoint that accepts filter parameters, not a resource creation."
-      },
-      "BulkApproveResponse": {
-        "properties": {
-          "jsonapi": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Jsonapi",
-            "default": {
-              "version": "1.1"
-            }
-          },
-          "meta": {
-            "$ref": "#/components/schemas/BulkApproveResponseMeta"
-          },
-          "links": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/JSONAPILinks"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "meta"
-        ],
-        "title": "BulkApproveResponse",
-        "description": "JSON:API response for bulk approval action."
-      },
-      "BulkApproveResponseMeta": {
-        "properties": {
-          "updated_count": {
-            "type": "integer",
-            "title": "Updated Count",
-            "description": "Number of candidates updated"
-          },
-          "promoted_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Promoted Count",
-            "description": "Number of candidates promoted (if auto_promote=True)"
-          }
-        },
-        "type": "object",
-        "required": [
-          "updated_count"
-        ],
-        "title": "BulkApproveResponseMeta",
-        "description": "Meta object for bulk approve response."
       },
       "BulkScanAttributes": {
         "properties": {
