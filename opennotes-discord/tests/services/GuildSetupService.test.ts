@@ -174,6 +174,35 @@ describe('GuildSetupService', () => {
       expect(mockCreateMonitoredChannel).toHaveBeenCalledTimes(2);
     });
 
+    it('should NOT include statusCode when a generic Error (not ApiError) is thrown', async () => {
+      const mockChannels = new Collection();
+      mockChannels.set('channel1', {
+        id: 'channel1',
+        name: 'general',
+        type: ChannelType.GuildText,
+      } as any);
+
+      (mockGuild.channels.fetch as any).mockResolvedValue(mockChannels);
+      mockCreateMonitoredChannel.mockRejectedValueOnce(new Error('Generic network error'));
+
+      await service.autoRegisterChannels(mockGuild);
+
+      expect(mockLogger.error).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register channel',
+        expect.not.objectContaining({ statusCode: expect.anything() })
+      );
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register channel',
+        expect.objectContaining({
+          channelId: 'channel1',
+          channelName: 'general',
+          guildId: TEST_GUILD_ID,
+          error: 'Generic network error',
+        })
+      );
+    });
+
     it('should handle 400 Bad Request error and log HTTP status code', async () => {
       const mockChannels = new Collection();
       mockChannels.set('channel1', {
@@ -274,6 +303,9 @@ describe('GuildSetupService', () => {
     });
 
     it('should handle ApiError with partial failure on multiple channels and log statusCode', async () => {
+      // Discord.js Collection (extends Map) iterates in insertion order.
+      // The mock responses below are set up to match this order:
+      // channel1 -> success, channel2 -> ApiError, channel3 -> success
       const mockChannels = new Collection();
       mockChannels.set('channel1', {
         id: 'channel1',
@@ -299,10 +331,11 @@ describe('GuildSetupService', () => {
         400,
         { detail: 'Bad request data' }
       );
+      // Mock responses in Collection insertion order (channel1, channel2, channel3)
       mockCreateMonitoredChannel
-        .mockResolvedValueOnce({ id: 'response-1' })
-        .mockRejectedValueOnce(apiError)
-        .mockResolvedValueOnce({ id: 'response-3' });
+        .mockResolvedValueOnce({ id: 'response-1' })  // channel1: success
+        .mockRejectedValueOnce(apiError)              // channel2: ApiError
+        .mockResolvedValueOnce({ id: 'response-3' }); // channel3: success
 
       await service.autoRegisterChannels(mockGuild);
 

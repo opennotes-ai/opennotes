@@ -352,6 +352,7 @@ class TestMonitoredChannelPlatformIdValidation:
                 assert response_data["data"]["type"] == "monitored-channels"
                 attrs = response_data["data"]["attributes"]
                 assert attrs["channel_id"] == channel_snowflake
+                assert attrs["community_server_id"] == community_server_snowflake
 
         finally:
             async with async_session_maker() as db:

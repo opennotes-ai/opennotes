@@ -75,7 +75,12 @@ def upgrade() -> None:
                 correct.platform_community_server_id AS correct_snowflake
             FROM community_servers dup
             JOIN community_servers correct
-                ON correct.id::text = dup.platform_community_server_id
+                -- Use LOWER() for case-insensitive comparison since PostgreSQL UUID::text
+                -- produces lowercase but stored values could theoretically be uppercase
+                ON LOWER(correct.id::text) = LOWER(dup.platform_community_server_id)
+                -- Platform filter is intentional: the bug (GuildSetupService.ts passing UUID
+                -- instead of snowflake) only affected Discord. Non-Discord platforms use
+                -- different ID formats and were not affected by this bug.
                 AND correct.platform = 'discord'
             WHERE dup.platform = 'discord'
               AND dup.platform_community_server_id ~* :uuid_pattern
@@ -353,7 +358,8 @@ def upgrade() -> None:
               AND dup.platform_community_server_id ~* :uuid_pattern
               AND NOT EXISTS (
                   SELECT 1 FROM community_servers correct
-                  WHERE correct.id::text = dup.platform_community_server_id
+                  -- Use LOWER() for case-insensitive comparison (consistency with main query)
+                  WHERE LOWER(correct.id::text) = LOWER(dup.platform_community_server_id)
               )
         """),
         {"uuid_pattern": UUID_PATTERN},

@@ -96,6 +96,9 @@ class TestCircularReferenceValidation:
         mock_circular_check_result.scalar_one_or_none.return_value = None
         mock_platform_lookup_result = MagicMock()
         mock_platform_lookup_result.scalar_one_or_none.return_value = None
+        # Expected call order in get_community_server_by_platform_id:
+        # 1. _check_circular_reference: SELECT id FROM community_servers WHERE id = <uuid>
+        # 2. Platform lookup: SELECT * FROM community_servers WHERE platform_community_server_id = ... AND platform = ...
         mock_db.execute.side_effect = [mock_circular_check_result, mock_platform_lookup_result]
 
         result = await get_community_server_by_platform_id(
@@ -150,6 +153,11 @@ class TestCircularReferenceValidation:
         mock_db.flush.assert_called_once()
         mock_db.refresh.assert_called_once()
         assert result is not None
+
+        # Verify the CommunityServer object passed to db.add has correct attributes
+        created_server = mock_db.add.call_args[0][0]
+        assert created_server.platform == "discord"
+        assert created_server.platform_community_server_id == snowflake_id
 
     async def test_existing_uuid_rejected_for_any_platform(self):
         """Existing UUID should be rejected regardless of platform (not just discord)."""
