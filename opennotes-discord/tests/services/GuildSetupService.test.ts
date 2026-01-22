@@ -207,6 +207,119 @@ describe('GuildSetupService', () => {
       );
     });
 
+    it('should handle 403 Forbidden error and log HTTP status code', async () => {
+      const mockChannels = new Collection();
+      mockChannels.set('channel1', {
+        id: 'channel1',
+        name: 'general',
+        type: ChannelType.GuildText,
+      } as any);
+
+      (mockGuild.channels.fetch as any).mockResolvedValue(mockChannels);
+
+      const apiError = new ApiError(
+        'Access denied',
+        '/api/v2/monitored-channels',
+        403,
+        { detail: 'Insufficient permissions' }
+      );
+      mockCreateMonitoredChannel.mockRejectedValueOnce(apiError);
+
+      await service.autoRegisterChannels(mockGuild);
+
+      expect(mockCreateMonitoredChannel).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register channel',
+        expect.objectContaining({
+          channelId: 'channel1',
+          channelName: 'general',
+          guildId: TEST_GUILD_ID,
+          error: 'Access denied',
+          statusCode: 403,
+        })
+      );
+    });
+
+    it('should handle 500 Internal Server Error and log HTTP status code', async () => {
+      const mockChannels = new Collection();
+      mockChannels.set('channel1', {
+        id: 'channel1',
+        name: 'general',
+        type: ChannelType.GuildText,
+      } as any);
+
+      (mockGuild.channels.fetch as any).mockResolvedValue(mockChannels);
+
+      const apiError = new ApiError(
+        'Internal server error',
+        '/api/v2/monitored-channels',
+        500,
+        { detail: 'Database connection failed' }
+      );
+      mockCreateMonitoredChannel.mockRejectedValueOnce(apiError);
+
+      await service.autoRegisterChannels(mockGuild);
+
+      expect(mockCreateMonitoredChannel).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register channel',
+        expect.objectContaining({
+          channelId: 'channel1',
+          channelName: 'general',
+          guildId: TEST_GUILD_ID,
+          error: 'Internal server error',
+          statusCode: 500,
+        })
+      );
+    });
+
+    it('should handle ApiError with partial failure on multiple channels and log statusCode', async () => {
+      const mockChannels = new Collection();
+      mockChannels.set('channel1', {
+        id: 'channel1',
+        name: 'general',
+        type: ChannelType.GuildText,
+      } as any);
+      mockChannels.set('channel2', {
+        id: 'channel2',
+        name: 'announcements',
+        type: ChannelType.GuildText,
+      } as any);
+      mockChannels.set('channel3', {
+        id: 'channel3',
+        name: 'random',
+        type: ChannelType.GuildText,
+      } as any);
+
+      (mockGuild.channels.fetch as any).mockResolvedValue(mockChannels);
+
+      const apiError = new ApiError(
+        'Invalid request',
+        '/api/v2/monitored-channels',
+        400,
+        { detail: 'Bad request data' }
+      );
+      mockCreateMonitoredChannel
+        .mockResolvedValueOnce({ id: 'response-1' })
+        .mockRejectedValueOnce(apiError)
+        .mockResolvedValueOnce({ id: 'response-3' });
+
+      await service.autoRegisterChannels(mockGuild);
+
+      expect(mockCreateMonitoredChannel).toHaveBeenCalledTimes(3);
+      expect(mockLogger.error).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register channel',
+        expect.objectContaining({
+          channelId: 'channel2',
+          channelName: 'announcements',
+          guildId: TEST_GUILD_ID,
+          error: 'Invalid request',
+          statusCode: 400,
+        })
+      );
+    });
+
     it('should handle empty channel list', async () => {
       const mockChannels = new Collection();
 

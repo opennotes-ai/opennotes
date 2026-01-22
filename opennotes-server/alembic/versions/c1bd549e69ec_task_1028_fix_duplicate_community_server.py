@@ -22,9 +22,17 @@ This migration:
 7. Updates interactions storing the UUID to use the correct Discord snowflake
 8. Reassigns bulk_content_scan_logs from duplicate to correct community_server (CASCADE FK - preserve data)
 9. Migrates community_config from duplicate to correct (most recent updated_at wins for conflicts)
-10. Deletes the duplicate community_servers rows (community_members cascades)
-11. Detects orphaned duplicates where the "correct" row was deleted
-12. Verifies no UUID-format platform_community_server_ids remain
+10. Logs CASCADE-delete counts for audit trail (community_members, previously_seen_messages,
+    community_server_llm_config, llm_usage_log)
+11. Deletes the duplicate community_servers rows (CASCADE deletes noted tables)
+12. Detects orphaned duplicates where the "correct" row was deleted
+13. Verifies no UUID-format platform_community_server_ids remain
+
+CASCADE delete decisions (acceptable data loss):
+- community_members: Membership records for duplicate server; duplicate was never real
+- previously_seen_messages: URL tracking for duplicate detection; no real messages existed
+- community_server_llm_config: LLM API configs; would conflict with correct server's configs
+- llm_usage_log: Usage statistics; low-value historical data for buggy duplicate
 
 Revision ID: c1bd549e69ec
 Revises: task_1009_rating_len
@@ -43,7 +51,7 @@ down_revision: str | Sequence[str] | None = "task_1009_rating_len"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# UUID v4 pattern (matches UUIDs used as platform_community_server_id by mistake)
+# UUID pattern (matches any standard UUID format - v1, v4, v5, v7, etc.)
 # Using case-insensitive pattern to catch both lowercase and uppercase UUIDs
 UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
@@ -296,7 +304,29 @@ def upgrade() -> None:
         )
 
         # Step 4: Delete the duplicate community_server row
-        # community_members will CASCADE delete automatically
+        # Log CASCADE-delete counts for audit trail before deletion
+        # These tables have CASCADE FK and their data will be deleted (acceptable data loss):
+        # - community_members: Membership records for buggy duplicate
+        # - previously_seen_messages: URL tracking data (duplicate never had real messages)
+        # - community_server_llm_config: Would conflict with correct server's configs
+        # - llm_usage_log: Low-value historical data for buggy duplicate
+        cascade_counts = conn.execute(
+            sa.text("""
+                SELECT
+                    (SELECT COUNT(*) FROM community_members WHERE community_id = :dup_id) AS members,
+                    (SELECT COUNT(*) FROM previously_seen_messages WHERE community_server_id = :dup_id) AS prev_seen,
+                    (SELECT COUNT(*) FROM community_server_llm_config WHERE community_server_id = :dup_id) AS llm_cfg,
+                    (SELECT COUNT(*) FROM llm_usage_log WHERE community_server_id = :dup_id) AS llm_usage
+            """),
+            {"dup_id": duplicate_id},
+        ).fetchone()
+        print(
+            f"    CASCADE delete counts: community_members={cascade_counts.members}, "
+            f"previously_seen_messages={cascade_counts.prev_seen}, "
+            f"community_server_llm_config={cascade_counts.llm_cfg}, "
+            f"llm_usage_log={cascade_counts.llm_usage}"
+        )
+
         result = conn.execute(
             sa.text("""
                 DELETE FROM community_servers

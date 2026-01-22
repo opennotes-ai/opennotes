@@ -14,6 +14,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import datetime
+from http import HTTPStatus
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -229,6 +230,22 @@ def create_error_response(
     )
 
 
+def _get_http_status_phrase(status_code: int) -> str:
+    """Get the standard HTTP status phrase for a status code."""
+    try:
+        return HTTPStatus(status_code).phrase
+    except ValueError:
+        return "Unknown Error"
+
+
+async def _handle_http_exception(e: HTTPException, db: AsyncSession) -> JSONResponse:
+    """Handle HTTPException with rollback and proper status phrase mapping."""
+    await db.rollback()
+    title = _get_http_status_phrase(e.status_code)
+    detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+    return create_error_response(e.status_code, title, detail)
+
+
 @router.get(
     "/monitored-channels",
     response_class=JSONResponse,
@@ -297,11 +314,7 @@ async def list_monitored_channels_jsonapi(
         )
 
     except HTTPException as e:
-        return create_error_response(
-            e.status_code,
-            "Bad Request" if e.status_code == 400 else "Request Error",
-            e.detail if isinstance(e.detail, str) else str(e.detail),
-        )
+        return await _handle_http_exception(e, db)
 
     except Exception as e:
         logger.exception(f"Failed to list monitored channels (JSON:API): {e}")
@@ -356,11 +369,7 @@ async def get_monitored_channel_jsonapi(
         )
 
     except HTTPException as e:
-        return create_error_response(
-            e.status_code,
-            "Bad Request" if e.status_code == 400 else "Request Error",
-            e.detail if isinstance(e.detail, str) else str(e.detail),
-        )
+        return await _handle_http_exception(e, db)
 
     except Exception as e:
         logger.exception(f"Failed to get monitored channel (JSON:API): {e}")
@@ -439,12 +448,7 @@ async def create_monitored_channel_jsonapi(
         )
 
     except HTTPException as e:
-        await db.rollback()
-        return create_error_response(
-            e.status_code,
-            "Bad Request" if e.status_code == 400 else "Request Error",
-            e.detail if isinstance(e.detail, str) else str(e.detail),
-        )
+        return await _handle_http_exception(e, db)
 
     except Exception as e:
         logger.exception(f"Failed to create monitored channel (JSON:API): {e}")
@@ -524,12 +528,7 @@ async def update_monitored_channel_jsonapi(
         )
 
     except HTTPException as e:
-        await db.rollback()
-        return create_error_response(
-            e.status_code,
-            "Bad Request" if e.status_code == 400 else "Request Error",
-            e.detail if isinstance(e.detail, str) else str(e.detail),
-        )
+        return await _handle_http_exception(e, db)
 
     except Exception as e:
         logger.exception(f"Failed to update monitored channel (JSON:API): {e}")
@@ -582,12 +581,7 @@ async def delete_monitored_channel_jsonapi(
         return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
 
     except HTTPException as e:
-        await db.rollback()
-        return create_error_response(
-            e.status_code,
-            "Bad Request" if e.status_code == 400 else "Request Error",
-            e.detail if isinstance(e.detail, str) else str(e.detail),
-        )
+        return await _handle_http_exception(e, db)
 
     except Exception as e:
         logger.exception(f"Failed to delete monitored channel (JSON:API): {e}")

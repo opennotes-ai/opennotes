@@ -5,12 +5,20 @@ Task-1028: Tests that circular reference validation (preventing use of existing
 CommunityServer UUIDs as platform IDs) is properly enforced at the API level.
 """
 
+from uuid import uuid4
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 
+from src.fact_checking.monitored_channel_models import MonitoredChannel
 from src.llm_config.models import CommunityServer
 from src.users.models import User
+
+
+def generate_snowflake() -> str:
+    """Generate a unique snowflake-like ID for testing."""
+    return str(int(uuid4().hex[:16], 16) % (10**18) + 10**17)
 
 
 @pytest.fixture
@@ -69,7 +77,7 @@ async def existing_community_server():
     async with async_session_maker() as db:
         server = CommunityServer(
             platform="discord",
-            platform_community_server_id="999888777666555444",
+            platform_community_server_id=generate_snowflake(),
             name="Test Server for Circular Reference",
             is_active=True,
             is_public=True,
@@ -136,46 +144,76 @@ class TestCircularReferenceApiValidation:
 
     async def test_lookup_with_valid_snowflake_succeeds(self, service_account_headers):
         """API should accept valid Discord snowflake and return community server."""
+        from src.database import get_session_maker
         from src.main import app
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            snowflake_id = "999999999999999901"
-            response = await client.get(
-                "/api/v1/community-servers/lookup",
-                params={
-                    "platform": "discord",
-                    "platform_community_server_id": snowflake_id,
-                },
-                headers=service_account_headers,
-            )
+        snowflake_id = generate_snowflake()
+        created_server_id = None
 
-            assert response.status_code == 200
-            response_data = response.json()
-            assert response_data["platform"] == "discord"
-            assert response_data["platform_community_server_id"] == snowflake_id
-            assert "id" in response_data
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    "/api/v1/community-servers/lookup",
+                    params={
+                        "platform": "discord",
+                        "platform_community_server_id": snowflake_id,
+                    },
+                    headers=service_account_headers,
+                )
+
+                assert response.status_code == 200
+                response_data = response.json()
+                assert response_data["platform"] == "discord"
+                assert response_data["platform_community_server_id"] == snowflake_id
+                assert "id" in response_data
+                created_server_id = response_data["id"]
+        finally:
+            if created_server_id:
+                async_session_maker = get_session_maker()
+                async with async_session_maker() as db:
+                    await db.execute(
+                        delete(CommunityServer).where(
+                            CommunityServer.platform_community_server_id == snowflake_id
+                        )
+                    )
+                    await db.commit()
 
     async def test_lookup_non_existing_uuid_allowed_for_slack(self, service_account_headers):
         """API should accept UUID for non-Discord platforms when it doesn't match existing PKs."""
+        from src.database import get_session_maker
         from src.main import app
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            non_existing_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-            response = await client.get(
-                "/api/v1/community-servers/lookup",
-                params={
-                    "platform": "slack",
-                    "platform_community_server_id": non_existing_uuid,
-                },
-                headers=service_account_headers,
-            )
+        non_existing_uuid = str(uuid4())
+        created_server_id = None
 
-            assert response.status_code == 200
-            response_data = response.json()
-            assert response_data["platform"] == "slack"
-            assert response_data["platform_community_server_id"] == non_existing_uuid
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    "/api/v1/community-servers/lookup",
+                    params={
+                        "platform": "slack",
+                        "platform_community_server_id": non_existing_uuid,
+                    },
+                    headers=service_account_headers,
+                )
+
+                assert response.status_code == 200
+                response_data = response.json()
+                assert response_data["platform"] == "slack"
+                assert response_data["platform_community_server_id"] == non_existing_uuid
+                created_server_id = response_data["id"]
+        finally:
+            if created_server_id:
+                async_session_maker = get_session_maker()
+                async with async_session_maker() as db:
+                    await db.execute(
+                        delete(CommunityServer).where(
+                            CommunityServer.platform_community_server_id == non_existing_uuid
+                        )
+                    )
+                    await db.commit()
 
     async def test_lookup_existing_uuid_rejected_for_any_platform(
         self, service_account_headers, existing_community_server
@@ -221,12 +259,13 @@ class TestMonitoredChannelPlatformIdValidation:
         from src.main import app
 
         async_session_maker = get_session_maker()
+        platform_id = generate_snowflake()
         community_uuid = None
 
         async with async_session_maker() as db:
             community = CommunityServer(
                 platform="discord",
-                platform_community_server_id="999999999999999902",
+                platform_community_server_id=platform_id,
                 name="Test Community for UUID Validation",
                 is_active=True,
                 is_public=True,
@@ -246,7 +285,7 @@ class TestMonitoredChannelPlatformIdValidation:
                             "type": "monitored-channels",
                             "attributes": {
                                 "community_server_id": community_uuid,
-                                "channel_id": "999999999999999903",
+                                "channel_id": generate_snowflake(),
                             },
                         }
                     },
@@ -267,7 +306,61 @@ class TestMonitoredChannelPlatformIdValidation:
             async with async_session_maker() as db:
                 await db.execute(
                     delete(CommunityServer).where(
-                        CommunityServer.platform_community_server_id == "999999999999999902"
+                        CommunityServer.platform_community_server_id == platform_id
+                    )
+                )
+                await db.commit()
+
+    async def test_create_monitored_channel_with_valid_snowflake_succeeds(
+        self, service_account_headers
+    ):
+        """API should accept valid Discord snowflakes and create monitored channel.
+
+        This tests the happy path where a client passes valid Discord snowflake IDs
+        for both community_server_id and channel_id.
+        """
+        from src.database import get_session_maker
+        from src.main import app
+
+        async_session_maker = get_session_maker()
+        community_server_snowflake = generate_snowflake()
+        channel_snowflake = generate_snowflake()
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v2/monitored-channels",
+                    json={
+                        "data": {
+                            "type": "monitored-channels",
+                            "attributes": {
+                                "community_server_id": community_server_snowflake,
+                                "channel_id": channel_snowflake,
+                            },
+                        }
+                    },
+                    headers={
+                        **service_account_headers,
+                        "Content-Type": "application/vnd.api+json",
+                    },
+                )
+
+                assert response.status_code == 201
+                response_data = response.json()
+                assert "data" in response_data
+                assert response_data["data"]["type"] == "monitored-channels"
+                attrs = response_data["data"]["attributes"]
+                assert attrs["channel_id"] == channel_snowflake
+
+        finally:
+            async with async_session_maker() as db:
+                await db.execute(
+                    delete(MonitoredChannel).where(MonitoredChannel.channel_id == channel_snowflake)
+                )
+                await db.execute(
+                    delete(CommunityServer).where(
+                        CommunityServer.platform_community_server_id == community_server_snowflake
                     )
                 )
                 await db.commit()

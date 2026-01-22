@@ -14,6 +14,7 @@ Raw X-Discord-* headers are stripped by HeaderStrippingMiddleware
 to prevent spoofing attacks.
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
@@ -45,6 +46,8 @@ from src.users.profile_schemas import (
     CommunityRole,
     UserProfileCreate,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def _get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None:
@@ -121,6 +124,10 @@ async def _check_circular_reference(db: AsyncSession, community_server_id: str) 
 
     result = await db.execute(select(CommunityServer.id).where(CommunityServer.id == uuid_value))
     if result.scalar_one_or_none():
+        logger.warning(
+            "Circular reference rejected: community_server_id '%s' matches existing CommunityServer UUID PK",
+            community_server_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid community server ID: '{community_server_id}'. "
