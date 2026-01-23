@@ -25,7 +25,7 @@ from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from taskiq import TaskiqMessage, TaskiqResult
 
@@ -267,6 +267,8 @@ async def _handle_fact_check_rechunk_final_failure(
                     extra={"job_id": job_id, "error": str(e)},
                 )
 
+        await progress_tracker.clear_item_tracking(job_uuid)
+
         logger.error(
             "Fact check rechunk job failed after all retries exhausted",
             extra={
@@ -346,6 +348,8 @@ async def _handle_previously_seen_rechunk_final_failure(
                         "error": str(e),
                     },
                 )
+
+        await progress_tracker.clear_item_tracking(job_uuid)
 
         logger.error(
             "Previously seen rechunk job failed after all retries exhausted",
@@ -565,7 +569,6 @@ async def process_fact_check_rechunk_task(
         progress = await progress_tracker.get_progress(job_uuid)
         if progress and progress.processed_count > 0:
             processed_count = progress.processed_count
-            offset = processed_count
             logger.info(
                 "Resuming fact check rechunk from previous progress",
                 extra={
@@ -577,33 +580,14 @@ async def process_fact_check_rechunk_task(
             span.set_attribute("job.resumed_from_count", processed_count)
         else:
             processed_count = 0
-            offset = 0
             span.set_attribute("job.resumed", False)
 
         failed_count = 0
+        offset = 0
 
         item_errors: list[dict] = []
         try:
             async with async_session() as db:
-                total_count_result = await db.execute(select(func.count(FactCheckItem.id)))
-                total_items = total_count_result.scalar() or 0
-
-                if offset > total_items:
-                    logger.warning(
-                        "Stored progress exceeds current item count, resetting offset",
-                        extra={
-                            "job_id": job_id,
-                            "stored_offset": offset,
-                            "total_items": total_items,
-                        },
-                    )
-                    offset = 0
-                    processed_count = 0
-                    span.add_event(
-                        "progress_reset",
-                        {"reason": "stored_offset_exceeds_total", "total_items": total_items},
-                    )
-
                 while True:
                     result = await db.execute(
                         select(FactCheckItem)
@@ -617,6 +601,17 @@ async def process_fact_check_rechunk_task(
                         break
 
                     for item in items:
+                        item_id_str = str(item.id)
+                        if await progress_tracker.is_item_processed_by_id(job_uuid, item_id_str):
+                            logger.debug(
+                                "Skipping already processed item",
+                                extra={
+                                    "job_id": job_id,
+                                    "item_id": item_id_str,
+                                },
+                            )
+                            continue
+
                         try:
                             await _process_fact_check_item_with_retry(
                                 engine=engine,
@@ -625,12 +620,14 @@ async def process_fact_check_rechunk_task(
                                 item_content=item.content,
                                 community_server_id=community_uuid,
                             )
+                            await progress_tracker.mark_item_processed_by_id(job_uuid, item_id_str)
                             processed_count += 1
                         except Exception as item_error:
+                            await progress_tracker.mark_item_failed_by_id(job_uuid, item_id_str)
                             failed_count += 1
                             item_errors.append(
                                 {
-                                    "item_id": str(item.id),
+                                    "item_id": item_id_str,
                                     "error": str(item_error),
                                 }
                             )
@@ -638,7 +635,7 @@ async def process_fact_check_rechunk_task(
                                 "Failed to process fact check item",
                                 extra={
                                     "job_id": job_id,
-                                    "item_id": str(item.id),
+                                    "item_id": item_id_str,
                                     "error": str(item_error),
                                 },
                             )
@@ -679,6 +676,8 @@ async def process_fact_check_rechunk_task(
                     failed_tasks=failed_count,
                 )
                 await session.commit()
+
+            await progress_tracker.clear_item_tracking(job_uuid)
 
             span.set_attribute("job.processed_count", processed_count)
             span.set_attribute("job.failed_count", failed_count)
@@ -784,7 +783,6 @@ async def process_previously_seen_rechunk_task(
         progress = await progress_tracker.get_progress(job_uuid)
         if progress and progress.processed_count > 0:
             processed_count = progress.processed_count
-            offset = processed_count
             logger.info(
                 "Resuming previously seen rechunk from previous progress",
                 extra={
@@ -797,38 +795,14 @@ async def process_previously_seen_rechunk_task(
             span.set_attribute("job.resumed_from_count", processed_count)
         else:
             processed_count = 0
-            offset = 0
             span.set_attribute("job.resumed", False)
 
         failed_count = 0
+        offset = 0
         item_errors: list[dict] = []
 
         try:
             async with async_session() as db:
-                total_count_result = await db.execute(
-                    select(func.count(PreviouslySeenMessage.id)).where(
-                        PreviouslySeenMessage.community_server_id == community_uuid
-                    )
-                )
-                total_items = total_count_result.scalar() or 0
-
-                if offset > total_items:
-                    logger.warning(
-                        "Stored progress exceeds current item count, resetting offset",
-                        extra={
-                            "job_id": job_id,
-                            "community_server_id": community_server_id,
-                            "stored_offset": offset,
-                            "total_items": total_items,
-                        },
-                    )
-                    offset = 0
-                    processed_count = 0
-                    span.add_event(
-                        "progress_reset",
-                        {"reason": "stored_offset_exceeds_total", "total_items": total_items},
-                    )
-
                 while True:
                     result = await db.execute(
                         select(PreviouslySeenMessage)
@@ -843,6 +817,17 @@ async def process_previously_seen_rechunk_task(
                         break
 
                     for msg in messages:
+                        msg_id_str = str(msg.id)
+                        if await progress_tracker.is_item_processed_by_id(job_uuid, msg_id_str):
+                            logger.debug(
+                                "Skipping already processed item",
+                                extra={
+                                    "job_id": job_id,
+                                    "message_id": msg_id_str,
+                                },
+                            )
+                            continue
+
                         content = (msg.extra_metadata or {}).get("content", "")
                         if content:
                             try:
@@ -853,12 +838,16 @@ async def process_previously_seen_rechunk_task(
                                     item_content=content,
                                     community_server_id=community_uuid,
                                 )
+                                await progress_tracker.mark_item_processed_by_id(
+                                    job_uuid, msg_id_str
+                                )
                                 processed_count += 1
                             except Exception as item_error:
+                                await progress_tracker.mark_item_failed_by_id(job_uuid, msg_id_str)
                                 failed_count += 1
                                 item_errors.append(
                                     {
-                                        "message_id": str(msg.id),
+                                        "message_id": msg_id_str,
                                         "error": str(item_error),
                                     }
                                 )
@@ -866,11 +855,12 @@ async def process_previously_seen_rechunk_task(
                                     "Failed to process previously seen message",
                                     extra={
                                         "job_id": job_id,
-                                        "message_id": str(msg.id),
+                                        "message_id": msg_id_str,
                                         "error": str(item_error),
                                     },
                                 )
                         else:
+                            await progress_tracker.mark_item_processed_by_id(job_uuid, msg_id_str)
                             processed_count += 1
 
                         try:
@@ -910,6 +900,8 @@ async def process_previously_seen_rechunk_task(
                     failed_tasks=failed_count,
                 )
                 await session.commit()
+
+            await progress_tracker.clear_item_tracking(job_uuid)
 
             span.set_attribute("job.processed_count", processed_count)
             span.set_attribute("job.failed_count", failed_count)

@@ -64,6 +64,10 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.get_progress = AsyncMock(return_value=None)
         mock_progress_tracker.update_progress = AsyncMock()
+        mock_progress_tracker.is_item_processed_by_id = AsyncMock(return_value=False)
+        mock_progress_tracker.mark_item_processed_by_id = AsyncMock()
+        mock_progress_tracker.mark_item_failed_by_id = AsyncMock()
+        mock_progress_tracker.clear_item_tracking = AsyncMock()
 
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
@@ -139,6 +143,10 @@ class TestFactCheckRechunkTaskBatchIteration:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.get_progress = AsyncMock(return_value=None)
         mock_progress_tracker.update_progress = AsyncMock()
+        mock_progress_tracker.is_item_processed_by_id = AsyncMock(return_value=False)
+        mock_progress_tracker.mark_item_processed_by_id = AsyncMock()
+        mock_progress_tracker.mark_item_failed_by_id = AsyncMock()
+        mock_progress_tracker.clear_item_tracking = AsyncMock()
 
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
@@ -223,6 +231,10 @@ class TestRechunkTaskProgressTracking:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.get_progress = AsyncMock(return_value=None)
         mock_progress_tracker.update_progress = AsyncMock()
+        mock_progress_tracker.is_item_processed_by_id = AsyncMock(return_value=False)
+        mock_progress_tracker.mark_item_processed_by_id = AsyncMock()
+        mock_progress_tracker.mark_item_failed_by_id = AsyncMock()
+        mock_progress_tracker.clear_item_tracking = AsyncMock()
 
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
@@ -301,6 +313,10 @@ class TestRechunkTaskProgressTracking:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.get_progress = AsyncMock(return_value=None)
         mock_progress_tracker.update_progress = AsyncMock()
+        mock_progress_tracker.is_item_processed_by_id = AsyncMock(return_value=False)
+        mock_progress_tracker.mark_item_processed_by_id = AsyncMock()
+        mock_progress_tracker.mark_item_failed_by_id = AsyncMock()
+        mock_progress_tracker.clear_item_tracking = AsyncMock()
 
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.complete_job = AsyncMock()
@@ -387,6 +403,10 @@ class TestRechunkTaskProgressTracking:
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.get_progress = AsyncMock(return_value=None)
         mock_progress_tracker.update_progress = AsyncMock()
+        mock_progress_tracker.is_item_processed_by_id = AsyncMock(return_value=False)
+        mock_progress_tracker.mark_item_processed_by_id = AsyncMock()
+        mock_progress_tracker.mark_item_failed_by_id = AsyncMock()
+        mock_progress_tracker.clear_item_tracking = AsyncMock()
 
         mock_batch_job_service = MagicMock()
         mock_batch_job_service.fail_job = AsyncMock()
@@ -667,6 +687,10 @@ class TestFinalRetryCallbackHandlers:
 
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.get_progress = AsyncMock(return_value=None)
+        mock_progress_tracker.is_item_processed_by_id = AsyncMock(return_value=False)
+        mock_progress_tracker.mark_item_processed_by_id = AsyncMock()
+        mock_progress_tracker.mark_item_failed_by_id = AsyncMock()
+        mock_progress_tracker.clear_item_tracking = AsyncMock()
 
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()
@@ -751,6 +775,10 @@ class TestFinalRetryCallbackHandlers:
 
         mock_progress_tracker = MagicMock()
         mock_progress_tracker.get_progress = AsyncMock(return_value=None)
+        mock_progress_tracker.is_item_processed_by_id = AsyncMock(return_value=False)
+        mock_progress_tracker.mark_item_processed_by_id = AsyncMock()
+        mock_progress_tracker.mark_item_failed_by_id = AsyncMock()
+        mock_progress_tracker.clear_item_tracking = AsyncMock()
 
         mock_db = AsyncMock()
         mock_db.commit = AsyncMock()

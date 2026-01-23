@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import redis.asyncio as redis
+from redis.asyncio.client import Pipeline
 
 from src.circuit_breaker import circuit_breaker_registry
 from src.config import settings
@@ -356,6 +357,151 @@ class RedisClient:
             return await self.circuit_breaker.call(self.client.hincrby, key, field, amount)  # type: ignore[arg-type]
         except Exception as e:
             logger.error(f"Redis HINCRBY failed for key '{key}' field '{field}': {e}")
+            raise
+
+    async def setbit(self, key: str, offset: int, value: int) -> int:
+        """
+        Set or clear the bit at offset in the string value stored at key.
+
+        Args:
+            key: The key
+            offset: Bit offset (0-indexed, must be >= 0)
+            value: Bit value (must be 0 or 1)
+
+        Returns:
+            The original bit value at offset
+
+        Raises:
+            ValueError: If offset < 0 or value is not 0 or 1
+            RuntimeError: If Redis client not connected
+        """
+        if offset < 0:
+            raise ValueError(f"offset must be >= 0, got {offset}")
+        if value not in (0, 1):
+            raise ValueError(f"value must be 0 or 1, got {value}")
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.setbit, key, offset, value)
+        except Exception as e:
+            logger.error(f"Redis SETBIT failed for key '{key}' offset {offset}: {e}")
+            raise
+
+    async def getbit(self, key: str, offset: int) -> int:
+        """
+        Get the bit value at offset in the string value stored at key.
+
+        Args:
+            key: The key
+            offset: Bit offset (0-indexed, must be >= 0)
+
+        Returns:
+            The bit value at offset (0 or 1)
+
+        Raises:
+            ValueError: If offset < 0
+            RuntimeError: If Redis client not connected
+        """
+        if offset < 0:
+            raise ValueError(f"offset must be >= 0, got {offset}")
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.getbit, key, offset)
+        except Exception as e:
+            logger.error(f"Redis GETBIT failed for key '{key}' offset {offset}: {e}")
+            raise
+
+    async def bitcount(self, key: str, start: int | None = None, end: int | None = None) -> int:
+        """
+        Count the number of set bits (1s) in a string.
+
+        Args:
+            key: The key
+            start: Optional start byte offset
+            end: Optional end byte offset
+
+        Returns:
+            Number of set bits
+
+        Raises:
+            RuntimeError: If Redis client not connected
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            if start is not None and end is not None:
+                return await self.circuit_breaker.call(self.client.bitcount, key, start, end)
+            return await self.circuit_breaker.call(self.client.bitcount, key)
+        except Exception as e:
+            logger.error(f"Redis BITCOUNT failed for key '{key}': {e}")
+            raise
+
+    def pipeline(self) -> Pipeline:
+        """
+        Create a Redis pipeline for batching commands.
+
+        Pipelines allow multiple commands to be sent to Redis in a single
+        network round-trip. When used with transaction=True (default),
+        commands are executed atomically via MULTI/EXEC.
+
+        Returns:
+            Redis pipeline object
+
+        Raises:
+            RuntimeError: If client is not connected
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+        return self.client.pipeline()
+
+    async def sadd(self, key: str, *members: str) -> int:
+        """
+        Add one or more members to a set.
+
+        Args:
+            key: The set key
+            *members: Members to add
+
+        Returns:
+            Number of members added (not already in set)
+
+        Raises:
+            RuntimeError: If Redis client not connected
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.sadd, key, *members)  # type: ignore[arg-type]
+        except Exception as e:
+            logger.error(f"Redis SADD failed for key '{key}': {e}")
+            raise
+
+    async def sismember(self, key: str, member: str) -> int:
+        """
+        Check if a member is in a set.
+
+        Args:
+            key: The set key
+            member: Member to check
+
+        Returns:
+            1 if member is in set, 0 otherwise
+
+        Raises:
+            RuntimeError: If Redis client not connected
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.sismember, key, member)  # type: ignore[arg-type]
+        except Exception as e:
+            logger.error(f"Redis SISMEMBER failed for key '{key}': {e}")
             raise
 
 

@@ -3112,6 +3112,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health/batch-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Batch Jobs Health
+         * @description Check for stuck batch jobs.
+         *
+         *     Returns status information about batch job processing:
+         *     - Number of jobs stuck with zero progress for >30 minutes
+         *     - Details about each stuck job
+         *     - Status is 'degraded' if any jobs are stuck
+         *
+         *     This helps detect worker issues or jobs that need manual intervention.
+         */
+        get: operations["batch_jobs_health_health_batch_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/detailed": {
         parameters: {
             query?: never;
@@ -12786,6 +12813,26 @@ export interface operations {
         };
     };
     taskiq_health_health_taskiq_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceStatus"];
+                };
+            };
+        };
+    };
+    batch_jobs_health_health_batch_jobs_get: {
         parameters: {
             query?: never;
             header?: never;

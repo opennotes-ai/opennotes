@@ -594,3 +594,139 @@ class TestRechunkServiceStaleJobCleanup:
 
         assert len(result) == 4
         assert mock_batch_job_service.fail_job.call_count == 4
+
+
+@pytest.mark.unit
+class TestRechunkServiceStuckJobsInfo:
+    """Tests for get_stuck_jobs_info method (task-1043)."""
+
+    @pytest.mark.asyncio
+    async def test_get_stuck_jobs_info_returns_stuck_jobs(
+        self,
+        mock_batch_job_service,
+    ):
+        """get_stuck_jobs_info returns jobs stuck with zero progress."""
+        from datetime import UTC, datetime, timedelta
+
+        stuck_job_id = uuid4()
+        stuck_job = MagicMock(spec=BatchJob)
+        stuck_job.id = stuck_job_id
+        stuck_job.job_type = RECHUNK_FACT_CHECK_JOB_TYPE
+        stuck_job.status = "in_progress"
+        stuck_job.completed_tasks = 0
+        stuck_job.total_tasks = 100
+        stuck_job.started_at = datetime.now(UTC) - timedelta(minutes=45)
+        stuck_job.updated_at = datetime.now(UTC) - timedelta(minutes=40)
+        stuck_job.created_at = datetime.now(UTC) - timedelta(hours=1)
+
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [stuck_job]
+        session.execute = AsyncMock(return_value=mock_result)
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.get_stuck_jobs_info()
+
+        assert len(result) == 1
+        assert result[0].job_id == stuck_job_id
+        assert result[0].job_type == RECHUNK_FACT_CHECK_JOB_TYPE
+        assert result[0].status == "in_progress"
+        assert result[0].completed_tasks == 0
+        assert result[0].total_tasks == 100
+        assert result[0].stuck_duration_seconds > 0
+
+    @pytest.mark.asyncio
+    async def test_get_stuck_jobs_info_returns_empty_when_no_stuck_jobs(
+        self,
+        mock_batch_job_service,
+    ):
+        """get_stuck_jobs_info returns empty list when no jobs are stuck."""
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        session.execute = AsyncMock(return_value=mock_result)
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.get_stuck_jobs_info()
+
+        assert len(result) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_stuck_jobs_info_respects_custom_threshold(
+        self,
+        mock_batch_job_service,
+    ):
+        """get_stuck_jobs_info respects custom threshold_minutes parameter."""
+
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        session.execute = AsyncMock(return_value=mock_result)
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        await service.get_stuck_jobs_info(threshold_minutes=60)
+
+        session.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_stuck_jobs_info_handles_multiple_job_types(
+        self,
+        mock_batch_job_service,
+    ):
+        """get_stuck_jobs_info handles all supported batch job types."""
+        from datetime import UTC, datetime, timedelta
+
+        stuck_jobs = []
+        for i, job_type in enumerate(
+            [
+                RECHUNK_FACT_CHECK_JOB_TYPE,
+                RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+                SCRAPE_JOB_TYPE,
+                PROMOTION_JOB_TYPE,
+            ]
+        ):
+            job = MagicMock(spec=BatchJob)
+            job.id = uuid4()
+            job.job_type = job_type
+            job.status = "in_progress"
+            job.completed_tasks = 0
+            job.total_tasks = 100
+            job.started_at = datetime.now(UTC) - timedelta(minutes=45 + i * 10)
+            job.updated_at = datetime.now(UTC) - timedelta(minutes=40 + i * 10)
+            job.created_at = datetime.now(UTC) - timedelta(hours=1 + i)
+            stuck_jobs.append(job)
+
+        session = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = stuck_jobs
+        session.execute = AsyncMock(return_value=mock_result)
+
+        service = RechunkBatchJobService(
+            session=session,
+            batch_job_service=mock_batch_job_service,
+        )
+
+        result = await service.get_stuck_jobs_info()
+
+        assert len(result) == 4
+        job_types = {info.job_type for info in result}
+        assert RECHUNK_FACT_CHECK_JOB_TYPE in job_types
+        assert RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE in job_types
+        assert SCRAPE_JOB_TYPE in job_types
+        assert PROMOTION_JOB_TYPE in job_types
