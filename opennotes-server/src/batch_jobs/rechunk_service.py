@@ -100,16 +100,21 @@ async def get_stuck_jobs_info(
     stuck_jobs = list(result.scalars().all())
 
     now = datetime.now(UTC)
-    return [
-        StuckJobInfo(
-            job_id=job.id,
-            job_type=job.job_type,
-            status=job.status,
-            stuck_duration_seconds=(now - job.updated_at).total_seconds(),
-            updated_at=job.updated_at,
+    result_list: list[StuckJobInfo] = []
+    for job in stuck_jobs:
+        reference_time = job.updated_at or job.created_at
+        if reference_time.tzinfo is None:
+            reference_time = reference_time.replace(tzinfo=UTC)
+        result_list.append(
+            StuckJobInfo(
+                job_id=job.id,
+                job_type=job.job_type,
+                status=job.status,
+                stuck_duration_seconds=(now - reference_time).total_seconds(),
+                updated_at=reference_time,
+            )
         )
-        for job in stuck_jobs
-    ]
+    return result_list
 
 
 def _job_type_lock_key(job_type: str) -> int:

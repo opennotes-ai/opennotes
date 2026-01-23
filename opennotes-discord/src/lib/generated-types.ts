@@ -3121,14 +3121,14 @@ export interface paths {
         };
         /**
          * Batch Jobs Health
-         * @description Check for stuck batch jobs.
+         * @description Check for stuck batch jobs and update Prometheus metrics.
          *
          *     Returns status information about batch job processing:
          *     - Number of jobs stuck with zero progress for >30 minutes
          *     - Details about each stuck job
          *     - Status is 'degraded' if any jobs are stuck
          *
-         *     This helps detect worker issues or jobs that need manual intervention.
+         *     Also updates Prometheus metrics for monitoring dashboards.
          */
         get: operations["batch_jobs_health_health_batch_jobs_get"];
         put?: never;
@@ -3165,29 +3165,6 @@ export interface paths {
         };
         /** Circuit Breakers Status */
         get: operations["circuit_breakers_status_health_circuit_breakers_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/health/batch-jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Batch Jobs Health
-         * @description Check batch job health and update stuck job metrics.
-         *
-         *     Returns information about stuck batch jobs and updates Prometheus metrics
-         *     for monitoring dashboards.
-         */
-        get: operations["batch_jobs_health_health_batch_jobs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -12896,28 +12873,6 @@ export interface operations {
         };
     };
     circuit_breakers_status_health_circuit_breakers_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    batch_jobs_health_health_batch_jobs_get: {
         parameters: {
             query?: never;
             header?: never;
