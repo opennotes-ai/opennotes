@@ -9,17 +9,15 @@ from src.main import app
 @pytest.mark.asyncio
 async def test_create_request_with_large_tweet_id(db_session, registered_user, auth_headers):
     """Test that creating a request with a large platform_message_id returns string in response."""
-    from uuid import uuid4
-
     from src.database import async_session_maker
     from src.llm_config.models import CommunityServer
 
-    community_server_id = uuid4()
+    # Use a snowflake-like ID for the platform_community_server_id
+    platform_server_id = "738146839441965267"
     async with async_session_maker() as db:
         community_server = CommunityServer(
-            id=community_server_id,
             platform="discord",
-            platform_community_server_id="test_guild_large_tweet",
+            platform_community_server_id=platform_server_id,
             name="Test Guild for Large Tweet ID",
         )
         db.add(community_server)
@@ -33,7 +31,8 @@ async def test_create_request_with_large_tweet_id(db_session, registered_user, a
         "platform_channel_id": "1423068966670176410",
         "platform_author_id": "696877497287049258",
         "platform_timestamp": "2025-11-06T17:04:31.840Z",
-        "community_server_id": str(community_server_id),
+        # Pass platform_community_server_id, not the internal UUID
+        "community_server_id": platform_server_id,
     }
 
     transport = ASGITransport(app=app)
