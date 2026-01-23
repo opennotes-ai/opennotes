@@ -60,6 +60,7 @@ class TestBrokerConfiguration:
                 servers=["nats://test:4222"],
                 stream_name="TEST_STREAM",
                 durable="opennotes-taskiq-worker",
+                connect_timeout=settings.NATS_CONNECT_TIMEOUT,
             )
 
             mock_retry.assert_called_once()
@@ -452,6 +453,7 @@ class TestBrokerAuthentication:
                 servers=["nats://test:4222"],
                 stream_name="TEST_STREAM",
                 durable="opennotes-taskiq-worker",
+                connect_timeout=settings.NATS_CONNECT_TIMEOUT,
                 user="testuser",
                 password="testpass",
             )
