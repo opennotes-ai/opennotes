@@ -57,6 +57,7 @@ from unittest.mock import MagicMock
 import pytest
 import redis.asyncio as aioredis
 
+from src.tasks.broker import RATE_LIMITER_SOCKET_TIMEOUT
 from src.tasks.rate_limit_middleware import (
     RATE_LIMIT_CAPACITY,
     RATE_LIMIT_EXPIRY,
@@ -834,7 +835,7 @@ class TestSocketTimeoutWithBlockingCommands:
         """
         client = aioredis.Redis.from_url(
             get_redis_url(),
-            socket_timeout=120,
+            socket_timeout=RATE_LIMITER_SOCKET_TIMEOUT,
         )
         mw = DistributedRateLimitMiddleware(redis_client=client, instance_id="test-socket-timeout")
         await mw.startup()

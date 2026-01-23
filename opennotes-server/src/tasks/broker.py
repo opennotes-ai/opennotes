@@ -172,7 +172,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
     rate_limiter_redis_client = aioredis.Redis.from_url(
         settings.REDIS_URL, **rate_limiter_redis_kwargs
     )
-    if ssl_ca_certs is not None:
+    if rate_limiter_redis_kwargs.get("ssl_ca_certs") is not None:
         logger.info("Rate limiter Redis client configured with SSL CA cert")
     logger.info(
         f"Rate limiter Redis client configured with socket_timeout={RATE_LIMITER_SOCKET_TIMEOUT}s "
