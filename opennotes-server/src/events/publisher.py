@@ -69,13 +69,32 @@ class EventPublisher:
         return f"{settings.NATS_STREAM_NAME}.{event_name}"
 
     def _inject_trace_context(self, headers: dict[str, str]) -> dict[str, str]:
-        """Inject W3C Trace Context and Baggage into NATS message headers."""
+        """Inject W3C Trace Context, Baggage, and user context into NATS message headers.
+
+        In addition to standard trace context propagation, this method extracts user
+        context from the current baggage and adds explicit X-User-* headers for
+        visibility in NATS message inspection and downstream services.
+        """
+        from opentelemetry import baggage, context  # noqa: PLC0415
+
         carrier: dict[str, str] = {}
         propagate.inject(carrier)
 
         for key in ("traceparent", "tracestate", "baggage"):
             if key in carrier:
                 headers[key] = carrier[key]
+
+        ctx = context.get_current()
+        user_id = baggage.get_baggage("enduser.id", ctx)
+        username = baggage.get_baggage("user.username", ctx)
+        discord_user_id = baggage.get_baggage("discord.user_id", ctx)
+
+        if user_id:
+            headers["X-User-Id"] = str(user_id)
+        if username:
+            headers["X-Username"] = str(username)
+        if discord_user_id:
+            headers["X-Discord-User-Id"] = str(discord_user_id)
 
         return headers
 

@@ -37,6 +37,8 @@ BAGGAGE_KEYS_TO_PROPAGATE = [
     "discord.username",
     "discord.guild_id",
     "request_id",
+    "enduser.id",
+    "user.username",
 ]
 
 

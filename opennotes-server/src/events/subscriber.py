@@ -45,6 +45,37 @@ def _extract_trace_context(msg: Msg) -> context.Context:
     return propagate.extract(carrier)
 
 
+def _extract_user_context(msg: Msg, span: trace.Span) -> None:
+    """Extract user context from NATS message headers and set span attributes.
+
+    This extracts the X-User-* headers injected by the publisher and sets them
+    as span attributes for visibility in traces. This provides explicit user
+    attribution even if baggage propagation fails.
+
+    Attributes set:
+    - enduser.id: User's UUID from X-User-Id header
+    - user.username: User's username from X-Username header
+    - discord.user_id: Discord user ID from X-Discord-User-Id header
+    - event.initiator.user_id: Same as enduser.id, semantic for event context
+    """
+    if not msg.headers:
+        return
+
+    user_id = msg.headers.get("X-User-Id")
+    username = msg.headers.get("X-Username")
+    discord_user_id = msg.headers.get("X-Discord-User-Id")
+
+    if user_id:
+        span.set_attribute("enduser.id", user_id)
+        span.set_attribute("event.initiator.user_id", user_id)
+
+    if username:
+        span.set_attribute("user.username", username)
+
+    if discord_user_id:
+        span.set_attribute("discord.user_id", discord_user_id)
+
+
 class EventSubscriber:
     def __init__(self) -> None:
         self.nats = nats_client
@@ -103,6 +134,7 @@ class EventSubscriber:
         ) as span:
             span.set_attribute(SpanAttributes.MESSAGING_SYSTEM, "nats")
             span.set_attribute(MESSAGING_OPERATION_TYPE, "process")
+            _extract_user_context(msg, span)
 
             try:
                 event_class = self._get_event_class(event_type)
