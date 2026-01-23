@@ -195,7 +195,9 @@ def _create_broker() -> PullBasedJetStreamBroker:
         instance_id=settings.INSTANCE_ID,
     )
 
-    connection_kwargs: dict[str, Any] = {}
+    connection_kwargs: dict[str, Any] = {
+        "connect_timeout": settings.NATS_CONNECT_TIMEOUT,
+    }
     if settings.NATS_USERNAME and settings.NATS_PASSWORD:
         connection_kwargs["user"] = settings.NATS_USERNAME
         connection_kwargs["password"] = settings.NATS_PASSWORD
