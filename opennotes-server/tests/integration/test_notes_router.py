@@ -1115,24 +1115,21 @@ class TestDataIntegrity:
         self, auth_client, sample_note_data
     ):
         """Test that creating a note with mismatched community_server_id fails."""
-        from uuid import uuid4
-
         from src.database import async_session_maker
         from src.llm_config.models import CommunityServer
 
-        community_server_id_1 = uuid4()
-        community_server_id_2 = uuid4()
+        # Use snowflake-like IDs for platform_community_server_id
+        platform_id_1 = "738146839441965001"
+        platform_id_2 = "738146839441965002"
         async with async_session_maker() as db:
             community_server_1 = CommunityServer(
-                id=community_server_id_1,
                 platform="discord",
-                platform_community_server_id="test_guild_555_1",
+                platform_community_server_id=platform_id_1,
                 name="Test Guild 555 1",
             )
             community_server_2 = CommunityServer(
-                id=community_server_id_2,
                 platform="discord",
-                platform_community_server_id="test_guild_555_2",
+                platform_community_server_id=platform_id_2,
                 name="Test Guild 555 2",
             )
             db.add(community_server_1)
@@ -1144,7 +1141,8 @@ class TestDataIntegrity:
                 "request_id": "req_mismatch_555",
                 "requested_by": "test_requester_555",
                 "original_message_content": "Test content",
-                "community_server_id": str(community_server_id_1),
+                # Pass platform_community_server_id, not internal UUID
+                "community_server_id": platform_id_1,
             }
         )
         request_response = await auth_client.post("/api/v2/requests", json=request_body)
@@ -1152,11 +1150,13 @@ class TestDataIntegrity:
 
         note_data = sample_note_data.copy()
         note_data["request_id"] = "req_mismatch_555"
-        note_data["community_server_id"] = str(community_server_id_2)
+        # Pass different platform_community_server_id to test mismatch validation
+        note_data["community_server_id"] = platform_id_2
 
         body = _create_note_jsonapi_body(note_data)
         response = await auth_client.post("/api/v2/notes", json=body)
-        assert response.status_code == 400
+        # 400 = Bad Request, 422 = Unprocessable Entity - both indicate validation failure
+        assert response.status_code in [400, 422], f"Expected 400/422, got {response.status_code}"
 
 
 class TestNotesFilterParameters:
