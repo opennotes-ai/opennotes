@@ -3173,6 +3173,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health/batch-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Batch Jobs Health
+         * @description Check batch job health and update stuck job metrics.
+         *
+         *     Returns information about stuck batch jobs and updates Prometheus metrics
+         *     for monitoring dashboards.
+         */
+        get: operations["batch_jobs_health_health_batch_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics": {
         parameters: {
             query?: never;
@@ -12873,6 +12896,28 @@ export interface operations {
         };
     };
     circuit_breakers_status_health_circuit_breakers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    batch_jobs_health_health_batch_jobs_get: {
         parameters: {
             query?: never;
             header?: never;

@@ -9006,6 +9006,30 @@
         }
       }
     },
+    "/health/batch-jobs": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Batch Jobs Health",
+        "description": "Check batch job health and update stuck job metrics.\n\nReturns information about stuck batch jobs and updates Prometheus metrics\nfor monitoring dashboards.",
+        "operationId": "batch_jobs_health_health_batch_jobs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Batch Jobs Health Health Batch Jobs Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metrics": {
       "get": {
         "summary": "Metrics",

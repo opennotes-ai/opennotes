@@ -8,13 +8,23 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.batch_jobs.rechunk_service import (
+    ALL_BATCH_JOB_TYPES,
+    StuckJobInfo,
+    get_stuck_jobs_info,
+)
 from src.cache.redis_client import redis_client
 from src.circuit_breaker import circuit_breaker_registry
 from src.config import settings
-from src.database import get_session_maker
+from src.database import get_db
 from src.events.nats_client import nats_client
 from src.monitoring import DistributedHealthCoordinator, HealthChecker
+from src.monitoring.metrics import (
+    batch_job_stuck_count,
+    batch_job_stuck_duration_seconds,
+)
 from src.tasks.broker import get_broker_health, is_broker_initialized
 
 logger = logging.getLogger(__name__)
@@ -273,25 +283,50 @@ async def taskiq_health() -> ServiceStatus:
 
 
 @router.get("/health/batch-jobs", response_model=ServiceStatus)
-async def batch_jobs_health() -> ServiceStatus:
+async def batch_jobs_health(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ServiceStatus:
     """
-    Check for stuck batch jobs.
+    Check for stuck batch jobs and update Prometheus metrics.
 
     Returns status information about batch job processing:
     - Number of jobs stuck with zero progress for >30 minutes
     - Details about each stuck job
     - Status is 'degraded' if any jobs are stuck
 
-    This helps detect worker issues or jobs that need manual intervention.
+    Also updates Prometheus metrics for monitoring dashboards.
     """
     start = time.time()
 
     try:
-        from src.batch_jobs.rechunk_service import RechunkBatchJobService  # noqa: PLC0415
+        stuck_jobs = await get_stuck_jobs_info(db)
+        instance_id = settings.INSTANCE_ID
 
-        async with get_session_maker()() as session:
-            service = RechunkBatchJobService(session)
-            stuck_jobs = await service.get_stuck_jobs_info()
+        by_type: dict[str, list[StuckJobInfo]] = {}
+        for job in stuck_jobs:
+            by_type.setdefault(job.job_type, []).append(job)
+
+        for job_type, jobs in by_type.items():
+            batch_job_stuck_count.labels(
+                job_type=job_type,
+                instance_id=instance_id,
+            ).set(len(jobs))
+            max_dur = max(j.stuck_duration_seconds for j in jobs)
+            batch_job_stuck_duration_seconds.labels(
+                job_type=job_type,
+                instance_id=instance_id,
+            ).set(max_dur)
+
+        for job_type in ALL_BATCH_JOB_TYPES:
+            if job_type not in by_type:
+                batch_job_stuck_count.labels(
+                    job_type=job_type,
+                    instance_id=instance_id,
+                ).set(0)
+                batch_job_stuck_duration_seconds.labels(
+                    job_type=job_type,
+                    instance_id=instance_id,
+                ).set(0)
 
         latency_ms = (time.time() - start) * 1000
 
@@ -303,7 +338,6 @@ async def batch_jobs_health() -> ServiceStatus:
                     "job_type": job.job_type,
                     "status": job.status,
                     "stuck_duration_seconds": round(job.stuck_duration_seconds),
-                    "started_at": job.started_at.isoformat() if job.started_at else None,
                     "updated_at": job.updated_at.isoformat() if job.updated_at else None,
                 }
                 for job in stuck_jobs
@@ -338,11 +372,13 @@ async def batch_jobs_health() -> ServiceStatus:
 
 
 @router.get("/health/detailed", response_model=HealthCheckResponse)
-async def detailed_health() -> HealthCheckResponse:
+async def detailed_health(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> HealthCheckResponse:
     redis_status = await redis_health()
     nats_status = await nats_health()
     taskiq_status = await taskiq_health()
-    batch_jobs_status = await batch_jobs_health()
+    batch_jobs_status = await batch_jobs_health(db)
 
     all_statuses = [redis_status, nats_status, taskiq_status, batch_jobs_status]
 
