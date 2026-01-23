@@ -241,6 +241,11 @@ class Settings(BaseSettings):
 
     NATS_MAX_RECONNECT_ATTEMPTS: int = Field(default=10)
     NATS_RECONNECT_WAIT: int = Field(default=2)
+    NATS_CONNECT_TIMEOUT: int = Field(
+        default=10,
+        description="Timeout in seconds for each NATS connection attempt. "
+        "Default nats-py timeout is 2s which is insufficient for Cloud Run → GCE VPC.",
+    )
     NATS_SUBSCRIBE_TIMEOUT: float = Field(
         default=60.0,
         description="Timeout in seconds for JetStream subscribe operations during startup",

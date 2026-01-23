@@ -71,6 +71,7 @@ class NATSClientManager:
 
         connect_kwargs: dict[str, object] = {
             "servers": servers,
+            "connect_timeout": settings.NATS_CONNECT_TIMEOUT,
             "max_reconnect_attempts": settings.NATS_MAX_RECONNECT_ATTEMPTS,
             "reconnect_time_wait": settings.NATS_RECONNECT_WAIT,
         }
