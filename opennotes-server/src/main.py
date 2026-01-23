@@ -85,6 +85,7 @@ from src.middleware.rate_limiting import limiter
 from src.middleware.request_size import RequestSizeLimitMiddleware
 from src.middleware.security import SecurityHeadersMiddleware
 from src.middleware.timeout import TimeoutMiddleware
+from src.middleware.user_context import AuthenticatedUserContextMiddleware
 from src.monitoring import (
     DistributedHealthCoordinator,
     HealthChecker,
@@ -416,6 +417,7 @@ app = FastAPI(
 
 if settings.ENABLE_TRACING and not settings.TESTING:
     app.add_middleware(DiscordContextMiddleware)
+    app.add_middleware(AuthenticatedUserContextMiddleware)
 
 app.state.limiter = limiter
 app.state.health_checker = health_checker
