@@ -604,6 +604,8 @@ async def process_fact_check_rechunk_task(
                         {"reason": "stored_offset_exceeds_total", "total_items": total_items},
                     )
 
+                item_index = offset
+
                 while True:
                     result = await db.execute(
                         select(FactCheckItem)
@@ -617,6 +619,19 @@ async def process_fact_check_rechunk_task(
                         break
 
                     for item in items:
+                        if await progress_tracker.is_item_processed(job_uuid, item_index):
+                            logger.debug(
+                                "Skipping already processed item",
+                                extra={
+                                    "job_id": job_id,
+                                    "item_index": item_index,
+                                    "item_id": str(item.id),
+                                },
+                            )
+                            processed_count += 1
+                            item_index += 1
+                            continue
+
                         try:
                             await _process_fact_check_item_with_retry(
                                 engine=engine,
@@ -625,6 +640,7 @@ async def process_fact_check_rechunk_task(
                                 item_content=item.content,
                                 community_server_id=community_uuid,
                             )
+                            await progress_tracker.mark_item_processed(job_uuid, item_index)
                             processed_count += 1
                         except Exception as item_error:
                             failed_count += 1
@@ -642,6 +658,8 @@ async def process_fact_check_rechunk_task(
                                     "error": str(item_error),
                                 },
                             )
+
+                        item_index += 1
 
                         try:
                             await progress_tracker.update_progress(
@@ -679,6 +697,8 @@ async def process_fact_check_rechunk_task(
                     failed_tasks=failed_count,
                 )
                 await session.commit()
+
+            await progress_tracker.clear_processed_bitmap(job_uuid)
 
             span.set_attribute("job.processed_count", processed_count)
             span.set_attribute("job.failed_count", failed_count)
@@ -728,7 +748,7 @@ async def process_fact_check_rechunk_task(
     rate_limit_name="rechunk:previously_seen:{community_server_id}",
     rate_limit_capacity="1",
 )
-async def process_previously_seen_rechunk_task(
+async def process_previously_seen_rechunk_task(  # noqa: PLR0912
     job_id: str,
     community_server_id: str,
     batch_size: int,
@@ -829,6 +849,8 @@ async def process_previously_seen_rechunk_task(
                         {"reason": "stored_offset_exceeds_total", "total_items": total_items},
                     )
 
+                item_index = offset
+
                 while True:
                     result = await db.execute(
                         select(PreviouslySeenMessage)
@@ -843,6 +865,19 @@ async def process_previously_seen_rechunk_task(
                         break
 
                     for msg in messages:
+                        if await progress_tracker.is_item_processed(job_uuid, item_index):
+                            logger.debug(
+                                "Skipping already processed item",
+                                extra={
+                                    "job_id": job_id,
+                                    "item_index": item_index,
+                                    "message_id": str(msg.id),
+                                },
+                            )
+                            processed_count += 1
+                            item_index += 1
+                            continue
+
                         content = (msg.extra_metadata or {}).get("content", "")
                         if content:
                             try:
@@ -853,6 +888,7 @@ async def process_previously_seen_rechunk_task(
                                     item_content=content,
                                     community_server_id=community_uuid,
                                 )
+                                await progress_tracker.mark_item_processed(job_uuid, item_index)
                                 processed_count += 1
                             except Exception as item_error:
                                 failed_count += 1
@@ -871,7 +907,10 @@ async def process_previously_seen_rechunk_task(
                                     },
                                 )
                         else:
+                            await progress_tracker.mark_item_processed(job_uuid, item_index)
                             processed_count += 1
+
+                        item_index += 1
 
                         try:
                             await progress_tracker.update_progress(
@@ -910,6 +949,8 @@ async def process_previously_seen_rechunk_task(
                     failed_tasks=failed_count,
                 )
                 await session.commit()
+
+            await progress_tracker.clear_processed_bitmap(job_uuid)
 
             span.set_attribute("job.processed_count", processed_count)
             span.set_attribute("job.failed_count", failed_count)

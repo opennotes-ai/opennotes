@@ -358,5 +358,46 @@ class RedisClient:
             logger.error(f"Redis HINCRBY failed for key '{key}' field '{field}': {e}")
             raise
 
+    async def setbit(self, key: str, offset: int, value: int) -> int:
+        """
+        Set or clear the bit at offset in the string value stored at key.
+
+        Args:
+            key: The key
+            offset: Bit offset (0-indexed)
+            value: Bit value (0 or 1)
+
+        Returns:
+            The original bit value at offset
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.setbit, key, offset, value)
+        except Exception as e:
+            logger.error(f"Redis SETBIT failed for key '{key}' offset {offset}: {e}")
+            raise
+
+    async def getbit(self, key: str, offset: int) -> int:
+        """
+        Get the bit value at offset in the string value stored at key.
+
+        Args:
+            key: The key
+            offset: Bit offset (0-indexed)
+
+        Returns:
+            The bit value at offset (0 or 1)
+        """
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+
+        try:
+            return await self.circuit_breaker.call(self.client.getbit, key, offset)
+        except Exception as e:
+            logger.error(f"Redis GETBIT failed for key '{key}' offset {offset}: {e}")
+            raise
+
 
 redis_client = RedisClient()

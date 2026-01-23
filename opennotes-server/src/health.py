@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.cache.redis_client import redis_client
 from src.circuit_breaker import circuit_breaker_registry
 from src.config import settings
+from src.database import get_session_maker
 from src.events.nats_client import nats_client
 from src.monitoring import DistributedHealthCoordinator, HealthChecker
 from src.tasks.broker import get_broker_health, is_broker_initialized
@@ -271,24 +272,83 @@ async def taskiq_health() -> ServiceStatus:
         )
 
 
+@router.get("/health/batch-jobs", response_model=ServiceStatus)
+async def batch_jobs_health() -> ServiceStatus:
+    """
+    Check for stuck batch jobs.
+
+    Returns status information about batch job processing:
+    - Number of jobs stuck with zero progress for >30 minutes
+    - Details about each stuck job
+    - Status is 'degraded' if any jobs are stuck
+
+    This helps detect worker issues or jobs that need manual intervention.
+    """
+    start = time.time()
+
+    try:
+        from src.batch_jobs.rechunk_service import RechunkBatchJobService  # noqa: PLC0415
+
+        async with get_session_maker()() as session:
+            service = RechunkBatchJobService(session)
+            stuck_jobs = await service.get_stuck_jobs_info()
+
+        latency_ms = (time.time() - start) * 1000
+
+        if stuck_jobs:
+            max_duration = max(job.stuck_duration_seconds for job in stuck_jobs)
+            stuck_details = [
+                {
+                    "job_id": str(job.job_id),
+                    "job_type": job.job_type,
+                    "status": job.status,
+                    "stuck_duration_seconds": round(job.stuck_duration_seconds),
+                    "started_at": job.started_at.isoformat() if job.started_at else None,
+                }
+                for job in stuck_jobs
+            ]
+
+            return ServiceStatus(
+                status="degraded",
+                latency_ms=latency_ms,
+                message=f"{len(stuck_jobs)} batch job(s) stuck with zero progress",
+                details={
+                    "stuck_count": len(stuck_jobs),
+                    "max_stuck_duration_seconds": round(max_duration),
+                    "stuck_jobs": stuck_details,
+                },
+            )
+
+        return ServiceStatus(
+            status="healthy",
+            latency_ms=latency_ms,
+            message="No stuck batch jobs",
+            details={"stuck_count": 0},
+        )
+
+    except Exception as e:
+        latency_ms = (time.time() - start) * 1000
+        logger.error(f"Batch jobs health check failed: {e}")
+        return ServiceStatus(
+            status="unhealthy",
+            latency_ms=latency_ms,
+            message=f"Batch jobs health check failed: {e!s}",
+        )
+
+
 @router.get("/health/detailed", response_model=HealthCheckResponse)
 async def detailed_health() -> HealthCheckResponse:
     redis_status = await redis_health()
     nats_status = await nats_health()
     taskiq_status = await taskiq_health()
+    batch_jobs_status = await batch_jobs_health()
+
+    all_statuses = [redis_status, nats_status, taskiq_status, batch_jobs_status]
 
     overall_status = "healthy"
-    if (
-        redis_status.status == "unhealthy"
-        or nats_status.status == "unhealthy"
-        or taskiq_status.status == "unhealthy"
-    ):
+    if any(s.status == "unhealthy" for s in all_statuses):
         overall_status = "unhealthy"
-    elif (
-        redis_status.status == "degraded"
-        or nats_status.status == "degraded"
-        or taskiq_status.status == "degraded"
-    ):
+    elif any(s.status == "degraded" for s in all_statuses):
         overall_status = "degraded"
 
     return HealthCheckResponse(
@@ -299,6 +359,7 @@ async def detailed_health() -> HealthCheckResponse:
             "redis": redis_status,
             "nats": nats_status,
             "taskiq": taskiq_status,
+            "batch_jobs": batch_jobs_status,
         },
         components=None,
     )

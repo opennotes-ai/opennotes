@@ -472,6 +472,27 @@ semaphore_leak_prevented_total = Counter(
     registry=registry,
 )
 
+batch_job_stuck_count = Gauge(
+    "batch_job_stuck_count",
+    "Number of batch jobs stuck in non-terminal state with zero progress",
+    ["job_type", "instance_id"],
+    registry=registry,
+)
+
+batch_job_stuck_duration_seconds = Gauge(
+    "batch_job_stuck_duration_seconds",
+    "Duration in seconds that batch jobs have been stuck (max across stuck jobs)",
+    ["job_type", "instance_id"],
+    registry=registry,
+)
+
+batch_job_stale_cleanup_total = Counter(
+    "batch_job_stale_cleanup_total",
+    "Total number of stale batch jobs cleaned up by scheduled task",
+    ["job_type", "instance_id"],
+    registry=registry,
+)
+
 
 def get_metrics() -> bytes:
     return generate_latest(registry)

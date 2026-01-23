@@ -14,6 +14,8 @@ from uuid import UUID, uuid4
 import pytest
 
 from src.batch_jobs.progress_tracker import (
+    BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX,
+    BATCH_JOB_PROCESSED_BITMAP_TTL_SECONDS,
     BATCH_JOB_PROGRESS_KEY_PREFIX,
     BATCH_JOB_PROGRESS_TTL_SECONDS,
     BatchJobProgressData,
@@ -23,13 +25,15 @@ from src.batch_jobs.progress_tracker import (
 
 @pytest.fixture
 def mock_redis():
-    """Create a mock Redis client with hash operations."""
+    """Create a mock Redis client with hash and bitmap operations."""
     redis = MagicMock()
     redis.hset = AsyncMock(return_value=True)
     redis.hgetall = AsyncMock(return_value=None)
     redis.hincrby = AsyncMock(return_value=1)
     redis.expire = AsyncMock(return_value=True)
     redis.delete = AsyncMock(return_value=1)
+    redis.setbit = AsyncMock(return_value=0)
+    redis.getbit = AsyncMock(return_value=0)
     return redis
 
 
@@ -329,3 +333,143 @@ class TestBatchJobProgressTracker:
 
         assert key == f"{BATCH_JOB_PROGRESS_KEY_PREFIX}{job_id}"
         assert key.startswith("batch_job:progress:")
+
+
+@pytest.mark.unit
+class TestBatchJobProgressTrackerBitmapOperations:
+    """Tests for bitmap-based idempotent processing methods."""
+
+    @pytest.mark.asyncio
+    async def test_mark_item_processed_uses_setbit(self, tracker, mock_redis):
+        """mark_item_processed uses SETBIT with correct key and offset."""
+        job_id = uuid4()
+        item_index = 42
+
+        result = await tracker.mark_item_processed(job_id, item_index)
+
+        assert result is True
+        mock_redis.setbit.assert_called_once_with(
+            f"{BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX}{job_id}",
+            item_index,
+            1,
+        )
+        mock_redis.expire.assert_called_with(
+            f"{BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX}{job_id}",
+            BATCH_JOB_PROCESSED_BITMAP_TTL_SECONDS,
+        )
+
+    @pytest.mark.asyncio
+    async def test_mark_item_processed_returns_true_when_newly_set(self, tracker, mock_redis):
+        """mark_item_processed returns True when item was not previously processed."""
+        mock_redis.setbit.return_value = 0
+        job_id = uuid4()
+
+        result = await tracker.mark_item_processed(job_id, 0)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_mark_item_processed_returns_false_when_already_set(self, tracker, mock_redis):
+        """mark_item_processed returns False when item was already processed."""
+        mock_redis.setbit.return_value = 1
+        job_id = uuid4()
+
+        result = await tracker.mark_item_processed(job_id, 0)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_mark_item_processed_returns_false_on_error(self, tracker, mock_redis):
+        """mark_item_processed returns False when Redis operation fails."""
+        mock_redis.setbit.side_effect = Exception("Redis error")
+        job_id = uuid4()
+
+        result = await tracker.mark_item_processed(job_id, 0)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_is_item_processed_uses_getbit(self, tracker, mock_redis):
+        """is_item_processed uses GETBIT with correct key and offset."""
+        job_id = uuid4()
+        item_index = 42
+
+        await tracker.is_item_processed(job_id, item_index)
+
+        mock_redis.getbit.assert_called_once_with(
+            f"{BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX}{job_id}",
+            item_index,
+        )
+
+    @pytest.mark.asyncio
+    async def test_is_item_processed_returns_true_when_bit_is_set(self, tracker, mock_redis):
+        """is_item_processed returns True when bit is 1."""
+        mock_redis.getbit.return_value = 1
+        job_id = uuid4()
+
+        result = await tracker.is_item_processed(job_id, 0)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_is_item_processed_returns_false_when_bit_is_unset(self, tracker, mock_redis):
+        """is_item_processed returns False when bit is 0."""
+        mock_redis.getbit.return_value = 0
+        job_id = uuid4()
+
+        result = await tracker.is_item_processed(job_id, 0)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_is_item_processed_returns_false_on_error(self, tracker, mock_redis):
+        """is_item_processed returns False when Redis operation fails."""
+        mock_redis.getbit.side_effect = Exception("Redis error")
+        job_id = uuid4()
+
+        result = await tracker.is_item_processed(job_id, 0)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_clear_processed_bitmap_deletes_key(self, tracker, mock_redis):
+        """clear_processed_bitmap deletes the bitmap key."""
+        job_id = uuid4()
+        mock_redis.delete.return_value = 1
+
+        result = await tracker.clear_processed_bitmap(job_id)
+
+        assert result is True
+        mock_redis.delete.assert_called_with(
+            f"{BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX}{job_id}",
+        )
+
+    @pytest.mark.asyncio
+    async def test_clear_processed_bitmap_returns_false_when_not_found(self, tracker, mock_redis):
+        """clear_processed_bitmap returns False when key doesn't exist."""
+        mock_redis.delete.return_value = 0
+        job_id = uuid4()
+
+        result = await tracker.clear_processed_bitmap(job_id)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_clear_processed_bitmap_returns_false_on_error(self, tracker, mock_redis):
+        """clear_processed_bitmap returns False when Redis operation fails."""
+        mock_redis.delete.side_effect = Exception("Redis error")
+        job_id = uuid4()
+
+        result = await tracker.clear_processed_bitmap(job_id)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_processed_bitmap_key_format(self, tracker):
+        """_processed_bitmap_key generates correct Redis key format."""
+        job_id = uuid4()
+
+        key = tracker._processed_bitmap_key(job_id)
+
+        assert key == f"{BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX}{job_id}"
+        assert key.startswith("batch_job:processed:")

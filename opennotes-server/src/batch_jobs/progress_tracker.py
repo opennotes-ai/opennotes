@@ -18,7 +18,9 @@ from src.monitoring import get_logger
 logger = get_logger(__name__)
 
 BATCH_JOB_PROGRESS_KEY_PREFIX = "batch_job:progress:"
+BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX = "batch_job:processed:"
 BATCH_JOB_PROGRESS_TTL_SECONDS = 3600  # 1 hour
+BATCH_JOB_PROCESSED_BITMAP_TTL_SECONDS = 86400  # 24 hours
 
 
 @dataclass
@@ -96,6 +98,10 @@ class BatchJobProgressTracker:
     def _progress_key(self, job_id: UUID) -> str:
         """Generate Redis key for job progress."""
         return f"{BATCH_JOB_PROGRESS_KEY_PREFIX}{job_id}"
+
+    def _processed_bitmap_key(self, job_id: UUID) -> str:
+        """Generate Redis key for processed items bitmap."""
+        return f"{BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX}{job_id}"
 
     async def start_tracking(self, job_id: UUID, current_item: str | None = None) -> bool:
         """
@@ -214,6 +220,88 @@ class BatchJobProgressTracker:
                 extra={"job_id": str(job_id), "error": str(e)},
             )
             return None
+
+    async def mark_item_processed(self, job_id: UUID, item_index: int) -> bool:
+        """
+        Mark an item as processed using a Redis bitmap.
+
+        Uses Redis SETBIT to atomically mark the item at the given index
+        as processed. This enables idempotent processing - items already
+        processed can be skipped on restart.
+
+        Args:
+            job_id: The job's unique identifier
+            item_index: Zero-based index of the item being processed
+
+        Returns:
+            True if item was newly marked (was 0, now 1), False if already processed
+        """
+        try:
+            key = self._processed_bitmap_key(job_id)
+            original_value = await self._redis.setbit(key, item_index, 1)
+            await self._redis.expire(key, BATCH_JOB_PROCESSED_BITMAP_TTL_SECONDS)
+            return original_value == 0
+        except Exception as e:
+            logger.error(
+                "Failed to mark item processed",
+                extra={"job_id": str(job_id), "item_index": item_index, "error": str(e)},
+            )
+            return False
+
+    async def is_item_processed(self, job_id: UUID, item_index: int) -> bool:
+        """
+        Check if an item has been processed using the Redis bitmap.
+
+        Uses Redis GETBIT to check if the item at the given index has
+        been marked as processed. This enables idempotent processing.
+
+        Args:
+            job_id: The job's unique identifier
+            item_index: Zero-based index of the item to check
+
+        Returns:
+            True if item is already processed, False otherwise
+        """
+        try:
+            key = self._processed_bitmap_key(job_id)
+            result = await self._redis.getbit(key, item_index)
+            return result == 1
+        except Exception as e:
+            logger.error(
+                "Failed to check if item processed",
+                extra={"job_id": str(job_id), "item_index": item_index, "error": str(e)},
+            )
+            return False
+
+    async def clear_processed_bitmap(self, job_id: UUID) -> bool:
+        """
+        Clear the processed items bitmap for a completed job.
+
+        Should be called when a job completes successfully to clean up
+        the bitmap from Redis.
+
+        Args:
+            job_id: The job's unique identifier
+
+        Returns:
+            True if cleared, False if not found/error
+        """
+        try:
+            key = self._processed_bitmap_key(job_id)
+            result = await self._redis.delete(key)
+            if result > 0:
+                logger.debug(
+                    "Cleared processed bitmap",
+                    extra={"job_id": str(job_id)},
+                )
+                return True
+            return False
+        except Exception as e:
+            logger.error(
+                "Failed to clear processed bitmap",
+                extra={"job_id": str(job_id), "error": str(e)},
+            )
+            return False
 
     async def stop_tracking(self, job_id: UUID) -> bool:
         """
