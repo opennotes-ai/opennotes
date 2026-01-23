@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import redis.asyncio as redis
+from redis.asyncio.client import Pipeline
 
 from src.circuit_breaker import circuit_breaker_registry
 from src.config import settings
@@ -439,7 +440,7 @@ class RedisClient:
             logger.error(f"Redis BITCOUNT failed for key '{key}': {e}")
             raise
 
-    def pipeline(self) -> redis.client.Pipeline:
+    def pipeline(self) -> Pipeline:
         """
         Create a Redis pipeline for batching commands.
 
@@ -475,7 +476,7 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
 
         try:
-            return await self.circuit_breaker.call(self.client.sadd, key, *members)
+            return await self.circuit_breaker.call(self.client.sadd, key, *members)  # type: ignore[arg-type]
         except Exception as e:
             logger.error(f"Redis SADD failed for key '{key}': {e}")
             raise
@@ -498,7 +499,7 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
 
         try:
-            return await self.circuit_breaker.call(self.client.sismember, key, member)
+            return await self.circuit_breaker.call(self.client.sismember, key, member)  # type: ignore[arg-type]
         except Exception as e:
             logger.error(f"Redis SISMEMBER failed for key '{key}': {e}")
             raise
