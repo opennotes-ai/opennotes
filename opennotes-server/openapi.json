@@ -8946,7 +8946,7 @@
           "health"
         ],
         "summary": "Batch Jobs Health",
-        "description": "Check for stuck batch jobs.\n\nReturns status information about batch job processing:\n- Number of jobs stuck with zero progress for >30 minutes\n- Details about each stuck job\n- Status is 'degraded' if any jobs are stuck\n\nThis helps detect worker issues or jobs that need manual intervention.",
+        "description": "Check for stuck batch jobs and update Prometheus metrics.\n\nReturns status information about batch job processing:\n- Number of jobs stuck with zero progress for >30 minutes\n- Details about each stuck job\n- Status is 'degraded' if any jobs are stuck\n\nAlso updates Prometheus metrics for monitoring dashboards.",
         "operationId": "batch_jobs_health_health_batch_jobs_get",
         "responses": {
           "200": {

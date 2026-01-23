@@ -25,6 +25,7 @@ from src.batch_jobs.models import BatchJob
 from src.batch_jobs.rechunk_service import (
     RechunkBatchJobService,
     RechunkType,
+    get_stuck_jobs_info,
 )
 
 
@@ -597,14 +598,11 @@ class TestRechunkServiceStaleJobCleanup:
 
 
 @pytest.mark.unit
-class TestRechunkServiceStuckJobsInfo:
-    """Tests for get_stuck_jobs_info method (task-1043)."""
+class TestGetStuckJobsInfo:
+    """Tests for get_stuck_jobs_info standalone function (task-1043)."""
 
     @pytest.mark.asyncio
-    async def test_get_stuck_jobs_info_returns_stuck_jobs(
-        self,
-        mock_batch_job_service,
-    ):
+    async def test_get_stuck_jobs_info_returns_stuck_jobs(self):
         """get_stuck_jobs_info returns jobs stuck with zero progress."""
         from datetime import UTC, datetime, timedelta
 
@@ -613,9 +611,6 @@ class TestRechunkServiceStuckJobsInfo:
         stuck_job.id = stuck_job_id
         stuck_job.job_type = RECHUNK_FACT_CHECK_JOB_TYPE
         stuck_job.status = "in_progress"
-        stuck_job.completed_tasks = 0
-        stuck_job.total_tasks = 100
-        stuck_job.started_at = datetime.now(UTC) - timedelta(minutes=45)
         stuck_job.updated_at = datetime.now(UTC) - timedelta(minutes=40)
         stuck_job.created_at = datetime.now(UTC) - timedelta(hours=1)
 
@@ -625,26 +620,16 @@ class TestRechunkServiceStuckJobsInfo:
         mock_result.scalars.return_value.all.return_value = [stuck_job]
         session.execute = AsyncMock(return_value=mock_result)
 
-        service = RechunkBatchJobService(
-            session=session,
-            batch_job_service=mock_batch_job_service,
-        )
-
-        result = await service.get_stuck_jobs_info()
+        result = await get_stuck_jobs_info(session)
 
         assert len(result) == 1
         assert result[0].job_id == stuck_job_id
         assert result[0].job_type == RECHUNK_FACT_CHECK_JOB_TYPE
         assert result[0].status == "in_progress"
-        assert result[0].completed_tasks == 0
-        assert result[0].total_tasks == 100
         assert result[0].stuck_duration_seconds > 0
 
     @pytest.mark.asyncio
-    async def test_get_stuck_jobs_info_returns_empty_when_no_stuck_jobs(
-        self,
-        mock_batch_job_service,
-    ):
+    async def test_get_stuck_jobs_info_returns_empty_when_no_stuck_jobs(self):
         """get_stuck_jobs_info returns empty list when no jobs are stuck."""
         session = MagicMock()
 
@@ -652,20 +637,12 @@ class TestRechunkServiceStuckJobsInfo:
         mock_result.scalars.return_value.all.return_value = []
         session.execute = AsyncMock(return_value=mock_result)
 
-        service = RechunkBatchJobService(
-            session=session,
-            batch_job_service=mock_batch_job_service,
-        )
-
-        result = await service.get_stuck_jobs_info()
+        result = await get_stuck_jobs_info(session)
 
         assert len(result) == 0
 
     @pytest.mark.asyncio
-    async def test_get_stuck_jobs_info_respects_custom_threshold(
-        self,
-        mock_batch_job_service,
-    ):
+    async def test_get_stuck_jobs_info_respects_custom_threshold(self):
         """get_stuck_jobs_info respects custom threshold_minutes parameter."""
 
         session = MagicMock()
@@ -674,20 +651,12 @@ class TestRechunkServiceStuckJobsInfo:
         mock_result.scalars.return_value.all.return_value = []
         session.execute = AsyncMock(return_value=mock_result)
 
-        service = RechunkBatchJobService(
-            session=session,
-            batch_job_service=mock_batch_job_service,
-        )
-
-        await service.get_stuck_jobs_info(threshold_minutes=60)
+        await get_stuck_jobs_info(session, threshold_minutes=60)
 
         session.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_get_stuck_jobs_info_handles_multiple_job_types(
-        self,
-        mock_batch_job_service,
-    ):
+    async def test_get_stuck_jobs_info_handles_multiple_job_types(self):
         """get_stuck_jobs_info handles all supported batch job types."""
         from datetime import UTC, datetime, timedelta
 
@@ -704,9 +673,6 @@ class TestRechunkServiceStuckJobsInfo:
             job.id = uuid4()
             job.job_type = job_type
             job.status = "in_progress"
-            job.completed_tasks = 0
-            job.total_tasks = 100
-            job.started_at = datetime.now(UTC) - timedelta(minutes=45 + i * 10)
             job.updated_at = datetime.now(UTC) - timedelta(minutes=40 + i * 10)
             job.created_at = datetime.now(UTC) - timedelta(hours=1 + i)
             stuck_jobs.append(job)
@@ -717,12 +683,7 @@ class TestRechunkServiceStuckJobsInfo:
         mock_result.scalars.return_value.all.return_value = stuck_jobs
         session.execute = AsyncMock(return_value=mock_result)
 
-        service = RechunkBatchJobService(
-            session=session,
-            batch_job_service=mock_batch_job_service,
-        )
-
-        result = await service.get_stuck_jobs_info()
+        result = await get_stuck_jobs_info(session)
 
         assert len(result) == 4
         job_types = {info.job_type for info in result}

@@ -23,8 +23,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.batch_jobs.rechunk_service import (
     DEFAULT_STALE_JOB_THRESHOLD_HOURS,
-    STUCK_JOB_THRESHOLD_MINUTES,
+    DEFAULT_STUCK_JOB_THRESHOLD_MINUTES,
     RechunkBatchJobService,
+    get_stuck_jobs_info,
 )
 from src.config import get_settings
 from src.monitoring import get_logger
@@ -132,7 +133,7 @@ async def cleanup_stale_batch_jobs_task(
     ],
 )
 async def monitor_stuck_batch_jobs_task(
-    threshold_minutes: float = STUCK_JOB_THRESHOLD_MINUTES,
+    threshold_minutes: int = DEFAULT_STUCK_JOB_THRESHOLD_MINUTES,
 ) -> dict:
     """
     Scheduled task to monitor for stuck batch jobs.
@@ -166,8 +167,7 @@ async def monitor_stuck_batch_jobs_task(
 
     try:
         async with async_session() as session:
-            service = RechunkBatchJobService(session)
-            stuck_jobs = await service.get_stuck_jobs_info(threshold_minutes=threshold_minutes)
+            stuck_jobs = await get_stuck_jobs_info(session, threshold_minutes=threshold_minutes)
 
             result = {
                 "status": "completed",
@@ -179,8 +179,6 @@ async def monitor_stuck_batch_jobs_task(
                         "job_id": str(job.job_id),
                         "job_type": job.job_type,
                         "status": job.status,
-                        "completed_tasks": job.completed_tasks,
-                        "total_tasks": job.total_tasks,
                         "stuck_duration_seconds": round(job.stuck_duration_seconds),
                     }
                     for job in stuck_jobs

@@ -45,11 +45,19 @@ from src.config import settings
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.monitoring import get_logger
+from src.monitoring.metrics import batch_job_stale_cleanup_total
 
 logger = get_logger(__name__)
 
 DEFAULT_STALE_JOB_THRESHOLD_HOURS = 2
-STUCK_JOB_THRESHOLD_MINUTES = 30
+DEFAULT_STUCK_JOB_THRESHOLD_MINUTES = 30
+
+ALL_BATCH_JOB_TYPES = [
+    RECHUNK_FACT_CHECK_JOB_TYPE,
+    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
+    SCRAPE_JOB_TYPE,
+    PROMOTION_JOB_TYPE,
+]
 
 
 @dataclass
@@ -59,11 +67,54 @@ class StuckJobInfo:
     job_id: UUID
     job_type: str
     status: str
-    completed_tasks: int
-    total_tasks: int
     stuck_duration_seconds: float
-    started_at: datetime | None
-    updated_at: datetime | None
+    updated_at: datetime
+
+
+async def get_stuck_jobs_info(
+    session: AsyncSession,
+    threshold_minutes: int = DEFAULT_STUCK_JOB_THRESHOLD_MINUTES,
+) -> list[StuckJobInfo]:
+    """
+    Query jobs stuck in PENDING/IN_PROGRESS beyond threshold.
+
+    Args:
+        session: SQLAlchemy async session
+        threshold_minutes: Minutes after which a non-terminal job is considered stuck.
+            Defaults to 30 minutes.
+
+    Returns:
+        List of StuckJobInfo for jobs that haven't updated within the threshold.
+    """
+    cutoff_time = datetime.now(UTC) - timedelta(minutes=threshold_minutes)
+
+    query = select(BatchJob).where(
+        BatchJob.job_type.in_(ALL_BATCH_JOB_TYPES),
+        or_(
+            BatchJob.status == BatchJobStatus.PENDING.value,
+            BatchJob.status == BatchJobStatus.IN_PROGRESS.value,
+        ),
+        BatchJob.updated_at < cutoff_time,
+    )
+    result = await session.execute(query)
+    stuck_jobs = list(result.scalars().all())
+
+    now = datetime.now(UTC)
+    result_list: list[StuckJobInfo] = []
+    for job in stuck_jobs:
+        reference_time = job.updated_at or job.created_at
+        if reference_time.tzinfo is None:
+            reference_time = reference_time.replace(tzinfo=UTC)
+        result_list.append(
+            StuckJobInfo(
+                job_id=job.id,
+                job_type=job.job_type,
+                status=job.status,
+                stuck_duration_seconds=(now - reference_time).total_seconds(),
+                updated_at=reference_time,
+            )
+        )
+    return result_list
 
 
 def _job_type_lock_key(job_type: str) -> int:
@@ -443,6 +494,10 @@ class RechunkBatchJobService:
             if failed_job is not None:
                 failed_jobs.append(failed_job)
                 await tracker.clear_processed_bitmap(job.id)
+                batch_job_stale_cleanup_total.labels(
+                    job_type=job.job_type,
+                    instance_id=settings.INSTANCE_ID,
+                ).inc()
 
         if failed_jobs:
             await self._session.commit()
@@ -456,87 +511,3 @@ class RechunkBatchJobService:
             )
 
         return failed_jobs
-
-    async def get_stuck_jobs_info(
-        self,
-        threshold_minutes: float = STUCK_JOB_THRESHOLD_MINUTES,
-    ) -> list[StuckJobInfo]:
-        """
-        Get information about potentially stuck batch jobs.
-
-        A job is considered "stuck" if it:
-        1. Is in PENDING or IN_PROGRESS status
-        2. Has not been updated for longer than the threshold
-
-        Note: Jobs with partial progress (completed_tasks > 0) are also detected
-        if they haven't been updated within the threshold. This catches jobs that
-        processed some items then got stuck.
-
-        This is useful for health checks and monitoring dashboards to detect
-        jobs that may need manual intervention or indicate worker issues.
-
-        Timezone Handling:
-            Database timestamps are assumed to be stored in UTC. If the database
-            returns naive datetimes, they are interpreted as UTC. This is the
-            standard convention for PostgreSQL with TIMESTAMPTZ columns.
-
-        Args:
-            threshold_minutes: Minutes after which an inactive job is
-                considered stuck. Defaults to 30 minutes.
-
-        Returns:
-            List of StuckJobInfo for jobs meeting the criteria
-        """
-        now = datetime.now(UTC)
-        cutoff_time = now - timedelta(minutes=threshold_minutes)
-
-        query = select(BatchJob).where(
-            BatchJob.job_type.in_(
-                [
-                    RECHUNK_FACT_CHECK_JOB_TYPE,
-                    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
-                    SCRAPE_JOB_TYPE,
-                    PROMOTION_JOB_TYPE,
-                ]
-            ),
-            or_(
-                BatchJob.status == BatchJobStatus.PENDING.value,
-                BatchJob.status == BatchJobStatus.IN_PROGRESS.value,
-            ),
-            BatchJob.updated_at < cutoff_time,
-        )
-
-        result = await self._session.execute(query)
-        stuck_jobs = result.scalars().all()
-
-        stuck_info: list[StuckJobInfo] = []
-        for job in stuck_jobs:
-            reference_time = job.updated_at or job.created_at
-            if reference_time.tzinfo is None:
-                reference_time = reference_time.replace(tzinfo=UTC)
-            stuck_duration = (now - reference_time).total_seconds()
-
-            stuck_info.append(
-                StuckJobInfo(
-                    job_id=job.id,
-                    job_type=job.job_type,
-                    status=job.status,
-                    completed_tasks=job.completed_tasks,
-                    total_tasks=job.total_tasks,
-                    stuck_duration_seconds=stuck_duration,
-                    started_at=job.started_at,
-                    updated_at=job.updated_at,
-                )
-            )
-
-        if stuck_info:
-            logger.warning(
-                "Found stuck batch jobs",
-                extra={
-                    "stuck_count": len(stuck_info),
-                    "job_ids": [str(info.job_id) for info in stuck_info],
-                    "threshold_minutes": threshold_minutes,
-                },
-            )
-
-        return stuck_info

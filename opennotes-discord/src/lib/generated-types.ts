@@ -3121,14 +3121,14 @@ export interface paths {
         };
         /**
          * Batch Jobs Health
-         * @description Check for stuck batch jobs.
+         * @description Check for stuck batch jobs and update Prometheus metrics.
          *
          *     Returns status information about batch job processing:
          *     - Number of jobs stuck with zero progress for >30 minutes
          *     - Details about each stuck job
          *     - Status is 'degraded' if any jobs are stuck
          *
-         *     This helps detect worker issues or jobs that need manual intervention.
+         *     Also updates Prometheus metrics for monitoring dashboards.
          */
         get: operations["batch_jobs_health_health_batch_jobs_get"];
         put?: never;
