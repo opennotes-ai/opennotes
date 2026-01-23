@@ -361,22 +361,48 @@ async def _handle_previously_seen_rechunk_final_failure(
         await engine.dispose()
 
 
+async def _handle_chunk_fact_check_item_final_failure(
+    message: TaskiqMessage,
+    result: TaskiqResult,
+    exception: BaseException,
+) -> None:
+    """
+    Called by RetryWithFinalCallbackMiddleware when all retries are exhausted
+    for single-item chunking tasks.
+
+    Unlike batch tasks, this doesn't update job status (no BatchJob exists).
+    It logs the permanent failure for visibility.
+    """
+    fact_check_id = message.kwargs.get("fact_check_id")
+    community_server_id = message.kwargs.get("community_server_id")
+
+    logger.error(
+        "Chunk fact check item task failed after all retries exhausted",
+        extra={
+            "fact_check_id": fact_check_id,
+            "community_server_id": community_server_id,
+            "error": str(exception),
+        },
+    )
+
+
 retry_callback_registry.register("rechunk:fact_check", _handle_fact_check_rechunk_final_failure)
 retry_callback_registry.register(
     "rechunk:previously_seen", _handle_previously_seen_rechunk_final_failure
+)
+retry_callback_registry.register(
+    "chunk:fact_check_item", _handle_chunk_fact_check_item_final_failure
 )
 
 
 @register_task(
     task_name="chunk:fact_check_item",
-    component="chunk",
-    task_type="single",
+    component="rechunk",
 )
 async def chunk_fact_check_item_task(
     fact_check_id: str,
     community_server_id: str | None,
     db_url: str,
-    redis_url: str,
 ) -> dict:
     """
     TaskIQ task to chunk and embed a single fact check item.
@@ -390,14 +416,13 @@ async def chunk_fact_check_item_task(
         community_server_id: UUID string of the community server for LLM credentials,
             or None to use global fallback
         db_url: Database connection URL
-        redis_url: Redis connection URL (unused, kept for consistency)
 
     Returns:
         dict with status and fact_check_id
     """
     with _tracer.start_as_current_span("chunk.fact_check_item") as span:
-        span.set_attribute("fact_check.id", fact_check_id)
-        span.set_attribute("fact_check.community_server_id", community_server_id or "global")
+        span.set_attribute("task.id", fact_check_id)
+        span.set_attribute("task.community_server_id", community_server_id or "global")
 
         settings = get_settings()
         fact_check_uuid = UUID(fact_check_id)
@@ -438,11 +463,13 @@ async def chunk_fact_check_item_task(
                     span.set_status(StatusCode.ERROR, "No content")
                     return {"status": "no_content", "fact_check_id": fact_check_id}
 
+                item_content = item.content
+
             await _process_fact_check_item_with_retry(
                 engine=engine,
                 service=service,
                 item_id=fact_check_uuid,
-                item_content=item.content,
+                item_content=item_content,
                 community_server_id=community_uuid,
             )
 

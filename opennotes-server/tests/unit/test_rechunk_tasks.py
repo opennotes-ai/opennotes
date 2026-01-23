@@ -790,9 +790,37 @@ class TestFinalRetryCallbackHandlers:
 class TestChunkFactCheckItemTask:
     """Test single-item chunking task for promoted fact check items (task-1030)."""
 
+    @pytest.fixture
+    def chunk_task_mocks(self):
+        """Common mock setup for chunk_fact_check_item_task tests (TASK-1030.07)."""
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_session_maker = MagicMock()
+        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        mock_engine_instance = MagicMock()
+        mock_engine_instance.dispose = AsyncMock()
+
+        mock_settings = MagicMock()
+        mock_settings.DB_POOL_SIZE = 5
+        mock_settings.DB_POOL_MAX_OVERFLOW = 10
+        mock_settings.DB_POOL_TIMEOUT = 30
+        mock_settings.DB_POOL_RECYCLE = 1800
+
+        return {
+            "mock_db": mock_db,
+            "mock_session_maker": mock_session_maker,
+            "mock_engine_instance": mock_engine_instance,
+            "mock_settings": mock_settings,
+        }
+
     @pytest.mark.asyncio
-    async def test_processes_single_item_successfully(self):
+    async def test_processes_single_item_successfully(self, chunk_task_mocks):
         """Task processes a single fact check item and returns completed status."""
+        from uuid import UUID
+
         fact_check_id = str(uuid4())
         community_server_id = str(uuid4())
 
@@ -800,33 +828,24 @@ class TestChunkFactCheckItemTask:
         mock_item.id = uuid4()
         mock_item.content = "Test content for chunking"
 
-        mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_item
-        mock_db.execute = AsyncMock(return_value=mock_result)
-        mock_db.commit = AsyncMock()
-
-        mock_session_maker = MagicMock()
-        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+        chunk_task_mocks["mock_db"].execute = AsyncMock(return_value=mock_result)
 
         mock_service = MagicMock()
         mock_service.chunk_and_embed_fact_check = AsyncMock()
 
         with (
             patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
-            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch(
+                "src.tasks.rechunk_tasks.async_sessionmaker",
+                return_value=chunk_task_mocks["mock_session_maker"],
+            ),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
-            mock_engine.return_value = MagicMock()
-            mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
+            mock_engine.return_value = chunk_task_mocks["mock_engine_instance"]
+            mock_settings.return_value = chunk_task_mocks["mock_settings"]
 
             from src.tasks.rechunk_tasks import chunk_fact_check_item_task
 
@@ -834,43 +853,41 @@ class TestChunkFactCheckItemTask:
                 fact_check_id=fact_check_id,
                 community_server_id=community_server_id,
                 db_url="postgresql+asyncpg://test:test@localhost/test",
-                redis_url="redis://localhost:6379",
             )
 
             assert result["status"] == "completed"
             assert result["fact_check_id"] == fact_check_id
+
             mock_service.chunk_and_embed_fact_check.assert_called_once()
+            call_kwargs = mock_service.chunk_and_embed_fact_check.call_args.kwargs
+            assert call_kwargs["fact_check_id"] == UUID(fact_check_id)
+            assert call_kwargs["text"] == mock_item.content
+            assert call_kwargs["community_server_id"] == UUID(community_server_id)
+
+            chunk_task_mocks["mock_engine_instance"].dispose.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_returns_not_found_when_item_missing(self):
+    async def test_returns_not_found_when_item_missing(self, chunk_task_mocks):
         """Task returns not_found status when fact check item doesn't exist."""
         fact_check_id = str(uuid4())
 
-        mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        mock_session_maker = MagicMock()
-        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+        chunk_task_mocks["mock_db"].execute = AsyncMock(return_value=mock_result)
 
         mock_service = MagicMock()
 
         with (
             patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
-            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch(
+                "src.tasks.rechunk_tasks.async_sessionmaker",
+                return_value=chunk_task_mocks["mock_session_maker"],
+            ),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
-            mock_engine.return_value = MagicMock()
-            mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
+            mock_engine.return_value = chunk_task_mocks["mock_engine_instance"]
+            mock_settings.return_value = chunk_task_mocks["mock_settings"]
 
             from src.tasks.rechunk_tasks import chunk_fact_check_item_task
 
@@ -878,47 +895,40 @@ class TestChunkFactCheckItemTask:
                 fact_check_id=fact_check_id,
                 community_server_id=None,
                 db_url="postgresql+asyncpg://test:test@localhost/test",
-                redis_url="redis://localhost:6379",
             )
 
             assert result["status"] == "not_found"
             assert result["fact_check_id"] == fact_check_id
             mock_service.chunk_and_embed_fact_check.assert_not_called()
 
+            chunk_task_mocks["mock_engine_instance"].dispose.assert_called_once()
+
     @pytest.mark.asyncio
-    async def test_returns_no_content_when_item_has_empty_content(self):
-        """Task returns no_content status when fact check item has no content."""
+    async def test_returns_no_content_when_item_has_none_content(self, chunk_task_mocks):
+        """Task returns no_content status when fact check item has None content."""
         fact_check_id = str(uuid4())
 
         mock_item = MagicMock()
         mock_item.id = uuid4()
         mock_item.content = None
 
-        mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_item
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        mock_session_maker = MagicMock()
-        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+        chunk_task_mocks["mock_db"].execute = AsyncMock(return_value=mock_result)
 
         mock_service = MagicMock()
 
         with (
             patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
-            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch(
+                "src.tasks.rechunk_tasks.async_sessionmaker",
+                return_value=chunk_task_mocks["mock_session_maker"],
+            ),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
-            mock_engine.return_value = MagicMock()
-            mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
+            mock_engine.return_value = chunk_task_mocks["mock_engine_instance"]
+            mock_settings.return_value = chunk_task_mocks["mock_settings"]
 
             from src.tasks.rechunk_tasks import chunk_fact_check_item_task
 
@@ -926,31 +936,67 @@ class TestChunkFactCheckItemTask:
                 fact_check_id=fact_check_id,
                 community_server_id=None,
                 db_url="postgresql+asyncpg://test:test@localhost/test",
-                redis_url="redis://localhost:6379",
             )
 
             assert result["status"] == "no_content"
             assert result["fact_check_id"] == fact_check_id
             mock_service.chunk_and_embed_fact_check.assert_not_called()
 
+            chunk_task_mocks["mock_engine_instance"].dispose.assert_called_once()
+
     @pytest.mark.asyncio
-    async def test_raises_on_chunking_error(self):
-        """Task raises exception when chunking fails."""
+    async def test_returns_no_content_when_item_has_empty_string_content(self, chunk_task_mocks):
+        """Task returns no_content status when fact check item has empty string content (TASK-1030.04)."""
+        fact_check_id = str(uuid4())
+
+        mock_item = MagicMock()
+        mock_item.id = uuid4()
+        mock_item.content = ""
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_item
+        chunk_task_mocks["mock_db"].execute = AsyncMock(return_value=mock_result)
+
+        mock_service = MagicMock()
+
+        with (
+            patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.rechunk_tasks.async_sessionmaker",
+                return_value=chunk_task_mocks["mock_session_maker"],
+            ),
+            patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
+            patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
+        ):
+            mock_engine.return_value = chunk_task_mocks["mock_engine_instance"]
+            mock_settings.return_value = chunk_task_mocks["mock_settings"]
+
+            from src.tasks.rechunk_tasks import chunk_fact_check_item_task
+
+            result = await chunk_fact_check_item_task(
+                fact_check_id=fact_check_id,
+                community_server_id=None,
+                db_url="postgresql+asyncpg://test:test@localhost/test",
+            )
+
+            assert result["status"] == "no_content"
+            assert result["fact_check_id"] == fact_check_id
+            mock_service.chunk_and_embed_fact_check.assert_not_called()
+
+            chunk_task_mocks["mock_engine_instance"].dispose.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_on_chunking_error(self, chunk_task_mocks):
+        """Task raises exception when chunking fails and disposes engine on error path (TASK-1030.03)."""
         fact_check_id = str(uuid4())
 
         mock_item = MagicMock()
         mock_item.id = uuid4()
         mock_item.content = "Test content"
 
-        mock_db = AsyncMock()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_item
-        mock_db.execute = AsyncMock(return_value=mock_result)
-        mock_db.commit = AsyncMock()
-
-        mock_session_maker = MagicMock()
-        mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+        chunk_task_mocks["mock_db"].execute = AsyncMock(return_value=mock_result)
 
         mock_service = MagicMock()
         mock_service.chunk_and_embed_fact_check = AsyncMock(
@@ -959,18 +1005,15 @@ class TestChunkFactCheckItemTask:
 
         with (
             patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
-            patch("src.tasks.rechunk_tasks.async_sessionmaker", return_value=mock_session_maker),
+            patch(
+                "src.tasks.rechunk_tasks.async_sessionmaker",
+                return_value=chunk_task_mocks["mock_session_maker"],
+            ),
             patch("src.tasks.rechunk_tasks.get_chunk_embedding_service", return_value=mock_service),
             patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
         ):
-            mock_engine.return_value = MagicMock()
-            mock_engine.return_value.dispose = AsyncMock()
-            settings = MagicMock()
-            settings.DB_POOL_SIZE = 5
-            settings.DB_POOL_MAX_OVERFLOW = 10
-            settings.DB_POOL_TIMEOUT = 30
-            settings.DB_POOL_RECYCLE = 1800
-            mock_settings.return_value = settings
+            mock_engine.return_value = chunk_task_mocks["mock_engine_instance"]
+            mock_settings.return_value = chunk_task_mocks["mock_settings"]
 
             from src.tasks.rechunk_tasks import chunk_fact_check_item_task
 
@@ -979,18 +1022,44 @@ class TestChunkFactCheckItemTask:
                     fact_check_id=fact_check_id,
                     community_server_id=None,
                     db_url="postgresql+asyncpg://test:test@localhost/test",
-                    redis_url="redis://localhost:6379",
+                )
+
+            chunk_task_mocks["mock_engine_instance"].dispose.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_on_invalid_uuid_format(self, chunk_task_mocks):
+        """Task raises ValueError when fact_check_id has invalid UUID format (TASK-1030.05)."""
+        invalid_uuid = "not-a-valid-uuid"
+
+        with (
+            patch("src.tasks.rechunk_tasks.create_async_engine") as mock_engine,
+            patch(
+                "src.tasks.rechunk_tasks.async_sessionmaker",
+                return_value=chunk_task_mocks["mock_session_maker"],
+            ),
+            patch("src.tasks.rechunk_tasks.get_settings") as mock_settings,
+        ):
+            mock_engine.return_value = chunk_task_mocks["mock_engine_instance"]
+            mock_settings.return_value = chunk_task_mocks["mock_settings"]
+
+            from src.tasks.rechunk_tasks import chunk_fact_check_item_task
+
+            with pytest.raises(ValueError, match="badly formed hexadecimal UUID string"):
+                await chunk_fact_check_item_task(
+                    fact_check_id=invalid_uuid,
+                    community_server_id=None,
+                    db_url="postgresql+asyncpg://test:test@localhost/test",
                 )
 
     def test_chunk_fact_check_item_task_has_labels(self):
-        """Verify chunk_fact_check_item task has component and task_type labels."""
+        """Verify chunk_fact_check_item task has component label (TASK-1030.10, TASK-1030.11)."""
         from src.tasks.broker import _all_registered_tasks
 
         assert "chunk:fact_check_item" in _all_registered_tasks
 
         _, labels = _all_registered_tasks["chunk:fact_check_item"]
-        assert labels.get("component") == "chunk"
-        assert labels.get("task_type") == "single"
+        assert labels.get("component") == "rechunk"
+        assert "task_type" not in labels
 
 
 class TestPromotionEnqueuesChunkingTask:
@@ -1031,7 +1100,6 @@ class TestPromotionEnqueuesChunkingTask:
 
         mock_settings = MagicMock()
         mock_settings.DATABASE_URL = "postgresql+asyncpg://test:test@localhost/test"
-        mock_settings.REDIS_URL = "redis://localhost:6379"
 
         with (
             patch(
@@ -1051,7 +1119,6 @@ class TestPromotionEnqueuesChunkingTask:
             mock_kiq.assert_called_once()
             call_kwargs = mock_kiq.call_args.kwargs
             assert call_kwargs["db_url"] == mock_settings.DATABASE_URL
-            assert call_kwargs["redis_url"] == mock_settings.REDIS_URL
             assert call_kwargs["community_server_id"] is None
 
     @pytest.mark.asyncio
@@ -1089,7 +1156,6 @@ class TestPromotionEnqueuesChunkingTask:
 
         mock_settings = MagicMock()
         mock_settings.DATABASE_URL = "postgresql+asyncpg://test:test@localhost/test"
-        mock_settings.REDIS_URL = "redis://localhost:6379"
 
         with (
             patch(

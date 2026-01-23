@@ -124,7 +124,6 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
                 fact_check_id=str(fact_check_item.id),
                 community_server_id=None,
                 db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
             )
             logger.info(f"Enqueued chunking task for promoted fact_check_item {fact_check_item.id}")
         except Exception as chunk_error:
