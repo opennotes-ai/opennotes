@@ -57,6 +57,7 @@ from unittest.mock import MagicMock
 import pytest
 import redis.asyncio as aioredis
 
+from src.tasks.broker import RATE_LIMITER_SOCKET_TIMEOUT
 from src.tasks.rate_limit_middleware import (
     RATE_LIMIT_CAPACITY,
     RATE_LIMIT_EXPIRY,
@@ -805,6 +806,99 @@ class TestConsecutiveFailureAlerts:
             message.task_id = "success-task"
             await middleware._release_semaphore(message)
             assert middleware._consecutive_release_failures == 0
+
+
+class TestSocketTimeoutWithBlockingCommands:
+    """Tests for BLPOP blocking commands with socket timeout (TASK-1032).
+
+    The rate limiter uses AsyncSemaphore which internally uses BLPOP with max_sleep.
+    If the Redis client's socket_timeout is shorter than max_sleep, BLPOP will
+    get a TimeoutError instead of waiting for the semaphore.
+
+    This test verifies that with a properly configured client (socket_timeout > max_sleep),
+    the rate limiter can successfully wait for semaphores even when blocking > 5 seconds.
+    """
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_succeeds_when_blpop_blocks_longer_than_default_timeout(self):
+        """Verify rate limiter works when BLPOP needs to block > 5s (default socket timeout).
+
+        This is the key test for TASK-1032. The scenario:
+        1. Task A acquires semaphore (capacity=1)
+        2. Task A holds the semaphore for 6 seconds (longer than default 5s socket timeout)
+        3. Task B starts waiting (via BLPOP) for the semaphore
+        4. After 6s, Task A releases the semaphore
+        5. Task B should successfully acquire (not get TimeoutError)
+
+        With the old configuration (socket_timeout=5s), Task B would fail.
+        With the fix (socket_timeout=120s for rate limiter), Task B succeeds.
+        """
+        client = aioredis.Redis.from_url(
+            get_redis_url(),
+            socket_timeout=RATE_LIMITER_SOCKET_TIMEOUT,
+        )
+        mw = DistributedRateLimitMiddleware(redis_client=client, instance_id="test-socket-timeout")
+        await mw.startup()
+
+        try:
+            lock_name = f"test:socket_timeout:{uuid.uuid4()}"
+            results = []
+
+            async def task_a():
+                """Holds semaphore for 6 seconds (longer than default 5s timeout)."""
+                message = create_message(
+                    {
+                        RATE_LIMIT_NAME: lock_name,
+                        RATE_LIMIT_CAPACITY: "1",
+                        RATE_LIMIT_MAX_SLEEP: "10",
+                    }
+                )
+                await mw.pre_execute(message)
+                try:
+                    results.append("task_a_acquired")
+                    await asyncio.sleep(6)
+                    results.append("task_a_releasing")
+                finally:
+                    await mw.post_execute(message, MagicMock())
+                    results.append("task_a_released")
+
+            async def task_b():
+                """Waits for semaphore - must block > 5s waiting for task_a."""
+                await asyncio.sleep(0.1)
+                message = create_message(
+                    {
+                        RATE_LIMIT_NAME: lock_name,
+                        RATE_LIMIT_CAPACITY: "1",
+                        RATE_LIMIT_MAX_SLEEP: "10",
+                    }
+                )
+                results.append("task_b_waiting")
+                await mw.pre_execute(message)
+                try:
+                    results.append("task_b_acquired")
+                finally:
+                    await mw.post_execute(message, MagicMock())
+                    results.append("task_b_released")
+
+            await asyncio.gather(task_a(), task_b())
+
+            assert "task_a_acquired" in results
+            assert "task_b_waiting" in results
+            assert "task_b_acquired" in results
+            assert "task_b_released" in results
+
+            task_a_acquired_idx = results.index("task_a_acquired")
+            task_b_waiting_idx = results.index("task_b_waiting")
+            task_a_releasing_idx = results.index("task_a_releasing")
+            task_b_acquired_idx = results.index("task_b_acquired")
+
+            assert task_a_acquired_idx < task_b_waiting_idx
+            assert task_b_waiting_idx < task_a_releasing_idx
+            assert task_a_releasing_idx < task_b_acquired_idx
+
+        finally:
+            await mw.shutdown()
+            await client.aclose()
 
 
 class TestCleanupOnTaskFailure:

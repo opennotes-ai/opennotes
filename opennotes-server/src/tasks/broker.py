@@ -122,6 +122,22 @@ _registered_task_objects: dict[str, Any] = {}
 retry_callback_registry = RetryCallbackHandlerRegistry()
 
 
+RATE_LIMITER_SOCKET_TIMEOUT = 120
+"""Socket timeout (seconds) for rate limiter's dedicated Redis client.
+
+The rate limiter uses the `limiters` library's AsyncSemaphore which internally
+uses BLPOP (a blocking Redis command) with max_sleep=30s by default. The standard
+Redis client uses REDIS_SOCKET_TIMEOUT=5s, which causes TimeoutError when BLPOP
+blocks waiting for a semaphore permit.
+
+This dedicated client uses a higher timeout (120s) to allow blocking commands to
+complete. The value should exceed the maximum expected wait time for semaphore
+acquisition (rate_limit_max_sleep defaults to 30s, but can be configured higher).
+
+See TASK-1032 for full root cause analysis.
+"""
+
+
 def _create_broker() -> PullBasedJetStreamBroker:
     """Create and configure the taskiq broker with current settings."""
     settings = get_settings()
@@ -149,9 +165,19 @@ def _create_broker() -> PullBasedJetStreamBroker:
 
     result_backend: RedisAsyncResultBackend = RedisAsyncResultBackend(**result_backend_kwargs)
 
-    shared_redis_client = aioredis.Redis.from_url(settings.REDIS_URL, **redis_kwargs)
-    if ssl_ca_certs is not None:
-        logger.info("Shared Redis client configured with SSL CA cert")
+    rate_limiter_redis_kwargs = get_redis_connection_kwargs(
+        settings.REDIS_URL,
+        socket_timeout=RATE_LIMITER_SOCKET_TIMEOUT,
+    )
+    rate_limiter_redis_client = aioredis.Redis.from_url(
+        settings.REDIS_URL, **rate_limiter_redis_kwargs
+    )
+    if rate_limiter_redis_kwargs.get("ssl_ca_certs") is not None:
+        logger.info("Rate limiter Redis client configured with SSL CA cert")
+    logger.info(
+        f"Rate limiter Redis client configured with socket_timeout={RATE_LIMITER_SOCKET_TIMEOUT}s "
+        f"(allows BLPOP blocking commands to complete)"
+    )
 
     retry_middleware = RetryWithFinalCallbackMiddleware(
         default_retry_count=settings.TASKIQ_DEFAULT_RETRY_COUNT,
@@ -165,7 +191,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
     )
 
     rate_limit_middleware = DistributedRateLimitMiddleware(
-        redis_client=shared_redis_client,
+        redis_client=rate_limiter_redis_client,
         instance_id=settings.INSTANCE_ID,
     )
 
