@@ -6,10 +6,25 @@ BatchJob database records. Used for real-time UI updates during job execution.
 
 Uses Redis hashes with HINCRBY for atomic increment operations to prevent
 race conditions during concurrent progress updates.
+
+Resume Semantics (TASK-1042.02):
+    The processed_count in the progress hash is for display purposes only.
+    For proper resume after restart, callers MUST use the bitmap:
+    - Use is_item_processed(job_id, index) to check each item
+    - Use get_unprocessed_indices(job_id, total) to get list of unprocessed items
+    - Use get_processed_count_from_bitmap(job_id) for actual count from bitmap
+    - Do NOT use processed_count as SQL OFFSET - this causes data loss if items fail
+
+Error Handling (TASK-1042.05, TASK-1042.06):
+    Bitmap operations return MarkItemResult enum or bool | None:
+    - mark_item_processed returns MarkItemResult enum to distinguish all three cases
+    - is_item_processed returns bool | None where None indicates Redis error
+    - Callers MUST handle None as "unknown state" - do NOT assume unprocessed
 """
 
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from uuid import UUID
 
 from src.cache.redis_client import RedisClient, redis_client
@@ -17,10 +32,28 @@ from src.monitoring import get_logger
 
 logger = get_logger(__name__)
 
+
+class MarkItemResult(Enum):
+    """Result of marking an item as processed (TASK-1042.05).
+
+    Distinguishes between:
+    - NEWLY_MARKED: Item was successfully marked (was 0, now 1)
+    - ALREADY_PROCESSED: Item was already marked (bit was already 1)
+    - ERROR: Redis operation failed - caller should handle appropriately
+    """
+
+    NEWLY_MARKED = "newly_marked"
+    ALREADY_PROCESSED = "already_processed"
+    ERROR = "error"
+
+
 BATCH_JOB_PROGRESS_KEY_PREFIX = "batch_job:progress:"
 BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX = "batch_job:processed:"
+BATCH_JOB_PROCESSED_ITEMS_KEY_PREFIX = "batch_job:processed_items:"
+BATCH_JOB_FAILED_ITEMS_KEY_PREFIX = "batch_job:failed_items:"
 BATCH_JOB_PROGRESS_TTL_SECONDS = 3600  # 1 hour
 BATCH_JOB_PROCESSED_BITMAP_TTL_SECONDS = 86400  # 24 hours
+BATCH_JOB_ITEMS_TTL_SECONDS = 86400  # 24 hours
 
 
 @dataclass
@@ -102,6 +135,14 @@ class BatchJobProgressTracker:
     def _processed_bitmap_key(self, job_id: UUID) -> str:
         """Generate Redis key for processed items bitmap."""
         return f"{BATCH_JOB_PROCESSED_BITMAP_KEY_PREFIX}{job_id}"
+
+    def _processed_items_key(self, job_id: UUID) -> str:
+        """Generate Redis key for processed items set (item.id based)."""
+        return f"{BATCH_JOB_PROCESSED_ITEMS_KEY_PREFIX}{job_id}"
+
+    def _failed_items_key(self, job_id: UUID) -> str:
+        """Generate Redis key for failed items set."""
+        return f"{BATCH_JOB_FAILED_ITEMS_KEY_PREFIX}{job_id}"
 
     async def start_tracking(self, job_id: UUID, current_item: str | None = None) -> bool:
         """
@@ -221,47 +262,78 @@ class BatchJobProgressTracker:
             )
             return None
 
-    async def mark_item_processed(self, job_id: UUID, item_index: int) -> bool:
+    async def mark_item_processed(self, job_id: UUID, item_index: int) -> MarkItemResult:
         """
         Mark an item as processed using a Redis bitmap.
 
         Uses Redis SETBIT to atomically mark the item at the given index
-        as processed. This enables idempotent processing - items already
-        processed can be skipped on restart.
+        as processed. SETBIT and EXPIRE are executed atomically via pipeline
+        (TASK-1042.03) to prevent race conditions.
 
         Args:
             job_id: The job's unique identifier
-            item_index: Zero-based index of the item being processed
+            item_index: Zero-based index of the item being processed (must be >= 0)
 
         Returns:
-            True if item was newly marked (was 0, now 1), False if already processed
+            MarkItemResult enum (TASK-1042.05):
+            - NEWLY_MARKED: Item was successfully marked (was 0, now 1)
+            - ALREADY_PROCESSED: Item was already marked (bit was already 1)
+            - ERROR: Redis operation failed - caller should handle appropriately
         """
+        if item_index < 0:
+            logger.error(
+                "Invalid item_index for mark_item_processed",
+                extra={"job_id": str(job_id), "item_index": item_index},
+            )
+            return MarkItemResult.ERROR
+
         try:
             key = self._processed_bitmap_key(job_id)
-            original_value = await self._redis.setbit(key, item_index, 1)
-            await self._redis.expire(key, BATCH_JOB_PROCESSED_BITMAP_TTL_SECONDS)
-            return original_value == 0
+            pipe = self._redis.pipeline()
+            pipe.setbit(key, item_index, 1)
+            pipe.expire(key, BATCH_JOB_PROCESSED_BITMAP_TTL_SECONDS)
+            results = await pipe.execute()
+            original_value = results[0]
+            return (
+                MarkItemResult.NEWLY_MARKED
+                if original_value == 0
+                else MarkItemResult.ALREADY_PROCESSED
+            )
         except Exception as e:
             logger.error(
                 "Failed to mark item processed",
                 extra={"job_id": str(job_id), "item_index": item_index, "error": str(e)},
             )
-            return False
+            return MarkItemResult.ERROR
 
-    async def is_item_processed(self, job_id: UUID, item_index: int) -> bool:
+    async def is_item_processed(self, job_id: UUID, item_index: int) -> bool | None:
         """
         Check if an item has been processed using the Redis bitmap.
 
         Uses Redis GETBIT to check if the item at the given index has
         been marked as processed. This enables idempotent processing.
 
+        IMPORTANT (TASK-1042.06): Returns None on Redis errors. Callers MUST
+        handle None as "unknown state" and NOT assume the item is unprocessed.
+        Assuming unprocessed on error could violate idempotency if processing
+        has side effects.
+
         Args:
             job_id: The job's unique identifier
-            item_index: Zero-based index of the item to check
+            item_index: Zero-based index of the item to check (must be >= 0)
 
         Returns:
-            True if item is already processed, False otherwise
+            True if item is already processed
+            False if item is not processed
+            None if Redis error occurred (caller must handle appropriately)
         """
+        if item_index < 0:
+            logger.error(
+                "Invalid item_index for is_item_processed",
+                extra={"job_id": str(job_id), "item_index": item_index},
+            )
+            return None
+
         try:
             key = self._processed_bitmap_key(job_id)
             result = await self._redis.getbit(key, item_index)
@@ -271,7 +343,7 @@ class BatchJobProgressTracker:
                 "Failed to check if item processed",
                 extra={"job_id": str(job_id), "item_index": item_index, "error": str(e)},
             )
-            return False
+            return None
 
     async def clear_processed_bitmap(self, job_id: UUID) -> bool:
         """
@@ -299,6 +371,202 @@ class BatchJobProgressTracker:
         except Exception as e:
             logger.error(
                 "Failed to clear processed bitmap",
+                extra={"job_id": str(job_id), "error": str(e)},
+            )
+            return False
+
+    async def get_processed_count_from_bitmap(self, job_id: UUID) -> int | None:
+        """
+        Get the actual count of processed items from the bitmap.
+
+        Uses Redis BITCOUNT to count set bits. This returns the true count
+        of successfully processed items, unlike processed_count which may
+        not reflect actual bitmap state after failures or restarts.
+
+        IMPORTANT (TASK-1042.02): Use this for accurate counts, not the
+        processed_count field from get_progress() which is for display only.
+
+        Args:
+            job_id: The job's unique identifier
+
+        Returns:
+            Count of set bits (processed items), or None on error
+        """
+        try:
+            key = self._processed_bitmap_key(job_id)
+            return await self._redis.bitcount(key)
+        except Exception as e:
+            logger.error(
+                "Failed to get processed count from bitmap",
+                extra={"job_id": str(job_id), "error": str(e)},
+            )
+            return None
+
+    async def get_unprocessed_indices(self, job_id: UUID, total_count: int) -> list[int] | None:
+        """
+        Get list of indices that have not been processed.
+
+        Iterates through indices 0 to total_count-1 and checks the bitmap
+        for each. Returns list of indices where the bit is not set.
+
+        IMPORTANT (TASK-1042.02): Use this for proper resume logic instead
+        of using processed_count as SQL OFFSET. This ensures no items are
+        permanently lost even if some items failed during previous runs.
+
+        Args:
+            job_id: The job's unique identifier
+            total_count: Total number of items to check (indices 0 to total_count-1)
+
+        Returns:
+            List of unprocessed indices (may be empty if all processed),
+            or None on Redis error
+        """
+        if total_count <= 0:
+            return []
+
+        try:
+            unprocessed: list[int] = []
+            for i in range(total_count):
+                is_processed = await self.is_item_processed(job_id, i)
+                if is_processed is None:
+                    return None
+                if not is_processed:
+                    unprocessed.append(i)
+            return unprocessed
+        except Exception as e:
+            logger.error(
+                "Failed to get unprocessed indices",
+                extra={"job_id": str(job_id), "total_count": total_count, "error": str(e)},
+            )
+            return None
+
+    async def mark_item_processed_by_id(self, job_id: UUID, item_id: str) -> bool:
+        """
+        Mark an item as processed using its stable ID.
+
+        Uses Redis SADD to add the item_id to a set of processed items.
+        This enables stable tracking that works across item insertions/deletions.
+
+        Args:
+            job_id: The job's unique identifier
+            item_id: String identifier of the item (typically str(uuid))
+
+        Returns:
+            True if item was newly added, False if already in set or error
+        """
+        try:
+            key = self._processed_items_key(job_id)
+            result = await self._redis.sadd(key, item_id)
+            await self._redis.expire(key, BATCH_JOB_ITEMS_TTL_SECONDS)
+            return result > 0
+        except Exception as e:
+            logger.error(
+                "Failed to mark item processed by id",
+                extra={"job_id": str(job_id), "item_id": item_id, "error": str(e)},
+            )
+            return False
+
+    async def is_item_processed_by_id(self, job_id: UUID, item_id: str) -> bool:
+        """
+        Check if an item has been processed using its stable ID.
+
+        Uses Redis SISMEMBER to check set membership.
+
+        Args:
+            job_id: The job's unique identifier
+            item_id: String identifier of the item (typically str(uuid))
+
+        Returns:
+            True if item is in the processed set, False otherwise
+        """
+        try:
+            key = self._processed_items_key(job_id)
+            result = await self._redis.sismember(key, item_id)
+            return result == 1
+        except Exception as e:
+            logger.error(
+                "Failed to check if item processed by id",
+                extra={"job_id": str(job_id), "item_id": item_id, "error": str(e)},
+            )
+            return False
+
+    async def mark_item_failed_by_id(self, job_id: UUID, item_id: str) -> bool:
+        """
+        Mark an item as failed using its stable ID.
+
+        Failed items are tracked separately from processed items so they
+        can be retried on job restart.
+
+        Args:
+            job_id: The job's unique identifier
+            item_id: String identifier of the item (typically str(uuid))
+
+        Returns:
+            True if item was newly added, False if already in set or error
+        """
+        try:
+            key = self._failed_items_key(job_id)
+            result = await self._redis.sadd(key, item_id)
+            await self._redis.expire(key, BATCH_JOB_ITEMS_TTL_SECONDS)
+            return result > 0
+        except Exception as e:
+            logger.error(
+                "Failed to mark item failed by id",
+                extra={"job_id": str(job_id), "item_id": item_id, "error": str(e)},
+            )
+            return False
+
+    async def is_item_failed_by_id(self, job_id: UUID, item_id: str) -> bool:
+        """
+        Check if an item was previously marked as failed.
+
+        Args:
+            job_id: The job's unique identifier
+            item_id: String identifier of the item (typically str(uuid))
+
+        Returns:
+            True if item is in the failed set, False otherwise
+        """
+        try:
+            key = self._failed_items_key(job_id)
+            result = await self._redis.sismember(key, item_id)
+            return result == 1
+        except Exception as e:
+            logger.error(
+                "Failed to check if item failed by id",
+                extra={"job_id": str(job_id), "item_id": item_id, "error": str(e)},
+            )
+            return False
+
+    async def clear_item_tracking(self, job_id: UUID) -> bool:
+        """
+        Clear all item tracking data for a job (bitmaps, processed set, failed set).
+
+        Should be called when a job completes or permanently fails to clean up Redis.
+
+        Args:
+            job_id: The job's unique identifier
+
+        Returns:
+            True if any keys were cleared, False if nothing to clear/error
+        """
+        try:
+            keys_to_delete = [
+                self._processed_bitmap_key(job_id),
+                self._processed_items_key(job_id),
+                self._failed_items_key(job_id),
+            ]
+            result = await self._redis.delete(*keys_to_delete)
+            if result > 0:
+                logger.debug(
+                    "Cleared item tracking",
+                    extra={"job_id": str(job_id), "keys_deleted": result},
+                )
+                return True
+            return False
+        except Exception as e:
+            logger.error(
+                "Failed to clear item tracking",
                 extra={"job_id": str(job_id), "error": str(e)},
             )
             return False

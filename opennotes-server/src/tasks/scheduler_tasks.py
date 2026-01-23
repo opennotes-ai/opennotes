@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.batch_jobs.rechunk_service import (
     DEFAULT_STALE_JOB_THRESHOLD_HOURS,
+    STUCK_JOB_THRESHOLD_MINUTES,
     RechunkBatchJobService,
 )
 from src.config import get_settings
@@ -52,6 +53,13 @@ async def cleanup_stale_batch_jobs_task(
     Runs weekly (Sunday midnight UTC) to mark jobs stuck in PENDING or
     IN_PROGRESS status as FAILED. This recovers from scenarios like
     worker crashes or network failures.
+
+    Note:
+        Creates its own database engine per execution. This is intentional for
+        TaskIQ scheduled tasks: workers run as separate processes that may be
+        restarted or scaled independently. Per-task engine creation ensures
+        clean connection state with no shared resources between executions.
+        For weekly execution frequency, this overhead is negligible.
 
     Args:
         stale_threshold_hours: Hours after which a job is considered stale.
@@ -106,6 +114,100 @@ async def cleanup_stale_batch_jobs_task(
         logger.error(
             "Scheduled cleanup failed",
             extra={"error": str(e), "threshold_hours": stale_threshold_hours},
+        )
+        raise
+    finally:
+        await engine.dispose()
+
+
+@register_task(
+    task_name="scheduler:monitor_stuck_batch_jobs",
+    component="scheduler",
+    task_type="monitoring",
+    schedule=[
+        {
+            "cron": "*/15 * * * *",
+            "schedule_id": "stuck_jobs_monitor",
+        }
+    ],
+)
+async def monitor_stuck_batch_jobs_task(
+    threshold_minutes: float = STUCK_JOB_THRESHOLD_MINUTES,
+) -> dict:
+    """
+    Scheduled task to monitor for stuck batch jobs.
+
+    Runs every 15 minutes to check for jobs that appear stuck (in non-terminal
+    status without recent updates). Logs warnings for any stuck jobs found.
+    This is an informational check for alerting - it does NOT modify jobs.
+
+    Note:
+        Creates its own database engine per execution. This is intentional for
+        TaskIQ scheduled tasks: workers run as separate processes that may be
+        restarted or scaled independently. Per-task engine creation ensures
+        clean connection state with no shared resources between executions.
+
+    Args:
+        threshold_minutes: Minutes after which a job is considered stuck.
+            Defaults to 30 minutes.
+
+    Returns:
+        dict with monitoring results including stuck job count and details
+    """
+    settings = get_settings()
+
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+    )
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        async with async_session() as session:
+            service = RechunkBatchJobService(session)
+            stuck_jobs = await service.get_stuck_jobs_info(threshold_minutes=threshold_minutes)
+
+            result = {
+                "status": "completed",
+                "stuck_count": len(stuck_jobs),
+                "threshold_minutes": threshold_minutes,
+                "executed_at": datetime.now(UTC).isoformat(),
+                "stuck_jobs": [
+                    {
+                        "job_id": str(job.job_id),
+                        "job_type": job.job_type,
+                        "status": job.status,
+                        "completed_tasks": job.completed_tasks,
+                        "total_tasks": job.total_tasks,
+                        "stuck_duration_seconds": round(job.stuck_duration_seconds),
+                    }
+                    for job in stuck_jobs
+                ],
+            }
+
+            if stuck_jobs:
+                logger.warning(
+                    "Scheduled monitor found stuck batch jobs",
+                    extra={
+                        "stuck_count": len(stuck_jobs),
+                        "job_ids": [str(job.job_id) for job in stuck_jobs],
+                        "threshold_minutes": threshold_minutes,
+                    },
+                )
+            else:
+                logger.debug(
+                    "Scheduled monitor found no stuck jobs",
+                    extra={"threshold_minutes": threshold_minutes},
+                )
+
+            return result
+
+    except Exception as e:
+        logger.error(
+            "Scheduled stuck jobs monitor failed",
+            extra={"error": str(e), "threshold_minutes": threshold_minutes},
         )
         raise
     finally:

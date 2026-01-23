@@ -35,6 +35,10 @@ from src.batch_jobs.constants import (
     SCRAPE_JOB_TYPE,
 )
 from src.batch_jobs.models import BatchJob
+from src.batch_jobs.progress_tracker import (
+    BatchJobProgressTracker,
+    get_batch_job_progress_tracker,
+)
 from src.batch_jobs.schemas import BatchJobCreate, BatchJobStatus
 from src.batch_jobs.service import BatchJobService
 from src.config import settings
@@ -380,6 +384,7 @@ class RechunkBatchJobService:
     async def cleanup_stale_jobs(
         self,
         stale_threshold_hours: float = DEFAULT_STALE_JOB_THRESHOLD_HOURS,
+        progress_tracker: BatchJobProgressTracker | None = None,
     ) -> list[BatchJob]:
         """
         Mark stale jobs as failed.
@@ -398,6 +403,8 @@ class RechunkBatchJobService:
         Args:
             stale_threshold_hours: Hours after which a non-terminal job is considered
                 stale (based on last update). Defaults to 2 hours.
+            progress_tracker: Optional progress tracker for cleaning up Redis bitmaps.
+                If not provided, uses the global tracker.
 
         Returns:
             List of jobs that were marked as failed
@@ -422,6 +429,7 @@ class RechunkBatchJobService:
         result = await self._session.execute(query)
         stale_jobs = list(result.scalars().all())
 
+        tracker = progress_tracker or get_batch_job_progress_tracker()
         failed_jobs: list[BatchJob] = []
         for job in stale_jobs:
             failed_job = await self._batch_job_service.fail_job(
@@ -434,6 +442,7 @@ class RechunkBatchJobService:
             )
             if failed_job is not None:
                 failed_jobs.append(failed_job)
+                await tracker.clear_processed_bitmap(job.id)
 
         if failed_jobs:
             await self._session.commit()
@@ -457,14 +466,22 @@ class RechunkBatchJobService:
 
         A job is considered "stuck" if it:
         1. Is in PENDING or IN_PROGRESS status
-        2. Has zero completed_tasks
-        3. Has been in this state for longer than the threshold
+        2. Has not been updated for longer than the threshold
+
+        Note: Jobs with partial progress (completed_tasks > 0) are also detected
+        if they haven't been updated within the threshold. This catches jobs that
+        processed some items then got stuck.
 
         This is useful for health checks and monitoring dashboards to detect
         jobs that may need manual intervention or indicate worker issues.
 
+        Timezone Handling:
+            Database timestamps are assumed to be stored in UTC. If the database
+            returns naive datetimes, they are interpreted as UTC. This is the
+            standard convention for PostgreSQL with TIMESTAMPTZ columns.
+
         Args:
-            threshold_minutes: Minutes after which a zero-progress job is
+            threshold_minutes: Minutes after which an inactive job is
                 considered stuck. Defaults to 30 minutes.
 
         Returns:
@@ -486,7 +503,6 @@ class RechunkBatchJobService:
                 BatchJob.status == BatchJobStatus.PENDING.value,
                 BatchJob.status == BatchJobStatus.IN_PROGRESS.value,
             ),
-            BatchJob.completed_tasks == 0,
             BatchJob.updated_at < cutoff_time,
         )
 
@@ -495,7 +511,7 @@ class RechunkBatchJobService:
 
         stuck_info: list[StuckJobInfo] = []
         for job in stuck_jobs:
-            reference_time = job.started_at or job.updated_at or job.created_at
+            reference_time = job.updated_at or job.created_at
             if reference_time.tzinfo is None:
                 reference_time = reference_time.replace(tzinfo=UTC)
             stuck_duration = (now - reference_time).total_seconds()

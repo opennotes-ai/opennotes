@@ -304,6 +304,7 @@ async def batch_jobs_health() -> ServiceStatus:
                     "status": job.status,
                     "stuck_duration_seconds": round(job.stuck_duration_seconds),
                     "started_at": job.started_at.isoformat() if job.started_at else None,
+                    "updated_at": job.updated_at.isoformat() if job.updated_at else None,
                 }
                 for job in stuck_jobs
             ]
