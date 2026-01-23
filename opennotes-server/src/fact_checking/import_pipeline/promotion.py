@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import get_settings
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
 from src.fact_checking.models import FactCheckItem
 
@@ -114,6 +115,24 @@ async def promote_candidate(session: AsyncSession, candidate_id: UUID) -> bool:
         await session.commit()
 
         logger.info(f"Promoted candidate {candidate_id} to fact_check_item {fact_check_item.id}")
+
+        try:
+            from src.tasks.rechunk_tasks import chunk_fact_check_item_task  # noqa: PLC0415
+
+            settings = get_settings()
+            await chunk_fact_check_item_task.kiq(
+                fact_check_id=str(fact_check_item.id),
+                community_server_id=None,
+                db_url=settings.DATABASE_URL,
+                redis_url=settings.REDIS_URL,
+            )
+            logger.info(f"Enqueued chunking task for promoted fact_check_item {fact_check_item.id}")
+        except Exception as chunk_error:
+            logger.warning(
+                f"Failed to enqueue chunking task for fact_check_item {fact_check_item.id}: "
+                f"{chunk_error}. Item was promoted but will need manual rechunking."
+            )
+
         return True
 
     except Exception as e:

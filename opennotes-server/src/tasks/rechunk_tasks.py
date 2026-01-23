@@ -368,6 +368,113 @@ retry_callback_registry.register(
 
 
 @register_task(
+    task_name="chunk:fact_check_item",
+    component="chunk",
+    task_type="single",
+)
+async def chunk_fact_check_item_task(
+    fact_check_id: str,
+    community_server_id: str | None,
+    db_url: str,
+    redis_url: str,
+) -> dict:
+    """
+    TaskIQ task to chunk and embed a single fact check item.
+
+    This task is enqueued when a candidate is promoted to a fact check item.
+    It performs the same chunking/embedding as the batch rechunk task but for
+    a single item, without BatchJob infrastructure.
+
+    Args:
+        fact_check_id: UUID string of the fact check item to process
+        community_server_id: UUID string of the community server for LLM credentials,
+            or None to use global fallback
+        db_url: Database connection URL
+        redis_url: Redis connection URL (unused, kept for consistency)
+
+    Returns:
+        dict with status and fact_check_id
+    """
+    with _tracer.start_as_current_span("chunk.fact_check_item") as span:
+        span.set_attribute("fact_check.id", fact_check_id)
+        span.set_attribute("fact_check.community_server_id", community_server_id or "global")
+
+        settings = get_settings()
+        fact_check_uuid = UUID(fact_check_id)
+        community_uuid = UUID(community_server_id) if community_server_id else None
+
+        engine = create_async_engine(
+            db_url,
+            pool_pre_ping=True,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_POOL_MAX_OVERFLOW,
+            pool_timeout=settings.DB_POOL_TIMEOUT,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        service = get_chunk_embedding_service()
+
+        try:
+            async with async_session() as db:
+                result = await db.execute(
+                    select(FactCheckItem).where(FactCheckItem.id == fact_check_uuid)
+                )
+                item = result.scalar_one_or_none()
+
+                if not item:
+                    logger.warning(
+                        "Fact check item not found for chunking",
+                        extra={"fact_check_id": fact_check_id},
+                    )
+                    span.set_status(StatusCode.ERROR, "Item not found")
+                    return {"status": "not_found", "fact_check_id": fact_check_id}
+
+                if not item.content:
+                    logger.warning(
+                        "Fact check item has no content for chunking",
+                        extra={"fact_check_id": fact_check_id},
+                    )
+                    span.set_status(StatusCode.ERROR, "No content")
+                    return {"status": "no_content", "fact_check_id": fact_check_id}
+
+            await _process_fact_check_item_with_retry(
+                engine=engine,
+                service=service,
+                item_id=fact_check_uuid,
+                item_content=item.content,
+                community_server_id=community_uuid,
+            )
+
+            logger.info(
+                "Completed chunking for promoted fact check item",
+                extra={
+                    "fact_check_id": fact_check_id,
+                    "community_server_id": community_server_id,
+                },
+            )
+
+            return {"status": "completed", "fact_check_id": fact_check_id}
+
+        except Exception as e:
+            error_msg = str(e)
+            span.record_exception(e)
+            span.set_status(StatusCode.ERROR, error_msg)
+
+            logger.error(
+                "Failed to chunk fact check item",
+                extra={
+                    "fact_check_id": fact_check_id,
+                    "community_server_id": community_server_id,
+                    "error": error_msg,
+                },
+            )
+            raise
+        finally:
+            await engine.dispose()
+
+
+@register_task(
     task_name="rechunk:fact_check",
     component="rechunk",
     task_type="batch",
