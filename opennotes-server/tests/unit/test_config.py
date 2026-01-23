@@ -886,3 +886,146 @@ class TestLLMModelNameValidation:
             assert settings.EMBEDDING_MODEL == "text-embedding-3-small"
             assert settings.VISION_MODEL == "gpt-5.1"
             assert settings.AI_NOTE_WRITER_MODEL == "gpt-5.1"
+
+
+class TestNATSServersConfiguration:
+    """Test NATS_SERVERS config parsing for cluster failover (task-1038)."""
+
+    def test_nats_servers_falls_back_to_nats_url_when_not_set(self):
+        """When NATS_SERVERS is not set, should fall back to NATS_URL."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "NATS_URL": "nats://single-server:4222",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == ["nats://single-server:4222"]
+
+    def test_nats_servers_falls_back_to_default_when_neither_set(self):
+        """When neither NATS_SERVERS nor NATS_URL is set, use default."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == ["nats://localhost:4222"]
+
+    def test_nats_servers_parses_comma_separated_urls(self):
+        """NATS_SERVERS with comma-separated URLs should be parsed into list."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "NATS_SERVERS": "nats://10.0.0.1:4222,nats://10.0.0.2:4222,nats://10.0.0.3:4222",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == [
+                "nats://10.0.0.1:4222",
+                "nats://10.0.0.2:4222",
+                "nats://10.0.0.3:4222",
+            ]
+
+    def test_nats_servers_strips_whitespace_from_urls(self):
+        """Whitespace around URLs should be stripped."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "NATS_SERVERS": "  nats://10.0.0.1:4222 , nats://10.0.0.2:4222  ",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == [
+                "nats://10.0.0.1:4222",
+                "nats://10.0.0.2:4222",
+            ]
+
+    def test_nats_servers_ignores_empty_values(self):
+        """Empty values in comma-separated list should be ignored."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "NATS_SERVERS": "nats://10.0.0.1:4222,,nats://10.0.0.2:4222,",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == [
+                "nats://10.0.0.1:4222",
+                "nats://10.0.0.2:4222",
+            ]
+
+    def test_nats_servers_single_url(self):
+        """Single URL in NATS_SERVERS should work."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "NATS_SERVERS": "nats://cluster-node:4222",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == ["nats://cluster-node:4222"]
+
+    def test_nats_servers_overrides_nats_url(self):
+        """When NATS_SERVERS is set, it should take precedence over NATS_URL."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "NATS_URL": "nats://ignored:4222",
+                "NATS_SERVERS": "nats://used:4222",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == ["nats://used:4222"]
+
+    def test_nats_servers_empty_string_falls_back_to_nats_url(self):
+        """Empty NATS_SERVERS should fall back to NATS_URL."""
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "NATS_URL": "nats://fallback:4222",
+                "NATS_SERVERS": "",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.NATS_SERVERS == ["nats://fallback:4222"]

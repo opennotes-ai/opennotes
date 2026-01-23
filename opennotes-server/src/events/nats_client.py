@@ -63,12 +63,14 @@ class NATSClientManager:
             max_startup_retries: Number of times to retry initial connection
             retry_backoff_base: Base for exponential backoff (wait = base^attempt seconds)
         """
-        url = settings.NATS_URL
+        servers = settings.NATS_SERVERS
         has_auth = bool(settings.NATS_USERNAME and settings.NATS_PASSWORD)
-        logger.info(f"Connecting to NATS at {url} (auth: {has_auth})")
+        logger.info(
+            f"Connecting to NATS cluster with {len(servers)} server(s): {servers} (auth: {has_auth})"
+        )
 
         connect_kwargs: dict[str, object] = {
-            "servers": [url],
+            "servers": servers,
             "max_reconnect_attempts": settings.NATS_MAX_RECONNECT_ATTEMPTS,
             "reconnect_time_wait": settings.NATS_RECONNECT_WAIT,
         }
@@ -92,7 +94,7 @@ class NATSClientManager:
 
                 await self._ensure_stream()
 
-                logger.info(f"Connected to NATS at {url}")
+                logger.info(f"Connected to NATS cluster: {servers}")
                 return
             except (TimeoutError, asyncio.CancelledError, Exception) as e:
                 last_error = e
@@ -110,7 +112,7 @@ class NATSClientManager:
 
         # All retries exhausted
         raise ConnectionError(
-            f"Failed to connect to NATS at {url} after {max_startup_retries} attempts"
+            f"Failed to connect to NATS cluster {servers} after {max_startup_retries} attempts"
         ) from last_error
 
     async def disconnect(self, timeout: float = 5.0) -> None:

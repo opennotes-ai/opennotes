@@ -31,6 +31,7 @@ class TestBrokerConfiguration:
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
+            settings.NATS_SERVERS = ["nats://test:4222"]
             settings.REDIS_URL = "redis://test:6379"
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
             settings.TASKIQ_RESULT_EXPIRY = 7200
@@ -428,6 +429,7 @@ class TestBrokerAuthentication:
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
+            settings.NATS_SERVERS = ["nats://test:4222"]
             settings.REDIS_URL = "redis://test:6379"
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
             settings.TASKIQ_RESULT_EXPIRY = 3600
