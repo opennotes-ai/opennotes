@@ -143,7 +143,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
     settings = get_settings()
 
     logger.info(
-        f"Creating taskiq broker with NATS: {settings.NATS_URL}, Redis: {settings.REDIS_URL}"
+        f"Creating taskiq broker with NATS cluster: {settings.NATS_SERVERS}, Redis: {settings.REDIS_URL}"
     )
     logger.info(
         f"Taskiq config: stream={settings.TASKIQ_STREAM_NAME}, "
@@ -203,7 +203,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
 
     new_broker = (
         PullBasedJetStreamBroker(
-            servers=[settings.NATS_URL],
+            servers=settings.NATS_SERVERS,
             stream_name=settings.TASKIQ_STREAM_NAME,
             durable="opennotes-taskiq-worker",
             **connection_kwargs,

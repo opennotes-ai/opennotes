@@ -215,6 +215,30 @@ class Settings(BaseSettings):
     )
 
     NATS_URL: str = Field(default="nats://localhost:4222")
+    nats_servers_raw: str | None = Field(
+        default=None,
+        validation_alias="NATS_SERVERS",
+        exclude=True,
+        description="Comma-separated list of NATS server URLs for cluster failover. "
+        "If not set, falls back to NATS_URL. "
+        "Example: nats://10.0.0.1:4222,nats://10.0.0.2:4222,nats://10.0.0.3:4222",
+    )
+
+    @computed_field
+    @property
+    def NATS_SERVERS(self) -> list[str]:  # noqa: N802 - uppercase for config consistency
+        """Parse NATS_SERVERS into a list of server URLs.
+
+        If NATS_SERVERS env var is set, parses comma-separated URLs.
+        Otherwise, falls back to NATS_URL as a single-element list.
+        This enables cluster failover while maintaining backward compatibility.
+        """
+        if self.nats_servers_raw:
+            servers = [s.strip() for s in self.nats_servers_raw.split(",") if s.strip()]
+            if servers:
+                return servers
+        return [self.NATS_URL]
+
     NATS_MAX_RECONNECT_ATTEMPTS: int = Field(default=10)
     NATS_RECONNECT_WAIT: int = Field(default=2)
     NATS_SUBSCRIBE_TIMEOUT: float = Field(
