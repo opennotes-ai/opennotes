@@ -149,7 +149,7 @@ class BatchJobService:
         job.started_at = datetime.now(UTC)
 
         try:
-            await self._session.flush()
+            await self._session.commit()
         except Exception:
             await self._progress_tracker.stop_tracking(job_id)
             raise
@@ -238,7 +238,7 @@ class BatchJobService:
         if failed_tasks is not None:
             job.failed_tasks = failed_tasks
 
-        await self._session.flush()
+        await self._session.commit()
         await self._progress_tracker.stop_tracking(job_id)
 
         logger.info(
@@ -294,7 +294,7 @@ class BatchJobService:
         if failed_tasks is not None:
             job.failed_tasks = failed_tasks
 
-        await self._session.flush()
+        await self._session.commit()
         await self._progress_tracker.stop_tracking(job_id)
 
         logger.error(
@@ -332,7 +332,7 @@ class BatchJobService:
         job.status = BatchJobStatus.CANCELLED.value
         job.completed_at = datetime.now(UTC)
 
-        await self._session.flush()
+        await self._session.commit()
         await self._progress_tracker.stop_tracking(job_id)
 
         logger.info(
