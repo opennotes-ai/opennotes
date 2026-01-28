@@ -95,7 +95,7 @@ class WebhookConfig(BaseModel):
     id: UUID | None = None
     url: str
     secret: str
-    community_server_id: str
+    community_server_id: UUID
     channel_id: str | None = None
     active: bool = True
 
@@ -116,7 +116,7 @@ class WebhookConfigResponse(BaseModel):
 
     id: UUID
     url: str
-    community_server_id: str
+    community_server_id: UUID
     channel_id: str | None = None
     active: bool
 
@@ -128,8 +128,9 @@ class WebhookConfigSecure(WebhookConfigResponse):
 class WebhookCreateRequest(StrictInputSchema):
     url: str = Field(..., description="Webhook URL")
     secret: str = Field(..., description="Webhook secret")
-    community_server_id: str = Field(
-        ..., description="Community server ID (Discord guild ID, subreddit name, etc.)"
+    platform_community_server_id: str = Field(
+        ...,
+        description="Platform-specific community server ID (Discord guild ID, subreddit name, etc.)",
     )
     channel_id: str | None = Field(None, description="Channel ID (Discord channel ID, etc.)")
 

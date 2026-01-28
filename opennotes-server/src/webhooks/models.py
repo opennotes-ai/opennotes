@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,7 +19,12 @@ class Webhook(Base):
     )
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     secret: Mapped[str] = mapped_column(String(100), nullable=False)
-    community_server_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    community_server_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("community_servers.id"),
+        nullable=False,
+        index=True,
+    )
     channel_id: Mapped[str] = mapped_column(String(50), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -43,7 +48,12 @@ class Interaction(Base):
     )
     interaction_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     interaction_type: Mapped[int] = mapped_column(Integer, nullable=False)
-    community_server_id: Mapped[str] = mapped_column(String(50), nullable=True, index=True)
+    community_server_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("community_servers.id"),
+        nullable=True,
+        index=True,
+    )
     channel_id: Mapped[str] = mapped_column(String(50), nullable=True)
     user_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     command_name: Mapped[str] = mapped_column(String(100), nullable=True)

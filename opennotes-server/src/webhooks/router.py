@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.community_dependencies import get_community_server_by_platform_id
 from src.database import get_db
 from src.webhooks.models import Webhook
 from src.webhooks.rate_limit import rate_limiter
@@ -26,10 +27,20 @@ async def register_webhook(
     webhook_request: WebhookCreateRequest,
     db: AsyncSession = Depends(get_db),
 ) -> WebhookConfigSecure:
+    # Look up or auto-create CommunityServer by platform ID
+    community_server = await get_community_server_by_platform_id(
+        db, webhook_request.platform_community_server_id, auto_create=True
+    )
+    if not community_server:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create or retrieve community server",
+        )
+
     webhook = Webhook(
         url=webhook_request.url,
         secret=webhook_request.secret,
-        community_server_id=webhook_request.community_server_id,
+        community_server_id=community_server.id,
         channel_id=webhook_request.channel_id,
         active=True,
     )
@@ -48,14 +59,21 @@ async def register_webhook(
     )
 
 
-@router.get("/{community_server_id}", response_model=list[WebhookConfigResponse])
+@router.get("/{platform_community_server_id}", response_model=list[WebhookConfigResponse])
 async def get_webhooks_by_community_server(
-    community_server_id: str,
+    platform_community_server_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> list[WebhookConfigResponse]:
+    # Look up CommunityServer by platform ID (don't auto-create for GET)
+    community_server = await get_community_server_by_platform_id(
+        db, platform_community_server_id, auto_create=False
+    )
+    if not community_server:
+        return []
+
     result = await db.execute(
         select(Webhook).where(
-            Webhook.community_server_id == community_server_id, Webhook.active == True
+            Webhook.community_server_id == community_server.id, Webhook.active == True
         )
     )
     webhooks = result.scalars().all()
@@ -110,7 +128,7 @@ async def update_webhook(
 
 @router.delete("/{webhook_id}")
 async def delete_webhook(
-    webhook_id: int,
+    webhook_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     result = await db.execute(select(Webhook).where(Webhook.id == webhook_id))
@@ -128,13 +146,13 @@ async def delete_webhook(
     return {"message": "Webhook deactivated successfully"}
 
 
-@router.get("/stats/{community_server_id}")
+@router.get("/stats/{platform_community_server_id}")
 async def get_community_server_stats(
-    community_server_id: str,
+    platform_community_server_id: str,
 ) -> dict[str, Any]:
-    rate_limit_info = await rate_limiter.get_rate_limit_info(community_server_id)
+    rate_limit_info = await rate_limiter.get_rate_limit_info(platform_community_server_id)
 
     return {
-        "community_server_id": community_server_id,
+        "platform_community_server_id": platform_community_server_id,
         "rate_limit": rate_limit_info,
     }
