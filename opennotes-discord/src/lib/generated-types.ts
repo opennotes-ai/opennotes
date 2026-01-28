@@ -1031,6 +1031,40 @@ export interface paths {
         patch: operations["update_admin_status_jsonapi_api_v2_profiles__profile_id__opennotes_admin_patch"];
         trace?: never;
     };
+    "/api/v2/user-profiles/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup User Profile Jsonapi
+         * @description Look up a user profile by platform and platform user ID with JSON:API format.
+         *
+         *     Returns the internal UUID for a user profile based on its platform-specific identifier.
+         *     Auto-creates the profile if it doesn't exist (for service accounts/bots).
+         *
+         *     Args:
+         *         platform: Platform type (default: "discord")
+         *         platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+         *
+         *     Returns:
+         *         JSON:API formatted response with user profile details
+         *
+         *     Raises:
+         *         404: If user profile not found and user is not a service account
+         *         400: If platform is not supported (currently only 'discord')
+         */
+        get: operations["lookup_user_profile_jsonapi_api_v2_user_profiles_lookup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/community-servers/lookup": {
         parameters: {
             query?: never;
@@ -1118,7 +1152,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/stats/user/{user_id}": {
+    "/api/v2/stats/author/{author_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1126,14 +1160,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get User Stats Jsonapi
-         * @description Get statistics for a specific user in JSON:API format.
+         * Get Author Stats Jsonapi
+         * @description Get statistics for a specific author in JSON:API format.
          *
-         *     Returns statistics about a user including notes created, ratings given,
+         *     Returns statistics about an author including notes created, ratings given,
          *     average helpfulness received, and top classification.
          *
          *     Path Parameters:
-         *     - user_id: The user's profile UUID
+         *     - author_id: The author's user profile UUID
          *
          *     Query Parameters:
          *     - filter[community_server_id]: Filter by community server UUID
@@ -1141,7 +1175,7 @@ export interface paths {
          *     Users can only see stats from communities they are members of.
          *     Service accounts can see all stats.
          */
-        get: operations["get_user_stats_jsonapi_api_v2_stats_user__user_id__get"];
+        get: operations["get_author_stats_jsonapi_api_v2_stats_author__author_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7849,6 +7883,50 @@ export interface components {
             email_verified: boolean;
         };
         /**
+         * UserProfileLookupAttributes
+         * @description Attributes for user profile lookup response.
+         */
+        UserProfileLookupAttributes: {
+            /** Platform */
+            platform: string;
+            /** Platform User Id */
+            platform_user_id: string;
+            /** Display Name */
+            display_name?: string | null;
+        };
+        /**
+         * UserProfileLookupResource
+         * @description JSON:API resource object for user profile lookup response.
+         */
+        UserProfileLookupResource: {
+            /**
+             * Type
+             * @default user-profiles
+             * @constant
+             */
+            type: "user-profiles";
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["UserProfileLookupAttributes"];
+        };
+        /**
+         * UserProfileLookupResponse
+         * @description JSON:API response for user profile lookup.
+         */
+        UserProfileLookupResponse: {
+            data: components["schemas"]["UserProfileLookupResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /**
          * UserProfileResponse
          * @description API response schema for user profile with nested relationships.
          */
@@ -9654,6 +9732,42 @@ export interface operations {
             };
         };
     };
+    lookup_user_profile_jsonapi_api_v2_user_profiles_lookup_get: {
+        parameters: {
+            query: {
+                /** @description Platform type */
+                platform?: string;
+                /** @description Platform-specific user ID (e.g., Discord user ID) */
+                platform_user_id: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileLookupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     lookup_community_server_jsonapi_api_v2_community_servers_lookup_get: {
         parameters: {
             query: {
@@ -9758,7 +9872,7 @@ export interface operations {
             };
         };
     };
-    get_user_stats_jsonapi_api_v2_stats_user__user_id__get: {
+    get_author_stats_jsonapi_api_v2_stats_author__author_id__get: {
         parameters: {
             query?: {
                 "filter[community_server_id]"?: string | null;
@@ -9767,7 +9881,7 @@ export interface operations {
                 "X-API-Key"?: string | null;
             };
             path: {
-                user_id: string;
+                author_id: string;
             };
             cookie?: never;
         };

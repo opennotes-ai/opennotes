@@ -2659,6 +2659,85 @@
         }
       }
     },
+    "/api/v2/user-profiles/lookup": {
+      "get": {
+        "tags": [
+          "profiles-jsonapi",
+          "profiles-jsonapi"
+        ],
+        "summary": "Lookup User Profile Jsonapi",
+        "description": "Look up a user profile by platform and platform user ID with JSON:API format.\n\nReturns the internal UUID for a user profile based on its platform-specific identifier.\nAuto-creates the profile if it doesn't exist (for service accounts/bots).\n\nArgs:\n    platform: Platform type (default: \"discord\")\n    platform_user_id: Platform-specific user ID (e.g., Discord user ID)\n\nReturns:\n    JSON:API formatted response with user profile details\n\nRaises:\n    404: If user profile not found and user is not a service account\n    400: If platform is not supported (currently only 'discord')",
+        "operationId": "lookup_user_profile_jsonapi_api_v2_user_profiles_lookup_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Platform type",
+              "default": "discord",
+              "title": "Platform"
+            },
+            "description": "Platform type"
+          },
+          {
+            "name": "platform_user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Platform-specific user ID (e.g., Discord user ID)",
+              "title": "Platform User Id"
+            },
+            "description": "Platform-specific user ID (e.g., Discord user ID)"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileLookupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/community-servers/lookup": {
       "get": {
         "tags": [
@@ -2910,14 +2989,14 @@
         }
       }
     },
-    "/api/v2/stats/user/{user_id}": {
+    "/api/v2/stats/author/{author_id}": {
       "get": {
         "tags": [
           "stats-jsonapi"
         ],
-        "summary": "Get User Stats Jsonapi",
-        "description": "Get statistics for a specific user in JSON:API format.\n\nReturns statistics about a user including notes created, ratings given,\naverage helpfulness received, and top classification.\n\nPath Parameters:\n- user_id: The user's profile UUID\n\nQuery Parameters:\n- filter[community_server_id]: Filter by community server UUID\n\nUsers can only see stats from communities they are members of.\nService accounts can see all stats.",
-        "operationId": "get_user_stats_jsonapi_api_v2_stats_user__user_id__get",
+        "summary": "Get Author Stats Jsonapi",
+        "description": "Get statistics for a specific author in JSON:API format.\n\nReturns statistics about an author including notes created, ratings given,\naverage helpfulness received, and top classification.\n\nPath Parameters:\n- author_id: The author's user profile UUID\n\nQuery Parameters:\n- filter[community_server_id]: Filter by community server UUID\n\nUsers can only see stats from communities they are members of.\nService accounts can see all stats.",
+        "operationId": "get_author_stats_jsonapi_api_v2_stats_author__author_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -2925,13 +3004,13 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "author_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Author Id"
             }
           },
           {
@@ -17935,6 +18014,93 @@
         ],
         "title": "UserIdentityResponse",
         "description": "API response schema for user identity (excludes sensitive fields)."
+      },
+      "UserProfileLookupAttributes": {
+        "properties": {
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "platform_user_id": {
+            "type": "string",
+            "title": "Platform User Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "platform",
+          "platform_user_id"
+        ],
+        "title": "UserProfileLookupAttributes",
+        "description": "Attributes for user profile lookup response."
+      },
+      "UserProfileLookupResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "user-profiles",
+            "title": "Type",
+            "default": "user-profiles"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/UserProfileLookupAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "UserProfileLookupResource",
+        "description": "JSON:API resource object for user profile lookup response."
+      },
+      "UserProfileLookupResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UserProfileLookupResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "UserProfileLookupResponse",
+        "description": "JSON:API response for user profile lookup."
       },
       "UserProfileResponse": {
         "properties": {

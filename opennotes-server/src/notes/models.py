@@ -51,7 +51,6 @@ class Note(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("user_profiles.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
 
     channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
@@ -144,7 +143,6 @@ class Rating(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("user_profiles.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
 
     note_id: Mapped[UUID] = mapped_column(
@@ -162,7 +160,7 @@ class Rating(Base, TimestampMixin):
     __table_args__ = (
         Index("idx_ratings_note_rater", "note_id", "rater_id", unique=True),
         Index("idx_ratings_created_at", "created_at"),
-        Index("idx_ratings_rater_id", "rater_id"),
+        Index("ix_ratings_rater_id", "rater_id"),
     )
 
     @property
