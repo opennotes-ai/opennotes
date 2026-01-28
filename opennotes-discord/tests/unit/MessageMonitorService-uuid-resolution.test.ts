@@ -125,7 +125,7 @@ describe('MessageMonitorService - Platform ID Handling', () => {
     messageId: 'msg-123',
     channelId: 'channel-456',
     guildId: testGuildId,
-    authorId: '00000000-0000-0001-aaaa-789',
+    authorId: '00000000-0000-0001-aaaa-000000000789',
     content: 'Test message content about a claim',
     timestamp: Date.now(),
     channelConfig: {

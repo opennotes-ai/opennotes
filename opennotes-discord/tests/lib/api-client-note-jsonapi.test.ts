@@ -188,12 +188,12 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
       const result = await apiClient.createNote(
         {
           messageId: 'msg-123',
-          authorId: '00000000-0000-0001-aaaa-123',
+          authorId: '00000000-0000-0001-aaaa-000000000123',
           content: 'This is a test note summary',
           channelId: 'channel-789',
           requestId: 'request-abc',
         },
-        { userId: '00000000-0000-0001-aaaa-123', guildId: 'guild-123' }
+        { userId: '00000000-0000-0001-aaaa-000000000123', guildId: 'guild-123' }
       ) as unknown as JSONAPISingleResponse;
 
       expect(result).toHaveProperty('data');
@@ -216,10 +216,10 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
       const result = await apiClient.createNote(
         {
           messageId: 'msg-123',
-          authorId: '00000000-0000-0001-aaaa-123',
+          authorId: '00000000-0000-0001-aaaa-000000000123',
           content: 'This is a test note summary',
         },
-        { userId: '00000000-0000-0001-aaaa-123', guildId: 'guild-123' }
+        { userId: '00000000-0000-0001-aaaa-000000000123', guildId: 'guild-123' }
       );
 
       expect(result).not.toHaveProperty('messageId');

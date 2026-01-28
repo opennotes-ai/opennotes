@@ -83,7 +83,7 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
         messageId: `msg-${i}`,
         channelId: 'channel-123',
         guildId: 'guild-123',
-        authorId: '00000000-0000-0001-aaaa-123',
+        authorId: '00000000-0000-0001-aaaa-000000000123',
         content: `Test message ${i}`,
         timestamp: Date.now(),
         channelConfig: {
@@ -123,7 +123,7 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
         messageId: `msg-${i}`,
         channelId: 'channel-123',
         guildId: 'guild-123',
-        authorId: '00000000-0000-0001-aaaa-123',
+        authorId: '00000000-0000-0001-aaaa-000000000123',
         content: `Test message ${i}`,
         timestamp: Date.now(),
         channelConfig: {
@@ -162,7 +162,7 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
         messageId: 'msg-first',
         channelId: 'channel-123',
         guildId: 'guild-123',
-        authorId: '00000000-0000-0001-aaaa-123',
+        authorId: '00000000-0000-0001-aaaa-000000000123',
         content: 'First message',
         timestamp: Date.now(),
         channelConfig: {
@@ -208,7 +208,7 @@ describe('MessageMonitorService - Queue Integration Tests', () => {
           messageId: `msg-${i}`,
           channelId: 'channel-123',
           guildId: 'guild-123',
-          authorId: '00000000-0000-0001-aaaa-123',
+          authorId: '00000000-0000-0001-aaaa-000000000123',
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {

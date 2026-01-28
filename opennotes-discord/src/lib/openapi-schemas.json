@@ -680,6 +680,29 @@
     "title": "RequestListJSONAPIResponse",
     "description": "JSON:API response for a list of request resources."
   },
+  "RequestResource": {
+    "properties": {
+      "type": {
+        "type": "string",
+        "title": "Type",
+        "default": "requests"
+      },
+      "id": {
+        "type": "string",
+        "title": "Id"
+      },
+      "attributes": {
+        "$ref": "#/components/schemas/RequestAttributes"
+      }
+    },
+    "type": "object",
+    "required": [
+      "id",
+      "attributes"
+    ],
+    "title": "RequestResource",
+    "description": "JSON:API resource object for a request."
+  },
   "RequestStatus": {
     "type": "string",
     "enum": [
@@ -1526,5 +1549,47 @@
       "size"
     ],
     "title": "NoteListResponse"
+  },
+  "ScoringRequest": {
+    "title": "ScoringRequest",
+    "type": "object",
+    "properties": {
+      "notes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/NoteData"
+        }
+      },
+      "ratings": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/RatingData"
+        }
+      },
+      "enrollment": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/EnrollmentData"
+        }
+      },
+      "status": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "notes",
+      "ratings",
+      "enrollment"
+    ]
   }
 }

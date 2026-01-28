@@ -23,6 +23,7 @@ const USED_SCHEMAS = [
   'RequestCreateAttributes',
   'RequestAttributes',
   'RequestListJSONAPIResponse',
+  'RequestResource',
   'RequestStatus',
   'RequestUpdateAttributes',
   'ScoringRequest',

@@ -135,6 +135,21 @@ describe('End-to-End Integration Tests', () => {
       const messageId = '234567890123';
       const communityServerId = '550e8400-e29b-41d4-a716-446655440000';
 
+      // Mock user profile lookup response for author resolution
+      const authorProfileId = '00000000-0000-0001-aaaa-000000000456';
+      const createUserProfileJSONAPIResponse = (id: string, platformUserId: string) => ({
+        jsonapi: { version: '1.1' },
+        data: {
+          type: 'user-profiles',
+          id,
+          attributes: {
+            platform: 'discord',
+            platform_user_id: platformUserId,
+            display_name: 'Test User',
+          },
+        },
+      });
+
       mockFetch
         .mockResolvedValueOnce(
           createMockResponse({
@@ -149,12 +164,25 @@ describe('End-to-End Integration Tests', () => {
         )
         .mockResolvedValueOnce(
           createMockResponse({
+            status: 200,
+            json: async () => createUserProfileJSONAPIResponse(authorProfileId, 'user456'),
+          })
+        )
+        .mockResolvedValueOnce(
+          createMockResponse({
             status: 201,
             json: async () => createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440001', {
-              author_id: 'user456',
+              author_id: authorProfileId,
               summary: 'This is a test community note',
               community_server_id: communityServerId,
             }),
+          })
+        )
+        // Mock user profile lookup for rater
+        .mockResolvedValueOnce(
+          createMockResponse({
+            status: 200,
+            json: async () => createUserProfileJSONAPIResponse('00000000-0000-0001-bbbb-000000000789', 'rater789'),
           })
         )
         .mockResolvedValueOnce(
@@ -162,7 +190,7 @@ describe('End-to-End Integration Tests', () => {
             status: 201,
             json: async () => createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440002', {
               note_id: '550e8400-e29b-41d4-a716-446655440001',
-              rater_id: 'rater789',
+              rater_id: '00000000-0000-0001-bbbb-000000000789',
               helpfulness_level: 'HELPFUL',
             }),
           })
@@ -184,7 +212,7 @@ describe('End-to-End Integration Tests', () => {
       expect(note.data.id).toBe('550e8400-e29b-41d4-a716-446655440001');
       expect(note.data.type).toBe('notes');
       expect(note.data.attributes.summary).toBe('This is a test community note');
-      expect(note.data.attributes.author_id).toBe('00000000-0000-0002-bbbb-456');
+      expect(note.data.attributes.author_id).toBe(authorProfileId);
       expect(note.data.attributes.created_at).toBeDefined();
 
       const rating = await apiClient.rateNote({
@@ -273,7 +301,7 @@ describe('End-to-End Integration Tests', () => {
           createMockResponse({
             status: 201,
             json: async () => createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440003', {
-              author_id: '00000000-0000-0001-aaaa-001',
+              author_id: '00000000-0000-0001-aaaa-000000000001',
               summary: 'Test note for scoring',
               community_server_id: communityServerId,
             }),
@@ -284,7 +312,7 @@ describe('End-to-End Integration Tests', () => {
             status: 201,
             json: async () => createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440004', {
               note_id: '550e8400-e29b-41d4-a716-446655440003',
-              rater_id: '00000000-0000-0002-bbbb-001',
+              rater_id: '00000000-0000-0002-bbbb-000000000001',
               helpfulness_level: 'HELPFUL',
             }),
           })
@@ -297,7 +325,7 @@ describe('End-to-End Integration Tests', () => {
 
       const note = await apiClient.createNote({
         messageId: '234567890123456790',
-        authorId: '00000000-0000-0001-aaaa-001',
+        authorId: '00000000-0000-0001-aaaa-000000000001',
         content: 'Test note for scoring',
       }, {
         guildId: 'guild123',
@@ -407,11 +435,32 @@ describe('End-to-End Integration Tests', () => {
           });
         }
 
+        // Handle user profile lookup for author resolution
+        if (urlStr.includes('/api/v2/user-profiles/lookup')) {
+          const urlParams = new URL(urlStr).searchParams;
+          const platformUserId = urlParams.get('platform_user_id') || 'unknown';
+          return createMockResponse({
+            status: 200,
+            json: async () => ({
+              jsonapi: { version: '1.1' },
+              data: {
+                type: 'user-profiles',
+                id: `00000000-0000-0001-aaaa-${platformUserId.padStart(12, '0').slice(0, 12)}`,
+                attributes: {
+                  platform: 'discord',
+                  platform_user_id: platformUserId,
+                  display_name: `Test User ${platformUserId}`,
+                },
+              },
+            }),
+          });
+        }
+
         if (urlStr.includes('/api/v2/notes')) {
           const i = noteIndex++;
           const noteId = `550e8400-e29b-41d4-a716-446655440${String(i).padStart(3, '0')}`;
           const response = createNoteJSONAPIResponse(noteId, {
-            author_id: `user${i}`,
+            author_id: `00000000-0000-0001-aaaa-${'user' + i}`.padStart(12, '0').slice(0, 12),
             summary: `Note ${i}`,
             community_server_id: communityServerId,
           });

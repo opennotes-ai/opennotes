@@ -167,7 +167,7 @@ describe('API Persistence Integration Tests', () => {
     it('should persist note via HTTP POST and retrieve via HTTP GET', async () => {
       const createRequest = {
         messageId: '123456789012345001',
-        authorId: '00000000-0000-0001-aaaa-456',
+        authorId: '00000000-0000-0001-aaaa-000000000456',
         content: 'This note should persist to the database',
       };
 
@@ -190,7 +190,7 @@ describe('API Persistence Integration Tests', () => {
         })
       );
 
-      const result = await client1.createNote(createRequest, { userId: '00000000-0000-0001-aaaa-456', guildId: 'guild-123' });
+      const result = await client1.createNote(createRequest, { userId: '00000000-0000-0001-aaaa-000000000456', guildId: 'guild-123' });
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes',
@@ -256,7 +256,7 @@ describe('API Persistence Integration Tests', () => {
     it('should persist note and retrieve it across different client instances', async () => {
       const createRequest = {
         messageId: '123456789012345002',
-        authorId: '00000000-0000-0001-aaaa-001',
+        authorId: '00000000-0000-0001-aaaa-000000000001',
         content: 'Cross-client persistence test',
       };
 
@@ -554,7 +554,7 @@ describe('API Persistence Integration Tests', () => {
         community_server_id: 'guild-123',
         originalMessageContent: 'Fact-check context',
         discord_channel_id: 'channel-123',
-        discord_author_id: '00000000-0000-0001-aaaa-456',
+        discord_author_id: '00000000-0000-0001-aaaa-000000000456',
         discord_timestamp: new Date('2024-01-15T10:30:00Z'),
         fact_check_metadata: {
           dataset_item_id: 'fc-item-789',
@@ -664,7 +664,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '123456789012345008',
-        authorId: '00000000-0000-0001-aaaa-500',
+        authorId: '00000000-0000-0001-aaaa-000000000500',
         content: 'Server error test',
       };
 
@@ -680,7 +680,7 @@ describe('API Persistence Integration Tests', () => {
         text: async () => 'Internal Server Error',
       }));
 
-      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-500', guildId: 'guild-123' })).rejects.toThrow(
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000500', guildId: 'guild-123' })).rejects.toThrow(
         'API request failed: 500 Internal Server Error'
       );
     });
@@ -694,7 +694,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '',
-        authorId: '00000000-0000-0001-aaaa-400',
+        authorId: '00000000-0000-0001-aaaa-000000000400',
         content: 'Invalid request',
       };
 
@@ -710,7 +710,7 @@ describe('API Persistence Integration Tests', () => {
         text: async () => 'Bad Request: messageId is required',
       }));
 
-      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-400', guildId: 'guild-123' })).rejects.toThrow(
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000400', guildId: 'guild-123' })).rejects.toThrow(
         'API request failed: 400 Bad Request'
       );
     });
@@ -940,13 +940,13 @@ describe('API Persistence Integration Tests', () => {
     it('should handle concurrent note creations from different clients', async () => {
       const note1Request = {
         messageId: '123456789012345014',
-        authorId: '00000000-0000-0001-aaaa-1',
+        authorId: '00000000-0000-0001-aaaa-000000000001',
         content: 'First note',
       };
 
       const note2Request = {
         messageId: '123456789012345014',
-        authorId: '00000000-0000-0001-aaaa-2',
+        authorId: '00000000-0000-0001-aaaa-000000000002',
         content: 'Second note',
       };
 
@@ -988,17 +988,17 @@ describe('API Persistence Integration Tests', () => {
       const notes = [
         {
           messageId: '123456789012345015',
-          authorId: '00000000-0000-0001-aaaa-1',
+          authorId: '00000000-0000-0001-aaaa-000000000001',
           content: 'First note',
         },
         {
           messageId: '123456789012345015',
-          authorId: '00000000-0000-0001-aaaa-2',
+          authorId: '00000000-0000-0001-aaaa-000000000002',
           content: 'Second note',
         },
         {
           messageId: '123456789012345015',
-          authorId: '00000000-0000-0001-aaaa-3',
+          authorId: '00000000-0000-0001-aaaa-000000000003',
           content: 'Third note',
         },
       ];

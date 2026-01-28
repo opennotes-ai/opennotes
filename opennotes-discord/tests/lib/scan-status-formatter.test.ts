@@ -77,7 +77,7 @@ describe('formatScanStatus', () => {
             attributes: {
               channel_id: 'ch-1',
               content: 'This vaccine causes autism',
-              author_id: '00000000-0000-0001-aaaa-1',
+              author_id: '00000000-0000-0001-aaaa-000000000001',
               timestamp: new Date().toISOString(),
               matches: [{
                 scan_type: 'similarity' as const,
@@ -125,7 +125,7 @@ describe('formatScanStatus', () => {
             attributes: {
               channel_id: 'ch-1',
               content: 'This vaccine causes autism',
-              author_id: '00000000-0000-0001-aaaa-1',
+              author_id: '00000000-0000-0001-aaaa-000000000001',
               timestamp: new Date().toISOString(),
               matches: [{
                 scan_type: 'similarity' as const,
@@ -163,7 +163,7 @@ describe('formatScanStatus', () => {
           attributes: {
             channel_id: 'ch-1',
             content: 'This vaccine causes autism',
-            author_id: '00000000-0000-0001-aaaa-1',
+            author_id: '00000000-0000-0001-aaaa-000000000001',
             timestamp: new Date().toISOString(),
             matches: [{
               scan_type: 'similarity' as const,
@@ -179,7 +179,7 @@ describe('formatScanStatus', () => {
           attributes: {
             channel_id: 'ch-2',
             content: '5G towers spread COVID',
-            author_id: '00000000-0000-0001-aaaa-2',
+            author_id: '00000000-0000-0001-aaaa-000000000002',
             timestamp: new Date().toISOString(),
             matches: [{
               scan_type: 'similarity' as const,
@@ -327,7 +327,7 @@ describe('formatScanStatus', () => {
           attributes: {
             channel_id: 'ch-1',
             content: 'This vaccine causes autism',
-            author_id: '00000000-0000-0001-aaaa-1',
+            author_id: '00000000-0000-0001-aaaa-000000000001',
             timestamp: new Date().toISOString(),
             matches: [{
               scan_type: 'similarity' as const,
@@ -369,7 +369,7 @@ describe('formatScanStatus', () => {
           attributes: {
             channel_id: 'ch-1',
             content: 'Some content',
-            author_id: '00000000-0000-0001-aaaa-1',
+            author_id: '00000000-0000-0001-aaaa-000000000001',
             timestamp: new Date().toISOString(),
             matches: [{
               scan_type: 'similarity' as const,
@@ -408,7 +408,7 @@ describe('formatScanStatus', () => {
           attributes: {
             channel_id: 'ch-1',
             content: 'Flagged content',
-            author_id: '00000000-0000-0001-aaaa-1',
+            author_id: '00000000-0000-0001-aaaa-000000000001',
             timestamp: new Date().toISOString(),
             matches: [{
               scan_type: 'similarity' as const,
@@ -446,7 +446,7 @@ describe('formatScanStatus', () => {
           attributes: {
             channel_id: 'ch-1',
             content: 'Flagged content',
-            author_id: '00000000-0000-0001-aaaa-1',
+            author_id: '00000000-0000-0001-aaaa-000000000001',
             timestamp: new Date().toISOString(),
             matches: [{
               scan_type: 'similarity' as const,

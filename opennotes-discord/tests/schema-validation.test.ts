@@ -216,20 +216,18 @@ describe('Schema Validation', () => {
   describe('RequestListResponse validation', () => {
     it('should validate a correct RequestListResponse object', () => {
       const validResponse = {
-        requests: [
+        data: [
           {
+            type: 'requests',
             id: '550e8400-e29b-41d4-a716-446655440004',
-            request_id: 'discord-msg123',
-            requested_by: 'user789',
-            requested_at: '2025-10-23T12:00:00Z',
-            status: 'PENDING',
-            created_at: '2025-10-23T12:00:00Z',
-            community_server_id: TEST_COMMUNITY_SERVER_ID,
+            attributes: {
+              request_id: 'discord-msg123',
+              requested_by: 'user789',
+              status: 'PENDING',
+            },
           },
         ],
-        total: 1,
-        page: 1,
-        size: 20,
+        jsonapi: { version: '1.1' },
       };
 
       expect(validateRequestListResponse(validResponse)).toBe(true);
@@ -237,10 +235,8 @@ describe('Schema Validation', () => {
 
     it('should validate empty request list', () => {
       const emptyResponse = {
-        requests: [],
-        total: 0,
-        page: 1,
-        size: 20,
+        data: [],
+        jsonapi: { version: '1.1' },
       };
 
       expect(validateRequestListResponse(emptyResponse)).toBe(true);

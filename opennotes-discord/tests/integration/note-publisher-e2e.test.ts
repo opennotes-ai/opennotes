@@ -129,7 +129,7 @@ describeWithNats('NotePublisher End-to-End Workflow Test (AC #17)', () => {
       originalMessageId: 'msg-123',
       channelId: 'channel-456',
       guildId: 'guild-123',
-      authorId: '00000000-0000-0001-aaaa-123',
+      authorId: '00000000-0000-0001-aaaa-000000000123',
     });
     mockNoteContextService.storeNoteContext.mockResolvedValue(undefined);
 

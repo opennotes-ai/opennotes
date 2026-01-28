@@ -15,7 +15,7 @@ describe('NotesFormatter', () => {
   const mockNote = noteWithRatingsFactory.build(
     {
       id: '1',
-      author_id: '00000000-0000-0001-aaaa-abc',
+      author_id: '00000000-0000-0001-aaaa-000000000123',
       summary: 'This is a test note summary',
       classification: 'MISINFORMATION_OR_ABUSE',
       helpfulness_score: 0.75,
@@ -27,7 +27,7 @@ describe('NotesFormatter', () => {
         ratingResponseFactory.build({
           id: '1',
           note_id: 'note-123',
-          rater_id: '00000000-0000-0002-bbbb-1',
+          rater_id: '00000000-0000-0002-bbbb-000000000001',
           helpfulness_level: 'HELPFUL',
           created_at: '2025-10-31T12:00:00Z',
           updated_at: '2025-10-31T12:00:00Z',
@@ -35,7 +35,7 @@ describe('NotesFormatter', () => {
         ratingResponseFactory.build({
           id: '2',
           note_id: 'note-123',
-          rater_id: '00000000-0000-0002-bbbb-2',
+          rater_id: '00000000-0000-0002-bbbb-000000000002',
           helpfulness_level: 'HELPFUL',
           created_at: '2025-10-31T12:00:00Z',
           updated_at: '2025-10-31T12:00:00Z',
@@ -116,7 +116,7 @@ describe('NotesFormatter', () => {
       const json = container.toJSON();
       const jsonString = JSON.stringify(json);
 
-      expect(jsonString).toContain('author-abc');
+      expect(jsonString).toContain('00000000-0000-0001-aaaa-000');
     });
 
     it('should include visual progress bar', () => {
@@ -338,7 +338,7 @@ describe('NotesFormatter', () => {
       const container = NotesFormatter.formatRatedNoteEmbedV2(mockNote, true, mockThresholds);
       const jsonString = JSON.stringify(container.toJSON());
 
-      expect(jsonString).toContain('author-abc');
+      expect(jsonString).toContain('00000000-0000-0001-aaaa-000');
       expect(jsonString).toContain('Misinformation Or Abuse');
     });
 

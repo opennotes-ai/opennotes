@@ -55,7 +55,7 @@ describe('JSON:API Response Parsing', () => {
               classification: 'NOT_MISLEADING',
               status: 'NEEDS_MORE_RATINGS',
               helpfulness_score: 0.75,
-              author_id: '00000000-0000-0001-aaaa-123',
+              author_id: '00000000-0000-0001-aaaa-000000000123',
               community_server_id: 'server-456',
               channel_id: 'channel-789',
               content: 'Original content here',
@@ -89,7 +89,7 @@ describe('JSON:API Response Parsing', () => {
         expect(result.data.attributes.classification).toBe('NOT_MISLEADING');
         expect(result.data.attributes.status).toBe('NEEDS_MORE_RATINGS');
         expect(result.data.attributes.helpfulness_score).toBe(0.75);
-        expect(result.data.attributes.author_id).toBe('00000000-0000-0001-aaaa-123');
+        expect(result.data.attributes.author_id).toBe('00000000-0000-0001-aaaa-000000000123');
         expect(result.data.attributes.community_server_id).toBe('server-456');
         expect(result.data.attributes.channel_id).toBe('channel-789');
         expect(result.data.attributes.request_id).toBe('req-001');
@@ -109,7 +109,7 @@ describe('JSON:API Response Parsing', () => {
               classification: 'NOT_MISLEADING',
               status: 'NEEDS_MORE_RATINGS',
               helpfulness_score: 0,
-              author_id: '00000000-0000-0001-aaaa-1',
+              author_id: '00000000-0000-0001-aaaa-000000000001',
               community_server_id: 'server-1',
               channel_id: null,
               content: null,
@@ -151,7 +151,7 @@ describe('JSON:API Response Parsing', () => {
             id: 'rating-uuid-123',
             attributes: {
               note_id: noteId,
-              rater_id: '00000000-0000-0002-bbbb-789',
+              rater_id: '00000000-0000-0002-bbbb-000000000789',
               helpfulness_level: 'HELPFUL',
               created_at: '2025-01-15T12:00:00Z',
               updated_at: '2025-01-15T12:30:00Z',
@@ -169,12 +169,12 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.rateNote({
           noteId,
-          userId: '00000000-0000-0001-aaaa-789',
+          userId: '00000000-0000-0001-aaaa-000000000789',
           helpful: true,
         });
 
         expect(result.data.attributes.note_id).toBe(noteId);
-        expect(result.data.attributes.rater_id).toBe('00000000-0000-0002-bbbb-789');
+        expect(result.data.attributes.rater_id).toBe('00000000-0000-0002-bbbb-000000000789');
         expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
         expect(result.data.attributes.created_at).toBe('2025-01-15T12:00:00Z');
       });
@@ -187,7 +187,7 @@ describe('JSON:API Response Parsing', () => {
             id: 'rating-no-date',
             attributes: {
               note_id: noteId,
-              rater_id: '00000000-0000-0002-bbbb-1',
+              rater_id: '00000000-0000-0002-bbbb-000000000001',
               helpfulness_level: 'NOT_HELPFUL',
               created_at: null,
               updated_at: null,
@@ -205,7 +205,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.rateNote({
           noteId,
-          userId: '00000000-0000-0001-aaaa-1',
+          userId: '00000000-0000-0001-aaaa-000000000001',
           helpful: false,
         });
 
@@ -423,7 +423,7 @@ describe('JSON:API Response Parsing', () => {
                 classification: 'NOT_MISLEADING',
                 status: 'NEEDS_MORE_RATINGS',
                 helpfulness_score: 0.6,
-                author_id: '00000000-0000-0001-aaaa-1',
+                author_id: '00000000-0000-0001-aaaa-000000000001',
                 community_server_id: 'server-1',
                 channel_id: null,
                 content: null,
@@ -443,7 +443,7 @@ describe('JSON:API Response Parsing', () => {
                 classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
                 status: 'CURRENTLY_RATED_HELPFUL',
                 helpfulness_score: 0.9,
-                author_id: '00000000-0000-0001-aaaa-2',
+                author_id: '00000000-0000-0001-aaaa-000000000002',
                 community_server_id: 'server-1',
                 channel_id: 'channel-1',
                 content: 'Some content',
@@ -526,7 +526,7 @@ describe('JSON:API Response Parsing', () => {
                 classification: 'NOT_MISLEADING',
                 status: 'NEEDS_MORE_RATINGS',
                 helpfulness_score: 0.7,
-                author_id: '00000000-0000-0001-aaaa-1',
+                author_id: '00000000-0000-0001-aaaa-000000000001',
                 community_server_id: 'server-456',
                 channel_id: 'channel-1',
                 content: null,
@@ -619,7 +619,7 @@ describe('JSON:API Response Parsing', () => {
                 classification: 'NOT_MISLEADING',
                 status: 'CURRENTLY_RATED_HELPFUL',
                 helpfulness_score: 0.9,
-                author_id: '00000000-0000-0001-aaaa-1',
+                author_id: '00000000-0000-0001-aaaa-000000000001',
                 community_server_id: 'server-1',
                 channel_id: 'ch-1',
                 content: null,
@@ -639,7 +639,7 @@ describe('JSON:API Response Parsing', () => {
                 classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
                 status: 'NEEDS_MORE_RATINGS',
                 helpfulness_score: 0.5,
-                author_id: '00000000-0000-0001-aaaa-2',
+                author_id: '00000000-0000-0001-aaaa-000000000002',
                 community_server_id: 'server-1',
                 channel_id: null,
                 content: null,
@@ -1509,7 +1509,7 @@ describe('JSON:API Response Parsing', () => {
             id: 'rating-no-update',
             attributes: {
               note_id: noteId,
-              rater_id: '00000000-0000-0002-bbbb-1',
+              rater_id: '00000000-0000-0002-bbbb-000000000001',
               helpfulness_level: 'HELPFUL',
               created_at: '2025-01-15T00:00:00Z',
               updated_at: null,
@@ -1527,7 +1527,7 @@ describe('JSON:API Response Parsing', () => {
 
         const result = await client.rateNote({
           noteId,
-          userId: '00000000-0000-0001-aaaa-1',
+          userId: '00000000-0000-0001-aaaa-000000000001',
           helpful: true,
         });
 

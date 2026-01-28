@@ -528,7 +528,7 @@ describe('NotePublisherService', () => {
         originalMessageId: 'msg-123',
         channelId: 'channel-456',
         guildId: 'guild-123',
-        authorId: '00000000-0000-0001-aaaa-123',
+        authorId: '00000000-0000-0001-aaaa-000000000123',
       });
 
       mockConfigService.getConfig.mockResolvedValue({

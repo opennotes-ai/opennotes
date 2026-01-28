@@ -108,7 +108,7 @@ describe('RateNoteService', () => {
     it('should return error for missing noteId', async () => {
       const result = await service.execute({
         noteId: '',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -120,7 +120,7 @@ describe('RateNoteService', () => {
     it('should return error for whitespace-only noteId', async () => {
       const result = await service.execute({
         noteId: '   ',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -156,7 +156,7 @@ describe('RateNoteService', () => {
     it('should return error for non-boolean helpful value', async () => {
       const result = await service.execute({
         noteId: 'note-123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: 'true' as any,
       });
 
@@ -168,7 +168,7 @@ describe('RateNoteService', () => {
     it('should return error for undefined helpful value', async () => {
       const result = await service.execute({
         noteId: 'note-123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: undefined as any,
       });
 
@@ -184,14 +184,14 @@ describe('RateNoteService', () => {
       const mockRating = createMockRatingJSONAPIResponse({
         id: '1',
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpfulnessLevel: 'HELPFUL',
       });
       mockApiClient.rateNote.mockResolvedValue(mockRating);
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -201,11 +201,11 @@ describe('RateNoteService', () => {
       expect(mockApiClient.rateNote).toHaveBeenCalledWith(
         {
           noteId: '123',
-          userId: '00000000-0000-0001-aaaa-123',
+          userId: '00000000-0000-0001-aaaa-000000000123',
           helpful: true,
         },
         {
-          userId: '00000000-0000-0001-aaaa-123',
+          userId: '00000000-0000-0001-aaaa-000000000123',
           username: undefined,
           displayName: undefined,
           avatarUrl: undefined,
@@ -220,14 +220,14 @@ describe('RateNoteService', () => {
       const mockRating = createMockRatingJSONAPIResponse({
         id: '1',
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpfulnessLevel: 'NOT_HELPFUL',
       });
       mockApiClient.rateNote.mockResolvedValue(mockRating);
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: false,
       });
 
@@ -343,7 +343,7 @@ describe('RateNoteService', () => {
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -357,7 +357,7 @@ describe('RateNoteService', () => {
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -371,7 +371,7 @@ describe('RateNoteService', () => {
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -391,7 +391,7 @@ describe('RateNoteService', () => {
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -423,7 +423,7 @@ describe('RateNoteService', () => {
 
         const result = await service.execute({
           noteId: '123',
-          userId: '00000000-0000-0001-aaaa-123',
+          userId: '00000000-0000-0001-aaaa-000000000123',
           helpful: true,
         });
 
@@ -436,7 +436,7 @@ describe('RateNoteService', () => {
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -450,7 +450,7 @@ describe('RateNoteService', () => {
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -465,13 +465,13 @@ describe('RateNoteService', () => {
       mockApiClient.rateNote.mockResolvedValue(createMockRatingJSONAPIResponse({
         id: '1',
         noteId: '999',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpfulnessLevel: 'HELPFUL',
       }));
 
       const result = await service.execute({
         noteId: '999',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 
@@ -484,13 +484,13 @@ describe('RateNoteService', () => {
       mockApiClient.rateNote.mockResolvedValue(createMockRatingJSONAPIResponse({
         id: '1',
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpfulnessLevel: 'HELPFUL',
       }));
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: '00000000-0000-0001-aaaa-000000000123',
         helpful: true,
       });
 

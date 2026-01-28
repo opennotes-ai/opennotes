@@ -204,7 +204,7 @@ describe('NatsPublisher', () => {
             channel_id: 'ch-1',
             community_server_id: '660e8400-e29b-41d4-a716-446655440000',
             content: 'Test message',
-            author_id: '00000000-0000-0001-aaaa-1',
+            author_id: '00000000-0000-0001-aaaa-000000000001',
             timestamp: new Date().toISOString(),
           }
         ],
