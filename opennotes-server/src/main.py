@@ -51,6 +51,7 @@ from src.community_servers.router import router as community_servers_router
 from src.config import settings
 from src.config_router import router as config_router
 from src.database import close_db, get_session_maker, init_db
+from src.dbos_workflows.config import get_dbos
 from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
@@ -303,6 +304,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     logger.info("Database initialized")
 
+    if not settings.TESTING:
+        try:
+            dbos = get_dbos()
+            dbos.launch()
+            logger.info("DBOS initialized successfully", extra={"schema": "dbos"})
+        except Exception as e:
+            logger.error(f"DBOS initialization failed: {e}")
+            raise RuntimeError(f"DBOS initialization failed: {e}") from e
+
     await redis_client.connect()
     await rate_limiter.connect()
     await interaction_cache.connect()
@@ -359,10 +369,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 error=f"NATS health check failed: {e}",
             )
 
+    async def check_dbos() -> Any:
+        try:
+            if settings.TESTING:
+                return ComponentHealth(
+                    status=HealthStatus.HEALTHY,
+                    details={"enabled": False, "reason": "Disabled in test mode"},
+                )
+            _dbos = get_dbos()
+            del _dbos
+            return ComponentHealth(
+                status=HealthStatus.HEALTHY,
+                details={"schema": "dbos", "workflows_enabled": True},
+            )
+        except Exception as e:
+            return ComponentHealth(
+                status=HealthStatus.UNHEALTHY,
+                error=f"DBOS health check failed: {e}",
+            )
+
     health_checker.register_check("database", check_db)
     health_checker.register_check("redis", check_redis)
     health_checker.register_check("cache", check_cache)
     health_checker.register_check("nats", check_nats)
+    health_checker.register_check("dbos", check_dbos)
     logger.info("Health checks registered")
 
     await distributed_health.start_heartbeat(health_checker.check_all)

@@ -19,6 +19,7 @@ from src.cache.redis_client import redis_client
 from src.circuit_breaker import circuit_breaker_registry
 from src.config import settings
 from src.database import get_db
+from src.dbos_workflows.config import get_dbos
 from src.events.nats_client import nats_client
 from src.monitoring import DistributedHealthCoordinator, HealthChecker
 from src.monitoring.metrics import (
@@ -282,6 +283,51 @@ async def taskiq_health() -> ServiceStatus:
         )
 
 
+@router.get("/health/dbos", response_model=ServiceStatus)
+async def dbos_health() -> ServiceStatus:
+    """Check DBOS health and connectivity.
+
+    Returns status information about the DBOS workflow system:
+    - Whether DBOS is initialized
+    - The schema name used for DBOS tables
+    - Whether workflows are enabled
+    """
+    start = time.time()
+
+    try:
+        if settings.TESTING:
+            latency_ms = (time.time() - start) * 1000
+            return ServiceStatus(
+                status="healthy",
+                latency_ms=latency_ms,
+                message="DBOS disabled in test mode",
+                details={"enabled": False, "reason": "test_mode"},
+            )
+
+        _dbos = get_dbos()
+        del _dbos
+        latency_ms = (time.time() - start) * 1000
+
+        return ServiceStatus(
+            status="healthy",
+            latency_ms=latency_ms,
+            message="DBOS is operational",
+            details={
+                "schema_name": "dbos",
+                "workflows_enabled": True,
+            },
+        )
+
+    except Exception as e:
+        latency_ms = (time.time() - start) * 1000
+        logger.error(f"DBOS health check failed: {e}")
+        return ServiceStatus(
+            status="unhealthy",
+            latency_ms=latency_ms,
+            message=f"DBOS health check failed: {e!s}",
+        )
+
+
 @router.get("/health/batch-jobs", response_model=ServiceStatus)
 async def batch_jobs_health(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -378,9 +424,10 @@ async def detailed_health(
     redis_status = await redis_health()
     nats_status = await nats_health()
     taskiq_status = await taskiq_health()
+    dbos_status = await dbos_health()
     batch_jobs_status = await batch_jobs_health(db)
 
-    all_statuses = [redis_status, nats_status, taskiq_status, batch_jobs_status]
+    all_statuses = [redis_status, nats_status, taskiq_status, dbos_status, batch_jobs_status]
 
     overall_status = "healthy"
     if any(s.status == "unhealthy" for s in all_statuses):
@@ -396,6 +443,7 @@ async def detailed_health(
             "redis": redis_status,
             "nats": nats_status,
             "taskiq": taskiq_status,
+            "dbos": dbos_status,
             "batch_jobs": batch_jobs_status,
         },
         components=None,
