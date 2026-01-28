@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import ARRAY, Boolean, Float, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime
 
 from src.database import Base
+
+if TYPE_CHECKING:
+    from src.llm_config.models import CommunityServer
 
 
 class MonitoredChannel(Base):
@@ -36,8 +42,18 @@ class MonitoredChannel(Base):
     )
 
     # Discord location identifiers
-    community_server_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    community_server_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("community_servers.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     channel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+    # Relationship to CommunityServer
+    community_server: Mapped["CommunityServer"] = relationship(
+        "CommunityServer", lazy="joined"
+    )
 
     # Configuration
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")

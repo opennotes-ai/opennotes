@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database import Base
 
 if TYPE_CHECKING:
+    from src.llm_config.models import CommunityServer
     from src.notes.models import Note
 
 
@@ -51,7 +52,17 @@ class NotePublisherPost(Base):
 
     # Discord location
     channel_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    community_server_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    community_server_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("community_servers.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    # Relationship to CommunityServer
+    community_server: Mapped["CommunityServer"] = relationship(
+        "CommunityServer", lazy="joined"
+    )
 
     # Score metadata at time of posting
     score_at_post: Mapped[float] = mapped_column(Float, nullable=False)
@@ -91,8 +102,18 @@ class NotePublisherConfig(Base):
     )
 
     # Discord location (channel_id=None means server-wide)
-    community_server_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    community_server_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("community_servers.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Relationship to CommunityServer
+    community_server: Mapped["CommunityServer"] = relationship(
+        "CommunityServer", lazy="joined"
+    )
 
     # Configuration
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")

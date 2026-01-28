@@ -600,7 +600,7 @@ async def check_previously_seen_jsonapi(
 
         monitored_channel_result = await db.execute(
             select(MonitoredChannel).where(
-                MonitoredChannel.community_server_id == attrs.guild_id,
+                MonitoredChannel.community_server_id == community_server_uuid,
                 MonitoredChannel.channel_id == attrs.channel_id,
             )
         )

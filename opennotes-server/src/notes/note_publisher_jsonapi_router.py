@@ -44,6 +44,7 @@ from src.common.jsonapi import (
     create_pagination_links as create_pagination_links_base,
 )
 from src.database import get_db
+from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.notes.note_publisher_models import NotePublisherConfig, NotePublisherPost
 from src.users.models import User
@@ -233,11 +234,17 @@ class NotePublisherPostSingleResponse(BaseModel):
 
 def config_to_resource(config: NotePublisherConfig) -> NotePublisherConfigResource:
     """Convert a NotePublisherConfig model to a JSON:API resource object."""
+    # Get platform ID from the related community_server
+    platform_id = (
+        config.community_server.platform_community_server_id
+        if config.community_server
+        else str(config.community_server_id)
+    )
     return NotePublisherConfigResource(
         type="note-publisher-configs",
         id=str(config.id),
         attributes=NotePublisherConfigAttributes(
-            community_server_id=config.community_server_id,
+            community_server_id=platform_id,
             channel_id=config.channel_id,
             enabled=config.enabled,
             threshold=config.threshold,
@@ -249,6 +256,12 @@ def config_to_resource(config: NotePublisherConfig) -> NotePublisherConfigResour
 
 def post_to_resource(post: NotePublisherPost) -> NotePublisherPostResource:
     """Convert a NotePublisherPost model to a JSON:API resource object."""
+    # Get platform ID from the related community_server
+    platform_id = (
+        post.community_server.platform_community_server_id
+        if post.community_server
+        else str(post.community_server_id)
+    )
     return NotePublisherPostResource(
         type="note-publisher-posts",
         id=str(post.id),
@@ -257,7 +270,7 @@ def post_to_resource(post: NotePublisherPost) -> NotePublisherPostResource:
             original_message_id=post.original_message_id,
             auto_post_message_id=post.auto_post_message_id,
             channel_id=post.channel_id,
-            community_server_id=post.community_server_id,
+            community_server_id=platform_id,
             score_at_post=post.score_at_post,
             confidence_at_post=post.confidence_at_post,
             posted_at=post.posted_at,
@@ -345,8 +358,23 @@ async def list_note_publisher_configs_jsonapi(
         if not is_service_account(current_user):
             await verify_community_membership(filter_community_server_id, current_user, db, request)
 
+        # Look up community server UUID from platform ID
+        cs_result = await db.execute(
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == filter_community_server_id
+            )
+        )
+        community_server_uuid = cs_result.scalar_one_or_none()
+
+        if not community_server_uuid:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Community server not found: {filter_community_server_id}",
+            )
+
         query = select(NotePublisherConfig).where(
-            NotePublisherConfig.community_server_id == filter_community_server_id
+            NotePublisherConfig.community_server_id == community_server_uuid
         )
 
         if filter_enabled is not None:
@@ -463,9 +491,24 @@ async def create_note_publisher_config_jsonapi(
         if not is_service_account(current_user):
             await verify_community_membership(attrs.community_server_id, current_user, db, request)
 
+        # Look up community server UUID from platform ID
+        cs_result = await db.execute(
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == attrs.community_server_id
+            )
+        )
+        community_server_uuid = cs_result.scalar_one_or_none()
+
+        if not community_server_uuid:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Community server not found: {attrs.community_server_id}",
+            )
+
         duplicate_result = await db.execute(
             select(NotePublisherConfig).where(
-                NotePublisherConfig.community_server_id == attrs.community_server_id,
+                NotePublisherConfig.community_server_id == community_server_uuid,
                 NotePublisherConfig.channel_id == attrs.channel_id,
             )
         )
@@ -477,7 +520,7 @@ async def create_note_publisher_config_jsonapi(
             )
 
         new_config = NotePublisherConfig(
-            community_server_id=attrs.community_server_id,
+            community_server_id=community_server_uuid,
             channel_id=attrs.channel_id,
             enabled=attrs.enabled,
             threshold=attrs.threshold,
@@ -684,8 +727,23 @@ async def list_note_publisher_posts_jsonapi(
         if not is_service_account(current_user):
             await verify_community_membership(filter_community_server_id, current_user, db, request)
 
+        # Look up community server UUID from platform ID
+        cs_result = await db.execute(
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == filter_community_server_id
+            )
+        )
+        community_server_uuid = cs_result.scalar_one_or_none()
+
+        if not community_server_uuid:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Community server not found: {filter_community_server_id}",
+            )
+
         query = select(NotePublisherPost).where(
-            NotePublisherPost.community_server_id == filter_community_server_id
+            NotePublisherPost.community_server_id == community_server_uuid
         )
 
         if filter_channel_id is not None:
@@ -807,6 +865,21 @@ async def create_note_publisher_post_jsonapi(
         if not is_service_account(current_user):
             await verify_community_membership(attrs.community_server_id, current_user, db, request)
 
+        # Look up community server UUID from platform ID
+        cs_result = await db.execute(
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == attrs.community_server_id
+            )
+        )
+        community_server_uuid = cs_result.scalar_one_or_none()
+
+        if not community_server_uuid:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Community server not found: {attrs.community_server_id}",
+            )
+
         duplicate_result = await db.execute(
             select(NotePublisherPost).where(
                 NotePublisherPost.original_message_id == attrs.original_message_id
@@ -826,7 +899,7 @@ async def create_note_publisher_post_jsonapi(
             if attrs.auto_post_message_id
             else (attrs.original_message_id if attrs.success else None),
             channel_id=attrs.channel_id,
-            community_server_id=attrs.community_server_id,
+            community_server_id=community_server_uuid,
             score_at_post=attrs.score_at_post,
             confidence_at_post=attrs.confidence_at_post,
             success=attrs.success,

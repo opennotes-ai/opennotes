@@ -42,6 +42,7 @@ from src.common.jsonapi import (
 from src.config import settings
 from src.database import get_db
 from src.fact_checking.monitored_channel_models import MonitoredChannel
+from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
 from src.users.models import User
 
@@ -173,11 +174,17 @@ class MonitoredChannelSingleResponse(BaseModel):
 
 def channel_to_resource(channel: MonitoredChannel) -> MonitoredChannelResource:
     """Convert a MonitoredChannel model to a JSON:API resource object."""
+    # Get platform ID from the related community_server
+    platform_id = (
+        channel.community_server.platform_community_server_id
+        if channel.community_server
+        else str(channel.community_server_id)
+    )
     return MonitoredChannelResource(
         type="monitored-channels",
         id=str(channel.id),
         attributes=MonitoredChannelAttributes(
-            community_server_id=channel.community_server_id,
+            community_server_id=platform_id,
             channel_id=channel.channel_id,
             enabled=channel.enabled,
             similarity_threshold=channel.similarity_threshold,
@@ -284,8 +291,23 @@ async def list_monitored_channels_jsonapi(
 
         await verify_community_admin(filter_community_server_id, current_user, db, request)
 
+        # Look up community server UUID from platform ID
+        cs_result = await db.execute(
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == filter_community_server_id
+            )
+        )
+        community_server_uuid = cs_result.scalar_one_or_none()
+
+        if not community_server_uuid:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Community server not found: {filter_community_server_id}",
+            )
+
         query = select(MonitoredChannel).where(
-            MonitoredChannel.community_server_id == filter_community_server_id
+            MonitoredChannel.community_server_id == community_server_uuid
         )
 
         if filter_enabled is not None:
@@ -406,6 +428,21 @@ async def create_monitored_channel_jsonapi(
 
         await verify_community_admin(attrs.community_server_id, current_user, db, request)
 
+        # Look up community server UUID from platform ID
+        cs_result = await db.execute(
+            select(CommunityServer.id).where(
+                CommunityServer.platform_community_server_id == attrs.community_server_id
+            )
+        )
+        community_server_uuid = cs_result.scalar_one_or_none()
+
+        if not community_server_uuid:
+            return create_error_response(
+                status.HTTP_404_NOT_FOUND,
+                "Not Found",
+                f"Community server not found: {attrs.community_server_id}",
+            )
+
         duplicate_result = await db.execute(
             select(MonitoredChannel).where(MonitoredChannel.channel_id == attrs.channel_id)
         )
@@ -417,7 +454,7 @@ async def create_monitored_channel_jsonapi(
             )
 
         new_channel = MonitoredChannel(
-            community_server_id=attrs.community_server_id,
+            community_server_id=community_server_uuid,
             channel_id=attrs.channel_id,
             enabled=attrs.enabled,
             similarity_threshold=attrs.similarity_threshold,
