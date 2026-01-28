@@ -81,7 +81,7 @@ class RatingsDataFrameBuilder:
             ratings: List of rating data dicts with keys:
                 - id: UUID of the rating
                 - note_id: UUID of the note being rated
-                - rater_participant_id: String identifier of the rater
+                - rater_id: UUID of the rater's user profile
                 - helpfulness_level: HELPFUL, SOMEWHAT_HELPFUL, or NOT_HELPFUL
                 - created_at: datetime when the rating was created
 
@@ -127,7 +127,7 @@ class RatingsDataFrameBuilder:
 
         row: dict[str, Any] = {
             "noteId": _to_string(rating["note_id"]),
-            "raterParticipantId": rating["rater_participant_id"],
+            "raterParticipantId": _to_string(rating["rater_id"]),
             "createdAtMillis": _datetime_to_millis(rating["created_at"]),
             "helpfulNum": helpful_num,
             "helpfulnessLevel": helpfulness_level,

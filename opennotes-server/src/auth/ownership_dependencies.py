@@ -129,9 +129,8 @@ async def verify_rating_ownership(
 
     This dependency fetches the rating and verifies ownership by checking:
     1. Service accounts - always granted access
-    2. Profile-based ownership (rater_profile_id matches user's profile)
-    3. Legacy ownership (rater_participant_id matches user's Discord ID)
-    4. Community admin access (user is admin/moderator of the rating's note's community)
+    2. Profile-based ownership (rater_id matches user's profile)
+    3. Community admin access (user is admin/moderator of the rating's note's community)
 
     Args:
         rating_id: UUID of the rating to verify ownership for
@@ -163,12 +162,8 @@ async def verify_rating_ownership(
     # Get user's profile ID for ownership check
     user_profile_id = await _get_profile_id_from_user(db, current_user)
 
-    # Check ownership via profile_id (new system)
-    if _is_owner_by_profile(rating.rater_profile_id, user_profile_id):
-        return rating
-
-    # Check ownership via participant_id (legacy - Discord ID)
-    if _is_owner_by_participant(rating.rater_participant_id, current_user.discord_id):
+    # Check ownership via rater_id
+    if _is_owner_by_profile(rating.rater_id, user_profile_id):
         return rating
 
     # Check if user is community admin (allows admin override)

@@ -206,8 +206,8 @@ def _build_attribute_filters(
     filter_request_id: str | None,
     filter_created_at_gte: datetime | None,
     filter_created_at_lte: datetime | None,
-    filter_rated_by_not_in: list[str] | None,
-    filter_rated_by: str | None = None,
+    filter_rated_by_not_in: list[UUID] | None,
+    filter_rated_by: UUID | None = None,
 ) -> list:
     """Build a list of filter conditions for note attributes.
 
@@ -216,8 +216,8 @@ def _build_attribute_filters(
     - Not equal: filter[field__neq]=value
     - Greater than or equal: filter[field__gte]=value
     - Less than or equal: filter[field__lte]=value
-    - Not in (exclusion): filter[rated_by_participant_id__not_in]=user1,user2
-    - In (inclusion): filter[rated_by_participant_id]=user1 (notes rated by user)
+    - Not in (exclusion): filter[rater_id__not_in]=uuid1,uuid2
+    - In (inclusion): filter[rater_id]=uuid (notes rated by user)
     """
     filters = []
 
@@ -243,16 +243,12 @@ def _build_attribute_filters(
         filters.append(Note.created_at <= filter_created_at_lte)
 
     if filter_rated_by_not_in:
-        rating_subquery = select(Rating.note_id).where(
-            Rating.rater_participant_id.in_(filter_rated_by_not_in)
-        )
+        rating_subquery = select(Rating.note_id).where(Rating.rater_id.in_(filter_rated_by_not_in))
         filters.append(not_(exists(rating_subquery.where(Rating.note_id == Note.id))))
 
     if filter_rated_by:
         filters.append(
-            Note.id.in_(
-                select(Rating.note_id).where(Rating.rater_participant_id == filter_rated_by)
-            )
+            Note.id.in_(select(Rating.note_id).where(Rating.rater_id == filter_rated_by))
         )
 
     return filters
@@ -273,10 +269,8 @@ async def list_notes_jsonapi(
     filter_request_id: str | None = Query(None, alias="filter[request_id]"),
     filter_created_at_gte: datetime | None = Query(None, alias="filter[created_at__gte]"),
     filter_created_at_lte: datetime | None = Query(None, alias="filter[created_at__lte]"),
-    filter_rated_by_not_in: str | None = Query(
-        None, alias="filter[rated_by_participant_id__not_in]"
-    ),
-    filter_rated_by: str | None = Query(None, alias="filter[rated_by_participant_id]"),
+    filter_rated_by_not_in: str | None = Query(None, alias="filter[rater_id__not_in]"),
+    filter_rated_by: UUID | None = Query(None, alias="filter[rater_id]"),
     filter_platform_message_id: str | None = Query(None, alias="filter[platform_message_id]"),
 ) -> JSONResponse:
     """List notes with JSON:API format.
@@ -299,20 +293,20 @@ async def list_notes_jsonapi(
     - filter[status__neq]: Exclude notes with this status
     - filter[created_at__gte]: Notes created on or after this datetime
     - filter[created_at__lte]: Notes created on or before this datetime
-    - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
-      (comma-separated list of participant IDs)
-    - filter[rated_by_participant_id]: Include only notes rated by this user
+    - filter[rater_id__not_in]: Exclude notes rated by these users
+      (comma-separated list of user profile UUIDs)
+    - filter[rater_id]: Include only notes rated by this user (user profile UUID)
 
     Returns JSON:API formatted response with data, jsonapi, links, and meta.
     """
     try:
         query = select(Note).options(*loaders.full())
 
-        rated_by_list = (
-            [x.strip() for x in filter_rated_by_not_in.split(",") if x.strip()]
-            if filter_rated_by_not_in
-            else None
-        )
+        rated_by_list: list[UUID] | None = None
+        if filter_rated_by_not_in:
+            rated_by_list = [
+                UUID(x.strip()) for x in filter_rated_by_not_in.split(",") if x.strip()
+            ]
 
         filters = _build_attribute_filters(
             filter_status=filter_status,

@@ -140,14 +140,11 @@ class Rating(Base, TimestampMixin):
         index=True,
     )
 
-    # Legacy field - kept temporarily for data migration
-    rater_participant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-
-    # New profile-based rater identity
-    rater_profile_id: Mapped[UUID | None] = mapped_column(
+    rater_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("user_profiles.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("user_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
 
     note_id: Mapped[UUID] = mapped_column(
@@ -158,22 +155,22 @@ class Rating(Base, TimestampMixin):
     )
 
     # Relationships
-    rater_profile: Mapped[UserProfile | None] = relationship("UserProfile", lazy="raise")
+    rater: Mapped[UserProfile] = relationship("UserProfile", foreign_keys=[rater_id], lazy="raise")
     note: Mapped[Note] = relationship("Note", back_populates="ratings", lazy="raise")
 
-    # Unique constraint to prevent duplicate ratings
+    # Indexes for common queries
     __table_args__ = (
-        Index("idx_ratings_note_rater", "note_id", "rater_participant_id", unique=True),
+        Index("idx_ratings_note_rater", "note_id", "rater_id", unique=True),
         Index("idx_ratings_created_at", "created_at"),
-        Index("idx_ratings_rater_profile_id", "rater_profile_id"),
+        Index("idx_ratings_rater_id", "rater_id"),
     )
 
     @property
     def rater_display_name(self) -> str:
-        """Get rater display name from profile or fall back to participant ID."""
-        if self.rater_profile:
-            return self.rater_profile.display_name
-        return self.rater_participant_id
+        """Get rater display name from profile."""
+        if self.rater:
+            return self.rater.display_name
+        return "Unknown"
 
 
 class Request(Base, TimestampMixin):

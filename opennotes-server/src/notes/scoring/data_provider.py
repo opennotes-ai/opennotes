@@ -33,7 +33,7 @@ class CommunityDataProvider(Protocol):
             List of rating data dicts with keys:
                 - id: UUID of the rating
                 - note_id: UUID of the note being rated
-                - rater_participant_id: String identifier of the rater
+                - rater_id: UUID of the rater's user profile
                 - helpfulness_level: HELPFUL, SOMEWHAT_HELPFUL, or NOT_HELPFUL
                 - created_at: datetime when the rating was created
         """

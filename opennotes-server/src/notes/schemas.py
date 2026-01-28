@@ -204,7 +204,7 @@ class RatingBase(BaseModel):
 
 
 class RatingCreate(RatingBase, StrictInputSchema):
-    rater_participant_id: str = Field(..., description="Rater's participant ID")
+    rater_id: UUID = Field(..., description="Rater's user profile ID")
 
 
 class RatingUpdate(StrictInputSchema):
@@ -213,7 +213,7 @@ class RatingUpdate(StrictInputSchema):
 
 class RatingInDB(RatingBase, TimestampSchema):
     id: UUID
-    rater_participant_id: str
+    rater_id: UUID
 
     model_config = ConfigDict(
         from_attributes=True,

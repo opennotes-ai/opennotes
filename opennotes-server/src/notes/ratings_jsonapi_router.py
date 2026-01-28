@@ -56,7 +56,7 @@ class RatingCreateAttributes(StrictInputSchema):
     """Attributes for creating a rating via JSON:API."""
 
     note_id: UUID = Field(..., description="Note ID to rate")
-    rater_participant_id: str = Field(..., description="Rater's participant ID")
+    rater_id: UUID = Field(..., description="Rater's user profile ID")
     helpfulness_level: HelpfulnessLevel = Field(..., description="Rating level")
 
 
@@ -79,7 +79,7 @@ class RatingAttributes(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     note_id: str
-    rater_participant_id: str
+    rater_id: str
     helpfulness_level: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -168,7 +168,7 @@ def rating_to_resource(rating: Rating) -> RatingResource:
         id=str(rating.id),
         attributes=RatingAttributes(
             note_id=str(rating.note_id),
-            rater_participant_id=rating.rater_participant_id,
+            rater_id=str(rating.rater_id),
             helpfulness_level=rating.helpfulness_level,
             created_at=rating.created_at,
             updated_at=rating.updated_at,
@@ -235,7 +235,7 @@ async def create_rating_jsonapi(
             insert(Rating)
             .values(**rating_dict)
             .on_conflict_do_update(
-                index_elements=["note_id", "rater_participant_id"],
+                index_elements=["note_id", "rater_id"],
                 set_={
                     "helpfulness_level": rating_dict["helpfulness_level"],
                     "updated_at": func.now(),
