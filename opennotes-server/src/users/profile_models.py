@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,7 +34,7 @@ class UserProfile(Base, TimestampMixin):
     same profile.
 
     Attributes:
-        id: Unique profile identifier (UUID)
+        id: Unique profile identifier (UUID v7, server-generated)
         display_name: User's display name
         avatar_url: URL to user's avatar image
         bio: User biography/description
@@ -54,7 +54,10 @@ class UserProfile(Base, TimestampMixin):
     __tablename__ = "user_profiles"
 
     id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid4, index=True
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("uuidv7()"),
+        index=True,
     )
     display_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
