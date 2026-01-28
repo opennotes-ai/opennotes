@@ -94,7 +94,7 @@ def note_to_resource(note: Note) -> NoteResource:
         type="notes",
         id=str(note.id),
         attributes=NoteJSONAPIAttributes(
-            author_participant_id=note.author_participant_id,
+            author_id=str(note.author_id),
             channel_id=note.channel_id,
             summary=note.summary,
             classification=note.classification,

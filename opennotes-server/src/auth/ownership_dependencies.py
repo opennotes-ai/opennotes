@@ -65,9 +65,8 @@ async def verify_note_ownership(
 
     This dependency fetches the note and verifies ownership by checking:
     1. Service accounts - always granted access
-    2. Profile-based ownership (author_profile_id matches user's profile)
-    3. Legacy ownership (author_participant_id matches user's Discord ID)
-    4. Community admin access (user is admin/moderator of note's community)
+    2. Profile-based ownership (author_id matches user's profile)
+    3. Community admin access (user is admin/moderator of note's community)
 
     Args:
         note_id: UUID of the note to verify ownership for
@@ -97,12 +96,8 @@ async def verify_note_ownership(
     # Get user's profile ID for ownership check
     user_profile_id = await _get_profile_id_from_user(db, current_user)
 
-    # Check ownership via profile_id (new system)
-    if _is_owner_by_profile(note.author_profile_id, user_profile_id):
-        return note
-
-    # Check ownership via participant_id (legacy - Discord ID)
-    if _is_owner_by_participant(note.author_participant_id, current_user.discord_id):
+    # Check ownership via author_id (profile-based)
+    if _is_owner_by_profile(note.author_id, user_profile_id):
         return note
 
     # Check if user is community admin (allows admin override)

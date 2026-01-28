@@ -82,6 +82,7 @@ from src.monitoring.metrics import (
     bulk_scan_finalization_dispatch_total,
 )
 from src.tasks.broker import register_task
+from src.users import PLACEHOLDER_USER_ID
 
 if TYPE_CHECKING:
     from src.fact_checking.models import FactCheckItem
@@ -625,7 +626,7 @@ async def generate_ai_note_task(
 
                 note = Note(
                     request_id=request_id,
-                    author_participant_id="ai-note-writer",
+                    author_id=PLACEHOLDER_USER_ID,
                     summary=response.content,
                     classification="NOT_MISLEADING",
                     status="NEEDS_MORE_RATINGS",

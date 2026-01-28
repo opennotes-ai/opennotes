@@ -2,7 +2,7 @@
 
 This module implements JSON:API 1.1 compliant endpoints for statistics:
 - GET /api/v2/stats/notes - Aggregated note statistics
-- GET /api/v2/stats/participant/{participant_id} - Participant statistics
+- GET /api/v2/stats/author/{author_id} - Author statistics (user profile UUID)
 
 Supports filtering:
 - filter[community_server_id]: Filter by community server UUID
@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import and_, desc, func, select, true
+from sqlalchemy import and_, desc, false, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -41,6 +41,7 @@ from src.monitoring import get_logger
 from src.notes.models import Note, Rating
 from src.notes.schemas import NoteStatus
 from src.users.models import User
+from src.users.profile_models import UserIdentity
 
 logger = get_logger(__name__)
 
@@ -239,24 +240,24 @@ async def get_notes_stats_jsonapi(
 
 
 @router.get(
-    "/stats/participant/{participant_id}",
+    "/stats/author/{author_id}",
     response_class=JSONResponse,
     response_model=ParticipantStatsSingleResponse,
 )
-async def get_participant_stats_jsonapi(
-    participant_id: str,
+async def get_author_stats_jsonapi(
+    author_id: UUID,
     request: HTTPRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     filter_community_server_id: UUID | None = Query(None, alias="filter[community_server_id]"),
 ) -> JSONResponse:
-    """Get statistics for a specific participant in JSON:API format.
+    """Get statistics for a specific author in JSON:API format.
 
-    Returns statistics about a participant including notes created, ratings given,
+    Returns statistics about an author including notes created, ratings given,
     average helpfulness received, and top classification.
 
     Path Parameters:
-    - participant_id: The participant ID to get statistics for
+    - author_id: The author's user profile UUID
 
     Query Parameters:
     - filter[community_server_id]: Filter by community server UUID
@@ -265,7 +266,7 @@ async def get_participant_stats_jsonapi(
     Service accounts can see all stats.
     """
     try:
-        note_filters: list = [Note.author_participant_id == participant_id]
+        note_filters: list = [Note.author_id == author_id]
         community_filter = None
 
         if filter_community_server_id:
@@ -281,7 +282,7 @@ async def get_participant_stats_jsonapi(
             else:
                 response = ParticipantStatsSingleResponse(
                     data=ParticipantStatsResource(
-                        id=participant_id,
+                        id=str(author_id),
                         attributes=ParticipantStatsAttributes(
                             notes_created=0,
                             ratings_given=0,
@@ -304,11 +305,19 @@ async def get_participant_stats_jsonapi(
         notes_result = await db.execute(select(func.count(Note.id)).where(notes_where))
         notes_created = notes_result.scalar() or 0
 
+        identity_result = await db.execute(
+            select(UserIdentity).where(
+                UserIdentity.profile_id == author_id, UserIdentity.provider == "discord"
+            )
+        )
+        identity = identity_result.scalar_one_or_none()
+        discord_id = identity.provider_user_id if identity else None
+
         ratings_query = (
             select(func.count(Rating.id))
             .select_from(Rating)
             .join(Note, Rating.note_id == Note.id)
-            .where(Rating.rater_participant_id == participant_id)
+            .where(Rating.rater_participant_id == discord_id if discord_id else false())
         )
         if community_filter is not None:
             ratings_query = ratings_query.where(community_filter)
@@ -332,7 +341,7 @@ async def get_participant_stats_jsonapi(
 
         response = ParticipantStatsSingleResponse(
             data=ParticipantStatsResource(
-                id=participant_id,
+                id=str(author_id),
                 attributes=ParticipantStatsAttributes(
                     notes_created=notes_created,
                     ratings_given=ratings_given,

@@ -78,7 +78,7 @@ class RequestStatus(str, PyEnum):
 
 # Note schemas
 class NoteBase(BaseModel):
-    author_participant_id: str = Field(..., description="Author's participant ID")
+    author_id: UUID = Field(..., description="Author's user profile ID")
     channel_id: str | None = Field(
         None, description="Discord channel ID where the message is located"
     )
@@ -150,7 +150,7 @@ class NoteJSONAPIAttributes(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    author_participant_id: str
+    author_id: str
     channel_id: str | None = None
     summary: str
     classification: str

@@ -6,7 +6,6 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -48,14 +47,11 @@ class Note(Base, TimestampMixin):
         index=True,
     )
 
-    # Legacy field - kept temporarily for data migration
-    author_participant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-
-    # New profile-based authorship
-    author_profile_id: Mapped[UUID | None] = mapped_column(
+    author_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("user_profiles.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("user_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
 
     channel_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
@@ -105,8 +101,8 @@ class Note(Base, TimestampMixin):
     force_published_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Relationships with lazy='raise' to prevent N+1 queries (explicit loading required)
-    author_profile: Mapped[UserProfile | None] = relationship(
-        "UserProfile", foreign_keys=[author_profile_id], lazy="raise"
+    author: Mapped[UserProfile] = relationship(
+        "UserProfile", foreign_keys=[author_id], lazy="raise"
     )
     force_published_by_profile: Mapped[UserProfile | None] = relationship(
         "UserProfile", foreign_keys=[force_published_by], lazy="raise"
@@ -121,22 +117,17 @@ class Note(Base, TimestampMixin):
 
     # Indexes for common queries
     __table_args__ = (
-        CheckConstraint(
-            "author_participant_id IS NOT NULL OR author_profile_id IS NOT NULL",
-            name="ck_notes_author_source",
-        ),
         Index("idx_notes_created_at", "created_at"),
-        Index("idx_notes_author_status", "author_participant_id", "status"),
-        Index("idx_notes_author_profile_id", "author_profile_id"),
+        Index("idx_notes_author_id", "author_id"),
         Index("idx_notes_status", "status"),
     )
 
     @property
     def author_display_name(self) -> str:
-        """Get author display name from profile or fall back to participant ID."""
-        if self.author_profile:
-            return self.author_profile.display_name
-        return self.author_participant_id
+        """Get author display name from profile."""
+        if self.author:
+            return self.author.display_name
+        return "Unknown"
 
 
 class Rating(Base, TimestampMixin):

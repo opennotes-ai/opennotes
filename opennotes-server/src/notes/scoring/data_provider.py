@@ -49,7 +49,7 @@ class CommunityDataProvider(Protocol):
         Returns:
             List of note data dicts with keys:
                 - id: UUID of the note
-                - author_participant_id: String identifier of the author
+                - author_id: UUID of the author (user profile ID)
                 - classification: NOT_MISLEADING or MISINFORMED_OR_POTENTIALLY_MISLEADING
                 - status: NEEDS_MORE_RATINGS, CURRENTLY_RATED_HELPFUL, or CURRENTLY_RATED_NOT_HELPFUL
                 - created_at: datetime when the note was created

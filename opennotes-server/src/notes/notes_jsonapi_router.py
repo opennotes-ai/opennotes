@@ -78,7 +78,7 @@ class NoteCreateAttributes(StrictInputSchema):
     summary: str = Field(..., min_length=1, description="Note summary text")
     classification: NoteClassification = Field(..., description="Note classification")
     community_server_id: UUID = Field(..., description="Community server ID")
-    author_participant_id: str = Field(..., description="Author's participant ID")
+    author_id: UUID = Field(..., description="Author's user profile ID")
     channel_id: str | None = Field(None, description="Discord channel ID")
     request_id: str | None = Field(None, description="Request ID this note responds to")
 
@@ -127,7 +127,7 @@ def note_to_resource(note: Note) -> NoteResource:
         type="notes",
         id=str(note.id),
         attributes=NoteJSONAPIAttributes(
-            author_participant_id=note.author_participant_id,
+            author_id=str(note.author_id),
             channel_id=note.channel_id,
             summary=note.summary,
             classification=note.classification,
@@ -231,7 +231,7 @@ def _build_attribute_filters(
         filters.append(Note.classification == filter_classification)
 
     if filter_author_id is not None:
-        filters.append(Note.author_participant_id == filter_author_id)
+        filters.append(Note.author_id == UUID(filter_author_id))
 
     if filter_request_id is not None:
         filters.append(Note.request_id == filter_request_id)
@@ -269,7 +269,7 @@ async def list_notes_jsonapi(
     filter_status_neq: NoteStatus | None = Query(None, alias="filter[status__neq]"),
     filter_classification: NoteClassification | None = Query(None, alias="filter[classification]"),
     filter_community_server_id: UUID | None = Query(None, alias="filter[community_server_id]"),
-    filter_author_id: str | None = Query(None, alias="filter[author_participant_id]"),
+    filter_author_id: str | None = Query(None, alias="filter[author_id]"),
     filter_request_id: str | None = Query(None, alias="filter[request_id]"),
     filter_created_at_gte: datetime | None = Query(None, alias="filter[created_at__gte]"),
     filter_created_at_lte: datetime | None = Query(None, alias="filter[created_at__lte]"),
@@ -291,7 +291,7 @@ async def list_notes_jsonapi(
     - filter[status]: Filter by note status (exact match)
     - filter[classification]: Filter by classification
     - filter[community_server_id]: Filter by community server UUID
-    - filter[author_participant_id]: Filter by author
+    - filter[author_id]: Filter by author (user profile UUID)
     - filter[request_id]: Filter by request ID
     - filter[platform_message_id]: Filter by platform message ID (Discord snowflake)
 
@@ -475,15 +475,14 @@ async def create_note_jsonapi(
         if attrs.request_id:
             duplicate_result = await db.execute(
                 select(Note).where(
-                    (Note.request_id == attrs.request_id)
-                    & (Note.author_participant_id == attrs.author_participant_id)
+                    (Note.request_id == attrs.request_id) & (Note.author_id == attrs.author_id)
                 )
             )
             if duplicate_result.scalar_one_or_none():
                 return create_error_response(
                     status.HTTP_409_CONFLICT,
                     "Conflict",
-                    f"A note already exists for request {attrs.request_id} by author {attrs.author_participant_id}",
+                    f"A note already exists for request {attrs.request_id} by author {attrs.author_id}",
                 )
 
         note_dict = attrs.model_dump(mode="python")
