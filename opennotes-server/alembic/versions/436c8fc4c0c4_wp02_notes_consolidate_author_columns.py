@@ -10,7 +10,7 @@ into a single author_id FK column pointing to user_profiles.
 Migration strategy:
 1. Add author_id column (nullable initially)
 2. Backfill from author_profile_id first (direct UUID match)
-3. Backfill remaining from participant_id → user_profiles.discord_id lookup
+3. Backfill remaining from participant_id → user_identities lookup
 4. Link orphans to placeholder user (00000000-0000-0000-0000-000000000001)
 5. Make column non-nullable
 6. Add FK constraint with RESTRICT
@@ -48,14 +48,15 @@ def upgrade() -> None:
           AND author_id IS NULL
     """)
 
-    # 3. Backfill remaining from participant_id → user_profiles.discord_id lookup
+    # 3. Backfill remaining from participant_id → user_identities lookup
     op.execute("""
         UPDATE notes n
-        SET author_id = up.id
-        FROM user_profiles up
+        SET author_id = ui.profile_id
+        FROM user_identities ui
         WHERE n.author_participant_id IS NOT NULL
           AND n.author_id IS NULL
-          AND up.discord_id = n.author_participant_id
+          AND ui.provider_user_id = n.author_participant_id
+          AND ui.provider = 'discord'
     """)
 
     # 4. Link remaining orphans to placeholder user
@@ -106,11 +107,12 @@ def downgrade() -> None:
         SET author_profile_id = author_id
     """)
 
-    # 3. Populate author_participant_id from user_profiles.discord_id
+    # 3. Populate author_participant_id from user_identities
     op.execute("""
         UPDATE notes n
         SET author_participant_id = COALESCE(
-            (SELECT discord_id FROM user_profiles WHERE id = n.author_id),
+            (SELECT provider_user_id FROM user_identities
+             WHERE profile_id = n.author_id AND provider = 'discord'),
             'unknown'
         )
     """)
