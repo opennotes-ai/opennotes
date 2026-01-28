@@ -1,4 +1,5 @@
 """DBOS configuration and initialization."""
+
 from dbos import DBOS, DBOSConfig
 
 from src.config import settings
