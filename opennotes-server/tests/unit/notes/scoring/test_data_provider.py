@@ -92,7 +92,7 @@ class TestCommunityDataProviderMockImplementation:
                     {
                         "id": "rating-1",
                         "note_id": "note-1",
-                        "rater_participant_id": "user-1",
+                        "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
                     }
                 ]
@@ -121,7 +121,7 @@ class TestCommunityDataProviderMockImplementation:
                 return [
                     {
                         "id": "note-1",
-                        "author_participant_id": "user-1",
+                        "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
                     }

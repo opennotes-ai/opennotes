@@ -60,9 +60,7 @@ class NotePublisherPost(Base):
     )
 
     # Relationship to CommunityServer
-    community_server: Mapped["CommunityServer"] = relationship(
-        "CommunityServer", lazy="joined"
-    )
+    community_server: Mapped[CommunityServer] = relationship("CommunityServer", lazy="joined")
 
     # Score metadata at time of posting
     score_at_post: Mapped[float] = mapped_column(Float, nullable=False)
@@ -111,9 +109,7 @@ class NotePublisherConfig(Base):
     channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Relationship to CommunityServer
-    community_server: Mapped["CommunityServer"] = relationship(
-        "CommunityServer", lazy="joined"
-    )
+    community_server: Mapped[CommunityServer] = relationship("CommunityServer", lazy="joined")
 
     # Configuration
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")

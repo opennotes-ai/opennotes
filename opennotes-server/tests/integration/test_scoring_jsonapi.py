@@ -149,7 +149,7 @@ def scoring_jsonapi_sample_note_data(
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary for scoring JSON:API",
-        "author_participant_id": scoring_jsonapi_registered_user["discord_id"],
+        "author_id": scoring_jsonapi_registered_user["discord_id"],
         "community_server_id": str(scoring_jsonapi_community_server["uuid"]),
     }
 
@@ -165,7 +165,7 @@ async def create_note_v2(client, note_data):
                 if hasattr(note_data["classification"], "value")
                 else note_data["classification"],
                 "community_server_id": str(note_data["community_server_id"]),
-                "author_participant_id": note_data["author_participant_id"],
+                "author_id": note_data["author_id"],
             },
         }
     }

@@ -213,7 +213,7 @@ async def test_note(test_community_server, test_user_with_auth):
     note_id = None
     async with get_session_maker()() as session:
         note = Note(
-            author_participant_id="test_author_123",
+            author_id="test_author_123",
             community_server_id=test_community_server.id,
             summary="Test note for previously seen detection 99999990001",
             classification="NOT_MISLEADING",
@@ -538,7 +538,7 @@ class TestCommunityServerScoping:
 
             # Create note in other guild
             other_note = Note(
-                author_participant_id="test_author_123",
+                author_id="test_author_123",
                 community_server_id=other_community.id,
                 summary="Note in other guild 99999990002",
                 classification="NOT_MISLEADING",

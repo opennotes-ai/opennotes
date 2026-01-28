@@ -191,7 +191,7 @@ async def discord_e2e_setup(setup_database):
 
         note1 = Note(
             id=PUUID("00000000-0000-0000-0000-000000088888"),
-            author_participant_id="e2e_test_author_1",
+            author_id="e2e_test_author_1",
             community_server_id=community.id,
             summary="Test note 1 for e2e discord",
             classification="NOT_MISLEADING",
@@ -200,7 +200,7 @@ async def discord_e2e_setup(setup_database):
 
         note2 = Note(
             id=PUUID("00000000-0000-0000-0000-000000077777"),
-            author_participant_id="e2e_test_author_2",
+            author_id="e2e_test_author_2",
             community_server_id=community.id,
             summary="Test note 2 for e2e discord",
             classification="NOT_MISLEADING",
@@ -209,7 +209,7 @@ async def discord_e2e_setup(setup_database):
 
         note3 = Note(
             id=PUUID("00000000-0000-0000-0000-000000066666"),
-            author_participant_id="e2e_test_author_3",
+            author_id="e2e_test_author_3",
             community_server_id=community.id,
             summary="Test note 3 for e2e discord",
             classification="NOT_MISLEADING",
@@ -218,7 +218,7 @@ async def discord_e2e_setup(setup_database):
 
         note4 = Note(
             id=PUUID("00000000-0000-0000-0000-000000055555"),
-            author_participant_id="e2e_test_author_4",
+            author_id="e2e_test_author_4",
             community_server_id=community.id,
             summary="Test note 4 for e2e discord",
             classification="NOT_MISLEADING",
@@ -227,7 +227,7 @@ async def discord_e2e_setup(setup_database):
 
         note5 = Note(
             id=PUUID("00000000-0000-0000-0000-000000044444"),
-            author_participant_id="e2e_test_author_5",
+            author_id="e2e_test_author_5",
             community_server_id=community.id,
             summary="Test note 5 for e2e discord",
             classification="NOT_MISLEADING",

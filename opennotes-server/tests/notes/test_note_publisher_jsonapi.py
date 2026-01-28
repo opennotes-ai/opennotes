@@ -155,7 +155,7 @@ async def note_publisher_jsonapi_test_note(note_publisher_jsonapi_community_serv
             id=note_id,
             summary=f"Test note summary for publisher JSONAPI {uuid4().hex[:8]}",
             classification="NOT_MISLEADING",
-            author_participant_id=f"test_author_{uuid4().hex[:8]}",
+            author_id=f"test_author_{uuid4().hex[:8]}",
             channel_id=f"test_channel_{uuid4().hex[:8]}",
             community_server_id=note_publisher_jsonapi_community_server["uuid"],
             status="CURRENTLY_RATED_HELPFUL",

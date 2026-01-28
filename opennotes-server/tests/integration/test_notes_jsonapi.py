@@ -148,7 +148,7 @@ def jsonapi_sample_note_data(jsonapi_community_server, jsonapi_registered_user):
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary for JSON:API",
-        "author_participant_id": jsonapi_registered_user["discord_id"],
+        "author_id": jsonapi_registered_user["discord_id"],
         "community_server_id": str(jsonapi_community_server["uuid"]),
     }
 
@@ -174,7 +174,7 @@ class TestJSONAPINotesEndpoint:
                     if hasattr(note_data["classification"], "value")
                     else note_data["classification"],
                     "community_server_id": str(note_data["community_server_id"]),
-                    "author_participant_id": note_data["author_participant_id"],
+                    "author_id": note_data["author_id"],
                 },
             }
         }
@@ -395,7 +395,7 @@ class TestJSONAPIAdvancedFilters:
                     if hasattr(note_data["classification"], "value")
                     else note_data["classification"],
                     "community_server_id": str(note_data["community_server_id"]),
-                    "author_participant_id": note_data["author_participant_id"],
+                    "author_id": note_data["author_id"],
                 },
             }
         }
@@ -433,7 +433,7 @@ class TestJSONAPIAdvancedFilters:
                 "type": "ratings",
                 "attributes": {
                     "note_id": rated_note_id,
-                    "rater_participant_id": rater_id,
+                    "rater_id": rater_id,
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -490,7 +490,7 @@ class TestJSONAPIAdvancedFilters:
                 "type": "ratings",
                 "attributes": {
                     "note_id": rated_note_id,
-                    "rater_participant_id": rater_id,
+                    "rater_id": rater_id,
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -747,7 +747,7 @@ class TestNotesWriteOperations:
                     if hasattr(note_data["classification"], "value")
                     else note_data["classification"],
                     "community_server_id": str(note_data["community_server_id"]),
-                    "author_participant_id": note_data["author_participant_id"],
+                    "author_id": note_data["author_id"],
                 },
             }
         }
@@ -773,7 +773,7 @@ class TestNotesWriteOperations:
                     "summary": note_data["summary"],
                     "classification": note_data["classification"].value,
                     "community_server_id": str(note_data["community_server_id"]),
-                    "author_participant_id": note_data["author_participant_id"],
+                    "author_id": note_data["author_id"],
                 },
             }
         }
@@ -808,7 +808,7 @@ class TestNotesWriteOperations:
                     "summary": note_data["summary"],
                     "classification": note_data["classification"].value,
                     "community_server_id": str(note_data["community_server_id"]),
-                    "author_participant_id": note_data["author_participant_id"],
+                    "author_id": note_data["author_id"],
                 },
             }
         }
@@ -941,7 +941,7 @@ class TestForcePublishNote:
                     if hasattr(note_data["classification"], "value")
                     else note_data["classification"],
                     "community_server_id": str(note_data["community_server_id"]),
-                    "author_participant_id": note_data["author_participant_id"],
+                    "author_id": note_data["author_id"],
                 },
             }
         }

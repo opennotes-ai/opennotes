@@ -71,9 +71,9 @@ def author() -> tuple[_AbstractLoad, ...]:
     """Load note author profile.
 
     Returns:
-        Tuple containing selectinload option for Note.author_profile relationship.
+        Tuple containing selectinload option for Note.author relationship.
     """
-    return (selectinload(Note.author_profile),)
+    return (selectinload(Note.author),)
 
 
 def request_with_archive() -> tuple[_AbstractLoad, ...]:

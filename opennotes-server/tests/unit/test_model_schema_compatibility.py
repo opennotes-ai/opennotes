@@ -28,10 +28,11 @@ async def test_note_model_basic_conversion():
     # This is a unit test demonstrating the conversion pattern
     # No database interaction required
     note_id = uuid4()
+    author_id = uuid4()
     community_server_id = uuid4()
     note_data = {
         "id": note_id,
-        "author_participant_id": "author_123",
+        "author_id": author_id,
         "community_server_id": community_server_id,
         "summary": "Test community note",
         "classification": "NOT_MISLEADING",
@@ -55,7 +56,7 @@ async def test_note_model_basic_conversion():
 
     # Verify conversion worked
     assert schema.id == note_id
-    assert schema.author_participant_id == note_data["author_participant_id"]
+    assert schema.author_id == author_id
     assert schema.summary == note_data["summary"]
     assert schema.community_server_id == community_server_id
     # With use_enum_values=True, enums are returned as strings
@@ -68,10 +69,11 @@ async def test_rating_model_basic_conversion():
     """Test that Rating models can be converted to Pydantic schemas."""
     rating_id = uuid4()
     note_id = uuid4()
+    rater_id = uuid4()
     rating_data = {
         "id": rating_id,
         "note_id": note_id,
-        "rater_participant_id": "rater_123",
+        "rater_id": rater_id,
         "helpfulness_level": "HELPFUL",
         "created_at": datetime.now(UTC),
         "updated_at": None,
@@ -90,7 +92,7 @@ async def test_rating_model_basic_conversion():
     # Verify conversion
     assert schema.id == rating_id
     assert schema.note_id == note_id
-    assert schema.rater_participant_id == rating_data["rater_participant_id"]
+    assert schema.rater_id == rater_id
     assert schema.helpfulness_level == "HELPFUL"
 
 
@@ -137,11 +139,14 @@ async def test_note_with_ratings_conversion():
     community_server_id = uuid4()
     rating1_id = uuid4()
     rating2_id = uuid4()
+    rater1_id = uuid4()
+    rater2_id = uuid4()
+    author_id = uuid4()
 
     rating1_data = {
         "id": rating1_id,
         "note_id": note_id,
-        "rater_participant_id": "rater_1",
+        "rater_id": rater1_id,
         "helpfulness_level": "HELPFUL",
         "created_at": datetime.now(UTC),
         "updated_at": None,
@@ -150,7 +155,7 @@ async def test_note_with_ratings_conversion():
     rating2_data = {
         "id": rating2_id,
         "note_id": note_id,
-        "rater_participant_id": "rater_2",
+        "rater_id": rater2_id,
         "helpfulness_level": "NOT_HELPFUL",
         "created_at": datetime.now(UTC),
         "updated_at": None,
@@ -165,7 +170,7 @@ async def test_note_with_ratings_conversion():
 
     note_data = {
         "id": note_id,
-        "author_participant_id": "author_rel_test",
+        "author_id": author_id,
         "community_server_id": community_server_id,
         "summary": "Note with ratings",
         "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
@@ -202,10 +207,11 @@ async def test_note_with_ratings_conversion():
 async def test_enum_values_use_string_representation():
     """Test that enum values are converted to strings due to use_enum_values=True."""
     note_id = uuid4()
+    author_id = uuid4()
     community_server_id = uuid4()
     note_data = {
         "id": note_id,
-        "author_participant_id": "author_enum",
+        "author_id": author_id,
         "community_server_id": community_server_id,
         "summary": "Testing enum conversion",
         "classification": "NOT_MISLEADING",

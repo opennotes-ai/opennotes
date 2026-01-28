@@ -49,7 +49,7 @@ class TestStrictInputSchemas:
         """NoteCreate should reject unknown fields."""
         with pytest.raises(ValidationError) as exc_info:
             NoteCreate(
-                author_participant_id="user123",
+                author_id=uuid4(),
                 community_server_id=uuid4(),
                 summary="Test note",
                 classification="NOT_MISLEADING",
@@ -63,7 +63,7 @@ class TestStrictInputSchemas:
             RatingCreate(
                 note_id=uuid4(),
                 helpfulness_level="HELPFUL",
-                rater_participant_id="user123",
+                rater_id=uuid4(),
                 extra_field="should_fail",
             )
         assert "extra_forbidden" in str(exc_info.value)
@@ -263,14 +263,15 @@ class TestWhitespaceStripping:
 
     def test_note_create_strips_whitespace_from_summary(self):
         """NoteCreate should strip whitespace from summary."""
+        author_uuid = uuid4()
         note = NoteCreate(
-            author_participant_id="  user123  ",
+            author_id=author_uuid,
             community_server_id=uuid4(),
             summary="  Test summary  ",
             classification="NOT_MISLEADING",
         )
         assert note.summary == "Test summary"
-        assert note.author_participant_id == "user123"
+        assert note.author_id == author_uuid
 
 
 @pytest.mark.unit
@@ -280,8 +281,9 @@ class TestStrictTypeCoercion:
     def test_note_create_accepts_string_uuid_for_community_server_id(self):
         """NoteCreate accepts UUID for community_server_id."""
         community_id = uuid4()
+        author_id = uuid4()
         note = NoteCreate(
-            author_participant_id="user123",
+            author_id=author_id,
             community_server_id=community_id,
             summary="Test",
             classification="NOT_MISLEADING",

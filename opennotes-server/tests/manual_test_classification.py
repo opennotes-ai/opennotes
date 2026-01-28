@@ -55,7 +55,7 @@ async def main():  # noqa: PLR0911 (too many returns - acceptable for test scrip
         note_data = {
             "classification": "NOT_MISLEADING",
             "summary": f"This post is accurate and helpful - manual test {int(datetime.now(UTC).timestamp() * 1000)}",
-            "author_participant_id": f"discord_user_{user['id']}",
+            "author_id": f"discord_user_{user['id']}",
         }
 
         create_response = await client.post(
@@ -99,7 +99,7 @@ async def main():  # noqa: PLR0911 (too many returns - acceptable for test scrip
         misinformed_note_data = {
             "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
             "summary": f"This post contains misinformation - manual test {int(datetime.now(UTC).timestamp() * 1000) + 1}",
-            "author_participant_id": f"discord_user_{user['id']}",
+            "author_id": f"discord_user_{user['id']}",
         }
 
         create_response2 = await client.post(

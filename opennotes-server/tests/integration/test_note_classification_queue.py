@@ -121,7 +121,7 @@ async def create_note_v2(client, note_data):
                 if hasattr(note_data["classification"], "value")
                 else note_data["classification"],
                 "community_server_id": str(note_data["community_server_id"]),
-                "author_participant_id": note_data["author_participant_id"],
+                "author_id": note_data["author_id"],
             },
         }
     }
@@ -140,7 +140,7 @@ class TestNoteClassificationInQueue:
         note_data = {
             "classification": NoteClassification.NOT_MISLEADING,
             "summary": f"This post is actually accurate and helpful {datetime.now(UTC).timestamp()}",
-            "author_participant_id": "author_not_misleading",
+            "author_id": "author_not_misleading",
             "community_server_id": str(community_server),
         }
 
@@ -175,7 +175,7 @@ class TestNoteClassificationInQueue:
         note_data = {
             "classification": NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             "summary": f"This post contains misinformation {datetime.now(UTC).timestamp()}",
-            "author_participant_id": "author_misleading",
+            "author_id": "author_misleading",
             "community_server_id": str(community_server),
         }
 
@@ -213,7 +213,7 @@ class TestNoteClassificationInQueue:
         not_misleading_note = {
             "classification": NoteClassification.NOT_MISLEADING,
             "summary": f"Accurate post #1 {datetime.now(UTC).timestamp()}",
-            "author_participant_id": "author_accurate",
+            "author_id": "author_accurate",
             "community_server_id": str(community_server),
         }
 
@@ -221,7 +221,7 @@ class TestNoteClassificationInQueue:
         misinformed_note = {
             "classification": NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             "summary": f"Misleading post #1 {datetime.now(UTC).timestamp()}",
-            "author_participant_id": "author_misleading_2",
+            "author_id": "author_misleading_2",
             "community_server_id": str(community_server),
         }
 
@@ -257,14 +257,14 @@ class TestNoteClassificationInQueue:
         not_misleading_note = {
             "classification": NoteClassification.NOT_MISLEADING,
             "summary": f"Accurate post #2 {datetime.now(UTC).timestamp()}",
-            "author_participant_id": "author_accurate_2",
+            "author_id": "author_accurate_2",
             "community_server_id": str(community_server),
         }
 
         misinformed_note = {
             "classification": NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             "summary": f"Misleading post #2 {datetime.now(UTC).timestamp()}",
-            "author_participant_id": "author_misleading_3",
+            "author_id": "author_misleading_3",
             "community_server_id": str(community_server),
         }
 

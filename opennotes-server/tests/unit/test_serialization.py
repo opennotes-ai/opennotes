@@ -192,7 +192,7 @@ class TestNoteResponseSerialization:
         note_data = {
             "id": note_id,
             "community_server_id": uuid4(),
-            "author_participant_id": "author_123",
+            "author_id": "author_123",
             "summary": "Test note",
             "classification": "NOT_MISLEADING",
             "helpfulness_score": 85,
@@ -229,7 +229,7 @@ class TestNoteResponseSerialization:
         rating1_data = {
             "id": uuid4(),
             "note_id": note_id,  # UUID FK to Note
-            "rater_participant_id": "rater_1",
+            "rater_id": "rater_1",
             "helpfulness_level": "HELPFUL",
             "created_at": datetime.now(UTC),
             "updated_at": None,
@@ -237,7 +237,7 @@ class TestNoteResponseSerialization:
         rating2_data = {
             "id": uuid4(),
             "note_id": note_id,  # UUID FK to Note
-            "rater_participant_id": "rater_2",
+            "rater_id": "rater_2",
             "helpfulness_level": "SOMEWHAT_HELPFUL",
             "created_at": datetime.now(UTC),
             "updated_at": None,
@@ -253,7 +253,7 @@ class TestNoteResponseSerialization:
         note_data = {
             "id": note_id,
             "community_server_id": uuid4(),
-            "author_participant_id": "author_123",
+            "author_id": "author_123",
             "summary": "Note with ratings",
             "classification": "NOT_MISLEADING",
             "helpfulness_score": 75,
@@ -292,7 +292,7 @@ class TestNoteResponseSerialization:
         note_data = {
             "id": uuid4(),
             "community_server_id": uuid4(),
-            "author_participant_id": "author_123",
+            "author_id": "author_123",
             "summary": "Test note",
             "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
             "helpfulness_score": 30,
@@ -333,7 +333,7 @@ class TestRatingResponseSerialization:
         rating_data = {
             "id": uuid4(),
             "note_id": note_uuid,  # UUID FK to Note
-            "rater_participant_id": "rater_123",
+            "rater_id": "rater_123",
             "helpfulness_level": "HELPFUL",
             "created_at": datetime.now(UTC),
             "updated_at": None,
@@ -427,7 +427,7 @@ class TestModelDumpJsonMode:
         note_data = {
             "id": note_id,
             "community_server_id": community_id,
-            "author_participant_id": "author_123",
+            "author_id": "author_123",
             "summary": "Test note",
             "classification": "NOT_MISLEADING",
             "helpfulness_score": 85,
@@ -564,7 +564,7 @@ class TestPydanticToTypeScriptCompatibility:
         rating1_data = {
             "id": uuid4(),
             "note_id": note_id,  # UUID FK to Note
-            "rater_participant_id": "rater_1",
+            "rater_id": "rater_1",
             "helpfulness_level": "HELPFUL",
             "created_at": datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC),
             "updated_at": None,
@@ -573,7 +573,7 @@ class TestPydanticToTypeScriptCompatibility:
         rating2_data = {
             "id": uuid4(),
             "note_id": note_id,  # UUID FK to Note
-            "rater_participant_id": "rater_2",
+            "rater_id": "rater_2",
             "helpfulness_level": "SOMEWHAT_HELPFUL",
             "created_at": datetime(2025, 1, 15, 11, 0, 0, tzinfo=UTC),
             "updated_at": None,
@@ -596,7 +596,7 @@ class TestPydanticToTypeScriptCompatibility:
         note_data = {
             "id": note_id,
             "community_server_id": uuid4(),
-            "author_participant_id": "author_123",
+            "author_id": "author_123",
             "channel_id": "channel_789",
             "request_id": "req_123",
             "summary": "This is a test community note",
@@ -622,7 +622,7 @@ class TestPydanticToTypeScriptCompatibility:
 
         # Assert: All fields match TypeScript expectations
         assert isinstance(json_output["id"], str)  # UUID as string
-        assert json_output["author_participant_id"] == "author_123"  # string
+        assert json_output["author_id"] == "author_123"  # string
         assert json_output["channel_id"] == "channel_789"  # string
         assert json_output["request_id"] == "req_123"  # string
         assert json_output["summary"] == "This is a test community note"  # string

@@ -4,7 +4,17 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime
@@ -51,9 +61,7 @@ class MonitoredChannel(Base):
     channel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
     # Relationship to CommunityServer
-    community_server: Mapped["CommunityServer"] = relationship(
-        "CommunityServer", lazy="joined"
-    )
+    community_server: Mapped[CommunityServer] = relationship("CommunityServer", lazy="joined")
 
     # Configuration
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")

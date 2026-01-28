@@ -317,7 +317,7 @@ async def get_author_stats_jsonapi(
             select(func.count(Rating.id))
             .select_from(Rating)
             .join(Note, Rating.note_id == Note.id)
-            .where(Rating.rater_participant_id == discord_id if discord_id else false())
+            .where(Rating.rater_id == discord_id if discord_id else false())
         )
         if community_filter is not None:
             ratings_query = ratings_query.where(community_filter)

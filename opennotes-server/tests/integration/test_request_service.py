@@ -209,7 +209,7 @@ class TestRequestService:
             # Create a note first (must exist for FK constraint)
             note = Note(
                 id=test_note_id,
-                author_participant_id="test_author",
+                author_id="test_author",
                 summary="Test note",
                 classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 status="NEEDS_MORE_RATINGS",
@@ -246,7 +246,7 @@ class TestRequestService:
             # Create a note first (must exist for FK constraint)
             note = Note(
                 id=test_note_id,
-                author_participant_id="test_author",
+                author_id="test_author",
                 summary="Test note for all fields",
                 classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 status="NEEDS_MORE_RATINGS",

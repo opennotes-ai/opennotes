@@ -82,7 +82,7 @@ def mock_notes_factory(community_server):
             note_id = uuid4()
             note = Note(
                 id=note_id,
-                author_participant_id=f"author_{i}",
+                author_id=f"author_{i}",
                 community_server_id=community_server,
                 summary=f"Test note {i}",
                 classification=NoteClassification.NOT_MISLEADING,
@@ -94,7 +94,7 @@ def mock_notes_factory(community_server):
                 rating = Rating(
                     id=uuid4(),
                     note_id=note_id,
-                    rater_participant_id=f"rater_{j}",
+                    rater_id=f"rater_{j}",
                     helpfulness_level=HelpfulnessLevel.HELPFUL,
                 )
                 note.ratings.append(rating)
@@ -116,7 +116,7 @@ async def test_get_top_notes_uses_batch_processing(
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_participant_id=f"author_{i}",
+            author_id=f"author_{i}",
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
@@ -127,7 +127,7 @@ async def test_get_top_notes_uses_batch_processing(
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_participant_id=f"rater_{j}",
+                rater_id=f"rater_{j}",
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(5)
@@ -158,7 +158,7 @@ async def test_get_top_notes_returns_correct_top_scored_notes(
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_participant_id=f"author_{i}",
+            author_id=f"author_{i}",
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
@@ -169,7 +169,7 @@ async def test_get_top_notes_returns_correct_top_scored_notes(
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_participant_id=f"rater_{j}",
+                rater_id=f"rater_{j}",
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(5)
@@ -205,7 +205,7 @@ async def test_get_top_notes_filtering_works_with_batch_processing(
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_participant_id=f"author_{i}",
+            author_id=f"author_{i}",
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
@@ -219,7 +219,7 @@ async def test_get_top_notes_filtering_works_with_batch_processing(
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_participant_id=f"rater_{j}",
+                rater_id=f"rater_{j}",
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(rating_count)
@@ -261,7 +261,7 @@ async def test_get_top_notes_memory_efficient_with_large_dataset(
     class MockNote:
         def __init__(self, note_idx, score, community_id):
             self.id = uuid4()
-            self.author_participant_id = f"author_{note_idx}"
+            self.author_id = f"author_{note_idx}"
             self.summary = f"Note {note_idx}"
             self.classification = "NOT_MISLEADING"
             self.helpfulness_score = score
@@ -342,7 +342,7 @@ async def test_get_top_notes_pagination_works_correctly(
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_participant_id=f"author_{i}",
+            author_id=f"author_{i}",
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
@@ -353,7 +353,7 @@ async def test_get_top_notes_pagination_works_correctly(
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_participant_id=f"rater_{j}",
+                rater_id=f"rater_{j}",
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(5)

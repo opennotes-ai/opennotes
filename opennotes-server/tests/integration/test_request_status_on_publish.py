@@ -27,7 +27,7 @@ async def create_note_v2_request(client, note_data):
         "summary": note_data["summary"],
         "classification": note_data["classification"],
         "community_server_id": str(note_data["community_server_id"]),
-        "author_participant_id": note_data["author_participant_id"],
+        "author_id": note_data["author_id"],
     }
     if "request_id" in note_data:
         attributes["request_id"] = note_data["request_id"]
@@ -65,7 +65,7 @@ async def create_note_with_request() -> tuple[Note, Request, CommunityServer]:
 
         note = Note(
             id=uuid4(),
-            author_participant_id="test_author_001",
+            author_id="test_author_001",
             summary=f"Test note for request status update {uuid4().hex[:8]}",
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             status="NEEDS_MORE_RATINGS",
@@ -163,7 +163,7 @@ class TestRequestStatusOnPublish:
 
             note = Note(
                 id=uuid4(),
-                author_participant_id="test_author_002",
+                author_id="test_author_002",
                 summary=f"Note without request {uuid4().hex[:8]}",
                 classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 status="NEEDS_MORE_RATINGS",
@@ -228,7 +228,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_participant_id": "rater_001",
+                        "rater_id": "rater_001",
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -241,7 +241,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_participant_id": "rater_002",
+                        "rater_id": "rater_002",
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -254,7 +254,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_participant_id": "rater_003",
+                        "rater_id": "rater_003",
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -301,7 +301,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_participant_id": "rater_unhelpful",
+                        "rater_id": "rater_unhelpful",
                         "helpfulness_level": "NOT_HELPFUL",
                     },
                 }
@@ -418,7 +418,7 @@ class TestRequestStatusOnNoteCreation:
         headers = {"Authorization": f"Bearer {access_token}"}
 
         note_data = {
-            "author_participant_id": "test_author_002",
+            "author_id": "test_author_002",
             "summary": f"Test note to verify IN_PROGRESS status {uuid4().hex[:8]}",
             "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
             "community_server_id": str(community_server_id),
@@ -473,7 +473,7 @@ class TestRequestStatusOnNoteCreation:
         headers = {"Authorization": f"Bearer {access_token}"}
 
         note_data = {
-            "author_participant_id": "test_author_003",
+            "author_id": "test_author_003",
             "summary": f"Test note without request {uuid4().hex[:8]}",
             "classification": "NOT_MISLEADING",
             "community_server_id": str(community_server_id),

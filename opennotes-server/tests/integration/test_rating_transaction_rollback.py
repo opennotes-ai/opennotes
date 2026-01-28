@@ -16,14 +16,14 @@ from src.notes.schemas import HelpfulnessLevel, NoteClassification, NoteStatus
 from src.users.profile_models import UserProfile  # noqa: F401 - needed for relationship resolution
 
 
-def make_jsonapi_rating_request(note_id: str, rater_participant_id: str, helpfulness_level: str):
+def make_jsonapi_rating_request(note_id: str, rater_id: str, helpfulness_level: str):
     """Helper to create JSON:API formatted rating request."""
     return {
         "data": {
             "type": "ratings",
             "attributes": {
                 "note_id": note_id,
-                "rater_participant_id": rater_participant_id,
+                "rater_id": rater_id,
                 "helpfulness_level": helpfulness_level,
             },
         }
@@ -38,7 +38,7 @@ async def test_note(db_session, community_server):
 
     note = Note(
         id=uuid4(),
-        author_participant_id="test_author",
+        author_id="test_author",
         summary=f"Test note for transaction testing {secrets.token_urlsafe(8)}",
         classification=NoteClassification.NOT_MISLEADING,
         helpfulness_score=0,
@@ -75,7 +75,7 @@ async def test_rating_and_score_in_same_transaction_success(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_participant_id == "test_rater_1",
+            Rating.rater_id == "test_rater_1",
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -119,7 +119,7 @@ async def test_transaction_rollback_on_score_calculation_failure(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_participant_id == "test_rater_2",
+            Rating.rater_id == "test_rater_2",
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -159,7 +159,7 @@ async def test_transaction_rollback_on_database_error(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_participant_id == "test_rater_3",
+            Rating.rater_id == "test_rater_3",
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -194,7 +194,7 @@ async def test_event_publish_failure_does_not_affect_transaction(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_participant_id == "test_rater_4",
+            Rating.rater_id == "test_rater_4",
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -237,7 +237,7 @@ async def test_no_partial_state_after_score_update_failure(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_participant_id == "test_rater_5",
+            Rating.rater_id == "test_rater_5",
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -285,7 +285,7 @@ async def test_upsert_updates_existing_rating_in_same_transaction(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_participant_id == "test_rater_6",
+            Rating.rater_id == "test_rater_6",
         )
     )
     ratings = rating_result.scalars().all()

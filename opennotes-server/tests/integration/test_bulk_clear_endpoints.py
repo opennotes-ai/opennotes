@@ -217,7 +217,7 @@ async def sample_notes(clear_test_community_server, clear_test_admin_user):
         # Recent unpublished note (1 day old)
         note1 = Note(
             community_server_id=clear_test_community_server.id,
-            author_participant_id="author1",
+            author_id="author1",
             author_profile_id=clear_test_admin_user["profile"].id,
             summary="Recent unpublished note",
             classification="NOT_MISLEADING",
@@ -229,7 +229,7 @@ async def sample_notes(clear_test_community_server, clear_test_admin_user):
         # Old unpublished note (40 days old)
         note2 = Note(
             community_server_id=clear_test_community_server.id,
-            author_participant_id="author2",
+            author_id="author2",
             author_profile_id=clear_test_admin_user["profile"].id,
             summary="Old unpublished note",
             classification="NOT_MISLEADING",
@@ -241,7 +241,7 @@ async def sample_notes(clear_test_community_server, clear_test_admin_user):
         # Published note (should NOT be deleted)
         note3 = Note(
             community_server_id=clear_test_community_server.id,
-            author_participant_id="author3",
+            author_id="author3",
             author_profile_id=clear_test_admin_user["profile"].id,
             summary="Published helpful note",
             classification="NOT_MISLEADING",
@@ -253,7 +253,7 @@ async def sample_notes(clear_test_community_server, clear_test_admin_user):
         # Force-published note (should NOT be deleted)
         note4 = Note(
             community_server_id=clear_test_community_server.id,
-            author_participant_id="author4",
+            author_id="author4",
             author_profile_id=clear_test_admin_user["profile"].id,
             summary="Force-published note",
             classification="NOT_MISLEADING",

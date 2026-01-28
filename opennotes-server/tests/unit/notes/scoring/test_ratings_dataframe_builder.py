@@ -106,7 +106,7 @@ class TestRatingsDataFrameBuilderWithRatingData:
         return {
             "id": uuid4(),
             "note_id": uuid4(),
-            "rater_participant_id": "discord_user_123",
+            "rater_id": "discord_user_123",
             "helpfulness_level": "HELPFUL",
             "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
         }
@@ -208,14 +208,14 @@ class TestRatingsDataFrameBuilderMultipleRatings:
             {
                 "id": uuid4(),
                 "note_id": uuid4(),
-                "rater_participant_id": "user_1",
+                "rater_id": "user_1",
                 "helpfulness_level": "HELPFUL",
                 "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
             },
             {
                 "id": uuid4(),
                 "note_id": uuid4(),
-                "rater_participant_id": "user_2",
+                "rater_id": "user_2",
                 "helpfulness_level": "NOT_HELPFUL",
                 "created_at": datetime(2024, 1, 16, 12, 0, 0, tzinfo=UTC),
             },

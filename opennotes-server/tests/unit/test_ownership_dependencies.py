@@ -48,15 +48,13 @@ def create_mock_user(
 
 def create_mock_note(
     note_id=None,
-    author_profile_id=None,
-    author_participant_id: str = "discord-user-123",
+    author_id=None,
     community_server_id=None,
 ) -> Note:
     """Create a mock Note object."""
     note = MagicMock(spec=Note)
     note.id = note_id or uuid4()
-    note.author_profile_id = author_profile_id
-    note.author_participant_id = author_participant_id
+    note.author_id = author_id or uuid4()
     note.community_server_id = community_server_id or uuid4()
     note.ratings = []
     note.request = None
@@ -65,15 +63,13 @@ def create_mock_note(
 
 def create_mock_rating(
     rating_id=None,
-    rater_profile_id=None,
-    rater_participant_id: str = "discord-user-456",
+    rater_id=None,
     note=None,
 ) -> Rating:
     """Create a mock Rating object."""
     rating = MagicMock(spec=Rating)
     rating.id = rating_id or uuid4()
-    rating.rater_profile_id = rater_profile_id
-    rating.rater_participant_id = rater_participant_id
+    rating.rater_id = rater_id or uuid4()
     rating.note = note or create_mock_note()
     return rating
 
@@ -145,13 +141,13 @@ class TestVerifyNoteOwnership:
     """Unit tests for verify_note_ownership dependency."""
 
     async def test_owner_by_profile_id_returns_note(self):
-        """Owner by profile_id should get access to note."""
+        """Owner by author_id (user profile ID) should get access to note."""
         note_id = uuid4()
-        profile_id = uuid4()
+        author_id = uuid4()
         community_id = uuid4()
         note = create_mock_note(
             note_id=note_id,
-            author_profile_id=profile_id,
+            author_id=author_id,
             community_server_id=community_id,
         )
 
@@ -168,39 +164,13 @@ class TestVerifyNoteOwnership:
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
                 "src.auth.ownership_dependencies._get_profile_id_from_user",
-                return_value=profile_id,
+                return_value=author_id,
             ),
-        ):
-            result = await verify_note_ownership(note_id, user, mock_db, mock_request)
-
-            assert result == note
-
-    async def test_owner_by_participant_id_returns_note(self):
-        """Owner by participant_id (legacy) should get access to note."""
-        note_id = uuid4()
-        discord_id = "discord-owner-123"
-        community_id = uuid4()
-        note = create_mock_note(
-            note_id=note_id,
-            author_profile_id=None,
-            author_participant_id=discord_id,
-            community_server_id=community_id,
-        )
-
-        mock_db = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = note
-        mock_db.execute.return_value = mock_result
-
-        user = create_mock_user(discord_id=discord_id)
-        mock_request = MagicMock()
-        mock_request.headers = {}
-
-        with (
-            patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
+            # Also patch in community_dependencies since verify_community_admin_by_uuid
+            # calls _get_profile_id_from_user using its own module reference
             patch(
-                "src.auth.ownership_dependencies._get_profile_id_from_user",
-                return_value=None,
+                "src.auth.community_dependencies._get_profile_id_from_user",
+                return_value=author_id,
             ),
         ):
             result = await verify_note_ownership(note_id, user, mock_db, mock_request)
@@ -250,8 +220,7 @@ class TestVerifyNoteOwnership:
         note_id = uuid4()
         note = create_mock_note(
             note_id=note_id,
-            author_profile_id=uuid4(),
-            author_participant_id="discord-other",
+            author_id=uuid4(),
         )
 
         mock_db = AsyncMock()
@@ -289,8 +258,7 @@ class TestVerifyNoteOwnership:
         community_id = uuid4()
         note = create_mock_note(
             note_id=note_id,
-            author_profile_id=uuid4(),
-            author_participant_id="discord-other",
+            author_id=uuid4(),
             community_server_id=community_id,
         )
 
@@ -333,7 +301,7 @@ class TestVerifyRatingOwnership:
         profile_id = uuid4()
         rating = create_mock_rating(
             rating_id=rating_id,
-            rater_profile_id=profile_id,
+            rater_id=profile_id,
         )
 
         mock_db = AsyncMock()
@@ -356,14 +324,13 @@ class TestVerifyRatingOwnership:
 
             assert result == rating
 
-    async def test_owner_by_participant_id_returns_rating(self):
-        """Owner by participant_id (legacy) should get access to rating."""
+    async def test_owner_by_rater_id_returns_rating(self):
+        """Owner by rater_id (user profile ID) should get access to rating."""
         rating_id = uuid4()
-        discord_id = "discord-rater-123"
+        rater_id = uuid4()
         rating = create_mock_rating(
             rating_id=rating_id,
-            rater_profile_id=None,
-            rater_participant_id=discord_id,
+            rater_id=rater_id,
         )
 
         mock_db = AsyncMock()
@@ -371,7 +338,7 @@ class TestVerifyRatingOwnership:
         mock_result.scalar_one_or_none.return_value = rating
         mock_db.execute.return_value = mock_result
 
-        user = create_mock_user(discord_id=discord_id)
+        user = create_mock_user(discord_id="discord-user")
         mock_request = MagicMock()
         mock_request.headers = {}
 
@@ -379,7 +346,7 @@ class TestVerifyRatingOwnership:
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
                 "src.auth.ownership_dependencies._get_profile_id_from_user",
-                return_value=None,
+                return_value=rater_id,
             ),
         ):
             result = await verify_rating_ownership(rating_id, user, mock_db, mock_request)
@@ -410,8 +377,7 @@ class TestVerifyRatingOwnership:
         rating_id = uuid4()
         rating = create_mock_rating(
             rating_id=rating_id,
-            rater_profile_id=uuid4(),
-            rater_participant_id="discord-other",
+            rater_id=uuid4(),
         )
 
         mock_db = AsyncMock()

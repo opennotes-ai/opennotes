@@ -322,7 +322,7 @@ async def test_notes(test_user_with_profile_and_membership):
         # Create test notes for different tests
         for note_suffix in ["12345", "12346", "12347", "12348", "99999"]:
             note = Note(
-                author_participant_id="test_author_123",
+                author_id="test_author_123",
                 author_profile_id=test_user_with_profile_and_membership["profile"].id,
                 community_server_id=test_user_with_profile_and_membership[
                     "membership"

@@ -52,7 +52,7 @@ async def previously_seen_jsonapi_test_note(previously_seen_jsonapi_community_se
         note = Note(
             id=note_id,
             community_server_id=previously_seen_jsonapi_community_server["uuid"],
-            author_participant_id=f"test_author_{uuid4().hex[:8]}",
+            author_id=f"test_author_{uuid4().hex[:8]}",
             summary=f"Test summary for previously seen tests {uuid4().hex[:8]}",
             classification="NOT_MISLEADING",
             status="NEEDS_MORE_RATINGS",

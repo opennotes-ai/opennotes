@@ -59,7 +59,7 @@ class MockCommunityDataProvider:
             notes.append(
                 {
                     "id": note_id,
-                    "author_participant_id": self._raters[author_idx],
+                    "author_id": self._raters[author_idx],
                     "classification": "NOT_MISLEADING"
                     if i < 10
                     else "MISINFORMED_OR_POTENTIALLY_MISLEADING",
@@ -73,7 +73,7 @@ class MockCommunityDataProvider:
         ratings = []
         for note_idx, note_id in enumerate(self._note_ids):
             for rater_idx, rater_id in enumerate(self._raters):
-                if self._notes[note_idx]["author_participant_id"] == rater_id:
+                if self._notes[note_idx]["author_id"] == rater_id:
                     continue
 
                 helpfulness = self._determine_helpfulness(note_idx, rater_idx)
@@ -82,7 +82,7 @@ class MockCommunityDataProvider:
                     {
                         "id": uuid4(),
                         "note_id": note_id,
-                        "rater_participant_id": rater_id,
+                        "rater_id": rater_id,
                         "helpfulness_level": helpfulness,
                         "created_at": datetime.now(UTC),
                     }

@@ -60,7 +60,7 @@ class TestNoteStatusHistoryBuilderWithNoteData:
         """Create mock note data dict (simulating Note model attributes)."""
         return {
             "id": uuid4(),
-            "author_participant_id": "discord_author_123",
+            "author_id": "discord_author_123",
             "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
             "status": "NEEDS_MORE_RATINGS",
             "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
@@ -169,14 +169,14 @@ class TestNoteStatusHistoryBuilderMultipleNotes:
         notes = [
             {
                 "id": uuid4(),
-                "author_participant_id": "author_1",
+                "author_id": "author_1",
                 "classification": "NOT_MISLEADING",
                 "status": "CURRENTLY_RATED_HELPFUL",
                 "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
             },
             {
                 "id": uuid4(),
-                "author_participant_id": "author_2",
+                "author_id": "author_2",
                 "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 "status": "NEEDS_MORE_RATINGS",
                 "created_at": datetime(2024, 1, 16, 12, 0, 0, tzinfo=UTC),

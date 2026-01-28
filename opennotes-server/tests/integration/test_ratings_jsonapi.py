@@ -151,7 +151,7 @@ def ratings_jsonapi_sample_note_data(
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary for ratings JSON:API",
-        "author_participant_id": ratings_jsonapi_registered_user["discord_id"],
+        "author_id": ratings_jsonapi_registered_user["discord_id"],
         "community_server_id": str(ratings_jsonapi_community_server["uuid"]),
     }
 
@@ -177,7 +177,7 @@ class TestRatingsJSONAPI:
                     if hasattr(note_data["classification"], "value")
                     else note_data["classification"],
                     "community_server_id": str(note_data["community_server_id"]),
-                    "author_participant_id": note_data["author_participant_id"],
+                    "author_id": note_data["author_id"],
                 },
             }
         }
@@ -204,7 +204,7 @@ class TestRatingsJSONAPI:
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_participant_id": "test_rater_jsonapi_123",
+                    "rater_id": "test_rater_jsonapi_123",
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -246,7 +246,7 @@ class TestRatingsJSONAPI:
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_participant_id": rater_id,
+                    "rater_id": rater_id,
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -259,7 +259,7 @@ class TestRatingsJSONAPI:
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_participant_id": rater_id,
+                    "rater_id": rater_id,
                     "helpfulness_level": "NOT_HELPFUL",
                 },
             }
@@ -288,7 +288,7 @@ class TestRatingsJSONAPI:
                 "type": "invalid_type",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_participant_id": "test_rater",
+                    "rater_id": "test_rater",
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -310,7 +310,7 @@ class TestRatingsJSONAPI:
                 "type": "ratings",
                 "attributes": {
                     "note_id": fake_note_id,
-                    "rater_participant_id": "test_rater",
+                    "rater_id": "test_rater",
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -344,7 +344,7 @@ class TestRatingsJSONAPI:
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_participant_id": "test_rater_list_jsonapi",
+                    "rater_id": "test_rater_list_jsonapi",
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -437,7 +437,7 @@ class TestRatingsJSONAPI:
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_participant_id": rater_id,
+                    "rater_id": rater_id,
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -521,7 +521,7 @@ class TestRatingsJSONAPI:
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_participant_id": rater_id,
+                    "rater_id": rater_id,
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -570,7 +570,7 @@ class TestRatingsJSONAPI:
                     "type": "ratings",
                     "attributes": {
                         "note_id": note_id,
-                        "rater_participant_id": f"test_rater_stats_{i}",
+                        "rater_id": f"test_rater_stats_{i}",
                         "helpfulness_level": level,
                     },
                 }

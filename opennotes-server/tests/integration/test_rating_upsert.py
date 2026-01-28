@@ -3,7 +3,7 @@ Tests for rating upsert functionality to verify race condition fixes.
 
 This test module verifies that the upsert pattern in submit_rating prevents
 race conditions when multiple concurrent requests try to create ratings for
-the same (note_id, rater_participant_id) pair.
+the same (note_id, rater_id) pair.
 """
 
 import asyncio
@@ -41,7 +41,7 @@ async def test_note() -> Note:
 
         note = Note(
             id=uuid4(),
-            author_participant_id="test_author_001",
+            author_id="test_author_001",
             summary=f"Test note for concurrent rating tests {uuid4().hex[:8]}",
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             status="NEEDS_MORE_RATINGS",
@@ -92,7 +92,7 @@ class TestRatingUpsert:
 
         rating_attributes = {
             "note_id": str(test_note.id),
-            "rater_participant_id": "concurrent_rater_001",
+            "rater_id": "concurrent_rater_001",
             "helpfulness_level": "HELPFUL",
         }
         rating_data = {
@@ -120,7 +120,7 @@ class TestRatingUpsert:
             count_result = await session.execute(
                 select(func.count(Rating.id)).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_participant_id == rating_attributes["rater_participant_id"],
+                    Rating.rater_id == rating_attributes["rater_id"],
                 )
             )
             rating_count = count_result.scalar()
@@ -130,7 +130,7 @@ class TestRatingUpsert:
             rating_result = await session.execute(
                 select(Rating).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_participant_id == rating_attributes["rater_participant_id"],
+                    Rating.rater_id == rating_attributes["rater_id"],
                 )
             )
             rating = rating_result.scalar_one()
@@ -152,7 +152,7 @@ class TestRatingUpsert:
         # Create initial rating
         rating_attributes = {
             "note_id": str(test_note.id),
-            "rater_participant_id": "update_rater_001",
+            "rater_id": "update_rater_001",
             "helpfulness_level": "HELPFUL",
         }
         rating_data = {
@@ -194,7 +194,7 @@ class TestRatingUpsert:
             count_result = await session.execute(
                 select(func.count(Rating.id)).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_participant_id == "update_rater_001",
+                    Rating.rater_id == "update_rater_001",
                 )
             )
             rating_count = count_result.scalar()
@@ -204,7 +204,7 @@ class TestRatingUpsert:
             rating_result = await session.execute(
                 select(Rating).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_participant_id == "update_rater_001",
+                    Rating.rater_id == "update_rater_001",
                 )
             )
             rating = rating_result.scalar_one()
@@ -225,7 +225,7 @@ class TestRatingUpsert:
 
         rating_attributes = {
             "note_id": str(test_note.id),
-            "rater_participant_id": "load_test_rater",
+            "rater_id": "load_test_rater",
             "helpfulness_level": "HELPFUL",
         }
         rating_data = {
@@ -258,7 +258,7 @@ class TestRatingUpsert:
             count_result = await session.execute(
                 select(func.count(Rating.id)).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_participant_id == rating_attributes["rater_participant_id"],
+                    Rating.rater_id == rating_attributes["rater_id"],
                 )
             )
             rating_count = count_result.scalar()

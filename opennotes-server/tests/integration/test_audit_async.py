@@ -34,7 +34,7 @@ class TestAuditMiddlewareAsync:
                         "data": {
                             "type": "notes",
                             "attributes": {
-                                "author_participant_id": "test-user",
+                                "author_id": "test-user",
                                 "summary": "Test note for audit",
                                 "classification": "NOT_MISLEADING",
                                 "community_server_id": str(uuid4()),
@@ -67,7 +67,7 @@ class TestAuditMiddlewareAsync:
                         "data": {
                             "type": "notes",
                             "attributes": {
-                                "author_participant_id": "test-user",
+                                "author_id": "test-user",
                                 "summary": "Test note for audit",
                                 "classification": "NOT_MISLEADING",
                                 "community_server_id": str(uuid4()),

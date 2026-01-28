@@ -31,7 +31,7 @@ async def notes_registered_user(notes_test_user, test_community_server):
     """Create a registered user specifically for notes tests.
 
     Sets a discord_id on the user to enable ownership verification for notes.
-    The discord_id is used to match author_participant_id on notes.
+    The discord_id is used to match author_id on notes.
 
     Also creates UserProfile, UserIdentity, and CommunityMember records
     required by the authorization middleware (task-713).
@@ -152,7 +152,7 @@ def sample_note_data(test_community_server, notes_registered_user):
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary",
-        "author_participant_id": notes_registered_user["discord_id"],
+        "author_id": notes_registered_user["discord_id"],
         "community_server_id": str(test_community_server["uuid"]),
     }
 
@@ -161,7 +161,7 @@ def _create_note_jsonapi_body(note_data: dict) -> dict:
     """Create a JSON:API request body for note creation."""
     attrs = {
         "summary": note_data["summary"],
-        "author_participant_id": note_data["author_participant_id"],
+        "author_id": note_data["author_id"],
     }
     if "community_server_id" in note_data:
         attrs["community_server_id"] = note_data["community_server_id"]
@@ -183,7 +183,7 @@ def _create_rating_jsonapi_body(rating_data: dict) -> dict:
             "type": "ratings",
             "attributes": {
                 "note_id": rating_data["note_id"],
-                "rater_participant_id": rating_data["rater_participant_id"],
+                "rater_id": rating_data["rater_id"],
                 "helpfulness_level": (
                     helpfulness.value if hasattr(helpfulness, "value") else helpfulness
                 ),
@@ -369,7 +369,7 @@ class TestRatingsRouter:
         """Test POST /api/v2/ratings creates a rating with JSON:API format."""
         rating_data = {
             "note_id": created_note["id"],
-            "rater_participant_id": "rater_456",
+            "rater_id": "rater_456",
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
 
@@ -380,17 +380,14 @@ class TestRatingsRouter:
         assert "data" in data
         assert data["data"]["type"] == "ratings"
         assert data["data"]["attributes"]["note_id"] == rating_data["note_id"]
-        assert (
-            data["data"]["attributes"]["rater_participant_id"]
-            == rating_data["rater_participant_id"]
-        )
+        assert data["data"]["attributes"]["rater_id"] == rating_data["rater_id"]
 
     @pytest.mark.asyncio
     async def test_list_ratings(self, auth_client, created_note):
         """Test GET /api/v2/notes/{id}/ratings returns JSON:API format."""
         rating_data = {
             "note_id": created_note["id"],
-            "rater_participant_id": "rater_789",
+            "rater_id": "rater_789",
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
         body = _create_rating_jsonapi_body(rating_data)
@@ -407,7 +404,7 @@ class TestRatingsRouter:
         """Test GET /api/v2/notes/{id}/ratings includes created rating."""
         rating_data = {
             "note_id": created_note["id"],
-            "rater_participant_id": "rater_get",
+            "rater_id": "rater_get",
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
         body = _create_rating_jsonapi_body(rating_data)
@@ -425,7 +422,7 @@ class TestRatingsRouter:
         """Test PUT /api/v2/ratings/{id} updates rating with JSON:API format."""
         rating_data = {
             "note_id": created_note["id"],
-            "rater_participant_id": notes_registered_user["discord_id"],
+            "rater_id": notes_registered_user["discord_id"],
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
         body = _create_rating_jsonapi_body(rating_data)
@@ -1181,7 +1178,7 @@ class TestNotesFilterParameters:
         rating_body_0 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[0]["id"],
-                "rater_participant_id": rater_a,
+                "rater_id": rater_a,
                 "helpfulness_level": HelpfulnessLevel.HELPFUL,
             }
         )
@@ -1191,7 +1188,7 @@ class TestNotesFilterParameters:
         rating_body_1 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[1]["id"],
-                "rater_participant_id": rater_a,
+                "rater_id": rater_a,
                 "helpfulness_level": HelpfulnessLevel.NOT_HELPFUL,
             }
         )
@@ -1201,7 +1198,7 @@ class TestNotesFilterParameters:
         rating_body_2 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[2]["id"],
-                "rater_participant_id": rater_b,
+                "rater_id": rater_b,
                 "helpfulness_level": HelpfulnessLevel.HELPFUL,
             }
         )
@@ -1287,7 +1284,7 @@ class TestNotesFilterParameters:
         rating_body_0 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[0]["id"],
-                "rater_participant_id": rater_a,
+                "rater_id": rater_a,
                 "helpfulness_level": HelpfulnessLevel.NOT_HELPFUL,
             }
         )
@@ -1297,7 +1294,7 @@ class TestNotesFilterParameters:
         rating_body_1 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[1]["id"],
-                "rater_participant_id": rater_a,
+                "rater_id": rater_a,
                 "helpfulness_level": HelpfulnessLevel.HELPFUL,
             }
         )
@@ -1336,7 +1333,7 @@ class TestNotesFilterParameters:
             rating_body = _create_rating_jsonapi_body(
                 {
                     "note_id": notes[-1]["id"],
-                    "rater_participant_id": rater,
+                    "rater_id": rater,
                     "helpfulness_level": HelpfulnessLevel.HELPFUL,
                 }
             )

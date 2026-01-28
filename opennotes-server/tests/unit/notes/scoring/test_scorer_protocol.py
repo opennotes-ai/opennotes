@@ -497,7 +497,7 @@ class TestMFCoreScorerAdapterPhase4:
                     {
                         "id": uuid4(),
                         "note_id": uuid4(),
-                        "rater_participant_id": "user-1",
+                        "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
                         "created_at": datetime.now(UTC),
                     }
@@ -507,7 +507,7 @@ class TestMFCoreScorerAdapterPhase4:
                 return [
                     {
                         "id": uuid4(),
-                        "author_participant_id": "user-1",
+                        "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
                         "created_at": datetime.now(UTC),
@@ -613,7 +613,7 @@ class TestMFCoreScorerAdapterPhase4:
                     {
                         "id": uuid4(),
                         "note_id": note_id,
-                        "rater_participant_id": "user-1",
+                        "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
                         "created_at": datetime.now(UTC),
                     }
@@ -652,7 +652,7 @@ class TestMFCoreScorerAdapterPhase4:
                 return [
                     {
                         "id": uuid4(),
-                        "author_participant_id": "user-1",
+                        "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
                         "created_at": datetime.now(UTC),
@@ -757,7 +757,7 @@ class TestMFCoreScorerAdapterPhase5:
                     {
                         "id": uuid4(),
                         "note_id": uuid4(),
-                        "rater_participant_id": "user-1",
+                        "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
                         "created_at": datetime.now(UTC),
                     }
@@ -767,7 +767,7 @@ class TestMFCoreScorerAdapterPhase5:
                 return [
                     {
                         "id": uuid4(),
-                        "author_participant_id": "user-1",
+                        "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
                         "created_at": datetime.now(UTC),
@@ -816,7 +816,7 @@ class TestMFCoreScorerAdapterPhase5:
                     {
                         "id": uuid4(),
                         "note_id": uuid4(),
-                        "rater_participant_id": "user-1",
+                        "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
                         "created_at": datetime.now(UTC),
                     }
@@ -826,7 +826,7 @@ class TestMFCoreScorerAdapterPhase5:
                 return [
                     {
                         "id": uuid4(),
-                        "author_participant_id": "user-1",
+                        "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
                         "created_at": datetime.now(UTC),
@@ -872,7 +872,7 @@ class TestMFCoreScorerAdapterPhase5:
                     {
                         "id": uuid4(),
                         "note_id": uuid4(),
-                        "rater_participant_id": "user-1",
+                        "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
                         "created_at": datetime.now(UTC),
                     }
@@ -882,7 +882,7 @@ class TestMFCoreScorerAdapterPhase5:
                 return [
                     {
                         "id": uuid4(),
-                        "author_participant_id": "user-1",
+                        "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
                         "created_at": datetime.now(UTC),
@@ -930,7 +930,7 @@ class TestMFCoreScorerAdapterPhase5:
                     {
                         "id": uuid4(),
                         "note_id": uuid4(),
-                        "rater_participant_id": "user-1",
+                        "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
                         "created_at": datetime.now(UTC),
                     }
@@ -940,7 +940,7 @@ class TestMFCoreScorerAdapterPhase5:
                 return [
                     {
                         "id": uuid4(),
-                        "author_participant_id": "user-1",
+                        "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
                         "created_at": datetime.now(UTC),

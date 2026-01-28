@@ -370,7 +370,7 @@ class TestAuthorizationFixtures:
             request_id=request.request_id,
             classification=NoteClassification.NOT_MISLEADING,
             summary="Test note in Community A for authorization tests",
-            author_participant_id=user_a_in_community_a["user"].discord_id,
+            author_id=user_a_in_community_a["user"].discord_id,
             author_profile_id=user_a_in_community_a["profile"].id,
             community_server_id=community_a.id,
             status="NEEDS_MORE_RATINGS",
@@ -413,7 +413,7 @@ class TestAuthorizationFixtures:
             request_id=request.request_id,
             classification=NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             summary="Test note in Community B for authorization tests",
-            author_participant_id=user_b_in_community_b["user"].discord_id,
+            author_id=user_b_in_community_b["user"].discord_id,
             author_profile_id=user_b_in_community_b["profile"].id,
             community_server_id=community_b.id,
             status="NEEDS_MORE_RATINGS",
@@ -431,7 +431,7 @@ class TestAuthorizationFixtures:
         rating = Rating(
             id=uuid4(),
             note_id=note_in_community_a.id,
-            rater_participant_id=user_a_in_community_a["user"].discord_id,
+            rater_id=user_a_in_community_a["user"].discord_id,
             rater_profile_id=user_a_in_community_a["profile"].id,
             helpfulness_level=HelpfulnessLevel.HELPFUL,
         )

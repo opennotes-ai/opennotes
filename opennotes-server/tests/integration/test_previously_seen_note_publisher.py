@@ -138,7 +138,7 @@ async def test_setup():
 
         # Create test note
         note = Note(
-            author_participant_id="test_author_123",
+            author_id="test_author_123",
             community_server_id=community.id,
             summary="Test note for embedding storage 99999990100",
             classification="NOT_MISLEADING",

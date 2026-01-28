@@ -154,7 +154,7 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 
         note_helpful = Note(
             id=uuid4(),
-            author_participant_id=participant_id,
+            author_id=participant_id,
             summary="This is a helpful note for testing",
             classification=NoteClassification.NOT_MISLEADING,
             community_server_id=stats_jsonapi_community_server["uuid"],
@@ -167,7 +167,7 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 
         note_not_helpful = Note(
             id=uuid4(),
-            author_participant_id=participant_id,
+            author_id=participant_id,
             summary="This is a not helpful note for testing",
             classification=NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             community_server_id=stats_jsonapi_community_server["uuid"],
@@ -180,7 +180,7 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 
         note_pending = Note(
             id=uuid4(),
-            author_participant_id=participant_id,
+            author_id=participant_id,
             summary="This is a pending note for testing",
             classification=NoteClassification.NOT_MISLEADING,
             community_server_id=stats_jsonapi_community_server["uuid"],
@@ -204,13 +204,13 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 async def stats_jsonapi_test_ratings(stats_jsonapi_test_notes):
     """Create test ratings for the test notes."""
     async with get_session_maker()() as db:
-        rater_participant_id = f"rater_{uuid4().hex[:8]}"
+        rater_id = f"rater_{uuid4().hex[:8]}"
 
         for note in stats_jsonapi_test_notes["notes"]:
             rating = Rating(
                 id=uuid4(),
                 note_id=note.id,
-                rater_participant_id=rater_participant_id,
+                rater_id=rater_id,
                 helpfulness_level="HELPFUL"
                 if note.status == NoteStatus.CURRENTLY_RATED_HELPFUL
                 else "NOT_HELPFUL",
@@ -221,7 +221,7 @@ async def stats_jsonapi_test_ratings(stats_jsonapi_test_notes):
         await db.commit()
 
         return {
-            "rater_participant_id": rater_participant_id,
+            "rater_id": rater_id,
         }
 
 
@@ -428,7 +428,7 @@ class TestStatsJSONAPI:
         self, stats_jsonapi_auth_client, stats_jsonapi_test_notes, stats_jsonapi_test_ratings
     ):
         """Test GET /api/v2/stats/participant/{id} for a rater."""
-        rater_id = stats_jsonapi_test_ratings["rater_participant_id"]
+        rater_id = stats_jsonapi_test_ratings["rater_id"]
         community_id = str(stats_jsonapi_test_notes["community_server_id"])
 
         response = await stats_jsonapi_auth_client.get(

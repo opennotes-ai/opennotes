@@ -181,7 +181,7 @@ def force_publish_sample_note_data(
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": f"Force publish query opt test note {int(datetime.now(tz=UTC).timestamp() * 1000000)}",
-        "author_participant_id": force_publish_registered_user["discord_id"],
+        "author_id": force_publish_registered_user["discord_id"],
         "community_server_id": str(force_publish_test_community_server["uuid"]),
     }
 
@@ -194,7 +194,7 @@ async def create_note_v2(client, note_data):
         if hasattr(note_data["classification"], "value")
         else note_data["classification"],
         "community_server_id": str(note_data["community_server_id"]),
-        "author_participant_id": note_data["author_participant_id"],
+        "author_id": note_data["author_id"],
     }
     if "request_id" in note_data:
         attributes["request_id"] = note_data["request_id"]

@@ -124,7 +124,7 @@ class TestDatabasePersistence:
 
             # Create note (Note model uses id (UUID) as primary key)
             note = Note(
-                author_participant_id="author_123",
+                author_id="author_123",
                 community_server_id=community_server_id,
                 summary="This is a test note",
                 classification="NOT_MISLEADING",
@@ -135,12 +135,12 @@ class TestDatabasePersistence:
             # Create ratings
             rating1 = Rating(
                 note_id=note.id,
-                rater_participant_id="rater_1",
+                rater_id="rater_1",
                 helpfulness_level="HELPFUL",
             )
             rating2 = Rating(
                 note_id=note.id,
-                rater_participant_id="rater_2",
+                rater_id="rater_2",
                 helpfulness_level="HELPFUL",
             )
             session.add_all([rating1, rating2])

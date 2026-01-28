@@ -950,7 +950,9 @@ async def lookup_user_profile_jsonapi(
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
     platform: str = Query("discord", description="Platform type"),
-    platform_user_id: str = Query(..., description="Platform-specific user ID (e.g., Discord user ID)"),
+    platform_user_id: str = Query(
+        ..., description="Platform-specific user ID (e.g., Discord user ID)"
+    ),
 ) -> JSONResponse:
     """Look up a user profile by platform and platform user ID with JSON:API format.
 

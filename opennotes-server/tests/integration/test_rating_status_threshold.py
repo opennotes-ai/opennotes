@@ -44,7 +44,7 @@ async def test_note(community_server: CommunityServer) -> Note:
     async with get_session_maker()() as session:
         note = Note(
             id=uuid4(),
-            author_participant_id="test_author_threshold",
+            author_id="test_author_threshold",
             summary=f"Test note for threshold status tests {uuid4().hex[:8]}",
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             status="NEEDS_MORE_RATINGS",
@@ -95,7 +95,7 @@ class TestRatingStatusThreshold:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(test_note.id),
-                        "rater_participant_id": f"threshold_rater_{i:03d}",
+                        "rater_id": f"threshold_rater_{i:03d}",
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -130,7 +130,7 @@ class TestRatingStatusThreshold:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(test_note.id),
-                        "rater_participant_id": f"helpful_rater_{i:03d}",
+                        "rater_id": f"helpful_rater_{i:03d}",
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -165,7 +165,7 @@ class TestRatingStatusThreshold:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(test_note.id),
-                        "rater_participant_id": f"unhelpful_rater_{i:03d}",
+                        "rater_id": f"unhelpful_rater_{i:03d}",
                         "helpfulness_level": "NOT_HELPFUL",
                     },
                 }
