@@ -25,7 +25,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.community_dependencies import verify_community_admin
+from src.auth.community_dependencies import (
+    verify_community_admin,
+    verify_community_admin_by_uuid,
+)
 from src.auth.dependencies import get_current_user_or_api_key
 from src.common.base_schemas import StrictInputSchema
 from src.common.jsonapi import (
@@ -376,7 +379,7 @@ async def get_monitored_channel_jsonapi(
                 f"Monitored channel {channel_uuid} not found",
             )
 
-        await verify_community_admin(channel.community_server_id, current_user, db, request)
+        await verify_community_admin_by_uuid(channel.community_server_id, current_user, db, request)
 
         channel_resource = channel_to_resource(channel)
 
@@ -539,7 +542,7 @@ async def update_monitored_channel_jsonapi(
                 f"Monitored channel {channel_uuid} not found",
             )
 
-        await verify_community_admin(channel.community_server_id, current_user, db, request)
+        await verify_community_admin_by_uuid(channel.community_server_id, current_user, db, request)
 
         attrs = body.data.attributes
         update_data = attrs.model_dump(exclude_unset=True)
@@ -606,7 +609,7 @@ async def delete_monitored_channel_jsonapi(
                 f"Monitored channel {channel_uuid} not found",
             )
 
-        await verify_community_admin(channel.community_server_id, current_user, db, request)
+        await verify_community_admin_by_uuid(channel.community_server_id, current_user, db, request)
 
         await db.execute(delete(MonitoredChannel).where(MonitoredChannel.id == channel_uuid))
         await db.commit()

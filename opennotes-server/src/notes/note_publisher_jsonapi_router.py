@@ -28,7 +28,10 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.community_dependencies import verify_community_membership
+from src.auth.community_dependencies import (
+    verify_community_membership,
+    verify_community_membership_by_uuid,
+)
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import StrictInputSchema
@@ -441,7 +444,9 @@ async def get_note_publisher_config_jsonapi(
             )
 
         if not is_service_account(current_user):
-            await verify_community_membership(config.community_server_id, current_user, db, request)
+            await verify_community_membership_by_uuid(
+                config.community_server_id, current_user, db, request
+            )
 
         config_resource = config_to_resource(config)
 
@@ -600,7 +605,9 @@ async def update_note_publisher_config_jsonapi(
             )
 
         if not is_service_account(current_user):
-            await verify_community_membership(config.community_server_id, current_user, db, request)
+            await verify_community_membership_by_uuid(
+                config.community_server_id, current_user, db, request
+            )
 
         attrs = body.data.attributes
         update_data = attrs.model_dump(exclude_unset=True)
@@ -665,7 +672,9 @@ async def delete_note_publisher_config_jsonapi(
             )
 
         if not is_service_account(current_user):
-            await verify_community_membership(config.community_server_id, current_user, db, request)
+            await verify_community_membership_by_uuid(
+                config.community_server_id, current_user, db, request
+            )
 
         await db.execute(delete(NotePublisherConfig).where(NotePublisherConfig.id == config_uuid))
         await db.commit()
@@ -815,7 +824,9 @@ async def get_note_publisher_post_jsonapi(
             )
 
         if not is_service_account(current_user):
-            await verify_community_membership(post.community_server_id, current_user, db, request)
+            await verify_community_membership_by_uuid(
+                post.community_server_id, current_user, db, request
+            )
 
         post_resource = post_to_resource(post)
 
