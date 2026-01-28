@@ -37,17 +37,15 @@ def upgrade() -> None:
           AND rater_id IS NULL
     """)
 
-    # 3. Backfill remaining from participant_id lookup via user_profiles
+    # 3. Backfill remaining from participant_id lookup via user_identities
     op.execute("""
         UPDATE ratings r
-        SET rater_id = up.id
-        FROM user_profiles up
+        SET rater_id = ui.profile_id
+        FROM user_identities ui
         WHERE r.rater_participant_id IS NOT NULL
           AND r.rater_id IS NULL
-          AND (
-            up.discord_id = r.rater_participant_id
-            OR up.id::text = r.rater_participant_id
-          )
+          AND ui.provider_user_id = r.rater_participant_id
+          AND ui.provider = 'discord'
     """)
 
     # 4. Link remaining orphans to placeholder user
@@ -115,11 +113,12 @@ def downgrade() -> None:
         SET rater_profile_id = rater_id
     """)
 
-    # 3. Populate rater_participant_id from user_profiles.discord_id
+    # 3. Populate rater_participant_id from user_identities
     op.execute("""
         UPDATE ratings r
         SET rater_participant_id = COALESCE(
-            (SELECT discord_id FROM user_profiles WHERE id = r.rater_id),
+            (SELECT provider_user_id FROM user_identities
+             WHERE profile_id = r.rater_id AND provider = 'discord'),
             'unknown'
         )
     """)
