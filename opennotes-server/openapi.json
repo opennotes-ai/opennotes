@@ -9022,6 +9022,28 @@
         }
       }
     },
+    "/health/dbos": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Dbos Health",
+        "description": "Check DBOS health and connectivity.\n\nReturns status information about the DBOS workflow system:\n- Whether DBOS is initialized\n- The schema name used for DBOS tables\n- Whether workflows are enabled",
+        "operationId": "dbos_health_health_dbos_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/batch-jobs": {
       "get": {
         "tags": [

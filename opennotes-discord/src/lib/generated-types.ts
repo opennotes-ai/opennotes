@@ -3146,6 +3146,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health/dbos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dbos Health
+         * @description Check DBOS health and connectivity.
+         *
+         *     Returns status information about the DBOS workflow system:
+         *     - Whether DBOS is initialized
+         *     - The schema name used for DBOS tables
+         *     - Whether workflows are enabled
+         */
+        get: operations["dbos_health_health_dbos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/batch-jobs": {
         parameters: {
             query?: never;
@@ -12935,6 +12960,26 @@ export interface operations {
         };
     };
     taskiq_health_health_taskiq_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceStatus"];
+                };
+            };
+        };
+    };
+    dbos_health_health_dbos_get: {
         parameters: {
             query?: never;
             header?: never;
