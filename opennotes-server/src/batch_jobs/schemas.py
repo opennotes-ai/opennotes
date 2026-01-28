@@ -47,6 +47,11 @@ class BatchJobCreate(BatchJobBase):
         alias="metadata",
         description="Job-specific metadata (e.g., source file, options)",
     )
+    workflow_id: str | None = Field(
+        default=None,
+        max_length=255,
+        description="DBOS workflow ID for linking batch job to workflow execution",
+    )
 
 
 class BatchJobUpdate(BaseModel):
@@ -92,6 +97,10 @@ class BatchJobResponse(BatchJobBase):
     error_summary: dict | None = Field(
         default=None,
         description="Summary of errors if any",
+    )
+    workflow_id: str | None = Field(
+        default=None,
+        description="DBOS workflow ID for linking batch job to workflow execution",
     )
     started_at: datetime | None = Field(
         default=None,

@@ -94,6 +94,7 @@ class BatchJobService:
             total_tasks=job_data.total_tasks,
             metadata_=job_data.metadata_,
             status=BatchJobStatus.PENDING.value,
+            workflow_id=job_data.workflow_id,
         )
 
         self._session.add(job)

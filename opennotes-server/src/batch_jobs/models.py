@@ -89,6 +89,13 @@ class BatchJob(Base, TimestampMixin):
         nullable=True,
     )
 
+    workflow_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        unique=True,
+    )
+
     @property
     def progress_percentage(self) -> float:
         """Calculate progress as a percentage (0.0 to 100.0)."""
