@@ -227,7 +227,7 @@ describe('End-to-End Integration Tests', () => {
       expect(rating.data.type).toBe('ratings');
       expect(rating.data.id).toBeDefined();
       expect(rating.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440001');
-      expect(rating.data.attributes.rater_id).toBe('rater789');
+      expect(rating.data.attributes.rater_id).toBe('00000000-0000-0001-bbbb-000000000789');
       expect(rating.data.attributes.helpfulness_level).toBe('HELPFUL');
       expect(rating.data.attributes.created_at).toBeDefined();
 
@@ -290,6 +290,8 @@ describe('End-to-End Integration Tests', () => {
         }
       };
 
+      const raterProfileId = '00000000-0000-0002-bbbb-000000000001';
+
       mockFetch
         .mockResolvedValueOnce(
           createMockResponse({
@@ -307,12 +309,30 @@ describe('End-to-End Integration Tests', () => {
             }),
           })
         )
+        // User profile lookup for rater
+        .mockResolvedValueOnce(
+          createMockResponse({
+            status: 200,
+            json: async () => ({
+              jsonapi: { version: '1.1' },
+              data: {
+                type: 'user-profiles',
+                id: raterProfileId,
+                attributes: {
+                  platform: 'discord',
+                  platform_user_id: 'rater-001',
+                  display_name: 'Rater User',
+                },
+              },
+            }),
+          })
+        )
         .mockResolvedValueOnce(
           createMockResponse({
             status: 201,
             json: async () => createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440004', {
               note_id: '550e8400-e29b-41d4-a716-446655440003',
-              rater_id: '00000000-0000-0002-bbbb-000000000001',
+              rater_id: raterProfileId,
               helpfulness_level: 'HELPFUL',
             }),
           })
@@ -323,6 +343,7 @@ describe('End-to-End Integration Tests', () => {
           })
         );
 
+      // Note: authorId is already a UUID, so no profile lookup needed
       const note = await apiClient.createNote({
         messageId: '234567890123456790',
         authorId: '00000000-0000-0001-aaaa-000000000001',
@@ -333,6 +354,7 @@ describe('End-to-End Integration Tests', () => {
         channelId: 'channel456',
       });
 
+      // rater-001 is not a UUID, so profile lookup will be called
       const rating = await apiClient.rateNote({
         noteId: note.data.id,
         userId: 'rater-001',
@@ -460,7 +482,7 @@ describe('End-to-End Integration Tests', () => {
           const i = noteIndex++;
           const noteId = `550e8400-e29b-41d4-a716-446655440${String(i).padStart(3, '0')}`;
           const response = createNoteJSONAPIResponse(noteId, {
-            author_id: `00000000-0000-0001-aaaa-${'user' + i}`.padStart(12, '0').slice(0, 12),
+            author_id: `00000000-0000-0001-aaaa-00000000000${i}`,
             summary: `Note ${i}`,
             community_server_id: communityServerId,
           });
@@ -481,11 +503,11 @@ describe('End-to-End Integration Tests', () => {
       const promises = Array.from({ length: 5 }, (_, i) =>
         apiClient.createNote({
           messageId: `${345678901234567890 + i}`,
-          authorId: `user${i}`,
+          authorId: `00000000-0000-0001-aaaa-00000000000${i}`,
           content: `Note ${i}`,
         }, {
           guildId: 'guild-concurrent',
-          userId: `user${i}`,
+          userId: `00000000-0000-0001-aaaa-00000000000${i}`,
           channelId: 'channel-concurrent',
         })
       );

@@ -32,6 +32,8 @@ const USED_SCHEMAS = [
   'RatingThresholdsResponse',
   'HealthCheckResponse',
   'ServiceStatus',
+  'JSONAPILinks',
+  'JSONAPIMeta',
 ];
 
 const SCHEMA_ALIASES: Record<string, string> = {
@@ -74,6 +76,59 @@ const CUSTOM_SCHEMAS: Record<string, unknown> = {
     type: 'object',
     required: ['notes', 'total', 'page', 'size'],
     title: 'NoteListResponse',
+  },
+  ScoringRequest: {
+    title: 'ScoringRequest',
+    type: 'object',
+    properties: {
+      notes: {
+        type: 'array',
+        items: {
+          $ref: '#/components/schemas/NoteData',
+        },
+      },
+      ratings: {
+        type: 'array',
+        items: {
+          $ref: '#/components/schemas/RatingData',
+        },
+      },
+      enrollment: {
+        type: 'array',
+        items: {
+          $ref: '#/components/schemas/EnrollmentData',
+        },
+      },
+      status: {
+        anyOf: [
+          { type: 'array', items: { type: 'object' } },
+          { type: 'null' },
+        ],
+      },
+    },
+    required: ['notes', 'ratings', 'enrollment'],
+  },
+  ScoringResponse: {
+    title: 'ScoringResponse',
+    type: 'object',
+    properties: {
+      data: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          id: { type: 'string' },
+          attributes: {
+            type: 'object',
+            properties: {
+              scored_notes: { type: 'array', items: { type: 'object' } },
+              helpful_scores: { type: 'array', items: { type: 'object' } },
+              auxiliary_info: { type: 'array', items: { type: 'object' } },
+            },
+          },
+        },
+      },
+    },
+    required: ['data'],
   },
 };
 

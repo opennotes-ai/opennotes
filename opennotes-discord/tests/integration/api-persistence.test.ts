@@ -273,7 +273,7 @@ describe('API Persistence Integration Tests', () => {
         }),
       }));
 
-      const created = await client1.createNote(createRequest, { userId: 'author-001', guildId: 'guild-123' });
+      const created = await client1.createNote(createRequest, { userId: '00000000-0000-0001-aaaa-000000000111', guildId: 'guild-123' });
       expect(created.data.id).toBe('note-cross-client-001');
       expect(created.data.attributes.author_id).toBe(createRequest.authorId);
       expect(created.data.attributes.summary).toBe(createRequest.content);
@@ -306,9 +306,10 @@ describe('API Persistence Integration Tests', () => {
     });
 
     it('should verify HTTP call structure for note creation', async () => {
+      const authorUuid = '00000000-0000-0001-aaaa-000000000003';
       const request = {
         messageId: '123456789012345003',
-        authorId: 'user-structure',
+        authorId: authorUuid,
         content: 'Verify HTTP structure',
       };
 
@@ -320,12 +321,12 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
         json: async () => createNoteJSONAPIResponse('note-999', {
-          author_id: request.authorId,
+          author_id: authorUuid,
           summary: request.content,
         }),
       }));
 
-      await client1.createNote(request, { userId: 'user-structure', guildId: 'guild-123' });
+      await client1.createNote(request, { userId: authorUuid, guildId: 'guild-123' });
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes',
@@ -349,9 +350,10 @@ describe('API Persistence Integration Tests', () => {
 
   describe('Rating Persistence', () => {
     it('should persist rating via HTTP POST', async () => {
+      const raterUuid = '00000000-0000-0002-bbbb-000000000456';
       const ratingRequest = {
         noteId: '550e8400-e29b-41d4-a716-446655440021',
-        userId: 'rater-456',
+        userId: raterUuid,
         helpful: true,
       };
 
@@ -359,7 +361,7 @@ describe('API Persistence Integration Tests', () => {
         ok: true,
         json: async () => createRatingJSONAPIResponse('rating-001', {
           note_id: ratingRequest.noteId,
-          rater_id: ratingRequest.userId,
+          rater_id: raterUuid,
           helpfulness_level: 'HELPFUL',
         }),
       }));
@@ -378,7 +380,7 @@ describe('API Persistence Integration Tests', () => {
       );
 
       expect(result.data.attributes.note_id).toBe(ratingRequest.noteId);
-      expect(result.data.attributes.rater_id).toBe(ratingRequest.userId);
+      expect(result.data.attributes.rater_id).toBe(raterUuid);
       expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
       expect(result.data.attributes.created_at).toBeDefined();
     });
@@ -386,7 +388,7 @@ describe('API Persistence Integration Tests', () => {
     it('should persist negative ratings correctly', async () => {
       const ratingRequest = {
         noteId: '550e8400-e29b-41d4-a716-446655440022',
-        userId: 'rater-789',
+        userId: '00000000-0000-0002-bbbb-000000000789',
         helpful: false,
       };
 
@@ -414,7 +416,7 @@ describe('API Persistence Integration Tests', () => {
     it('should verify rating data is sent with correct structure', async () => {
       const request = {
         noteId: '550e8400-e29b-41d4-a716-446655440023',
-        userId: 'user-structure-789',
+        userId: '00000000-0000-0002-aaaa-000000000789',
         helpful: true,
       };
 
@@ -451,7 +453,7 @@ describe('API Persistence Integration Tests', () => {
     it('should persist note request via HTTP POST', async () => {
       const noteRequest = {
         messageId: '100000000000',
-        userId: 'requester-456',
+        userId: '00000000-0000-0001-aaaa-000000000116',
         community_server_id: 'guild-123',
         reason: 'This message needs context',
       };
@@ -490,7 +492,7 @@ describe('API Persistence Integration Tests', () => {
     it('should persist note request without optional reason', async () => {
       const noteRequest = {
         messageId: '200000000000',
-        userId: 'requester-789',
+        userId: '00000000-0000-0001-aaaa-000000000117',
         community_server_id: 'guild-123',
       };
 
@@ -525,7 +527,7 @@ describe('API Persistence Integration Tests', () => {
     it('should verify request is recorded in backend', async () => {
       const request = {
         messageId: '123456789012345006',
-        userId: 'user-verify-456',
+        userId: '00000000-0000-0001-aaaa-000000000789',
         community_server_id: 'guild-123',
         reason: 'Verification test',
       };
@@ -550,7 +552,7 @@ describe('API Persistence Integration Tests', () => {
     it('should include platform_message_id and platform metadata in request', async () => {
       const noteRequest = {
         messageId: '987654321098765432',
-        userId: 'system-factcheck',
+        userId: '00000000-0000-0001-aaaa-000000000118',
         community_server_id: 'guild-123',
         originalMessageContent: 'Fact-check context',
         discord_channel_id: 'channel-123',
@@ -601,7 +603,7 @@ describe('API Persistence Integration Tests', () => {
     it('should handle optional platform metadata fields being null', async () => {
       const noteRequest = {
         messageId: '111222333444555666',
-        userId: 'user-optional-test',
+        userId: '00000000-0000-0001-aaaa-000000000790',
         community_server_id: 'guild-456',
       };
 
@@ -637,7 +639,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '123456789012345007',
-        authorId: 'user-error-001',
+        authorId: '00000000-0000-0001-aaaa-000000000791',
         content: 'This will fail',
       };
 
@@ -648,7 +650,7 @@ describe('API Persistence Integration Tests', () => {
 
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-      await expect(client.createNote(request, { userId: 'user-error-001', guildId: 'guild-123' })).rejects.toThrow(
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000791', guildId: 'guild-123' })).rejects.toThrow(
         'Network error'
       );
 
@@ -737,7 +739,7 @@ describe('API Persistence Integration Tests', () => {
     it('should retry on transient failures', async () => {
       const request = {
         messageId: '123456789012345009',
-        authorId: 'user-retry',
+        authorId: '00000000-0000-0001-aaaa-000000000792',
         content: 'Retry test',
       };
 
@@ -756,7 +758,7 @@ describe('API Persistence Integration Tests', () => {
           })
         );
 
-      const result = await client1.createNote(request, { userId: 'user-retry', guildId: 'guild-123' });
+      const result = await client1.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000792', guildId: 'guild-123' });
 
       expect(result.data.id).toBe('note-retry-success');
       expect(result.data.type).toBe('notes');
@@ -775,7 +777,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '123456789012345010',
-        authorId: 'user-max-retry',
+        authorId: '00000000-0000-0001-aaaa-000000000793',
         content: 'Max retry test',
       };
 
@@ -788,7 +790,7 @@ describe('API Persistence Integration Tests', () => {
         .mockRejectedValueOnce(new Error('Error 2'))
         .mockRejectedValueOnce(new Error('Error 3'));
 
-      await expect(client.createNote(request, { userId: 'user-max-retry', guildId: 'guild-123' })).rejects.toThrow();
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000793', guildId: 'guild-123' })).rejects.toThrow();
 
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });
@@ -802,7 +804,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '123456789012345011',
-        authorId: 'user-malformed',
+        authorId: '00000000-0000-0001-aaaa-000000000794',
         content: 'Malformed test',
       };
 
@@ -818,7 +820,7 @@ describe('API Persistence Integration Tests', () => {
         },
       }));
 
-      await expect(client.createNote(request, { userId: 'user-malformed', guildId: 'guild-123' })).rejects.toThrow(
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000794', guildId: 'guild-123' })).rejects.toThrow(
         'Invalid JSON'
       );
     });
@@ -832,7 +834,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '123456789012345012',
-        authorId: 'user-timeout',
+        authorId: '00000000-0000-0001-aaaa-000000000795',
         content: 'Timeout test',
       };
 
@@ -848,7 +850,7 @@ describe('API Persistence Integration Tests', () => {
           )
       );
 
-      await expect(client.createNote(request, { userId: 'user-timeout', guildId: 'guild-123' })).rejects.toThrow(
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000795', guildId: 'guild-123' })).rejects.toThrow(
         'Request timeout'
       );
     });
@@ -858,7 +860,7 @@ describe('API Persistence Integration Tests', () => {
     it('should maintain data consistency across multiple clients', async () => {
       const noteRequest = {
         messageId: '123456789012345013',
-        authorId: 'author-consistency',
+        authorId: '00000000-0000-0001-aaaa-000000000112',
         content: 'Consistency test note',
       };
 
@@ -883,7 +885,7 @@ describe('API Persistence Integration Tests', () => {
         }),
       }));
 
-      await client1.createNote(noteRequest, { userId: 'author-consistency', guildId: 'guild-123' });
+      await client1.createNote(noteRequest, { userId: '00000000-0000-0001-aaaa-000000000112', guildId: 'guild-123' });
 
       mockFetch.mockClear();
       mockFetch.mockResolvedValueOnce(createMockResponse({
@@ -976,8 +978,8 @@ describe('API Persistence Integration Tests', () => {
           })
         );
 
-      const result1 = await client1.createNote(note1Request, { userId: 'author-1', guildId: 'guild-123' });
-      const result2 = await client2.createNote(note2Request, { userId: 'author-2', guildId: 'guild-123' });
+      const result1 = await client1.createNote(note1Request, { userId: '00000000-0000-0001-aaaa-000000000113', guildId: 'guild-123' });
+      const result2 = await client2.createNote(note2Request, { userId: '00000000-0000-0001-aaaa-000000000114', guildId: 'guild-123' });
 
       expect(result1.data.id).toBe('note-concurrent-001');
       expect(result2.data.id).toBe('note-concurrent-002');
@@ -1062,7 +1064,7 @@ describe('API Persistence Integration Tests', () => {
     it('should verify created note data matches request data', async () => {
       const request = {
         messageId: 'validation-001',
-        authorId: 'author-validation',
+        authorId: '00000000-0000-0001-aaaa-000000000115',
         content: 'Validate this content persists correctly',
       };
 
@@ -1080,7 +1082,7 @@ describe('API Persistence Integration Tests', () => {
         }),
       }));
 
-      const result = await client1.createNote(request, { userId: 'author-validation', guildId: 'guild-123' });
+      const result = await client1.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000115', guildId: 'guild-123' });
 
       expect(result.data.attributes.author_id).toBe(request.authorId);
       expect(result.data.attributes.summary).toBe(request.content);
@@ -1091,7 +1093,7 @@ describe('API Persistence Integration Tests', () => {
     it('should verify rating data integrity', async () => {
       const request = {
         noteId: '550e8400-e29b-41d4-a716-446655440024',
-        userId: 'user-rating-validation',
+        userId: '00000000-0000-0002-bbbb-000000000796',
         helpful: true,
       };
 
@@ -1115,7 +1117,7 @@ describe('API Persistence Integration Tests', () => {
     it('should ensure request data is not corrupted during transmission', async () => {
       const request = {
         messageId: 'special-chars-™-©-®',
-        authorId: 'user-emoji-test',
+        authorId: '00000000-0000-0001-aaaa-000000000797',
         content: 'Content with special chars: hello world',
       };
 
@@ -1132,7 +1134,7 @@ describe('API Persistence Integration Tests', () => {
         }),
       }));
 
-      await client1.createNote(request, { userId: 'user-emoji-test', guildId: 'guild-123' });
+      await client1.createNote(request, { userId: '00000000-0000-0001-aaaa-000000000797', guildId: 'guild-123' });
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes',
