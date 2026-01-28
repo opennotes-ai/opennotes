@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
@@ -47,6 +47,7 @@ from src.users.profile_crud import (
     get_identities_by_profile,
     get_identity_by_id,
     get_identity_by_provider,
+    get_or_create_profile_from_discord,
     get_profile_by_id,
     get_profile_communities,
     update_profile,
@@ -259,6 +260,34 @@ class AdminStatusUpdateRequest(BaseModel):
     """JSON:API request for updating admin status."""
 
     data: AdminStatusUpdateData
+
+
+class UserProfileLookupAttributes(BaseModel):
+    """Attributes for user profile lookup response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    platform: str
+    platform_user_id: str
+    display_name: str | None = None
+
+
+class UserProfileLookupResource(BaseModel):
+    """JSON:API resource object for user profile lookup response."""
+
+    type: Literal["user-profiles"] = "user-profiles"
+    id: str
+    attributes: UserProfileLookupAttributes
+
+
+class UserProfileLookupResponse(BaseModel):
+    """JSON:API response for user profile lookup."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    data: UserProfileLookupResource
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    links: JSONAPILinks | None = None
 
 
 def profile_to_resource(profile: UserProfile) -> ProfileResource:
@@ -908,4 +937,108 @@ async def update_profile_jsonapi(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Internal Server Error",
             "Failed to update profile",
+        )
+
+
+@router.get(
+    "/user-profiles/lookup",
+    response_class=JSONResponse,
+    response_model=UserProfileLookupResponse,
+)
+async def lookup_user_profile_jsonapi(
+    request: HTTPRequest,
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    platform: str = Query("discord", description="Platform type"),
+    platform_user_id: str = Query(..., description="Platform-specific user ID (e.g., Discord user ID)"),
+) -> JSONResponse:
+    """Look up a user profile by platform and platform user ID with JSON:API format.
+
+    Returns the internal UUID for a user profile based on its platform-specific identifier.
+    Auto-creates the profile if it doesn't exist (for service accounts/bots).
+
+    Args:
+        platform: Platform type (default: "discord")
+        platform_user_id: Platform-specific user ID (e.g., Discord user ID)
+
+    Returns:
+        JSON:API formatted response with user profile details
+
+    Raises:
+        404: If user profile not found and user is not a service account
+        400: If platform is not supported (currently only 'discord')
+    """
+    try:
+        logger.info(
+            "Looking up user profile (JSON:API)",
+            extra={
+                "user_id": current_user.id,
+                "platform": platform,
+                "platform_user_id": platform_user_id,
+            },
+        )
+
+        # Currently only Discord is supported
+        if platform != "discord":
+            return create_error_response(
+                status.HTTP_400_BAD_REQUEST,
+                "Bad Request",
+                f"Unsupported platform: {platform}. Currently only 'discord' is supported.",
+            )
+
+        # Check if identity already exists
+        identity = await get_identity_by_provider(db, AuthProvider.DISCORD, platform_user_id)
+
+        if identity:
+            # Return existing profile
+            profile = identity.profile
+        else:
+            # Auto-create only for service accounts (bots)
+            if not is_service_account(current_user):
+                return create_error_response(
+                    status.HTTP_404_NOT_FOUND,
+                    "Not Found",
+                    f"User profile not found: {platform}:{platform_user_id}",
+                )
+
+            # Create new profile with Discord identity
+            profile = await get_or_create_profile_from_discord(
+                db=db,
+                discord_user_id=platform_user_id,
+                username=f"user_{platform_user_id}",  # Placeholder username
+                display_name=None,
+                avatar_url=None,
+                guild_id=None,
+            )
+            await db.commit()
+            await db.refresh(profile)
+
+        lookup_resource = UserProfileLookupResource(
+            type="user-profiles",
+            id=str(profile.id),
+            attributes=UserProfileLookupAttributes(
+                platform=platform,
+                platform_user_id=platform_user_id,
+                display_name=profile.display_name,
+            ),
+        )
+
+        response = UserProfileLookupResponse(
+            data=lookup_resource,
+            links=JSONAPILinks(self_=str(request.url)),
+        )
+
+        return JSONResponse(
+            content=response.model_dump(by_alias=True, mode="json"),
+            media_type=JSONAPI_CONTENT_TYPE,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to lookup user profile (JSON:API): {e}")
+        return create_error_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Internal Server Error",
+            "Failed to lookup user profile",
         )

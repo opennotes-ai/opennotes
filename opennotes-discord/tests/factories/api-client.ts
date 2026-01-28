@@ -34,6 +34,7 @@ import type {
   ExplanationResultResponse,
   NoteStatus,
   ScoreConfidence,
+  UserProfileLookupResponse,
 } from '../../src/lib/api-client.js';
 
 export interface MockApiClient {
@@ -48,6 +49,7 @@ export interface MockApiClient {
   getRequest: jest.Mock<() => Promise<JSONAPISingleResponse<RequestAttributes>>>;
   generateAiNote: jest.Mock<() => Promise<NoteJSONAPIResponse>>;
   getCommunityServerByPlatformId: jest.Mock<() => Promise<CommunityServerJSONAPIResponse>>;
+  getUserProfileByPlatformId: jest.Mock<() => Promise<UserProfileLookupResponse>>;
   updateWelcomeMessageId: jest.Mock<() => Promise<WelcomeMessageUpdateResponse>>;
   getRatingThresholds: jest.Mock<() => Promise<RatingThresholdsResponse>>;
   listNotesWithStatus: jest.Mock<() => Promise<NoteListJSONAPIResponseWithPagination>>;
@@ -319,6 +321,18 @@ export const apiClientFactory = Factory.define<MockApiClient, ApiClientTransient
       getCommunityServerByPlatformId: jest.fn<() => Promise<CommunityServerJSONAPIResponse>>().mockResolvedValue(
         createMockCommunityServerJSONAPIResponse(communityParams)
       ),
+      getUserProfileByPlatformId: jest.fn<() => Promise<UserProfileLookupResponse>>().mockResolvedValue({
+        data: {
+          type: 'user-profiles',
+          id: testUuid('u001', sequence),
+          attributes: {
+            platform: 'discord',
+            platform_user_id: `discord-user-${sequence}`,
+            display_name: `Test User ${sequence}`,
+          },
+        },
+        jsonapi: { version: '1.1' },
+      }),
       updateWelcomeMessageId: jest.fn<() => Promise<WelcomeMessageUpdateResponse>>().mockResolvedValue({
         id: defaultCommunityServerId ?? `community-${sequence}`,
         platform_community_server_id: `platform-${sequence}`,

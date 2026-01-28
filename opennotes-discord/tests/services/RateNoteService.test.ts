@@ -83,6 +83,8 @@ jest.unstable_mockModule('../../src/logger.js', () => ({
   },
 }));
 
+// No mock needed - the actual resolveUserProfileId will pass through valid UUIDs directly
+// (tests use valid 36-char UUID format)
 const { RateNoteService } = await import('../../src/services/RateNoteService.js');
 const ApiError = MockApiError;
 
@@ -236,11 +238,14 @@ describe('RateNoteService', () => {
 
   describe('Updating Existing Ratings', () => {
     it('should update existing rating when user has rated before', async () => {
+      // Use testUuid format (valid 36-char UUIDs) for consistent behavior
+      const testUserId = '00000000-0000-0001-aaaa-000000000123';
+
       const existingRatingsResponse = createMockRatingListJSONAPIResponse([
         {
           id: '1',
           noteId: '123',
-          userId: '00000000-0000-0001-aaaa-123',
+          userId: testUserId,
           helpfulnessLevel: 'NOT_HELPFUL',
         },
       ]);
@@ -249,14 +254,15 @@ describe('RateNoteService', () => {
       const updatedRating = createMockRatingJSONAPIResponse({
         id: '1',
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: testUserId,
         helpfulnessLevel: 'HELPFUL',
       });
+      mockApiClient.updateRating.mockReset();
       mockApiClient.updateRating.mockResolvedValue(updatedRating);
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: testUserId,
         helpful: true,
       });
 
@@ -264,7 +270,7 @@ describe('RateNoteService', () => {
       expect(result.data?.rating).toEqual(updatedRating);
       expect(mockApiClient.getRatingsForNote).toHaveBeenCalledWith('123');
       expect(mockApiClient.updateRating).toHaveBeenCalledWith('1', true, {
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: testUserId,
         username: undefined,
         displayName: undefined,
         avatarUrl: undefined,
@@ -274,45 +280,51 @@ describe('RateNoteService', () => {
     });
 
     it('should find existing rating among multiple ratings', async () => {
+      const testUserId = '00000000-0000-0001-aaaa-000000000123';
+
       const multipleRatingsResponse = createMockRatingListJSONAPIResponse([
         {
           id: '1',
           noteId: '123',
-          userId: '00000000-0000-0001-aaaa-456',
+          userId: '00000000-0000-0001-aaaa-000000000456',
           helpfulnessLevel: 'HELPFUL',
         },
         {
           id: '2',
           noteId: '123',
-          userId: '00000000-0000-0001-aaaa-123',
+          userId: testUserId,
           helpfulnessLevel: 'NOT_HELPFUL',
         },
         {
           id: '3',
           noteId: '123',
-          userId: '00000000-0000-0001-aaaa-789',
+          userId: '00000000-0000-0001-aaaa-000000000789',
           helpfulnessLevel: 'HELPFUL',
         },
       ]);
-      mockApiClient.getRatingsForNote.mockResolvedValue(multipleRatingsResponse);
+
+      mockApiClient.getRatingsForNote.mockResolvedValueOnce(multipleRatingsResponse);
 
       const updatedRating = createMockRatingJSONAPIResponse({
         id: '2',
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: testUserId,
         helpfulnessLevel: 'HELPFUL',
       });
+      mockApiClient.updateRating.mockReset();
       mockApiClient.updateRating.mockResolvedValue(updatedRating);
 
       const result = await service.execute({
         noteId: '123',
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: testUserId,
         helpful: true,
       });
 
       expect(result.success).toBe(true);
+      // Should have called updateRating (not rateNote) since we found an existing rating
+      expect(mockApiClient.rateNote).not.toHaveBeenCalled();
       expect(mockApiClient.updateRating).toHaveBeenCalledWith('2', true, {
-        userId: '00000000-0000-0001-aaaa-123',
+        userId: testUserId,
         username: undefined,
         displayName: undefined,
         avatarUrl: undefined,

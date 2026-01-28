@@ -9,6 +9,7 @@ import {
 } from './types.js';
 import type { RateLimiterInterface } from './RateLimitFactory.js';
 import { getErrorMessage, getErrorStack, isApiError } from '../utils/error-handlers.js';
+import { resolveUserProfileId } from '../lib/user-profile-resolver.js';
 
 export class RateNoteService {
   constructor(
@@ -39,10 +40,13 @@ export class RateNoteService {
         guildId: input.guildId,
       };
 
+      // Resolve Discord user ID to user profile UUID for comparison
+      const userProfileUuid = await resolveUserProfileId(input.userId, this.apiClient);
+
       // First, check if the user already has a rating for this note
       const existingRatingsResponse = await this.apiClient.getRatingsForNote(input.noteId);
       const existingRating = existingRatingsResponse.data.find(
-        r => r.attributes.rater_id === input.userId
+        r => r.attributes.rater_id === userProfileUuid
       );
 
       let rating: RatingJSONAPIResponse;

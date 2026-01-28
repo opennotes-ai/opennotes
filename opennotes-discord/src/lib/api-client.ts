@@ -18,6 +18,7 @@ import { logger } from '../logger.js';
 import { getIdentityToken, isRunningOnGCP } from '../utils/gcp-auth.js';
 import { createDiscordClaimsToken } from '../utils/discord-claims.js';
 import { nanoid } from 'nanoid';
+import { resolveUserProfileId } from './user-profile-resolver.js';
 
 // Types from generated OpenAPI schema
 export type NoteStatus = components['schemas']['NoteStatus'];
@@ -259,6 +260,15 @@ export interface WelcomeMessageUpdateResponse {
 
 // JSONAPI response type for community servers - raw structure from the server
 export type CommunityServerJSONAPIResponse = JSONAPISingleResponse<CommunityServerAttributes>;
+
+// User profile lookup attributes for resolving Discord user IDs to UUIDs
+export interface UserProfileLookupAttributes {
+  platform: string;
+  platform_user_id: string;
+  display_name: string | null;
+}
+
+export type UserProfileLookupResponse = JSONAPISingleResponse<UserProfileLookupAttributes>;
 
 // Type for rating attributes in JSON:API response
 export interface RatingAttributes {
@@ -1005,8 +1015,24 @@ export class ApiClient {
       }
     }
 
+    // Resolve Discord user ID to user profile UUID
+    let author_id: string;
+    try {
+      author_id = await resolveUserProfileId(request.authorId, this);
+    } catch (error) {
+      logger.error('Failed to resolve author user profile', {
+        authorId: request.authorId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new ApiError(
+        'Failed to resolve user profile. Please try again.',
+        '/api/v2/notes',
+        400
+      );
+    }
+
     const noteAttributes = {
-      author_id: request.authorId,  // Expects user profile UUID
+      author_id,
       channel_id: request.channelId || null,
       community_server_id,
       request_id: request.requestId || null,
@@ -1030,9 +1056,25 @@ export class ApiClient {
   }
 
   async rateNote(request: CreateRatingRequest, context?: UserContext): Promise<RatingJSONAPIResponse> {
+    // Resolve Discord user ID to user profile UUID
+    let rater_id: string;
+    try {
+      rater_id = await resolveUserProfileId(request.userId, this);
+    } catch (error) {
+      logger.error('Failed to resolve rater user profile', {
+        userId: request.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new ApiError(
+        'Failed to resolve user profile. Please try again.',
+        '/api/v2/ratings',
+        400
+      );
+    }
+
     const ratingAttributes = {
       note_id: request.noteId,
-      rater_id: request.userId,  // Expects user profile UUID
+      rater_id,
       helpfulness_level: request.helpful ? 'HELPFUL' : 'NOT_HELPFUL',
     };
 
@@ -1137,6 +1179,18 @@ export class ApiClient {
 
     const endpoint = `/api/v2/community-servers/lookup?${params.toString()}`;
     return this.fetchWithRetry<CommunityServerJSONAPIResponse>(endpoint);
+  }
+
+  async getUserProfileByPlatformId(
+    platformUserId: string,
+    platform: string = 'discord'
+  ): Promise<UserProfileLookupResponse> {
+    const params = new URLSearchParams();
+    params.append('platform', platform);
+    params.append('platform_user_id', platformUserId);
+
+    const endpoint = `/api/v2/user-profiles/lookup?${params.toString()}`;
+    return this.fetchWithRetry<UserProfileLookupResponse>(endpoint);
   }
 
   async updateWelcomeMessageId(
