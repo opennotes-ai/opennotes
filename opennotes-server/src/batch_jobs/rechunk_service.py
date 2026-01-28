@@ -20,6 +20,7 @@ Monitoring:
 """
 
 import hashlib
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -48,6 +49,8 @@ from src.monitoring import get_logger
 from src.monitoring.metrics import batch_job_stale_cleanup_total
 
 logger = get_logger(__name__)
+
+USE_DBOS_RECHUNK = os.environ.get("USE_DBOS_RECHUNK", "false").lower() == "true"
 
 DEFAULT_STALE_JOB_THRESHOLD_HOURS = 2
 DEFAULT_STUCK_JOB_THRESHOLD_MINUTES = 30
@@ -241,16 +244,18 @@ class RechunkBatchJobService:
         self,
         community_server_id: UUID | None,
         batch_size: int = 100,
+        use_dbos: bool | None = None,
     ) -> BatchJob:
         """
         Start a fact check rechunk job.
 
         Checks for active jobs first, then creates a BatchJob and dispatches
-        the TaskIQ task.
+        the appropriate backend (TaskIQ or DBOS workflow).
 
         Args:
             community_server_id: Community server ID for LLM credentials (None for global)
             batch_size: Number of items to process per batch
+            use_dbos: Override USE_DBOS_RECHUNK feature flag (None = use flag)
 
         Returns:
             The created and started BatchJob
@@ -258,6 +263,57 @@ class RechunkBatchJobService:
         Raises:
             ActiveJobExistsError: If a fact check rechunk job is already active
         """
+        should_use_dbos = use_dbos if use_dbos is not None else USE_DBOS_RECHUNK
+
+        if should_use_dbos:
+            return await self._start_dbos_fact_check_rechunk_job(
+                community_server_id=community_server_id,
+                batch_size=batch_size,
+            )
+
+        return await self._start_taskiq_fact_check_rechunk_job(
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+        )
+
+    async def _start_dbos_fact_check_rechunk_job(
+        self,
+        community_server_id: UUID | None,
+        batch_size: int = 100,
+    ) -> BatchJob:
+        """Start fact check rechunk job using DBOS workflow."""
+        await self._check_no_active_job(RECHUNK_FACT_CHECK_JOB_TYPE)
+
+        from src.dbos_workflows.rechunk_workflow import (  # noqa: PLC0415
+            dispatch_dbos_rechunk_workflow,
+        )
+
+        logger.info(
+            "Using DBOS workflow for rechunk job",
+            extra={
+                "community_server_id": str(community_server_id) if community_server_id else None,
+                "batch_size": batch_size,
+            },
+        )
+
+        job_id = await dispatch_dbos_rechunk_workflow(
+            db=self._session,
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+        )
+
+        job = await self._batch_job_service.get_job(job_id)
+        if job is None:
+            raise RuntimeError(f"BatchJob {job_id} not found after dispatch")
+
+        return job
+
+    async def _start_taskiq_fact_check_rechunk_job(
+        self,
+        community_server_id: UUID | None,
+        batch_size: int = 100,
+    ) -> BatchJob:
+        """Start fact check rechunk job using TaskIQ (original implementation)."""
         await self._check_no_active_job(RECHUNK_FACT_CHECK_JOB_TYPE)
 
         result = await self._session.execute(select(func.count(FactCheckItem.id)))
@@ -273,6 +329,7 @@ class RechunkBatchJobService:
                     else None,
                     "batch_size": batch_size,
                     "chunk_type": RechunkType.FACT_CHECK.value,
+                    "execution_backend": "taskiq",
                 },
             )
         )
@@ -301,7 +358,7 @@ class RechunkBatchJobService:
             raise
 
         logger.info(
-            "Started fact check rechunk batch job",
+            "Started fact check rechunk batch job (TaskIQ)",
             extra={
                 "job_id": str(job.id),
                 "community_server_id": str(community_server_id) if community_server_id else None,
