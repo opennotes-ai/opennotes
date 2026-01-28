@@ -1,5 +1,6 @@
 import { Factory } from 'fishery';
 import { jest } from '@jest/globals';
+import { testUuid } from './test-utils.js';
 import type {
   NoteJSONAPIResponse,
   NoteListJSONAPIResponse,
@@ -118,7 +119,7 @@ function createMockNoteJSONAPIResponse(params: {
         classification: 'NOT_MISLEADING',
         status: params.status ?? 'NEEDS_MORE_RATINGS',
         helpfulness_score: 0.5,
-        author_participant_id: `author-${seq}`,
+        author_id: testUuid('a001', seq),
         community_server_id: params.communityServerId ?? `community-${seq}`,
         channel_id: null,
         request_id: null,
@@ -161,7 +162,7 @@ function createMockRatingJSONAPIResponse(params: {
       id: params.id ?? `rating-${seq}`,
       attributes: {
         note_id: params.noteId ?? `note-${seq}`,
-        rater_participant_id: `rater-${seq}`,
+        rater_id: testUuid('r001', seq),
         helpfulness_level: params.helpfulnessLevel ?? 'HELPFUL',
         created_at: new Date().toISOString(),
         updated_at: null,

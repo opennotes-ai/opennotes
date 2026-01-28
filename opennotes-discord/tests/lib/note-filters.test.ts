@@ -27,15 +27,15 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: 'other-user-1' }),
-              ratingResponseFactory.build({ rater_participant_id: 'other-user-2' }),
+              ratingResponseFactory.build({ rater_id: 'other-user-1' }),
+              ratingResponseFactory.build({ rater_id: 'other-user-2' }),
             ],
             ratings_count: 2,
           }),
           noteWithRatingsFactory.build({
             id: 'note-2',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: 'other-user-3' }),
+              ratingResponseFactory.build({ rater_id: 'other-user-3' }),
             ],
             ratings_count: 1,
           }),
@@ -52,7 +52,7 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
+              ratingResponseFactory.build({ rater_id: currentUserId }),
             ],
             ratings_count: 1,
           }),
@@ -68,14 +68,14 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: 'other-user' }),
+              ratingResponseFactory.build({ rater_id: 'other-user' }),
             ],
             ratings_count: 1,
           }),
           noteWithRatingsFactory.build({
             id: 'note-2',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
+              ratingResponseFactory.build({ rater_id: currentUserId }),
             ],
             ratings_count: 1,
           }),
@@ -87,8 +87,8 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-4',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: 'other-user' }),
-              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
+              ratingResponseFactory.build({ rater_id: 'other-user' }),
+              ratingResponseFactory.build({ rater_id: currentUserId }),
             ],
             ratings_count: 2,
           }),
@@ -104,12 +104,12 @@ describe('note-filters', () => {
         const notes = [
           noteWithRatingsFactory.build({
             id: 'note-1',
-            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_id: currentUserId })],
             ratings_count: 1,
           }),
           noteWithRatingsFactory.build({
             id: 'note-2',
-            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_id: currentUserId })],
             ratings_count: 1,
           }),
         ];
@@ -132,7 +132,7 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: '12345' }),
+              ratingResponseFactory.build({ rater_id: '12345' }),
             ],
             ratings_count: 1,
           }),
@@ -148,7 +148,7 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              { ...ratingResponseFactory.build(), rater_participant_id: 12345 as unknown as string },
+              { ...ratingResponseFactory.build(), rater_id: 12345 as unknown as string },
             ],
             ratings_count: 1,
           }),
@@ -165,7 +165,7 @@ describe('note-filters', () => {
             id: 'note-1',
             ratings: [
               ratingResponseFactory.build({
-                rater_participant_id: currentUserId,
+                rater_id: currentUserId,
                 helpfulness_level: 'HELPFUL',
               }),
             ],
@@ -184,7 +184,7 @@ describe('note-filters', () => {
             id: 'note-1',
             ratings: [
               ratingResponseFactory.build({
-                rater_participant_id: currentUserId,
+                rater_id: currentUserId,
                 helpfulness_level: 'NOT_HELPFUL',
               }),
             ],
@@ -203,7 +203,7 @@ describe('note-filters', () => {
             id: 'note-1',
             ratings: [
               ratingResponseFactory.build({
-                rater_participant_id: currentUserId,
+                rater_id: currentUserId,
                 helpfulness_level: 'SOMEWHAT_HELPFUL',
               }),
             ],
@@ -221,11 +221,11 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: 'user-a' }),
-              ratingResponseFactory.build({ rater_participant_id: 'user-b' }),
-              ratingResponseFactory.build({ rater_participant_id: 'user-c' }),
-              ratingResponseFactory.build({ rater_participant_id: 'user-d' }),
-              ratingResponseFactory.build({ rater_participant_id: 'user-e' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-a' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-b' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-c' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-d' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-e' }),
             ],
             ratings_count: 5,
           }),
@@ -242,11 +242,11 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({
             id: 'note-1',
             ratings: [
-              ratingResponseFactory.build({ rater_participant_id: 'user-a' }),
-              ratingResponseFactory.build({ rater_participant_id: 'user-b' }),
-              ratingResponseFactory.build({ rater_participant_id: currentUserId }),
-              ratingResponseFactory.build({ rater_participant_id: 'user-d' }),
-              ratingResponseFactory.build({ rater_participant_id: 'user-e' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-a' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-b' }),
+              ratingResponseFactory.build({ rater_id: currentUserId }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-d' }),
+              ratingResponseFactory.build({ rater_id: '00000000-0000-0002-bbbb-e' }),
             ],
             ratings_count: 5,
           }),
@@ -262,12 +262,12 @@ describe('note-filters', () => {
           noteWithRatingsFactory.build({ id: 'note-a', ratings: [] }),
           noteWithRatingsFactory.build({
             id: 'note-b',
-            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_id: currentUserId })],
           }),
           noteWithRatingsFactory.build({ id: 'note-c', ratings: [] }),
           noteWithRatingsFactory.build({
             id: 'note-d',
-            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_id: currentUserId })],
           }),
           noteWithRatingsFactory.build({ id: 'note-e', ratings: [] }),
         ];
@@ -282,7 +282,7 @@ describe('note-filters', () => {
         const originalNotes = [
           noteWithRatingsFactory.build({
             id: 'note-1',
-            ratings: [ratingResponseFactory.build({ rater_participant_id: currentUserId })],
+            ratings: [ratingResponseFactory.build({ rater_id: currentUserId })],
           }),
           noteWithRatingsFactory.build({ id: 'note-2', ratings: [] }),
         ];

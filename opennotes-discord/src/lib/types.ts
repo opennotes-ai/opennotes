@@ -101,7 +101,7 @@ export interface RequestInfo {
 // Note: tweet_id has been removed - platform message ID now comes from the linked request
 export interface NoteWithRatings {
   id: string;
-  author_participant_id: string;
+  author_id: string;  // User profile UUID
   channel_id?: string | null;
   summary: string;
   classification: string;

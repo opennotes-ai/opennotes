@@ -128,7 +128,7 @@ function createMockNoteJSONAPIResponse(overrides: {
         classification: 'NOT_MISLEADING',
         status: overrides.status ?? 'PUBLISHED',
         helpfulness_score: 0,
-        author_participant_id: 'user-123',
+        author_id: 'user-123',
         community_server_id: 'test-guild-id',
         channel_id: 'test-channel-id',
         request_id: null,

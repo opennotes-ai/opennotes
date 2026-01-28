@@ -15,7 +15,7 @@ describe('NotesFormatter', () => {
   const mockNote = noteWithRatingsFactory.build(
     {
       id: '1',
-      author_participant_id: 'author-abc',
+      author_id: '00000000-0000-0001-aaaa-abc',
       summary: 'This is a test note summary',
       classification: 'MISINFORMATION_OR_ABUSE',
       helpfulness_score: 0.75,
@@ -27,7 +27,7 @@ describe('NotesFormatter', () => {
         ratingResponseFactory.build({
           id: '1',
           note_id: 'note-123',
-          rater_participant_id: 'rater-1',
+          rater_id: '00000000-0000-0002-bbbb-1',
           helpfulness_level: 'HELPFUL',
           created_at: '2025-10-31T12:00:00Z',
           updated_at: '2025-10-31T12:00:00Z',
@@ -35,7 +35,7 @@ describe('NotesFormatter', () => {
         ratingResponseFactory.build({
           id: '2',
           note_id: 'note-123',
-          rater_participant_id: 'rater-2',
+          rater_id: '00000000-0000-0002-bbbb-2',
           helpfulness_level: 'HELPFUL',
           created_at: '2025-10-31T12:00:00Z',
           updated_at: '2025-10-31T12:00:00Z',

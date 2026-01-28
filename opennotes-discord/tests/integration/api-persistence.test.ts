@@ -84,7 +84,7 @@ const createCommunityServerJSONAPIResponse = (id: string, platformId: string) =>
 );
 
 const createNoteJSONAPIResponse = (id: string, attrs: {
-  author_participant_id: string;
+  author_id: string;
   summary: string;
   classification?: string;
   status?: string;
@@ -98,7 +98,7 @@ const createNoteJSONAPIResponse = (id: string, attrs: {
   'notes',
   id,
   {
-    author_participant_id: attrs.author_participant_id,
+    author_id: attrs.author_id,
     summary: attrs.summary,
     classification: attrs.classification || 'NOT_MISLEADING',
     status: attrs.status || 'NEEDS_MORE_RATINGS',
@@ -117,7 +117,7 @@ const createNoteJSONAPIResponse = (id: string, attrs: {
 
 const createRatingJSONAPIResponse = (id: string, attrs: {
   note_id: string;
-  rater_participant_id: string;
+  rater_id: string;
   helpfulness_level: string;
   created_at?: string;
 }) => createJSONAPIResponse(
@@ -125,7 +125,7 @@ const createRatingJSONAPIResponse = (id: string, attrs: {
   id,
   {
     note_id: attrs.note_id,
-    rater_participant_id: attrs.rater_participant_id,
+    rater_id: attrs.rater_id,
     helpfulness_level: attrs.helpfulness_level,
     created_at: attrs.created_at || new Date().toISOString(),
     updated_at: null,
@@ -167,7 +167,7 @@ describe('API Persistence Integration Tests', () => {
     it('should persist note via HTTP POST and retrieve via HTTP GET', async () => {
       const createRequest = {
         messageId: '123456789012345001',
-        authorId: 'user-456',
+        authorId: '00000000-0000-0001-aaaa-456',
         content: 'This note should persist to the database',
       };
 
@@ -183,14 +183,14 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockResolvedValueOnce(
         createMockResponse({
           json: async () => createNoteJSONAPIResponse('note-789', {
-            author_participant_id: createRequest.authorId,
+            author_id: createRequest.authorId,
             summary: createRequest.content,
             created_at: now,
           }),
         })
       );
 
-      const result = await client1.createNote(createRequest, { userId: 'user-456', guildId: 'guild-123' });
+      const result = await client1.createNote(createRequest, { userId: '00000000-0000-0001-aaaa-456', guildId: 'guild-123' });
 
       expect(mockFetch).toHaveBeenCalledWith(
         'http://localhost:8000/api/v2/notes',
@@ -206,13 +206,13 @@ describe('API Persistence Integration Tests', () => {
       expect(fetchCalls[1]).toBeDefined();
       const [_, fetchInit] = fetchCalls[1];
       const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
-      expect(sentBody.data.attributes).toHaveProperty('author_participant_id', createRequest.authorId);
+      expect(sentBody.data.attributes).toHaveProperty('author_id', createRequest.authorId);
       expect(sentBody.data.attributes).toHaveProperty('summary', createRequest.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
 
       expect(result.data.id).toBe('note-789');
       expect(result.data.type).toBe('notes');
-      expect(result.data.attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(result.data.attributes.author_id).toBe(createRequest.authorId);
       expect(result.data.attributes.summary).toBe(createRequest.content);
       expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
 
@@ -223,7 +223,7 @@ describe('API Persistence Integration Tests', () => {
           json: async () => createJSONAPIListResponse('notes', [{
             id: 'note-789',
             attributes: {
-              author_participant_id: createRequest.authorId,
+              author_id: createRequest.authorId,
               summary: createRequest.content,
               classification: 'NOT_MISLEADING',
               status: 'NEEDS_MORE_RATINGS',
@@ -249,14 +249,14 @@ describe('API Persistence Integration Tests', () => {
 
       expect(retrievedNotes.data).toHaveLength(1);
       expect(retrievedNotes.data[0].id).toBe('note-789');
-      expect(retrievedNotes.data[0].attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(retrievedNotes.data[0].attributes.author_id).toBe(createRequest.authorId);
       expect(retrievedNotes.data[0].attributes.summary).toBe(createRequest.content);
     });
 
     it('should persist note and retrieve it across different client instances', async () => {
       const createRequest = {
         messageId: '123456789012345002',
-        authorId: 'author-001',
+        authorId: '00000000-0000-0001-aaaa-001',
         content: 'Cross-client persistence test',
       };
 
@@ -268,14 +268,14 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
         json: async () => createNoteJSONAPIResponse('note-cross-client-001', {
-          author_participant_id: createRequest.authorId,
+          author_id: createRequest.authorId,
           summary: createRequest.content,
         }),
       }));
 
       const created = await client1.createNote(createRequest, { userId: 'author-001', guildId: 'guild-123' });
       expect(created.data.id).toBe('note-cross-client-001');
-      expect(created.data.attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(created.data.attributes.author_id).toBe(createRequest.authorId);
       expect(created.data.attributes.summary).toBe(createRequest.content);
 
       mockFetch.mockClear();
@@ -285,7 +285,7 @@ describe('API Persistence Integration Tests', () => {
         json: async () => createJSONAPIListResponse('notes', [{
           id: 'note-cross-client-001',
           attributes: {
-            author_participant_id: createRequest.authorId,
+            author_id: createRequest.authorId,
             summary: createRequest.content,
             classification: 'NOT_MISLEADING',
             status: 'NEEDS_MORE_RATINGS',
@@ -301,7 +301,7 @@ describe('API Persistence Integration Tests', () => {
 
       expect(retrieved.data).toHaveLength(1);
       expect(retrieved.data[0].id).toBe('note-cross-client-001');
-      expect(retrieved.data[0].attributes.author_participant_id).toBe(createRequest.authorId);
+      expect(retrieved.data[0].attributes.author_id).toBe(createRequest.authorId);
       expect(retrieved.data[0].attributes.summary).toBe(createRequest.content);
     });
 
@@ -320,7 +320,7 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
         json: async () => createNoteJSONAPIResponse('note-999', {
-          author_participant_id: request.authorId,
+          author_id: request.authorId,
           summary: request.content,
         }),
       }));
@@ -341,7 +341,7 @@ describe('API Persistence Integration Tests', () => {
       expect(fetchCalls[1]).toBeDefined();
       const [_, fetchInit] = fetchCalls[1];
       const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
-      expect(sentBody.data.attributes).toHaveProperty('author_participant_id', request.authorId);
+      expect(sentBody.data.attributes).toHaveProperty('author_id', request.authorId);
       expect(sentBody.data.attributes).toHaveProperty('summary', request.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
     });
@@ -359,7 +359,7 @@ describe('API Persistence Integration Tests', () => {
         ok: true,
         json: async () => createRatingJSONAPIResponse('rating-001', {
           note_id: ratingRequest.noteId,
-          rater_participant_id: ratingRequest.userId,
+          rater_id: ratingRequest.userId,
           helpfulness_level: 'HELPFUL',
         }),
       }));
@@ -378,7 +378,7 @@ describe('API Persistence Integration Tests', () => {
       );
 
       expect(result.data.attributes.note_id).toBe(ratingRequest.noteId);
-      expect(result.data.attributes.rater_participant_id).toBe(ratingRequest.userId);
+      expect(result.data.attributes.rater_id).toBe(ratingRequest.userId);
       expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
       expect(result.data.attributes.created_at).toBeDefined();
     });
@@ -394,7 +394,7 @@ describe('API Persistence Integration Tests', () => {
         ok: true,
         json: async () => createRatingJSONAPIResponse('rating-002', {
           note_id: ratingRequest.noteId,
-          rater_participant_id: ratingRequest.userId,
+          rater_id: ratingRequest.userId,
           helpfulness_level: 'NOT_HELPFUL',
         }),
       }));
@@ -422,7 +422,7 @@ describe('API Persistence Integration Tests', () => {
         ok: true,
         json: async () => createRatingJSONAPIResponse('rating-003', {
           note_id: request.noteId,
-          rater_participant_id: request.userId,
+          rater_id: request.userId,
           helpfulness_level: 'HELPFUL',
         }),
       }));
@@ -442,7 +442,7 @@ describe('API Persistence Integration Tests', () => {
       const [_, fetchInit] = fetchCalls[0];
       const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
       expect(sentBody.data.attributes).toHaveProperty('note_id');
-      expect(sentBody.data.attributes).toHaveProperty('rater_participant_id', request.userId);
+      expect(sentBody.data.attributes).toHaveProperty('rater_id', request.userId);
       expect(sentBody.data.attributes).toHaveProperty('helpfulness_level', 'HELPFUL');
     });
   });
@@ -554,7 +554,7 @@ describe('API Persistence Integration Tests', () => {
         community_server_id: 'guild-123',
         originalMessageContent: 'Fact-check context',
         discord_channel_id: 'channel-123',
-        discord_author_id: 'author-456',
+        discord_author_id: '00000000-0000-0001-aaaa-456',
         discord_timestamp: new Date('2024-01-15T10:30:00Z'),
         fact_check_metadata: {
           dataset_item_id: 'fc-item-789',
@@ -664,7 +664,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '123456789012345008',
-        authorId: 'user-500',
+        authorId: '00000000-0000-0001-aaaa-500',
         content: 'Server error test',
       };
 
@@ -680,7 +680,7 @@ describe('API Persistence Integration Tests', () => {
         text: async () => 'Internal Server Error',
       }));
 
-      await expect(client.createNote(request, { userId: 'user-500', guildId: 'guild-123' })).rejects.toThrow(
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-500', guildId: 'guild-123' })).rejects.toThrow(
         'API request failed: 500 Internal Server Error'
       );
     });
@@ -694,7 +694,7 @@ describe('API Persistence Integration Tests', () => {
 
       const request = {
         messageId: '',
-        authorId: 'user-400',
+        authorId: '00000000-0000-0001-aaaa-400',
         content: 'Invalid request',
       };
 
@@ -710,7 +710,7 @@ describe('API Persistence Integration Tests', () => {
         text: async () => 'Bad Request: messageId is required',
       }));
 
-      await expect(client.createNote(request, { userId: 'user-400', guildId: 'guild-123' })).rejects.toThrow(
+      await expect(client.createNote(request, { userId: '00000000-0000-0001-aaaa-400', guildId: 'guild-123' })).rejects.toThrow(
         'API request failed: 400 Bad Request'
       );
     });
@@ -750,7 +750,7 @@ describe('API Persistence Integration Tests', () => {
         .mockResolvedValueOnce(
           createMockResponse({
             json: async () => createNoteJSONAPIResponse('note-retry-success', {
-              author_participant_id: request.authorId,
+              author_id: request.authorId,
               summary: request.content,
             }),
           })
@@ -760,7 +760,7 @@ describe('API Persistence Integration Tests', () => {
 
       expect(result.data.id).toBe('note-retry-success');
       expect(result.data.type).toBe('notes');
-      expect(result.data.attributes.author_participant_id).toBe(request.authorId);
+      expect(result.data.attributes.author_id).toBe(request.authorId);
       expect(result.data.attributes.summary).toBe(request.content);
       expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
       expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -878,7 +878,7 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
         json: async () => createNoteJSONAPIResponse('note-consistency-001', {
-          author_participant_id: noteRequest.authorId,
+          author_id: noteRequest.authorId,
           summary: noteRequest.content,
         }),
       }));
@@ -891,7 +891,7 @@ describe('API Persistence Integration Tests', () => {
         json: async () => createJSONAPIListResponse('notes', [{
           id: 'note-consistency-001',
           attributes: {
-            author_participant_id: noteRequest.authorId,
+            author_id: noteRequest.authorId,
             summary: noteRequest.content,
             classification: 'NOT_MISLEADING',
             status: 'NEEDS_MORE_RATINGS',
@@ -907,7 +907,7 @@ describe('API Persistence Integration Tests', () => {
 
       expect(notesFromClient2.data).toHaveLength(1);
       expect(notesFromClient2.data[0].id).toBe('note-consistency-001');
-      expect(notesFromClient2.data[0].attributes.author_participant_id).toBe(noteRequest.authorId);
+      expect(notesFromClient2.data[0].attributes.author_id).toBe(noteRequest.authorId);
       expect(notesFromClient2.data[0].attributes.summary).toBe(noteRequest.content);
 
       mockFetch.mockClear();
@@ -916,7 +916,7 @@ describe('API Persistence Integration Tests', () => {
         json: async () => createJSONAPIListResponse('notes', [{
           id: 'note-consistency-001',
           attributes: {
-            author_participant_id: noteRequest.authorId,
+            author_id: noteRequest.authorId,
             summary: noteRequest.content,
             classification: 'NOT_MISLEADING',
             status: 'NEEDS_MORE_RATINGS',
@@ -933,20 +933,20 @@ describe('API Persistence Integration Tests', () => {
       );
 
       expect(notesFromClient1Again.data[0].id).toBe(notesFromClient2.data[0].id);
-      expect(notesFromClient1Again.data[0].attributes.author_participant_id).toBe(notesFromClient2.data[0].attributes.author_participant_id);
+      expect(notesFromClient1Again.data[0].attributes.author_id).toBe(notesFromClient2.data[0].attributes.author_id);
       expect(notesFromClient1Again.data[0].attributes.summary).toBe(notesFromClient2.data[0].attributes.summary);
     });
 
     it('should handle concurrent note creations from different clients', async () => {
       const note1Request = {
         messageId: '123456789012345014',
-        authorId: 'author-1',
+        authorId: '00000000-0000-0001-aaaa-1',
         content: 'First note',
       };
 
       const note2Request = {
         messageId: '123456789012345014',
-        authorId: 'author-2',
+        authorId: '00000000-0000-0001-aaaa-2',
         content: 'Second note',
       };
 
@@ -958,7 +958,7 @@ describe('API Persistence Integration Tests', () => {
         .mockResolvedValueOnce(
           createMockResponse({
             json: async () => createNoteJSONAPIResponse('note-concurrent-001', {
-              author_participant_id: note1Request.authorId,
+              author_id: note1Request.authorId,
               summary: note1Request.content,
             }),
           })
@@ -970,7 +970,7 @@ describe('API Persistence Integration Tests', () => {
         .mockResolvedValueOnce(
           createMockResponse({
             json: async () => createNoteJSONAPIResponse('note-concurrent-002', {
-              author_participant_id: note2Request.authorId,
+              author_id: note2Request.authorId,
               summary: note2Request.content,
             }),
           })
@@ -988,17 +988,17 @@ describe('API Persistence Integration Tests', () => {
       const notes = [
         {
           messageId: '123456789012345015',
-          authorId: 'author-1',
+          authorId: '00000000-0000-0001-aaaa-1',
           content: 'First note',
         },
         {
           messageId: '123456789012345015',
-          authorId: 'author-2',
+          authorId: '00000000-0000-0001-aaaa-2',
           content: 'Second note',
         },
         {
           messageId: '123456789012345015',
-          authorId: 'author-3',
+          authorId: '00000000-0000-0001-aaaa-3',
           content: 'Third note',
         },
       ];
@@ -1017,7 +1017,7 @@ describe('API Persistence Integration Tests', () => {
         mockFetch.mockResolvedValueOnce(createMockResponse({
           ok: true,
           json: async () => createNoteJSONAPIResponse(`note-multi-${i}`, {
-            author_participant_id: notes[i].authorId,
+            author_id: notes[i].authorId,
             summary: notes[i].content,
           }),
         }));
@@ -1034,7 +1034,7 @@ describe('API Persistence Integration Tests', () => {
         json: async () => createJSONAPIListResponse('notes', notes.map((note, i) => ({
           id: `note-multi-${i}`,
           attributes: {
-            author_participant_id: note.authorId,
+            author_id: note.authorId,
             summary: note.content,
             classification: 'NOT_MISLEADING',
             status: 'NEEDS_MORE_RATINGS',
@@ -1049,9 +1049,9 @@ describe('API Persistence Integration Tests', () => {
       const retrievedNotes = await client2.getNotes('msg-multi-note-001');
 
       expect(retrievedNotes.data).toHaveLength(3);
-      retrievedNotes.data.forEach((note: { id: string; attributes: { author_participant_id: string; summary: string; created_at: string } }, i: number) => {
+      retrievedNotes.data.forEach((note: { id: string; attributes: { author_id: string; summary: string; created_at: string } }, i: number) => {
         expect(note.id).toBe(`note-multi-${i}`);
-        expect(note.attributes.author_participant_id).toBe(notes[i].authorId);
+        expect(note.attributes.author_id).toBe(notes[i].authorId);
         expect(note.attributes.summary).toBe(notes[i].content);
         expect(new Date(note.attributes.created_at).getTime()).toBeGreaterThan(0);
       });
@@ -1075,14 +1075,14 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
         json: async () => createNoteJSONAPIResponse('note-validation-001', {
-          author_participant_id: request.authorId,
+          author_id: request.authorId,
           summary: request.content,
         }),
       }));
 
       const result = await client1.createNote(request, { userId: 'author-validation', guildId: 'guild-123' });
 
-      expect(result.data.attributes.author_participant_id).toBe(request.authorId);
+      expect(result.data.attributes.author_id).toBe(request.authorId);
       expect(result.data.attributes.summary).toBe(request.content);
       expect(result.data.id).toBeTruthy();
       expect(new Date(result.data.attributes.created_at).getTime()).toBeGreaterThan(0);
@@ -1099,7 +1099,7 @@ describe('API Persistence Integration Tests', () => {
         ok: true,
         json: async () => createRatingJSONAPIResponse('rating-validation-001', {
           note_id: request.noteId,
-          rater_participant_id: request.userId,
+          rater_id: request.userId,
           helpfulness_level: 'HELPFUL',
         }),
       }));
@@ -1107,7 +1107,7 @@ describe('API Persistence Integration Tests', () => {
       const result = await client1.rateNote(request);
 
       expect(result.data.attributes.note_id).toBe(request.noteId);
-      expect(result.data.attributes.rater_participant_id).toBe(request.userId);
+      expect(result.data.attributes.rater_id).toBe(request.userId);
       expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
       expect(result.data.attributes.created_at).toBeDefined();
     });
@@ -1127,7 +1127,7 @@ describe('API Persistence Integration Tests', () => {
       mockFetch.mockResolvedValueOnce(createMockResponse({
         ok: true,
         json: async () => createNoteJSONAPIResponse('note-special-chars', {
-          author_participant_id: request.authorId,
+          author_id: request.authorId,
           summary: request.content,
         }),
       }));
@@ -1145,7 +1145,7 @@ describe('API Persistence Integration Tests', () => {
       expect(fetchCalls[1]).toBeDefined();
       const [_, fetchInit] = fetchCalls[1];
       const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
-      expect(sentBody.data.attributes).toHaveProperty('author_participant_id', request.authorId);
+      expect(sentBody.data.attributes).toHaveProperty('author_id', request.authorId);
       expect(sentBody.data.attributes).toHaveProperty('summary', request.content);
       expect(sentBody.data.attributes).toHaveProperty('classification', 'NOT_MISLEADING');
     });

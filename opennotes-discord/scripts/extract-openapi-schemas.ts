@@ -10,23 +10,21 @@ const OUTPUT_FILE = path.resolve(__dirname, '../src/lib/openapi-schemas.json');
 
 const USED_SCHEMAS = [
   'NoteCreateAttributes',
-  'NoteResponse',
+  'NoteJSONAPIAttributes',
   'NoteData',
-  'NoteSummaryStats',
   'NoteClassification',
   'NoteStatus',
   'NoteUpdateAttributes',
   'RatingCreateAttributes',
-  'RatingResponse',
+  'RatingAttributes',
   'RatingData',
   'RatingUpdateAttributes',
   'HelpfulnessLevel',
-  'RequestCreate',
-  'RequestResponse',
-  'RequestListResponse',
+  'RequestCreateAttributes',
+  'RequestAttributes',
+  'RequestListJSONAPIResponse',
   'RequestStatus',
-  'RequestUpdate',
-  'RequestInfo',
+  'RequestUpdateAttributes',
   'ScoringRequest',
   'ScoringResponse',
   'EnrollmentData',
@@ -37,9 +35,15 @@ const USED_SCHEMAS = [
 
 const SCHEMA_ALIASES: Record<string, string> = {
   'NoteCreate': 'NoteCreateAttributes',
+  'NoteResponse': 'NoteJSONAPIAttributes',
   'RatingCreate': 'RatingCreateAttributes',
+  'RatingResponse': 'RatingAttributes',
   'NoteUpdate': 'NoteUpdateAttributes',
   'RatingUpdate': 'RatingUpdateAttributes',
+  'RequestCreate': 'RequestCreateAttributes',
+  'RequestResponse': 'RequestAttributes',
+  'RequestListResponse': 'RequestListJSONAPIResponse',
+  'RequestUpdate': 'RequestUpdateAttributes',
 };
 
 const CUSTOM_SCHEMAS: Record<string, unknown> = {

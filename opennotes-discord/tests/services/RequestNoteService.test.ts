@@ -20,7 +20,7 @@ describe('RequestNoteService', () => {
 
   const validInput = {
     messageId: 'msg-123',
-    userId: 'user-123',
+    userId: '00000000-0000-0001-aaaa-123',
     community_server_id: '1234567890123456789',
     channelId: 'channel-123',
     reason: 'Test reason',
@@ -118,7 +118,7 @@ describe('RequestNoteService', () => {
       expect(mockApiClient.requestNote).toHaveBeenCalledWith(
         {
           messageId: 'msg-123',
-          userId: 'user-123',
+          userId: '00000000-0000-0001-aaaa-123',
           community_server_id: '1234567890123456789',
           discord_channel_id: 'channel-123',
           reason: 'Test reason',
@@ -129,7 +129,7 @@ describe('RequestNoteService', () => {
           embeddedImageUrl: undefined,
         },
         {
-          userId: 'user-123',
+          userId: '00000000-0000-0001-aaaa-123',
           username: 'testuser',
           displayName: 'Test User',
           avatarUrl: 'https://example.com/avatar.png',

@@ -80,7 +80,7 @@ const createCommunityServerJSONAPIResponse = (id: string, platformId: string) =>
 );
 
 const createNoteJSONAPIResponse = (id: string, attrs: {
-  author_participant_id: string;
+  author_id: string;
   summary: string;
   classification?: string;
   status?: string;
@@ -90,7 +90,7 @@ const createNoteJSONAPIResponse = (id: string, attrs: {
   'notes',
   id,
   {
-    author_participant_id: attrs.author_participant_id,
+    author_id: attrs.author_id,
     summary: attrs.summary,
     classification: attrs.classification || 'NOT_MISLEADING',
     status: attrs.status || 'NEEDS_MORE_RATINGS',
@@ -109,7 +109,7 @@ const createNoteJSONAPIResponse = (id: string, attrs: {
 
 const createRatingJSONAPIResponse = (id: string, attrs: {
   note_id: string;
-  rater_participant_id: string;
+  rater_id: string;
   helpfulness_level: string;
   created_at?: string;
 }) => createJSONAPIResponse(
@@ -117,7 +117,7 @@ const createRatingJSONAPIResponse = (id: string, attrs: {
   id,
   {
     note_id: attrs.note_id,
-    rater_participant_id: attrs.rater_participant_id,
+    rater_id: attrs.rater_id,
     helpfulness_level: attrs.helpfulness_level,
     created_at: attrs.created_at || new Date().toISOString(),
     updated_at: null,
@@ -151,7 +151,7 @@ describe('End-to-End Integration Tests', () => {
           createMockResponse({
             status: 201,
             json: async () => createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440001', {
-              author_participant_id: 'user456',
+              author_id: 'user456',
               summary: 'This is a test community note',
               community_server_id: communityServerId,
             }),
@@ -162,7 +162,7 @@ describe('End-to-End Integration Tests', () => {
             status: 201,
             json: async () => createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440002', {
               note_id: '550e8400-e29b-41d4-a716-446655440001',
-              rater_participant_id: 'rater789',
+              rater_id: 'rater789',
               helpfulness_level: 'HELPFUL',
             }),
           })
@@ -184,7 +184,7 @@ describe('End-to-End Integration Tests', () => {
       expect(note.data.id).toBe('550e8400-e29b-41d4-a716-446655440001');
       expect(note.data.type).toBe('notes');
       expect(note.data.attributes.summary).toBe('This is a test community note');
-      expect(note.data.attributes.author_participant_id).toBe('user456');
+      expect(note.data.attributes.author_id).toBe('00000000-0000-0002-bbbb-456');
       expect(note.data.attributes.created_at).toBeDefined();
 
       const rating = await apiClient.rateNote({
@@ -199,7 +199,7 @@ describe('End-to-End Integration Tests', () => {
       expect(rating.data.type).toBe('ratings');
       expect(rating.data.id).toBeDefined();
       expect(rating.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440001');
-      expect(rating.data.attributes.rater_participant_id).toBe('rater789');
+      expect(rating.data.attributes.rater_id).toBe('rater789');
       expect(rating.data.attributes.helpfulness_level).toBe('HELPFUL');
       expect(rating.data.attributes.created_at).toBeDefined();
 
@@ -214,7 +214,7 @@ describe('End-to-End Integration Tests', () => {
               classification: 'NOT_MISLEADING',
               status: 'published',
               helpfulness_score: 0.5,
-              author_participant_id: 'user456',
+              author_id: 'user456',
               community_server_id: 'community-uuid',
               channel_id: null,
               request_id: 'request-1',
@@ -241,7 +241,7 @@ describe('End-to-End Integration Tests', () => {
       expect(notes.data).toContainEqual(expect.objectContaining({
         type: 'notes',
         attributes: expect.objectContaining({
-          author_participant_id: 'user456',
+          author_id: 'user456',
           summary: 'This is a test community note',
         }),
       }));
@@ -273,7 +273,7 @@ describe('End-to-End Integration Tests', () => {
           createMockResponse({
             status: 201,
             json: async () => createNoteJSONAPIResponse('550e8400-e29b-41d4-a716-446655440003', {
-              author_participant_id: 'author-001',
+              author_id: '00000000-0000-0001-aaaa-001',
               summary: 'Test note for scoring',
               community_server_id: communityServerId,
             }),
@@ -284,7 +284,7 @@ describe('End-to-End Integration Tests', () => {
             status: 201,
             json: async () => createRatingJSONAPIResponse('550e8400-e29b-41d4-a716-446655440004', {
               note_id: '550e8400-e29b-41d4-a716-446655440003',
-              rater_participant_id: 'rater-001',
+              rater_id: '00000000-0000-0002-bbbb-001',
               helpfulness_level: 'HELPFUL',
             }),
           })
@@ -297,7 +297,7 @@ describe('End-to-End Integration Tests', () => {
 
       const note = await apiClient.createNote({
         messageId: '234567890123456790',
-        authorId: 'author-001',
+        authorId: '00000000-0000-0001-aaaa-001',
         content: 'Test note for scoring',
       }, {
         guildId: 'guild123',
@@ -317,7 +317,7 @@ describe('End-to-End Integration Tests', () => {
         notes: [
           {
             noteId: parseInt(note.data.id.split('-')[1]) || 456,
-            noteAuthorParticipantId: note.data.attributes.author_participant_id,
+            noteAuthorParticipantId: note.data.attributes.author_id,
             createdAtMillis: noteCreatedAtMillis,
             tweetId: 234567890123456790,
             summary: note.data.attributes.summary,
@@ -326,7 +326,7 @@ describe('End-to-End Integration Tests', () => {
         ],
         ratings: [
           {
-            raterParticipantId: rating.data.attributes.rater_participant_id,
+            raterParticipantId: rating.data.attributes.rater_id,
             noteId: parseInt(note.data.id.split('-')[1]) || 456,
             createdAtMillis: ratingCreatedAtMillis,
             helpfulnessLevel: rating.data.attributes.helpfulness_level,
@@ -334,13 +334,13 @@ describe('End-to-End Integration Tests', () => {
         ],
         enrollment: [
           {
-            participantId: note.data.attributes.author_participant_id,
+            participantId: note.data.attributes.author_id,
             enrollmentState: 'EARNED_IN',
             successfulRatingNeededToEarnIn: 0,
             timestampOfLastStateChange: noteCreatedAtMillis,
           },
           {
-            participantId: rating.data.attributes.rater_participant_id,
+            participantId: rating.data.attributes.rater_id,
             enrollmentState: 'EARNED_IN',
             successfulRatingNeededToEarnIn: 0,
             timestampOfLastStateChange: ratingCreatedAtMillis,
@@ -411,7 +411,7 @@ describe('End-to-End Integration Tests', () => {
           const i = noteIndex++;
           const noteId = `550e8400-e29b-41d4-a716-446655440${String(i).padStart(3, '0')}`;
           const response = createNoteJSONAPIResponse(noteId, {
-            author_participant_id: `user${i}`,
+            author_id: `user${i}`,
             summary: `Note ${i}`,
             community_server_id: communityServerId,
           });

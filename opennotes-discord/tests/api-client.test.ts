@@ -761,7 +761,7 @@ describe('ApiClient Wrapper', () => {
               classification: 'NOT_MISLEADING',
               status: 'published',
               helpfulness_score: 0.8,
-              author_participant_id: 'participant-1',
+              author_id: '00000000-0000-0001-aaaa-1',
               community_server_id: 'community-uuid',
               channel_id: null,
               request_id: 'request-1',
@@ -780,7 +780,7 @@ describe('ApiClient Wrapper', () => {
               classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
               status: 'published',
               helpfulness_score: 0.6,
-              author_participant_id: 'participant-2',
+              author_id: '00000000-0000-0001-aaaa-2',
               community_server_id: 'community-uuid',
               channel_id: 'channel-1',
               request_id: 'request-2',
@@ -822,13 +822,13 @@ describe('ApiClient Wrapper', () => {
       expect(result.data[0].id).toBe('note-uuid-1');
       expect(result.data[0].attributes.summary).toBe('Test note 1');
       expect(result.data[0].attributes.classification).toBe('NOT_MISLEADING');
-      expect(result.data[0].attributes.author_participant_id).toBe('participant-1');
+      expect(result.data[0].attributes.author_id).toBe('00000000-0000-0001-aaaa-1');
       expect(result.data[0].attributes.ratings_count).toBe(5);
       expect(result.data[1].type).toBe('notes');
       expect(result.data[1].id).toBe('note-uuid-2');
       expect(result.data[1].attributes.summary).toBe('Test note 2');
       expect(result.data[1].attributes.classification).toBe('MISINFORMED_OR_POTENTIALLY_MISLEADING');
-      expect(result.data[1].attributes.author_participant_id).toBe('participant-2');
+      expect(result.data[1].attributes.author_id).toBe('00000000-0000-0001-aaaa-2');
       expect(result.data[1].attributes.ratings_count).toBe(3);
     });
 
@@ -860,7 +860,7 @@ describe('ApiClient Wrapper', () => {
       const request = {
         messageId: '123456789012345678',
         content: 'Test note content',
-        authorId: 'user-456',
+        authorId: '00000000-0000-0001-aaaa-456',
         authorName: 'testuser',
         communityServerId: 'guild-123',
       };
@@ -891,7 +891,7 @@ describe('ApiClient Wrapper', () => {
           type: 'notes',
           id: '789',
           attributes: {
-            author_participant_id: 'user-456',
+            author_id: 'user-456',
             community_server_id: '123e4567-e89b-12d3-a456-426614174000',
             summary: 'Test note content',
             classification: 'NOT_MISLEADING',
@@ -914,7 +914,7 @@ describe('ApiClient Wrapper', () => {
       );
 
       const result = await apiClient.createNote(request, {
-        userId: 'user-123',
+        userId: '00000000-0000-0001-aaaa-123',
         guildId: 'guild-123',
       });
 
@@ -923,7 +923,7 @@ describe('ApiClient Wrapper', () => {
           type: 'notes',
           id: '789',
           attributes: {
-            author_participant_id: 'user-456',
+            author_id: 'user-456',
             community_server_id: '123e4567-e89b-12d3-a456-426614174000',
             summary: 'Test note content',
             classification: 'NOT_MISLEADING',
@@ -954,7 +954,7 @@ describe('ApiClient Wrapper', () => {
       expect(fetchInit).toBeDefined();
       const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
       expect(sentBody.data.type).toBe('notes');
-      expect(sentBody.data.attributes.author_participant_id).toBe(request.authorId);
+      expect(sentBody.data.attributes.author_id).toBe(request.authorId);
       expect(sentBody.data.attributes.summary).toBe(request.content);
       expect(sentBody.data.attributes.classification).toBe('NOT_MISLEADING');
     });
@@ -964,7 +964,7 @@ describe('ApiClient Wrapper', () => {
     it('should successfully rate a note as helpful', async () => {
       const request = {
         noteId: '550e8400-e29b-41d4-a716-446655440000',
-        userId: 'user-456',
+        userId: '00000000-0000-0001-aaaa-456',
         helpful: true,
       };
 
@@ -974,7 +974,7 @@ describe('ApiClient Wrapper', () => {
           id: '1',
           attributes: {
             note_id: '550e8400-e29b-41d4-a716-446655440000',
-            rater_participant_id: 'user-456',
+            rater_id: '00000000-0000-0002-bbbb-456',
             helpfulness_level: 'HELPFUL',
             created_at: '2025-10-23T12:00:00Z',
             updated_at: '2025-10-23T12:00:00Z',
@@ -995,7 +995,7 @@ describe('ApiClient Wrapper', () => {
       expect(result.data.id).toBe('1');
       expect(result.data.type).toBe('ratings');
       expect(result.data.attributes.note_id).toBe('550e8400-e29b-41d4-a716-446655440000');
-      expect(result.data.attributes.rater_participant_id).toBe('user-456');
+      expect(result.data.attributes.rater_id).toBe('00000000-0000-0002-bbbb-456');
       expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
@@ -1017,7 +1017,7 @@ describe('ApiClient Wrapper', () => {
           type: 'ratings',
           attributes: {
             note_id: '550e8400-e29b-41d4-a716-446655440000',
-            rater_participant_id: 'user-456',
+            rater_id: '00000000-0000-0002-bbbb-456',
             helpfulness_level: 'HELPFUL',
           },
         },
@@ -1027,7 +1027,7 @@ describe('ApiClient Wrapper', () => {
     it('should successfully rate a note as not helpful', async () => {
       const request = {
         noteId: '660e8400-e29b-41d4-a716-446655440001',
-        userId: 'user-789',
+        userId: '00000000-0000-0001-aaaa-789',
         helpful: false,
       };
 
@@ -1037,7 +1037,7 @@ describe('ApiClient Wrapper', () => {
           id: '2',
           attributes: {
             note_id: '660e8400-e29b-41d4-a716-446655440001',
-            rater_participant_id: 'user-789',
+            rater_id: '00000000-0000-0002-bbbb-789',
             helpfulness_level: 'NOT_HELPFUL',
             created_at: '2025-10-23T13:00:00Z',
             updated_at: '2025-10-23T13:00:00Z',
@@ -1058,7 +1058,7 @@ describe('ApiClient Wrapper', () => {
       expect(result.data.id).toBe('2');
       expect(result.data.type).toBe('ratings');
       expect(result.data.attributes.note_id).toBe('660e8400-e29b-41d4-a716-446655440001');
-      expect(result.data.attributes.rater_participant_id).toBe('user-789');
+      expect(result.data.attributes.rater_id).toBe('00000000-0000-0002-bbbb-789');
       expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
 
       const fetchCall = mockFetch.mock.calls[0];
@@ -1070,7 +1070,7 @@ describe('ApiClient Wrapper', () => {
           type: 'ratings',
           attributes: {
             note_id: '660e8400-e29b-41d4-a716-446655440001',
-            rater_participant_id: 'user-789',
+            rater_id: '00000000-0000-0002-bbbb-789',
             helpfulness_level: 'NOT_HELPFUL',
           },
         },
@@ -1089,7 +1089,7 @@ describe('ApiClient Wrapper', () => {
           id: '1',
           attributes: {
             note_id: '123',
-            rater_participant_id: 'user-456',
+            rater_id: '00000000-0000-0002-bbbb-456',
             helpfulness_level: 'HELPFUL',
             created_at: '2025-10-23T12:00:00Z',
             updated_at: '2025-10-24T12:00:00Z',
@@ -1110,7 +1110,7 @@ describe('ApiClient Wrapper', () => {
       expect(result.data.id).toBe('1');
       expect(result.data.type).toBe('ratings');
       expect(result.data.attributes.note_id).toBe('123');
-      expect(result.data.attributes.rater_participant_id).toBe('user-456');
+      expect(result.data.attributes.rater_id).toBe('00000000-0000-0002-bbbb-456');
       expect(result.data.attributes.helpfulness_level).toBe('HELPFUL');
 
       expect(mockFetch).toHaveBeenCalledWith(
@@ -1148,7 +1148,7 @@ describe('ApiClient Wrapper', () => {
           id: '2',
           attributes: {
             note_id: '456',
-            rater_participant_id: 'user-789',
+            rater_id: '00000000-0000-0002-bbbb-789',
             helpfulness_level: 'NOT_HELPFUL',
             created_at: '2025-10-23T13:00:00Z',
             updated_at: '2025-10-24T13:00:00Z',
@@ -1169,7 +1169,7 @@ describe('ApiClient Wrapper', () => {
       expect(result.data.id).toBe('2');
       expect(result.data.type).toBe('ratings');
       expect(result.data.attributes.note_id).toBe('456');
-      expect(result.data.attributes.rater_participant_id).toBe('user-789');
+      expect(result.data.attributes.rater_id).toBe('00000000-0000-0002-bbbb-789');
       expect(result.data.attributes.helpfulness_level).toBe('NOT_HELPFUL');
     });
   });
@@ -1187,7 +1187,7 @@ describe('ApiClient Wrapper', () => {
             classification: 'NOT_MISLEADING',
             status: 'draft',
             helpfulness_score: 0,
-            author_participant_id: 'ai-participant',
+            author_id: '00000000-0000-0001-aaaa-000000000999',
             community_server_id: 'community-uuid',
             channel_id: null,
             request_id: requestId,
@@ -1240,7 +1240,7 @@ describe('ApiClient Wrapper', () => {
             id: '1',
             attributes: {
               note_id: '123',
-              rater_participant_id: 'user-456',
+              rater_id: '00000000-0000-0002-bbbb-456',
               helpfulness_level: 'HELPFUL',
               created_at: '2025-10-23T12:00:00Z',
               updated_at: '2025-10-23T12:00:00Z',
@@ -1251,7 +1251,7 @@ describe('ApiClient Wrapper', () => {
             id: '2',
             attributes: {
               note_id: '123',
-              rater_participant_id: 'user-789',
+              rater_id: '00000000-0000-0002-bbbb-789',
               helpfulness_level: 'NOT_HELPFUL',
               created_at: '2025-10-23T13:00:00Z',
               updated_at: '2025-10-23T13:00:00Z',
@@ -1274,7 +1274,7 @@ describe('ApiClient Wrapper', () => {
       expect(result.data[0].id).toBe('1');
       expect(result.data[0].type).toBe('ratings');
       expect(result.data[0].attributes.note_id).toBe('123');
-      expect(result.data[0].attributes.rater_participant_id).toBe('user-456');
+      expect(result.data[0].attributes.rater_id).toBe('00000000-0000-0002-bbbb-456');
       expect(result.data[0].attributes.helpfulness_level).toBe('HELPFUL');
       expect(result.data[1].id).toBe('2');
       expect(result.data[1].attributes.helpfulness_level).toBe('NOT_HELPFUL');
@@ -1322,7 +1322,7 @@ describe('ApiClient Wrapper', () => {
               classification: 'NOT_MISLEADING',
               status: 'published',
               helpfulness_score: 0.8,
-              author_participant_id: 'author-1',
+              author_id: '00000000-0000-0001-aaaa-1',
               community_server_id: 'community-uuid',
               channel_id: null,
               request_id: 'request-1',
@@ -1409,7 +1409,7 @@ describe('ApiClient Wrapper', () => {
     it('should successfully request a note', async () => {
       const request = {
         messageId: '123456789012345678',
-        userId: 'user-456',
+        userId: '00000000-0000-0001-aaaa-456',
         community_server_id: 'guild-123',
         reason: 'Need clarification',
       };
@@ -1455,13 +1455,13 @@ describe('ApiClient Wrapper', () => {
       expect(sentBody.data.type).toBe('requests');
       expect(sentBody.data.attributes.request_id).toMatch(/^discord-123456789012345678-\d+$/);
       expect(sentBody.data.attributes.platform_message_id).toBe('123456789012345678');
-      expect(sentBody.data.attributes.requested_by).toBe('user-456');
+      expect(sentBody.data.attributes.requested_by).toBe('00000000-0000-0002-bbbb-456');
     });
 
     it('should request a note without a reason', async () => {
       const request = {
         messageId: '123456789012345678',
-        userId: 'user-456',
+        userId: '00000000-0000-0001-aaaa-456',
         community_server_id: 'guild-123',
       };
 
@@ -1834,7 +1834,7 @@ describe('ApiClient Wrapper', () => {
             attributes: {
               channel_id: 'ch-1',
               content: 'Flagged content',
-              author_id: 'author-1',
+              author_id: '00000000-0000-0001-aaaa-1',
               timestamp: '2024-01-15T09:00:00Z',
               matches: [
                 {

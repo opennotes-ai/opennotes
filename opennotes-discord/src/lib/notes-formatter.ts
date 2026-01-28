@@ -53,7 +53,7 @@ export class NotesFormatter {
     guildId?: string
   ): ContainerBuilder {
     const urgency = calculateUrgency(note.ratings_count, thresholds.min_ratings_needed);
-    const uniqueRaters = new Set(note.ratings.map(r => r.rater_participant_id)).size;
+    const uniqueRaters = new Set(note.ratings.map(r => r.rater_id)).size;
     const createdTimestamp = Math.floor(new Date(note.created_at).getTime() / 1000);
 
     const isForcePublished = (note as { force_published?: boolean }).force_published === true;
@@ -114,7 +114,7 @@ export class NotesFormatter {
     container.addSeparatorComponents(createSmallSeparator());
 
     const detailsLines = [
-      `**Author:** \`${v2SanitizeMarkdown(v2Truncate(note.author_participant_id, 30))}\``,
+      `**Author:** \`${v2SanitizeMarkdown(v2Truncate(note.author_id, 30))}\``,
       `**Type:** ${this.formatClassification(note.classification)}`,
       `**Created:** <t:${createdTimestamp}:R>`,
     ];
@@ -178,7 +178,7 @@ export class NotesFormatter {
 
     notes.forEach((note, index) => {
       const urgency = calculateUrgency(note.ratings_count, thresholds.min_ratings_needed);
-      const uniqueRaters = new Set(note.ratings.map(r => r.rater_participant_id)).size;
+      const uniqueRaters = new Set(note.ratings.map(r => r.rater_id)).size;
       const createdTimestamp = Math.floor(new Date(note.created_at).getTime() / 1000);
       const noteNumber = startIndex + index + 1;
 
@@ -226,7 +226,7 @@ export class NotesFormatter {
     userRating: boolean,
     thresholds: RatingThresholds
   ): ContainerBuilder {
-    const uniqueRaters = new Set(note.ratings.map(r => r.rater_participant_id)).size;
+    const uniqueRaters = new Set(note.ratings.map(r => r.rater_id)).size;
     const createdTimestamp = Math.floor(new Date(note.created_at).getTime() / 1000);
     const ratingIndicator = userRating ? '\u{1F44D} Helpful' : '\u{1F44E} Not Helpful';
 
@@ -266,7 +266,7 @@ export class NotesFormatter {
     container.addSeparatorComponents(createSmallSeparator());
 
     const detailsLines = [
-      `**Author:** \`${v2SanitizeMarkdown(v2Truncate(note.author_participant_id, 30))}\``,
+      `**Author:** \`${v2SanitizeMarkdown(v2Truncate(note.author_id, 30))}\``,
       `**Type:** ${this.formatClassification(note.classification)}`,
       `**Created:** <t:${createdTimestamp}:R>`,
     ];

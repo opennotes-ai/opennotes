@@ -285,7 +285,7 @@ describe('note-queue-profiled command', () => {
           {
             id: 1,
             note_id: 'note1',
-            author_participant_id: 'author1',
+            author_id: 'author1',
             summary: 'Test note 1',
             classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
             helpfulness_score: 0,
@@ -297,7 +297,7 @@ describe('note-queue-profiled command', () => {
           {
             id: 2,
             note_id: 'note2',
-            author_participant_id: 'author2',
+            author_id: 'author2',
             summary: 'Test note 2',
             classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
             helpfulness_score: 0,

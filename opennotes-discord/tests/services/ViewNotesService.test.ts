@@ -124,7 +124,7 @@ describe('ViewNotesService', () => {
             classification: 'NOT_MISLEADING',
             status: 'NEEDS_MORE_RATINGS' as const,
             helpfulness_score: 0,
-            author_participant_id: `user-${i}`,
+            author_id: `user-${i}`,
             community_server_id: 'server-123',
             channel_id: null,
             request_id: null,

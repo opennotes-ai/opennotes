@@ -23,7 +23,7 @@ describe('Schema Validation', () => {
   describe('NoteCreate validation', () => {
     it('should validate a correct NoteCreate object', () => {
       const validNote = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'This is a test note',
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -34,7 +34,7 @@ describe('Schema Validation', () => {
 
     it('should reject NoteCreate with missing required fields', () => {
       const invalidNote = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
       };
 
       expect(() => validateNoteCreate(invalidNote)).toThrow(SchemaValidationError);
@@ -42,7 +42,7 @@ describe('Schema Validation', () => {
 
     it('should reject NoteCreate with wrong field types', () => {
       const invalidNote = {
-        author_participant_id: 123,  // Should be string
+        author_id: 123,  // Should be string
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -53,7 +53,7 @@ describe('Schema Validation', () => {
 
     it('should reject NoteCreate with invalid classification enum', () => {
       const invalidNote = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'INVALID_CLASSIFICATION',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -67,7 +67,7 @@ describe('Schema Validation', () => {
     it('should validate a correct NoteResponse object', () => {
       const validResponse = {
         id: '550e8400-e29b-41d4-a716-446655440001',
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test note',
         classification: 'NOT_MISLEADING',
         helpfulness_score: 75,
@@ -84,7 +84,7 @@ describe('Schema Validation', () => {
     it('should handle missing optional fields', () => {
       const responseWithNulls = {
         id: '550e8400-e29b-41d4-a716-446655440002',
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         helpfulness_score: 0,
@@ -102,7 +102,7 @@ describe('Schema Validation', () => {
     it('should validate a correct RatingCreate object', () => {
       const validRating = {
         note_id: '550e8400-e29b-41d4-a716-446655440001',
-        rater_participant_id: 'user456',
+        rater_id: '00000000-0000-0002-bbbb-000000000456',
         helpfulness_level: 'HELPFUL',
       };
 
@@ -115,7 +115,7 @@ describe('Schema Validation', () => {
       for (const level of levels) {
         const rating = {
           note_id: '550e8400-e29b-41d4-a716-446655440001',
-          rater_participant_id: 'user456',
+          rater_id: '00000000-0000-0002-bbbb-000000000456',
           helpfulness_level: level,
         };
 
@@ -126,7 +126,7 @@ describe('Schema Validation', () => {
     it('should reject invalid helpfulness level', () => {
       const invalidRating = {
         note_id: '550e8400-e29b-41d4-a716-446655440001',
-        rater_participant_id: 'user456',
+        rater_id: '00000000-0000-0002-bbbb-000000000456',
         helpfulness_level: 'SUPER_HELPFUL',
       };
 
@@ -147,7 +147,7 @@ describe('Schema Validation', () => {
       const validResponse = {
         id: '550e8400-e29b-41d4-a716-446655440003',
         note_id: '550e8400-e29b-41d4-a716-446655440001',
-        rater_participant_id: 'user456',
+        rater_id: '00000000-0000-0002-bbbb-000000000456',
         helpfulness_level: 'HELPFUL',
         created_at: '2025-10-23T12:00:00Z',
         updated_at: null,
@@ -345,7 +345,7 @@ describe('Schema Validation', () => {
         notes: [
           {
             id: '550e8400-e29b-41d4-a716-446655440001',
-            author_participant_id: 'user123',
+            author_id: '00000000-0000-0001-aaaa-000000000123',
             summary: 'Test',
             classification: 'NOT_MISLEADING',
             helpfulness_score: 0,
@@ -367,7 +367,7 @@ describe('Schema Validation', () => {
   describe('Utility functions', () => {
     it('should get validation errors for invalid data', () => {
       const invalidNote = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
       };
 
       const errors = getValidationErrors('NoteCreate', invalidNote);
@@ -378,7 +378,7 @@ describe('Schema Validation', () => {
 
     it('should return null for valid data', () => {
       const validNote = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -391,7 +391,7 @@ describe('Schema Validation', () => {
 
     it('should format validation errors as human-readable strings', () => {
       const invalidNote = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
       };
 
       const errors = getValidationErrors('NoteCreate', invalidNote);
@@ -412,7 +412,7 @@ describe('Schema Validation', () => {
     it('should handle null values where allowed', () => {
       const responseWithNull = {
         id: '550e8400-e29b-41d4-a716-446655440001',
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         helpfulness_score: 0,
@@ -428,7 +428,7 @@ describe('Schema Validation', () => {
 
     it('should reject null values where not allowed', () => {
       const invalidNote = {
-        author_participant_id: null,
+        author_id: null,
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -449,7 +449,7 @@ describe('Schema Validation', () => {
 
     it('should strip extra properties when removeAdditional is enabled', () => {
       const noteWithExtra = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -472,7 +472,7 @@ describe('Schema Validation', () => {
       for (const date of validDates) {
         const response = {
           id: '550e8400-e29b-41d4-a716-446655440001',
-          author_participant_id: 'user123',
+          author_id: '00000000-0000-0001-aaaa-000000000123',
           summary: 'Test',
           classification: 'NOT_MISLEADING',
           helpfulness_score: 0,
@@ -489,7 +489,7 @@ describe('Schema Validation', () => {
     it('should reject invalid date-time formats', () => {
       const invalidDate = {
         id: '550e8400-e29b-41d4-a716-446655440001',
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         helpfulness_score: 0,
@@ -506,7 +506,7 @@ describe('Schema Validation', () => {
   describe('Strict mode validation', () => {
     it('should enforce strict mode and reject unknown keywords', () => {
       const noteWithExtra = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -519,7 +519,7 @@ describe('Schema Validation', () => {
     it('should remove additional properties from request objects', () => {
       const ratingWithExtra = {
         note_id: '550e8400-e29b-41d4-a716-446655440001',
-        rater_participant_id: 'user456',
+        rater_id: '00000000-0000-0002-bbbb-000000000456',
         helpfulness_level: 'HELPFUL',
         injected_field: 'malicious content',
         another_extra: 123,
@@ -552,7 +552,7 @@ describe('Schema Validation', () => {
     it('should validate responses with strict mode', () => {
       const noteResponseWithExtra = {
         id: '550e8400-e29b-41d4-a716-446655440001',
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         helpfulness_score: 0,
@@ -571,7 +571,7 @@ describe('Schema Validation', () => {
         notes: [
           {
             id: '550e8400-e29b-41d4-a716-446655440001',
-            author_participant_id: 'user123',
+            author_id: '00000000-0000-0001-aaaa-000000000123',
             summary: 'Test',
             classification: 'NOT_MISLEADING',
             helpfulness_score: 0,
@@ -595,7 +595,7 @@ describe('Schema Validation', () => {
   describe('Security validation tests', () => {
     it('should strip potentially malicious properties', () => {
       const noteWithMalicious = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'Test',
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,
@@ -609,7 +609,7 @@ describe('Schema Validation', () => {
 
     it('should handle very large objects without extra properties', () => {
       const largeNote = {
-        author_participant_id: 'user123',
+        author_id: '00000000-0000-0001-aaaa-000000000123',
         summary: 'A'.repeat(1000),
         classification: 'NOT_MISLEADING',
         community_server_id: TEST_COMMUNITY_SERVER_ID,

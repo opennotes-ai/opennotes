@@ -640,7 +640,7 @@ export interface paths {
          *     - filter[status]: Filter by note status (exact match)
          *     - filter[classification]: Filter by classification
          *     - filter[community_server_id]: Filter by community server UUID
-         *     - filter[author_participant_id]: Filter by author
+         *     - filter[author_id]: Filter by author (user profile UUID)
          *     - filter[request_id]: Filter by request ID
          *     - filter[platform_message_id]: Filter by platform message ID (Discord snowflake)
          *
@@ -648,9 +648,9 @@ export interface paths {
          *     - filter[status__neq]: Exclude notes with this status
          *     - filter[created_at__gte]: Notes created on or after this datetime
          *     - filter[created_at__lte]: Notes created on or before this datetime
-         *     - filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
-         *       (comma-separated list of participant IDs)
-         *     - filter[rated_by_participant_id]: Include only notes rated by this user
+         *     - filter[rater_id__not_in]: Exclude notes rated by these users
+         *       (comma-separated list of user profile UUIDs)
+         *     - filter[rater_id]: Include only notes rated by this user (user profile UUID)
          *
          *     Returns JSON:API formatted response with data, jsonapi, links, and meta.
          */
@@ -1118,7 +1118,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v2/stats/participant/{participant_id}": {
+    "/api/v2/stats/user/{user_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1126,14 +1126,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Participant Stats Jsonapi
-         * @description Get statistics for a specific participant in JSON:API format.
+         * Get User Stats Jsonapi
+         * @description Get statistics for a specific user in JSON:API format.
          *
-         *     Returns statistics about a participant including notes created, ratings given,
+         *     Returns statistics about a user including notes created, ratings given,
          *     average helpfulness received, and top classification.
          *
          *     Path Parameters:
-         *     - participant_id: The participant ID to get statistics for
+         *     - user_id: The user's profile UUID
          *
          *     Query Parameters:
          *     - filter[community_server_id]: Filter by community server UUID
@@ -1141,7 +1141,7 @@ export interface paths {
          *     Users can only see stats from communities they are members of.
          *     Service accounts can see all stats.
          */
-        get: operations["get_participant_stats_jsonapi_api_v2_stats_participant__participant_id__get"];
+        get: operations["get_user_stats_jsonapi_api_v2_stats_user__user_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2046,7 +2046,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhooks/{community_server_id}": {
+    "/api/v1/webhooks/{platform_community_server_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2054,7 +2054,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Webhooks By Community Server */
-        get: operations["get_webhooks_by_community_server_api_v1_webhooks__community_server_id__get"];
+        get: operations["get_webhooks_by_community_server_api_v1_webhooks__platform_community_server_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2081,7 +2081,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhooks/stats/{community_server_id}": {
+    "/api/v1/webhooks/stats/{platform_community_server_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2089,7 +2089,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Community Server Stats */
-        get: operations["get_community_server_stats_api_v1_webhooks_stats__community_server_id__get"];
+        get: operations["get_community_server_stats_api_v1_webhooks_stats__platform_community_server_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5530,10 +5530,11 @@ export interface components {
              */
             community_server_id: string;
             /**
-             * Author Participant Id
-             * @description Author's participant ID
+             * Author Id
+             * Format: uuid
+             * @description Author's user profile ID
              */
-            author_participant_id: string;
+            author_id: string;
             /**
              * Channel Id
              * @description Discord channel ID
@@ -5585,8 +5586,8 @@ export interface components {
          * @description Note attributes for JSON:API resource.
          */
         NoteJSONAPIAttributes: {
-            /** Author Participant Id */
-            author_participant_id: string;
+            /** Author Id */
+            author_id: string;
             /** Channel Id */
             channel_id?: string | null;
             /** Summary */
@@ -6746,8 +6747,8 @@ export interface components {
         RatingAttributes: {
             /** Note Id */
             note_id: string;
-            /** Rater Participant Id */
-            rater_participant_id: string;
+            /** Rater Id */
+            rater_id: string;
             /** Helpfulness Level */
             helpfulness_level: string;
             /** Created At */
@@ -6767,10 +6768,11 @@ export interface components {
              */
             note_id: string;
             /**
-             * Rater Participant Id
-             * @description Rater's participant ID
+             * Rater Id
+             * Format: uuid
+             * @description Rater's user profile ID
              */
-            rater_participant_id: string;
+            rater_id: string;
             /** @description Rating level */
             helpfulness_level: components["schemas"]["HelpfulnessLevel"];
         };
@@ -8020,7 +8022,10 @@ export interface components {
             id: string;
             /** Url */
             url: string;
-            /** Community Server Id */
+            /**
+             * Community Server Id
+             * Format: uuid
+             */
             community_server_id: string;
             /** Channel Id */
             channel_id?: string | null;
@@ -8036,7 +8041,10 @@ export interface components {
             id: string;
             /** Url */
             url: string;
-            /** Community Server Id */
+            /**
+             * Community Server Id
+             * Format: uuid
+             */
             community_server_id: string;
             /** Channel Id */
             channel_id?: string | null;
@@ -8058,10 +8066,10 @@ export interface components {
              */
             secret: string;
             /**
-             * Community Server Id
-             * @description Community server ID (Discord guild ID, subreddit name, etc.)
+             * Platform Community Server Id
+             * @description Platform-specific community server ID (Discord guild ID, subreddit name, etc.)
              */
-            community_server_id: string;
+            platform_community_server_id: string;
             /**
              * Channel Id
              * @description Channel ID (Discord channel ID, etc.)
@@ -9021,12 +9029,12 @@ export interface operations {
                 "filter[status__neq]"?: components["schemas"]["NoteStatus"] | null;
                 "filter[classification]"?: components["schemas"]["NoteClassification"] | null;
                 "filter[community_server_id]"?: string | null;
-                "filter[author_participant_id]"?: string | null;
+                "filter[author_id]"?: string | null;
                 "filter[request_id]"?: string | null;
                 "filter[created_at__gte]"?: string | null;
                 "filter[created_at__lte]"?: string | null;
-                "filter[rated_by_participant_id__not_in]"?: string | null;
-                "filter[rated_by_participant_id]"?: string | null;
+                "filter[rater_id__not_in]"?: string | null;
+                "filter[rater_id]"?: string | null;
                 "filter[platform_message_id]"?: string | null;
             };
             header?: {
@@ -9750,7 +9758,7 @@ export interface operations {
             };
         };
     };
-    get_participant_stats_jsonapi_api_v2_stats_participant__participant_id__get: {
+    get_user_stats_jsonapi_api_v2_stats_user__user_id__get: {
         parameters: {
             query?: {
                 "filter[community_server_id]"?: string | null;
@@ -9759,7 +9767,7 @@ export interface operations {
                 "X-API-Key"?: string | null;
             };
             path: {
-                participant_id: string;
+                user_id: string;
             };
             cookie?: never;
         };
@@ -11060,12 +11068,12 @@ export interface operations {
             };
         };
     };
-    get_webhooks_by_community_server_api_v1_webhooks__community_server_id__get: {
+    get_webhooks_by_community_server_api_v1_webhooks__platform_community_server_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                community_server_id: string;
+                platform_community_server_id: string;
             };
             cookie?: never;
         };
@@ -11131,7 +11139,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                webhook_id: number;
+                webhook_id: string;
             };
             cookie?: never;
         };
@@ -11159,12 +11167,12 @@ export interface operations {
             };
         };
     };
-    get_community_server_stats_api_v1_webhooks_stats__community_server_id__get: {
+    get_community_server_stats_api_v1_webhooks_stats__platform_community_server_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                community_server_id: string;
+                platform_community_server_id: string;
             };
             cookie?: never;
         };

@@ -1,5 +1,6 @@
 import { Factory } from 'fishery';
 import type { NoteWithRatings, RatingResponse, RequestInfo, NoteStatus } from '../../src/lib/types.js';
+import { testUuid } from './test-utils.js';
 
 export interface RatingResponseTransientParams {
   noteId?: string;
@@ -9,9 +10,9 @@ export const ratingResponseFactory = Factory.define<RatingResponse, RatingRespon
   ({ sequence, transientParams }) => {
     const { noteId } = transientParams;
     return {
-      id: `rating-${sequence}`,
-      note_id: noteId ?? `note-${sequence}`,
-      rater_participant_id: `rater-${sequence}`,
+      id: testUuid('0001', sequence),
+      note_id: noteId ?? testUuid('n001', sequence),
+      rater_id: testUuid('r001', sequence),
       helpfulness_level: 'HELPFUL',
       created_at: '2025-10-31T12:00:00Z',
       updated_at: '2025-10-31T12:00:00Z',
@@ -61,7 +62,7 @@ export const noteWithRatingsFactory = Factory.define<NoteWithRatings, NoteWithRa
     if (ratedByUser) {
       ratings.push(
         ratingResponseFactory.build(
-          { rater_participant_id: ratedByUser },
+          { rater_id: ratedByUser },
           { transient: { noteId } }
         )
       );
@@ -69,7 +70,7 @@ export const noteWithRatingsFactory = Factory.define<NoteWithRatings, NoteWithRa
 
     const base: NoteWithRatings = {
       id: noteId,
-      author_participant_id: `author-${sequence}`,
+      author_id: testUuid('a001', sequence),
       summary: `This is a test note summary ${sequence}`,
       classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
       helpfulness_score: 0.5,

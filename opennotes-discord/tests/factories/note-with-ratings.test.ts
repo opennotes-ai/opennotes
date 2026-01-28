@@ -10,7 +10,7 @@ describe('noteWithRatingsFactory', () => {
     const note = noteWithRatingsFactory.build();
 
     expect(note.id).toBeDefined();
-    expect(note.author_participant_id).toBeDefined();
+    expect(note.author_id).toBeDefined();
     expect(note.summary).toBeDefined();
     expect(note.classification).toBe('MISINFORMED_OR_POTENTIALLY_MISLEADING');
     expect(note.helpfulness_score).toBe(0.5);
@@ -52,7 +52,7 @@ describe('noteWithRatingsFactory', () => {
     const note = noteWithRatingsFactory.build({}, { transient: { ratedByUser: 'user-123' } });
 
     expect(note.ratings.length).toBe(1);
-    expect(note.ratings[0].rater_participant_id).toBe('user-123');
+    expect(note.ratings[0].rater_id).toBe('user-123');
   });
 
   it('should create a force-published note using transient params', () => {
@@ -77,7 +77,7 @@ describe('ratingResponseFactory', () => {
 
     expect(rating.id).toBeDefined();
     expect(rating.note_id).toBeDefined();
-    expect(rating.rater_participant_id).toBeDefined();
+    expect(rating.rater_id).toBeDefined();
     expect(rating.helpfulness_level).toBe('HELPFUL');
     expect(rating.created_at).toBeDefined();
     expect(rating.updated_at).toBeDefined();

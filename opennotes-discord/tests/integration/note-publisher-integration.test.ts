@@ -74,7 +74,7 @@ function createMockNoteJSONAPIResponse(overrides: {
         classification: 'NOT_MISLEADING',
         status: 'NEEDS_MORE_RATINGS',
         helpfulness_score: 0,
-        author_participant_id: 'user-123',
+        author_id: 'user-123',
         community_server_id: 'guild-123',
         channel_id: 'channel-456',
         request_id: null,
@@ -127,7 +127,7 @@ describeWithNats('NotePublisher Integration Tests (AC #16)', () => {
       originalMessageId: 'msg-123',
       channelId: 'channel-456',
       guildId: 'guild-123',
-      authorId: 'user-123',
+      authorId: '00000000-0000-0001-aaaa-123',
     });
     mockNoteContextService.storeNoteContext.mockResolvedValue(undefined);
 

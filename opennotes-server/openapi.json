@@ -1342,7 +1342,7 @@
           "notes-jsonapi"
         ],
         "summary": "List Notes Jsonapi",
-        "description": "List notes with JSON:API format.\n\nSupports filtering and pagination per JSON:API specification.\n\nQuery Parameters:\n- page[number]: Page number (default: 1)\n- page[size]: Page size (default: 20, max: 100)\n\nFilter Parameters (equality):\n- filter[status]: Filter by note status (exact match)\n- filter[classification]: Filter by classification\n- filter[community_server_id]: Filter by community server UUID\n- filter[author_participant_id]: Filter by author\n- filter[request_id]: Filter by request ID\n- filter[platform_message_id]: Filter by platform message ID (Discord snowflake)\n\nFilter Parameters (operators):\n- filter[status__neq]: Exclude notes with this status\n- filter[created_at__gte]: Notes created on or after this datetime\n- filter[created_at__lte]: Notes created on or before this datetime\n- filter[rated_by_participant_id__not_in]: Exclude notes rated by these users\n  (comma-separated list of participant IDs)\n- filter[rated_by_participant_id]: Include only notes rated by this user\n\nReturns JSON:API formatted response with data, jsonapi, links, and meta.",
+        "description": "List notes with JSON:API format.\n\nSupports filtering and pagination per JSON:API specification.\n\nQuery Parameters:\n- page[number]: Page number (default: 1)\n- page[size]: Page size (default: 20, max: 100)\n\nFilter Parameters (equality):\n- filter[status]: Filter by note status (exact match)\n- filter[classification]: Filter by classification\n- filter[community_server_id]: Filter by community server UUID\n- filter[author_id]: Filter by author (user profile UUID)\n- filter[request_id]: Filter by request ID\n- filter[platform_message_id]: Filter by platform message ID (Discord snowflake)\n\nFilter Parameters (operators):\n- filter[status__neq]: Exclude notes with this status\n- filter[created_at__gte]: Notes created on or after this datetime\n- filter[created_at__lte]: Notes created on or before this datetime\n- filter[rater_id__not_in]: Exclude notes rated by these users\n  (comma-separated list of user profile UUIDs)\n- filter[rater_id]: Include only notes rated by this user (user profile UUID)\n\nReturns JSON:API formatted response with data, jsonapi, links, and meta.",
         "operationId": "list_notes_jsonapi_api_v2_notes_get",
         "security": [
           {
@@ -1439,7 +1439,7 @@
             }
           },
           {
-            "name": "filter[author_participant_id]",
+            "name": "filter[author_id]",
             "in": "query",
             "required": false,
             "schema": {
@@ -1451,7 +1451,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Filter[Author Participant Id]"
+              "title": "Filter[Author Id]"
             }
           },
           {
@@ -1505,7 +1505,7 @@
             }
           },
           {
-            "name": "filter[rated_by_participant_id__not_in]",
+            "name": "filter[rater_id__not_in]",
             "in": "query",
             "required": false,
             "schema": {
@@ -1517,23 +1517,24 @@
                   "type": "null"
                 }
               ],
-              "title": "Filter[Rated By Participant Id  Not In]"
+              "title": "Filter[Rater Id  Not In]"
             }
           },
           {
-            "name": "filter[rated_by_participant_id]",
+            "name": "filter[rater_id]",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Filter[Rated By Participant Id]"
+              "title": "Filter[Rater Id]"
             }
           },
           {
@@ -2909,14 +2910,14 @@
         }
       }
     },
-    "/api/v2/stats/participant/{participant_id}": {
+    "/api/v2/stats/user/{user_id}": {
       "get": {
         "tags": [
           "stats-jsonapi"
         ],
-        "summary": "Get Participant Stats Jsonapi",
-        "description": "Get statistics for a specific participant in JSON:API format.\n\nReturns statistics about a participant including notes created, ratings given,\naverage helpfulness received, and top classification.\n\nPath Parameters:\n- participant_id: The participant ID to get statistics for\n\nQuery Parameters:\n- filter[community_server_id]: Filter by community server UUID\n\nUsers can only see stats from communities they are members of.\nService accounts can see all stats.",
-        "operationId": "get_participant_stats_jsonapi_api_v2_stats_participant__participant_id__get",
+        "summary": "Get User Stats Jsonapi",
+        "description": "Get statistics for a specific user in JSON:API format.\n\nReturns statistics about a user including notes created, ratings given,\naverage helpfulness received, and top classification.\n\nPath Parameters:\n- user_id: The user's profile UUID\n\nQuery Parameters:\n- filter[community_server_id]: Filter by community server UUID\n\nUsers can only see stats from communities they are members of.\nService accounts can see all stats.",
+        "operationId": "get_user_stats_jsonapi_api_v2_stats_user__user_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -2924,12 +2925,13 @@
         ],
         "parameters": [
           {
-            "name": "participant_id",
+            "name": "user_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Participant Id"
+              "format": "uuid",
+              "title": "User Id"
             }
           },
           {
@@ -5686,21 +5688,21 @@
         }
       }
     },
-    "/api/v1/webhooks/{community_server_id}": {
+    "/api/v1/webhooks/{platform_community_server_id}": {
       "get": {
         "tags": [
           "webhooks"
         ],
         "summary": "Get Webhooks By Community Server",
-        "operationId": "get_webhooks_by_community_server_api_v1_webhooks__community_server_id__get",
+        "operationId": "get_webhooks_by_community_server_api_v1_webhooks__platform_community_server_id__get",
         "parameters": [
           {
-            "name": "community_server_id",
+            "name": "platform_community_server_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Community Server Id"
+              "title": "Platform Community Server Id"
             }
           }
         ],
@@ -5714,7 +5716,7 @@
                   "items": {
                     "$ref": "#/components/schemas/WebhookConfigResponse"
                   },
-                  "title": "Response Get Webhooks By Community Server Api V1 Webhooks  Community Server Id  Get"
+                  "title": "Response Get Webhooks By Community Server Api V1 Webhooks  Platform Community Server Id  Get"
                 }
               }
             }
@@ -5796,7 +5798,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
+              "type": "string",
+              "format": "uuid",
               "title": "Webhook Id"
             }
           }
@@ -5829,21 +5832,21 @@
         }
       }
     },
-    "/api/v1/webhooks/stats/{community_server_id}": {
+    "/api/v1/webhooks/stats/{platform_community_server_id}": {
       "get": {
         "tags": [
           "webhooks"
         ],
         "summary": "Get Community Server Stats",
-        "operationId": "get_community_server_stats_api_v1_webhooks_stats__community_server_id__get",
+        "operationId": "get_community_server_stats_api_v1_webhooks_stats__platform_community_server_id__get",
         "parameters": [
           {
-            "name": "community_server_id",
+            "name": "platform_community_server_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Community Server Id"
+              "title": "Platform Community Server Id"
             }
           }
         ],
@@ -5855,7 +5858,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "title": "Response Get Community Server Stats Api V1 Webhooks Stats  Community Server Id  Get"
+                  "title": "Response Get Community Server Stats Api V1 Webhooks Stats  Platform Community Server Id  Get"
                 }
               }
             }
@@ -13537,10 +13540,11 @@
             "title": "Community Server Id",
             "description": "Community server ID"
           },
-          "author_participant_id": {
+          "author_id": {
             "type": "string",
-            "title": "Author Participant Id",
-            "description": "Author's participant ID"
+            "format": "uuid",
+            "title": "Author Id",
+            "description": "Author's user profile ID"
           },
           "channel_id": {
             "anyOf": [
@@ -13573,7 +13577,7 @@
           "summary",
           "classification",
           "community_server_id",
-          "author_participant_id"
+          "author_id"
         ],
         "title": "NoteCreateAttributes",
         "description": "Attributes for creating a note via JSON:API."
@@ -13651,9 +13655,9 @@
       },
       "NoteJSONAPIAttributes": {
         "properties": {
-          "author_participant_id": {
+          "author_id": {
             "type": "string",
-            "title": "Author Participant Id"
+            "title": "Author Id"
           },
           "channel_id": {
             "anyOf": [
@@ -13782,7 +13786,7 @@
         },
         "type": "object",
         "required": [
-          "author_participant_id",
+          "author_id",
           "summary",
           "classification"
         ],
@@ -15983,9 +15987,9 @@
             "type": "string",
             "title": "Note Id"
           },
-          "rater_participant_id": {
+          "rater_id": {
             "type": "string",
-            "title": "Rater Participant Id"
+            "title": "Rater Id"
           },
           "helpfulness_level": {
             "type": "string",
@@ -16019,7 +16023,7 @@
         "type": "object",
         "required": [
           "note_id",
-          "rater_participant_id",
+          "rater_id",
           "helpfulness_level"
         ],
         "title": "RatingAttributes",
@@ -16033,10 +16037,11 @@
             "title": "Note Id",
             "description": "Note ID to rate"
           },
-          "rater_participant_id": {
+          "rater_id": {
             "type": "string",
-            "title": "Rater Participant Id",
-            "description": "Rater's participant ID"
+            "format": "uuid",
+            "title": "Rater Id",
+            "description": "Rater's user profile ID"
           },
           "helpfulness_level": {
             "$ref": "#/components/schemas/HelpfulnessLevel",
@@ -16047,7 +16052,7 @@
         "type": "object",
         "required": [
           "note_id",
-          "rater_participant_id",
+          "rater_id",
           "helpfulness_level"
         ],
         "title": "RatingCreateAttributes",
@@ -18274,6 +18279,7 @@
           },
           "community_server_id": {
             "type": "string",
+            "format": "uuid",
             "title": "Community Server Id"
           },
           "channel_id": {
@@ -18314,6 +18320,7 @@
           },
           "community_server_id": {
             "type": "string",
+            "format": "uuid",
             "title": "Community Server Id"
           },
           "channel_id": {
@@ -18358,10 +18365,10 @@
             "title": "Secret",
             "description": "Webhook secret"
           },
-          "community_server_id": {
+          "platform_community_server_id": {
             "type": "string",
-            "title": "Community Server Id",
-            "description": "Community server ID (Discord guild ID, subreddit name, etc.)"
+            "title": "Platform Community Server Id",
+            "description": "Platform-specific community server ID (Discord guild ID, subreddit name, etc.)"
           },
           "channel_id": {
             "anyOf": [
@@ -18381,7 +18388,7 @@
         "required": [
           "url",
           "secret",
-          "community_server_id"
+          "platform_community_server_id"
         ],
         "title": "WebhookCreateRequest"
       },

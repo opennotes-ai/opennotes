@@ -66,7 +66,7 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
       classification: 'NOT_MISLEADING',
       status: 'NEEDS_MORE_RATINGS',
       helpfulness_score: 0.5,
-      author_participant_id: 'user-123',
+      author_id: 'user-123',
       community_server_id: 'community-uuid-456',
       channel_id: 'channel-789',
       request_id: 'request-abc',
@@ -90,7 +90,7 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
         classification: 'NOT_MISLEADING',
         status: 'NEEDS_MORE_RATINGS',
         helpfulness_score: 0.6,
-        author_participant_id: 'user-1',
+        author_id: 'user-1',
         community_server_id: 'community-uuid-456',
         channel_id: null,
         request_id: null,
@@ -109,7 +109,7 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
         classification: 'MISINFORMED_OR_POTENTIALLY_MISLEADING',
         status: 'CURRENTLY_RATED_HELPFUL',
         helpfulness_score: 0.8,
-        author_participant_id: 'user-2',
+        author_id: 'user-2',
         community_server_id: 'community-uuid-456',
         channel_id: 'channel-abc',
         request_id: 'request-xyz',
@@ -188,12 +188,12 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
       const result = await apiClient.createNote(
         {
           messageId: 'msg-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: 'This is a test note summary',
           channelId: 'channel-789',
           requestId: 'request-abc',
         },
-        { userId: 'user-123', guildId: 'guild-123' }
+        { userId: '00000000-0000-0001-aaaa-123', guildId: 'guild-123' }
       ) as unknown as JSONAPISingleResponse;
 
       expect(result).toHaveProperty('data');
@@ -216,10 +216,10 @@ describe('ApiClient Note Methods - JSONAPI Passthrough', () => {
       const result = await apiClient.createNote(
         {
           messageId: 'msg-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: 'This is a test note summary',
         },
-        { userId: 'user-123', guildId: 'guild-123' }
+        { userId: '00000000-0000-0001-aaaa-123', guildId: 'guild-123' }
       );
 
       expect(result).not.toHaveProperty('messageId');

@@ -42,7 +42,7 @@ describe('WriteNoteService', () => {
     it('should return error for missing messageId', async () => {
       const result = await service.execute({
         messageId: '',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -54,7 +54,7 @@ describe('WriteNoteService', () => {
     it('should return error for whitespace-only messageId', async () => {
       const result = await service.execute({
         messageId: '   ',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -90,7 +90,7 @@ describe('WriteNoteService', () => {
     it('should return error for missing content', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: '',
       });
 
@@ -102,7 +102,7 @@ describe('WriteNoteService', () => {
     it('should return error for whitespace-only content', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: '   ',
       });
 
@@ -114,7 +114,7 @@ describe('WriteNoteService', () => {
     it('should return error for content shorter than 10 characters', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'Short',
       });
 
@@ -126,7 +126,7 @@ describe('WriteNoteService', () => {
     it('should return error for content exactly 9 characters', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: '123456789',
       });
 
@@ -138,7 +138,7 @@ describe('WriteNoteService', () => {
     it('should accept content with exactly 10 characters', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: '1234567890',
       });
 
@@ -150,7 +150,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: longContent,
       });
 
@@ -164,7 +164,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: maxContent,
       });
 
@@ -176,7 +176,7 @@ describe('WriteNoteService', () => {
     it('should create note with required fields only', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -185,7 +185,7 @@ describe('WriteNoteService', () => {
       expect(mockApiClient.createNote).toHaveBeenCalledWith(
         {
           messageId: 'msg-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: 'This is a valid note content',
           channelId: undefined,
           requestId: undefined,
@@ -193,7 +193,7 @@ describe('WriteNoteService', () => {
           classification: undefined,
         },
         expect.objectContaining({
-          userId: 'user-123',
+          userId: '00000000-0000-0001-aaaa-123',
           username: undefined,
           displayName: undefined,
           avatarUrl: undefined,
@@ -205,7 +205,7 @@ describe('WriteNoteService', () => {
     it('should create note with all optional fields', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
         channelId: 'channel-456',
         guildId: 'guild-789',
@@ -217,7 +217,7 @@ describe('WriteNoteService', () => {
       expect(mockApiClient.createNote).toHaveBeenCalledWith(
         {
           messageId: 'msg-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: 'This is a valid note content',
           channelId: 'channel-456',
           requestId: 'request-999',
@@ -225,7 +225,7 @@ describe('WriteNoteService', () => {
           classification: undefined,
         },
         expect.objectContaining({
-          userId: 'user-123',
+          userId: '00000000-0000-0001-aaaa-123',
           username: undefined,
           displayName: undefined,
           avatarUrl: undefined,
@@ -239,7 +239,7 @@ describe('WriteNoteService', () => {
     it('should successfully create note with channelId and guildId', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
         channelId: 'channel-456',
         guildId: 'guild-789',
@@ -252,7 +252,7 @@ describe('WriteNoteService', () => {
     it('should successfully create note without channelId', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
         guildId: 'guild-789',
       });
@@ -264,7 +264,7 @@ describe('WriteNoteService', () => {
     it('should successfully create note without guildId', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
         channelId: 'channel-456',
       });
@@ -276,7 +276,7 @@ describe('WriteNoteService', () => {
     it('should create note even if context storage would fail', async () => {
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
         channelId: 'channel-456',
         guildId: 'guild-789',
@@ -293,7 +293,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -307,7 +307,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -321,7 +321,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -335,7 +335,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -349,7 +349,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: 'This is a valid note content',
       });
 
@@ -364,7 +364,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: specialContent,
       });
 
@@ -376,7 +376,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: unicodeContent,
       });
 
@@ -388,7 +388,7 @@ describe('WriteNoteService', () => {
 
       const result = await service.execute({
         messageId: 'msg-123',
-        authorId: 'user-123',
+        authorId: '00000000-0000-0001-aaaa-123',
         content: multilineContent,
       });
 

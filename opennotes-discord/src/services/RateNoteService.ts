@@ -42,7 +42,7 @@ export class RateNoteService {
       // First, check if the user already has a rating for this note
       const existingRatingsResponse = await this.apiClient.getRatingsForNote(input.noteId);
       const existingRating = existingRatingsResponse.data.find(
-        r => r.attributes.rater_participant_id === input.userId
+        r => r.attributes.rater_id === input.userId
       );
 
       let rating: RatingJSONAPIResponse;

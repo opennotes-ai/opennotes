@@ -17,10 +17,11 @@
         "title": "Community Server Id",
         "description": "Community server ID"
       },
-      "author_participant_id": {
+      "author_id": {
         "type": "string",
-        "title": "Author Participant Id",
-        "description": "Author's participant ID"
+        "format": "uuid",
+        "title": "Author Id",
+        "description": "Author's user profile ID"
       },
       "channel_id": {
         "anyOf": [
@@ -53,32 +54,16 @@
       "summary",
       "classification",
       "community_server_id",
-      "author_participant_id"
+      "author_id"
     ],
     "title": "NoteCreateAttributes",
     "description": "Attributes for creating a note via JSON:API."
   },
-  "NoteResponse": {
+  "NoteJSONAPIAttributes": {
     "properties": {
-      "created_at": {
+      "author_id": {
         "type": "string",
-        "title": "Created At"
-      },
-      "updated_at": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Updated At"
-      },
-      "author_participant_id": {
-        "type": "string",
-        "title": "Author Participant Id",
-        "description": "Author's participant ID"
+        "title": "Author Id"
       },
       "channel_id": {
         "anyOf": [
@@ -89,8 +74,70 @@
             "type": "null"
           }
         ],
-        "title": "Channel Id",
-        "description": "Discord channel ID where the message is located"
+        "title": "Channel Id"
+      },
+      "summary": {
+        "type": "string",
+        "title": "Summary"
+      },
+      "classification": {
+        "type": "string",
+        "title": "Classification"
+      },
+      "helpfulness_score": {
+        "type": "integer",
+        "title": "Helpfulness Score",
+        "default": 0
+      },
+      "status": {
+        "type": "string",
+        "title": "Status",
+        "default": "NEEDS_MORE_RATINGS"
+      },
+      "ai_generated": {
+        "type": "boolean",
+        "title": "Ai Generated",
+        "default": false
+      },
+      "ai_provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Ai Provider"
+      },
+      "force_published": {
+        "type": "boolean",
+        "title": "Force Published",
+        "default": false
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "updated_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Updated At"
       },
       "request_id": {
         "anyOf": [
@@ -101,53 +148,9 @@
             "type": "null"
           }
         ],
-        "title": "Request Id",
-        "description": "Request ID this note responds to"
+        "title": "Request Id"
       },
-      "summary": {
-        "type": "string",
-        "title": "Summary",
-        "description": "Note summary text"
-      },
-      "classification": {
-        "$ref": "#/components/schemas/NoteClassification",
-        "description": "Note classification"
-      },
-      "id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Id"
-      },
-      "community_server_id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Community Server Id"
-      },
-      "helpfulness_score": {
-        "type": "integer",
-        "title": "Helpfulness Score"
-      },
-      "status": {
-        "$ref": "#/components/schemas/NoteStatus"
-      },
-      "force_published": {
-        "type": "boolean",
-        "title": "Force Published",
-        "default": false
-      },
-      "force_published_by": {
-        "anyOf": [
-          {
-            "type": "string",
-            "format": "uuid"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Force Published By"
-      },
-      "force_published_at": {
+      "platform_message_id": {
         "anyOf": [
           {
             "type": "string"
@@ -156,47 +159,45 @@
             "type": "null"
           }
         ],
-        "title": "Force Published At"
+        "title": "Platform Message Id"
       },
-      "ratings": {
-        "items": {
-          "$ref": "#/components/schemas/RatingResponse"
-        },
-        "type": "array",
-        "title": "Ratings",
-        "default": []
-      },
-      "request": {
+      "force_published_at": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/RequestInfo"
+            "type": "string",
+            "format": "date-time"
           },
           {
             "type": "null"
           }
-        ]
+        ],
+        "title": "Force Published At"
       },
       "ratings_count": {
         "type": "integer",
         "title": "Ratings Count",
-        "description": "Compute ratings count from loaded ratings relationship.",
-        "readOnly": true
+        "default": 0
+      },
+      "community_server_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Community Server Id"
       }
     },
-    "additionalProperties": false,
     "type": "object",
     "required": [
-      "created_at",
-      "author_participant_id",
+      "author_id",
       "summary",
-      "classification",
-      "id",
-      "community_server_id",
-      "helpfulness_score",
-      "status",
-      "ratings_count"
+      "classification"
     ],
-    "title": "NoteResponse"
+    "title": "NoteJSONAPIAttributes",
+    "description": "Note attributes for JSON:API resource."
   },
   "NoteData": {
     "properties": {
@@ -235,39 +236,6 @@
       "classification"
     ],
     "title": "NoteData"
-  },
-  "NoteSummaryStats": {
-    "properties": {
-      "total_notes": {
-        "type": "integer",
-        "title": "Total Notes"
-      },
-      "helpful_notes": {
-        "type": "integer",
-        "title": "Helpful Notes"
-      },
-      "not_helpful_notes": {
-        "type": "integer",
-        "title": "Not Helpful Notes"
-      },
-      "pending_notes": {
-        "type": "integer",
-        "title": "Pending Notes"
-      },
-      "average_helpfulness_score": {
-        "type": "number",
-        "title": "Average Helpfulness Score"
-      }
-    },
-    "type": "object",
-    "required": [
-      "total_notes",
-      "helpful_notes",
-      "not_helpful_notes",
-      "pending_notes",
-      "average_helpfulness_score"
-    ],
-    "title": "NoteSummaryStats"
   },
   "NoteClassification": {
     "type": "string",
@@ -325,10 +293,11 @@
         "title": "Note Id",
         "description": "Note ID to rate"
       },
-      "rater_participant_id": {
+      "rater_id": {
         "type": "string",
-        "title": "Rater Participant Id",
-        "description": "Rater's participant ID"
+        "format": "uuid",
+        "title": "Rater Id",
+        "description": "Rater's user profile ID"
       },
       "helpfulness_level": {
         "$ref": "#/components/schemas/HelpfulnessLevel",
@@ -339,59 +308,59 @@
     "type": "object",
     "required": [
       "note_id",
-      "rater_participant_id",
+      "rater_id",
       "helpfulness_level"
     ],
     "title": "RatingCreateAttributes",
     "description": "Attributes for creating a rating via JSON:API."
   },
-  "RatingResponse": {
+  "RatingAttributes": {
     "properties": {
-      "created_at": {
+      "note_id": {
         "type": "string",
+        "title": "Note Id"
+      },
+      "rater_id": {
+        "type": "string",
+        "title": "Rater Id"
+      },
+      "helpfulness_level": {
+        "type": "string",
+        "title": "Helpfulness Level"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
         "title": "Created At"
       },
       "updated_at": {
         "anyOf": [
           {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           {
             "type": "null"
           }
         ],
         "title": "Updated At"
-      },
-      "note_id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Note Id",
-        "description": "Note ID to rate"
-      },
-      "helpfulness_level": {
-        "$ref": "#/components/schemas/HelpfulnessLevel",
-        "description": "Rating level"
-      },
-      "id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Id"
-      },
-      "rater_participant_id": {
-        "type": "string",
-        "title": "Rater Participant Id"
       }
     },
-    "additionalProperties": false,
     "type": "object",
     "required": [
-      "created_at",
       "note_id",
-      "helpfulness_level",
-      "id",
-      "rater_participant_id"
+      "rater_id",
+      "helpfulness_level"
     ],
-    "title": "RatingResponse"
+    "title": "RatingAttributes",
+    "description": "Rating attributes for JSON:API resource."
   },
   "RatingData": {
     "properties": {
@@ -445,10 +414,11 @@
     ],
     "title": "HelpfulnessLevel"
   },
-  "RequestCreate": {
+  "RequestCreateAttributes": {
     "properties": {
       "request_id": {
         "type": "string",
+        "minLength": 1,
         "title": "Request Id",
         "description": "Unique request identifier"
       },
@@ -534,61 +504,7 @@
           }
         ],
         "title": "Metadata",
-        "description": "Request metadata (e.g., fact-check match info)"
-      },
-      "attachment_url": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Attachment Url",
-        "description": "URL of the first attachment (image, video, or file)"
-      },
-      "attachment_type": {
-        "anyOf": [
-          {
-            "type": "string",
-            "enum": [
-              "image",
-              "video",
-              "file"
-            ]
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Attachment Type",
-        "description": "Type of attachment"
-      },
-      "attachment_metadata": {
-        "anyOf": [
-          {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Attachment Metadata",
-        "description": "Attachment metadata (width, height, size, filename)"
-      },
-      "embedded_image_url": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Embedded Image Url",
-        "description": "URL of embedded image (from Discord embeds or text links)"
+        "description": "Request metadata"
       }
     },
     "additionalProperties": false,
@@ -598,192 +514,81 @@
       "requested_by",
       "community_server_id"
     ],
-    "title": "RequestCreate"
+    "title": "RequestCreateAttributes",
+    "description": "Attributes for creating a request via JSON:API."
   },
-  "RequestResponse": {
+  "RequestAttributes": {
     "properties": {
-      "created_at": {
+      "request_id": {
         "type": "string",
+        "title": "Request Id"
+      },
+      "requested_by": {
+        "type": "string",
+        "title": "Requested By"
+      },
+      "status": {
+        "type": "string",
+        "title": "Status",
+        "default": "PENDING"
+      },
+      "note_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note Id"
+      },
+      "community_server_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Community Server Id"
+      },
+      "requested_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Requested At"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
         "title": "Created At"
       },
       "updated_at": {
         "anyOf": [
           {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           {
             "type": "null"
           }
         ],
         "title": "Updated At"
-      },
-      "request_id": {
-        "type": "string",
-        "title": "Request Id",
-        "description": "Unique request identifier"
-      },
-      "requested_by": {
-        "type": "string",
-        "title": "Requested By",
-        "description": "Requester's participant ID"
-      },
-      "id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Id"
-      },
-      "community_server_id": {
-        "type": "string",
-        "format": "uuid",
-        "title": "Community Server Id",
-        "description": "Community server ID"
-      },
-      "requested_at": {
-        "type": "string",
-        "title": "Requested At"
-      },
-      "status": {
-        "$ref": "#/components/schemas/RequestStatus"
-      },
-      "note_id": {
-        "anyOf": [
-          {
-            "type": "string",
-            "format": "uuid"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Note Id"
-      },
-      "content": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Content",
-        "description": "Message content from archive or legacy field"
-      },
-      "platform_message_id": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Platform Message Id",
-        "description": "Platform message ID from message archive"
-      },
-      "metadata": {
-        "anyOf": [
-          {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Metadata",
-        "description": "Request metadata (e.g., fact-check match info)"
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "required": [
-      "created_at",
-      "request_id",
-      "requested_by",
-      "id",
-      "community_server_id",
-      "requested_at",
-      "status"
-    ],
-    "title": "RequestResponse"
-  },
-  "RequestListResponse": {
-    "properties": {
-      "requests": {
-        "items": {
-          "$ref": "#/components/schemas/RequestResponse"
-        },
-        "type": "array",
-        "title": "Requests"
-      },
-      "total": {
-        "type": "integer",
-        "title": "Total"
-      },
-      "page": {
-        "type": "integer",
-        "title": "Page"
-      },
-      "size": {
-        "type": "integer",
-        "title": "Size"
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "required": [
-      "requests",
-      "total",
-      "page",
-      "size"
-    ],
-    "title": "RequestListResponse"
-  },
-  "RequestStatus": {
-    "type": "string",
-    "enum": [
-      "PENDING",
-      "IN_PROGRESS",
-      "COMPLETED",
-      "FAILED"
-    ],
-    "title": "RequestStatus"
-  },
-  "RequestUpdate": {
-    "properties": {
-      "status": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/RequestStatus"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "note_id": {
-        "anyOf": [
-          {
-            "type": "string",
-            "format": "uuid"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Note Id"
-      }
-    },
-    "additionalProperties": false,
-    "type": "object",
-    "title": "RequestUpdate"
-  },
-  "RequestInfo": {
-    "properties": {
-      "request_id": {
-        "type": "string",
-        "title": "Request Id"
       },
       "content": {
         "anyOf": [
@@ -796,110 +601,126 @@
         ],
         "title": "Content"
       },
-      "requested_by": {
-        "type": "string",
-        "title": "Requested By"
-      },
-      "requested_at": {
-        "type": "string",
-        "format": "date-time",
-        "title": "Requested At"
-      }
-    },
-    "type": "object",
-    "required": [
-      "request_id",
-      "requested_by",
-      "requested_at"
-    ],
-    "title": "RequestInfo",
-    "description": "Simplified request info for embedding in note responses"
-  },
-  "ScoringRequest": {
-    "properties": {
-      "notes": {
-        "items": {
-          "$ref": "#/components/schemas/NoteData"
-        },
-        "type": "array",
-        "title": "Notes",
-        "description": "List of community notes to score"
-      },
-      "ratings": {
-        "items": {
-          "$ref": "#/components/schemas/RatingData"
-        },
-        "type": "array",
-        "title": "Ratings",
-        "description": "List of ratings for the notes"
-      },
-      "enrollment": {
-        "items": {
-          "$ref": "#/components/schemas/EnrollmentData"
-        },
-        "type": "array",
-        "title": "Enrollment",
-        "description": "List of user enrollment data"
-      },
-      "status": {
+      "platform_message_id": {
         "anyOf": [
           {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array"
+            "type": "string"
           },
           {
             "type": "null"
           }
         ],
-        "title": "Status",
-        "description": "Optional note status history"
+        "title": "Platform Message Id"
+      },
+      "metadata": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Metadata"
       }
     },
     "type": "object",
     "required": [
-      "notes",
-      "ratings",
-      "enrollment"
+      "request_id",
+      "requested_by"
     ],
-    "title": "ScoringRequest"
+    "title": "RequestAttributes",
+    "description": "Request attributes for JSON:API resource."
   },
-  "ScoringResponse": {
+  "RequestListJSONAPIResponse": {
     "properties": {
-      "scored_notes": {
+      "data": {
         "items": {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/components/schemas/RequestResource"
         },
         "type": "array",
-        "title": "Scored Notes"
+        "title": "Data"
       },
-      "helpful_scores": {
-        "items": {
-          "additionalProperties": true,
-          "type": "object"
+      "jsonapi": {
+        "additionalProperties": {
+          "type": "string"
         },
-        "type": "array",
-        "title": "Helpful Scores"
+        "type": "object",
+        "title": "Jsonapi",
+        "default": {
+          "version": "1.1"
+        }
       },
-      "auxiliary_info": {
-        "items": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "type": "array",
-        "title": "Auxiliary Info"
+      "links": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/JSONAPILinks"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "meta": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/JSONAPIMeta"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "type": "object",
     "required": [
-      "scored_notes",
-      "helpful_scores",
-      "auxiliary_info"
+      "data"
     ],
-    "title": "ScoringResponse"
+    "title": "RequestListJSONAPIResponse",
+    "description": "JSON:API response for a list of request resources."
+  },
+  "RequestStatus": {
+    "type": "string",
+    "enum": [
+      "PENDING",
+      "IN_PROGRESS",
+      "COMPLETED",
+      "FAILED"
+    ],
+    "title": "RequestStatus"
+  },
+  "RequestUpdateAttributes": {
+    "properties": {
+      "status": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Updated request status"
+      },
+      "note_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "uuid"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note Id",
+        "description": "Associated note ID"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "title": "RequestUpdateAttributes",
+    "description": "Attributes for updating a request via JSON:API."
   },
   "EnrollmentData": {
     "properties": {
@@ -1071,10 +892,11 @@
         "title": "Community Server Id",
         "description": "Community server ID"
       },
-      "author_participant_id": {
+      "author_id": {
         "type": "string",
-        "title": "Author Participant Id",
-        "description": "Author's participant ID"
+        "format": "uuid",
+        "title": "Author Id",
+        "description": "Author's user profile ID"
       },
       "channel_id": {
         "anyOf": [
@@ -1107,10 +929,150 @@
       "summary",
       "classification",
       "community_server_id",
-      "author_participant_id"
+      "author_id"
     ],
     "title": "NoteCreateAttributes",
     "description": "Attributes for creating a note via JSON:API."
+  },
+  "NoteResponse": {
+    "properties": {
+      "author_id": {
+        "type": "string",
+        "title": "Author Id"
+      },
+      "channel_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Channel Id"
+      },
+      "summary": {
+        "type": "string",
+        "title": "Summary"
+      },
+      "classification": {
+        "type": "string",
+        "title": "Classification"
+      },
+      "helpfulness_score": {
+        "type": "integer",
+        "title": "Helpfulness Score",
+        "default": 0
+      },
+      "status": {
+        "type": "string",
+        "title": "Status",
+        "default": "NEEDS_MORE_RATINGS"
+      },
+      "ai_generated": {
+        "type": "boolean",
+        "title": "Ai Generated",
+        "default": false
+      },
+      "ai_provider": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Ai Provider"
+      },
+      "force_published": {
+        "type": "boolean",
+        "title": "Force Published",
+        "default": false
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "updated_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Updated At"
+      },
+      "request_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Request Id"
+      },
+      "platform_message_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Platform Message Id"
+      },
+      "force_published_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Force Published At"
+      },
+      "ratings_count": {
+        "type": "integer",
+        "title": "Ratings Count",
+        "default": 0
+      },
+      "community_server_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Community Server Id"
+      }
+    },
+    "type": "object",
+    "required": [
+      "author_id",
+      "summary",
+      "classification"
+    ],
+    "title": "NoteJSONAPIAttributes",
+    "description": "Note attributes for JSON:API resource."
   },
   "RatingCreate": {
     "properties": {
@@ -1120,10 +1082,11 @@
         "title": "Note Id",
         "description": "Note ID to rate"
       },
-      "rater_participant_id": {
+      "rater_id": {
         "type": "string",
-        "title": "Rater Participant Id",
-        "description": "Rater's participant ID"
+        "format": "uuid",
+        "title": "Rater Id",
+        "description": "Rater's user profile ID"
       },
       "helpfulness_level": {
         "$ref": "#/components/schemas/HelpfulnessLevel",
@@ -1134,11 +1097,59 @@
     "type": "object",
     "required": [
       "note_id",
-      "rater_participant_id",
+      "rater_id",
       "helpfulness_level"
     ],
     "title": "RatingCreateAttributes",
     "description": "Attributes for creating a rating via JSON:API."
+  },
+  "RatingResponse": {
+    "properties": {
+      "note_id": {
+        "type": "string",
+        "title": "Note Id"
+      },
+      "rater_id": {
+        "type": "string",
+        "title": "Rater Id"
+      },
+      "helpfulness_level": {
+        "type": "string",
+        "title": "Helpfulness Level"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "updated_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Updated At"
+      }
+    },
+    "type": "object",
+    "required": [
+      "note_id",
+      "rater_id",
+      "helpfulness_level"
+    ],
+    "title": "RatingAttributes",
+    "description": "Rating attributes for JSON:API resource."
   },
   "NoteUpdate": {
     "properties": {
@@ -1185,6 +1196,304 @@
     ],
     "title": "RatingUpdateAttributes",
     "description": "Attributes for updating a rating via JSON:API."
+  },
+  "RequestCreate": {
+    "properties": {
+      "request_id": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Request Id",
+        "description": "Unique request identifier"
+      },
+      "requested_by": {
+        "type": "string",
+        "title": "Requested By",
+        "description": "Requester's participant ID"
+      },
+      "community_server_id": {
+        "type": "string",
+        "title": "Community Server Id",
+        "description": "Community server ID (Discord guild ID, subreddit, etc.)"
+      },
+      "original_message_content": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Original Message Content",
+        "description": "Original message content"
+      },
+      "platform_message_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Platform Message Id",
+        "description": "Platform message ID"
+      },
+      "platform_channel_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Platform Channel Id",
+        "description": "Platform channel ID"
+      },
+      "platform_author_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Platform Author Id",
+        "description": "Platform author ID"
+      },
+      "platform_timestamp": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Platform Timestamp",
+        "description": "Platform message timestamp"
+      },
+      "metadata": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Metadata",
+        "description": "Request metadata"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "request_id",
+      "requested_by",
+      "community_server_id"
+    ],
+    "title": "RequestCreateAttributes",
+    "description": "Attributes for creating a request via JSON:API."
+  },
+  "RequestResponse": {
+    "properties": {
+      "request_id": {
+        "type": "string",
+        "title": "Request Id"
+      },
+      "requested_by": {
+        "type": "string",
+        "title": "Requested By"
+      },
+      "status": {
+        "type": "string",
+        "title": "Status",
+        "default": "PENDING"
+      },
+      "note_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note Id"
+      },
+      "community_server_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Community Server Id"
+      },
+      "requested_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Requested At"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "updated_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Updated At"
+      },
+      "content": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Content"
+      },
+      "platform_message_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Platform Message Id"
+      },
+      "metadata": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Metadata"
+      }
+    },
+    "type": "object",
+    "required": [
+      "request_id",
+      "requested_by"
+    ],
+    "title": "RequestAttributes",
+    "description": "Request attributes for JSON:API resource."
+  },
+  "RequestListResponse": {
+    "properties": {
+      "data": {
+        "items": {
+          "$ref": "#/components/schemas/RequestResource"
+        },
+        "type": "array",
+        "title": "Data"
+      },
+      "jsonapi": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object",
+        "title": "Jsonapi",
+        "default": {
+          "version": "1.1"
+        }
+      },
+      "links": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/JSONAPILinks"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "meta": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/JSONAPIMeta"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "type": "object",
+    "required": [
+      "data"
+    ],
+    "title": "RequestListJSONAPIResponse",
+    "description": "JSON:API response for a list of request resources."
+  },
+  "RequestUpdate": {
+    "properties": {
+      "status": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Updated request status"
+      },
+      "note_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "uuid"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note Id",
+        "description": "Associated note ID"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "title": "RequestUpdateAttributes",
+    "description": "Attributes for updating a request via JSON:API."
   },
   "NoteListResponse": {
     "properties": {

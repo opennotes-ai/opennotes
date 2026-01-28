@@ -134,7 +134,7 @@ export class DiscordFormatter {
 
     const metadataLines = [
       `**Message ID:** ${messageIdDisplay}`,
-      `**Author:** <@${attrs.author_participant_id}>`,
+      `**Author:** <@${attrs.author_id}>`,
       `**Note ID:** ${noteId}`,
     ];
 
@@ -191,7 +191,7 @@ export class DiscordFormatter {
         `**Note #${note.id}**`,
         note.attributes.summary,
         '',
-        `**Author:** <@${note.attributes.author_participant_id}>`,
+        `**Author:** <@${note.attributes.author_id}>`,
         `**Ratings:** \u{1F44D} ${note.attributes.ratings_count}`,
       ];
 
@@ -338,7 +338,7 @@ export class DiscordFormatter {
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent([
           `**Note ID:** ${noteId}`,
-          `**Rated by:** <@${result.rating.data.attributes.rater_participant_id}>`,
+          `**Rated by:** <@${result.rating.data.attributes.rater_id}>`,
         ].join('\n'))
       );
 

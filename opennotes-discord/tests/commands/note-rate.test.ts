@@ -26,7 +26,7 @@ function createMockRatingJSONAPIResponse(overrides: {
       id: overrides.id ?? 'rating-1',
       attributes: {
         note_id: overrides.noteId ?? TEST_NOTE_UUID,
-        rater_participant_id: overrides.userId ?? 'user-123',
+        rater_id: overrides.userId ?? 'user-123',
         helpfulness_level: overrides.helpfulnessLevel ?? 'HELPFUL',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

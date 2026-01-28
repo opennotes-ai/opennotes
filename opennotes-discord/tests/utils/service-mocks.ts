@@ -123,7 +123,7 @@ export function createMockRatingJSONAPIResponse(overrides: {
       id: overrides.id ?? 'rating-1',
       attributes: {
         note_id: overrides.noteId ?? 'note-123',
-        rater_participant_id: overrides.userId ?? 'user-123',
+        rater_id: overrides.userId ?? 'user-123',
         helpfulness_level: overrides.helpfulnessLevel ?? 'HELPFUL',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -171,7 +171,7 @@ export function createMockNoteListJSONAPIResponse(notes: Array<{
         classification: note.classification ?? 'NOT_MISLEADING',
         status: (note.status ?? 'NEEDS_MORE_RATINGS') as 'NEEDS_MORE_RATINGS' | 'CURRENTLY_RATED_HELPFUL' | 'CURRENTLY_RATED_NOT_HELPFUL',
         helpfulness_score: note.helpfulnessScore ?? 0.5,
-        author_participant_id: note.authorParticipantId ?? 'author-123',
+        author_id: note.authorParticipantId ?? 'author-123',
         community_server_id: note.communityServerId ?? 'server-123',
         channel_id: note.channelId ?? null,
         content: null,

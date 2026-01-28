@@ -54,7 +54,7 @@ export interface NoteResponse {
   classification: NoteClassification;
   status: NoteStatus;
   helpfulness_score: number;
-  author_participant_id: string;
+  author_id: string;  // User profile UUID
   community_server_id: string;
   channel_id: string | null;
   request_id: string | null;
@@ -71,7 +71,7 @@ export interface NoteResponse {
 export interface RatingResponse {
   id: string;
   note_id: string;
-  rater_participant_id: string;
+  rater_id: string;  // User profile UUID
   helpfulness_level: HelpfulnessLevel;
   created_at: string;
   updated_at?: string;
@@ -214,7 +214,7 @@ export interface NoteAttributes {
   classification: string;
   status: NoteStatus;
   helpfulness_score: number;
-  author_participant_id: string;
+  author_id: string;  // User profile UUID
   community_server_id: string;
   channel_id?: string | null;
   request_id?: string | null;
@@ -263,7 +263,7 @@ export type CommunityServerJSONAPIResponse = JSONAPISingleResponse<CommunityServ
 // Type for rating attributes in JSON:API response
 export interface RatingAttributes {
   note_id: string;
-  rater_participant_id: string;
+  rater_id: string;  // User profile UUID
   helpfulness_level: string;
   created_at?: string | null;
   updated_at?: string | null;
@@ -1006,7 +1006,7 @@ export class ApiClient {
     }
 
     const noteAttributes = {
-      author_participant_id: request.authorId,
+      author_id: request.authorId,  // Expects user profile UUID
       channel_id: request.channelId || null,
       community_server_id,
       request_id: request.requestId || null,
@@ -1032,7 +1032,7 @@ export class ApiClient {
   async rateNote(request: CreateRatingRequest, context?: UserContext): Promise<RatingJSONAPIResponse> {
     const ratingAttributes = {
       note_id: request.noteId,
-      rater_participant_id: request.userId,
+      rater_id: request.userId,  // Expects user profile UUID
       helpfulness_level: request.helpful ? 'HELPFUL' : 'NOT_HELPFUL',
     };
 

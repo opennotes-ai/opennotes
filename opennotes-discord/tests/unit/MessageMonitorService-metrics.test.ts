@@ -131,7 +131,7 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           messageId: `msg-${i}`,
           channelId: 'channel-123',
           guildId: 'guild-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
@@ -161,7 +161,7 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           messageId: `msg-${i}`,
           channelId: 'channel-123',
           guildId: 'guild-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
@@ -193,7 +193,7 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           messageId: `msg-${i}`,
           channelId: 'channel-123',
           guildId: 'guild-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
@@ -222,7 +222,7 @@ describe('MessageMonitorService - Metrics Unit Tests', () => {
           messageId: `msg-${i}`,
           channelId: 'channel-123',
           guildId: 'guild-123',
-          authorId: 'user-123',
+          authorId: '00000000-0000-0001-aaaa-123',
           content: `Message ${i}`,
           timestamp: Date.now(),
           channelConfig: {
