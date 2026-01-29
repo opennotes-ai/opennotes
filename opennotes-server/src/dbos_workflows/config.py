@@ -38,7 +38,7 @@ def create_dbos_instance() -> DBOS:
 
 def get_dbos() -> DBOS:
     """Get the DBOS instance, creating if needed."""
-    global _dbos_instance  # noqa: PLW0603 - Singleton pattern requires module-level state
+    global _dbos_instance
     if _dbos_instance is None:
         _dbos_instance = create_dbos_instance()
     return _dbos_instance
@@ -46,5 +46,5 @@ def get_dbos() -> DBOS:
 
 def reset_dbos() -> None:
     """Reset the DBOS instance. Used for testing."""
-    global _dbos_instance  # noqa: PLW0603 - Singleton pattern requires module-level state
+    global _dbos_instance
     _dbos_instance = None
