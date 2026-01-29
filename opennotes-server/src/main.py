@@ -284,6 +284,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Debug mode: {settings.DEBUG}")
+    logger.info(f"Server mode: {settings.SERVER_MODE}")
+
+    is_dbos_worker = settings.SERVER_MODE == "dbos_worker"
 
     logger.info("Validating encryption master key...")
     try:
@@ -319,12 +322,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Redis connections established")
 
     await _connect_nats()
-    app.state.taskiq_broker = await _start_taskiq_broker()
 
-    # Initialize AI Note Writer and Vision services if enabled
-    ai_note_writer, vision_service, llm_service = await _init_ai_services()
+    # Initialize TaskIQ, AI services, and event handlers only in full mode
+    ai_note_writer = None
+    vision_service = None
+    if is_dbos_worker:
+        logger.info("DBOS worker mode - skipping TaskIQ, AI services, and event handlers")
+        app.state.taskiq_broker = None
+    else:
+        app.state.taskiq_broker = await _start_taskiq_broker()
 
-    await _register_bulk_scan_handlers(llm_service=llm_service)
+        # Initialize AI Note Writer and Vision services if enabled
+        ai_note_writer, vision_service, llm_service = await _init_ai_services()
+
+        await _register_bulk_scan_handlers(llm_service=llm_service)
 
     # Store in app state for dependency injection
     app.state.ai_note_writer = ai_note_writer

@@ -89,6 +89,11 @@ class Settings(BaseSettings):
         default="opennotes-server-1",
         description="Unique identifier for this server instance (e.g., opennotes-server-1, opennotes-server-2)",
     )
+    SERVER_MODE: Literal["full", "dbos_worker"] = Field(
+        default="full",
+        description="Server mode: 'full' runs complete API server with all handlers, "
+        "'dbos_worker' runs minimal server for DBOS workflow processing only",
+    )
 
     CORS_ORIGINS: str | list[str] = Field(default="http://localhost:3000,http://localhost:5173")
 
