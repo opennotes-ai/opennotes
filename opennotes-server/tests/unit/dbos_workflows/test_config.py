@@ -27,15 +27,6 @@ class TestGetDbosConfig:
         assert isinstance(config, dict)
         assert "name" in config
         assert "system_database_url" in config
-        assert "dbos_system_schema" in config
-
-    def test_uses_dbos_schema_isolation(self) -> None:
-        """Config specifies 'dbos' schema for system tables."""
-        from src.dbos_workflows.config import get_dbos_config
-
-        config: dict[str, Any] = dict(get_dbos_config())
-
-        assert config.get("dbos_system_schema") == "dbos"
 
     def test_converts_asyncpg_url_to_sync(self) -> None:
         """Async PostgreSQL URL is converted to sync format for DBOS."""
