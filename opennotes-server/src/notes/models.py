@@ -146,7 +146,7 @@ class Rating(Base, TimestampMixin):
     )
 
     note_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("notes.id"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("notes.id", ondelete="CASCADE"), nullable=False
     )
     helpfulness_level: Mapped[str] = mapped_column(
         Enum("HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL", name="helpfulness_level"), nullable=False
@@ -205,7 +205,7 @@ class Request(Base, TimestampMixin):
         nullable=False,
     )
     note_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("notes.id"), nullable=True
+        PGUUID(as_uuid=True), ForeignKey("notes.id", ondelete="SET NULL"), nullable=True
     )
     request_metadata: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True, server_default="{}"

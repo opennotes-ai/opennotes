@@ -360,6 +360,38 @@ class BatchJobService:
 
         return job
 
+    async def set_workflow_id(
+        self,
+        job_id: UUID,
+        workflow_id: str,
+    ) -> BatchJob | None:
+        """
+        Set the DBOS workflow ID for a batch job.
+
+        Args:
+            job_id: The job's unique identifier
+            workflow_id: DBOS workflow ID to associate with the job
+
+        Returns:
+            The updated BatchJob if found, None otherwise
+        """
+        job = await self.get_job(job_id)
+        if job is None:
+            return None
+
+        job.workflow_id = workflow_id
+        await self._session.flush()
+
+        logger.info(
+            "Set workflow_id for batch job",
+            extra={
+                "job_id": str(job_id),
+                "workflow_id": workflow_id,
+            },
+        )
+
+        return job
+
     async def list_jobs(
         self,
         job_type: str | None = None,
