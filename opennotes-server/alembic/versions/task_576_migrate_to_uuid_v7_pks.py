@@ -405,7 +405,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
         ),
-        sa.ForeignKeyConstraint(["note_id"], ["notes.id"]),
+        sa.ForeignKeyConstraint(["note_id"], ["notes.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["rater_profile_id"], ["user_profiles.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id", name="ratings_pkey"),
     )
@@ -486,7 +486,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
         ),
-        sa.ForeignKeyConstraint(["note_id"], ["notes.id"]),
+        sa.ForeignKeyConstraint(["note_id"], ["notes.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(
             ["message_archive_id"], ["message_archive.id"], ondelete="SET NULL"
         ),
