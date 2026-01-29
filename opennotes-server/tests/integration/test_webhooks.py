@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -11,7 +13,7 @@ async def test_webhook_registration() -> None:
         webhook_data = {
             "url": "https://discord.com/api/webhooks/123/token",
             "secret": "test_secret",
-            "community_server_id": "guild_123",
+            "platform_community_server_id": "guild_123",
             "channel_id": "channel_456",
         }
 
@@ -22,7 +24,8 @@ async def test_webhook_registration() -> None:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["community_server_id"] == "guild_123"
+        # community_server_id in response is a UUID (internal ID), not the platform string
+        UUID(data["community_server_id"])  # Validates it's a valid UUID
         assert data["active"] is True
 
 
@@ -33,7 +36,7 @@ async def test_get_webhooks_by_guild() -> None:
         webhook_data = {
             "url": "https://discord.com/api/webhooks/123/token",
             "secret": "test_secret",
-            "community_server_id": "guild_456",
+            "platform_community_server_id": "guild_456",
             "channel_id": "channel_789",
         }
 
@@ -44,4 +47,5 @@ async def test_get_webhooks_by_guild() -> None:
         assert response.status_code == 200
         webhooks = response.json()
         assert len(webhooks) >= 1
-        assert webhooks[0]["community_server_id"] == "guild_456"
+        # community_server_id in response is a UUID (internal ID), not the platform string
+        UUID(webhooks[0]["community_server_id"])  # Validates it's a valid UUID

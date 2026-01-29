@@ -144,7 +144,9 @@ async def note_publisher_jsonapi_auth_client(note_publisher_jsonapi_auth_headers
 
 
 @pytest.fixture
-async def note_publisher_jsonapi_test_note(note_publisher_jsonapi_community_server):
+async def note_publisher_jsonapi_test_note(
+    note_publisher_jsonapi_community_server, note_publisher_jsonapi_registered_user
+):
     """Create a test note for note publisher JSON:API tests."""
     from src.database import get_session_maker
     from src.notes.models import Note
@@ -155,7 +157,7 @@ async def note_publisher_jsonapi_test_note(note_publisher_jsonapi_community_serv
             id=note_id,
             summary=f"Test note summary for publisher JSONAPI {uuid4().hex[:8]}",
             classification="NOT_MISLEADING",
-            author_id=f"test_author_{uuid4().hex[:8]}",
+            author_id=note_publisher_jsonapi_registered_user["profile_id"],
             channel_id=f"test_channel_{uuid4().hex[:8]}",
             community_server_id=note_publisher_jsonapi_community_server["uuid"],
             status="CURRENTLY_RATED_HELPFUL",
