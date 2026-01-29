@@ -128,6 +128,8 @@ class BatchJobService:
         """
         Mark a job as in progress and start tracking.
 
+        Uses SELECT FOR UPDATE to prevent TOCTOU race conditions.
+
         Args:
             job_id: The job's unique identifier
 
@@ -137,22 +139,28 @@ class BatchJobService:
         Raises:
             InvalidStateTransitionError: If job is not in PENDING status
         """
-        job = await self.get_job(job_id)
+        result = await self._session.execute(
+            select(BatchJob).where(BatchJob.id == job_id).with_for_update()
+        )
+        job = result.scalar_one_or_none()
         if job is None:
             return None
 
         current_status = BatchJobStatus(job.status)
         self._validate_transition(current_status, BatchJobStatus.IN_PROGRESS)
 
-        await self._progress_tracker.start_tracking(job_id)
-
-        job.status = BatchJobStatus.IN_PROGRESS.value
-        job.started_at = datetime.now(UTC)
-
+        tracking_started = False
         try:
+            await self._progress_tracker.start_tracking(job_id)
+            tracking_started = True
+
+            job.status = BatchJobStatus.IN_PROGRESS.value
+            job.started_at = datetime.now(UTC)
+
             await self._session.commit()
         except Exception:
-            await self._progress_tracker.stop_tracking(job_id)
+            if tracking_started:
+                await self._progress_tracker.stop_tracking(job_id)
             raise
 
         logger.info(
@@ -239,8 +247,10 @@ class BatchJobService:
         if failed_tasks is not None:
             job.failed_tasks = failed_tasks
 
-        await self._session.commit()
-        await self._progress_tracker.stop_tracking(job_id)
+        try:
+            await self._progress_tracker.stop_tracking(job_id)
+        finally:
+            await self._session.commit()
 
         logger.info(
             "Completed batch job",
@@ -295,8 +305,10 @@ class BatchJobService:
         if failed_tasks is not None:
             job.failed_tasks = failed_tasks
 
-        await self._session.commit()
-        await self._progress_tracker.stop_tracking(job_id)
+        try:
+            await self._progress_tracker.stop_tracking(job_id)
+        finally:
+            await self._session.commit()
 
         logger.error(
             "Batch job failed",
@@ -333,8 +345,10 @@ class BatchJobService:
         job.status = BatchJobStatus.CANCELLED.value
         job.completed_at = datetime.now(UTC)
 
-        await self._session.commit()
-        await self._progress_tracker.stop_tracking(job_id)
+        try:
+            await self._progress_tracker.stop_tracking(job_id)
+        finally:
+            await self._session.commit()
 
         logger.info(
             "Cancelled batch job",
