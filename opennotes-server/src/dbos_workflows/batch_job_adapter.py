@@ -7,10 +7,10 @@ BatchJob records are informational—adapter failures do not block workflow exec
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Callable, Coroutine
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from functools import wraps
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast, overload
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,31 +27,60 @@ logger = get_logger(__name__)
 
 P = ParamSpec("P")
 T = TypeVar("T")
+R = TypeVar("R")
+
+
+def _fire_and_forget_impl(
+    func: Callable[P, Coroutine[Any, Any, R]],
+    default_return: R,
+) -> Callable[P, Coroutine[Any, Any, R]]:
+    """Implementation of fire_and_forget decorator."""
+
+    @wraps(func)
+    async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            logger.error(
+                f"Fire-and-forget operation failed: {func.__name__}",
+                exc_info=True,
+                extra={"error": str(e)},
+            )
+            return default_return
+
+    return async_wrapper
+
+
+@overload
+def fire_and_forget(
+    default_return: None,
+) -> Callable[
+    [Callable[P, Coroutine[Any, Any, UUID | None]]],
+    Callable[P, Coroutine[Any, Any, UUID | None]],
+]: ...
+
+
+@overload
+def fire_and_forget(
+    default_return: bool,
+) -> Callable[
+    [Callable[P, Coroutine[Any, Any, bool]]], Callable[P, Coroutine[Any, Any, bool]]
+]: ...
 
 
 def fire_and_forget(
-    default_return: T,
-) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
+    default_return: Any,
+) -> Callable[[Callable[P, Coroutine[Any, Any, Any]]], Callable[P, Coroutine[Any, Any, Any]]]:
     """Decorator that catches all exceptions and returns a default value.
 
     Use this for operations that should never block the caller.
     Errors are logged but not propagated.
     """
 
-    def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
-        @wraps(func)
-        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            try:
-                return await func(*args, **kwargs)
-            except Exception as e:
-                logger.error(
-                    f"Fire-and-forget operation failed: {func.__name__}",
-                    exc_info=True,
-                    extra={"error": str(e)},
-                )
-                return default_return
-
-        return async_wrapper
+    def decorator(
+        func: Callable[P, Coroutine[Any, Any, Any]],
+    ) -> Callable[P, Coroutine[Any, Any, Any]]:
+        return _fire_and_forget_impl(func, default_return)
 
     return decorator
 
@@ -65,7 +94,7 @@ class BatchJobDBOSAdapter:
 
     def __init__(
         self,
-        db_session_factory: Callable[[], AsyncSession] | Callable[[], asynccontextmanager[AsyncGenerator[AsyncSession, None]]],
+        db_session_factory: Callable[[], AsyncSession] | Callable[[], AbstractAsyncContextManager[AsyncSession]],
     ) -> None:
         """Initialize the adapter.
 
@@ -80,10 +109,10 @@ class BatchJobDBOSAdapter:
         """Get a database session, handling both session factories and context managers."""
         result = self._db_session_factory()
         if hasattr(result, "__aenter__"):
-            async with result as session:
+            async with cast(AbstractAsyncContextManager[AsyncSession], result) as session:
                 yield session
         else:
-            yield result
+            yield cast(AsyncSession, result)
 
     @fire_and_forget(default_return=None)
     async def create_for_workflow(
@@ -133,9 +162,8 @@ class BatchJobDBOSAdapter:
         metadata: dict[str, Any] | None = None,
     ) -> UUID | None:
         """Synchronous wrapper for create_for_workflow."""
-        return asyncio.run(
-            self.create_for_workflow(workflow_id, job_type, total_tasks, metadata)
-        )
+        coro = self.create_for_workflow(workflow_id, job_type, total_tasks, metadata)
+        return asyncio.run(cast(Coroutine[Any, Any, UUID | None], coro))
 
     @fire_and_forget(default_return=False)
     async def update_status(
@@ -201,7 +229,8 @@ class BatchJobDBOSAdapter:
         error_summary: dict[str, Any] | None = None,
     ) -> bool:
         """Synchronous wrapper for update_status."""
-        return asyncio.run(self.update_status(batch_job_id, status, error_summary))
+        coro = self.update_status(batch_job_id, status, error_summary)
+        return asyncio.run(cast(Coroutine[Any, Any, bool], coro))
 
     @fire_and_forget(default_return=False)
     async def update_progress(
@@ -279,15 +308,14 @@ class BatchJobDBOSAdapter:
         increment_failed: bool = False,
     ) -> bool:
         """Synchronous wrapper for update_progress."""
-        return asyncio.run(
-            self.update_progress(
-                batch_job_id,
-                completed_tasks,
-                failed_tasks,
-                increment_completed,
-                increment_failed,
-            )
+        coro = self.update_progress(
+            batch_job_id,
+            completed_tasks,
+            failed_tasks,
+            increment_completed,
+            increment_failed,
         )
+        return asyncio.run(cast(Coroutine[Any, Any, bool], coro))
 
     @fire_and_forget(default_return=False)
     async def finalize_job(
@@ -353,11 +381,10 @@ class BatchJobDBOSAdapter:
         error_summary: dict[str, Any] | None = None,
     ) -> bool:
         """Synchronous wrapper for finalize_job."""
-        return asyncio.run(
-            self.finalize_job(
-                batch_job_id, success, completed_tasks, failed_tasks, error_summary
-            )
+        coro = self.finalize_job(
+            batch_job_id, success, completed_tasks, failed_tasks, error_summary
         )
+        return asyncio.run(cast(Coroutine[Any, Any, bool], coro))
 
     async def get_job_by_workflow_id(self, workflow_id: str) -> BatchJob | None:
         """Get a BatchJob by its workflow_id.
