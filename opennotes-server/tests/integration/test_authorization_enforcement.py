@@ -106,6 +106,7 @@ class TestAuthorizationFixtures:
             banned_reason=None,
         )
 
+        assert user.discord_id is not None  # Set above
         profile, identity = await create_profile_with_identity(
             db=db,
             profile_create=profile_create,
@@ -178,6 +179,7 @@ class TestAuthorizationFixtures:
             banned_reason=None,
         )
 
+        assert user.discord_id is not None  # Set above
         profile, identity = await create_profile_with_identity(
             db=db,
             profile_create=profile_create,
@@ -250,6 +252,7 @@ class TestAuthorizationFixtures:
             banned_reason=None,
         )
 
+        assert user.discord_id is not None  # Set above
         profile, identity = await create_profile_with_identity(
             db=db,
             profile_create=profile_create,
@@ -309,7 +312,7 @@ class TestAuthorizationFixtures:
     def _create_auth_headers(self, user_data):
         """Create auth headers for a user."""
         user = user_data["user"]
-        token_data = {
+        token_data: dict[str, str | int] = {
             "sub": str(user.id),
             "username": user.username,
             "role": user.role,
@@ -580,7 +583,7 @@ class TestCrossCommunityAccessPrevention(TestAuthorizationFixtures):
         db.add(user)
         await db.commit()
 
-        token_data = {
+        token_data: dict[str, str | int] = {
             "sub": str(user.id),
             "username": user.username,
             "role": user.role,

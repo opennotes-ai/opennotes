@@ -154,6 +154,7 @@ async def community_server_with_data(db):
         banned_at=None,
         banned_reason=None,
     )
+    assert test_user.discord_id is not None  # Set above
     profile, _identity = await create_profile_with_identity(
         db=db,
         profile_create=profile_create,
