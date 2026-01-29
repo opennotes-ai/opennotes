@@ -371,9 +371,9 @@ class TestJSONAPIAdvancedFilters:
     - neq (not equal): filter[status__neq]=NEEDS_MORE_RATINGS
     - gte (greater than or equal): filter[created_at__gte]=2024-01-01
     - lte (less than or equal): filter[created_at__lte]=2024-12-31
-    - not_in: filter[rated_by_participant_id__not_in]=user1,user2
+    - not_in: filter[rater_id__not_in]=user1,user2
 
-    The primary use case is rated_by_participant_id__not_in which enables
+    The primary use case is rater_id__not_in which enables
     filtering out notes already rated by the current user (task-783).
     """
 
@@ -403,6 +403,44 @@ class TestJSONAPIAdvancedFilters:
             request_body["data"]["attributes"]["request_id"] = note_data["request_id"]
         return await client.post("/api/v2/notes", json=request_body)
 
+    async def _create_rater_profile(self, community_server_id, suffix: str):
+        """Create a rater profile with community membership for testing.
+
+        Returns the profile UUID.
+        """
+        from src.database import get_session_maker
+        from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
+
+        async with get_session_maker()() as session:
+            profile = UserProfile(
+                display_name=f"Test Rater {suffix}",
+                is_human=True,
+                is_active=True,
+            )
+            session.add(profile)
+            await session.flush()
+
+            identity = UserIdentity(
+                profile_id=profile.id,
+                provider="discord",
+                provider_user_id=f"test_rater_discord_{suffix}",
+            )
+            session.add(identity)
+
+            member = CommunityMember(
+                community_id=community_server_id,
+                profile_id=profile.id,
+                role="member",
+                is_active=True,
+                joined_at=datetime.now(UTC),
+            )
+            session.add(member)
+
+            await session.commit()
+            await session.refresh(profile)
+
+            return profile.id
+
     @pytest.mark.asyncio
     async def test_filter_notes_exclude_rated_by_participant(
         self, jsonapi_auth_client, jsonapi_sample_note_data, jsonapi_community_server
@@ -412,7 +450,7 @@ class TestJSONAPIAdvancedFilters:
         This is the main use case from task-783: showing notes that still need
         rating by the current user by filtering out already-rated notes.
 
-        filter[rated_by_participant_id__not_in]=user1 should return only notes
+        filter[rater_id__not_in]=user1 should return only notes
         NOT rated by user1.
         """
         note_data_1 = self._get_unique_note_data(jsonapi_sample_note_data)
@@ -427,24 +465,26 @@ class TestJSONAPIAdvancedFilters:
         assert create_resp_2.status_code == 201
         unrated_note_id = create_resp_2.json()["data"]["id"]
 
-        rater_id = "test_rater_for_exclusion"
+        rater_id = await self._create_rater_profile(jsonapi_community_server["uuid"], "exclusion")
         rating_data = {
             "data": {
                 "type": "ratings",
                 "attributes": {
                     "note_id": rated_note_id,
-                    "rater_id": rater_id,
+                    "rater_id": str(rater_id),
                     "helpfulness_level": "HELPFUL",
                 },
             }
         }
         rating_resp = await jsonapi_auth_client.post("/api/v2/ratings", json=rating_data)
-        assert rating_resp.status_code in [200, 201]
+        assert rating_resp.status_code in [200, 201], (
+            f"Failed to create rating: {rating_resp.status_code} {rating_resp.text}"
+        )
 
         response = await jsonapi_auth_client.get(
             f"/api/v2/notes?"
             f"filter[community_server_id]={jsonapi_community_server['uuid']}"
-            f"&filter[rated_by_participant_id__not_in]={rater_id}"
+            f"&filter[rater_id__not_in]={rater_id}"
         )
         assert response.status_code == 200
 
@@ -465,9 +505,9 @@ class TestJSONAPIAdvancedFilters:
     ):
         """Test filtering notes to only include those rated by a specific user.
 
-        filter[rated_by_participant_id]=user1 should return only notes
+        filter[rater_id]=user1 should return only notes
         that have been rated by user1. This is the inverse of
-        rated_by_participant_id__not_in which EXCLUDES notes.
+        rater_id__not_in which EXCLUDES notes.
 
         Use case: Discord client's listNotesRatedByUser() function needs
         to find all notes that a specific user has rated.
@@ -484,24 +524,26 @@ class TestJSONAPIAdvancedFilters:
         assert create_resp_2.status_code == 201
         unrated_note_id = create_resp_2.json()["data"]["id"]
 
-        rater_id = "test_rater_for_inclusion"
+        rater_id = await self._create_rater_profile(jsonapi_community_server["uuid"], "inclusion")
         rating_data = {
             "data": {
                 "type": "ratings",
                 "attributes": {
                     "note_id": rated_note_id,
-                    "rater_id": rater_id,
+                    "rater_id": str(rater_id),
                     "helpfulness_level": "HELPFUL",
                 },
             }
         }
         rating_resp = await jsonapi_auth_client.post("/api/v2/ratings", json=rating_data)
-        assert rating_resp.status_code in [200, 201]
+        assert rating_resp.status_code in [200, 201], (
+            f"Failed to create rating: {rating_resp.status_code} {rating_resp.text}"
+        )
 
         response = await jsonapi_auth_client.get(
             f"/api/v2/notes?"
             f"filter[community_server_id]={jsonapi_community_server['uuid']}"
-            f"&filter[rated_by_participant_id]={rater_id}"
+            f"&filter[rater_id]={rater_id}"
         )
         assert response.status_code == 200
 

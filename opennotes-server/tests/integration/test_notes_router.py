@@ -97,6 +97,50 @@ async def notes_registered_user(notes_test_user, test_community_server):
             }
 
 
+async def create_rater_profile(community_server_uuid, display_name: str, discord_id: str):
+    """Helper function to create a rater profile with identity and community membership.
+
+    This creates the necessary UserProfile, UserIdentity, and CommunityMember records
+    that are required for a valid rater_id (which must be a UUID profile ID).
+
+    Returns the profile ID (UUID) to use as rater_id.
+    """
+    from datetime import UTC, datetime
+
+    from src.database import get_session_maker
+    from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
+
+    async with get_session_maker()() as session:
+        profile = UserProfile(
+            display_name=display_name,
+            is_human=True,
+            is_active=True,
+        )
+        session.add(profile)
+        await session.flush()
+
+        identity = UserIdentity(
+            profile_id=profile.id,
+            provider="discord",
+            provider_user_id=discord_id,
+        )
+        session.add(identity)
+
+        member = CommunityMember(
+            community_id=community_server_uuid,
+            profile_id=profile.id,
+            role="member",
+            is_active=True,
+            joined_at=datetime.now(UTC),
+        )
+        session.add(member)
+
+        await session.commit()
+        await session.refresh(profile)
+
+        return profile.id
+
+
 @pytest.fixture
 async def notes_auth_headers(notes_registered_user):
     """Generate auth headers for notes test user"""
@@ -364,12 +408,22 @@ class TestRatingsRouter:
         response = await auth_client.post("/api/v2/notes", json=body)
         return response.json()["data"]
 
+    @pytest.fixture
+    async def rater_profile(self, test_community_server):
+        """Create a rater profile for rating tests."""
+        profile_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="Test Rater",
+            discord_id="test_rater_discord_456",
+        )
+        return {"profile_id": profile_id}
+
     @pytest.mark.asyncio
-    async def test_create_rating(self, auth_client, created_note):
+    async def test_create_rating(self, auth_client, created_note, rater_profile):
         """Test POST /api/v2/ratings creates a rating with JSON:API format."""
         rating_data = {
             "note_id": created_note["id"],
-            "rater_id": "rater_456",
+            "rater_id": str(rater_profile["profile_id"]),
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
 
@@ -383,11 +437,16 @@ class TestRatingsRouter:
         assert data["data"]["attributes"]["rater_id"] == rating_data["rater_id"]
 
     @pytest.mark.asyncio
-    async def test_list_ratings(self, auth_client, created_note):
+    async def test_list_ratings(self, auth_client, created_note, test_community_server):
         """Test GET /api/v2/notes/{id}/ratings returns JSON:API format."""
+        rater_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="List Ratings Rater",
+            discord_id="list_rater_discord_789",
+        )
         rating_data = {
             "note_id": created_note["id"],
-            "rater_id": "rater_789",
+            "rater_id": str(rater_id),
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
         body = _create_rating_jsonapi_body(rating_data)
@@ -400,11 +459,16 @@ class TestRatingsRouter:
         assert isinstance(data["data"], list)
 
     @pytest.mark.asyncio
-    async def test_get_rating_by_id(self, auth_client, created_note):
+    async def test_get_rating_by_id(self, auth_client, created_note, test_community_server):
         """Test GET /api/v2/notes/{id}/ratings includes created rating."""
+        rater_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="Get Rating Rater",
+            discord_id="get_rater_discord_get",
+        )
         rating_data = {
             "note_id": created_note["id"],
-            "rater_id": "rater_get",
+            "rater_id": str(rater_id),
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
         body = _create_rating_jsonapi_body(rating_data)
@@ -422,7 +486,7 @@ class TestRatingsRouter:
         """Test PUT /api/v2/ratings/{id} updates rating with JSON:API format."""
         rating_data = {
             "note_id": created_note["id"],
-            "rater_id": notes_registered_user["discord_id"],
+            "rater_id": str(notes_registered_user["profile_id"]),
             "helpfulness_level": HelpfulnessLevel.HELPFUL,
         }
         body = _create_rating_jsonapi_body(rating_data)
@@ -1172,13 +1236,21 @@ class TestNotesFilterParameters:
             assert response.status_code == 201
             notes.append(response.json()["data"])
 
-        rater_a = "rater_participant_a"
-        rater_b = "rater_participant_b"
+        rater_a_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="Rater Participant A",
+            discord_id="filter_rater_participant_a",
+        )
+        rater_b_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="Rater Participant B",
+            discord_id="filter_rater_participant_b",
+        )
 
         rating_body_0 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[0]["id"],
-                "rater_id": rater_a,
+                "rater_id": str(rater_a_id),
                 "helpfulness_level": HelpfulnessLevel.HELPFUL,
             }
         )
@@ -1188,7 +1260,7 @@ class TestNotesFilterParameters:
         rating_body_1 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[1]["id"],
-                "rater_id": rater_a,
+                "rater_id": str(rater_a_id),
                 "helpfulness_level": HelpfulnessLevel.NOT_HELPFUL,
             }
         )
@@ -1198,7 +1270,7 @@ class TestNotesFilterParameters:
         rating_body_2 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[2]["id"],
-                "rater_id": rater_b,
+                "rater_id": str(rater_b_id),
                 "helpfulness_level": HelpfulnessLevel.HELPFUL,
             }
         )
@@ -1207,19 +1279,19 @@ class TestNotesFilterParameters:
 
         return {
             "notes": notes,
-            "rater_a": rater_a,
-            "rater_b": rater_b,
+            "rater_a": str(rater_a_id),
+            "rater_b": str(rater_b_id),
             "community_server_id": test_community_server["uuid"],
         }
 
     @pytest.mark.asyncio
     async def test_filter_by_rated_by_participant_id_not_in(self, auth_client, notes_with_ratings):
-        """Test filter[rated_by_participant_id__not_in] excludes notes rated by specified participant."""
+        """Test filter[rater_id__not_in] excludes notes rated by specified participant."""
         rater_a = notes_with_ratings["rater_a"]
         community_id = notes_with_ratings["community_server_id"]
 
         response = await auth_client.get(
-            f"/api/v2/notes?filter[rated_by_participant_id__not_in]={rater_a}"
+            f"/api/v2/notes?filter[rater_id__not_in]={rater_a}"
             f"&filter[community_server_id]={community_id}"
         )
         assert response.status_code == 200
@@ -1234,14 +1306,18 @@ class TestNotesFilterParameters:
 
     @pytest.mark.asyncio
     async def test_filter_by_rated_by_participant_id_not_in_no_ratings(
-        self, auth_client, notes_with_ratings
+        self, auth_client, notes_with_ratings, test_community_server
     ):
-        """Test filter[rated_by_participant_id__not_in] returns all when participant has no ratings."""
-        nonexistent_rater = "rater_that_does_not_exist"
+        """Test filter[rater_id__not_in] returns all when participant has no ratings."""
+        nonexistent_rater_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="Nonexistent Rater",
+            discord_id="nonexistent_rater_no_ratings",
+        )
         community_id = notes_with_ratings["community_server_id"]
 
         response = await auth_client.get(
-            f"/api/v2/notes?filter[rated_by_participant_id__not_in]={nonexistent_rater}"
+            f"/api/v2/notes?filter[rater_id__not_in]={nonexistent_rater_id}"
             f"&filter[community_server_id]={community_id}"
         )
         assert response.status_code == 200
@@ -1268,7 +1344,7 @@ class TestNotesFilterParameters:
     async def test_combine_rated_by_and_exclude_status(
         self, auth_client, sample_note_data, test_community_server
     ):
-        """Test combination of filter[rated_by_participant_id__not_in] and filter[status__neq]."""
+        """Test combination of filter[rater_id__not_in] and filter[status__neq]."""
         notes = []
 
         for i in range(3):
@@ -1279,12 +1355,16 @@ class TestNotesFilterParameters:
             assert response.status_code == 201
             notes.append(response.json()["data"])
 
-        rater_a = "combined_test_rater_a"
+        rater_a_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="Combined Test Rater A",
+            discord_id="combined_test_rater_a",
+        )
 
         rating_body_0 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[0]["id"],
-                "rater_id": rater_a,
+                "rater_id": str(rater_a_id),
                 "helpfulness_level": HelpfulnessLevel.NOT_HELPFUL,
             }
         )
@@ -1294,7 +1374,7 @@ class TestNotesFilterParameters:
         rating_body_1 = _create_rating_jsonapi_body(
             {
                 "note_id": notes[1]["id"],
-                "rater_id": rater_a,
+                "rater_id": str(rater_a_id),
                 "helpfulness_level": HelpfulnessLevel.HELPFUL,
             }
         )
@@ -1304,7 +1384,7 @@ class TestNotesFilterParameters:
         community_id = test_community_server["uuid"]
 
         response = await auth_client.get(
-            f"/api/v2/notes?filter[rated_by_participant_id__not_in]={rater_a}"
+            f"/api/v2/notes?filter[rater_id__not_in]={rater_a_id}"
             f"&filter[status__neq]=CURRENTLY_RATED_HELPFUL"
             f"&filter[community_server_id]={community_id}"
         )
@@ -1320,8 +1400,12 @@ class TestNotesFilterParameters:
     async def test_rated_by_participant_id_not_in_with_pagination(
         self, auth_client, sample_note_data, test_community_server
     ):
-        """Test filter[rated_by_participant_id__not_in] with JSON:API pagination."""
-        rater = "pagination_test_rater"
+        """Test filter[rater_id__not_in] with JSON:API pagination."""
+        rater_id = await create_rater_profile(
+            community_server_uuid=test_community_server["uuid"],
+            display_name="Pagination Test Rater",
+            discord_id="pagination_test_rater",
+        )
         notes = []
         for i in range(5):
             note_data = sample_note_data.copy()
@@ -1333,7 +1417,7 @@ class TestNotesFilterParameters:
             rating_body = _create_rating_jsonapi_body(
                 {
                     "note_id": notes[-1]["id"],
-                    "rater_id": rater,
+                    "rater_id": str(rater_id),
                     "helpfulness_level": HelpfulnessLevel.HELPFUL,
                 }
             )
@@ -1342,7 +1426,7 @@ class TestNotesFilterParameters:
         community_id = test_community_server["uuid"]
 
         response = await auth_client.get(
-            f"/api/v2/notes?filter[rated_by_participant_id__not_in]={rater}"
+            f"/api/v2/notes?filter[rater_id__not_in]={rater_id}"
             f"&page[number]=1&page[size]=2"
             f"&filter[community_server_id]={community_id}"
         )
