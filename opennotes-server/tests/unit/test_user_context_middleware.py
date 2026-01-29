@@ -80,7 +80,11 @@ def test_user_context_extracted_from_jwt(monkeypatch):
         response = client.get("/test", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
-    assert captured_attributes.get("enduser.id") == user_id
+    assert captured_attributes.get("enduser.id") == user_id, (
+        f"enduser.id mismatch. Expected: {user_id}, Got: {captured_attributes.get('enduser.id')}. "
+        f"Captured keys: {list(captured_attributes.keys())}. "
+        f"All captured: {captured_attributes}"
+    )
     assert captured_attributes.get("user.username") == username
     assert captured_attributes.get("enduser.role") == role
 
