@@ -181,7 +181,7 @@ def force_publish_sample_note_data(
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": f"Force publish query opt test note {int(datetime.now(tz=UTC).timestamp() * 1000000)}",
-        "author_id": force_publish_registered_user["discord_id"],
+        "author_id": str(force_publish_registered_user["profile_id"]),
         "community_server_id": str(force_publish_test_community_server["uuid"]),
     }
 

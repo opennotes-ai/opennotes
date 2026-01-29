@@ -152,7 +152,7 @@ def sample_note_data(test_community_server, notes_registered_user):
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary",
-        "author_id": notes_registered_user["discord_id"],
+        "author_id": str(notes_registered_user["profile_id"]),
         "community_server_id": str(test_community_server["uuid"]),
     }
 

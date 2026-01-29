@@ -133,14 +133,14 @@ class TestNoteClassificationInQueue:
 
     @pytest.mark.asyncio
     async def test_not_misleading_note_appears_in_queue(
-        self, classification_auth_client, community_server
+        self, classification_auth_client, community_server, classification_registered_user
     ):
         """Verify that a human-written NOT_MISLEADING note appears in the queue"""
         # Create a note with NOT_MISLEADING classification
         note_data = {
             "classification": NoteClassification.NOT_MISLEADING,
             "summary": f"This post is actually accurate and helpful {datetime.now(UTC).timestamp()}",
-            "author_id": "author_not_misleading",
+            "author_id": str(classification_registered_user["profile_id"]),
             "community_server_id": str(community_server),
         }
 
@@ -168,14 +168,14 @@ class TestNoteClassificationInQueue:
 
     @pytest.mark.asyncio
     async def test_misinformed_note_appears_in_queue(
-        self, classification_auth_client, community_server
+        self, classification_auth_client, community_server, classification_registered_user
     ):
         """Verify that a MISINFORMED_OR_POTENTIALLY_MISLEADING note appears in the queue"""
         # Create a note with MISINFORMED_OR_POTENTIALLY_MISLEADING classification
         note_data = {
             "classification": NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             "summary": f"This post contains misinformation {datetime.now(UTC).timestamp()}",
-            "author_id": "author_misleading",
+            "author_id": str(classification_registered_user["profile_id"]),
             "community_server_id": str(community_server),
         }
 
@@ -206,14 +206,14 @@ class TestNoteClassificationInQueue:
 
     @pytest.mark.asyncio
     async def test_both_classifications_appear_together(
-        self, classification_auth_client, community_server
+        self, classification_auth_client, community_server, classification_registered_user
     ):
         """Verify that notes of both classifications appear together in the queue"""
         # Create one NOT_MISLEADING note
         not_misleading_note = {
             "classification": NoteClassification.NOT_MISLEADING,
             "summary": f"Accurate post #1 {datetime.now(UTC).timestamp()}",
-            "author_id": "author_accurate",
+            "author_id": str(classification_registered_user["profile_id"]),
             "community_server_id": str(community_server),
         }
 
@@ -221,7 +221,7 @@ class TestNoteClassificationInQueue:
         misinformed_note = {
             "classification": NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             "summary": f"Misleading post #1 {datetime.now(UTC).timestamp()}",
-            "author_id": "author_misleading_2",
+            "author_id": str(classification_registered_user["profile_id"]),
             "community_server_id": str(community_server),
         }
 
@@ -250,21 +250,21 @@ class TestNoteClassificationInQueue:
 
     @pytest.mark.asyncio
     async def test_classification_filter_works_independently(
-        self, classification_auth_client, community_server
+        self, classification_auth_client, community_server, classification_registered_user
     ):
         """Verify that classification filtering works independently from status filtering"""
         # Create notes with different classifications
         not_misleading_note = {
             "classification": NoteClassification.NOT_MISLEADING,
             "summary": f"Accurate post #2 {datetime.now(UTC).timestamp()}",
-            "author_id": "author_accurate_2",
+            "author_id": str(classification_registered_user["profile_id"]),
             "community_server_id": str(community_server),
         }
 
         misinformed_note = {
             "classification": NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             "summary": f"Misleading post #2 {datetime.now(UTC).timestamp()}",
-            "author_id": "author_misleading_3",
+            "author_id": str(classification_registered_user["profile_id"]),
             "community_server_id": str(community_server),
         }
 

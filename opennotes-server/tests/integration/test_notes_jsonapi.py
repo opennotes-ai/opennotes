@@ -148,7 +148,7 @@ def jsonapi_sample_note_data(jsonapi_community_server, jsonapi_registered_user):
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary for JSON:API",
-        "author_id": jsonapi_registered_user["discord_id"],
+        "author_id": str(jsonapi_registered_user["profile_id"]),
         "community_server_id": str(jsonapi_community_server["uuid"]),
     }
 
