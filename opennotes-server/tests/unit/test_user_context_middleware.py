@@ -51,6 +51,13 @@ def test_user_context_extracted_from_jwt(monkeypatch):
 
     from src.middleware.user_context import AuthenticatedUserContextMiddleware
 
+    # CRITICAL: Also patch settings in the middleware module itself.
+    # The middleware imports `from src.config import settings` at module load time,
+    # capturing a reference to settings. If another test imported the middleware first
+    # (e.g., via src.main), the module's settings reference points to the real settings,
+    # not our test_settings. This patch ensures JWT decoding uses our test keys.
+    monkeypatch.setattr("src.middleware.user_context.settings", test_settings)
+
     app = FastAPI()
     app.add_middleware(AuthenticatedUserContextMiddleware)
 
@@ -109,6 +116,8 @@ def test_no_user_context_without_auth_header(monkeypatch):
 
     from src.middleware.user_context import AuthenticatedUserContextMiddleware
 
+    monkeypatch.setattr("src.middleware.user_context.settings", test_settings)
+
     app = FastAPI()
     app.add_middleware(AuthenticatedUserContextMiddleware)
 
@@ -152,6 +161,8 @@ def test_invalid_jwt_does_not_crash(monkeypatch):
 
     from src.middleware.user_context import AuthenticatedUserContextMiddleware
 
+    monkeypatch.setattr("src.middleware.user_context.settings", test_settings)
+
     app = FastAPI()
     app.add_middleware(AuthenticatedUserContextMiddleware)
 
@@ -192,6 +203,8 @@ def test_non_bearer_auth_header_ignored(monkeypatch):
     monkeypatch.setattr(config, "settings", test_settings)
 
     from src.middleware.user_context import AuthenticatedUserContextMiddleware
+
+    monkeypatch.setattr("src.middleware.user_context.settings", test_settings)
 
     app = FastAPI()
     app.add_middleware(AuthenticatedUserContextMiddleware)

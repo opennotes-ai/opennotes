@@ -356,11 +356,9 @@ class TestStatsJSONAPI:
     async def test_get_participant_stats_jsonapi_format(
         self, stats_jsonapi_auth_client, stats_jsonapi_test_notes, stats_jsonapi_test_ratings
     ):
-        """Test GET /api/v2/stats/participant/{id} returns proper JSON:API format."""
+        """Test GET /api/v2/stats/author/{id} returns proper JSON:API format."""
         participant_id = stats_jsonapi_test_notes["participant_id"]
-        response = await stats_jsonapi_auth_client.get(
-            f"/api/v2/stats/participant/{participant_id}"
-        )
+        response = await stats_jsonapi_auth_client.get(f"/api/v2/stats/author/{participant_id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -377,9 +375,7 @@ class TestStatsJSONAPI:
     ):
         """Test that participant stats resource objects have correct JSON:API structure."""
         participant_id = stats_jsonapi_test_notes["participant_id"]
-        response = await stats_jsonapi_auth_client.get(
-            f"/api/v2/stats/participant/{participant_id}"
-        )
+        response = await stats_jsonapi_auth_client.get(f"/api/v2/stats/author/{participant_id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -408,9 +404,7 @@ class TestStatsJSONAPI:
     ):
         """Test that participant stats response Content-Type is application/vnd.api+json."""
         participant_id = stats_jsonapi_test_notes["participant_id"]
-        response = await stats_jsonapi_auth_client.get(
-            f"/api/v2/stats/participant/{participant_id}"
-        )
+        response = await stats_jsonapi_auth_client.get(f"/api/v2/stats/author/{participant_id}")
         assert response.status_code == 200
 
         content_type = response.headers.get("content-type", "")
@@ -422,12 +416,12 @@ class TestStatsJSONAPI:
     async def test_participant_stats_with_community_filter(
         self, stats_jsonapi_auth_client, stats_jsonapi_test_notes, stats_jsonapi_test_ratings
     ):
-        """Test GET /api/v2/stats/participant/{id} with community_server_id filter."""
+        """Test GET /api/v2/stats/author/{id} with community_server_id filter."""
         participant_id = stats_jsonapi_test_notes["participant_id"]
         community_id = str(stats_jsonapi_test_notes["community_server_id"])
 
         response = await stats_jsonapi_auth_client.get(
-            f"/api/v2/stats/participant/{participant_id}",
+            f"/api/v2/stats/author/{participant_id}",
             params={"filter[community_server_id]": community_id},
         )
         assert response.status_code == 200
@@ -442,12 +436,12 @@ class TestStatsJSONAPI:
     async def test_participant_stats_rater(
         self, stats_jsonapi_auth_client, stats_jsonapi_test_notes, stats_jsonapi_test_ratings
     ):
-        """Test GET /api/v2/stats/participant/{id} for a rater."""
+        """Test GET /api/v2/stats/author/{id} for a rater."""
         rater_id = stats_jsonapi_test_ratings["rater_id"]
         community_id = str(stats_jsonapi_test_notes["community_server_id"])
 
         response = await stats_jsonapi_auth_client.get(
-            f"/api/v2/stats/participant/{rater_id}",
+            f"/api/v2/stats/author/{rater_id}",
             params={"filter[community_server_id]": community_id},
         )
         assert response.status_code == 200
@@ -468,8 +462,8 @@ class TestStatsJSONAPI:
 
     @pytest.mark.asyncio
     async def test_unauthenticated_participant_stats_returns_401(self):
-        """Test that GET /api/v2/stats/participant/{id} without auth returns 401."""
+        """Test that GET /api/v2/stats/author/{id} without auth returns 401."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/api/v2/stats/participant/test_participant")
+            response = await client.get("/api/v2/stats/author/00000000-0000-0000-0000-000000000000")
             assert response.status_code == 401

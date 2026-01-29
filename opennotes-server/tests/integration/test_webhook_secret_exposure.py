@@ -26,7 +26,7 @@ async def test_webhook_registration_returns_secret():
         webhook_data = {
             "url": "https://discord.com/api/webhooks/task187-1/token",
             "secret": "task-187-test-secret-registration",
-            "community_server_id": "guild_task187_1",
+            "platform_community_server_id": "guild_task187_1",
             "channel_id": "channel_task187_1",
         }
 
@@ -38,54 +38,49 @@ async def test_webhook_registration_returns_secret():
         assert response.status_code == 200
         data = response.json()
 
-        # Verify WebhookConfigSecure structure (includes secret)
         assert "secret" in data, "POST /register must return secret in WebhookConfigSecure"
         assert data["secret"] == webhook_data["secret"]
-        assert data["community_server_id"] == webhook_data["community_server_id"]
+        assert "community_server_id" in data
         assert data["active"] is True
 
 
 @pytest.mark.asyncio
 async def test_get_webhooks_excludes_secret():
     """
-    Task-187: Verify GET /{community_server_id} returns WebhookConfigResponse without secret.
+    Task-187: Verify GET /{platform_community_server_id} returns WebhookConfigResponse without secret.
 
     The secret should NEVER be returned in GET requests to prevent exposure
     in logs, caches, or unauthorized access.
     """
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # First, register a webhook
+        platform_id = "guild_task187_2"
         webhook_data = {
             "url": "https://discord.com/api/webhooks/task187-2/token",
             "secret": "task-187-test-secret-get",
-            "community_server_id": "guild_task187_2",
+            "platform_community_server_id": platform_id,
             "channel_id": "channel_task187_2",
         }
 
         await client.post("/api/v1/webhooks/register", json=webhook_data)
 
-        # Now GET the webhooks
-        response = await client.get(f"/api/v1/webhooks/{webhook_data['community_server_id']}")
+        response = await client.get(f"/api/v1/webhooks/{platform_id}")
 
         assert response.status_code == 200
         webhooks = response.json()
         assert len(webhooks) >= 1
 
-        # Verify WebhookConfigResponse structure (excludes secret)
+        found = False
         for webhook in webhooks:
-            if webhook["community_server_id"] == webhook_data["community_server_id"]:
-                assert "secret" not in webhook, (
-                    "GET requests must return WebhookConfigResponse without secret"
-                )
-                assert "url" in webhook
-                assert "community_server_id" in webhook
-                assert "active" in webhook
-                break
-        else:
-            pytest.fail(
-                f"Webhook for guild {webhook_data['community_server_id']} not found in response"
+            assert "secret" not in webhook, (
+                "GET requests must return WebhookConfigResponse without secret"
             )
+            assert "url" in webhook
+            assert "community_server_id" in webhook
+            assert "active" in webhook
+            found = True
+
+        assert found, f"Webhook for platform ID {platform_id} not found in response"
 
 
 @pytest.mark.asyncio
@@ -98,18 +93,16 @@ async def test_update_webhook_excludes_secret():
     """
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # First, register a webhook
         webhook_data = {
             "url": "https://discord.com/api/webhooks/task187-3/token",
             "secret": "task-187-test-secret-update",
-            "community_server_id": "guild_task187_3",
+            "platform_community_server_id": "guild_task187_3",
             "channel_id": "channel_task187_3",
         }
 
         register_response = await client.post("/api/v1/webhooks/register", json=webhook_data)
         webhook_id = register_response.json()["id"]
 
-        # Update the webhook
         update_data = {"active": False}
         response = await client.put(
             f"/api/v1/webhooks/{webhook_id}",
@@ -119,12 +112,11 @@ async def test_update_webhook_excludes_secret():
         assert response.status_code == 200
         data = response.json()
 
-        # Verify WebhookConfigResponse structure (excludes secret)
         assert "secret" not in data, "PUT requests must return WebhookConfigResponse without secret"
         assert "url" in data
         assert "community_server_id" in data
         assert "active" in data
-        assert data["active"] is False  # Verify update worked
+        assert data["active"] is False
 
 
 @pytest.mark.asyncio
@@ -137,30 +129,25 @@ async def test_secret_never_exposed_in_list_operations():
     """
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Register multiple webhooks for the same guild
-        guild_id = "guild_task187_bulk"
+        platform_id = "guild_task187_bulk"
 
         for i in range(3):
             webhook_data = {
                 "url": f"https://discord.com/api/webhooks/task187-bulk-{i}/token",
                 "secret": f"task-187-test-secret-bulk-{i}",
-                "community_server_id": guild_id,
+                "platform_community_server_id": platform_id,
                 "channel_id": f"channel_task187_bulk_{i}",
             }
             await client.post("/api/v1/webhooks/register", json=webhook_data)
 
-        # Get all webhooks for the guild
-        response = await client.get(f"/api/v1/webhooks/{guild_id}")
+        response = await client.get(f"/api/v1/webhooks/{platform_id}")
 
         assert response.status_code == 200
         webhooks = response.json()
 
-        # Count webhooks for this guild
-        guild_webhooks = [w for w in webhooks if w["community_server_id"] == guild_id]
-        assert len(guild_webhooks) >= 3
+        assert len(webhooks) >= 3, f"Expected at least 3 webhooks, got {len(webhooks)}"
 
-        # Verify NONE of them expose secrets
-        for webhook in guild_webhooks:
+        for webhook in webhooks:
             assert "secret" not in webhook, (
                 f"Webhook {webhook.get('id')} exposed secret in bulk operation"
             )
@@ -179,7 +166,7 @@ async def test_secret_format_validation():
         webhook_data = {
             "url": "https://discord.com/api/webhooks/task187-validation/token",
             "secret": "task-187-test-secret-validation-with-special-chars-!@#$%",
-            "community_server_id": "guild_task187_validation",
+            "platform_community_server_id": "guild_task187_validation",
             "channel_id": "channel_task187_validation",
         }
 
@@ -188,8 +175,6 @@ async def test_secret_format_validation():
         assert response.status_code == 200
         data = response.json()
 
-        # Verify secret is returned correctly on registration
         assert data["secret"] == webhook_data["secret"]
 
-        # Verify special characters are preserved
         assert "!@#$%" in data["secret"]

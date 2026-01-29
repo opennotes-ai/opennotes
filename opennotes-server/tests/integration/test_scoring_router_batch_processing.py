@@ -9,11 +9,12 @@ This test file verifies that task-224 fix works correctly by ensuring:
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import status
 
+from src.database import get_session_maker
 from src.notes.models import Note, Rating
 from src.notes.schemas import HelpfulnessLevel, NoteClassification, NoteStatus
 from src.users.profile_models import (
@@ -21,6 +22,20 @@ from src.users.profile_models import (
     UserIdentity,
     UserProfile,
 )
+
+
+async def create_user_profile(display_name: str) -> UUID:
+    """Create a user profile for testing. Returns the profile ID (UUID)."""
+    async with get_session_maker()() as session:
+        profile = UserProfile(
+            display_name=display_name,
+            is_human=True,
+            is_active=True,
+        )
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
+        return profile.id
 
 
 @pytest.fixture
@@ -72,7 +87,27 @@ async def user_with_community_membership(db_session, registered_user, community_
 
 
 @pytest.fixture
-def mock_notes_factory(community_server):
+async def author_profiles():
+    """Create author profiles for testing."""
+    profiles = {}
+    for i in range(100):
+        profile_id = await create_user_profile(f"Test Author {i}")
+        profiles[i] = profile_id
+    return profiles
+
+
+@pytest.fixture
+async def rater_profiles():
+    """Create rater profiles for testing."""
+    profiles = {}
+    for j in range(10):
+        profile_id = await create_user_profile(f"Test Rater {j}")
+        profiles[j] = profile_id
+    return profiles
+
+
+@pytest.fixture
+def mock_notes_factory(community_server, author_profiles, rater_profiles):
     """Factory to create mock notes with ratings."""
 
     def create_notes(count: int, base_score: float = 50.0) -> list[Note]:
@@ -80,9 +115,10 @@ def mock_notes_factory(community_server):
         notes = []
         for i in range(count):
             note_id = uuid4()
+            author_id = author_profiles[i % len(author_profiles)]
             note = Note(
                 id=note_id,
-                author_id=f"author_{i}",
+                author_id=author_id,
                 community_server_id=community_server,
                 summary=f"Test note {i}",
                 classification=NoteClassification.NOT_MISLEADING,
@@ -91,10 +127,11 @@ def mock_notes_factory(community_server):
             )
             note.ratings = []
             for j in range(5):
+                rater_id = rater_profiles[j % len(rater_profiles)]
                 rating = Rating(
                     id=uuid4(),
                     note_id=note_id,
-                    rater_id=f"rater_{j}",
+                    rater_id=rater_id,
                     helpfulness_level=HelpfulnessLevel.HELPFUL,
                 )
                 note.ratings.append(rating)
@@ -112,11 +149,14 @@ async def test_get_top_notes_uses_batch_processing(
     from src.notes.models import Note, Rating
     from src.notes.schemas import HelpfulnessLevel, NoteClassification, NoteStatus
 
+    author_ids = [await create_user_profile(f"Batch Author {i}") for i in range(100)]
+    rater_ids = [await create_user_profile(f"Batch Rater {j}") for j in range(5)]
+
     for i in range(100):
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_id=f"author_{i}",
+            author_id=author_ids[i],
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
@@ -127,7 +167,7 @@ async def test_get_top_notes_uses_batch_processing(
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_id=f"rater_{j}",
+                rater_id=rater_ids[j],
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(5)
@@ -152,13 +192,15 @@ async def test_get_top_notes_returns_correct_top_scored_notes(
     async_client, async_auth_headers, db_session, community_server, user_with_community_membership
 ):
     """Test that batch processing returns correctly sorted top notes."""
-    # Create notes with known scores
+    author_ids = [await create_user_profile(f"TopScore Author {i}") for i in range(100)]
+    rater_ids = [await create_user_profile(f"TopScore Rater {j}") for j in range(5)]
+
     notes_with_scores = []
     for i in range(100):
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_id=f"author_{i}",
+            author_id=author_ids[i],
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
@@ -169,7 +211,7 @@ async def test_get_top_notes_returns_correct_top_scored_notes(
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_id=f"rater_{j}",
+                rater_id=rater_ids[j],
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(5)
@@ -199,27 +241,27 @@ async def test_get_top_notes_filtering_works_with_batch_processing(
     async_client, async_auth_headers, db_session, community_server, user_with_community_membership
 ):
     """Test that filtering by confidence and tier works with batch processing."""
-    # Create mix of notes with different ratings counts (affecting confidence)
+    author_ids = [await create_user_profile(f"Filter Author {i}") for i in range(50)]
+    rater_ids = [await create_user_profile(f"Filter Rater {j}") for j in range(10)]
+
     notes = []
     for i in range(50):
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_id=f"author_{i}",
+            author_id=author_ids[i],
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
             helpfulness_score=50 + i,
             status=NoteStatus.NEEDS_MORE_RATINGS,
         )
-        # Some notes have many ratings (standard confidence)
-        # Some have few ratings (provisional confidence)
         rating_count = 10 if i % 2 == 0 else 2
         note.ratings = [
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_id=f"rater_{j}",
+                rater_id=rater_ids[j % len(rater_ids)],
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(rating_count)
@@ -247,21 +289,19 @@ async def test_get_top_notes_memory_efficient_with_large_dataset(
     async_client, async_auth_headers, db_session, community_server, user_with_community_membership
 ):
     """Test that memory usage is bounded with large datasets."""
-    # Simulate a very large dataset (50k+ notes)
     large_count = 50000
     batch_size = 1000
     limit = 10
 
-    # We'll track peak memory usage of the scored notes list
     max_in_memory = [0]
 
-    # Get the community_id from the membership fixture for use in mock
     test_community_id = user_with_community_membership["membership"].community_id
+    mock_author_id = uuid4()
 
     class MockNote:
         def __init__(self, note_idx, score, community_id):
             self.id = uuid4()
-            self.author_id = f"author_{note_idx}"
+            self.author_id = mock_author_id
             self.summary = f"Note {note_idx}"
             self.classification = "NOT_MISLEADING"
             self.helpfulness_score = score
@@ -337,12 +377,14 @@ async def test_get_top_notes_pagination_works_correctly(
     async_client, async_auth_headers, db_session, community_server, user_with_community_membership
 ):
     """Test that pagination (limit parameter) works correctly with batch processing."""
-    # Create 100 notes
+    author_ids = [await create_user_profile(f"Pagination Author {i}") for i in range(100)]
+    rater_ids = [await create_user_profile(f"Pagination Rater {j}") for j in range(5)]
+
     for i in range(100):
         note_id = uuid4()
         note = Note(
             id=note_id,
-            author_id=f"author_{i}",
+            author_id=author_ids[i],
             community_server_id=community_server,
             summary=f"Test note {i}",
             classification=NoteClassification.NOT_MISLEADING,
@@ -353,7 +395,7 @@ async def test_get_top_notes_pagination_works_correctly(
             Rating(
                 id=uuid4(),
                 note_id=note_id,
-                rater_id=f"rater_{j}",
+                rater_id=rater_ids[j],
                 helpfulness_level=HelpfulnessLevel.HELPFUL,
             )
             for j in range(5)

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import and_, desc, false, func, select, true
+from sqlalchemy import and_, desc, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -41,7 +41,6 @@ from src.monitoring import get_logger
 from src.notes.models import Note, Rating
 from src.notes.schemas import NoteStatus
 from src.users.models import User
-from src.users.profile_models import UserIdentity
 
 logger = get_logger(__name__)
 
@@ -305,19 +304,11 @@ async def get_author_stats_jsonapi(
         notes_result = await db.execute(select(func.count(Note.id)).where(notes_where))
         notes_created = notes_result.scalar() or 0
 
-        identity_result = await db.execute(
-            select(UserIdentity).where(
-                UserIdentity.profile_id == author_id, UserIdentity.provider == "discord"
-            )
-        )
-        identity = identity_result.scalar_one_or_none()
-        discord_id = identity.provider_user_id if identity else None
-
         ratings_query = (
             select(func.count(Rating.id))
             .select_from(Rating)
             .join(Note, Rating.note_id == Note.id)
-            .where(Rating.rater_id == discord_id if discord_id else false())
+            .where(Rating.rater_id == author_id)
         )
         if community_filter is not None:
             ratings_query = ratings_query.where(community_filter)
