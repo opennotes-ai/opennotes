@@ -6,14 +6,33 @@ both the rating and score updates are rolled back together.
 """
 
 from unittest.mock import patch
+from uuid import UUID
 
 import pytest
 from fastapi import status
 from sqlalchemy import select
 
+from src.database import get_session_maker
 from src.notes.models import Note, Rating
 from src.notes.schemas import HelpfulnessLevel, NoteClassification, NoteStatus
 from src.users.profile_models import UserProfile
+
+
+async def create_rater_profile(display_name: str) -> UUID:
+    """Create a rater profile for testing.
+
+    Returns the profile ID (UUID) to use as rater_id.
+    """
+    async with get_session_maker()() as session:
+        profile = UserProfile(
+            display_name=display_name,
+            is_human=True,
+            is_active=True,
+        )
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
+        return profile.id
 
 
 def make_jsonapi_rating_request(note_id: str, rater_id: str, helpfulness_level: str):
@@ -65,9 +84,12 @@ async def test_rating_and_score_in_same_transaction_success(
     async_client, async_auth_headers, db_session, test_note
 ):
     """Test that rating creation and score update happen in the same transaction on success."""
+    # Create a proper rater profile with UUID
+    rater_id = await create_rater_profile("Test Rater 1")
+
     rating_data = make_jsonapi_rating_request(
         str(test_note.id),
-        "test_rater_1",
+        str(rater_id),
         HelpfulnessLevel.HELPFUL,
     )
 
@@ -84,7 +106,7 @@ async def test_rating_and_score_in_same_transaction_success(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_id == "test_rater_1",
+            Rating.rater_id == rater_id,
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -104,10 +126,12 @@ async def test_transaction_rollback_on_score_calculation_failure(
     async_client, async_auth_headers, db_session, test_note
 ):
     """Test that if score calculation fails, both rating and score updates are rolled back."""
+    # Create a proper rater profile with UUID
+    rater_id = await create_rater_profile("Test Rater 2")
 
     rating_data = make_jsonapi_rating_request(
         str(test_note.id),
-        "test_rater_2",
+        str(rater_id),
         HelpfulnessLevel.HELPFUL,
     )
 
@@ -128,7 +152,7 @@ async def test_transaction_rollback_on_score_calculation_failure(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_id == "test_rater_2",
+            Rating.rater_id == rater_id,
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -147,10 +171,12 @@ async def test_transaction_rollback_on_database_error(
     async_client, async_auth_headers, db_session, test_note
 ):
     """Test that database errors trigger full transaction rollback."""
+    # Create a proper rater profile with UUID
+    rater_id = await create_rater_profile("Test Rater 3")
 
     rating_data = make_jsonapi_rating_request(
         str(test_note.id),
-        "test_rater_3",
+        str(rater_id),
         HelpfulnessLevel.HELPFUL,
     )
 
@@ -168,7 +194,7 @@ async def test_transaction_rollback_on_database_error(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_id == "test_rater_3",
+            Rating.rater_id == rater_id,
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -180,10 +206,12 @@ async def test_event_publish_failure_does_not_affect_transaction(
     async_client, async_auth_headers, db_session, test_note
 ):
     """Test that event publishing failures don't affect database consistency."""
+    # Create a proper rater profile with UUID
+    rater_id = await create_rater_profile("Test Rater 4")
 
     rating_data = make_jsonapi_rating_request(
         str(test_note.id),
-        "test_rater_4",
+        str(rater_id),
         HelpfulnessLevel.HELPFUL,
     )
 
@@ -203,7 +231,7 @@ async def test_event_publish_failure_does_not_affect_transaction(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_id == "test_rater_4",
+            Rating.rater_id == rater_id,
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -222,13 +250,15 @@ async def test_no_partial_state_after_score_update_failure(
     async_client, async_auth_headers, db_session, test_note
 ):
     """Test that there's no partial state where rating exists but score is not updated."""
+    # Create a proper rater profile with UUID
+    rater_id = await create_rater_profile("Test Rater 5")
 
     initial_score = test_note.helpfulness_score
     initial_status = test_note.status
 
     rating_data = make_jsonapi_rating_request(
         str(test_note.id),
-        "test_rater_5",
+        str(rater_id),
         HelpfulnessLevel.HELPFUL,
     )
 
@@ -246,7 +276,7 @@ async def test_no_partial_state_after_score_update_failure(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_id == "test_rater_5",
+            Rating.rater_id == rater_id,
         )
     )
     rating = rating_result.scalar_one_or_none()
@@ -265,10 +295,12 @@ async def test_upsert_updates_existing_rating_in_same_transaction(
     async_client, async_auth_headers, db_session, test_note
 ):
     """Test that updating existing rating also updates score in same transaction."""
+    # Create a proper rater profile with UUID
+    rater_id = await create_rater_profile("Test Rater 6")
 
     rating_data = make_jsonapi_rating_request(
         str(test_note.id),
-        "test_rater_6",
+        str(rater_id),
         HelpfulnessLevel.SOMEWHAT_HELPFUL,
     )
 
@@ -294,7 +326,7 @@ async def test_upsert_updates_existing_rating_in_same_transaction(
     rating_result = await db_session.execute(
         select(Rating).where(
             Rating.note_id == test_note.id,
-            Rating.rater_id == "test_rater_6",
+            Rating.rater_id == rater_id,
         )
     )
     ratings = rating_result.scalars().all()

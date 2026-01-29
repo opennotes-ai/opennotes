@@ -10,8 +10,8 @@ _dbos_instance: DBOS | None = None
 def get_dbos_config() -> DBOSConfig:
     """Build DBOS configuration from environment.
 
-    Uses dedicated 'dbos' schema to isolate DBOS tables from
-    application tables in the 'public' schema.
+    DBOS automatically uses a dedicated 'dbos' schema for its system tables,
+    isolating them from application tables in the 'public' schema.
 
     Note: DBOS uses synchronous psycopg internally, so we convert
     the async DATABASE_URL (postgresql+asyncpg://) to sync format.
@@ -25,7 +25,6 @@ def get_dbos_config() -> DBOSConfig:
     config: DBOSConfig = {
         "name": "opennotes-server",
         "system_database_url": sync_url,
-        "dbos_system_schema": "dbos",
     }
     return config
 

@@ -6,7 +6,7 @@ to CURRENTLY_RATED_HELPFUL or CURRENTLY_RATED_NOT_HELPFUL after reaching the
 minimum rating threshold (MIN_RATINGS_NEEDED).
 """
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -20,6 +20,23 @@ from src.notes.models import Note, Rating
 from src.users.profile_models import UserProfile
 
 pytestmark = pytest.mark.integration
+
+
+async def create_rater_profile(display_name: str) -> UUID:
+    """Create a rater profile for testing.
+
+    Returns the profile ID (UUID) to use as rater_id.
+    """
+    async with get_session_maker()() as session:
+        profile = UserProfile(
+            display_name=display_name,
+            is_human=True,
+            is_active=True,
+        )
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
+        return profile.id
 
 
 @pytest.fixture
@@ -100,12 +117,15 @@ class TestRatingStatusThreshold:
             await session.commit()
 
         for i in range(settings.MIN_RATINGS_NEEDED - 1):
+            # Create a proper rater profile with UUID for each rater
+            rater_id = await create_rater_profile(f"Threshold Rater {i:03d}")
+
             rating_data = {
                 "data": {
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(test_note.id),
-                        "rater_id": f"threshold_rater_{i:03d}",
+                        "rater_id": str(rater_id),
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -135,12 +155,15 @@ class TestRatingStatusThreshold:
             await session.commit()
 
         for i in range(settings.MIN_RATINGS_NEEDED):
+            # Create a proper rater profile with UUID for each rater
+            rater_id = await create_rater_profile(f"Helpful Rater {i:03d}")
+
             rating_data = {
                 "data": {
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(test_note.id),
-                        "rater_id": f"helpful_rater_{i:03d}",
+                        "rater_id": str(rater_id),
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -170,12 +193,15 @@ class TestRatingStatusThreshold:
             await session.commit()
 
         for i in range(settings.MIN_RATINGS_NEEDED):
+            # Create a proper rater profile with UUID for each rater
+            rater_id = await create_rater_profile(f"Unhelpful Rater {i:03d}")
+
             rating_data = {
                 "data": {
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(test_note.id),
-                        "rater_id": f"unhelpful_rater_{i:03d}",
+                        "rater_id": str(rater_id),
                         "helpfulness_level": "NOT_HELPFUL",
                     },
                 }

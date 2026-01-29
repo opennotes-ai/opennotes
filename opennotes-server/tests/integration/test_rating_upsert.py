@@ -7,6 +7,7 @@ the same (note_id, rater_id) pair.
 """
 
 import asyncio
+from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,6 +19,23 @@ from src.notes.models import Note, Rating
 from src.users.profile_models import UserProfile
 
 pytestmark = pytest.mark.integration
+
+
+async def create_rater_profile(display_name: str) -> UUID:
+    """Create a rater profile for testing.
+
+    Returns the profile ID (UUID) to use as rater_id.
+    """
+    async with get_session_maker()() as session:
+        profile = UserProfile(
+            display_name=display_name,
+            is_human=True,
+            is_active=True,
+        )
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
+        return profile.id
 
 
 @pytest.fixture
@@ -99,9 +117,12 @@ class TestRatingUpsert:
             await session.execute(Rating.__table__.delete().where(Rating.note_id == test_note.id))
             await session.commit()
 
+        # Create a proper rater profile with UUID
+        rater_id = await create_rater_profile("Concurrent Rater 001")
+
         rating_attributes = {
             "note_id": str(test_note.id),
-            "rater_id": "concurrent_rater_001",
+            "rater_id": str(rater_id),
             "helpfulness_level": "HELPFUL",
         }
         rating_data = {
@@ -129,7 +150,7 @@ class TestRatingUpsert:
             count_result = await session.execute(
                 select(func.count(Rating.id)).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_id == rating_attributes["rater_id"],
+                    Rating.rater_id == rater_id,
                 )
             )
             rating_count = count_result.scalar()
@@ -139,7 +160,7 @@ class TestRatingUpsert:
             rating_result = await session.execute(
                 select(Rating).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_id == rating_attributes["rater_id"],
+                    Rating.rater_id == rater_id,
                 )
             )
             rating = rating_result.scalar_one()
@@ -158,10 +179,13 @@ class TestRatingUpsert:
             await session.execute(Rating.__table__.delete().where(Rating.note_id == test_note.id))
             await session.commit()
 
+        # Create a proper rater profile with UUID
+        rater_id = await create_rater_profile("Update Rater 001")
+
         # Create initial rating
         rating_attributes = {
             "note_id": str(test_note.id),
-            "rater_id": "update_rater_001",
+            "rater_id": str(rater_id),
             "helpfulness_level": "HELPFUL",
         }
         rating_data = {
@@ -203,7 +227,7 @@ class TestRatingUpsert:
             count_result = await session.execute(
                 select(func.count(Rating.id)).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_id == "update_rater_001",
+                    Rating.rater_id == rater_id,
                 )
             )
             rating_count = count_result.scalar()
@@ -213,7 +237,7 @@ class TestRatingUpsert:
             rating_result = await session.execute(
                 select(Rating).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_id == "update_rater_001",
+                    Rating.rater_id == rater_id,
                 )
             )
             rating = rating_result.scalar_one()
@@ -232,9 +256,12 @@ class TestRatingUpsert:
             await session.execute(Rating.__table__.delete().where(Rating.note_id == test_note.id))
             await session.commit()
 
+        # Create a proper rater profile with UUID
+        rater_id = await create_rater_profile("Load Test Rater")
+
         rating_attributes = {
             "note_id": str(test_note.id),
-            "rater_id": "load_test_rater",
+            "rater_id": str(rater_id),
             "helpfulness_level": "HELPFUL",
         }
         rating_data = {
@@ -267,7 +294,7 @@ class TestRatingUpsert:
             count_result = await session.execute(
                 select(func.count(Rating.id)).where(
                     Rating.note_id == test_note.id,
-                    Rating.rater_id == rating_attributes["rater_id"],
+                    Rating.rater_id == rater_id,
                 )
             )
             rating_count = count_result.scalar()
