@@ -130,7 +130,7 @@ def _job_type_lock_key(job_type: str) -> int:
     Returns:
         A signed 64-bit integer suitable for PostgreSQL advisory locks
     """
-    hash_bytes = hashlib.md5(job_type.encode()).digest()[:8]
+    hash_bytes = hashlib.md5(job_type.encode(), usedforsecurity=False).digest()[:8]
     return int.from_bytes(hash_bytes, byteorder="big", signed=True)
 
 

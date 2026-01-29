@@ -22,6 +22,7 @@ Usage in DBOS workflows:
 
 from __future__ import annotations
 
+import threading
 import time
 from enum import Enum
 
@@ -45,8 +46,8 @@ class CircuitOpenError(Exception):
 class CircuitBreaker:
     """Synchronous circuit breaker for protecting against cascading failures.
 
-    This implementation is thread-safe for single-threaded DBOS workers but does
-    not use locks. For multi-threaded scenarios, external synchronization is needed.
+    This implementation is thread-safe using a threading.Lock to prevent race
+    conditions during state transitions.
 
     Attributes:
         threshold: Consecutive failures before opening circuit
@@ -71,47 +72,60 @@ class CircuitBreaker:
         self.failures = 0
         self.last_failure_time: float | None = None
         self.state = CircuitState.CLOSED
+        self._lock = threading.Lock()
 
     def check(self) -> None:
-        """Check if circuit allows request. Raises CircuitOpenError if open."""
-        if self.state == CircuitState.CLOSED:
-            return
+        """Check if circuit allows request. Raises CircuitOpenError if open.
 
-        if self.state == CircuitState.OPEN:
-            if self._should_attempt_reset():
-                self.state = CircuitState.HALF_OPEN
-                logger.info("Circuit breaker entering half-open state")
+        Thread-safe: holds lock throughout state check and transition.
+        """
+        with self._lock:
+            if self.state == CircuitState.CLOSED:
                 return
-            raise CircuitOpenError(
-                f"Circuit open after {self.failures} consecutive failures. "
-                f"Reset in {self._time_until_reset():.1f}s"
-            )
+
+            if self.state == CircuitState.OPEN:
+                if self._should_attempt_reset():
+                    self.state = CircuitState.HALF_OPEN
+                    logger.info("Circuit breaker entering half-open state")
+                    return
+                raise CircuitOpenError(
+                    f"Circuit open after {self.failures} consecutive failures. "
+                    f"Reset in {self._time_until_reset():.1f}s"
+                )
 
     def record_success(self) -> None:
-        """Record a successful call. Resets failure count and closes circuit."""
-        if self.state == CircuitState.HALF_OPEN:
-            logger.info("Circuit breaker closing after successful test")
+        """Record a successful call. Resets failure count and closes circuit.
 
-        self.failures = 0
-        self.last_failure_time = None
-        self.state = CircuitState.CLOSED
+        Thread-safe: holds lock throughout state transition.
+        """
+        with self._lock:
+            if self.state == CircuitState.HALF_OPEN:
+                logger.info("Circuit breaker closing after successful test")
+
+            self.failures = 0
+            self.last_failure_time = None
+            self.state = CircuitState.CLOSED
 
     def record_failure(self) -> None:
-        """Record a failed call. May trip the circuit breaker."""
-        self.failures += 1
-        self.last_failure_time = time.time()
+        """Record a failed call. May trip the circuit breaker.
 
-        if self.state == CircuitState.HALF_OPEN:
-            self.state = CircuitState.OPEN
-            logger.warning("Circuit breaker reopening after failed test")
-            return
+        Thread-safe: holds lock throughout state transition.
+        """
+        with self._lock:
+            self.failures += 1
+            self.last_failure_time = time.time()
 
-        if self.failures >= self.threshold:
-            self.state = CircuitState.OPEN
-            logger.error(
-                "Circuit breaker opened",
-                extra={"failures": self.failures, "threshold": self.threshold},
-            )
+            if self.state == CircuitState.HALF_OPEN:
+                self.state = CircuitState.OPEN
+                logger.warning("Circuit breaker reopening after failed test")
+                return
+
+            if self.failures >= self.threshold:
+                self.state = CircuitState.OPEN
+                logger.error(
+                    "Circuit breaker opened",
+                    extra={"failures": self.failures, "threshold": self.threshold},
+                )
 
     def _should_attempt_reset(self) -> bool:
         """Check if enough time has passed to attempt reset."""

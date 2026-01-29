@@ -1,5 +1,4 @@
 import asyncio
-import time
 
 import pytest
 
@@ -69,7 +68,7 @@ async def test_circuit_breaker_half_open_recovery():
 
     assert breaker.state == CircuitState.OPEN
 
-    time.sleep(1.1)
+    await asyncio.sleep(1.1)
 
     async def working_function() -> str:
         return "success"
@@ -188,7 +187,7 @@ async def test_circuit_breaker_concurrent_half_open_transitions():
 
     assert breaker.state == CircuitState.OPEN
 
-    time.sleep(1.1)
+    await asyncio.sleep(1.1)
 
     async def working_function() -> str:
         return "recovered"
