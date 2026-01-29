@@ -168,3 +168,35 @@ async def test_readiness_check_fails_on_unhealthy() -> None:
 
     is_ready = await checker.readiness()
     assert is_ready is False
+
+
+def test_dbos_health_endpoint(client: TestClient) -> None:
+    """Test DBOS health endpoint returns expected response structure."""
+    response = client.get("/health/dbos")
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert data["status"] == "healthy"
+    assert "latency_ms" in data
+    assert "details" in data
+
+
+def test_dbos_health_endpoint_returns_schema_info(client: TestClient) -> None:
+    """Test DBOS health endpoint includes schema configuration."""
+    response = client.get("/health/dbos")
+    assert response.status_code == 200
+    data = response.json()
+    details = data.get("details", {})
+    if details.get("enabled") is not False:
+        assert "schema_name" in details or data.get("message") == "DBOS disabled in test mode"
+
+
+def test_detailed_health_includes_dbos(client: TestClient) -> None:
+    """Test /health/detailed includes DBOS in services list."""
+    response = client.get("/health/detailed")
+    assert response.status_code == 200
+    data = response.json()
+    assert "services" in data
+    services = data["services"]
+    assert "dbos" in services
+    assert services["dbos"]["status"] in ("healthy", "degraded", "unhealthy")
