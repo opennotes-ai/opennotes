@@ -3457,6 +3457,11 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
+            /**
+             * Workflow Id
+             * @description DBOS workflow ID for linking batch job to workflow execution
+             */
+            workflow_id?: string | null;
         };
         /**
          * BatchJobProgress
@@ -3548,6 +3553,11 @@ export interface components {
             error_summary?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Workflow Id
+             * @description DBOS workflow ID for linking batch job to workflow execution
+             */
+            workflow_id?: string | null;
             /**
              * Started At
              * @description When the job started processing

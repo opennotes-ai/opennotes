@@ -9537,6 +9537,19 @@
             "type": "object",
             "title": "Metadata",
             "description": "Job-specific metadata (e.g., source file, options)"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id",
+            "description": "DBOS workflow ID for linking batch job to workflow execution"
           }
         },
         "type": "object",
@@ -9665,6 +9678,18 @@
             ],
             "title": "Error Summary",
             "description": "Summary of errors if any"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id",
+            "description": "DBOS workflow ID for linking batch job to workflow execution"
           },
           "started_at": {
             "anyOf": [

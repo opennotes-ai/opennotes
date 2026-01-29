@@ -93,6 +93,7 @@ class BatchJob(Base, TimestampMixin):
         String(255),
         nullable=True,
         index=True,
+        unique=True,
         comment="DBOS workflow ID for workflow-backed jobs",
     )
 
