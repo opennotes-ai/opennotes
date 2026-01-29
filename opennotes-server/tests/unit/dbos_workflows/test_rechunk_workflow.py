@@ -3,13 +3,14 @@
 Tests the rechunk workflow components including queue configuration,
 process_fact_check_item step, and the main workflow function.
 
-Note: Tests use the _impl functions directly to avoid DBOS initialization
-requirements. The DBOS decorators are thin wrappers around these functions.
+Note: Tests mock the synchronous helper functions that wrap async operations
+since DBOS steps/workflows are synchronous. The actual DBOS decorators
+add checkpointing and retry behavior.
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -52,12 +53,12 @@ class TestEmbeddingRetryConfig:
         assert EMBEDDING_RETRY_CONFIG["backoff_rate"] == 2.0
 
 
-class TestProcessFactCheckItemImpl:
-    """Tests for _process_fact_check_item_impl (core logic without DBOS)."""
+class TestProcessFactCheckItem:
+    """Tests for process_fact_check_item step logic."""
 
     def test_returns_success_on_successful_processing(self) -> None:
         """Returns success result when processing succeeds."""
-        from src.dbos_workflows.rechunk_workflow import _process_fact_check_item_impl
+        from src.dbos_workflows.rechunk_workflow import process_fact_check_item
 
         item_id = str(uuid4())
         community_server_id = str(uuid4())
@@ -67,7 +68,7 @@ class TestProcessFactCheckItemImpl:
         ) as mock_chunk:
             mock_chunk.return_value = {"chunks_created": 5}
 
-            result = _process_fact_check_item_impl(
+            result = process_fact_check_item.__wrapped__(
                 item_id=item_id,
                 community_server_id=community_server_id,
             )
@@ -78,7 +79,7 @@ class TestProcessFactCheckItemImpl:
 
     def test_raises_on_processing_failure(self) -> None:
         """Raises exception to trigger DBOS retry."""
-        from src.dbos_workflows.rechunk_workflow import _process_fact_check_item_impl
+        from src.dbos_workflows.rechunk_workflow import process_fact_check_item
 
         item_id = str(uuid4())
 
@@ -88,7 +89,7 @@ class TestProcessFactCheckItemImpl:
             mock_chunk.side_effect = RuntimeError("Embedding service unavailable")
 
             with pytest.raises(RuntimeError, match="Embedding service unavailable"):
-                _process_fact_check_item_impl(
+                process_fact_check_item.__wrapped__(
                     item_id=item_id,
                     community_server_id=None,
                 )
@@ -97,74 +98,52 @@ class TestProcessFactCheckItemImpl:
 class TestChunkAndEmbedSyncWrapper:
     """Tests for the synchronous wrapper around async chunking logic."""
 
-    def test_wrapper_calls_async_service(self) -> None:
-        """Sync wrapper calls async service correctly."""
+    def test_wrapper_uses_asyncio_run(self) -> None:
+        """Sync wrapper uses asyncio.run to execute async code."""
         from src.dbos_workflows.rechunk_workflow import chunk_and_embed_fact_check_sync
 
         fact_check_id = uuid4()
         community_server_id = uuid4()
 
-        with patch(
-            "src.dbos_workflows.rechunk_workflow._run_async_chunk_and_embed"
-        ) as mock_async:
-            mock_async.return_value = {"chunks_created": 3}
+        with patch("asyncio.run") as mock_asyncio_run:
+            mock_asyncio_run.return_value = {"chunks_created": 3}
 
             result = chunk_and_embed_fact_check_sync(
                 fact_check_id=fact_check_id,
                 community_server_id=community_server_id,
             )
 
-        assert result["chunks_created"] == 3
-        mock_async.assert_called_once_with(fact_check_id, community_server_id)
+            assert result["chunks_created"] == 3
+            mock_asyncio_run.assert_called_once()
 
 
-class TestRechunkWorkflowImpl:
-    """Tests for _rechunk_workflow_impl (core logic without DBOS)."""
-
-    def test_workflow_updates_batch_job_status_on_start(self) -> None:
-        """Workflow updates BatchJob to IN_PROGRESS at start."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
-
-        batch_job_id = str(uuid4())
-        item_ids = [str(uuid4())]
-
-        mock_process = MagicMock(return_value={"success": True})
-
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
-
-            _rechunk_workflow_impl(
-                batch_job_id=batch_job_id,
-                community_server_id=None,
-                item_ids=item_ids,
-                process_item_func=mock_process,
-            )
-
-            mock_adapter.update_status_sync.assert_called()
+class TestRechunkWorkflow:
+    """Tests for rechunk_fact_check_workflow logic."""
 
     def test_workflow_processes_all_items(self) -> None:
-        """Workflow processes each item via process_item_func."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
+        """Workflow processes each item via process_fact_check_item."""
+        from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
         item_ids = [str(uuid4()) for _ in range(3)]
 
-        mock_process = MagicMock(return_value={"success": True})
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch(
+                "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.return_value = {"success": True, "chunks_created": 2}
+            mock_progress.return_value = True
+            mock_finalize.return_value = True
 
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
-
-            result = _rechunk_workflow_impl(
+            result = rechunk_fact_check_workflow.__wrapped__(
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
-                process_item_func=mock_process,
             )
 
             assert mock_process.call_count == 3
@@ -173,30 +152,37 @@ class TestRechunkWorkflowImpl:
 
     def test_workflow_handles_item_failure(self) -> None:
         """Workflow tracks failed items and continues processing."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
+        from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
         item_ids = [str(uuid4()) for _ in range(3)]
 
-        mock_process = MagicMock(
-            side_effect=[
-                {"success": True},
-                RuntimeError("Failed"),
-                {"success": True},
-            ]
-        )
+        call_count = 0
 
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
+        def mock_process_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("Failed")
+            return {"success": True, "chunks_created": 1}
 
-            result = _rechunk_workflow_impl(
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch(
+                "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.side_effect = mock_process_side_effect
+            mock_progress.return_value = True
+            mock_finalize.return_value = True
+
+            result = rechunk_fact_check_workflow.__wrapped__(
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
-                process_item_func=mock_process,
             )
 
             assert result["completed_count"] == 2
@@ -205,77 +191,88 @@ class TestRechunkWorkflowImpl:
 
     def test_workflow_stops_on_circuit_breaker_open(self) -> None:
         """Workflow raises CircuitOpenError when circuit breaker trips."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
+        from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
         item_ids = [str(uuid4()) for _ in range(10)]
 
-        mock_process = MagicMock(side_effect=RuntimeError("Fail"))
-
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch(
+                "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync"),
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.side_effect = RuntimeError("Always fail")
+            mock_progress.return_value = True
 
             with pytest.raises(CircuitOpenError):
-                _rechunk_workflow_impl(
+                rechunk_fact_check_workflow.__wrapped__(
                     batch_job_id=batch_job_id,
                     community_server_id=None,
                     item_ids=item_ids,
-                    process_item_func=mock_process,
                 )
 
     def test_workflow_finalizes_batch_job_on_success(self) -> None:
-        """Workflow calls finalize_job on successful completion."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
+        """Workflow calls finalize_batch_job_sync on successful completion."""
+        from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
         item_ids = [str(uuid4())]
 
-        mock_process = MagicMock(return_value={"success": True})
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch(
+                "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.return_value = {"success": True, "chunks_created": 1}
+            mock_progress.return_value = True
+            mock_finalize.return_value = True
 
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
-
-            _rechunk_workflow_impl(
+            rechunk_fact_check_workflow.__wrapped__(
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
-                process_item_func=mock_process,
             )
 
-            mock_adapter.finalize_job.assert_called_once()
-            call_args = mock_adapter.finalize_job.call_args
-            assert call_args.kwargs["success"] is True
+            mock_finalize.assert_called_once()
+            call_kwargs = mock_finalize.call_args.kwargs
+            assert call_kwargs["success"] is True
 
     def test_workflow_updates_progress_periodically(self) -> None:
         """Workflow updates progress every batch_size items."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
+        from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
         item_ids = [str(uuid4()) for _ in range(150)]
 
-        mock_process = MagicMock(return_value={"success": True})
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch(
+                "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.return_value = {"success": True, "chunks_created": 1}
+            mock_progress.return_value = True
+            mock_finalize.return_value = True
 
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
-
-            _rechunk_workflow_impl(
+            rechunk_fact_check_workflow.__wrapped__(
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
                 batch_size=100,
-                process_item_func=mock_process,
             )
 
-            progress_calls = mock_adapter.update_progress_sync.call_count
+            progress_calls = mock_progress.call_count
             assert progress_calls == 2
 
 
@@ -284,61 +281,72 @@ class TestCircuitBreakerIntegration:
 
     def test_circuit_trips_after_consecutive_failures(self) -> None:
         """Circuit breaker trips after 5 consecutive failures."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
+        from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
         item_ids = [str(uuid4()) for _ in range(10)]
 
         call_count = 0
 
-        def fail_always(**kwargs: object) -> dict[str, bool]:
+        def fail_always(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             raise RuntimeError("Always fail")
 
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch(
+                "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync"),
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.side_effect = fail_always
+            mock_progress.return_value = True
 
             with pytest.raises(CircuitOpenError):
-                _rechunk_workflow_impl(
+                rechunk_fact_check_workflow.__wrapped__(
                     batch_job_id=batch_job_id,
                     community_server_id=None,
                     item_ids=item_ids,
-                    process_item_func=fail_always,
                 )
 
             assert call_count == 5
 
     def test_circuit_resets_after_success(self) -> None:
         """Circuit breaker resets failure count after success."""
-        from src.dbos_workflows.rechunk_workflow import _rechunk_workflow_impl
+        from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
         item_ids = [str(uuid4()) for _ in range(10)]
 
         call_count = 0
 
-        def intermittent_fail(**kwargs: object) -> dict[str, bool]:
+        def intermittent_fail(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count % 3 == 0:
-                return {"success": True}
+                return {"success": True, "chunks_created": 1}
             raise RuntimeError("Intermittent fail")
 
-        with patch(
-            "src.dbos_workflows.rechunk_workflow.get_batch_job_adapter"
-        ) as mock_get_adapter:
-            mock_adapter = MagicMock()
-            mock_get_adapter.return_value = mock_adapter
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch(
+                "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.side_effect = intermittent_fail
+            mock_progress.return_value = True
+            mock_finalize.return_value = True
 
-            result = _rechunk_workflow_impl(
+            result = rechunk_fact_check_workflow.__wrapped__(
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
-                process_item_func=intermittent_fail,
             )
 
             assert result["completed_count"] + result["failed_count"] == 10

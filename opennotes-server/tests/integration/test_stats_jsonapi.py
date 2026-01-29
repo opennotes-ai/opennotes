@@ -150,11 +150,19 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
     """Create test notes with various statuses for stats JSON:API tests."""
     async with get_session_maker()() as db:
         notes = []
-        participant_id = f"test_participant_{uuid4().hex[:8]}"
+
+        # Create a user profile for the author/participant
+        participant_profile = UserProfile(
+            display_name=f"Test Participant {uuid4().hex[:8]}",
+            is_human=True,
+            is_active=True,
+        )
+        db.add(participant_profile)
+        await db.flush()
 
         note_helpful = Note(
             id=uuid4(),
-            author_id=participant_id,
+            author_id=participant_profile.id,
             summary="This is a helpful note for testing",
             classification=NoteClassification.NOT_MISLEADING,
             community_server_id=stats_jsonapi_community_server["uuid"],
@@ -167,7 +175,7 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 
         note_not_helpful = Note(
             id=uuid4(),
-            author_id=participant_id,
+            author_id=participant_profile.id,
             summary="This is a not helpful note for testing",
             classification=NoteClassification.MISINFORMED_OR_POTENTIALLY_MISLEADING,
             community_server_id=stats_jsonapi_community_server["uuid"],
@@ -180,7 +188,7 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 
         note_pending = Note(
             id=uuid4(),
-            author_id=participant_id,
+            author_id=participant_profile.id,
             summary="This is a pending note for testing",
             classification=NoteClassification.NOT_MISLEADING,
             community_server_id=stats_jsonapi_community_server["uuid"],
@@ -195,7 +203,7 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 
         return {
             "notes": notes,
-            "participant_id": participant_id,
+            "participant_id": str(participant_profile.id),
             "community_server_id": stats_jsonapi_community_server["uuid"],
         }
 
@@ -204,13 +212,20 @@ async def stats_jsonapi_test_notes(stats_jsonapi_community_server):
 async def stats_jsonapi_test_ratings(stats_jsonapi_test_notes):
     """Create test ratings for the test notes."""
     async with get_session_maker()() as db:
-        rater_id = f"rater_{uuid4().hex[:8]}"
+        # Create a user profile for the rater
+        rater_profile = UserProfile(
+            display_name=f"Test Rater {uuid4().hex[:8]}",
+            is_human=True,
+            is_active=True,
+        )
+        db.add(rater_profile)
+        await db.flush()
 
         for note in stats_jsonapi_test_notes["notes"]:
             rating = Rating(
                 id=uuid4(),
                 note_id=note.id,
-                rater_id=rater_id,
+                rater_id=rater_profile.id,
                 helpfulness_level="HELPFUL"
                 if note.status == NoteStatus.CURRENTLY_RATED_HELPFUL
                 else "NOT_HELPFUL",
@@ -221,7 +236,7 @@ async def stats_jsonapi_test_ratings(stats_jsonapi_test_notes):
         await db.commit()
 
         return {
-            "rater_id": rater_id,
+            "rater_id": str(rater_profile.id),
         }
 
 

@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from src.database import get_session_maker
 from src.main import app
 from src.notes.models import Note, Rating
-from src.users.profile_models import UserProfile  # noqa: F401 - needed for relationship resolution
+from src.users.profile_models import UserProfile
 
 pytestmark = pytest.mark.integration
 
@@ -28,11 +28,20 @@ async def test_note() -> Note:
     from src.llm_config.models import CommunityServer
 
     async with get_session_maker()() as session:
+        # Create a user profile for the author
+        author_profile = UserProfile(
+            display_name="Test Author",
+            is_human=True,
+            is_active=True,
+        )
+        session.add(author_profile)
+        await session.flush()
+
         # Create a community server first
         community_server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_community_server_id="test-server-123",
+            platform_community_server_id=f"test-server-{uuid4().hex[:8]}",
             name="Test Server",
             is_active=True,
         )
@@ -41,7 +50,7 @@ async def test_note() -> Note:
 
         note = Note(
             id=uuid4(),
-            author_id="test_author_001",
+            author_id=author_profile.id,
             summary=f"Test note for concurrent rating tests {uuid4().hex[:8]}",
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             status="NEEDS_MORE_RATINGS",

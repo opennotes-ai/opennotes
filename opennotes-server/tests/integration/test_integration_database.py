@@ -12,6 +12,8 @@ Run with: mise run test:integration
 import pytest
 from sqlalchemy import select
 
+from src.users.profile_models import UserProfile
+
 pytest_plugins = ("pytest_asyncio",)
 
 
@@ -102,11 +104,30 @@ class TestDatabasePersistence:
 
         # Create note with ratings in first session
         async with async_session_maker() as session:
+            # Create user profiles for author and raters
+            author_profile = UserProfile(
+                display_name="Test Author",
+                is_human=True,
+                is_active=True,
+            )
+            rater1_profile = UserProfile(
+                display_name="Test Rater 1",
+                is_human=True,
+                is_active=True,
+            )
+            rater2_profile = UserProfile(
+                display_name="Test Rater 2",
+                is_human=True,
+                is_active=True,
+            )
+            session.add_all([author_profile, rater1_profile, rater2_profile])
+            await session.flush()
+
             # Create a community server first
             community_server = CommunityServer(
                 id=community_server_id,
                 platform="discord",
-                platform_community_server_id="test_server_123",
+                platform_community_server_id=f"test_server_{uuid4().hex[:8]}",
                 name="Test Server",
             )
             session.add(community_server)
@@ -114,7 +135,7 @@ class TestDatabasePersistence:
 
             # Create a request first
             request = Request(
-                request_id="req_rel_123",
+                request_id=f"req_rel_{uuid4().hex[:8]}",
                 community_server_id=community_server_id,
                 requested_by="user_rel_111",
                 status="IN_PROGRESS",
@@ -124,7 +145,7 @@ class TestDatabasePersistence:
 
             # Create note (Note model uses id (UUID) as primary key)
             note = Note(
-                author_id="author_123",
+                author_id=author_profile.id,
                 community_server_id=community_server_id,
                 summary="This is a test note",
                 classification="NOT_MISLEADING",
@@ -135,12 +156,12 @@ class TestDatabasePersistence:
             # Create ratings
             rating1 = Rating(
                 note_id=note.id,
-                rater_id="rater_1",
+                rater_id=rater1_profile.id,
                 helpfulness_level="HELPFUL",
             )
             rating2 = Rating(
                 note_id=note.id,
-                rater_id="rater_2",
+                rater_id=rater2_profile.id,
                 helpfulness_level="HELPFUL",
             )
             session.add_all([rating1, rating2])

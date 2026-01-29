@@ -164,8 +164,7 @@ async def community_server_with_data(db):
     await db.flush()
 
     test_note = Note(
-        author_id="test_participant",
-        author_profile_id=profile.id,
+        author_id=profile.id,
         community_server_id=server.id,
         summary="Test note summary",
         classification="NOT_MISLEADING",

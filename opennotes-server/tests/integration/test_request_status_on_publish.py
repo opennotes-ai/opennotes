@@ -17,6 +17,7 @@ from src.database import get_session_maker
 from src.llm_config.models import CommunityServer
 from src.main import app
 from src.notes.models import Note, Request
+from src.users.profile_models import UserProfile
 
 pytestmark = pytest.mark.integration
 
@@ -43,10 +44,19 @@ async def create_note_v2_request(client, note_data):
 async def create_note_with_request() -> tuple[Note, Request, CommunityServer]:
     """Create a test note with an associated request."""
     async with get_session_maker()() as session:
+        # Create author profile
+        author_profile = UserProfile(
+            display_name="Test Author",
+            is_human=True,
+            is_active=True,
+        )
+        session.add(author_profile)
+        await session.flush()
+
         community_server = CommunityServer(
             id=uuid4(),
             platform="discord",
-            platform_community_server_id="test-server-123",
+            platform_community_server_id=f"test-server-{uuid4().hex[:8]}",
             name="Test Server",
             is_active=True,
         )
@@ -65,7 +75,7 @@ async def create_note_with_request() -> tuple[Note, Request, CommunityServer]:
 
         note = Note(
             id=uuid4(),
-            author_id="test_author_001",
+            author_id=author_profile.id,
             summary=f"Test note for request status update {uuid4().hex[:8]}",
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             status="NEEDS_MORE_RATINGS",
@@ -151,10 +161,19 @@ class TestRequestStatusOnPublish:
             await session.commit()
 
         async with get_session_maker()() as session:
+            # Create author profile
+            author_profile = UserProfile(
+                display_name="Test Author 2",
+                is_human=True,
+                is_active=True,
+            )
+            session.add(author_profile)
+            await session.flush()
+
             community_server = CommunityServer(
                 id=uuid4(),
                 platform="discord",
-                platform_community_server_id="test-server-456",
+                platform_community_server_id=f"test-server-{uuid4().hex[:8]}",
                 name="Test Server 2",
                 is_active=True,
             )
@@ -163,7 +182,7 @@ class TestRequestStatusOnPublish:
 
             note = Note(
                 id=uuid4(),
-                author_id="test_author_002",
+                author_id=author_profile.id,
                 summary=f"Note without request {uuid4().hex[:8]}",
                 classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 status="NEEDS_MORE_RATINGS",
@@ -384,10 +403,20 @@ class TestRequestStatusOnNoteCreation:
         Expected: Request status changes from PENDING to IN_PROGRESS
         """
         async with get_session_maker()() as session:
+            # Create author profile for the note
+            author_profile = UserProfile(
+                display_name="Test Author for Note Creation",
+                is_human=True,
+                is_active=True,
+            )
+            session.add(author_profile)
+            await session.flush()
+            author_id = str(author_profile.id)
+
             community_server = CommunityServer(
                 id=uuid4(),
                 platform="discord",
-                platform_community_server_id="test-server-note-create-123",
+                platform_community_server_id=f"test-server-note-create-{uuid4().hex[:8]}",
                 name="Test Server for Note Creation",
                 is_active=True,
             )
@@ -418,7 +447,7 @@ class TestRequestStatusOnNoteCreation:
         headers = {"Authorization": f"Bearer {access_token}"}
 
         note_data = {
-            "author_id": "test_author_002",
+            "author_id": author_id,
             "summary": f"Test note to verify IN_PROGRESS status {uuid4().hex[:8]}",
             "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
             "community_server_id": str(community_server_id),
@@ -452,10 +481,20 @@ class TestRequestStatusOnNoteCreation:
         Expected: Note is created successfully
         """
         async with get_session_maker()() as session:
+            # Create author profile for the note
+            author_profile = UserProfile(
+                display_name="Test Author No Request",
+                is_human=True,
+                is_active=True,
+            )
+            session.add(author_profile)
+            await session.flush()
+            author_id = str(author_profile.id)
+
             community_server = CommunityServer(
                 id=uuid4(),
                 platform="discord",
-                platform_community_server_id="test-server-no-request-456",
+                platform_community_server_id=f"test-server-no-request-{uuid4().hex[:8]}",
                 name="Test Server No Request",
                 is_active=True,
             )
@@ -473,7 +512,7 @@ class TestRequestStatusOnNoteCreation:
         headers = {"Authorization": f"Bearer {access_token}"}
 
         note_data = {
-            "author_id": "test_author_003",
+            "author_id": author_id,
             "summary": f"Test note without request {uuid4().hex[:8]}",
             "classification": "NOT_MISLEADING",
             "community_server_id": str(community_server_id),

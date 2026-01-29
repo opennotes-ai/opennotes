@@ -19,6 +19,7 @@ from src.llm_config.models import CommunityServer
 from src.notes.message_archive_models import MessageArchive
 from src.notes.models import Note, Request
 from src.notes.request_service import RequestService
+from src.users.profile_models import UserProfile
 
 
 @pytest.fixture
@@ -26,13 +27,27 @@ async def community_server(db_session):
     """Create a test community server."""
     server = CommunityServer(
         platform="discord",
-        platform_community_server_id="test_server_123",
+        platform_community_server_id=f"test_server_{uuid4().hex[:8]}",
         name="Test Server",
     )
     db_session.add(server)
     await db_session.commit()
     await db_session.refresh(server)
     return server
+
+
+@pytest.fixture
+async def test_author_profile(db_session):
+    """Create a test user profile for note authorship."""
+    profile = UserProfile(
+        display_name="Test Author",
+        is_human=True,
+        is_active=True,
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+    return profile
 
 
 @pytest.mark.asyncio
@@ -200,6 +215,7 @@ class TestRequestService:
     async def test_create_from_message_with_note_id(
         self,
         community_server,
+        test_author_profile,
     ):
         """Test creating request linked to existing note"""
         async_session_maker = get_session_maker()
@@ -209,7 +225,7 @@ class TestRequestService:
             # Create a note first (must exist for FK constraint)
             note = Note(
                 id=test_note_id,
-                author_id="test_author",
+                author_id=test_author_profile.id,
                 summary="Test note",
                 classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 status="NEEDS_MORE_RATINGS",
@@ -234,6 +250,7 @@ class TestRequestService:
     async def test_create_from_message_all_fields(
         self,
         community_server,
+        test_author_profile,
     ):
         """Test creating request with all possible fields populated"""
         async_session_maker = get_session_maker()
@@ -246,7 +263,7 @@ class TestRequestService:
             # Create a note first (must exist for FK constraint)
             note = Note(
                 id=test_note_id,
-                author_id="test_author",
+                author_id=test_author_profile.id,
                 summary="Test note for all fields",
                 classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 status="NEEDS_MORE_RATINGS",

@@ -165,7 +165,7 @@ async def discord_e2e_setup(setup_database):
 
         # Create note_publisher configuration
         note_publisher_config = NotePublisherConfig(
-            community_server_id=community.platform_community_server_id,
+            community_server_id=community.id,
             channel_id=None,
             enabled=True,
             threshold=0.75,
@@ -186,12 +186,12 @@ async def discord_e2e_setup(setup_database):
         )
         session.add(hitler_item)
 
-        # Create Note objects for the tests
+        # Create Note objects for the tests - using the profile.id as author_id
         from uuid import UUID as PUUID
 
         note1 = Note(
             id=PUUID("00000000-0000-0000-0000-000000088888"),
-            author_id="e2e_test_author_1",
+            author_id=profile.id,
             community_server_id=community.id,
             summary="Test note 1 for e2e discord",
             classification="NOT_MISLEADING",
@@ -200,7 +200,7 @@ async def discord_e2e_setup(setup_database):
 
         note2 = Note(
             id=PUUID("00000000-0000-0000-0000-000000077777"),
-            author_id="e2e_test_author_2",
+            author_id=profile.id,
             community_server_id=community.id,
             summary="Test note 2 for e2e discord",
             classification="NOT_MISLEADING",
@@ -209,7 +209,7 @@ async def discord_e2e_setup(setup_database):
 
         note3 = Note(
             id=PUUID("00000000-0000-0000-0000-000000066666"),
-            author_id="e2e_test_author_3",
+            author_id=profile.id,
             community_server_id=community.id,
             summary="Test note 3 for e2e discord",
             classification="NOT_MISLEADING",
@@ -218,7 +218,7 @@ async def discord_e2e_setup(setup_database):
 
         note4 = Note(
             id=PUUID("00000000-0000-0000-0000-000000055555"),
-            author_id="e2e_test_author_4",
+            author_id=profile.id,
             community_server_id=community.id,
             summary="Test note 4 for e2e discord",
             classification="NOT_MISLEADING",
@@ -227,7 +227,7 @@ async def discord_e2e_setup(setup_database):
 
         note5 = Note(
             id=PUUID("00000000-0000-0000-0000-000000044444"),
-            author_id="e2e_test_author_5",
+            author_id=profile.id,
             community_server_id=community.id,
             summary="Test note 5 for e2e discord",
             classification="NOT_MISLEADING",

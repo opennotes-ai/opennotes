@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from src.notes.models import Note, Rating
 from src.notes.schemas import HelpfulnessLevel, NoteClassification, NoteStatus
-from src.users.profile_models import UserProfile  # noqa: F401 - needed for relationship resolution
+from src.users.profile_models import UserProfile
 
 
 def make_jsonapi_rating_request(note_id: str, rater_id: str, helpfulness_level: str):
@@ -36,9 +36,18 @@ async def test_note(db_session, community_server):
     import secrets
     from uuid import uuid4
 
+    # Create author profile
+    author_profile = UserProfile(
+        display_name="Test Author",
+        is_human=True,
+        is_active=True,
+    )
+    db_session.add(author_profile)
+    await db_session.flush()
+
     note = Note(
         id=uuid4(),
-        author_id="test_author",
+        author_id=author_profile.id,
         summary=f"Test note for transaction testing {secrets.token_urlsafe(8)}",
         classification=NoteClassification.NOT_MISLEADING,
         helpfulness_score=0,

@@ -17,6 +17,7 @@ from src.database import get_session_maker
 from src.llm_config.models import CommunityServer
 from src.main import app
 from src.notes.models import Note, Rating
+from src.users.profile_models import UserProfile
 
 pytestmark = pytest.mark.integration
 
@@ -42,9 +43,18 @@ async def community_server() -> CommunityServer:
 async def test_note(community_server: CommunityServer) -> Note:
     """Create a test note for rating threshold tests."""
     async with get_session_maker()() as session:
+        # Create author profile
+        author_profile = UserProfile(
+            display_name="Test Author Threshold",
+            is_human=True,
+            is_active=True,
+        )
+        session.add(author_profile)
+        await session.flush()
+
         note = Note(
             id=uuid4(),
-            author_id="test_author_threshold",
+            author_id=author_profile.id,
             summary=f"Test note for threshold status tests {uuid4().hex[:8]}",
             classification="MISINFORMED_OR_POTENTIALLY_MISLEADING",
             status="NEEDS_MORE_RATINGS",

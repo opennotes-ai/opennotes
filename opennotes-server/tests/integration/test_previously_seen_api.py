@@ -6,6 +6,7 @@ Updated for JSON:API v2 endpoints:
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -213,7 +214,7 @@ async def test_note(test_community_server, test_user_with_auth):
     note_id = None
     async with get_session_maker()() as session:
         note = Note(
-            author_id="test_author_123",
+            author_id=test_user_with_auth["profile"].id,
             community_server_id=test_community_server.id,
             summary="Test note for previously seen detection 99999990001",
             classification="NOT_MISLEADING",
@@ -527,9 +528,18 @@ class TestCommunityServerScoping:
         record_id = None
 
         async with get_session_maker()() as session:
+            # Create author profile for the other guild
+            other_author = UserProfile(
+                display_name="Other Guild Author",
+                is_human=True,
+                is_active=True,
+            )
+            session.add(other_author)
+            await session.flush()
+
             other_community = CommunityServer(
                 platform="discord",
-                platform_community_server_id="other_guild_999",
+                platform_community_server_id=f"other_guild_{uuid4().hex[:8]}",
                 name="Other Guild",
                 is_active=True,
             )
@@ -538,7 +548,7 @@ class TestCommunityServerScoping:
 
             # Create note in other guild
             other_note = Note(
-                author_id="test_author_123",
+                author_id=other_author.id,
                 community_server_id=other_community.id,
                 summary="Note in other guild 99999990002",
                 classification="NOT_MISLEADING",

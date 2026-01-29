@@ -411,10 +411,12 @@ async def test_generate_note_for_request_success(
         assert "community_server_id" in call_kwargs
 
         # Verify note was created
+        from src.users import PLACEHOLDER_USER_ID
+
         assert note is not None
         assert note.ai_generated is True
         assert note.summary == "This is an AI-generated community note providing context."
-        assert note.author_id == "ai-note-writer"
+        assert note.author_id == PLACEHOLDER_USER_ID
         assert note.classification == "NOT_MISLEADING"
 
         # Verify LLM service was called
