@@ -68,7 +68,7 @@ class TestProcessFactCheckItem:
         ) as mock_chunk:
             mock_chunk.return_value = {"chunks_created": 5}
 
-            result = process_fact_check_item.__wrapped__(
+            result = process_fact_check_item.__wrapped__(  # type: ignore[attr-defined]
                 item_id=item_id,
                 community_server_id=community_server_id,
             )
@@ -89,7 +89,7 @@ class TestProcessFactCheckItem:
             mock_chunk.side_effect = RuntimeError("Embedding service unavailable")
 
             with pytest.raises(RuntimeError, match="Embedding service unavailable"):
-                process_fact_check_item.__wrapped__(
+                process_fact_check_item.__wrapped__(  # type: ignore[attr-defined]
                     item_id=item_id,
                     community_server_id=None,
                 )
@@ -140,7 +140,7 @@ class TestRechunkWorkflow:
             mock_progress.return_value = True
             mock_finalize.return_value = True
 
-            result = rechunk_fact_check_workflow.__wrapped__(
+            result = rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
@@ -179,7 +179,7 @@ class TestRechunkWorkflow:
             mock_progress.return_value = True
             mock_finalize.return_value = True
 
-            result = rechunk_fact_check_workflow.__wrapped__(
+            result = rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
@@ -209,7 +209,7 @@ class TestRechunkWorkflow:
             mock_progress.return_value = True
 
             with pytest.raises(CircuitOpenError):
-                rechunk_fact_check_workflow.__wrapped__(
+                rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
                     batch_job_id=batch_job_id,
                     community_server_id=None,
                     item_ids=item_ids,
@@ -235,7 +235,7 @@ class TestRechunkWorkflow:
             mock_progress.return_value = True
             mock_finalize.return_value = True
 
-            rechunk_fact_check_workflow.__wrapped__(
+            rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
@@ -265,7 +265,7 @@ class TestRechunkWorkflow:
             mock_progress.return_value = True
             mock_finalize.return_value = True
 
-            rechunk_fact_check_workflow.__wrapped__(
+            rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
@@ -306,7 +306,7 @@ class TestCircuitBreakerIntegration:
             mock_progress.return_value = True
 
             with pytest.raises(CircuitOpenError):
-                rechunk_fact_check_workflow.__wrapped__(
+                rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
                     batch_job_id=batch_job_id,
                     community_server_id=None,
                     item_ids=item_ids,
@@ -343,7 +343,7 @@ class TestCircuitBreakerIntegration:
             mock_progress.return_value = True
             mock_finalize.return_value = True
 
-            result = rechunk_fact_check_workflow.__wrapped__(
+            result = rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
                 batch_job_id=batch_job_id,
                 community_server_id=None,
                 item_ids=item_ids,
