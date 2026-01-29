@@ -106,6 +106,10 @@ class BatchJobResponse(BatchJobBase):
         default=None,
         description="When the job was last updated",
     )
+    workflow_id: str | None = Field(
+        default=None,
+        description="DBOS workflow ID for workflow-backed jobs",
+    )
 
     @field_serializer("created_at", "updated_at", "started_at", "completed_at", when_used="json")
     def serialize_datetime(self, value: datetime | None) -> str | None:

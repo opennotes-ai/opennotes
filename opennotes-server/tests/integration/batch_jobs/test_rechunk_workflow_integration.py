@@ -312,6 +312,7 @@ class TestRechunkAPICompatibility:
                 "created_at",
                 "updated_at",
                 "progress_percentage",
+                "workflow_id",
             ]
 
             response_dict = response.model_dump()
@@ -628,4 +629,160 @@ class TestBatchJobProgressTracking:
 
         async with get_session_maker()() as cleanup_session:
             await cleanup_session.execute(delete(BatchJob).where(BatchJob.id == job_id))
+            await cleanup_session.commit()
+
+
+@pytest.mark.integration
+class TestDBOSWorkflowCompatibility:
+    """Tests for DBOS workflow compatibility (T029).
+
+    These tests verify that the BatchJob model and API are compatible
+    with DBOS workflow tracking via the workflow_id field.
+    """
+
+    @pytest.mark.asyncio
+    async def test_workflow_id_field_in_response(self) -> None:
+        """
+        Test that BatchJob response includes workflow_id field.
+
+        T029: API compatibility - GET /api/batch-jobs/{id} returns correct
+        shape with workflow_id (nullable).
+        """
+        async with get_session_maker()() as session:
+            job = BatchJob(
+                job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                status=BatchJobStatus.IN_PROGRESS.value,
+                total_tasks=100,
+                completed_tasks=0,
+                metadata_={"community_server_id": None},
+                created_at=datetime.now(UTC),
+                started_at=datetime.now(UTC),
+            )
+            session.add(job)
+            await session.commit()
+            await session.refresh(job)
+            job_id = job.id
+
+            from src.batch_jobs.schemas import BatchJobResponse
+
+            response = BatchJobResponse.model_validate(job)
+            response_dict = response.model_dump()
+
+            assert "workflow_id" in response_dict
+            assert response.workflow_id is None
+
+        async with get_session_maker()() as cleanup_session:
+            await cleanup_session.execute(delete(BatchJob).where(BatchJob.id == job_id))
+            await cleanup_session.commit()
+
+    @pytest.mark.asyncio
+    async def test_workflow_id_stored_and_retrieved(self) -> None:
+        """
+        Test that workflow_id can be stored and retrieved.
+
+        T029: Verify BatchJob correctly stores DBOS workflow ID.
+        """
+        test_workflow_id = "test-workflow-abc123"
+
+        async with get_session_maker()() as session:
+            job = BatchJob(
+                job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                status=BatchJobStatus.IN_PROGRESS.value,
+                total_tasks=100,
+                completed_tasks=0,
+                metadata_={"community_server_id": None},
+                workflow_id=test_workflow_id,
+                created_at=datetime.now(UTC),
+                started_at=datetime.now(UTC),
+            )
+            session.add(job)
+            await session.commit()
+            job_id = job.id
+
+        async with get_session_maker()() as session:
+            batch_job_service = BatchJobService(session)
+            retrieved_job = await batch_job_service.get_job(job_id)
+
+            assert retrieved_job is not None
+            assert retrieved_job.workflow_id == test_workflow_id
+
+            from src.batch_jobs.schemas import BatchJobResponse
+
+            response = BatchJobResponse.model_validate(retrieved_job)
+            assert response.workflow_id == test_workflow_id
+
+        async with get_session_maker()() as cleanup_session:
+            await cleanup_session.execute(delete(BatchJob).where(BatchJob.id == job_id))
+            await cleanup_session.commit()
+
+    @pytest.mark.asyncio
+    async def test_workflow_id_nullable(self) -> None:
+        """
+        Test that workflow_id can be null for non-DBOS jobs.
+
+        T029: Ensure backward compatibility - workflow_id is optional.
+        """
+        async with get_session_maker()() as session:
+            job_without_workflow = BatchJob(
+                job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                status=BatchJobStatus.IN_PROGRESS.value,
+                total_tasks=100,
+                metadata_={"community_server_id": None},
+                workflow_id=None,
+                created_at=datetime.now(UTC),
+            )
+            session.add(job_without_workflow)
+            await session.commit()
+            job_id = job_without_workflow.id
+
+            await session.refresh(job_without_workflow)
+            assert job_without_workflow.workflow_id is None
+
+        async with get_session_maker()() as cleanup_session:
+            await cleanup_session.execute(delete(BatchJob).where(BatchJob.id == job_id))
+            await cleanup_session.commit()
+
+    @pytest.mark.asyncio
+    async def test_workflow_id_filter(self) -> None:
+        """
+        Test that jobs can be queried by workflow_id.
+
+        T029: Verify workflow_id is indexed and queryable.
+        """
+        test_workflow_id = "test-workflow-xyz789"
+
+        async with get_session_maker()() as session:
+            job_with_workflow = BatchJob(
+                job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                status=BatchJobStatus.IN_PROGRESS.value,
+                total_tasks=100,
+                metadata_={"community_server_id": None},
+                workflow_id=test_workflow_id,
+                created_at=datetime.now(UTC),
+            )
+            job_without_workflow = BatchJob(
+                job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                status=BatchJobStatus.PENDING.value,
+                total_tasks=50,
+                metadata_={"community_server_id": None},
+                workflow_id=None,
+                created_at=datetime.now(UTC),
+            )
+            session.add(job_with_workflow)
+            session.add(job_without_workflow)
+            await session.commit()
+            job_with_id = job_with_workflow.id
+            job_without_id = job_without_workflow.id
+
+            result = await session.execute(
+                select(BatchJob).where(BatchJob.workflow_id == test_workflow_id)
+            )
+            jobs = list(result.scalars().all())
+            assert len(jobs) == 1
+            assert jobs[0].workflow_id == test_workflow_id
+
+        async with get_session_maker()() as cleanup_session:
+            await cleanup_session.execute(
+                delete(BatchJob).where(BatchJob.id.in_([job_with_id, job_without_id]))
+            )
             await cleanup_session.commit()
