@@ -1,23 +1,7 @@
-"""Synchronous circuit breaker for DBOS workflow steps.
+"""Circuit breaker for external service calls.
 
-DBOS steps are synchronous, so this circuit breaker does not use async locks.
-Implements the standard three-state pattern for protecting against cascading failures.
-
-States:
-- CLOSED: Normal operation, requests pass through
-- OPEN: Service failing, requests immediately rejected
-- HALF_OPEN: Testing recovery, one request allowed through
-
-Usage in DBOS workflows:
-    breaker = CircuitBreaker(threshold=5, reset_timeout=60)
-
-    for item_id in item_ids:
-        try:
-            breaker.check()  # Raises CircuitOpenError if open
-            result = process_item(item_id)
-            breaker.record_success()
-        except ServiceError:
-            breaker.record_failure()
+Trips after consecutive failures to prevent resource exhaustion
+during extended outages.
 """
 
 from __future__ import annotations
@@ -31,8 +15,6 @@ logger = get_logger(__name__)
 
 
 class CircuitState(Enum):
-    """Circuit breaker states."""
-
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
@@ -43,23 +25,28 @@ class CircuitOpenError(Exception):
 
 
 class CircuitBreaker:
-    """Synchronous circuit breaker for protecting against cascading failures.
+    """Circuit breaker for protecting against cascading failures.
 
-    This implementation is thread-safe for single-threaded DBOS workers but does
-    not use locks. For multi-threaded scenarios, external synchronization is needed.
+    States:
+    - CLOSED: Normal operation, requests pass through
+    - OPEN: Service failing, requests immediately rejected
+    - HALF_OPEN: Testing recovery, one request allowed through
 
-    Attributes:
-        threshold: Consecutive failures before opening circuit
-        reset_timeout: Seconds before attempting reset (half-open)
-        failures: Current consecutive failure count
-        state: Current circuit state
+    Usage:
+        breaker = CircuitBreaker(threshold=5, reset_timeout=60)
+        try:
+            breaker.check()
+            result = call_external_service()
+            breaker.record_success()
+        except ServiceError:
+            breaker.record_failure()
     """
 
     def __init__(
         self,
         threshold: int = 5,
         reset_timeout: float = 60.0,
-    ) -> None:
+    ):
         """Initialize circuit breaker.
 
         Args:
@@ -110,7 +97,10 @@ class CircuitBreaker:
             self.state = CircuitState.OPEN
             logger.error(
                 "Circuit breaker opened",
-                extra={"failures": self.failures, "threshold": self.threshold},
+                extra={
+                    "failures": self.failures,
+                    "threshold": self.threshold,
+                },
             )
 
     def _should_attempt_reset(self) -> bool:

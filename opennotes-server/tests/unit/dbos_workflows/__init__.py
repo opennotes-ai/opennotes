@@ -1,1 +1,1 @@
-"""Tests for DBOS workflow infrastructure."""
+"""Unit tests for DBOS workflows infrastructure."""

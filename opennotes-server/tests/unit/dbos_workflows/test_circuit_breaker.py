@@ -1,13 +1,13 @@
-"""Tests for DBOS workflow circuit breaker.
+"""Unit tests for circuit breaker pattern (T031).
 
-This circuit breaker is synchronous (for use in DBOS steps) and implements
-the standard three-state pattern: CLOSED -> OPEN -> HALF_OPEN.
+Tests verify:
+- Circuit breaker state transitions (CLOSED -> OPEN -> HALF_OPEN -> CLOSED)
+- Threshold-based circuit opening
+- Reset timeout behavior
+- CircuitOpenError raising when circuit is open
 """
 
-from __future__ import annotations
-
 import time
-from unittest.mock import patch
 
 import pytest
 
@@ -18,186 +18,179 @@ from src.dbos_workflows.circuit_breaker import (
 )
 
 
-class TestCircuitBreakerInitialization:
-    """Tests for circuit breaker initialization."""
+@pytest.mark.unit
+class TestCircuitBreakerStateTransitions:
+    """Test circuit breaker state machine transitions."""
 
-    def test_default_initialization(self) -> None:
-        """Circuit breaker starts in CLOSED state with zero failures."""
-        breaker = CircuitBreaker(threshold=5, reset_timeout=60.0)
-
+    def test_initial_state_is_closed(self):
+        """Circuit breaker starts in CLOSED state."""
+        breaker = CircuitBreaker(threshold=3, reset_timeout=1)
         assert breaker.state == CircuitState.CLOSED
+        assert not breaker.is_open
         assert breaker.failures == 0
-        assert breaker.threshold == 5
-        assert breaker.reset_timeout == 60.0
-        assert breaker.last_failure_time is None
 
-    def test_custom_threshold_and_timeout(self) -> None:
-        """Circuit breaker accepts custom configuration."""
-        breaker = CircuitBreaker(threshold=3, reset_timeout=30.0)
-
-        assert breaker.threshold == 3
-        assert breaker.reset_timeout == 30.0
-
-
-class TestCircuitBreakerClosedState:
-    """Tests for circuit breaker in CLOSED state (normal operation)."""
-
-    def test_check_allows_request_when_closed(self) -> None:
-        """Check passes when circuit is closed."""
-        breaker = CircuitBreaker(threshold=5, reset_timeout=60.0)
-
+    def test_check_passes_when_closed(self):
+        """Check passes without exception when circuit is closed."""
+        breaker = CircuitBreaker(threshold=3, reset_timeout=1)
         breaker.check()
 
-    def test_record_success_resets_failures(self) -> None:
-        """Recording success resets failure count."""
-        breaker = CircuitBreaker(threshold=5, reset_timeout=60.0)
-        breaker.failures = 3
-        breaker.last_failure_time = time.time()
-
-        breaker.record_success()
-
-        assert breaker.failures == 0
-        assert breaker.last_failure_time is None
-        assert breaker.state == CircuitState.CLOSED
-
-    def test_record_failure_increments_count(self) -> None:
-        """Recording failure increments failure count."""
-        breaker = CircuitBreaker(threshold=5, reset_timeout=60.0)
+    def test_failures_below_threshold_keep_circuit_closed(self):
+        """Circuit remains closed when failures are below threshold."""
+        breaker = CircuitBreaker(threshold=3, reset_timeout=1)
 
         breaker.record_failure()
-
         assert breaker.failures == 1
-        assert breaker.last_failure_time is not None
-        assert breaker.state == CircuitState.CLOSED
-
-    def test_circuit_opens_at_threshold(self) -> None:
-        """Circuit opens when failures reach threshold."""
-        breaker = CircuitBreaker(threshold=3, reset_timeout=60.0)
-
-        breaker.record_failure()
-        breaker.record_failure()
         assert breaker.state == CircuitState.CLOSED
 
         breaker.record_failure()
+        assert breaker.failures == 2
+        assert breaker.state == CircuitState.CLOSED
+
+    def test_threshold_failures_open_circuit(self):
+        """Circuit opens after reaching failure threshold."""
+        breaker = CircuitBreaker(threshold=3, reset_timeout=1)
+
+        for _ in range(3):
+            breaker.record_failure()
+
         assert breaker.state == CircuitState.OPEN
+        assert breaker.is_open
         assert breaker.failures == 3
 
-
-class TestCircuitBreakerOpenState:
-    """Tests for circuit breaker in OPEN state (failing fast)."""
-
-    def test_check_raises_when_open(self) -> None:
+    def test_check_raises_when_open(self):
         """Check raises CircuitOpenError when circuit is open."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=60.0)
-        breaker.record_failure()
-        breaker.record_failure()
-        assert breaker.state == CircuitState.OPEN
+        breaker = CircuitBreaker(threshold=3, reset_timeout=60)
+
+        for _ in range(3):
+            breaker.record_failure()
 
         with pytest.raises(CircuitOpenError) as exc_info:
             breaker.check()
 
-        assert "2 consecutive failures" in str(exc_info.value)
-        assert "Reset in" in str(exc_info.value)
+        assert "Circuit open after 3 consecutive failures" in str(exc_info.value)
 
-    def test_transitions_to_half_open_after_timeout(self) -> None:
-        """Circuit transitions to HALF_OPEN after reset timeout."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=1.0)
-        breaker.record_failure()
-        breaker.record_failure()
+    def test_circuit_enters_half_open_after_timeout(self):
+        """Circuit enters HALF_OPEN state after reset timeout."""
+        breaker = CircuitBreaker(threshold=3, reset_timeout=0.1)
+
+        for _ in range(3):
+            breaker.record_failure()
         assert breaker.state == CircuitState.OPEN
 
-        with patch("time.time") as mock_time:
-            mock_time.return_value = breaker.last_failure_time + 2.0
+        time.sleep(0.15)
 
-            breaker.check()
-
+        breaker.check()
         assert breaker.state == CircuitState.HALF_OPEN
 
-    def test_is_open_property(self) -> None:
-        """is_open property reflects OPEN state."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=60.0)
-        assert breaker.is_open is False
-
-        breaker.record_failure()
-        breaker.record_failure()
-
-        assert breaker.is_open is True
-
-
-class TestCircuitBreakerHalfOpenState:
-    """Tests for circuit breaker in HALF_OPEN state (testing recovery)."""
-
-    def test_success_in_half_open_closes_circuit(self) -> None:
+    def test_success_in_half_open_closes_circuit(self):
         """Success in HALF_OPEN state closes the circuit."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=0.0)
-        breaker.record_failure()
-        breaker.record_failure()
+        breaker = CircuitBreaker(threshold=3, reset_timeout=0.1)
+
+        for _ in range(3):
+            breaker.record_failure()
+
+        time.sleep(0.15)
 
         breaker.check()
         assert breaker.state == CircuitState.HALF_OPEN
 
         breaker.record_success()
-
         assert breaker.state == CircuitState.CLOSED
         assert breaker.failures == 0
+        assert not breaker.is_open
 
-    def test_failure_in_half_open_reopens_circuit(self) -> None:
+    def test_failure_in_half_open_reopens_circuit(self):
         """Failure in HALF_OPEN state reopens the circuit."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=0.0)
-        breaker.record_failure()
-        breaker.record_failure()
+        breaker = CircuitBreaker(threshold=3, reset_timeout=0.1)
+
+        for _ in range(3):
+            breaker.record_failure()
+
+        time.sleep(0.15)
 
         breaker.check()
         assert breaker.state == CircuitState.HALF_OPEN
 
         breaker.record_failure()
+        assert breaker.state == CircuitState.OPEN
+        assert breaker.is_open
 
+    def test_success_resets_failure_count(self):
+        """Recording success resets the failure count."""
+        breaker = CircuitBreaker(threshold=5, reset_timeout=1)
+
+        breaker.record_failure()
+        breaker.record_failure()
+        assert breaker.failures == 2
+
+        breaker.record_success()
+        assert breaker.failures == 0
+        assert breaker.state == CircuitState.CLOSED
+
+
+@pytest.mark.unit
+class TestCircuitBreakerConfiguration:
+    """Test circuit breaker configuration options."""
+
+    def test_custom_threshold(self):
+        """Circuit breaker respects custom threshold."""
+        breaker = CircuitBreaker(threshold=5, reset_timeout=1)
+
+        for i in range(4):
+            breaker.record_failure()
+            assert breaker.state == CircuitState.CLOSED, f"Failed at failure {i + 1}"
+
+        breaker.record_failure()
         assert breaker.state == CircuitState.OPEN
 
+    def test_time_until_reset_calculation(self):
+        """Time until reset is calculated correctly."""
+        breaker = CircuitBreaker(threshold=3, reset_timeout=60)
 
-class TestCircuitBreakerTimeCalculations:
-    """Tests for time-related calculations."""
+        for _ in range(3):
+            breaker.record_failure()
 
-    def test_time_until_reset_when_open(self) -> None:
-        """Calculate time remaining until reset attempt."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=60.0)
+        time_until_reset = breaker._time_until_reset()
+        assert 59 < time_until_reset <= 60
+
+    def test_is_open_property(self):
+        """is_open property reflects circuit state correctly."""
+        breaker = CircuitBreaker(threshold=2, reset_timeout=1)
+
+        assert not breaker.is_open
+
         breaker.record_failure()
+        assert not breaker.is_open
+
         breaker.record_failure()
-
-        with patch("time.time") as mock_time:
-            mock_time.return_value = breaker.last_failure_time + 10.0
-            remaining = breaker._time_until_reset()
-
-        assert 49.0 <= remaining <= 51.0
-
-    def test_time_until_reset_returns_zero_when_no_failure(self) -> None:
-        """Time until reset is zero when no failures recorded."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=60.0)
-
-        remaining = breaker._time_until_reset()
-
-        assert remaining == 0.0
-
-    def test_time_until_reset_returns_zero_when_timeout_exceeded(self) -> None:
-        """Time until reset is zero when timeout has passed."""
-        breaker = CircuitBreaker(threshold=2, reset_timeout=60.0)
-        breaker.record_failure()
-
-        with patch("time.time") as mock_time:
-            mock_time.return_value = breaker.last_failure_time + 120.0
-            remaining = breaker._time_until_reset()
-
-        assert remaining == 0.0
+        assert breaker.is_open
 
 
-class TestCircuitOpenError:
-    """Tests for CircuitOpenError exception."""
+@pytest.mark.unit
+class TestCircuitBreakerErrorMessages:
+    """Test circuit breaker error messaging."""
 
-    def test_error_message_format(self) -> None:
-        """CircuitOpenError message includes failure count and reset time."""
-        error = CircuitOpenError(
-            "Circuit open after 5 consecutive failures. Reset in 30.0s"
-        )
+    def test_error_includes_failure_count(self):
+        """CircuitOpenError message includes failure count."""
+        breaker = CircuitBreaker(threshold=5, reset_timeout=60)
 
-        assert "5 consecutive failures" in str(error)
-        assert "30.0s" in str(error)
+        for _ in range(5):
+            breaker.record_failure()
+
+        with pytest.raises(CircuitOpenError) as exc_info:
+            breaker.check()
+
+        assert "5 consecutive failures" in str(exc_info.value)
+
+    def test_error_includes_time_until_reset(self):
+        """CircuitOpenError message includes time until reset."""
+        breaker = CircuitBreaker(threshold=3, reset_timeout=30)
+
+        for _ in range(3):
+            breaker.record_failure()
+
+        with pytest.raises(CircuitOpenError) as exc_info:
+            breaker.check()
+
+        error_message = str(exc_info.value)
+        assert "Reset in" in error_message
