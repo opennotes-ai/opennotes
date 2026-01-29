@@ -149,7 +149,7 @@ def scoring_jsonapi_sample_note_data(
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary for scoring JSON:API",
-        "author_id": scoring_jsonapi_registered_user["discord_id"],
+        "author_id": str(scoring_jsonapi_registered_user["profile_id"]),
         "community_server_id": str(scoring_jsonapi_community_server["uuid"]),
     }
 

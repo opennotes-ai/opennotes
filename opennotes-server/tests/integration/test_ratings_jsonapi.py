@@ -10,12 +10,52 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.main import app
 from src.notes.schemas import NoteClassification
+
+
+async def create_rater_profile(community_server_uuid, display_name: str, discord_id: str) -> UUID:
+    """Create a rater profile for testing.
+
+    Creates UserProfile, UserIdentity, and CommunityMember records required for a valid rater_id.
+    Returns the profile ID (UUID) to use as rater_id.
+    """
+    from src.database import get_session_maker
+    from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
+
+    async with get_session_maker()() as session:
+        profile = UserProfile(
+            display_name=display_name,
+            is_human=True,
+            is_active=True,
+        )
+        session.add(profile)
+        await session.flush()
+
+        identity = UserIdentity(
+            profile_id=profile.id,
+            provider="discord",
+            provider_user_id=discord_id,
+        )
+        session.add(identity)
+
+        member = CommunityMember(
+            community_id=community_server_uuid,
+            profile_id=profile.id,
+            role="member",
+            is_active=True,
+            joined_at=datetime.now(UTC),
+        )
+        session.add(member)
+
+        await session.commit()
+        await session.refresh(profile)
+        return profile.id
 
 
 @pytest.fixture
@@ -151,7 +191,7 @@ def ratings_jsonapi_sample_note_data(
     return {
         "classification": NoteClassification.NOT_MISLEADING,
         "summary": "This is a test note summary for ratings JSON:API",
-        "author_id": ratings_jsonapi_registered_user["discord_id"],
+        "author_id": str(ratings_jsonapi_registered_user["profile_id"]),
         "community_server_id": str(ratings_jsonapi_community_server["uuid"]),
     }
 
@@ -185,7 +225,10 @@ class TestRatingsJSONAPI:
 
     @pytest.mark.asyncio
     async def test_create_rating_jsonapi(
-        self, ratings_jsonapi_auth_client, ratings_jsonapi_sample_note_data
+        self,
+        ratings_jsonapi_auth_client,
+        ratings_jsonapi_sample_note_data,
+        ratings_jsonapi_community_server,
     ):
         """Test POST /api/v2/ratings creates a rating with JSON:API request body.
 
@@ -199,12 +242,18 @@ class TestRatingsJSONAPI:
         assert create_response.status_code == 201
         note_id = create_response.json()["data"]["id"]
 
+        rater_profile_id = await create_rater_profile(
+            ratings_jsonapi_community_server["uuid"],
+            "Test Rater Create JSONAPI",
+            "test_rater_jsonapi_123",
+        )
+
         request_body = {
             "data": {
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_id": "test_rater_jsonapi_123",
+                    "rater_id": str(rater_profile_id),
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -228,7 +277,10 @@ class TestRatingsJSONAPI:
 
     @pytest.mark.asyncio
     async def test_create_rating_jsonapi_upsert(
-        self, ratings_jsonapi_auth_client, ratings_jsonapi_sample_note_data
+        self,
+        ratings_jsonapi_auth_client,
+        ratings_jsonapi_sample_note_data,
+        ratings_jsonapi_community_server,
     ):
         """Test POST /api/v2/ratings upserts an existing rating.
 
@@ -239,7 +291,12 @@ class TestRatingsJSONAPI:
         assert create_response.status_code == 201
         note_id = create_response.json()["data"]["id"]
 
-        rater_id = "test_rater_upsert_jsonapi"
+        rater_profile_id = await create_rater_profile(
+            ratings_jsonapi_community_server["uuid"],
+            "Test Rater Upsert JSONAPI",
+            "test_rater_upsert_jsonapi",
+        )
+        rater_id = str(rater_profile_id)
 
         request_body_1 = {
             "data": {
@@ -275,7 +332,10 @@ class TestRatingsJSONAPI:
 
     @pytest.mark.asyncio
     async def test_create_rating_jsonapi_invalid_type(
-        self, ratings_jsonapi_auth_client, ratings_jsonapi_sample_note_data
+        self,
+        ratings_jsonapi_auth_client,
+        ratings_jsonapi_sample_note_data,
+        ratings_jsonapi_community_server,
     ):
         """Test POST /api/v2/ratings rejects invalid resource type."""
         note_data = self._get_unique_note_data(ratings_jsonapi_sample_note_data)
@@ -283,12 +343,18 @@ class TestRatingsJSONAPI:
         assert create_response.status_code == 201
         note_id = create_response.json()["data"]["id"]
 
+        rater_profile_id = await create_rater_profile(
+            ratings_jsonapi_community_server["uuid"],
+            "Test Rater Invalid Type",
+            "test_rater_invalid_type",
+        )
+
         request_body = {
             "data": {
                 "type": "invalid_type",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_id": "test_rater",
+                    "rater_id": str(rater_profile_id),
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -299,18 +365,26 @@ class TestRatingsJSONAPI:
         assert response.status_code == 422, f"Expected 422, got {response.status_code}"
 
     @pytest.mark.asyncio
-    async def test_create_rating_jsonapi_note_not_found(self, ratings_jsonapi_auth_client):
+    async def test_create_rating_jsonapi_note_not_found(
+        self, ratings_jsonapi_auth_client, ratings_jsonapi_community_server
+    ):
         """Test POST /api/v2/ratings returns 404 for non-existent note."""
         from uuid import uuid4
 
         fake_note_id = str(uuid4())
+
+        rater_profile_id = await create_rater_profile(
+            ratings_jsonapi_community_server["uuid"],
+            "Test Rater Not Found",
+            "test_rater_not_found",
+        )
 
         request_body = {
             "data": {
                 "type": "ratings",
                 "attributes": {
                     "note_id": fake_note_id,
-                    "rater_id": "test_rater",
+                    "rater_id": str(rater_profile_id),
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -325,7 +399,10 @@ class TestRatingsJSONAPI:
 
     @pytest.mark.asyncio
     async def test_list_note_ratings_jsonapi(
-        self, ratings_jsonapi_auth_client, ratings_jsonapi_sample_note_data
+        self,
+        ratings_jsonapi_auth_client,
+        ratings_jsonapi_sample_note_data,
+        ratings_jsonapi_community_server,
     ):
         """Test GET /api/v2/notes/{id}/ratings returns ratings collection.
 
@@ -339,12 +416,18 @@ class TestRatingsJSONAPI:
         assert create_response.status_code == 201
         note_id = create_response.json()["data"]["id"]
 
+        rater_profile_id = await create_rater_profile(
+            ratings_jsonapi_community_server["uuid"],
+            "Test Rater List JSONAPI",
+            "test_rater_list_jsonapi",
+        )
+
         rating_body = {
             "data": {
                 "type": "ratings",
                 "attributes": {
                     "note_id": note_id,
-                    "rater_id": "test_rater_list_jsonapi",
+                    "rater_id": str(rater_profile_id),
                     "helpfulness_level": "HELPFUL",
                 },
             }
@@ -430,7 +513,7 @@ class TestRatingsJSONAPI:
         assert create_response.status_code == 201
         note_id = create_response.json()["data"]["id"]
 
-        rater_id = ratings_jsonapi_registered_user["discord_id"]
+        rater_id = str(ratings_jsonapi_registered_user["profile_id"])
 
         create_rating_body = {
             "data": {
@@ -514,7 +597,7 @@ class TestRatingsJSONAPI:
         assert create_response.status_code == 201
         note_id = create_response.json()["data"]["id"]
 
-        rater_id = ratings_jsonapi_registered_user["discord_id"]
+        rater_id = str(ratings_jsonapi_registered_user["profile_id"])
 
         create_rating_body = {
             "data": {
@@ -550,7 +633,10 @@ class TestRatingsJSONAPI:
 
     @pytest.mark.asyncio
     async def test_get_rating_stats_jsonapi(
-        self, ratings_jsonapi_auth_client, ratings_jsonapi_sample_note_data
+        self,
+        ratings_jsonapi_auth_client,
+        ratings_jsonapi_sample_note_data,
+        ratings_jsonapi_community_server,
     ):
         """Test GET /api/v2/notes/{note_id}/ratings/stats returns statistics.
 
@@ -565,12 +651,17 @@ class TestRatingsJSONAPI:
         note_id = create_response.json()["data"]["id"]
 
         for i, level in enumerate(["HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL"]):
+            rater_profile_id = await create_rater_profile(
+                ratings_jsonapi_community_server["uuid"],
+                f"Test Rater Stats {i}",
+                f"test_rater_stats_{i}",
+            )
             rating_body = {
                 "data": {
                     "type": "ratings",
                     "attributes": {
                         "note_id": note_id,
-                        "rater_id": f"test_rater_stats_{i}",
+                        "rater_id": str(rater_profile_id),
                         "helpfulness_level": level,
                     },
                 }

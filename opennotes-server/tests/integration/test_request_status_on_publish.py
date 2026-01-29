@@ -22,6 +22,23 @@ from src.users.profile_models import UserProfile
 pytestmark = pytest.mark.integration
 
 
+async def create_rater_profile(display_name: str) -> UUID:
+    """Create a rater profile for testing.
+
+    Returns the profile ID (UUID) to use as rater_id.
+    """
+    async with get_session_maker()() as session:
+        profile = UserProfile(
+            display_name=display_name,
+            is_human=True,
+            is_active=True,
+        )
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
+        return profile.id
+
+
 async def create_note_v2_request(client, note_data):
     """Create a note using the v2 JSON:API endpoint."""
     attributes = {
@@ -238,6 +255,10 @@ class TestRequestStatusOnPublish:
         access_token = create_access_token(token_data)
         headers = {"Authorization": f"Bearer {access_token}"}
 
+        rater_1_id = await create_rater_profile("Rater 001")
+        rater_2_id = await create_rater_profile("Rater 002")
+        rater_3_id = await create_rater_profile("Rater 003")
+
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport, base_url="http://test", headers=headers
@@ -247,7 +268,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_id": "rater_001",
+                        "rater_id": str(rater_1_id),
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -260,7 +281,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_id": "rater_002",
+                        "rater_id": str(rater_2_id),
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -273,7 +294,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_id": "rater_003",
+                        "rater_id": str(rater_3_id),
                         "helpfulness_level": "HELPFUL",
                     },
                 }
@@ -311,6 +332,8 @@ class TestRequestStatusOnPublish:
             "Authorization": f"Bearer {access_token}",
         }
 
+        rater_id = await create_rater_profile("Rater Unhelpful")
+
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport, base_url="http://test", headers=headers
@@ -320,7 +343,7 @@ class TestRequestStatusOnPublish:
                     "type": "ratings",
                     "attributes": {
                         "note_id": str(note.id),
-                        "rater_id": "rater_unhelpful",
+                        "rater_id": str(rater_id),
                         "helpfulness_level": "NOT_HELPFUL",
                     },
                 }
