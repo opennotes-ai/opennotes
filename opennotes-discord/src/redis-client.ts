@@ -34,7 +34,15 @@ export function getRedisClient(): Redis | null {
       return delay;
     },
     reconnectOnError: (err: Error) => {
-      const targetErrors = ['READONLY', 'ECONNREFUSED', 'ETIMEDOUT'];
+      const targetErrors = [
+        'READONLY',
+        'ECONNREFUSED',
+        'ETIMEDOUT',
+        'ECONNRESET',
+        'ENOTCONN',
+        'Connection is closed',
+        'Connection lost',
+      ];
       if (targetErrors.some((target) => err.message.includes(target))) {
         logger.warn('Redis reconnecting on error', { error: err.message });
         return 2;
