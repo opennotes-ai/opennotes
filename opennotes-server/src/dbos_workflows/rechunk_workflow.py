@@ -406,3 +406,110 @@ def finalize_batch_job_sync(
             exc_info=True,
         )
         return False
+
+
+@DBOS.workflow()
+def chunk_single_fact_check_workflow(
+    fact_check_id: str,
+    community_server_id: str | None,
+) -> dict[str, Any]:
+    """DBOS workflow for chunking a single fact-check item.
+
+    This is a lightweight workflow for processing individual items
+    (e.g., after candidate promotion). Uses the same step as batch
+    processing for consistency.
+
+    Args:
+        fact_check_id: UUID of the FactCheckItem to process
+        community_server_id: Optional community server for LLM credentials
+
+    Returns:
+        dict with success boolean and optional error message
+    """
+    workflow_id = DBOS.workflow_id
+
+    logger.info(
+        "Starting single fact-check chunk workflow",
+        extra={
+            "workflow_id": workflow_id,
+            "fact_check_id": fact_check_id,
+            "community_server_id": community_server_id,
+        },
+    )
+
+    try:
+        result = process_fact_check_item(
+            item_id=fact_check_id,
+            community_server_id=community_server_id,
+        )
+
+        logger.info(
+            "Single fact-check chunk workflow completed",
+            extra={
+                "workflow_id": workflow_id,
+                "fact_check_id": fact_check_id,
+                "success": result["success"],
+            },
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(
+            "Single fact-check chunk workflow failed",
+            extra={
+                "workflow_id": workflow_id,
+                "fact_check_id": fact_check_id,
+                "error": str(e),
+            },
+        )
+        return {
+            "success": False,
+            "item_id": fact_check_id,
+            "error": str(e),
+        }
+
+
+async def enqueue_single_fact_check_chunk(
+    fact_check_id: UUID,
+    community_server_id: UUID | None = None,
+) -> str | None:
+    """Enqueue a single fact-check item for chunking via DBOS.
+
+    This function enqueues the chunk_single_fact_check_workflow to the
+    rechunk_queue for durable processing.
+
+    Args:
+        fact_check_id: UUID of the FactCheckItem to process
+        community_server_id: Optional community server for LLM credentials
+
+    Returns:
+        The DBOS workflow_id if successfully enqueued, None on failure
+    """
+    try:
+        handle = rechunk_queue.enqueue(
+            chunk_single_fact_check_workflow,
+            fact_check_id=str(fact_check_id),
+            community_server_id=str(community_server_id) if community_server_id else None,
+        )
+
+        logger.info(
+            "Enqueued single fact-check chunk via DBOS",
+            extra={
+                "fact_check_id": str(fact_check_id),
+                "workflow_id": handle.workflow_id,
+            },
+        )
+
+        return handle.workflow_id
+
+    except Exception as e:
+        logger.error(
+            "Failed to enqueue single fact-check chunk via DBOS",
+            extra={
+                "fact_check_id": str(fact_check_id),
+                "error": str(e),
+            },
+            exc_info=True,
+        )
+        return None

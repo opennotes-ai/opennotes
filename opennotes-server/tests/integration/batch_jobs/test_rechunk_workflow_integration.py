@@ -14,7 +14,6 @@ control and Redis for progress tracking.
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -30,7 +29,7 @@ from src.batch_jobs.rechunk_service import (
     RechunkBatchJobService,
     get_stuck_jobs_info,
 )
-from src.batch_jobs.schemas import BatchJobStatus
+from src.batch_jobs.schemas import BatchJobCreate, BatchJobStatus
 from src.batch_jobs.service import BatchJobService
 from src.database import get_session_maker
 
@@ -167,30 +166,37 @@ class TestRechunkJobCompletion:
     """Tests for successful job completion (SC-001)."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
-    async def test_job_completes_successfully(self, mock_task: AsyncMock) -> None:
+    async def test_job_completes_successfully(self) -> None:
         """
         Test that a batch job transitions through states correctly to completion.
 
         SC-001: Rechunk job completes successfully with proper state transitions.
+
+        Note: This test creates the job directly via BatchJobService since
+        fact_check rechunk now uses DBOS workflows (TASK-1056).
         """
-        mock_task.kiq = AsyncMock()
+        job_id = uuid4()
 
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
-            service = RechunkBatchJobService(
-                session=session,
-                batch_job_service=batch_job_service,
-            )
 
-            job = await service.start_fact_check_rechunk_job(
-                community_server_id=None,
-                batch_size=100,
+            job = await batch_job_service.create_job(
+                BatchJobCreate(
+                    job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                    total_tasks=100,
+                    metadata={
+                        "community_server_id": None,
+                        "batch_size": 100,
+                        "chunk_type": "fact_check",
+                        "execution_backend": "dbos",
+                    },
+                )
             )
             job_id = job.id
 
-            assert job.status == BatchJobStatus.IN_PROGRESS.value
-            assert job.started_at is not None
+            started_job = await batch_job_service.start_job(job_id)
+            assert started_job.status == BatchJobStatus.IN_PROGRESS.value
+            assert started_job.started_at is not None
 
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
@@ -211,27 +217,32 @@ class TestRechunkJobCompletion:
             await cleanup_session.commit()
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
-    async def test_job_records_partial_progress_on_failure(self, mock_task: AsyncMock) -> None:
+    async def test_job_records_partial_progress_on_failure(self) -> None:
         """
         Test that partial progress is preserved when a job fails.
 
         This ensures we can resume from where we left off.
-        """
-        mock_task.kiq = AsyncMock()
 
+        Note: Creates job directly via BatchJobService since fact_check rechunk
+        now uses DBOS workflows (TASK-1056).
+        """
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
-            service = RechunkBatchJobService(
-                session=session,
-                batch_job_service=batch_job_service,
-            )
 
-            job = await service.start_fact_check_rechunk_job(
-                community_server_id=None,
-                batch_size=100,
+            job = await batch_job_service.create_job(
+                BatchJobCreate(
+                    job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                    total_tasks=100,
+                    metadata={
+                        "community_server_id": None,
+                        "batch_size": 100,
+                        "chunk_type": "fact_check",
+                        "execution_backend": "dbos",
+                    },
+                )
             )
             job_id = job.id
+            await batch_job_service.start_job(job_id)
 
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
@@ -370,27 +381,32 @@ class TestConcurrentJobExecution:
     """Tests for concurrent job handling (SC-008)."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
-    async def test_concurrent_job_creation_blocked(self, mock_task: AsyncMock) -> None:
+    async def test_concurrent_job_creation_blocked(self) -> None:
         """
         Test that only one job of each type can be active at a time.
 
         SC-008: System handles concurrent requests by blocking duplicates.
-        """
-        mock_task.kiq = AsyncMock()
 
+        Note: Creates first job directly via BatchJobService since fact_check rechunk
+        now uses DBOS workflows (TASK-1056).
+        """
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
-            service = RechunkBatchJobService(
-                session=session,
-                batch_job_service=batch_job_service,
-            )
 
-            job = await service.start_fact_check_rechunk_job(
-                community_server_id=None,
-                batch_size=100,
+            job = await batch_job_service.create_job(
+                BatchJobCreate(
+                    job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                    total_tasks=100,
+                    metadata={
+                        "community_server_id": None,
+                        "batch_size": 100,
+                        "chunk_type": "fact_check",
+                        "execution_backend": "dbos",
+                    },
+                )
             )
             job_id = job.id
+            await batch_job_service.start_job(job_id)
 
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
@@ -412,15 +428,12 @@ class TestConcurrentJobExecution:
             await cleanup_session.commit()
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
-    async def test_different_job_types_can_run_concurrently(self, mock_fc_task: AsyncMock) -> None:
+    async def test_different_job_types_can_run_concurrently(self) -> None:
         """
         Test that different job types can run concurrently.
 
         fact_check and previously_seen jobs should be able to run in parallel.
         """
-        mock_fc_task.kiq = AsyncMock()
-
         async with get_session_maker()() as session:
             fc_job = BatchJob(
                 job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
@@ -464,25 +477,30 @@ class TestConcurrentJobExecution:
             await cleanup_session.commit()
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
-    async def test_completed_job_allows_new_job(self, mock_task: AsyncMock) -> None:
+    async def test_completed_job_allows_new_job(self) -> None:
         """
         Test that completing a job allows a new job of the same type to start.
-        """
-        mock_task.kiq = AsyncMock()
 
+        Note: Creates jobs directly via BatchJobService since fact_check rechunk
+        now uses DBOS workflows (TASK-1056).
+        """
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
-            service = RechunkBatchJobService(
-                session=session,
-                batch_job_service=batch_job_service,
-            )
 
-            job1 = await service.start_fact_check_rechunk_job(
-                community_server_id=None,
-                batch_size=100,
+            job1 = await batch_job_service.create_job(
+                BatchJobCreate(
+                    job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                    total_tasks=100,
+                    metadata={
+                        "community_server_id": None,
+                        "batch_size": 100,
+                        "chunk_type": "fact_check",
+                        "execution_backend": "dbos",
+                    },
+                )
             )
             job1_id = job1.id
+            await batch_job_service.start_job(job1_id)
 
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
@@ -490,18 +508,23 @@ class TestConcurrentJobExecution:
 
         async with get_session_maker()() as session:
             batch_job_service = BatchJobService(session)
-            service = RechunkBatchJobService(
-                session=session,
-                batch_job_service=batch_job_service,
-            )
 
-            job2 = await service.start_fact_check_rechunk_job(
-                community_server_id=None,
-                batch_size=100,
+            job2 = await batch_job_service.create_job(
+                BatchJobCreate(
+                    job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
+                    total_tasks=100,
+                    metadata={
+                        "community_server_id": None,
+                        "batch_size": 100,
+                        "chunk_type": "fact_check",
+                        "execution_backend": "dbos",
+                    },
+                )
             )
             job2_id = job2.id
+            started_job2 = await batch_job_service.start_job(job2_id)
 
-            assert job2.status == BatchJobStatus.IN_PROGRESS.value
+            assert started_job2.status == BatchJobStatus.IN_PROGRESS.value
 
         async with get_session_maker()() as cleanup_session:
             await cleanup_session.execute(

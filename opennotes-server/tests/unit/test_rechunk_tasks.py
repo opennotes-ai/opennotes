@@ -462,18 +462,15 @@ class TestRechunkTaskProgressTracking:
 class TestTaskIQLabels:
     """Test TaskIQ labels are properly configured (task-909.07)."""
 
-    def test_fact_check_task_has_labels(self):
-        """Verify fact check rechunk task has component and task_type labels."""
+    def test_fact_check_task_not_registered(self):
+        """Verify fact check rechunk task is NOT registered (migrated to DBOS, TASK-1056)."""
         from src.tasks.broker import _all_registered_tasks
 
-        assert "rechunk:fact_check" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["rechunk:fact_check"]
-        assert labels.get("component") == "rechunk"
-        assert labels.get("task_type") == "batch"
+        assert "rechunk:fact_check" not in _all_registered_tasks
 
     def test_previously_seen_task_has_labels(self):
         """Verify previously seen rechunk task has component and task_type labels."""
+        import src.tasks.rechunk_tasks  # noqa: F401 - import triggers registration
         from src.tasks.broker import _all_registered_tasks
 
         assert "rechunk:previously_seen" in _all_registered_tasks
@@ -1079,24 +1076,21 @@ class TestChunkFactCheckItemTask:
                     db_url="postgresql+asyncpg://test:test@localhost/test",
                 )
 
-    def test_chunk_fact_check_item_task_has_labels(self):
-        """Verify chunk_fact_check_item task has component label (TASK-1030.10, TASK-1030.11)."""
+    def test_chunk_fact_check_item_task_not_registered(self):
+        """Verify chunk_fact_check_item task is NOT registered (migrated to DBOS, TASK-1056)."""
         from src.tasks.broker import _all_registered_tasks
 
-        assert "chunk:fact_check_item" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["chunk:fact_check_item"]
-        assert labels.get("component") == "rechunk"
-        assert "task_type" not in labels
+        assert "chunk:fact_check_item" not in _all_registered_tasks
 
 
 class TestPromotionEnqueuesChunkingTask:
-    """Test that promotion enqueues chunking task (task-1030)."""
+    """Test that promotion enqueues chunking task via routing function (task-1030, task-1056.01)."""
 
     @pytest.mark.asyncio
     async def test_promotion_enqueues_chunking_task(self):
-        """Successful promotion enqueues a chunking task for the new fact check item."""
+        """Successful promotion enqueues a chunking task via enqueue_single_fact_check_chunk."""
         candidate_id = uuid4()
+        fact_check_item_id = uuid4()
 
         mock_candidate = MagicMock()
         mock_candidate.id = candidate_id
@@ -1122,37 +1116,32 @@ class TestPromotionEnqueuesChunkingTask:
         mock_session.commit = AsyncMock()
         mock_session.rollback = AsyncMock()
 
-        mock_kiq = AsyncMock()
-        mock_chunk_task = MagicMock()
-        mock_chunk_task.kiq = mock_kiq
-
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://test:test@localhost/test"
-
         with (
+            patch("src.batch_jobs.rechunk_service.enqueue_single_fact_check_chunk") as mock_enqueue,
             patch(
-                "src.fact_checking.import_pipeline.promotion.get_settings",
-                return_value=mock_settings,
-            ),
-            patch(
-                "src.tasks.rechunk_tasks.chunk_fact_check_item_task",
-                mock_chunk_task,
-            ),
+                "src.fact_checking.import_pipeline.promotion.FactCheckItem"
+            ) as mock_fact_check_class,
         ):
+            mock_enqueue.return_value = True
+            mock_fact_check_item = MagicMock()
+            mock_fact_check_item.id = fact_check_item_id
+            mock_fact_check_class.return_value = mock_fact_check_item
+
             from src.fact_checking.import_pipeline.promotion import promote_candidate
 
             result = await promote_candidate(mock_session, candidate_id)
 
             assert result is True
-            mock_kiq.assert_called_once()
-            call_kwargs = mock_kiq.call_args.kwargs
-            assert call_kwargs["db_url"] == mock_settings.DATABASE_URL
-            assert call_kwargs["community_server_id"] is None
+            mock_enqueue.assert_called_once_with(
+                fact_check_id=fact_check_item_id,
+                community_server_id=None,
+            )
 
     @pytest.mark.asyncio
     async def test_promotion_succeeds_even_if_chunk_enqueue_fails(self):
         """Promotion still succeeds if chunking task enqueue fails."""
         candidate_id = uuid4()
+        fact_check_item_id = uuid4()
 
         mock_candidate = MagicMock()
         mock_candidate.id = candidate_id
@@ -1178,26 +1167,20 @@ class TestPromotionEnqueuesChunkingTask:
         mock_session.commit = AsyncMock()
         mock_session.rollback = AsyncMock()
 
-        mock_kiq = AsyncMock(side_effect=Exception("NATS connection failed"))
-        mock_chunk_task = MagicMock()
-        mock_chunk_task.kiq = mock_kiq
-
-        mock_settings = MagicMock()
-        mock_settings.DATABASE_URL = "postgresql+asyncpg://test:test@localhost/test"
-
         with (
+            patch("src.batch_jobs.rechunk_service.enqueue_single_fact_check_chunk") as mock_enqueue,
             patch(
-                "src.fact_checking.import_pipeline.promotion.get_settings",
-                return_value=mock_settings,
-            ),
-            patch(
-                "src.tasks.rechunk_tasks.chunk_fact_check_item_task",
-                mock_chunk_task,
-            ),
+                "src.fact_checking.import_pipeline.promotion.FactCheckItem"
+            ) as mock_fact_check_class,
         ):
+            mock_enqueue.side_effect = Exception("NATS connection failed")
+            mock_fact_check_item = MagicMock()
+            mock_fact_check_item.id = fact_check_item_id
+            mock_fact_check_class.return_value = mock_fact_check_item
+
             from src.fact_checking.import_pipeline.promotion import promote_candidate
 
             result = await promote_candidate(mock_session, candidate_id)
 
             assert result is True
-            mock_kiq.assert_called_once()
+            mock_enqueue.assert_called_once()
