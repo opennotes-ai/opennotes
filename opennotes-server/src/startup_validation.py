@@ -238,7 +238,15 @@ async def check_nats_connectivity() -> CheckResult:
         CheckResult indicating if NATS is reachable
     """
     try:
-        nc = await nats.connect(settings.NATS_URL, connect_timeout=5)
+        connect_kwargs: dict[str, Any] = {
+            "servers": settings.NATS_URL,
+            "connect_timeout": 5,
+        }
+        if settings.NATS_USERNAME and settings.NATS_PASSWORD:
+            connect_kwargs["user"] = settings.NATS_USERNAME
+            connect_kwargs["password"] = settings.NATS_PASSWORD
+
+        nc = await nats.connect(**connect_kwargs)
         await nc.close()
 
         return CheckResult(

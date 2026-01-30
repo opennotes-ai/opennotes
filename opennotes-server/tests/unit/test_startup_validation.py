@@ -384,3 +384,73 @@ class TestStartupValidationOrchestrator:
         assert len(results) == 5
         mock_schema.assert_not_called()
         mock_pg.assert_not_called()
+
+
+@pytest.mark.asyncio
+class TestNatsConnectivityAuth:
+    """Test NATS connectivity check authentication handling."""
+
+    async def test_check_nats_connectivity_uses_auth_when_configured(self):
+        """Test that NATS connectivity check uses credentials when available."""
+        mock_nc = AsyncMock()
+        mock_nc.close = AsyncMock()
+
+        with (
+            patch("src.startup_validation.settings") as mock_settings,
+            patch("nats.connect", return_value=mock_nc) as mock_connect,
+        ):
+            mock_settings.NATS_URL = "nats://localhost:4222"
+            mock_settings.NATS_USERNAME = "testuser"
+            mock_settings.NATS_PASSWORD = "testpass"
+
+            result = await check_nats_connectivity()
+
+        assert result.passed is True
+        mock_connect.assert_called_once()
+        call_kwargs = mock_connect.call_args.kwargs
+        assert call_kwargs["servers"] == "nats://localhost:4222"
+        assert call_kwargs["user"] == "testuser"
+        assert call_kwargs["password"] == "testpass"
+        assert call_kwargs["connect_timeout"] == 5
+
+    async def test_check_nats_connectivity_no_auth_when_not_configured(self):
+        """Test that NATS connectivity check omits auth when not configured."""
+        mock_nc = AsyncMock()
+        mock_nc.close = AsyncMock()
+
+        with (
+            patch("src.startup_validation.settings") as mock_settings,
+            patch("nats.connect", return_value=mock_nc) as mock_connect,
+        ):
+            mock_settings.NATS_URL = "nats://localhost:4222"
+            mock_settings.NATS_USERNAME = None
+            mock_settings.NATS_PASSWORD = None
+
+            result = await check_nats_connectivity()
+
+        assert result.passed is True
+        mock_connect.assert_called_once()
+        call_kwargs = mock_connect.call_args.kwargs
+        assert call_kwargs["servers"] == "nats://localhost:4222"
+        assert "user" not in call_kwargs
+        assert "password" not in call_kwargs
+
+    async def test_check_nats_connectivity_no_auth_when_partial_credentials(self):
+        """Test that NATS auth is omitted when only username or password is set."""
+        mock_nc = AsyncMock()
+        mock_nc.close = AsyncMock()
+
+        with (
+            patch("src.startup_validation.settings") as mock_settings,
+            patch("nats.connect", return_value=mock_nc) as mock_connect,
+        ):
+            mock_settings.NATS_URL = "nats://localhost:4222"
+            mock_settings.NATS_USERNAME = "testuser"
+            mock_settings.NATS_PASSWORD = None  # Only username set
+
+            result = await check_nats_connectivity()
+
+        assert result.passed is True
+        call_kwargs = mock_connect.call_args.kwargs
+        assert "user" not in call_kwargs
+        assert "password" not in call_kwargs
