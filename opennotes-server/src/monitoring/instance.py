@@ -3,6 +3,28 @@ import socket
 from typing import Any, Optional
 
 
+def _resolve_hostname() -> str | None:
+    """Resolve a meaningful hostname for logging.
+
+    Priority:
+    1. K_REVISION (Cloud Run revision name)
+    2. K_SERVICE (Cloud Run service name)
+    3. socket.gethostname() if not "localhost"
+    4. None (omit from logs)
+    """
+    if revision := os.getenv("K_REVISION"):
+        return revision
+
+    if service := os.getenv("K_SERVICE"):
+        return service
+
+    hostname = socket.gethostname()
+    if hostname and hostname.lower() != "localhost":
+        return hostname
+
+    return None
+
+
 class InstanceMetadata:
     _instance: Optional["InstanceMetadata"] = None
 
@@ -21,10 +43,10 @@ class InstanceMetadata:
         return "unknown"
 
     @classmethod
-    def get_hostname(cls) -> str:
+    def get_hostname(cls) -> str | None:
         if cls._instance:
             return cls._instance._hostname
-        return socket.gethostname()
+        return _resolve_hostname()
 
     @classmethod
     def instance_id(cls) -> str:
@@ -33,10 +55,10 @@ class InstanceMetadata:
         return "unknown"
 
     @classmethod
-    def hostname(cls) -> str:
+    def hostname(cls) -> str | None:
         if cls._instance:
             return cls._instance._hostname
-        return socket.gethostname()
+        return _resolve_hostname()
 
     def __init__(
         self,
@@ -46,7 +68,7 @@ class InstanceMetadata:
         environment: str | None = None,
     ) -> None:
         self._instance_id = instance_id
-        self._hostname = hostname or socket.gethostname()
+        self._hostname = hostname if hostname is not None else _resolve_hostname()
         self.pod_name = pod_name or os.getenv("HOSTNAME", "")
         self.environment = environment or os.getenv("ENVIRONMENT", "development")
 
@@ -58,12 +80,14 @@ class InstanceMetadata:
         return object.__getattribute__(self, name)
 
     def to_dict(self) -> dict[str, str]:
-        return {
+        result: dict[str, str] = {
             "instance_id": self._instance_id,
-            "hostname": self._hostname,
             "pod_name": self.pod_name or "",
             "environment": self.environment or "",
         }
+        if self._hostname:
+            result["hostname"] = self._hostname
+        return result
 
 
 def initialize_instance_metadata(
