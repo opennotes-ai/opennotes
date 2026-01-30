@@ -462,18 +462,15 @@ class TestRechunkTaskProgressTracking:
 class TestTaskIQLabels:
     """Test TaskIQ labels are properly configured (task-909.07)."""
 
-    def test_fact_check_task_has_labels(self):
-        """Verify fact check rechunk task has component and task_type labels."""
+    def test_fact_check_task_not_registered(self):
+        """Verify fact check rechunk task is NOT registered (migrated to DBOS, TASK-1056)."""
         from src.tasks.broker import _all_registered_tasks
 
-        assert "rechunk:fact_check" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["rechunk:fact_check"]
-        assert labels.get("component") == "rechunk"
-        assert labels.get("task_type") == "batch"
+        assert "rechunk:fact_check" not in _all_registered_tasks
 
     def test_previously_seen_task_has_labels(self):
         """Verify previously seen rechunk task has component and task_type labels."""
+        import src.tasks.rechunk_tasks  # noqa: F401 - import triggers registration
         from src.tasks.broker import _all_registered_tasks
 
         assert "rechunk:previously_seen" in _all_registered_tasks
@@ -1079,15 +1076,11 @@ class TestChunkFactCheckItemTask:
                     db_url="postgresql+asyncpg://test:test@localhost/test",
                 )
 
-    def test_chunk_fact_check_item_task_has_labels(self):
-        """Verify chunk_fact_check_item task has component label (TASK-1030.10, TASK-1030.11)."""
+    def test_chunk_fact_check_item_task_not_registered(self):
+        """Verify chunk_fact_check_item task is NOT registered (migrated to DBOS, TASK-1056)."""
         from src.tasks.broker import _all_registered_tasks
 
-        assert "chunk:fact_check_item" in _all_registered_tasks
-
-        _, labels = _all_registered_tasks["chunk:fact_check_item"]
-        assert labels.get("component") == "rechunk"
-        assert "task_type" not in labels
+        assert "chunk:fact_check_item" not in _all_registered_tasks
 
 
 class TestPromotionEnqueuesChunkingTask:
