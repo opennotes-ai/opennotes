@@ -25,6 +25,7 @@ from src.batch_jobs.models import BatchJob
 from src.batch_jobs.rechunk_service import (
     RechunkBatchJobService,
     RechunkType,
+    enqueue_single_fact_check_chunk,
     get_stuck_jobs_info,
 )
 
@@ -691,3 +692,125 @@ class TestGetStuckJobsInfo:
         assert RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE in job_types
         assert SCRAPE_JOB_TYPE in job_types
         assert PROMOTION_JOB_TYPE in job_types
+
+
+@pytest.mark.unit
+class TestEnqueueSingleFactCheckChunk:
+    """Tests for enqueue_single_fact_check_chunk routing function (task-1056.01)."""
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", False)
+    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
+    async def test_routes_to_taskiq_when_flag_disabled(self, mock_task):
+        """Routes to TaskIQ when USE_DBOS_RECHUNK is False."""
+        fact_check_id = uuid4()
+        community_server_id = uuid4()
+        mock_task.kiq = AsyncMock()
+
+        result = await enqueue_single_fact_check_chunk(
+            fact_check_id=fact_check_id,
+            community_server_id=community_server_id,
+        )
+
+        assert result is True
+        mock_task.kiq.assert_called_once()
+        call_kwargs = mock_task.kiq.call_args.kwargs
+        assert call_kwargs["fact_check_id"] == str(fact_check_id)
+        assert call_kwargs["community_server_id"] == str(community_server_id)
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", True)
+    @patch("src.dbos_workflows.rechunk_workflow.enqueue_single_fact_check_chunk")
+    async def test_routes_to_dbos_when_flag_enabled(self, mock_dbos_enqueue):
+        """Routes to DBOS when USE_DBOS_RECHUNK is True."""
+        fact_check_id = uuid4()
+        community_server_id = uuid4()
+        mock_dbos_enqueue.return_value = "test-workflow-id"
+
+        result = await enqueue_single_fact_check_chunk(
+            fact_check_id=fact_check_id,
+            community_server_id=community_server_id,
+        )
+
+        assert result is True
+        mock_dbos_enqueue.assert_called_once_with(
+            fact_check_id=fact_check_id,
+            community_server_id=community_server_id,
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", False)
+    @patch("src.dbos_workflows.rechunk_workflow.enqueue_single_fact_check_chunk")
+    async def test_explicit_use_dbos_true_overrides_flag(self, mock_dbos_enqueue):
+        """Explicit use_dbos=True overrides USE_DBOS_RECHUNK flag."""
+        fact_check_id = uuid4()
+        mock_dbos_enqueue.return_value = "test-workflow-id"
+
+        result = await enqueue_single_fact_check_chunk(
+            fact_check_id=fact_check_id,
+            use_dbos=True,
+        )
+
+        assert result is True
+        mock_dbos_enqueue.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", True)
+    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
+    async def test_explicit_use_dbos_false_overrides_flag(self, mock_task):
+        """Explicit use_dbos=False overrides USE_DBOS_RECHUNK flag."""
+        fact_check_id = uuid4()
+        mock_task.kiq = AsyncMock()
+
+        result = await enqueue_single_fact_check_chunk(
+            fact_check_id=fact_check_id,
+            use_dbos=False,
+        )
+
+        assert result is True
+        mock_task.kiq.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", False)
+    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
+    async def test_returns_false_on_taskiq_failure(self, mock_task):
+        """Returns False when TaskIQ dispatch fails."""
+        fact_check_id = uuid4()
+        mock_task.kiq = AsyncMock(side_effect=Exception("TaskIQ error"))
+
+        result = await enqueue_single_fact_check_chunk(
+            fact_check_id=fact_check_id,
+        )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", True)
+    @patch("src.dbos_workflows.rechunk_workflow.enqueue_single_fact_check_chunk")
+    async def test_returns_false_on_dbos_failure(self, mock_dbos_enqueue):
+        """Returns False when DBOS enqueue returns None."""
+        fact_check_id = uuid4()
+        mock_dbos_enqueue.return_value = None
+
+        result = await enqueue_single_fact_check_chunk(
+            fact_check_id=fact_check_id,
+        )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", False)
+    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
+    async def test_handles_null_community_server_id(self, mock_task):
+        """Handles null community_server_id correctly."""
+        fact_check_id = uuid4()
+        mock_task.kiq = AsyncMock()
+
+        result = await enqueue_single_fact_check_chunk(
+            fact_check_id=fact_check_id,
+            community_server_id=None,
+        )
+
+        assert result is True
+        call_kwargs = mock_task.kiq.call_args.kwargs
+        assert call_kwargs["community_server_id"] is None

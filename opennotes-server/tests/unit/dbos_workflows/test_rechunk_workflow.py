@@ -10,7 +10,7 @@ add checkpointing and retry behavior.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -274,6 +274,152 @@ class TestRechunkWorkflow:
 
             progress_calls = mock_progress.call_count
             assert progress_calls == 2
+
+
+class TestChunkSingleFactCheckWorkflow:
+    """Tests for chunk_single_fact_check_workflow (task-1056.01)."""
+
+    def test_returns_success_on_successful_processing(self) -> None:
+        """Returns success result when single item processing succeeds."""
+        from src.dbos_workflows.rechunk_workflow import chunk_single_fact_check_workflow
+
+        fact_check_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.return_value = {
+                "success": True,
+                "item_id": fact_check_id,
+                "chunks_created": 3,
+            }
+
+            result = chunk_single_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
+                fact_check_id=fact_check_id,
+                community_server_id=community_server_id,
+            )
+
+        assert result["success"] is True
+        assert result["item_id"] == fact_check_id
+        assert result["chunks_created"] == 3
+        mock_process.assert_called_once_with(
+            item_id=fact_check_id,
+            community_server_id=community_server_id,
+        )
+
+    def test_returns_failure_on_processing_error(self) -> None:
+        """Returns failure result when processing raises exception."""
+        from src.dbos_workflows.rechunk_workflow import chunk_single_fact_check_workflow
+
+        fact_check_id = str(uuid4())
+
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.side_effect = RuntimeError("Embedding service unavailable")
+
+            result = chunk_single_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
+                fact_check_id=fact_check_id,
+                community_server_id=None,
+            )
+
+        assert result["success"] is False
+        assert result["item_id"] == fact_check_id
+        assert "Embedding service unavailable" in result["error"]
+
+    def test_handles_null_community_server_id(self) -> None:
+        """Handles null community_server_id correctly."""
+        from src.dbos_workflows.rechunk_workflow import chunk_single_fact_check_workflow
+
+        fact_check_id = str(uuid4())
+
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.process_fact_check_item") as mock_process,
+            patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_process.return_value = {
+                "success": True,
+                "item_id": fact_check_id,
+                "chunks_created": 1,
+            }
+
+            result = chunk_single_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
+                fact_check_id=fact_check_id,
+                community_server_id=None,
+            )
+
+        assert result["success"] is True
+        mock_process.assert_called_once_with(
+            item_id=fact_check_id,
+            community_server_id=None,
+        )
+
+
+class TestEnqueueSingleFactCheckChunkDBOS:
+    """Tests for enqueue_single_fact_check_chunk DBOS function (task-1056.01)."""
+
+    @pytest.mark.asyncio
+    async def test_enqueues_via_rechunk_queue(self) -> None:
+        """Enqueues single item workflow via rechunk queue."""
+        from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
+
+        fact_check_id = uuid4()
+        community_server_id = uuid4()
+
+        with patch("src.dbos_workflows.rechunk_workflow.rechunk_queue") as mock_queue:
+            mock_handle = MagicMock()
+            mock_handle.workflow_id = "test-workflow-id"
+            mock_queue.enqueue.return_value = mock_handle
+
+            result = await enqueue_single_fact_check_chunk(
+                fact_check_id=fact_check_id,
+                community_server_id=community_server_id,
+            )
+
+        assert result == "test-workflow-id"
+        mock_queue.enqueue.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_enqueue_failure(self) -> None:
+        """Returns None when queue enqueue fails."""
+        from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
+
+        fact_check_id = uuid4()
+
+        with patch("src.dbos_workflows.rechunk_workflow.rechunk_queue") as mock_queue:
+            mock_queue.enqueue.side_effect = RuntimeError("Queue unavailable")
+
+            result = await enqueue_single_fact_check_chunk(
+                fact_check_id=fact_check_id,
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_handles_null_community_server_id(self) -> None:
+        """Handles null community_server_id by passing None."""
+        from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
+
+        fact_check_id = uuid4()
+
+        with patch("src.dbos_workflows.rechunk_workflow.rechunk_queue") as mock_queue:
+            mock_handle = MagicMock()
+            mock_handle.workflow_id = "test-workflow-id"
+            mock_queue.enqueue.return_value = mock_handle
+
+            await enqueue_single_fact_check_chunk(
+                fact_check_id=fact_check_id,
+                community_server_id=None,
+            )
+
+        call_kwargs = mock_queue.enqueue.call_args.kwargs
+        assert call_kwargs["community_server_id"] is None
 
 
 class TestCircuitBreakerIntegration:

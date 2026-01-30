@@ -53,6 +53,84 @@ logger = get_logger(__name__)
 USE_DBOS_RECHUNK = os.environ.get("USE_DBOS_RECHUNK", "false").lower() == "true"
 
 DEFAULT_STALE_JOB_THRESHOLD_HOURS = 2
+
+
+async def enqueue_single_fact_check_chunk(
+    fact_check_id: UUID,
+    community_server_id: UUID | None = None,
+    use_dbos: bool | None = None,
+) -> bool:
+    """Enqueue a single fact-check item for chunking.
+
+    Routes to either DBOS or TaskIQ based on the USE_DBOS_RECHUNK flag
+    (or explicit override). This is the preferred entry point for
+    single-item chunking operations.
+
+    Args:
+        fact_check_id: UUID of the FactCheckItem to process
+        community_server_id: Optional community server for LLM credentials
+        use_dbos: Override USE_DBOS_RECHUNK feature flag (None = use flag)
+
+    Returns:
+        True if successfully enqueued, False on failure
+    """
+    should_use_dbos = use_dbos if use_dbos is not None else USE_DBOS_RECHUNK
+
+    if should_use_dbos:
+        from src.dbos_workflows.rechunk_workflow import (  # noqa: PLC0415
+            enqueue_single_fact_check_chunk as dbos_enqueue,
+        )
+
+        workflow_id = await dbos_enqueue(
+            fact_check_id=fact_check_id,
+            community_server_id=community_server_id,
+        )
+
+        if workflow_id:
+            logger.info(
+                "Enqueued single fact-check chunk via DBOS",
+                extra={
+                    "fact_check_id": str(fact_check_id),
+                    "workflow_id": workflow_id,
+                },
+            )
+            return True
+
+        logger.warning(
+            "Failed to enqueue single fact-check chunk via DBOS",
+            extra={"fact_check_id": str(fact_check_id)},
+        )
+        return False
+
+    from src.tasks.rechunk_tasks import chunk_fact_check_item_task  # noqa: PLC0415
+
+    try:
+        await chunk_fact_check_item_task.kiq(
+            fact_check_id=str(fact_check_id),
+            community_server_id=str(community_server_id) if community_server_id else None,
+            db_url=settings.DATABASE_URL,
+        )
+
+        logger.info(
+            "Enqueued single fact-check chunk via TaskIQ",
+            extra={
+                "fact_check_id": str(fact_check_id),
+                "community_server_id": str(community_server_id) if community_server_id else None,
+            },
+        )
+        return True
+
+    except Exception as e:
+        logger.warning(
+            "Failed to enqueue single fact-check chunk via TaskIQ",
+            extra={
+                "fact_check_id": str(fact_check_id),
+                "error": str(e),
+            },
+        )
+        return False
+
+
 DEFAULT_STUCK_JOB_THRESHOLD_MINUTES = 30
 
 ALL_BATCH_JOB_TYPES = [
