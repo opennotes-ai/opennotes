@@ -56,7 +56,8 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
             instance_metadata = InstanceMetadata.get_instance()
             if instance_metadata:
                 log_data["instance_id"] = instance_metadata.instance_id
-                log_data["hostname"] = instance_metadata.hostname
+                if instance_metadata.hostname:
+                    log_data["hostname"] = instance_metadata.hostname
         except (ImportError, LookupError):
             pass
 
