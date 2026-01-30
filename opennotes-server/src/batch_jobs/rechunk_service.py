@@ -43,7 +43,6 @@ from src.batch_jobs.progress_tracker import (
 from src.batch_jobs.schemas import BatchJobCreate, BatchJobStatus
 from src.batch_jobs.service import BatchJobService
 from src.config import settings
-from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.monitoring import get_logger
 from src.monitoring.metrics import batch_job_stale_cleanup_total
@@ -60,75 +59,49 @@ async def enqueue_single_fact_check_chunk(
     community_server_id: UUID | None = None,
     use_dbos: bool | None = None,
 ) -> bool:
-    """Enqueue a single fact-check item for chunking.
+    """Enqueue a single fact-check item for chunking via DBOS.
 
-    Routes to either DBOS or TaskIQ based on the USE_DBOS_RECHUNK flag
-    (or explicit override). This is the preferred entry point for
-    single-item chunking operations.
+    This is the preferred entry point for single-item chunking operations.
+    Always uses DBOS workflows (TaskIQ support has been removed).
 
     Args:
         fact_check_id: UUID of the FactCheckItem to process
         community_server_id: Optional community server for LLM credentials
-        use_dbos: Override USE_DBOS_RECHUNK feature flag (None = use flag)
+        use_dbos: Deprecated parameter, kept for API compatibility. Logs warning if False.
 
     Returns:
         True if successfully enqueued, False on failure
     """
-    should_use_dbos = use_dbos if use_dbos is not None else USE_DBOS_RECHUNK
-
-    if should_use_dbos:
-        from src.dbos_workflows.rechunk_workflow import (  # noqa: PLC0415
-            enqueue_single_fact_check_chunk as dbos_enqueue,
-        )
-
-        workflow_id = await dbos_enqueue(
-            fact_check_id=fact_check_id,
-            community_server_id=community_server_id,
-        )
-
-        if workflow_id:
-            logger.info(
-                "Enqueued single fact-check chunk via DBOS",
-                extra={
-                    "fact_check_id": str(fact_check_id),
-                    "workflow_id": workflow_id,
-                },
-            )
-            return True
-
+    if use_dbos is False:
         logger.warning(
-            "Failed to enqueue single fact-check chunk via DBOS",
+            "use_dbos=False is deprecated; TaskIQ support removed. Using DBOS.",
             extra={"fact_check_id": str(fact_check_id)},
         )
-        return False
 
-    from src.tasks.rechunk_tasks import chunk_fact_check_item_task  # noqa: PLC0415
+    from src.dbos_workflows.rechunk_workflow import (  # noqa: PLC0415
+        enqueue_single_fact_check_chunk as dbos_enqueue,
+    )
 
-    try:
-        await chunk_fact_check_item_task.kiq(
-            fact_check_id=str(fact_check_id),
-            community_server_id=str(community_server_id) if community_server_id else None,
-            db_url=settings.DATABASE_URL,
-        )
+    workflow_id = await dbos_enqueue(
+        fact_check_id=fact_check_id,
+        community_server_id=community_server_id,
+    )
 
+    if workflow_id:
         logger.info(
-            "Enqueued single fact-check chunk via TaskIQ",
+            "Enqueued single fact-check chunk via DBOS",
             extra={
                 "fact_check_id": str(fact_check_id),
-                "community_server_id": str(community_server_id) if community_server_id else None,
+                "workflow_id": workflow_id,
             },
         )
         return True
 
-    except Exception as e:
-        logger.warning(
-            "Failed to enqueue single fact-check chunk via TaskIQ",
-            extra={
-                "fact_check_id": str(fact_check_id),
-                "error": str(e),
-            },
-        )
-        return False
+    logger.warning(
+        "Failed to enqueue single fact-check chunk via DBOS",
+        extra={"fact_check_id": str(fact_check_id)},
+    )
+    return False
 
 
 DEFAULT_STUCK_JOB_THRESHOLD_MINUTES = 30
@@ -325,15 +298,19 @@ class RechunkBatchJobService:
         use_dbos: bool | None = None,
     ) -> BatchJob:
         """
-        Start a fact check rechunk job.
+        Start a fact check rechunk job using DBOS workflow.
 
         Checks for active jobs first, then creates a BatchJob and dispatches
-        the appropriate backend (TaskIQ or DBOS workflow).
+        the DBOS workflow.
+
+        Note:
+            As of TASK-1056, all fact_check rechunk operations use DBOS exclusively.
+            The use_dbos parameter is retained for API compatibility but is ignored.
 
         Args:
             community_server_id: Community server ID for LLM credentials (None for global)
             batch_size: Number of items to process per batch
-            use_dbos: Override USE_DBOS_RECHUNK feature flag (None = use flag)
+            use_dbos: Deprecated, ignored. DBOS is always used.
 
         Returns:
             The created and started BatchJob
@@ -341,15 +318,10 @@ class RechunkBatchJobService:
         Raises:
             ActiveJobExistsError: If a fact check rechunk job is already active
         """
-        should_use_dbos = use_dbos if use_dbos is not None else USE_DBOS_RECHUNK
+        if use_dbos is False:
+            logger.warning("use_dbos=False is deprecated for fact_check rechunk; using DBOS anyway")
 
-        if should_use_dbos:
-            return await self._start_dbos_fact_check_rechunk_job(
-                community_server_id=community_server_id,
-                batch_size=batch_size,
-            )
-
-        return await self._start_taskiq_fact_check_rechunk_job(
+        return await self._start_dbos_fact_check_rechunk_job(
             community_server_id=community_server_id,
             batch_size=batch_size,
         )
@@ -383,67 +355,6 @@ class RechunkBatchJobService:
         job = await self._batch_job_service.get_job(job_id)
         if job is None:
             raise RuntimeError(f"BatchJob {job_id} not found after dispatch")
-
-        return job
-
-    async def _start_taskiq_fact_check_rechunk_job(
-        self,
-        community_server_id: UUID | None,
-        batch_size: int = 100,
-    ) -> BatchJob:
-        """Start fact check rechunk job using TaskIQ (original implementation)."""
-        await self._check_no_active_job(RECHUNK_FACT_CHECK_JOB_TYPE)
-
-        result = await self._session.execute(select(func.count(FactCheckItem.id)))
-        total_items = result.scalar_one()
-
-        job = await self._batch_job_service.create_job(
-            BatchJobCreate(
-                job_type=RECHUNK_FACT_CHECK_JOB_TYPE,
-                total_tasks=total_items,
-                metadata={
-                    "community_server_id": str(community_server_id)
-                    if community_server_id
-                    else None,
-                    "batch_size": batch_size,
-                    "chunk_type": RechunkType.FACT_CHECK.value,
-                    "execution_backend": "taskiq",
-                },
-            )
-        )
-
-        await self._batch_job_service.start_job(job.id)
-        await self._session.commit()
-        await self._session.refresh(job)
-
-        try:
-            from src.tasks.rechunk_tasks import process_fact_check_rechunk_task  # noqa: PLC0415
-
-            await process_fact_check_rechunk_task.kiq(
-                job_id=str(job.id),
-                community_server_id=str(community_server_id) if community_server_id else None,
-                batch_size=batch_size,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
-            )
-        except Exception as e:
-            await self._batch_job_service.fail_job(
-                job.id,
-                error_summary={"error": str(e), "stage": "task_dispatch"},
-            )
-            await self._session.commit()
-            await self._session.refresh(job)
-            raise
-
-        logger.info(
-            "Started fact check rechunk batch job (TaskIQ)",
-            extra={
-                "job_id": str(job.id),
-                "community_server_id": str(community_server_id) if community_server_id else None,
-                "batch_size": batch_size,
-                "total_items": total_items,
-            },
-        )
 
         return job
 

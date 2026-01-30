@@ -1,9 +1,17 @@
 """
 TaskIQ tasks for chunk re-embedding operations.
 
+DEPRECATION NOTICE:
+    Fact-check related tasks (chunk:fact_check_item, rechunk:fact_check) have been
+    migrated to DBOS workflows for improved reliability. These TaskIQ task functions
+    are retained for reference but are no longer registered with the TaskIQ broker.
+    See src/dbos_workflows/rechunk_workflow.py for the DBOS implementations.
+
+    Only rechunk:previously_seen remains as a TaskIQ task (no DBOS workflow yet).
+
 These tasks handle background processing of:
-- FactCheckItem content re-chunking and re-embedding
-- PreviouslySeenMessage content re-chunking and re-embedding
+- PreviouslySeenMessage content re-chunking and re-embedding (TaskIQ)
+- FactCheckItem operations are now handled by DBOS workflows
 
 Tasks are designed to be self-contained, creating their own database and Redis
 connections to work reliably in distributed worker environments.
@@ -390,19 +398,11 @@ async def _handle_chunk_fact_check_item_final_failure(
     )
 
 
-retry_callback_registry.register("rechunk:fact_check", _handle_fact_check_rechunk_final_failure)
 retry_callback_registry.register(
     "rechunk:previously_seen", _handle_previously_seen_rechunk_final_failure
 )
-retry_callback_registry.register(
-    "chunk:fact_check_item", _handle_chunk_fact_check_item_final_failure
-)
 
 
-@register_task(
-    task_name="chunk:fact_check_item",
-    component="rechunk",
-)
 async def chunk_fact_check_item_task(
     fact_check_id: str,
     community_server_id: str | None,
@@ -505,13 +505,6 @@ async def chunk_fact_check_item_task(
             await engine.dispose()
 
 
-@register_task(
-    task_name="rechunk:fact_check",
-    component="rechunk",
-    task_type="batch",
-    rate_limit_name="rechunk:fact_check",
-    rate_limit_capacity="1",
-)
 async def process_fact_check_rechunk_task(
     job_id: str,
     community_server_id: str | None,

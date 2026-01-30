@@ -84,21 +84,20 @@ class TestRechunkServiceNullCommunityServerId:
     """Tests for null community_server_id handling (task-896 regression)."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
+    @patch("src.dbos_workflows.rechunk_workflow.dispatch_dbos_rechunk_workflow")
     async def test_start_fact_check_rechunk_job_with_null_community_server_id(
         self,
-        mock_task,
+        mock_dispatch,
         rechunk_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """Start fact check rechunk with null community_server_id stores None, not 'None' string."""
+        """Start fact check rechunk with null community_server_id passes None to DBOS dispatch."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
-        mock_batch_job_service.create_job.return_value = mock_job
-        mock_batch_job_service.start_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
+        mock_dispatch.return_value = job_id
+        mock_batch_job_service.get_job.return_value = mock_job
 
         result = await rechunk_service.start_fact_check_rechunk_job(
             community_server_id=None,
@@ -106,15 +105,10 @@ class TestRechunkServiceNullCommunityServerId:
         )
 
         assert result == mock_job
-        mock_batch_job_service.create_job.assert_called_once()
-        create_call = mock_batch_job_service.create_job.call_args
-        job_create = create_call[0][0]
-
-        assert job_create.job_type == RECHUNK_FACT_CHECK_JOB_TYPE
-        assert job_create.metadata_["community_server_id"] is None
-        assert job_create.metadata_["community_server_id"] != "None"
-        assert job_create.metadata_["batch_size"] == 50
-        assert job_create.metadata_["chunk_type"] == RechunkType.FACT_CHECK.value
+        mock_dispatch.assert_called_once()
+        call_kwargs = mock_dispatch.call_args.kwargs
+        assert call_kwargs["community_server_id"] is None
+        assert call_kwargs["batch_size"] == 50
 
     @pytest.mark.asyncio
     async def test_cancel_rechunk_job_with_null_community_server_id(
@@ -144,34 +138,30 @@ class TestRechunkServiceMetadataSerialization:
     """Tests for metadata serialization (task-898 regression)."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
-    async def test_metadata_stores_null_not_string_none(
+    @patch("src.dbos_workflows.rechunk_workflow.dispatch_dbos_rechunk_workflow")
+    async def test_dispatch_receives_null_community_server_id(
         self,
-        mock_task,
+        mock_dispatch,
         rechunk_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """Metadata community_server_id stores JSON null, not string 'None'."""
+        """DBOS dispatch receives None community_server_id, not string 'None'."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
-        mock_batch_job_service.create_job.return_value = mock_job
-        mock_batch_job_service.start_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
+        mock_dispatch.return_value = job_id
+        mock_batch_job_service.get_job.return_value = mock_job
 
         await rechunk_service.start_fact_check_rechunk_job(
             community_server_id=None,
             batch_size=100,
         )
 
-        create_call = mock_batch_job_service.create_job.call_args
-        job_create = create_call[0][0]
-        metadata = job_create.metadata_
-
-        assert "community_server_id" in metadata
-        assert metadata["community_server_id"] is None
-        assert not isinstance(metadata["community_server_id"], str)
+        mock_dispatch.assert_called_once()
+        call_kwargs = mock_dispatch.call_args.kwargs
+        assert call_kwargs["community_server_id"] is None
+        assert call_kwargs["community_server_id"] != "None"
 
     @pytest.mark.asyncio
     async def test_get_job_with_null_community_server_id_in_metadata(
@@ -260,28 +250,21 @@ class TestRechunkServiceTaskDispatchFailure:
     """Tests for task dispatch failure scenarios."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
-    async def test_job_marked_failed_on_task_dispatch_failure(
+    @patch("src.dbos_workflows.rechunk_workflow.dispatch_dbos_rechunk_workflow")
+    async def test_dispatch_failure_raises_exception(
         self,
-        mock_task,
+        mock_dispatch,
         rechunk_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """Job is marked as failed when task dispatch fails."""
-        job_id = uuid4()
-        mock_job = MagicMock(spec=BatchJob)
-        mock_job.id = job_id
-        mock_batch_job_service.create_job.return_value = mock_job
-        mock_batch_job_service.start_job.return_value = mock_job
-        mock_task.kiq = AsyncMock(side_effect=Exception("Task dispatch error"))
+        """DBOS dispatch failure raises exception."""
+        mock_dispatch.side_effect = Exception("DBOS dispatch error")
 
-        with pytest.raises(Exception, match="Task dispatch error"):
+        with pytest.raises(Exception, match="DBOS dispatch error"):
             await rechunk_service.start_fact_check_rechunk_job(
                 community_server_id=None,
             )
-
-        mock_batch_job_service.fail_job.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cancel_job_not_found_returns_none(
@@ -700,12 +683,12 @@ class TestEnqueueSingleFactCheckChunk:
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", False)
-    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
-    async def test_routes_to_taskiq_when_flag_disabled(self, mock_task):
-        """Routes to TaskIQ when USE_DBOS_RECHUNK is False."""
+    @patch("src.dbos_workflows.rechunk_workflow.enqueue_single_fact_check_chunk")
+    async def test_always_routes_to_dbos_regardless_of_flag(self, mock_dbos_enqueue):
+        """Always routes to DBOS regardless of USE_DBOS_RECHUNK flag (TaskIQ removed)."""
         fact_check_id = uuid4()
         community_server_id = uuid4()
-        mock_task.kiq = AsyncMock()
+        mock_dbos_enqueue.return_value = "test-workflow-id"
 
         result = await enqueue_single_fact_check_chunk(
             fact_check_id=fact_check_id,
@@ -713,10 +696,10 @@ class TestEnqueueSingleFactCheckChunk:
         )
 
         assert result is True
-        mock_task.kiq.assert_called_once()
-        call_kwargs = mock_task.kiq.call_args.kwargs
-        assert call_kwargs["fact_check_id"] == str(fact_check_id)
-        assert call_kwargs["community_server_id"] == str(community_server_id)
+        mock_dbos_enqueue.assert_called_once_with(
+            fact_check_id=fact_check_id,
+            community_server_id=community_server_id,
+        )
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", True)
@@ -756,33 +739,25 @@ class TestEnqueueSingleFactCheckChunk:
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", True)
-    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
-    async def test_explicit_use_dbos_false_overrides_flag(self, mock_task):
-        """Explicit use_dbos=False overrides USE_DBOS_RECHUNK flag."""
-        fact_check_id = uuid4()
-        mock_task.kiq = AsyncMock()
+    @patch("src.dbos_workflows.rechunk_workflow.enqueue_single_fact_check_chunk")
+    async def test_explicit_use_dbos_false_logs_warning_but_uses_dbos(
+        self, mock_dbos_enqueue, caplog
+    ):
+        """Explicit use_dbos=False logs deprecation warning but still uses DBOS."""
+        import logging
 
-        result = await enqueue_single_fact_check_chunk(
-            fact_check_id=fact_check_id,
-            use_dbos=False,
-        )
+        fact_check_id = uuid4()
+        mock_dbos_enqueue.return_value = "test-workflow-id"
+
+        with caplog.at_level(logging.WARNING):
+            result = await enqueue_single_fact_check_chunk(
+                fact_check_id=fact_check_id,
+                use_dbos=False,
+            )
 
         assert result is True
-        mock_task.kiq.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", False)
-    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
-    async def test_returns_false_on_taskiq_failure(self, mock_task):
-        """Returns False when TaskIQ dispatch fails."""
-        fact_check_id = uuid4()
-        mock_task.kiq = AsyncMock(side_effect=Exception("TaskIQ error"))
-
-        result = await enqueue_single_fact_check_chunk(
-            fact_check_id=fact_check_id,
-        )
-
-        assert result is False
+        mock_dbos_enqueue.assert_called_once()
+        assert "deprecated" in caplog.text.lower()
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", True)
@@ -799,12 +774,11 @@ class TestEnqueueSingleFactCheckChunk:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("src.batch_jobs.rechunk_service.USE_DBOS_RECHUNK", False)
-    @patch("src.tasks.rechunk_tasks.chunk_fact_check_item_task")
-    async def test_handles_null_community_server_id(self, mock_task):
+    @patch("src.dbos_workflows.rechunk_workflow.enqueue_single_fact_check_chunk")
+    async def test_handles_null_community_server_id(self, mock_dbos_enqueue):
         """Handles null community_server_id correctly."""
         fact_check_id = uuid4()
-        mock_task.kiq = AsyncMock()
+        mock_dbos_enqueue.return_value = "test-workflow-id"
 
         result = await enqueue_single_fact_check_chunk(
             fact_check_id=fact_check_id,
@@ -812,5 +786,7 @@ class TestEnqueueSingleFactCheckChunk:
         )
 
         assert result is True
-        call_kwargs = mock_task.kiq.call_args.kwargs
-        assert call_kwargs["community_server_id"] is None
+        mock_dbos_enqueue.assert_called_once_with(
+            fact_check_id=fact_check_id,
+            community_server_id=None,
+        )
