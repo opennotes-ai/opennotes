@@ -111,8 +111,30 @@ async def test_community_server():
 
     yield community
 
-    # Cleanup in new session
+    # Cleanup in new session - must delete FK-dependent records first
     if community_id:
+        async with get_session_maker()() as session:
+            # Delete NotePublisherConfig records first (FK constraint)
+            result = await session.execute(
+                select(NotePublisherConfig).where(
+                    NotePublisherConfig.community_server_id == community_id
+                )
+            )
+            for config in result.scalars().all():
+                await session.delete(config)
+
+            # Delete NotePublisherPost records (FK constraint)
+            result = await session.execute(
+                select(NotePublisherPost).where(
+                    NotePublisherPost.community_server_id == community_id
+                )
+            )
+            for post in result.scalars().all():
+                await session.delete(post)
+
+            await session.commit()
+
+        # Now delete the community server in a new session
         async with get_session_maker()() as session:
             result = await session.execute(
                 select(CommunityServer).where(CommunityServer.id == community_id)
@@ -358,7 +380,7 @@ async def autopost_config(test_community_server):
 
     async with get_session_maker()() as session:
         config = NotePublisherConfig(
-            community_server_id=test_community_server.platform_community_server_id,
+            community_server_id=test_community_server.id,  # Use UUID id, not string platform_community_server_id
             channel_id=None,  # Server-wide config
             enabled=True,
             threshold=0.75,  # 75% similarity threshold
