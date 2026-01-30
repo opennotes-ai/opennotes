@@ -36,7 +36,7 @@ def upgrade() -> None:
         INSERT INTO community_servers (id, platform, platform_community_server_id, name, is_active, created_at, updated_at)
         SELECT
             gen_random_uuid(),
-            'unknown',
+            'other',
             platform_id,
             '[Unknown Community: ' || platform_id || ']',
             false,
