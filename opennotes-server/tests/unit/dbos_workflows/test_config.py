@@ -140,6 +140,48 @@ class TestGetDbosConfig:
         assert name is not None
         assert len(name) > 0
 
+    def test_app_name_uses_otel_service_name_when_set(self) -> None:
+        """Config uses OTEL_SERVICE_NAME when explicitly set."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://localhost/test"
+            mock_settings.OTEL_SERVICE_NAME = "custom-otel-name"
+            mock_settings.PROJECT_NAME = "Open Notes Server"
+            mock_settings.OTLP_ENDPOINT = None
+
+            from src.dbos_workflows import config as config_module
+
+            result = dict(config_module.get_dbos_config())
+
+            assert result.get("name") == "custom-otel-name"
+
+    def test_app_name_falls_back_to_project_name(self) -> None:
+        """Config falls back to PROJECT_NAME when OTEL_SERVICE_NAME is not set."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://localhost/test"
+            mock_settings.OTEL_SERVICE_NAME = None
+            mock_settings.PROJECT_NAME = "Open Notes Server"
+            mock_settings.OTLP_ENDPOINT = None
+
+            from src.dbos_workflows import config as config_module
+
+            result = dict(config_module.get_dbos_config())
+
+            assert result.get("name") == "Open Notes Server"
+
+    def test_app_name_falls_back_to_empty_when_both_unset(self) -> None:
+        """Config handles case when both OTEL_SERVICE_NAME and PROJECT_NAME are None."""
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = "postgresql+asyncpg://localhost/test"
+            mock_settings.OTEL_SERVICE_NAME = None
+            mock_settings.PROJECT_NAME = None
+            mock_settings.OTLP_ENDPOINT = None
+
+            from src.dbos_workflows import config as config_module
+
+            result = dict(config_module.get_dbos_config())
+
+            assert result.get("name") is None
+
     def test_raises_if_database_url_missing(self) -> None:
         """Raises ValueError if DATABASE_URL is not configured."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
@@ -249,3 +291,68 @@ class TestDbosInstance:
             create_dbos_instance()
 
             mock_dbos_class.assert_called_once_with(config=mock_config)
+
+
+class TestValidateDbosConnection:
+    """Tests for validate_dbos_connection() function."""
+
+    def test_raises_runtime_error_on_connection_failure(self) -> None:
+        """Raises RuntimeError when database connection fails."""
+        import psycopg
+
+        with (
+            patch("src.dbos_workflows.config.get_dbos_config") as mock_config,
+            patch("psycopg.connect") as mock_connect,
+        ):
+            mock_config.return_value = {"system_database_url": "postgresql://bad:url@host/db"}
+            mock_connect.side_effect = psycopg.Error("Connection refused")
+
+            from src.dbos_workflows.config import validate_dbos_connection
+
+            mock_dbos = MagicMock()
+            with pytest.raises(RuntimeError, match="DBOS database connection failed"):
+                validate_dbos_connection(mock_dbos)
+
+    def test_raises_runtime_error_when_schema_missing(self) -> None:
+        """Raises RuntimeError when DBOS schema is not found."""
+        with (
+            patch("src.dbos_workflows.config.get_dbos_config") as mock_config,
+            patch("psycopg.connect") as mock_connect,
+        ):
+            mock_config.return_value = {"system_database_url": "postgresql://user:pass@host/db"}
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (False,)
+            mock_conn = MagicMock()
+            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+            mock_conn.__exit__ = MagicMock(return_value=False)
+            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+            mock_connect.return_value = mock_conn
+
+            from src.dbos_workflows.config import validate_dbos_connection
+
+            mock_dbos = MagicMock()
+            with pytest.raises(RuntimeError, match="DBOS system tables not found"):
+                validate_dbos_connection(mock_dbos)
+
+    def test_returns_true_when_validation_succeeds(self) -> None:
+        """Returns True when database connection and schema check succeed."""
+        with (
+            patch("src.dbos_workflows.config.get_dbos_config") as mock_config,
+            patch("psycopg.connect") as mock_connect,
+        ):
+            mock_config.return_value = {"system_database_url": "postgresql://user:pass@host/db"}
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (True,)
+            mock_conn = MagicMock()
+            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+            mock_conn.__exit__ = MagicMock(return_value=False)
+            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+            mock_connect.return_value = mock_conn
+
+            from src.dbos_workflows.config import validate_dbos_connection
+
+            mock_dbos = MagicMock()
+            result = validate_dbos_connection(mock_dbos)
+            assert result is True

@@ -1,12 +1,35 @@
 """DBOS workflow infrastructure for durable background tasks.
 
-This module provides:
-- BatchJobDBOSAdapter: Sync DBOS workflow state to BatchJob records
-- CircuitBreaker: Protect against cascading failures during workflow execution
-- dispatch_dbos_rechunk_workflow: Dispatch rechunk jobs via DBOS
-- rechunk_fact_check_workflow: DBOS workflow for rechunking fact-check items
-- get_dbos_client: Get DBOSClient for enqueueing workflows (server mode)
-- get_dbos: Get full DBOS instance for queue polling (worker mode)
+Architecture:
+    Server mode (opennotes-server):
+        Uses DBOSClient for lightweight enqueue-only operations.
+        Does not poll queues or execute workflows.
+        Use get_dbos_client() in this mode.
+
+    Worker mode (opennotes-dbos-worker):
+        Uses DBOS with launch() for queue polling and execution.
+        Processes workflows dispatched by servers.
+        Use get_dbos() in this mode.
+
+Configuration:
+    get_dbos_client(): Get DBOSClient instance (server mode, enqueue only)
+    get_dbos(): Get DBOS instance (worker mode, full execution)
+    reset_dbos(): Reset DBOS singleton for testing
+    reset_dbos_client(): Reset DBOSClient singleton for testing
+
+Adapters:
+    BatchJobDBOSAdapter: Sync DBOS workflow state to BatchJob records.
+        All methods use fire-and-forget semantics (errors logged, not raised).
+
+Resilience:
+    CircuitBreaker: Protect against cascading failures during workflow execution
+    CircuitOpenError: Raised when circuit breaker is open
+    CircuitState: Enum with CLOSED, OPEN, HALF_OPEN states
+
+Workflows:
+    rechunk_fact_check_workflow: Batch rechunking of fact-check items
+    dispatch_dbos_rechunk_workflow: Create BatchJob and enqueue workflow
+    enqueue_single_fact_check_chunk: Enqueue single item for chunking
 """
 
 from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter

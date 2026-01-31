@@ -14,6 +14,32 @@ Singleton Pattern (TASK-1058.02):
     model loading. Use get_chunking_service() to get the singleton instance.
     Use use_chunking_service() or use_chunking_service_sync() for gated access
     that ensures only one caller uses the chunker at a time.
+
+Concurrency Model:
+    This module provides two context managers for accessing the shared ChunkingService
+    singleton with concurrency control:
+
+    - use_chunking_service() - async context manager with asyncio.Semaphore
+      Use this in async code paths (FastAPI endpoints, async tasks)
+
+    - use_chunking_service_sync() - sync context manager with threading.Lock
+      Use this in sync code paths (DBOS steps, synchronous functions)
+
+    Process Isolation:
+        TaskIQ workers and DBOS workers run in separate processes. Each process
+        maintains its own singleton instance with independent locking. Cross-process
+        coordination is not needed because:
+
+        1. NeuralChunker model loading is process-local (no shared memory)
+        2. Each process has its own event loop and thread pool
+        3. The semaphore/lock only coordinates access within one process
+
+    Thread Safety:
+        Both mechanisms protect the same singleton instance within a process.
+        The async semaphore is checked from async contexts; the threading lock
+        is checked from sync contexts. They don't interfere because Python's
+        GIL prevents true parallel execution, and the semaphore releases before
+        any sync code could run.
 """
 
 import asyncio
@@ -393,11 +419,14 @@ def _get_chunking_semaphore() -> asyncio.Semaphore:
     Get or create the async semaphore for chunking service access.
 
     Creates the semaphore lazily to ensure it's bound to the correct event loop.
+    Uses double-checked locking with _singleton_lock for thread-safety.
     """
     global _chunking_semaphore  # noqa: PLW0603
 
     if _chunking_semaphore is None:
-        _chunking_semaphore = asyncio.Semaphore(1)
+        with _singleton_lock:
+            if _chunking_semaphore is None:
+                _chunking_semaphore = asyncio.Semaphore(1)
     return _chunking_semaphore
 
 

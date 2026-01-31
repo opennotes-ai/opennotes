@@ -147,3 +147,38 @@ def reset_dbos_client() -> None:
     """Reset the DBOSClient instance. Used for testing."""
     global _dbos_client
     _dbos_client = None
+
+
+def validate_dbos_connection(dbos_instance: DBOS) -> bool:
+    """Validate DBOS can connect to its system database.
+
+    Executes a simple query against the DBOS schema to verify:
+    1. Database connectivity works
+    2. DBOS system tables exist (created by launch())
+
+    Args:
+        dbos_instance: The launched DBOS instance
+
+    Returns:
+        True if validation succeeds
+
+    Raises:
+        RuntimeError: If connection or schema validation fails
+    """
+    import psycopg
+
+    config = get_dbos_config()
+    db_url = config["system_database_url"]
+
+    try:
+        with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'dbos' AND table_name = 'workflow_status')"
+            )
+            exists = cur.fetchone()[0]
+            if not exists:
+                raise RuntimeError("DBOS system tables not found in 'dbos' schema")
+        return True
+    except psycopg.Error as e:
+        raise RuntimeError(f"DBOS database connection failed: {e}") from e

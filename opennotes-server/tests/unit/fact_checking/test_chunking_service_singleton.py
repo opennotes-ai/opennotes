@@ -1,18 +1,25 @@
 """Unit tests for ChunkingService singleton pattern and semaphore gating.
 
 Task: TASK-1058.02 - Implement NeuralChunker singleton with semaphore-gated access
+Task: TASK-1058.11 - Thread-safety tests for _get_chunking_semaphore()
 
 These tests verify:
 1. get_chunking_service() returns the same instance (singleton pattern)
 2. use_chunking_service() gates concurrent access with a semaphore
 3. reset_chunking_service() clears the singleton for testing
+4. _get_chunking_semaphore() is thread-safe with double-checked locking
 """
 
 import asyncio
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
+import pytest
 
+
+@pytest.mark.unit
 class TestChunkingServiceSingleton:
     """Test get_chunking_service() singleton pattern."""
 
@@ -74,6 +81,8 @@ class TestChunkingServiceSingleton:
         assert service1 is not service2
 
 
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestChunkingServiceSemaphore:
     """Test use_chunking_service() semaphore gating for concurrent access."""
 
@@ -173,6 +182,7 @@ class TestChunkingServiceSemaphore:
         assert all(s is services[0] for s in services)
 
 
+@pytest.mark.unit
 class TestChunkingServiceSyncWrapper:
     """Test use_chunking_service_sync() for use in synchronous DBOS workflows."""
 
@@ -217,3 +227,38 @@ class TestChunkingServiceSyncWrapper:
                 services.append(service)
 
         assert all(s is services[0] for s in services)
+
+
+@pytest.mark.unit
+class TestChunkingSemaphoreThreadSafety:
+    """Test _get_chunking_semaphore() thread-safety."""
+
+    def setup_method(self):
+        from src.fact_checking.chunking_service import reset_chunking_service
+
+        reset_chunking_service()
+
+    def teardown_method(self):
+        from src.fact_checking.chunking_service import reset_chunking_service
+
+        reset_chunking_service()
+
+    def test_concurrent_semaphore_creation_returns_same_instance(self):
+        """Concurrent calls to _get_chunking_semaphore() return same instance."""
+        from src.fact_checking.chunking_service import _get_chunking_semaphore
+
+        semaphores: list[asyncio.Semaphore] = []
+        barrier = threading.Barrier(10)
+
+        def get_semaphore():
+            barrier.wait()
+            sem = _get_chunking_semaphore()
+            semaphores.append(sem)
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(get_semaphore) for _ in range(10)]
+            for f in futures:
+                f.result()
+
+        assert len(semaphores) == 10
+        assert all(s is semaphores[0] for s in semaphores)

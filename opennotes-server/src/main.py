@@ -311,7 +311,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
             dbos = get_dbos()
             dbos.launch()
-            logger.info("DBOS worker mode - queue polling enabled", extra={"schema": "dbos"})
+
+            from src.dbos_workflows.config import validate_dbos_connection
+
+            validate_dbos_connection(dbos)
+
+            logger.info(
+                "DBOS worker mode - queue polling enabled and validated", extra={"schema": "dbos"}
+            )
         except Exception as e:
             logger.error(f"DBOS initialization failed: {e}")
             raise RuntimeError(f"DBOS initialization failed: {e}") from e
