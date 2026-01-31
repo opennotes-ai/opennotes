@@ -44,7 +44,7 @@ from src.cache.redis_client import RedisClient
 from src.common.db_retry import is_deadlock_error
 from src.config import get_settings
 from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-from src.fact_checking.chunking_service import ChunkingService
+from src.fact_checking.chunking_service import get_chunking_service
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.llm_config.encryption import EncryptionService
@@ -62,13 +62,17 @@ DEADLOCK_MAX_DELAY = 2.0
 
 
 def get_chunk_embedding_service() -> ChunkEmbeddingService:
-    """Create ChunkEmbeddingService with required dependencies."""
+    """Create ChunkEmbeddingService with required dependencies.
+
+    Uses the singleton ChunkingService via get_chunking_service() to avoid
+    repeatedly loading the NeuralChunker model on each call.
+    """
     settings = get_settings()
     llm_client_manager = LLMClientManager(
         encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
     )
     llm_service = LLMService(client_manager=llm_client_manager)
-    chunking_service = ChunkingService()
+    chunking_service = get_chunking_service()
     return ChunkEmbeddingService(
         chunking_service=chunking_service,
         llm_service=llm_service,
@@ -935,3 +939,57 @@ async def process_previously_seen_rechunk_task(
         finally:
             await redis_client_bg.disconnect()
             await engine.dispose()
+
+
+@register_task(
+    task_name="rechunk:fact_check",
+    component="rechunk",
+    task_type="deprecated",
+)
+async def deprecated_fact_check_rechunk_task(*args, **kwargs) -> None:
+    """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
+
+    This task was migrated to DBOS in TASK-1056. This handler exists only to
+    acknowledge and discard stale messages in the JetStream queue.
+
+    The task will automatically ACK the message after this function returns,
+    preventing infinite redelivery of legacy messages.
+
+    Remove after 2026-03-01 when all legacy messages have been drained.
+    """
+    logger.warning(
+        "Received deprecated rechunk:fact_check message - discarding",
+        extra={
+            "task_name": "rechunk:fact_check",
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()) if kwargs else [],
+            "migration_note": "Task migrated to DBOS in TASK-1056",
+        },
+    )
+
+
+@register_task(
+    task_name="chunk:fact_check_item",
+    component="rechunk",
+    task_type="deprecated",
+)
+async def deprecated_chunk_fact_check_item_task(*args, **kwargs) -> None:
+    """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
+
+    This task was migrated to DBOS in TASK-1056. This handler exists only to
+    acknowledge and discard stale messages in the JetStream queue.
+
+    The task will automatically ACK the message after this function returns,
+    preventing infinite redelivery of legacy messages.
+
+    Remove after 2026-03-01 when all legacy messages have been drained.
+    """
+    logger.warning(
+        "Received deprecated chunk:fact_check_item message - discarding",
+        extra={
+            "task_name": "chunk:fact_check_item",
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()) if kwargs else [],
+            "migration_note": "Task migrated to DBOS in TASK-1056",
+        },
+    )

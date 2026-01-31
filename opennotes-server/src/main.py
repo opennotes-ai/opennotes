@@ -307,14 +307,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     logger.info("Database initialized")
 
-    if not settings.TESTING:
+    if not settings.TESTING and is_dbos_worker:
         try:
             dbos = get_dbos()
             dbos.launch()
-            logger.info("DBOS initialized successfully", extra={"schema": "dbos"})
+            logger.info("DBOS worker mode - queue polling enabled", extra={"schema": "dbos"})
         except Exception as e:
             logger.error(f"DBOS initialization failed: {e}")
             raise RuntimeError(f"DBOS initialization failed: {e}") from e
+    elif not settings.TESTING:
+        logger.info("DBOS server mode - using DBOSClient for enqueueing only")
 
     await redis_client.connect()
     await rate_limiter.connect()

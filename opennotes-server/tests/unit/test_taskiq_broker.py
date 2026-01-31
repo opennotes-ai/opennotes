@@ -34,6 +34,7 @@ class TestBrokerConfiguration:
             settings.NATS_SERVERS = ["nats://test:4222"]
             settings.REDIS_URL = "redis://test:6379"
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
+            settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800  # 7 days
             settings.TASKIQ_RESULT_EXPIRY = 7200
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 5
             settings.NATS_USERNAME = None
@@ -56,12 +57,14 @@ class TestBrokerConfiguration:
                 result_ex_time=7200,
             )
 
-            mock_broker.assert_called_once_with(
-                servers=["nats://test:4222"],
-                stream_name="TEST_STREAM",
-                durable="opennotes-taskiq-worker",
-                connect_timeout=settings.NATS_CONNECT_TIMEOUT,
-            )
+            # Verify broker was called with expected arguments
+            mock_broker.assert_called_once()
+            call_kwargs = mock_broker.call_args.kwargs
+            assert call_kwargs["servers"] == ["nats://test:4222"]
+            assert call_kwargs["stream_name"] == "TEST_STREAM"
+            assert call_kwargs["durable"] == "opennotes-taskiq-worker"
+            # stream_config should have max_age set
+            assert call_kwargs["stream_config"].max_age == 604800
 
             mock_retry.assert_called_once()
             call_kwargs = mock_retry.call_args.kwargs
@@ -433,6 +436,7 @@ class TestBrokerAuthentication:
             settings.NATS_SERVERS = ["nats://test:4222"]
             settings.REDIS_URL = "redis://test:6379"
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
+            settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800  # 7 days
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_USERNAME = "testuser"
@@ -449,14 +453,15 @@ class TestBrokerAuthentication:
 
             _create_broker()
 
-            mock_broker.assert_called_once_with(
-                servers=["nats://test:4222"],
-                stream_name="TEST_STREAM",
-                durable="opennotes-taskiq-worker",
-                connect_timeout=settings.NATS_CONNECT_TIMEOUT,
-                user="testuser",
-                password="testpass",
-            )
+            # Verify broker was called with expected arguments including auth
+            mock_broker.assert_called_once()
+            call_kwargs = mock_broker.call_args.kwargs
+            assert call_kwargs["servers"] == ["nats://test:4222"]
+            assert call_kwargs["stream_name"] == "TEST_STREAM"
+            assert call_kwargs["user"] == "testuser"
+            assert call_kwargs["password"] == "testpass"
+            # stream_config should have max_age set
+            assert call_kwargs["stream_config"].max_age == 604800
 
 
 class TestSafeOpenTelemetryMiddleware:

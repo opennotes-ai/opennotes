@@ -10,6 +10,7 @@ AC#4: Test progress tracking updates (via BatchJobProgressTracker)
 AC#5: Test lock release on success and failure paths
 """
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -462,11 +463,37 @@ class TestRechunkTaskProgressTracking:
 class TestTaskIQLabels:
     """Test TaskIQ labels are properly configured (task-909.07)."""
 
-    def test_fact_check_task_not_registered(self):
-        """Verify fact check rechunk task is NOT registered (migrated to DBOS, TASK-1056)."""
+    def test_fact_check_task_registered_as_deprecated(self):
+        """Verify fact check rechunk task is registered as deprecated no-op (TASK-1058.03).
+
+        This task was migrated to DBOS in TASK-1056. A deprecated no-op handler
+        exists to drain stale messages from JetStream that were enqueued before
+        the migration.
+        """
+        import src.tasks.rechunk_tasks  # noqa: F401 - import triggers registration
         from src.tasks.broker import _all_registered_tasks
 
-        assert "rechunk:fact_check" not in _all_registered_tasks
+        assert "rechunk:fact_check" in _all_registered_tasks
+
+        _, labels = _all_registered_tasks["rechunk:fact_check"]
+        assert labels.get("component") == "rechunk"
+        assert labels.get("task_type") == "deprecated"
+
+    def test_chunk_fact_check_item_task_registered_as_deprecated(self):
+        """Verify chunk fact check item task is registered as deprecated no-op (TASK-1058.03).
+
+        This task was migrated to DBOS in TASK-1056. A deprecated no-op handler
+        exists to drain stale messages from JetStream that were enqueued before
+        the migration.
+        """
+        import src.tasks.rechunk_tasks  # noqa: F401 - import triggers registration
+        from src.tasks.broker import _all_registered_tasks
+
+        assert "chunk:fact_check_item" in _all_registered_tasks
+
+        _, labels = _all_registered_tasks["chunk:fact_check_item"]
+        assert labels.get("component") == "rechunk"
+        assert labels.get("task_type") == "deprecated"
 
     def test_previously_seen_task_has_labels(self):
         """Verify previously seen rechunk task has component and task_type labels."""
@@ -1076,11 +1103,68 @@ class TestChunkFactCheckItemTask:
                     db_url="postgresql+asyncpg://test:test@localhost/test",
                 )
 
-    def test_chunk_fact_check_item_task_not_registered(self):
-        """Verify chunk_fact_check_item task is NOT registered (migrated to DBOS, TASK-1056)."""
+    def test_chunk_fact_check_item_task_registered_as_deprecated(self):
+        """Verify chunk_fact_check_item task is registered as deprecated no-op (TASK-1058.03).
+
+        This task was migrated to DBOS in TASK-1056. A deprecated no-op handler
+        exists to drain stale messages from JetStream.
+        """
+        import src.tasks.rechunk_tasks  # noqa: F401 - import triggers registration
         from src.tasks.broker import _all_registered_tasks
 
-        assert "chunk:fact_check_item" not in _all_registered_tasks
+        assert "chunk:fact_check_item" in _all_registered_tasks
+        _, labels = _all_registered_tasks["chunk:fact_check_item"]
+        assert labels.get("task_type") == "deprecated"
+
+
+class TestDeprecatedNoOpHandlers:
+    """Test deprecated no-op handlers drain legacy messages (TASK-1058.03)."""
+
+    @pytest.mark.asyncio
+    async def test_deprecated_fact_check_rechunk_task_logs_and_returns_none(self, caplog):
+        """Verify deprecated handler logs warning and returns None."""
+        from src.tasks.rechunk_tasks import deprecated_fact_check_rechunk_task
+
+        with caplog.at_level(logging.WARNING):
+            result = await deprecated_fact_check_rechunk_task(
+                "arg1", "arg2", key1="value1", key2="value2"
+            )
+
+        assert result is None
+        assert "Received deprecated rechunk:fact_check message - discarding" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_deprecated_chunk_fact_check_item_task_logs_and_returns_none(self, caplog):
+        """Verify deprecated handler logs warning and returns None."""
+        from src.tasks.rechunk_tasks import deprecated_chunk_fact_check_item_task
+
+        with caplog.at_level(logging.WARNING):
+            result = await deprecated_chunk_fact_check_item_task(
+                "fact_check_id", community_server_id="community_id"
+            )
+
+        assert result is None
+        assert "Received deprecated chunk:fact_check_item message - discarding" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_deprecated_handlers_accept_any_arguments(self):
+        """Verify deprecated handlers accept any args/kwargs without error."""
+        from src.tasks.rechunk_tasks import (
+            deprecated_chunk_fact_check_item_task,
+            deprecated_fact_check_rechunk_task,
+        )
+
+        result1 = await deprecated_fact_check_rechunk_task()
+        assert result1 is None
+
+        result2 = await deprecated_fact_check_rechunk_task("a", "b", "c", x=1, y=2, z=3)
+        assert result2 is None
+
+        result3 = await deprecated_chunk_fact_check_item_task()
+        assert result3 is None
+
+        result4 = await deprecated_chunk_fact_check_item_task(foo="bar", baz=123)
+        assert result4 is None
 
 
 class TestPromotionEnqueuesChunkingTask:

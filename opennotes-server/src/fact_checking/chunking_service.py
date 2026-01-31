@@ -8,9 +8,18 @@ for creating more granular embeddings that improve semantic search accuracy.
 The NeuralChunker uses a fine-tuned BERT model to detect topic shifts and
 create chunks at natural semantic boundaries rather than arbitrary character
 or token limits.
+
+Singleton Pattern (TASK-1058.02):
+    The module provides singleton access to ChunkingService to avoid repeated
+    model loading. Use get_chunking_service() to get the singleton instance.
+    Use use_chunking_service() or use_chunking_service_sync() for gated access
+    that ensures only one caller uses the chunker at a time.
 """
 
+import asyncio
 import threading
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -28,6 +37,11 @@ if TYPE_CHECKING:
     from chonkie.chunker.neural import NeuralChunker
 
 logger = get_logger(__name__)
+
+_chunking_service_singleton: "ChunkingService | None" = None
+_singleton_lock = threading.Lock()
+_chunking_semaphore: asyncio.Semaphore | None = None
+_sync_lock = threading.Lock()
 
 NETWORK_RETRY_EXCEPTIONS = (OSError, ConnectionError, TimeoutError)
 
@@ -311,3 +325,144 @@ class ChunkingService:
             ]
             for doc_chunks in batch_results
         ]
+
+
+def get_chunking_service(
+    model: str = ChunkingService.DEFAULT_MODEL,
+    device_map: str | None = None,
+    min_characters_per_chunk: int = 50,
+) -> ChunkingService:
+    """
+    Get the singleton ChunkingService instance.
+
+    This function implements a thread-safe singleton pattern to ensure the
+    NeuralChunker model is loaded only once per process. Subsequent calls
+    return the same instance, saving memory and initialization time.
+
+    Note: If called with different parameters after the singleton is created,
+    the original singleton is returned (parameters are ignored). Call
+    reset_chunking_service() first if you need to change configuration.
+
+    Args:
+        model: Model identifier (only used on first call)
+        device_map: Device mapping (only used on first call)
+        min_characters_per_chunk: Minimum chars per chunk (only used on first call)
+
+    Returns:
+        The singleton ChunkingService instance
+
+    Example:
+        >>> service = get_chunking_service()
+        >>> chunks = service.chunk_text("Some text to chunk")
+    """
+    global _chunking_service_singleton  # noqa: PLW0603
+
+    if _chunking_service_singleton is None:
+        with _singleton_lock:
+            if _chunking_service_singleton is None:
+                logger.info("Creating ChunkingService singleton")
+                _chunking_service_singleton = ChunkingService(
+                    model=model,
+                    device_map=device_map,
+                    min_characters_per_chunk=min_characters_per_chunk,
+                )
+    return _chunking_service_singleton
+
+
+def reset_chunking_service() -> None:
+    """
+    Reset the singleton ChunkingService instance.
+
+    This function clears the cached singleton, allowing a new instance to be
+    created on the next call to get_chunking_service(). Primarily useful for
+    testing or when configuration changes are needed.
+
+    Warning: Any in-flight operations using the old singleton may fail.
+    """
+    global _chunking_service_singleton, _chunking_semaphore  # noqa: PLW0603
+
+    with _singleton_lock:
+        if _chunking_service_singleton is not None:
+            logger.info("Resetting ChunkingService singleton")
+            _chunking_service_singleton = None
+            _chunking_semaphore = None
+
+
+def _get_chunking_semaphore() -> asyncio.Semaphore:
+    """
+    Get or create the async semaphore for chunking service access.
+
+    Creates the semaphore lazily to ensure it's bound to the correct event loop.
+    """
+    global _chunking_semaphore  # noqa: PLW0603
+
+    if _chunking_semaphore is None:
+        _chunking_semaphore = asyncio.Semaphore(1)
+    return _chunking_semaphore
+
+
+@asynccontextmanager
+async def use_chunking_service(
+    model: str = ChunkingService.DEFAULT_MODEL,
+    device_map: str | None = None,
+    min_characters_per_chunk: int = 50,
+) -> AsyncGenerator[ChunkingService, None]:
+    """
+    Async context manager for semaphore-gated access to the ChunkingService.
+
+    This ensures only one caller can use the NeuralChunker at a time, which is
+    important because the model may not be thread-safe and concurrent access
+    could cause issues or excessive memory usage.
+
+    Args:
+        model: Model identifier (only used on first call)
+        device_map: Device mapping (only used on first call)
+        min_characters_per_chunk: Minimum chars per chunk (only used on first call)
+
+    Yields:
+        The singleton ChunkingService instance
+
+    Example:
+        >>> async with use_chunking_service() as service:
+        ...     chunks = service.chunk_text("Text to chunk")
+    """
+    semaphore = _get_chunking_semaphore()
+    async with semaphore:
+        yield get_chunking_service(
+            model=model,
+            device_map=device_map,
+            min_characters_per_chunk=min_characters_per_chunk,
+        )
+
+
+@contextmanager
+def use_chunking_service_sync(
+    model: str = ChunkingService.DEFAULT_MODEL,
+    device_map: str | None = None,
+    min_characters_per_chunk: int = 50,
+) -> Generator[ChunkingService, None, None]:
+    """
+    Sync context manager for lock-gated access to the ChunkingService.
+
+    This is designed for use in synchronous DBOS workflow steps where async
+    context managers are not available. Uses a threading lock instead of
+    an async semaphore.
+
+    Args:
+        model: Model identifier (only used on first call)
+        device_map: Device mapping (only used on first call)
+        min_characters_per_chunk: Minimum chars per chunk (only used on first call)
+
+    Yields:
+        The singleton ChunkingService instance
+
+    Example:
+        >>> with use_chunking_service_sync() as service:
+        ...     chunks = service.chunk_text("Text to chunk")
+    """
+    with _sync_lock:
+        yield get_chunking_service(
+            model=model,
+            device_map=device_map,
+            min_characters_per_chunk=min_characters_per_chunk,
+        )
