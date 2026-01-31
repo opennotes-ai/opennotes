@@ -1268,3 +1268,139 @@ class TestPromotionEnqueuesChunkingTask:
 
             assert result is True
             mock_enqueue.assert_called_once()
+
+
+class TestServiceSingletons:
+    """Test service singleton pattern for get_chunk_embedding_service (TASK-1058.27)."""
+
+    def test_get_chunk_embedding_service_returns_singleton(self):
+        """Verify get_chunk_embedding_service returns the same instance on multiple calls."""
+        from src.tasks.rechunk_tasks import (
+            get_chunk_embedding_service,
+            reset_task_services,
+        )
+
+        reset_task_services()
+
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_client_manager = MagicMock()
+        mock_encryption_service = MagicMock()
+
+        mock_settings = MagicMock()
+        mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
+
+        with (
+            patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
+            patch(
+                "src.tasks.rechunk_tasks.get_chunking_service", return_value=mock_chunking_service
+            ),
+            patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
+            patch("src.tasks.rechunk_tasks.LLMClientManager", return_value=mock_llm_client_manager),
+            patch(
+                "src.tasks.rechunk_tasks.EncryptionService", return_value=mock_encryption_service
+            ),
+        ):
+            service1 = get_chunk_embedding_service()
+            service2 = get_chunk_embedding_service()
+
+            assert service1 is service2
+
+        reset_task_services()
+
+    def test_reset_task_services_clears_singletons(self):
+        """Verify reset_task_services clears all singleton instances."""
+        from src.tasks.rechunk_tasks import (
+            get_chunk_embedding_service,
+            reset_task_services,
+        )
+
+        reset_task_services()
+
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_client_manager = MagicMock()
+        mock_encryption_service = MagicMock()
+
+        mock_settings = MagicMock()
+        mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
+
+        with (
+            patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
+            patch(
+                "src.tasks.rechunk_tasks.get_chunking_service", return_value=mock_chunking_service
+            ),
+            patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
+            patch("src.tasks.rechunk_tasks.LLMClientManager", return_value=mock_llm_client_manager),
+            patch(
+                "src.tasks.rechunk_tasks.EncryptionService", return_value=mock_encryption_service
+            ),
+        ):
+            service_before = get_chunk_embedding_service()
+            assert service_before is not None
+
+            reset_task_services()
+
+            import src.tasks.rechunk_tasks as module
+
+            assert module._chunk_embedding_service is None
+            assert module._encryption_service is None
+            assert module._llm_client_manager is None
+            assert module._llm_service is None
+
+    def test_singleton_pattern_is_thread_safe(self):
+        """Verify singleton pattern uses proper locking for thread safety."""
+        import threading
+
+        from src.tasks.rechunk_tasks import (
+            get_chunk_embedding_service,
+            reset_task_services,
+        )
+
+        reset_task_services()
+
+        mock_chunking_service = MagicMock()
+        mock_llm_service = MagicMock()
+        mock_llm_client_manager = MagicMock()
+        mock_encryption_service = MagicMock()
+
+        mock_settings = MagicMock()
+        mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
+
+        services = []
+        errors = []
+
+        def get_service():
+            try:
+                with (
+                    patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
+                    patch(
+                        "src.tasks.rechunk_tasks.get_chunking_service",
+                        return_value=mock_chunking_service,
+                    ),
+                    patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
+                    patch(
+                        "src.tasks.rechunk_tasks.LLMClientManager",
+                        return_value=mock_llm_client_manager,
+                    ),
+                    patch(
+                        "src.tasks.rechunk_tasks.EncryptionService",
+                        return_value=mock_encryption_service,
+                    ),
+                ):
+                    service = get_chunk_embedding_service()
+                    services.append(service)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=get_service) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        assert len(services) == 10
+        assert all(s is services[0] for s in services)
+
+        reset_task_services()

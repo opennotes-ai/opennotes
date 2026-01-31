@@ -29,6 +29,7 @@ Deadlock Handling:
 
 import asyncio
 import random
+import threading
 from uuid import UUID
 
 from opentelemetry import trace
@@ -60,23 +61,70 @@ MAX_DEADLOCK_RETRIES = 3
 DEADLOCK_BASE_DELAY = 0.1
 DEADLOCK_MAX_DELAY = 2.0
 
+_encryption_service: EncryptionService | None = None
+_llm_client_manager: LLMClientManager | None = None
+_llm_service: LLMService | None = None
+_chunk_embedding_service: ChunkEmbeddingService | None = None
+_service_lock = threading.RLock()
+
+
+def _get_encryption_service() -> EncryptionService:
+    """Get or create singleton EncryptionService with double-checked locking."""
+    global _encryption_service  # noqa: PLW0603
+    if _encryption_service is None:
+        with _service_lock:
+            if _encryption_service is None:
+                settings = get_settings()
+                _encryption_service = EncryptionService(settings.ENCRYPTION_MASTER_KEY)
+    return _encryption_service
+
+
+def _get_llm_client_manager() -> LLMClientManager:
+    """Get or create singleton LLMClientManager with double-checked locking."""
+    global _llm_client_manager  # noqa: PLW0603
+    if _llm_client_manager is None:
+        with _service_lock:
+            if _llm_client_manager is None:
+                _llm_client_manager = LLMClientManager(encryption_service=_get_encryption_service())
+    return _llm_client_manager
+
+
+def _get_llm_service() -> LLMService:
+    """Get or create singleton LLMService with double-checked locking."""
+    global _llm_service  # noqa: PLW0603
+    if _llm_service is None:
+        with _service_lock:
+            if _llm_service is None:
+                _llm_service = LLMService(client_manager=_get_llm_client_manager())
+    return _llm_service
+
 
 def get_chunk_embedding_service() -> ChunkEmbeddingService:
-    """Create ChunkEmbeddingService with required dependencies.
+    """Get or create singleton ChunkEmbeddingService with double-checked locking.
 
-    Uses the singleton ChunkingService via get_chunking_service() to avoid
-    repeatedly loading the NeuralChunker model on each call.
+    All service dependencies are also singletons, ensuring consistent caching
+    behavior for LLM clients and avoiding repeated model loading.
     """
-    settings = get_settings()
-    llm_client_manager = LLMClientManager(
-        encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
-    )
-    llm_service = LLMService(client_manager=llm_client_manager)
-    chunking_service = get_chunking_service()
-    return ChunkEmbeddingService(
-        chunking_service=chunking_service,
-        llm_service=llm_service,
-    )
+    global _chunk_embedding_service  # noqa: PLW0603
+    if _chunk_embedding_service is None:
+        with _service_lock:
+            if _chunk_embedding_service is None:
+                _chunk_embedding_service = ChunkEmbeddingService(
+                    chunking_service=get_chunking_service(),
+                    llm_service=_get_llm_service(),
+                )
+    return _chunk_embedding_service
+
+
+def reset_task_services() -> None:
+    """Reset all service singletons. For testing only."""
+    global _encryption_service, _llm_client_manager  # noqa: PLW0603
+    global _llm_service, _chunk_embedding_service  # noqa: PLW0603
+    with _service_lock:
+        _encryption_service = None
+        _llm_client_manager = None
+        _llm_service = None
+        _chunk_embedding_service = None
 
 
 async def _process_fact_check_item_with_retry(

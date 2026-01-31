@@ -98,15 +98,15 @@ class TestProcessFactCheckItem:
 class TestChunkAndEmbedSyncWrapper:
     """Tests for the synchronous wrapper around async chunking logic."""
 
-    def test_wrapper_uses_asyncio_run(self) -> None:
-        """Sync wrapper uses asyncio.run to execute async code."""
+    def test_wrapper_uses_run_sync(self) -> None:
+        """Sync wrapper uses run_sync to execute async code safely."""
         from src.dbos_workflows.rechunk_workflow import chunk_and_embed_fact_check_sync
 
         fact_check_id = uuid4()
         community_server_id = uuid4()
 
-        with patch("asyncio.run") as mock_asyncio_run:
-            mock_asyncio_run.return_value = {"chunks_created": 3}
+        with patch("src.dbos_workflows.rechunk_workflow.run_sync") as mock_run_sync:
+            mock_run_sync.return_value = {"chunks_created": 3}
 
             result = chunk_and_embed_fact_check_sync(
                 fact_check_id=fact_check_id,
@@ -114,7 +114,7 @@ class TestChunkAndEmbedSyncWrapper:
             )
 
             assert result["chunks_created"] == 3
-            mock_asyncio_run.assert_called_once()
+            mock_run_sync.assert_called_once()
 
 
 class TestRechunkWorkflow:

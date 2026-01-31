@@ -8,12 +8,17 @@ This separation ensures that only workers compete for queued workflows,
 while the server can enqueue work without starting its own executor.
 """
 
+import threading
+from urllib.parse import urlparse, urlunparse
+
 from dbos import DBOS, DBOSClient, DBOSConfig
 
 from src.config import settings
 
 _dbos_instance: DBOS | None = None
 _dbos_client: DBOSClient | None = None
+_dbos_lock = threading.Lock()
+_dbos_client_lock = threading.Lock()
 
 
 def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
@@ -21,12 +26,13 @@ def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
 
     DBOS uses HTTP OTLP endpoints (port 4318 with /v1/* paths) while the main
     application uses gRPC OTLP (port 4317). This function transforms the
-    gRPC endpoint to HTTP format.
+    gRPC endpoint to HTTP format using proper URL parsing.
 
     Common transformations:
     - http://tempo:4317 -> http://tempo:4318
     - https://otel-collector:443 -> https://otel-collector:443 (HTTPS typically uses same port)
     - http://localhost:4317 -> http://localhost:4318
+    - http://host4317.example.com:4317 -> http://host4317.example.com:4318 (hostname preserved)
 
     Args:
         grpc_endpoint: The gRPC OTLP endpoint (e.g., http://tempo:4317)
@@ -38,11 +44,28 @@ def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
         return None
 
     endpoint = grpc_endpoint.rstrip("/")
+    parsed = urlparse(endpoint)
 
-    if ":4317" in endpoint:
-        return endpoint.replace(":4317", ":4318")
+    if parsed.port != 4317:
+        return endpoint
 
-    return endpoint
+    if parsed.hostname is None:
+        return endpoint
+
+    if ":" in parsed.hostname:
+        new_netloc = f"[{parsed.hostname}]:4318"
+    else:
+        new_netloc = f"{parsed.hostname}:4318"
+
+    if parsed.username:
+        auth = parsed.username
+        if parsed.password:
+            auth = f"{auth}:{parsed.password}"
+        new_netloc = f"{auth}@{new_netloc}"
+
+    return urlunparse(
+        (parsed.scheme, new_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
 
 
 def _get_otlp_config() -> dict:
@@ -86,8 +109,10 @@ def get_dbos_config() -> DBOSConfig:
 
     sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
 
+    service_name = settings.OTEL_SERVICE_NAME or settings.PROJECT_NAME or "opennotes-server"
+
     config: DBOSConfig = {
-        "name": settings.OTEL_SERVICE_NAME or settings.PROJECT_NAME,
+        "name": service_name,
         "system_database_url": sync_url,
         **_get_otlp_config(),
     }
@@ -101,17 +126,45 @@ def create_dbos_instance() -> DBOS:
 
 
 def get_dbos() -> DBOS:
-    """Get the DBOS instance, creating if needed."""
+    """Get the DBOS instance, creating if needed.
+
+    Uses double-checked locking to ensure thread-safe singleton creation
+    without unnecessary lock contention.
+    """
     global _dbos_instance
     if _dbos_instance is None:
-        _dbos_instance = create_dbos_instance()
+        with _dbos_lock:
+            if _dbos_instance is None:
+                _dbos_instance = create_dbos_instance()
     return _dbos_instance
 
 
 def reset_dbos() -> None:
     """Reset the DBOS instance. Used for testing."""
     global _dbos_instance
-    _dbos_instance = None
+    with _dbos_lock:
+        _dbos_instance = None
+
+
+def destroy_dbos(workflow_completion_timeout_sec: int = 5) -> None:
+    """Gracefully destroy the DBOS singleton.
+
+    Calls DBOS.destroy() to properly shut down the executor and wait
+    for any in-flight workflows to complete. This should be called
+    during application shutdown.
+
+    Args:
+        workflow_completion_timeout_sec: Seconds to wait for workflows to
+            complete before forcefully shutting down. Defaults to 5.
+    """
+    global _dbos_instance
+    with _dbos_lock:
+        if _dbos_instance is not None:
+            DBOS.destroy(
+                workflow_completion_timeout_sec=workflow_completion_timeout_sec,
+                destroy_registry=False,
+            )
+            _dbos_instance = None
 
 
 def _get_sync_database_url() -> str:
@@ -133,20 +186,26 @@ def get_dbos_client() -> DBOSClient:
     queue polling. The client connects directly to the DBOS system
     database to manage queue operations.
 
+    Uses double-checked locking to ensure thread-safe singleton creation
+    without unnecessary lock contention.
+
     Returns:
         DBOSClient instance for enqueueing workflows
     """
     global _dbos_client
     if _dbos_client is None:
-        sync_url = _get_sync_database_url()
-        _dbos_client = DBOSClient(system_database_url=sync_url)
+        with _dbos_client_lock:
+            if _dbos_client is None:
+                sync_url = _get_sync_database_url()
+                _dbos_client = DBOSClient(system_database_url=sync_url)
     return _dbos_client
 
 
 def reset_dbos_client() -> None:
     """Reset the DBOSClient instance. Used for testing."""
     global _dbos_client
-    _dbos_client = None
+    with _dbos_client_lock:
+        _dbos_client = None
 
 
 def validate_dbos_connection(dbos_instance: DBOS) -> bool:

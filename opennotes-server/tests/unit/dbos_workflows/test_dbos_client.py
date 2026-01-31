@@ -195,6 +195,9 @@ class TestServerModeInitialization:
             patch("src.dbos_workflows.config.settings") as mock_settings,
         ):
             mock_settings.DATABASE_URL = "postgresql+asyncpg://user:pass@host/db"
+            mock_settings.OTEL_SERVICE_NAME = "test-service"
+            mock_settings.PROJECT_NAME = None
+            mock_settings.OTLP_ENDPOINT = None
             mock_client = MagicMock()
             mock_dbos = MagicMock()
             mock_client_class.return_value = mock_client

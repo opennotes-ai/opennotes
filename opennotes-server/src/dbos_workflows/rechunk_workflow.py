@@ -23,6 +23,7 @@ from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.dbos_workflows.config import get_dbos_client
 from src.fact_checking.models import FactCheckItem
 from src.monitoring import get_logger
+from src.utils.async_compat import run_sync
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -301,8 +302,6 @@ def chunk_and_embed_fact_check_sync(
     Uses the singleton ChunkingService via use_chunking_service_sync() to avoid
     repeatedly loading the NeuralChunker model on each call.
     """
-    import asyncio
-
     from src.config import get_settings
     from src.database import get_session_maker
     from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
@@ -340,7 +339,7 @@ def chunk_and_embed_fact_check_sync(
             return {"chunks_created": len(chunks)}
 
     with use_chunking_service_sync() as chunking_service:
-        return asyncio.run(_async_impl(chunking_service))
+        return run_sync(_async_impl(chunking_service))
 
 
 def update_batch_job_progress_sync(
@@ -349,8 +348,6 @@ def update_batch_job_progress_sync(
     failed_tasks: int,
 ) -> bool:
     """Synchronous helper to update BatchJob progress from DBOS workflow."""
-    import asyncio
-
     from src.database import get_session_maker
 
     async def _async_impl() -> bool:
@@ -365,7 +362,7 @@ def update_batch_job_progress_sync(
             return True
 
     try:
-        return asyncio.run(_async_impl())
+        return run_sync(_async_impl())
     except Exception as e:
         logger.error(
             "Failed to update batch job progress",
@@ -383,8 +380,6 @@ def finalize_batch_job_sync(
     error_summary: dict[str, Any] | None = None,
 ) -> bool:
     """Synchronous helper to finalize BatchJob from DBOS workflow."""
-    import asyncio
-
     from src.database import get_session_maker
 
     async def _async_impl() -> bool:
@@ -407,7 +402,7 @@ def finalize_batch_job_sync(
             return True
 
     try:
-        return asyncio.run(_async_impl())
+        return run_sync(_async_impl())
     except Exception as e:
         logger.error(
             "Failed to finalize batch job",
@@ -528,3 +523,7 @@ async def enqueue_single_fact_check_chunk(
             exc_info=True,
         )
         return None
+
+
+RECHUNK_FACT_CHECK_WORKFLOW_NAME: str = rechunk_fact_check_workflow.__name__
+CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME: str = chunk_single_fact_check_workflow.__name__

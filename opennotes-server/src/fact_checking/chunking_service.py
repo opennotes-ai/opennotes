@@ -15,15 +15,19 @@ Singleton Pattern (TASK-1058.02):
     Use use_chunking_service() or use_chunking_service_sync() for gated access
     that ensures only one caller uses the chunker at a time.
 
-Concurrency Model:
+Concurrency Model (TASK-1058.18):
     This module provides two context managers for accessing the shared ChunkingService
-    singleton with concurrency control:
+    singleton with unified concurrency control via a single threading.Lock:
 
-    - use_chunking_service() - async context manager with asyncio.Semaphore
-      Use this in async code paths (FastAPI endpoints, async tasks)
+    - use_chunking_service() - async context manager for async code paths
+      Acquires the lock via run_in_executor to avoid blocking the event loop.
 
-    - use_chunking_service_sync() - sync context manager with threading.Lock
-      Use this in sync code paths (DBOS steps, synchronous functions)
+    - use_chunking_service_sync() - sync context manager for sync code paths
+      Directly acquires the threading lock.
+
+    Both context managers use the same underlying lock (_access_lock), ensuring
+    mutual exclusion between async and sync callers. This prevents race conditions
+    where an async caller and sync caller could access the singleton simultaneously.
 
     Process Isolation:
         TaskIQ workers and DBOS workers run in separate processes. Each process
@@ -32,14 +36,7 @@ Concurrency Model:
 
         1. NeuralChunker model loading is process-local (no shared memory)
         2. Each process has its own event loop and thread pool
-        3. The semaphore/lock only coordinates access within one process
-
-    Thread Safety:
-        Both mechanisms protect the same singleton instance within a process.
-        The async semaphore is checked from async contexts; the threading lock
-        is checked from sync contexts. They don't interfere because Python's
-        GIL prevents true parallel execution, and the semaphore releases before
-        any sync code could run.
+        3. The lock only coordinates access within one process
 """
 
 import asyncio
@@ -66,8 +63,7 @@ logger = get_logger(__name__)
 
 _chunking_service_singleton: "ChunkingService | None" = None
 _singleton_lock = threading.Lock()
-_chunking_semaphore: asyncio.Semaphore | None = None
-_sync_lock = threading.Lock()
+_access_lock = threading.Lock()  # Unified lock for all access patterns (TASK-1058.18)
 
 NETWORK_RETRY_EXCEPTIONS = (OSError, ConnectionError, TimeoutError)
 
@@ -405,29 +401,12 @@ def reset_chunking_service() -> None:
 
     Warning: Any in-flight operations using the old singleton may fail.
     """
-    global _chunking_service_singleton, _chunking_semaphore  # noqa: PLW0603
+    global _chunking_service_singleton  # noqa: PLW0603
 
-    with _singleton_lock:
+    with _access_lock:
         if _chunking_service_singleton is not None:
             logger.info("Resetting ChunkingService singleton")
             _chunking_service_singleton = None
-            _chunking_semaphore = None
-
-
-def _get_chunking_semaphore() -> asyncio.Semaphore:
-    """
-    Get or create the async semaphore for chunking service access.
-
-    Creates the semaphore lazily to ensure it's bound to the correct event loop.
-    Uses double-checked locking with _singleton_lock for thread-safety.
-    """
-    global _chunking_semaphore  # noqa: PLW0603
-
-    if _chunking_semaphore is None:
-        with _singleton_lock:
-            if _chunking_semaphore is None:
-                _chunking_semaphore = asyncio.Semaphore(1)
-    return _chunking_semaphore
 
 
 @asynccontextmanager
@@ -437,11 +416,15 @@ async def use_chunking_service(
     min_characters_per_chunk: int = 50,
 ) -> AsyncGenerator[ChunkingService, None]:
     """
-    Async context manager for semaphore-gated access to the ChunkingService.
+    Async context manager for lock-gated access to the ChunkingService.
 
     This ensures only one caller can use the NeuralChunker at a time, which is
     important because the model may not be thread-safe and concurrent access
     could cause issues or excessive memory usage.
+
+    Uses the unified _access_lock (threading.Lock) acquired via run_in_executor
+    to avoid blocking the event loop while waiting. This provides mutual exclusion
+    with sync callers using use_chunking_service_sync().
 
     Args:
         model: Model identifier (only used on first call)
@@ -455,13 +438,16 @@ async def use_chunking_service(
         >>> async with use_chunking_service() as service:
         ...     chunks = service.chunk_text("Text to chunk")
     """
-    semaphore = _get_chunking_semaphore()
-    async with semaphore:
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _access_lock.acquire)
+    try:
         yield get_chunking_service(
             model=model,
             device_map=device_map,
             min_characters_per_chunk=min_characters_per_chunk,
         )
+    finally:
+        _access_lock.release()
 
 
 @contextmanager
@@ -474,8 +460,8 @@ def use_chunking_service_sync(
     Sync context manager for lock-gated access to the ChunkingService.
 
     This is designed for use in synchronous DBOS workflow steps where async
-    context managers are not available. Uses a threading lock instead of
-    an async semaphore.
+    context managers are not available. Uses the unified _access_lock
+    (threading.Lock) to ensure mutual exclusion with async callers.
 
     Args:
         model: Model identifier (only used on first call)
@@ -489,7 +475,7 @@ def use_chunking_service_sync(
         >>> with use_chunking_service_sync() as service:
         ...     chunks = service.chunk_text("Text to chunk")
     """
-    with _sync_lock:
+    with _access_lock:
         yield get_chunking_service(
             model=model,
             device_map=device_map,
