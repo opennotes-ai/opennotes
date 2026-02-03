@@ -16,7 +16,6 @@ import pytest
 from src.config import get_settings
 from src.dbos_workflows.config import (
     _derive_http_otlp_endpoint,
-    _get_otlp_config,
     create_dbos_instance,
     destroy_dbos,
     get_dbos,
@@ -126,50 +125,6 @@ class TestDeriveHttpOtlpEndpoint:
         assert result == "http://tempo:4318?timeout=30"
 
 
-class TestGetOtlpConfig:
-    """Tests for _get_otlp_config() function."""
-
-    def test_returns_disabled_when_no_endpoint(self) -> None:
-        """Returns enable_otlp=False when OTLP_ENDPOINT is not set."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.OTLP_ENDPOINT = None
-
-            result = _get_otlp_config()
-
-            assert result == {"enable_otlp": False}
-
-    def test_returns_disabled_when_endpoint_is_empty(self) -> None:
-        """Returns enable_otlp=False when OTLP_ENDPOINT is empty string."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.OTLP_ENDPOINT = ""
-
-            result = _get_otlp_config()
-
-            assert result == {"enable_otlp": False}
-
-    def test_returns_enabled_with_endpoints(self) -> None:
-        """Returns OTLP config with trace and log endpoints when enabled."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.OTLP_ENDPOINT = "http://tempo:4317"
-
-            result = _get_otlp_config()
-
-            assert result["enable_otlp"] is True
-            assert result["otlp_traces_endpoints"] == ["http://tempo:4318/v1/traces"]
-            assert result["otlp_logs_endpoints"] == ["http://tempo:4318/v1/logs"]
-
-    def test_uses_https_endpoint(self) -> None:
-        """Handles HTTPS OTLP endpoints correctly."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.OTLP_ENDPOINT = "https://otel-collector:443"
-
-            result = _get_otlp_config()
-
-            assert result["enable_otlp"] is True
-            assert result["otlp_traces_endpoints"] == ["https://otel-collector:443/v1/traces"]
-            assert result["otlp_logs_endpoints"] == ["https://otel-collector:443/v1/logs"]
-
-
 class TestGetDbosConfig:
     """Tests for get_dbos_config() function."""
 
@@ -264,7 +219,7 @@ class TestGetDbosConfig:
 
             config: dict[str, Any] = dict(get_dbos_config())
 
-            assert config["enable_otlp"] is True
+            assert "disable_otlp" not in config
             assert config["otlp_traces_endpoints"] == ["http://tempo:4318/v1/traces"]
             assert config["otlp_logs_endpoints"] == ["http://tempo:4318/v1/logs"]
 
@@ -278,7 +233,7 @@ class TestGetDbosConfig:
 
             config: dict[str, Any] = dict(get_dbos_config())
 
-            assert config["enable_otlp"] is False
+            assert config["disable_otlp"] is True
             assert "otlp_traces_endpoints" not in config
             assert "otlp_logs_endpoints" not in config
 

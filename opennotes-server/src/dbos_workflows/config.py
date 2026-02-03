@@ -68,32 +68,6 @@ def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
     )
 
 
-def _get_otlp_config() -> dict:
-    """Build OTLP configuration for DBOS based on environment settings.
-
-    Uses the same OTLP_ENDPOINT setting as the main application but transforms
-    it to HTTP format required by DBOS.
-
-    Returns:
-        Dictionary with DBOS OTLP configuration fields
-    """
-    if not settings.OTLP_ENDPOINT:
-        return {"enable_otlp": False}
-
-    http_base = _derive_http_otlp_endpoint(settings.OTLP_ENDPOINT)
-    if not http_base:
-        return {"enable_otlp": False}
-
-    traces_endpoint = f"{http_base}/v1/traces"
-    logs_endpoint = f"{http_base}/v1/logs"
-
-    return {
-        "enable_otlp": True,
-        "otlp_traces_endpoints": [traces_endpoint],
-        "otlp_logs_endpoints": [logs_endpoint],
-    }
-
-
 def get_dbos_config() -> DBOSConfig:
     """Build DBOS configuration from environment.
 
@@ -114,8 +88,18 @@ def get_dbos_config() -> DBOSConfig:
     config: DBOSConfig = {
         "name": service_name,
         "system_database_url": sync_url,
-        **_get_otlp_config(),
     }
+
+    if settings.OTLP_ENDPOINT:
+        http_base = _derive_http_otlp_endpoint(settings.OTLP_ENDPOINT)
+        if http_base:
+            config["otlp_traces_endpoints"] = [f"{http_base}/v1/traces"]
+            config["otlp_logs_endpoints"] = [f"{http_base}/v1/logs"]
+        else:
+            config["disable_otlp"] = True
+    else:
+        config["disable_otlp"] = True
+
     return config
 
 
@@ -227,7 +211,9 @@ def validate_dbos_connection(dbos_instance: DBOS) -> bool:
     import psycopg
 
     config = get_dbos_config()
-    db_url = config["system_database_url"]
+    db_url = config.get("system_database_url")
+    if not db_url:
+        raise RuntimeError("system_database_url not configured in DBOS config")
 
     try:
         with psycopg.connect(db_url) as conn, conn.cursor() as cur:
@@ -235,8 +221,8 @@ def validate_dbos_connection(dbos_instance: DBOS) -> bool:
                 "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
                 "WHERE table_schema = 'dbos' AND table_name = 'workflow_status')"
             )
-            exists = cur.fetchone()[0]
-            if not exists:
+            row = cur.fetchone()
+            if row is None or not row[0]:
                 raise RuntimeError("DBOS system tables not found in 'dbos' schema")
         return True
     except psycopg.Error as e:
