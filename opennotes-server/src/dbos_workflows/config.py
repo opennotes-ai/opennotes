@@ -82,10 +82,8 @@ def get_dbos_config() -> DBOSConfig:
 
     sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
 
-    service_name = settings.OTEL_SERVICE_NAME or settings.PROJECT_NAME or "opennotes-server"
-
     config: DBOSConfig = {
-        "name": service_name,
+        "name": settings.DBOS_APP_NAME,
         "system_database_url": sync_url,
     }
 

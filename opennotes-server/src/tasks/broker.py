@@ -32,8 +32,9 @@ from typing import Any, TypeVar
 
 import redis.asyncio as aioredis
 from nats.js.api import StreamConfig
+from nats.js.errors import BadRequestError
 from opentelemetry import context as context_api
-from taskiq import TaskiqMessage, TaskiqResult
+from taskiq import AsyncBroker, TaskiqMessage, TaskiqResult
 from taskiq.middlewares.opentelemetry_middleware import (
     OpenTelemetryMiddleware,
     detach_context,
@@ -113,6 +114,29 @@ class SafeOpenTelemetryMiddleware(OpenTelemetryMiddleware):
                     )
                 else:
                     raise
+
+
+class ResilientJetStreamBroker(PullBasedJetStreamBroker):
+    async def startup(self) -> None:
+        await AsyncBroker.startup(self)
+        await self.client.connect(self.servers, **self.connection_kwargs)
+        self.js = self.client.jetstream()
+        if self.stream_config.name is None:
+            self.stream_config.name = self.stream_name
+        if not self.stream_config.subjects:
+            self.stream_config.subjects = [self.subject]
+        try:
+            await self.js.add_stream(config=self.stream_config)
+        except BadRequestError as exc:
+            if exc.err_code == 10058:
+                logger.warning(
+                    "Stream %s already exists with different config (err_code=10058), updating",
+                    self.stream_config.name,
+                )
+                await self.js.update_stream(config=self.stream_config)
+            else:
+                raise
+        await self._startup_consumer()
 
 
 _broker_instance: PullBasedJetStreamBroker | None = None
@@ -214,7 +238,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
     )
 
     new_broker = (
-        PullBasedJetStreamBroker(
+        ResilientJetStreamBroker(
             servers=settings.NATS_SERVERS,
             stream_name=settings.TASKIQ_STREAM_NAME,
             stream_config=stream_config,
@@ -526,6 +550,7 @@ broker = _BrokerProxy()
 __all__ = [
     "LazyTask",
     "PullBasedJetStreamBroker",
+    "ResilientJetStreamBroker",
     "SafeOpenTelemetryMiddleware",
     "broker",
     "check_redis_ssl_connectivity",
