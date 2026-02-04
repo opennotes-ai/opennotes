@@ -188,8 +188,8 @@ class TestBatchJobServiceSetWorkflowId:
         """
         Test that workflow_id is accessible even when object attributes are expired.
 
-        SQLAlchemy's expire_on_commit=True (default in our async_sessionmaker)
-        expires all attributes after commit. When accessing an expired attribute,
+        SQLAlchemy's expire_on_commit=False (configured in our async_sessionmaker)
+        means attributes are NOT automatically expired after commit. When accessing an expired attribute,
         SQLAlchemy issues a lazy load. This test verifies the workflow_id
         survives this pattern.
 

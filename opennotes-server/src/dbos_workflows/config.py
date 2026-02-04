@@ -93,6 +93,11 @@ def get_dbos_config() -> DBOSConfig:
     if settings.DBOS_CONDUCTOR_KEY:
         config["conductor_key"] = settings.DBOS_CONDUCTOR_KEY
 
+    config["otlp_attributes"] = {
+        "service.version": settings.VERSION,
+        "deployment.environment": settings.ENVIRONMENT,
+    }
+
     if settings.OTLP_ENDPOINT:
         http_base = _derive_http_otlp_endpoint(settings.OTLP_ENDPOINT)
         if http_base:
