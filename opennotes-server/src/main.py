@@ -309,6 +309,12 @@ async def _run_startup_validation() -> None:
 async def _init_dbos(is_dbos_worker: bool) -> None:
     if settings.TESTING:
         return
+
+    if settings.DBOS_CONDUCTOR_KEY:
+        logger.info("DBOS Conductor enabled (API key configured)")
+    else:
+        logger.info("DBOS Conductor disabled (no API key)")
+
     if is_dbos_worker:
         try:
             dbos = get_dbos()

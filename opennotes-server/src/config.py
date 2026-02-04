@@ -787,6 +787,12 @@ class Settings(BaseSettings):
         "Bulk scans are computationally expensive, so this limit prevents abuse.",
     )
 
+    DBOS_CONDUCTOR_KEY: str | None = Field(
+        default=None,
+        description="DBOS Conductor API key for workflow observability and management",
+        repr=False,
+    )
+
     @model_validator(mode="after")
     def validate_encryption_key_entropy(self) -> "Settings":
         if self.TESTING or not self.ENCRYPTION_MASTER_KEY:

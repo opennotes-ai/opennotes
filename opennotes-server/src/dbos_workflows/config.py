@@ -90,6 +90,9 @@ def get_dbos_config() -> DBOSConfig:
         "system_database_url": sync_url,
     }
 
+    if settings.DBOS_CONDUCTOR_KEY:
+        config["conductor_key"] = settings.DBOS_CONDUCTOR_KEY
+
     if settings.OTLP_ENDPOINT:
         http_base = _derive_http_otlp_endpoint(settings.OTLP_ENDPOINT)
         if http_base:

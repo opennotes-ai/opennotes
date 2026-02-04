@@ -135,6 +135,7 @@ class TestGetDbosConfig:
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
 
             config: dict[str, Any] = dict(get_dbos_config())
 
@@ -149,6 +150,7 @@ class TestGetDbosConfig:
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = None
             mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
 
             config: dict[str, Any] = dict(get_dbos_config())
             db_url = config.get("system_database_url", "")
@@ -164,6 +166,7 @@ class TestGetDbosConfig:
             mock_settings.OTEL_SERVICE_NAME = "custom-otel-name"
             mock_settings.PROJECT_NAME = "Open Notes Server"
             mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
 
             result = dict(get_dbos_config())
 
@@ -176,6 +179,7 @@ class TestGetDbosConfig:
             mock_settings.OTEL_SERVICE_NAME = None
             mock_settings.PROJECT_NAME = "Open Notes Server"
             mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
 
             result = dict(get_dbos_config())
 
@@ -188,6 +192,7 @@ class TestGetDbosConfig:
             mock_settings.OTEL_SERVICE_NAME = None
             mock_settings.PROJECT_NAME = None
             mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
 
             result = dict(get_dbos_config())
 
@@ -216,6 +221,7 @@ class TestGetDbosConfig:
             mock_settings.OTLP_ENDPOINT = "http://tempo:4317"
             mock_settings.OTEL_SERVICE_NAME = "opennotes-server"
             mock_settings.PROJECT_NAME = "Open Notes Server"
+            mock_settings.DBOS_CONDUCTOR_KEY = None
 
             config: dict[str, Any] = dict(get_dbos_config())
 
@@ -230,12 +236,49 @@ class TestGetDbosConfig:
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.OTEL_SERVICE_NAME = None
             mock_settings.PROJECT_NAME = "Open Notes Server"
+            mock_settings.DBOS_CONDUCTOR_KEY = None
 
             config: dict[str, Any] = dict(get_dbos_config())
 
             assert config["disable_otlp"] is True
             assert "otlp_traces_endpoints" not in config
             assert "otlp_logs_endpoints" not in config
+
+    def test_includes_conductor_key_when_set(self) -> None:
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.OTEL_SERVICE_NAME = "test-service"
+            mock_settings.PROJECT_NAME = "Test Project"
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = "test-conductor-api-key-123"
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert config["conductor_key"] == "test-conductor-api-key-123"
+
+    def test_omits_conductor_key_when_not_set(self) -> None:
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.OTEL_SERVICE_NAME = "test-service"
+            mock_settings.PROJECT_NAME = "Test Project"
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert "conductor_key" not in config
+
+    def test_omits_conductor_key_when_empty_string(self) -> None:
+        with patch("src.dbos_workflows.config.settings") as mock_settings:
+            mock_settings.DATABASE_URL = TEST_DATABASE_URL
+            mock_settings.OTEL_SERVICE_NAME = "test-service"
+            mock_settings.PROJECT_NAME = "Test Project"
+            mock_settings.OTLP_ENDPOINT = None
+            mock_settings.DBOS_CONDUCTOR_KEY = ""
+
+            config: dict[str, Any] = dict(get_dbos_config())
+
+            assert "conductor_key" not in config
 
 
 class TestDbosInstance:
