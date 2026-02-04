@@ -29,6 +29,7 @@ Deadlock Handling:
 
 import asyncio
 import random
+import threading
 from uuid import UUID
 
 from opentelemetry import trace
@@ -44,7 +45,10 @@ from src.cache.redis_client import RedisClient
 from src.common.db_retry import is_deadlock_error
 from src.config import get_settings
 from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-from src.fact_checking.chunking_service import ChunkingService
+from src.fact_checking.chunking_service import (
+    reset_chunking_service,
+    use_chunking_service_sync,
+)
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.llm_config.encryption import EncryptionService
@@ -60,19 +64,75 @@ MAX_DEADLOCK_RETRIES = 3
 DEADLOCK_BASE_DELAY = 0.1
 DEADLOCK_MAX_DELAY = 2.0
 
+_encryption_service: EncryptionService | None = None
+_llm_client_manager: LLMClientManager | None = None
+_llm_service: LLMService | None = None
+_chunk_embedding_service: ChunkEmbeddingService | None = None
+_service_lock = threading.RLock()
+
+
+def _get_encryption_service() -> EncryptionService:
+    """Get or create singleton EncryptionService with double-checked locking."""
+    global _encryption_service  # noqa: PLW0603
+    if _encryption_service is None:
+        with _service_lock:
+            if _encryption_service is None:
+                settings = get_settings()
+                _encryption_service = EncryptionService(settings.ENCRYPTION_MASTER_KEY)
+    return _encryption_service
+
+
+def _get_llm_client_manager() -> LLMClientManager:
+    """Get or create singleton LLMClientManager with double-checked locking."""
+    global _llm_client_manager  # noqa: PLW0603
+    if _llm_client_manager is None:
+        with _service_lock:
+            if _llm_client_manager is None:
+                _llm_client_manager = LLMClientManager(encryption_service=_get_encryption_service())
+    return _llm_client_manager
+
+
+def _get_llm_service() -> LLMService:
+    """Get or create singleton LLMService with double-checked locking."""
+    global _llm_service  # noqa: PLW0603
+    if _llm_service is None:
+        with _service_lock:
+            if _llm_service is None:
+                _llm_service = LLMService(client_manager=_get_llm_client_manager())
+    return _llm_service
+
 
 def get_chunk_embedding_service() -> ChunkEmbeddingService:
-    """Create ChunkEmbeddingService with required dependencies."""
-    settings = get_settings()
-    llm_client_manager = LLMClientManager(
-        encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
-    )
-    llm_service = LLMService(client_manager=llm_client_manager)
-    chunking_service = ChunkingService()
-    return ChunkEmbeddingService(
-        chunking_service=chunking_service,
-        llm_service=llm_service,
-    )
+    """Get or create singleton ChunkEmbeddingService with double-checked locking.
+
+    All service dependencies are also singletons, ensuring consistent caching
+    behavior for LLM clients and avoiding repeated model loading.
+
+    Uses use_chunking_service_sync() to acquire _access_lock during singleton
+    creation, ensuring mutual exclusion with other callers (TASK-1058.12).
+    """
+    global _chunk_embedding_service  # noqa: PLW0603
+    if _chunk_embedding_service is None:
+        with _service_lock:
+            if _chunk_embedding_service is None:
+                with use_chunking_service_sync() as chunking_service:
+                    _chunk_embedding_service = ChunkEmbeddingService(
+                        chunking_service=chunking_service,
+                        llm_service=_get_llm_service(),
+                    )
+    return _chunk_embedding_service
+
+
+def reset_task_services() -> None:
+    """Reset all service singletons. For testing only."""
+    global _encryption_service, _llm_client_manager  # noqa: PLW0603
+    global _llm_service, _chunk_embedding_service  # noqa: PLW0603
+    with _service_lock:
+        _encryption_service = None
+        _llm_client_manager = None
+        _llm_service = None
+        _chunk_embedding_service = None
+    reset_chunking_service()
 
 
 async def _process_fact_check_item_with_retry(
@@ -935,3 +995,57 @@ async def process_previously_seen_rechunk_task(
         finally:
             await redis_client_bg.disconnect()
             await engine.dispose()
+
+
+@register_task(
+    task_name="rechunk:fact_check",
+    component="rechunk",
+    task_type="deprecated",
+)
+async def deprecated_fact_check_rechunk_task(*args, **kwargs) -> None:
+    """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
+
+    This task was migrated to DBOS in TASK-1056. This handler exists only to
+    acknowledge and discard stale messages in the JetStream queue.
+
+    The task will automatically ACK the message after this function returns,
+    preventing infinite redelivery of legacy messages.
+
+    Remove after 2026-03-01 when all legacy messages have been drained.
+    """
+    logger.info(
+        "Received deprecated rechunk:fact_check message - discarding",
+        extra={
+            "task_name": "rechunk:fact_check",
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()) if kwargs else [],
+            "migration_note": "Task migrated to DBOS in TASK-1056",
+        },
+    )
+
+
+@register_task(
+    task_name="chunk:fact_check_item",
+    component="rechunk",
+    task_type="deprecated",
+)
+async def deprecated_chunk_fact_check_item_task(*args, **kwargs) -> None:
+    """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
+
+    This task was migrated to DBOS in TASK-1056. This handler exists only to
+    acknowledge and discard stale messages in the JetStream queue.
+
+    The task will automatically ACK the message after this function returns,
+    preventing infinite redelivery of legacy messages.
+
+    Remove after 2026-03-01 when all legacy messages have been drained.
+    """
+    logger.info(
+        "Received deprecated chunk:fact_check_item message - discarding",
+        extra={
+            "task_name": "chunk:fact_check_item",
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()) if kwargs else [],
+            "migration_note": "Task migrated to DBOS in TASK-1056",
+        },
+    )

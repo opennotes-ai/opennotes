@@ -368,6 +368,10 @@ class BatchJobService:
         """
         Set the DBOS workflow ID for a batch job.
 
+        After updating the workflow_id, refreshes the job object from the database
+        to ensure all references (including the original job object in the caller's
+        identity map) reflect the updated value.
+
         Args:
             job_id: The job's unique identifier
             workflow_id: DBOS workflow ID to associate with the job
@@ -381,6 +385,7 @@ class BatchJobService:
 
         job.workflow_id = workflow_id
         await self._session.flush()
+        await self._session.refresh(job)
 
         logger.info(
             "Set workflow_id for batch job",

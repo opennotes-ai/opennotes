@@ -31,6 +31,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 import redis.asyncio as aioredis
+from nats.js.api import StreamConfig
 from opentelemetry import context as context_api
 from taskiq import TaskiqMessage, TaskiqResult
 from taskiq.middlewares.opentelemetry_middleware import (
@@ -203,10 +204,20 @@ def _create_broker() -> PullBasedJetStreamBroker:
         connection_kwargs["password"] = settings.NATS_PASSWORD
         logger.info("Taskiq broker configured with NATS authentication")
 
+    stream_config = StreamConfig(
+        name=settings.TASKIQ_STREAM_NAME,
+        max_age=settings.TASKIQ_STREAM_MAX_AGE_SECONDS,
+    )
+    logger.info(
+        f"Taskiq stream configured with max_age={settings.TASKIQ_STREAM_MAX_AGE_SECONDS}s "
+        f"({settings.TASKIQ_STREAM_MAX_AGE_SECONDS // 86400} days)"
+    )
+
     new_broker = (
         PullBasedJetStreamBroker(
             servers=settings.NATS_SERVERS,
             stream_name=settings.TASKIQ_STREAM_NAME,
+            stream_config=stream_config,
             durable="opennotes-taskiq-worker",
             **connection_kwargs,
         )

@@ -1,10 +1,37 @@
 """DBOS workflow infrastructure for durable background tasks.
 
-This module provides:
-- BatchJobDBOSAdapter: Sync DBOS workflow state to BatchJob records
-- CircuitBreaker: Protect against cascading failures during workflow execution
-- dispatch_dbos_rechunk_workflow: Dispatch rechunk jobs via DBOS
-- rechunk_fact_check_workflow: DBOS workflow for rechunking fact-check items
+Architecture:
+    Server mode (opennotes-server):
+        Uses DBOSClient for lightweight enqueue-only operations.
+        Does not poll queues or execute workflows.
+        Use get_dbos_client() in this mode.
+
+    Worker mode (opennotes-dbos-worker):
+        Uses DBOS with launch() for queue polling and execution.
+        Processes workflows dispatched by servers.
+        Use get_dbos() in this mode.
+
+Configuration:
+    get_dbos_client(): Get DBOSClient instance (server mode, enqueue only)
+    get_dbos(): Get DBOS instance (worker mode, full execution)
+    destroy_dbos(): Gracefully destroy DBOS singleton during shutdown
+    destroy_dbos_client(): Gracefully destroy DBOSClient singleton during shutdown
+    reset_dbos(): Reset DBOS singleton for testing
+    reset_dbos_client(): Reset DBOSClient singleton for testing
+
+Adapters:
+    BatchJobDBOSAdapter: Sync DBOS workflow state to BatchJob records.
+        All methods use fire-and-forget semantics (errors logged, not raised).
+
+Resilience:
+    CircuitBreaker: Protect against cascading failures during workflow execution
+    CircuitOpenError: Raised when circuit breaker is open
+    CircuitState: Enum with CLOSED, OPEN, HALF_OPEN states
+
+Workflows:
+    rechunk_fact_check_workflow: Batch rechunking of fact-check items
+    dispatch_dbos_rechunk_workflow: Create BatchJob and enqueue workflow
+    enqueue_single_fact_check_chunk: Enqueue single item for chunking
 """
 
 from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter
@@ -13,16 +40,36 @@ from src.dbos_workflows.circuit_breaker import (
     CircuitOpenError,
     CircuitState,
 )
+from src.dbos_workflows.config import (
+    destroy_dbos,
+    destroy_dbos_client,
+    get_dbos,
+    get_dbos_client,
+    reset_dbos,
+    reset_dbos_client,
+)
 from src.dbos_workflows.rechunk_workflow import (
+    CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
+    RECHUNK_FACT_CHECK_WORKFLOW_NAME,
     dispatch_dbos_rechunk_workflow,
+    enqueue_single_fact_check_chunk,
     rechunk_fact_check_workflow,
 )
 
 __all__ = [
+    "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
+    "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
     "BatchJobDBOSAdapter",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",
+    "destroy_dbos",
+    "destroy_dbos_client",
     "dispatch_dbos_rechunk_workflow",
+    "enqueue_single_fact_check_chunk",
+    "get_dbos",
+    "get_dbos_client",
     "rechunk_fact_check_workflow",
+    "reset_dbos",
+    "reset_dbos_client",
 ]

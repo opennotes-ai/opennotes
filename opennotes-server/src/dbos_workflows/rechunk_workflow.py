@@ -13,15 +13,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from dbos import DBOS, Queue
+from dbos import DBOS, EnqueueOptions, Queue
 from sqlalchemy import select
 
 from src.batch_jobs.constants import RECHUNK_FACT_CHECK_JOB_TYPE
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.dbos_workflows.config import get_dbos_client
 from src.fact_checking.models import FactCheckItem
 from src.monitoring import get_logger
+from src.utils.async_compat import run_sync
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -100,12 +102,17 @@ async def dispatch_dbos_rechunk_workflow(
     await db.refresh(job)
 
     try:
-        handle = rechunk_queue.enqueue(
-            rechunk_fact_check_workflow,
-            batch_job_id=str(job.id),
-            community_server_id=str(community_server_id) if community_server_id else None,
-            item_ids=item_ids,
-            batch_size=batch_size,
+        client = get_dbos_client()
+        options: EnqueueOptions = {
+            "queue_name": "rechunk",
+            "workflow_name": RECHUNK_FACT_CHECK_WORKFLOW_NAME,
+        }
+        handle = client.enqueue(
+            options,
+            str(job.id),
+            str(community_server_id) if community_server_id else None,
+            item_ids,
+            batch_size,
         )
         workflow_id = handle.workflow_id
     except Exception as e:
@@ -291,29 +298,19 @@ def chunk_and_embed_fact_check_sync(
 
     DBOS steps are synchronous, so we need to wrap the async service method.
     This fetches the FactCheckItem's content and processes it.
+
+    Uses singleton service dependencies via get_chunk_embedding_service() for
+    consistent caching (TASK-1058.27). Acquires _access_lock via
+    use_chunking_service_sync() only during NeuralChunker usage (TASK-1058.39),
+    not during the full DB+LLM pipeline.
     """
-    import asyncio
-
-    from src.config import get_settings
     from src.database import get_session_maker
-    from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-    from src.fact_checking.chunking_service import ChunkingService
-    from src.llm_config.encryption import EncryptionService
-    from src.llm_config.manager import LLMClientManager
-    from src.llm_config.service import LLMService
+    from src.fact_checking.chunking_service import use_chunking_service_sync
+    from src.tasks.rechunk_tasks import get_chunk_embedding_service
 
-    async def _async_impl() -> dict[str, Any]:
-        settings = get_settings()
-        llm_client_manager = LLMClientManager(
-            encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
-        )
-        llm_service = LLMService(client_manager=llm_client_manager)
-        chunking_service = ChunkingService()
-        service = ChunkEmbeddingService(
-            chunking_service=chunking_service,
-            llm_service=llm_service,
-        )
+    service = get_chunk_embedding_service()
 
+    async def _fetch_content() -> str:
         async with get_session_maker()() as db:
             result = await db.execute(
                 select(FactCheckItem).where(FactCheckItem.id == fact_check_id)
@@ -321,17 +318,26 @@ def chunk_and_embed_fact_check_sync(
             item = result.scalar_one_or_none()
             if item is None:
                 raise ValueError(f"FactCheckItem {fact_check_id} not found")
+            return item.content or ""
 
+    text = run_sync(_fetch_content())
+
+    with use_chunking_service_sync() as chunking_service:
+        chunk_texts = chunking_service.chunk_text(text)
+
+    async def _embed_and_persist() -> dict[str, Any]:
+        async with get_session_maker()() as db:
             chunks = await service.chunk_and_embed_fact_check(
                 db=db,
                 fact_check_id=fact_check_id,
-                text=item.content or "",
+                text=text,
                 community_server_id=community_server_id,
+                chunk_texts=chunk_texts,
             )
             await db.commit()
             return {"chunks_created": len(chunks)}
 
-    return asyncio.run(_async_impl())
+    return run_sync(_embed_and_persist())
 
 
 def update_batch_job_progress_sync(
@@ -340,8 +346,6 @@ def update_batch_job_progress_sync(
     failed_tasks: int,
 ) -> bool:
     """Synchronous helper to update BatchJob progress from DBOS workflow."""
-    import asyncio
-
     from src.database import get_session_maker
 
     async def _async_impl() -> bool:
@@ -356,7 +360,7 @@ def update_batch_job_progress_sync(
             return True
 
     try:
-        return asyncio.run(_async_impl())
+        return run_sync(_async_impl())
     except Exception as e:
         logger.error(
             "Failed to update batch job progress",
@@ -374,8 +378,6 @@ def finalize_batch_job_sync(
     error_summary: dict[str, Any] | None = None,
 ) -> bool:
     """Synchronous helper to finalize BatchJob from DBOS workflow."""
-    import asyncio
-
     from src.database import get_session_maker
 
     async def _async_impl() -> bool:
@@ -398,7 +400,7 @@ def finalize_batch_job_sync(
             return True
 
     try:
-        return asyncio.run(_async_impl())
+        return run_sync(_async_impl())
     except Exception as e:
         logger.error(
             "Failed to finalize batch job",
@@ -476,8 +478,9 @@ async def enqueue_single_fact_check_chunk(
 ) -> str | None:
     """Enqueue a single fact-check item for chunking via DBOS.
 
-    This function enqueues the chunk_single_fact_check_workflow to the
-    rechunk_queue for durable processing.
+    This function uses DBOSClient.enqueue() to submit the workflow to the
+    rechunk queue for durable processing by a DBOS worker. The client
+    does not poll the queue - it only enqueues work.
 
     Args:
         fact_check_id: UUID of the FactCheckItem to process
@@ -487,10 +490,15 @@ async def enqueue_single_fact_check_chunk(
         The DBOS workflow_id if successfully enqueued, None on failure
     """
     try:
-        handle = rechunk_queue.enqueue(
-            chunk_single_fact_check_workflow,
-            fact_check_id=str(fact_check_id),
-            community_server_id=str(community_server_id) if community_server_id else None,
+        client = get_dbos_client()
+        options: EnqueueOptions = {
+            "queue_name": "rechunk",
+            "workflow_name": CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
+        }
+        handle = client.enqueue(
+            options,
+            str(fact_check_id),
+            str(community_server_id) if community_server_id else None,
         )
 
         logger.info(
@@ -513,3 +521,9 @@ async def enqueue_single_fact_check_chunk(
             exc_info=True,
         )
         return None
+
+
+RECHUNK_FACT_CHECK_WORKFLOW_NAME: str = f"{__name__}.{rechunk_fact_check_workflow.__name__}"
+CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME: str = (
+    f"{__name__}.{chunk_single_fact_check_workflow.__name__}"
+)

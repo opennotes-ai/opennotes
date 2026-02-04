@@ -300,6 +300,11 @@ class Settings(BaseSettings):
         default="OPENNOTES_TASKS",
         description="NATS JetStream stream name for taskiq background tasks",
     )
+    TASKIQ_STREAM_MAX_AGE_SECONDS: int = Field(
+        default=604800,
+        description="Maximum age in seconds for messages in TaskIQ stream (default: 7 days). "
+        "Messages older than this are automatically deleted to prevent stale message accumulation.",
+    )
     TASKIQ_RESULT_EXPIRY: int = Field(
         default=3600,
         description="Time in seconds to keep task results in Redis (default: 1 hour)",
@@ -780,6 +785,12 @@ class Settings(BaseSettings):
         default=5,
         description="Maximum number of bulk content scans per hour per user. "
         "Bulk scans are computationally expensive, so this limit prevents abuse.",
+    )
+
+    DBOS_CONDUCTOR_KEY: str | None = Field(
+        default=None,
+        description="DBOS Conductor API key for workflow observability and management",
+        repr=False,
     )
 
     @model_validator(mode="after")
