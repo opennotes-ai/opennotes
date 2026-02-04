@@ -403,7 +403,7 @@ def reset_chunking_service() -> None:
     """
     global _chunking_service_singleton  # noqa: PLW0603
 
-    with _access_lock:
+    with _singleton_lock:
         if _chunking_service_singleton is not None:
             logger.info("Resetting ChunkingService singleton")
             _chunking_service_singleton = None

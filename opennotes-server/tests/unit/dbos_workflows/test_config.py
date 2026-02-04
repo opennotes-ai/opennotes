@@ -99,10 +99,10 @@ class TestDeriveHttpOtlpEndpoint:
         result = _derive_http_otlp_endpoint("http://host4317.example.com:443")
         assert result == "http://host4317.example.com:443"
 
-    def test_handles_url_with_path(self) -> None:
-        """Handles URLs that include path components."""
+    def test_strips_path_from_url(self) -> None:
+        """Strips path components to return base URL only."""
         result = _derive_http_otlp_endpoint("http://tempo:4317/v1/traces")
-        assert result == "http://tempo:4318/v1/traces"
+        assert result == "http://tempo:4318"
 
     def test_handles_url_with_credentials(self) -> None:
         """Handles URLs with username and password."""
@@ -119,10 +119,10 @@ class TestDeriveHttpOtlpEndpoint:
         result = _derive_http_otlp_endpoint("http://[::1]:4317")
         assert result == "http://[::1]:4318"
 
-    def test_preserves_query_string(self) -> None:
-        """Preserves query string parameters."""
+    def test_strips_query_string(self) -> None:
+        """Strips query string to return base URL only."""
         result = _derive_http_otlp_endpoint("http://tempo:4317?timeout=30")
-        assert result == "http://tempo:4318?timeout=30"
+        assert result == "http://tempo:4318"
 
 
 class TestGetDbosConfig:

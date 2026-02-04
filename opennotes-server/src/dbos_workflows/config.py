@@ -8,6 +8,7 @@ This separation ensures that only workers compete for queued workflows,
 while the server can enqueue work without starting its own executor.
 """
 
+import re
 import threading
 from urllib.parse import urlparse, urlunparse
 
@@ -47,10 +48,10 @@ def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
     parsed = urlparse(endpoint)
 
     if parsed.port != 4317:
-        return endpoint
+        return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
 
     if parsed.hostname is None:
-        return endpoint
+        return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
 
     if ":" in parsed.hostname:
         new_netloc = f"[{parsed.hostname}]:4318"
@@ -63,9 +64,7 @@ def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
             auth = f"{auth}:{parsed.password}"
         new_netloc = f"{auth}@{new_netloc}"
 
-    return urlunparse(
-        (parsed.scheme, new_netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
-    )
+    return urlunparse((parsed.scheme, new_netloc, "", "", "", ""))
 
 
 def get_dbos_config() -> DBOSConfig:
@@ -123,11 +122,14 @@ def get_dbos() -> DBOS:
     without unnecessary lock contention.
     """
     global _dbos_instance
-    if _dbos_instance is None:
+    instance = _dbos_instance
+    if instance is None:
         with _dbos_lock:
-            if _dbos_instance is None:
-                _dbos_instance = create_dbos_instance()
-    return _dbos_instance
+            instance = _dbos_instance
+            if instance is None:
+                instance = create_dbos_instance()
+                _dbos_instance = instance
+    return instance
 
 
 def reset_dbos() -> None:
@@ -184,12 +186,15 @@ def get_dbos_client() -> DBOSClient:
         DBOSClient instance for enqueueing workflows
     """
     global _dbos_client
-    if _dbos_client is None:
+    client = _dbos_client
+    if client is None:
         with _dbos_client_lock:
-            if _dbos_client is None:
+            client = _dbos_client
+            if client is None:
                 sync_url = _get_sync_database_url()
-                _dbos_client = DBOSClient(system_database_url=sync_url)
-    return _dbos_client
+                client = DBOSClient(system_database_url=sync_url)
+                _dbos_client = client
+    return client
 
 
 def destroy_dbos_client() -> None:
@@ -227,4 +232,11 @@ def validate_dbos_connection() -> bool:
                 raise RuntimeError("DBOS system tables not found in 'dbos' schema")
         return True
     except psycopg.Error as e:
-        raise RuntimeError(f"DBOS database connection failed: {e}") from e
+        sanitized = re.sub(
+            r"://[^@]*@",
+            "://***:***@",
+            str(e),
+        )
+        raise RuntimeError(
+            f"DBOS database connection failed: {type(e).__name__}: {sanitized}"
+        ) from None

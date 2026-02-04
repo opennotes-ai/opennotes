@@ -232,7 +232,10 @@ class BatchJobService:
         Raises:
             InvalidStateTransitionError: If job is not in IN_PROGRESS status
         """
-        job = await self.get_job(job_id)
+        result = await self._session.execute(
+            select(BatchJob).where(BatchJob.id == job_id).with_for_update()
+        )
+        job = result.scalar_one_or_none()
         if job is None:
             return None
 
@@ -285,7 +288,10 @@ class BatchJobService:
         Raises:
             InvalidStateTransitionError: If job is in terminal state
         """
-        job = await self.get_job(job_id)
+        result = await self._session.execute(
+            select(BatchJob).where(BatchJob.id == job_id).with_for_update()
+        )
+        job = result.scalar_one_or_none()
         if job is None:
             logger.error(
                 "Job not found for fail_job",
@@ -335,7 +341,10 @@ class BatchJobService:
         Raises:
             InvalidStateTransitionError: If job is in terminal state
         """
-        job = await self.get_job(job_id)
+        result = await self._session.execute(
+            select(BatchJob).where(BatchJob.id == job_id).with_for_update()
+        )
+        job = result.scalar_one_or_none()
         if job is None:
             return None
 
