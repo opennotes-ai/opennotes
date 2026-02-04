@@ -787,6 +787,10 @@ class Settings(BaseSettings):
         "Bulk scans are computationally expensive, so this limit prevents abuse.",
     )
 
+    DBOS_APP_NAME: str = Field(
+        default="opennotes-server",
+        description="Application name for DBOS (lowercase, alphanumeric, dashes, underscores only)",
+    )
     DBOS_CONDUCTOR_KEY: str | None = Field(
         default=None,
         description="DBOS Conductor API key for workflow observability and management",
