@@ -90,9 +90,6 @@ def get_dbos_config() -> DBOSConfig:
         "system_database_url": sync_url,
     }
 
-    if settings.DBOS_CONDUCTOR_KEY:
-        config["conductor_key"] = settings.DBOS_CONDUCTOR_KEY
-
     config["otlp_attributes"] = {
         "service.version": settings.VERSION,
         "deployment.environment": settings.ENVIRONMENT,
@@ -114,6 +111,8 @@ def get_dbos_config() -> DBOSConfig:
 def create_dbos_instance() -> DBOS:
     """Create and return DBOS instance (do not launch yet)."""
     config = get_dbos_config()
+    if settings.DBOS_CONDUCTOR_KEY:
+        return DBOS(config=config, conductor_key=settings.DBOS_CONDUCTOR_KEY)
     return DBOS(config=config)
 
 

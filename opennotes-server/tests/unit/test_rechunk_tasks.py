@@ -1126,7 +1126,7 @@ class TestDeprecatedNoOpHandlers:
         """Verify deprecated handler logs warning and returns None."""
         from src.tasks.rechunk_tasks import deprecated_fact_check_rechunk_task
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             result = await deprecated_fact_check_rechunk_task(
                 "arg1", "arg2", key1="value1", key2="value2"
             )
@@ -1139,7 +1139,7 @@ class TestDeprecatedNoOpHandlers:
         """Verify deprecated handler logs warning and returns None."""
         from src.tasks.rechunk_tasks import deprecated_chunk_fact_check_item_task
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             result = await deprecated_chunk_fact_check_item_task(
                 "fact_check_id", community_server_id="community_id"
             )

@@ -244,37 +244,13 @@ class TestGetDbosConfig:
             assert "otlp_traces_endpoints" not in config
             assert "otlp_logs_endpoints" not in config
 
-    def test_includes_conductor_key_when_set(self) -> None:
+    def test_config_does_not_include_conductor_key(self) -> None:
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = TEST_DATABASE_URL
             mock_settings.OTEL_SERVICE_NAME = "test-service"
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = "test-conductor-api-key-123"
-
-            config: dict[str, Any] = dict(get_dbos_config())
-
-            assert config["conductor_key"] == "test-conductor-api-key-123"
-
-    def test_omits_conductor_key_when_not_set(self) -> None:
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = "test-service"
-            mock_settings.PROJECT_NAME = "Test Project"
-            mock_settings.OTLP_ENDPOINT = None
-            mock_settings.DBOS_CONDUCTOR_KEY = None
-
-            config: dict[str, Any] = dict(get_dbos_config())
-
-            assert "conductor_key" not in config
-
-    def test_omits_conductor_key_when_empty_string(self) -> None:
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = "test-service"
-            mock_settings.PROJECT_NAME = "Test Project"
-            mock_settings.OTLP_ENDPOINT = None
-            mock_settings.DBOS_CONDUCTOR_KEY = ""
 
             config: dict[str, Any] = dict(get_dbos_config())
 
@@ -329,12 +305,52 @@ class TestDbosInstance:
         with (
             patch("src.dbos_workflows.config.DBOS") as mock_dbos_class,
             patch("src.dbos_workflows.config.get_dbos_config") as mock_get_config,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
         ):
             mock_config: dict[str, Any] = {
                 "name": "test",
                 "system_database_url": "postgresql://",
             }
             mock_get_config.return_value = mock_config
+            mock_settings.DBOS_CONDUCTOR_KEY = None
+
+            create_dbos_instance()
+
+            mock_dbos_class.assert_called_once_with(config=mock_config)
+
+    def test_create_dbos_instance_passes_conductor_key(self) -> None:
+        """create_dbos_instance() passes conductor_key to DBOS constructor when set."""
+        with (
+            patch("src.dbos_workflows.config.DBOS") as mock_dbos_class,
+            patch("src.dbos_workflows.config.get_dbos_config") as mock_get_config,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_config: dict[str, Any] = {
+                "name": "test",
+                "system_database_url": "postgresql://",
+            }
+            mock_get_config.return_value = mock_config
+            mock_settings.DBOS_CONDUCTOR_KEY = "test-key-123"
+
+            create_dbos_instance()
+
+            mock_dbos_class.assert_called_once_with(
+                config=mock_config, conductor_key="test-key-123"
+            )
+
+    def test_create_dbos_instance_omits_conductor_key_when_empty(self) -> None:
+        """create_dbos_instance() omits conductor_key when empty string."""
+        with (
+            patch("src.dbos_workflows.config.DBOS") as mock_dbos_class,
+            patch("src.dbos_workflows.config.get_dbos_config") as mock_get_config,
+            patch("src.dbos_workflows.config.settings") as mock_settings,
+        ):
+            mock_config: dict[str, Any] = {
+                "name": "test",
+                "system_database_url": "postgresql://",
+            }
+            mock_get_config.return_value = mock_config
+            mock_settings.DBOS_CONDUCTOR_KEY = ""
 
             create_dbos_instance()
 
