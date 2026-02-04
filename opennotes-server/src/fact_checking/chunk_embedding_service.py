@@ -427,6 +427,7 @@ class ChunkEmbeddingService:
         fact_check_id: UUID,
         text: str,
         community_server_id: UUID | None = None,
+        chunk_texts: list[str] | None = None,
     ) -> list[ChunkEmbedding]:
         """
         Chunk text and create/reuse embeddings for a FactCheckItem.
@@ -447,11 +448,16 @@ class ChunkEmbeddingService:
             text: Text content to chunk and embed
             community_server_id: Community server UUID for LLM credentials,
                 or None for global fallback
+            chunk_texts: Pre-computed chunk texts. When provided, skips the
+                chunking_service.chunk_text() call. Callers that need to
+                control lock scope around NeuralChunker can chunk externally
+                and pass the results here.
 
         Returns:
             List of ChunkEmbedding records (new or existing)
         """
-        chunk_texts = self.chunking_service.chunk_text(text)
+        if chunk_texts is None:
+            chunk_texts = self.chunking_service.chunk_text(text)
 
         chunk_results = await self.get_or_create_chunks_batch(
             db=db,

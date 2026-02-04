@@ -301,7 +301,8 @@ def chunk_and_embed_fact_check_sync(
 
     Uses singleton service dependencies via get_chunk_embedding_service() for
     consistent caching (TASK-1058.27). Acquires _access_lock via
-    use_chunking_service_sync() for mutual exclusion during chunking.
+    use_chunking_service_sync() only during NeuralChunker usage (TASK-1058.39),
+    not during the full DB+LLM pipeline.
     """
     from src.database import get_session_maker
     from src.fact_checking.chunking_service import use_chunking_service_sync
@@ -309,7 +310,7 @@ def chunk_and_embed_fact_check_sync(
 
     service = get_chunk_embedding_service()
 
-    async def _async_impl() -> dict[str, Any]:
+    async def _fetch_content() -> str:
         async with get_session_maker()() as db:
             result = await db.execute(
                 select(FactCheckItem).where(FactCheckItem.id == fact_check_id)
@@ -317,18 +318,26 @@ def chunk_and_embed_fact_check_sync(
             item = result.scalar_one_or_none()
             if item is None:
                 raise ValueError(f"FactCheckItem {fact_check_id} not found")
+            return item.content or ""
 
+    text = run_sync(_fetch_content())
+
+    with use_chunking_service_sync() as chunking_service:
+        chunk_texts = chunking_service.chunk_text(text)
+
+    async def _embed_and_persist() -> dict[str, Any]:
+        async with get_session_maker()() as db:
             chunks = await service.chunk_and_embed_fact_check(
                 db=db,
                 fact_check_id=fact_check_id,
-                text=item.content or "",
+                text=text,
                 community_server_id=community_server_id,
+                chunk_texts=chunk_texts,
             )
             await db.commit()
             return {"chunks_created": len(chunks)}
 
-    with use_chunking_service_sync():
-        return run_sync(_async_impl())
+    return run_sync(_embed_and_persist())
 
 
 def update_batch_job_progress_sync(

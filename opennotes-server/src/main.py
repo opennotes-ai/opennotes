@@ -1,3 +1,4 @@
+import asyncio
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -312,7 +313,7 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
         try:
             dbos = get_dbos()
             dbos.launch()
-            validate_dbos_connection()
+            await asyncio.to_thread(validate_dbos_connection)
             logger.info(
                 "DBOS worker mode - queue polling enabled and validated", extra={"schema": "dbos"}
             )

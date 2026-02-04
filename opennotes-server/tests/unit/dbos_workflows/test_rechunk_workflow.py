@@ -99,18 +99,20 @@ class TestProcessFactCheckItem:
 class TestChunkAndEmbedSyncWrapper:
     """Tests for the synchronous wrapper around async chunking logic."""
 
-    def test_wrapper_uses_run_sync(self) -> None:
-        """Sync wrapper uses run_sync to execute async code safely."""
+    def test_wrapper_narrows_lock_to_chunking_only(self) -> None:
+        """Lock is held only during chunk_text, not during DB/LLM operations."""
         from src.dbos_workflows.rechunk_workflow import chunk_and_embed_fact_check_sync
 
         fact_check_id = uuid4()
         community_server_id = uuid4()
 
         mock_service = MagicMock()
+        mock_chunking_service = MagicMock()
+        mock_chunking_service.chunk_text.return_value = ["chunk1", "chunk2"]
 
         @contextmanager
         def mock_use_chunking_sync():
-            yield MagicMock()
+            yield mock_chunking_service
 
         with (
             patch("src.dbos_workflows.rechunk_workflow.run_sync") as mock_run_sync,
@@ -123,7 +125,7 @@ class TestChunkAndEmbedSyncWrapper:
                 side_effect=mock_use_chunking_sync,
             ),
         ):
-            mock_run_sync.return_value = {"chunks_created": 3}
+            mock_run_sync.side_effect = ["some text content", {"chunks_created": 3}]
 
             result = chunk_and_embed_fact_check_sync(
                 fact_check_id=fact_check_id,
@@ -131,7 +133,8 @@ class TestChunkAndEmbedSyncWrapper:
             )
 
             assert result["chunks_created"] == 3
-            mock_run_sync.assert_called_once()
+            assert mock_run_sync.call_count == 2
+            mock_chunking_service.chunk_text.assert_called_once_with("some text content")
 
 
 class TestRechunkWorkflow:
@@ -446,7 +449,8 @@ class TestEnqueueSingleFactCheckChunkDBOS:
             )
 
         call_args = mock_client.enqueue.call_args
-        assert call_args.args[2] is None
+        _options, _fact_check_id, community_server_id_arg = call_args.args
+        assert community_server_id_arg is None
 
     @pytest.mark.asyncio
     async def test_uses_correct_enqueue_options(self) -> None:
@@ -467,7 +471,7 @@ class TestEnqueueSingleFactCheckChunkDBOS:
             )
 
         call_args = mock_client.enqueue.call_args
-        options = call_args.args[0]
+        options, _fact_check_id, _community_server_id = call_args.args
         assert options["queue_name"] == "rechunk"
         assert "chunk_single_fact_check_workflow" in options["workflow_name"]
 

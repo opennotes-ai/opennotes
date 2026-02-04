@@ -1386,38 +1386,41 @@ class TestServiceSingletons:
 
         services = []
         errors = []
+        num_threads = 10
+        barrier = threading.Barrier(num_threads)
 
         def get_service():
             try:
-                with (
-                    patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
-                    patch(
-                        "src.tasks.rechunk_tasks.use_chunking_service_sync",
-                        side_effect=mock_use_chunking_service_sync,
-                    ),
-                    patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
-                    patch(
-                        "src.tasks.rechunk_tasks.LLMClientManager",
-                        return_value=mock_llm_client_manager,
-                    ),
-                    patch(
-                        "src.tasks.rechunk_tasks.EncryptionService",
-                        return_value=mock_encryption_service,
-                    ),
-                ):
-                    service = get_chunk_embedding_service()
-                    services.append(service)
+                barrier.wait()
+                service = get_chunk_embedding_service()
+                services.append(service)
             except Exception as e:
                 errors.append(e)
 
-        threads = [threading.Thread(target=get_service) for _ in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        with (
+            patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
+            patch(
+                "src.tasks.rechunk_tasks.use_chunking_service_sync",
+                side_effect=mock_use_chunking_service_sync,
+            ),
+            patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
+            patch(
+                "src.tasks.rechunk_tasks.LLMClientManager",
+                return_value=mock_llm_client_manager,
+            ),
+            patch(
+                "src.tasks.rechunk_tasks.EncryptionService",
+                return_value=mock_encryption_service,
+            ),
+        ):
+            threads = [threading.Thread(target=get_service) for _ in range(num_threads)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
 
         assert not errors
-        assert len(services) == 10
+        assert len(services) == num_threads
         assert all(s is services[0] for s in services)
 
         reset_task_services()
