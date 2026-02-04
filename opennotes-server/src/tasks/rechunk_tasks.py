@@ -45,7 +45,10 @@ from src.cache.redis_client import RedisClient
 from src.common.db_retry import is_deadlock_error
 from src.config import get_settings
 from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
-from src.fact_checking.chunking_service import get_chunking_service
+from src.fact_checking.chunking_service import (
+    reset_chunking_service,
+    use_chunking_service_sync,
+)
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.llm_config.encryption import EncryptionService
@@ -104,15 +107,19 @@ def get_chunk_embedding_service() -> ChunkEmbeddingService:
 
     All service dependencies are also singletons, ensuring consistent caching
     behavior for LLM clients and avoiding repeated model loading.
+
+    Uses use_chunking_service_sync() to acquire _access_lock during singleton
+    creation, ensuring mutual exclusion with other callers (TASK-1058.12).
     """
     global _chunk_embedding_service  # noqa: PLW0603
     if _chunk_embedding_service is None:
         with _service_lock:
             if _chunk_embedding_service is None:
-                _chunk_embedding_service = ChunkEmbeddingService(
-                    chunking_service=get_chunking_service(),
-                    llm_service=_get_llm_service(),
-                )
+                with use_chunking_service_sync() as chunking_service:
+                    _chunk_embedding_service = ChunkEmbeddingService(
+                        chunking_service=chunking_service,
+                        llm_service=_get_llm_service(),
+                    )
     return _chunk_embedding_service
 
 
@@ -125,6 +132,7 @@ def reset_task_services() -> None:
         _llm_client_manager = None
         _llm_service = None
         _chunk_embedding_service = None
+    reset_chunking_service()
 
 
 async def _process_fact_check_item_with_retry(
@@ -1005,7 +1013,7 @@ async def deprecated_fact_check_rechunk_task(*args, **kwargs) -> None:
 
     Remove after 2026-03-01 when all legacy messages have been drained.
     """
-    logger.warning(
+    logger.info(
         "Received deprecated rechunk:fact_check message - discarding",
         extra={
             "task_name": "rechunk:fact_check",
@@ -1032,7 +1040,7 @@ async def deprecated_chunk_fact_check_item_task(*args, **kwargs) -> None:
 
     Remove after 2026-03-01 when all legacy messages have been drained.
     """
-    logger.warning(
+    logger.info(
         "Received deprecated chunk:fact_check_item message - discarding",
         extra={
             "task_name": "chunk:fact_check_item",

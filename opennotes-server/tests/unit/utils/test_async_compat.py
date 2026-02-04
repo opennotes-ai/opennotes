@@ -8,7 +8,13 @@ from typing import Any
 
 import pytest
 
-from src.utils.async_compat import run_sync
+from src.utils.async_compat import (
+    _executor,
+    _thread_local_loops,
+    cleanup_event_loops,
+    run_sync,
+    shutdown,
+)
 
 
 class TestRunSync:
@@ -118,3 +124,80 @@ class TestRunSync:
 
         assert result == "done"
         assert call_order == ["start", "end"]
+
+    def test_run_sync_reuses_executor_from_async_context(self) -> None:
+        executor_ids: list[int] = []
+
+        async def capture() -> None:
+            run_sync(asyncio.sleep(0))
+            executor_ids.append(id(_executor))
+            run_sync(asyncio.sleep(0))
+            executor_ids.append(id(_executor))
+
+        asyncio.run(capture())
+
+        assert len(set(executor_ids)) == 1
+
+    def test_run_sync_concurrent_from_async_context(self) -> None:
+        results: list[int] = []
+        errors: list[Exception] = []
+
+        async def outer() -> None:
+            threads = []
+            for i in range(10):
+
+                async def work(val: int = i) -> int:
+                    return val * 3
+
+                def submit(val: int = i) -> None:
+                    try:
+                        results.append(run_sync(work(val)))
+                    except Exception as e:
+                        errors.append(e)
+
+                t = threading.Thread(target=submit)
+                threads.append(t)
+                t.start()
+            for t in threads:
+                t.join()
+
+        asyncio.run(outer())
+
+        assert not errors
+        assert sorted(results) == [i * 3 for i in range(10)]
+
+
+class TestCleanup:
+    def test_cleanup_event_loops_closes_registered_loops(self) -> None:
+        loops_before = len(_thread_local_loops)
+
+        async def noop() -> None:
+            pass
+
+        def worker() -> None:
+            run_sync(noop())
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+
+        assert len(_thread_local_loops) > loops_before
+
+        cleanup_event_loops()
+
+        assert len(_thread_local_loops) == 0
+
+    def test_shutdown_cleans_up(self) -> None:
+        async def noop() -> None:
+            pass
+
+        def worker() -> None:
+            run_sync(noop())
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+
+        shutdown()
+
+        assert len(_thread_local_loops) == 0

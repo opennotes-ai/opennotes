@@ -10,6 +10,7 @@ add checkpointing and retry behavior.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -105,7 +106,23 @@ class TestChunkAndEmbedSyncWrapper:
         fact_check_id = uuid4()
         community_server_id = uuid4()
 
-        with patch("src.dbos_workflows.rechunk_workflow.run_sync") as mock_run_sync:
+        mock_service = MagicMock()
+
+        @contextmanager
+        def mock_use_chunking_sync():
+            yield MagicMock()
+
+        with (
+            patch("src.dbos_workflows.rechunk_workflow.run_sync") as mock_run_sync,
+            patch(
+                "src.tasks.rechunk_tasks.get_chunk_embedding_service",
+                return_value=mock_service,
+            ),
+            patch(
+                "src.fact_checking.chunking_service.use_chunking_service_sync",
+                side_effect=mock_use_chunking_sync,
+            ),
+        ):
             mock_run_sync.return_value = {"chunks_created": 3}
 
             result = chunk_and_embed_fact_check_sync(

@@ -14,6 +14,8 @@ Architecture:
 Configuration:
     get_dbos_client(): Get DBOSClient instance (server mode, enqueue only)
     get_dbos(): Get DBOS instance (worker mode, full execution)
+    destroy_dbos(): Gracefully destroy DBOS singleton during shutdown
+    destroy_dbos_client(): Gracefully destroy DBOSClient singleton during shutdown
     reset_dbos(): Reset DBOS singleton for testing
     reset_dbos_client(): Reset DBOSClient singleton for testing
 
@@ -39,22 +41,30 @@ from src.dbos_workflows.circuit_breaker import (
     CircuitState,
 )
 from src.dbos_workflows.config import (
+    destroy_dbos,
+    destroy_dbos_client,
     get_dbos,
     get_dbos_client,
     reset_dbos,
     reset_dbos_client,
 )
 from src.dbos_workflows.rechunk_workflow import (
+    CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
+    RECHUNK_FACT_CHECK_WORKFLOW_NAME,
     dispatch_dbos_rechunk_workflow,
     enqueue_single_fact_check_chunk,
     rechunk_fact_check_workflow,
 )
 
 __all__ = [
+    "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
+    "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
     "BatchJobDBOSAdapter",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",
+    "destroy_dbos",
+    "destroy_dbos_client",
     "dispatch_dbos_rechunk_workflow",
     "enqueue_single_fact_check_chunk",
     "get_dbos",

@@ -185,29 +185,23 @@ def get_dbos_client() -> DBOSClient:
     return _dbos_client
 
 
-def reset_dbos_client() -> None:
-    """Reset the DBOSClient instance. Used for testing."""
+def destroy_dbos_client() -> None:
     global _dbos_client
     with _dbos_client_lock:
+        if _dbos_client is not None:
+            _dbos_client.destroy()
+            _dbos_client = None
+
+
+def reset_dbos_client() -> None:
+    global _dbos_client
+    with _dbos_client_lock:
+        if _dbos_client is not None:
+            _dbos_client.destroy()
         _dbos_client = None
 
 
-def validate_dbos_connection(dbos_instance: DBOS) -> bool:
-    """Validate DBOS can connect to its system database.
-
-    Executes a simple query against the DBOS schema to verify:
-    1. Database connectivity works
-    2. DBOS system tables exist (created by launch())
-
-    Args:
-        dbos_instance: The launched DBOS instance
-
-    Returns:
-        True if validation succeeds
-
-    Raises:
-        RuntimeError: If connection or schema validation fails
-    """
+def validate_dbos_connection() -> bool:
     import psycopg
 
     config = get_dbos_config()

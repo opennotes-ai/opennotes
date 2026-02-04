@@ -51,7 +51,13 @@ from src.community_servers.router import router as community_servers_router
 from src.config import settings
 from src.config_router import router as config_router
 from src.database import close_db, get_session_maker, init_db
-from src.dbos_workflows.config import get_dbos, validate_dbos_connection
+from src.dbos_workflows.config import (
+    destroy_dbos,
+    destroy_dbos_client,
+    get_dbos,
+    get_dbos_client,
+    validate_dbos_connection,
+)
 from src.events.nats_client import nats_client
 from src.events.schemas import EventType
 from src.events.subscriber import event_subscriber
@@ -279,15 +285,7 @@ async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) ->
         )
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
-    logger.info(f"Environment: {settings.ENVIRONMENT}")
-    logger.info(f"Debug mode: {settings.DEBUG}")
-    logger.info(f"Server mode: {settings.SERVER_MODE}")
-
-    is_dbos_worker = settings.SERVER_MODE == "dbos_worker"
-
+def _validate_encryption_key() -> None:
     logger.info("Validating encryption master key...")
     try:
         EncryptionService(settings.ENCRYPTION_MASTER_KEY)
@@ -296,40 +294,44 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error(f"Encryption master key validation failed: {e}")
         raise RuntimeError(f"Invalid ENCRYPTION_MASTER_KEY: {e}") from e
 
-    # Run startup validation checks
-    if not settings.TESTING:  # Skip in test mode
-        try:
-            await run_startup_checks(skip_checks=settings.SKIP_STARTUP_CHECKS)
-        except Exception as e:
-            logger.error(f"Startup validation failed: {e}")
-            raise RuntimeError("Server startup aborted due to failed validation checks") from e
 
-    await init_db()
-    logger.info("Database initialized")
+async def _run_startup_validation() -> None:
+    if settings.TESTING:
+        return
+    try:
+        await run_startup_checks(skip_checks=settings.SKIP_STARTUP_CHECKS)
+    except Exception as e:
+        logger.error(f"Startup validation failed: {e}")
+        raise RuntimeError("Server startup aborted due to failed validation checks") from e
 
-    if not settings.TESTING and is_dbos_worker:
+
+async def _init_dbos(is_dbos_worker: bool) -> None:
+    if settings.TESTING:
+        return
+    if is_dbos_worker:
         try:
             dbos = get_dbos()
             dbos.launch()
-            validate_dbos_connection(dbos)
-
+            validate_dbos_connection()
             logger.info(
                 "DBOS worker mode - queue polling enabled and validated", extra={"schema": "dbos"}
             )
         except Exception as e:
             logger.error(f"DBOS initialization failed: {e}")
             raise RuntimeError(f"DBOS initialization failed: {e}") from e
-    elif not settings.TESTING:
-        logger.info("DBOS server mode - using DBOSClient for enqueueing only")
+    else:
+        try:
+            get_dbos_client()
+            logger.info("DBOS server mode - DBOSClient validated for enqueueing")
+        except Exception as e:
+            logger.error(f"DBOSClient initialization failed: {e}")
+            raise RuntimeError(f"DBOSClient initialization failed: {e}") from e
 
-    await redis_client.connect()
-    await rate_limiter.connect()
-    await interaction_cache.connect()
-    logger.info("Redis connections established")
 
-    await _connect_nats()
-
-    # Initialize TaskIQ, AI services, and event handlers only in full mode
+async def _init_worker_services(
+    app: FastAPI,
+    is_dbos_worker: bool,
+) -> tuple[AINoteWriter | None, VisionService | None]:
     ai_note_writer = None
     vision_service = None
     if is_dbos_worker:
@@ -337,18 +339,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.taskiq_broker = None
     else:
         app.state.taskiq_broker = await _start_taskiq_broker()
-
-        # Initialize AI Note Writer and Vision services if enabled
         ai_note_writer, vision_service, llm_service = await _init_ai_services()
-
         await _register_bulk_scan_handlers(llm_service=llm_service)
+    return ai_note_writer, vision_service
 
-    # Store in app state for dependency injection
-    app.state.ai_note_writer = ai_note_writer
-    app.state.vision_service = vision_service
-    app.state.health_checker = health_checker
-    app.state.distributed_health = distributed_health
 
+def _register_health_checks() -> None:
     async def check_db() -> Any:
         async with get_session_maker()() as session:
             return await health_checker.check_database(session)
@@ -412,20 +408,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     health_checker.register_check("dbos", check_dbos)
     logger.info("Health checks registered")
 
-    await distributed_health.start_heartbeat(health_checker.check_all)
-    logger.info(f"Distributed health heartbeat started for instance {settings.INSTANCE_ID}")
 
-    yield
-
+async def _shutdown_services(
+    app: FastAPI, is_dbos_worker: bool, ai_note_writer: AINoteWriter | None
+) -> None:
     await distributed_health.stop_heartbeat()
     logger.info("Distributed health heartbeat stopped")
 
-    # Stop AI Note Writer service if it was started
     if ai_note_writer:
         await ai_note_writer.stop()
         logger.info("AI Note Writer service stopped")
 
-    # Shutdown taskiq broker
     if hasattr(app.state, "taskiq_broker") and app.state.taskiq_broker:
         try:
             await app.state.taskiq_broker.shutdown()
@@ -448,8 +441,66 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await redis_client.disconnect()
     logger.info("Redis connections closed")
 
+    _destroy_dbos(is_dbos_worker)
+
     await close_db()
     logger.info(f"Shutting down {settings.PROJECT_NAME}")
+
+
+def _destroy_dbos(is_dbos_worker: bool) -> None:
+    if is_dbos_worker:
+        try:
+            destroy_dbos()
+            logger.info("DBOS worker destroyed")
+        except Exception as e:
+            logger.warning(f"Error destroying DBOS worker: {e}")
+    else:
+        try:
+            destroy_dbos_client()
+            logger.info("DBOSClient destroyed")
+        except Exception as e:
+            logger.warning(f"Error destroying DBOSClient: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
+    logger.info(f"Debug mode: {settings.DEBUG}")
+    logger.info(f"Server mode: {settings.SERVER_MODE}")
+
+    is_dbos_worker = settings.SERVER_MODE == "dbos_worker"
+
+    _validate_encryption_key()
+    await _run_startup_validation()
+
+    await init_db()
+    logger.info("Database initialized")
+
+    await _init_dbos(is_dbos_worker)
+
+    await redis_client.connect()
+    await rate_limiter.connect()
+    await interaction_cache.connect()
+    logger.info("Redis connections established")
+
+    await _connect_nats()
+
+    ai_note_writer, vision_service = await _init_worker_services(app, is_dbos_worker)
+
+    app.state.ai_note_writer = ai_note_writer
+    app.state.vision_service = vision_service
+    app.state.health_checker = health_checker
+    app.state.distributed_health = distributed_health
+
+    _register_health_checks()
+
+    await distributed_health.start_heartbeat(health_checker.check_all)
+    logger.info(f"Distributed health heartbeat started for instance {settings.INSTANCE_ID}")
+
+    yield
+
+    await _shutdown_services(app, is_dbos_worker, ai_note_writer)
 
 
 app = FastAPI(

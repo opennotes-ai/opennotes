@@ -105,7 +105,7 @@ async def dispatch_dbos_rechunk_workflow(
         client = get_dbos_client()
         options: EnqueueOptions = {
             "queue_name": "rechunk",
-            "workflow_name": "src.dbos_workflows.rechunk_workflow.rechunk_fact_check_workflow",
+            "workflow_name": RECHUNK_FACT_CHECK_WORKFLOW_NAME,
         }
         handle = client.enqueue(
             options,
@@ -299,28 +299,17 @@ def chunk_and_embed_fact_check_sync(
     DBOS steps are synchronous, so we need to wrap the async service method.
     This fetches the FactCheckItem's content and processes it.
 
-    Uses the singleton ChunkingService via use_chunking_service_sync() to avoid
-    repeatedly loading the NeuralChunker model on each call.
+    Uses singleton service dependencies via get_chunk_embedding_service() for
+    consistent caching (TASK-1058.27). Acquires _access_lock via
+    use_chunking_service_sync() for mutual exclusion during chunking.
     """
-    from src.config import get_settings
     from src.database import get_session_maker
-    from src.fact_checking.chunk_embedding_service import ChunkEmbeddingService
     from src.fact_checking.chunking_service import use_chunking_service_sync
-    from src.llm_config.encryption import EncryptionService
-    from src.llm_config.manager import LLMClientManager
-    from src.llm_config.service import LLMService
+    from src.tasks.rechunk_tasks import get_chunk_embedding_service
 
-    async def _async_impl(chunking_service) -> dict[str, Any]:
-        settings = get_settings()
-        llm_client_manager = LLMClientManager(
-            encryption_service=EncryptionService(settings.ENCRYPTION_MASTER_KEY)
-        )
-        llm_service = LLMService(client_manager=llm_client_manager)
-        service = ChunkEmbeddingService(
-            chunking_service=chunking_service,
-            llm_service=llm_service,
-        )
+    service = get_chunk_embedding_service()
 
+    async def _async_impl() -> dict[str, Any]:
         async with get_session_maker()() as db:
             result = await db.execute(
                 select(FactCheckItem).where(FactCheckItem.id == fact_check_id)
@@ -338,8 +327,8 @@ def chunk_and_embed_fact_check_sync(
             await db.commit()
             return {"chunks_created": len(chunks)}
 
-    with use_chunking_service_sync() as chunking_service:
-        return run_sync(_async_impl(chunking_service))
+    with use_chunking_service_sync():
+        return run_sync(_async_impl())
 
 
 def update_batch_job_progress_sync(
@@ -495,7 +484,7 @@ async def enqueue_single_fact_check_chunk(
         client = get_dbos_client()
         options: EnqueueOptions = {
             "queue_name": "rechunk",
-            "workflow_name": "src.dbos_workflows.rechunk_workflow.chunk_single_fact_check_workflow",
+            "workflow_name": CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
         }
         handle = client.enqueue(
             options,
@@ -525,5 +514,7 @@ async def enqueue_single_fact_check_chunk(
         return None
 
 
-RECHUNK_FACT_CHECK_WORKFLOW_NAME: str = rechunk_fact_check_workflow.__name__
-CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME: str = chunk_single_fact_check_workflow.__name__
+RECHUNK_FACT_CHECK_WORKFLOW_NAME: str = f"{__name__}.{rechunk_fact_check_workflow.__name__}"
+CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME: str = (
+    f"{__name__}.{chunk_single_fact_check_workflow.__name__}"
+)

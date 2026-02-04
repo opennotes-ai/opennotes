@@ -37,6 +37,7 @@ class TestBrokerConfiguration:
             settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800  # 7 days
             settings.TASKIQ_RESULT_EXPIRY = 7200
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 5
+            settings.NATS_CONNECT_TIMEOUT = 15
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
@@ -57,13 +58,12 @@ class TestBrokerConfiguration:
                 result_ex_time=7200,
             )
 
-            # Verify broker was called with expected arguments
             mock_broker.assert_called_once()
             call_kwargs = mock_broker.call_args.kwargs
             assert call_kwargs["servers"] == ["nats://test:4222"]
             assert call_kwargs["stream_name"] == "TEST_STREAM"
             assert call_kwargs["durable"] == "opennotes-taskiq-worker"
-            # stream_config should have max_age set
+            assert call_kwargs["connect_timeout"] == 15
             assert call_kwargs["stream_config"].max_age == 604800
 
             mock_retry.assert_called_once()
@@ -89,6 +89,7 @@ class TestBrokerConfiguration:
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_CONNECT_TIMEOUT = 10
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
@@ -131,6 +132,7 @@ class TestBrokerConfiguration:
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_CONNECT_TIMEOUT = 10
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
             mock_settings.return_value = settings
@@ -303,6 +305,7 @@ class TestBrokerConnectionFailure:
             settings.TASKIQ_STREAM_NAME = "TEST"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_CONNECT_TIMEOUT = 10
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
@@ -350,6 +353,7 @@ class TestBrokerConnectionFailure:
             settings.TASKIQ_STREAM_NAME = "TEST"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_CONNECT_TIMEOUT = 10
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
@@ -396,6 +400,7 @@ class TestRetryMiddlewareConfiguration:
             settings.TASKIQ_STREAM_NAME = "TEST"
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 10
+            settings.NATS_CONNECT_TIMEOUT = 10
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
@@ -439,6 +444,7 @@ class TestBrokerAuthentication:
             settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800  # 7 days
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
+            settings.NATS_CONNECT_TIMEOUT = 30
             settings.NATS_USERNAME = "testuser"
             settings.NATS_PASSWORD = "testpass"
             settings.INSTANCE_ID = "test-instance"
@@ -453,14 +459,13 @@ class TestBrokerAuthentication:
 
             _create_broker()
 
-            # Verify broker was called with expected arguments including auth
             mock_broker.assert_called_once()
             call_kwargs = mock_broker.call_args.kwargs
             assert call_kwargs["servers"] == ["nats://test:4222"]
             assert call_kwargs["stream_name"] == "TEST_STREAM"
+            assert call_kwargs["connect_timeout"] == 30
             assert call_kwargs["user"] == "testuser"
             assert call_kwargs["password"] == "testpass"
-            # stream_config should have max_age set
             assert call_kwargs["stream_config"].max_age == 604800
 
 

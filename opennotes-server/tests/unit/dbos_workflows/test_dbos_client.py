@@ -172,13 +172,23 @@ class TestServerModeInitialization:
     This ensures only workers compete for queued workflows.
     """
 
-    def test_full_mode_uses_dbos_client(self) -> None:
+    @pytest.mark.asyncio
+    async def test_full_mode_uses_dbos_client(self) -> None:
         """In full mode, enqueueing uses DBOSClient (not queue.enqueue)."""
+        from uuid import uuid4
+
         from src.dbos_workflows.rechunk_workflow import enqueue_single_fact_check_chunk
 
-        assert "get_dbos_client" in str(
-            enqueue_single_fact_check_chunk.__code__.co_names
-        ) or hasattr(enqueue_single_fact_check_chunk, "__wrapped__")
+        with patch("src.dbos_workflows.rechunk_workflow.get_dbos_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_handle = MagicMock()
+            mock_handle.workflow_id = "wf-123"
+            mock_client.enqueue.return_value = mock_handle
+            mock_get_client.return_value = mock_client
+
+            await enqueue_single_fact_check_chunk(fact_check_id=uuid4())
+
+            mock_get_client.assert_called_once()
 
     def test_rechunk_queue_still_defined_for_worker(self) -> None:
         """rechunk_queue is still defined for DBOS workers to poll."""

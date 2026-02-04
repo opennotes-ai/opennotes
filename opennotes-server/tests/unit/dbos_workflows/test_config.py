@@ -455,9 +455,8 @@ class TestValidateDbosConnection:
             mock_config.return_value = {"system_database_url": "postgresql://bad:url@host/db"}
             mock_connect.side_effect = psycopg.Error("Connection refused")
 
-            mock_dbos = MagicMock()
             with pytest.raises(RuntimeError, match="DBOS database connection failed"):
-                validate_dbos_connection(mock_dbos)
+                validate_dbos_connection()
 
     def test_raises_runtime_error_when_schema_missing(self) -> None:
         """Raises RuntimeError when DBOS schema is not found."""
@@ -475,9 +474,8 @@ class TestValidateDbosConnection:
             mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
             mock_connect.return_value = mock_conn
 
-            mock_dbos = MagicMock()
             with pytest.raises(RuntimeError, match="DBOS system tables not found"):
-                validate_dbos_connection(mock_dbos)
+                validate_dbos_connection()
 
     def test_returns_true_when_validation_succeeds(self) -> None:
         """Returns True when database connection and schema check succeed."""
@@ -495,6 +493,5 @@ class TestValidateDbosConnection:
             mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
             mock_connect.return_value = mock_conn
 
-            mock_dbos = MagicMock()
-            result = validate_dbos_connection(mock_dbos)
+            result = validate_dbos_connection()
             assert result is True

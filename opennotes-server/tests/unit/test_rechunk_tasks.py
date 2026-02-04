@@ -11,6 +11,7 @@ AC#5: Test lock release on success and failure paths
 """
 
 import logging
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -1290,10 +1291,15 @@ class TestServiceSingletons:
         mock_settings = MagicMock()
         mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
 
+        @contextmanager
+        def mock_use_chunking_service_sync():
+            yield mock_chunking_service
+
         with (
             patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
             patch(
-                "src.tasks.rechunk_tasks.get_chunking_service", return_value=mock_chunking_service
+                "src.tasks.rechunk_tasks.use_chunking_service_sync",
+                side_effect=mock_use_chunking_service_sync,
             ),
             patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
             patch("src.tasks.rechunk_tasks.LLMClientManager", return_value=mock_llm_client_manager),
@@ -1309,7 +1315,7 @@ class TestServiceSingletons:
         reset_task_services()
 
     def test_reset_task_services_clears_singletons(self):
-        """Verify reset_task_services clears all singleton instances."""
+        """Verify reset_task_services clears all singleton instances including ChunkingService."""
         from src.tasks.rechunk_tasks import (
             get_chunk_embedding_service,
             reset_task_services,
@@ -1325,16 +1331,22 @@ class TestServiceSingletons:
         mock_settings = MagicMock()
         mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
 
+        @contextmanager
+        def mock_use_chunking_service_sync():
+            yield mock_chunking_service
+
         with (
             patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
             patch(
-                "src.tasks.rechunk_tasks.get_chunking_service", return_value=mock_chunking_service
+                "src.tasks.rechunk_tasks.use_chunking_service_sync",
+                side_effect=mock_use_chunking_service_sync,
             ),
             patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
             patch("src.tasks.rechunk_tasks.LLMClientManager", return_value=mock_llm_client_manager),
             patch(
                 "src.tasks.rechunk_tasks.EncryptionService", return_value=mock_encryption_service
             ),
+            patch("src.tasks.rechunk_tasks.reset_chunking_service") as mock_reset_chunking,
         ):
             service_before = get_chunk_embedding_service()
             assert service_before is not None
@@ -1347,6 +1359,7 @@ class TestServiceSingletons:
             assert module._encryption_service is None
             assert module._llm_client_manager is None
             assert module._llm_service is None
+            mock_reset_chunking.assert_called_once()
 
     def test_singleton_pattern_is_thread_safe(self):
         """Verify singleton pattern uses proper locking for thread safety."""
@@ -1367,6 +1380,10 @@ class TestServiceSingletons:
         mock_settings = MagicMock()
         mock_settings.ENCRYPTION_MASTER_KEY = "test-key"
 
+        @contextmanager
+        def mock_use_chunking_service_sync():
+            yield mock_chunking_service
+
         services = []
         errors = []
 
@@ -1375,8 +1392,8 @@ class TestServiceSingletons:
                 with (
                     patch("src.tasks.rechunk_tasks.get_settings", return_value=mock_settings),
                     patch(
-                        "src.tasks.rechunk_tasks.get_chunking_service",
-                        return_value=mock_chunking_service,
+                        "src.tasks.rechunk_tasks.use_chunking_service_sync",
+                        side_effect=mock_use_chunking_service_sync,
                     ),
                     patch("src.tasks.rechunk_tasks.LLMService", return_value=mock_llm_service),
                     patch(
