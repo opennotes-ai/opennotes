@@ -10,6 +10,7 @@ item IDs, enqueues the DBOS workflow, and links them together.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -107,7 +108,8 @@ async def dispatch_dbos_rechunk_workflow(
             "queue_name": "rechunk",
             "workflow_name": RECHUNK_FACT_CHECK_WORKFLOW_NAME,
         }
-        handle = client.enqueue(
+        handle = await asyncio.to_thread(
+            client.enqueue,
             options,
             str(job.id),
             str(community_server_id) if community_server_id else None,
@@ -495,7 +497,8 @@ async def enqueue_single_fact_check_chunk(
             "queue_name": "rechunk",
             "workflow_name": CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
         }
-        handle = client.enqueue(
+        handle = await asyncio.to_thread(
+            client.enqueue,
             options,
             str(fact_check_id),
             str(community_server_id) if community_server_id else None,

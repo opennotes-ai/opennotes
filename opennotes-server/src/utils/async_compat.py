@@ -31,8 +31,11 @@ def cleanup_event_loops() -> None:
     with _loops_lock:
         for loop in _thread_local_loops:
             if not loop.is_closed():
-                loop.call_soon_threadsafe(loop.stop)
-                loop.close()
+                try:
+                    if not loop.is_running():
+                        loop.close()
+                except RuntimeError:
+                    pass
         _thread_local_loops.clear()
 
 
@@ -44,7 +47,7 @@ def shutdown() -> None:
 atexit.register(shutdown)
 
 
-def run_sync(coro: Coroutine[Any, Any, T]) -> T:
+def run_sync(coro: Coroutine[Any, Any, T], *, timeout: float = 300.0) -> T:
     """Run an async coroutine synchronously.
 
     Handles two scenarios:
@@ -56,6 +59,7 @@ def run_sync(coro: Coroutine[Any, Any, T]) -> T:
 
     Args:
         coro: The coroutine to execute
+        timeout: Maximum seconds to wait when running in a thread (default 300s)
 
     Returns:
         The result of the coroutine
@@ -68,8 +72,9 @@ def run_sync(coro: Coroutine[Any, Any, T]) -> T:
     except RuntimeError:
         if not hasattr(_thread_local, "loop") or _thread_local.loop.is_closed():
             _thread_local.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(_thread_local.loop)
             _register_loop(_thread_local.loop)
         return _thread_local.loop.run_until_complete(coro)
 
     future = _executor.submit(asyncio.run, coro)
-    return future.result()
+    return future.result(timeout=timeout)

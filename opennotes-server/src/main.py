@@ -351,7 +351,7 @@ async def _init_worker_services(
     return ai_note_writer, vision_service
 
 
-def _register_health_checks() -> None:
+def _register_health_checks(is_dbos_worker: bool) -> None:
     async def check_db() -> Any:
         async with get_session_maker()() as session:
             return await health_checker.check_database(session)
@@ -396,11 +396,18 @@ def _register_health_checks() -> None:
                     status=HealthStatus.HEALTHY,
                     details={"enabled": False, "reason": "Disabled in test mode"},
                 )
-            _dbos = get_dbos()
-            del _dbos
+            if is_dbos_worker:
+                _dbos = get_dbos()
+                del _dbos
+                return ComponentHealth(
+                    status=HealthStatus.HEALTHY,
+                    details={"mode": "worker", "schema": "dbos", "workflows_enabled": True},
+                )
+            _client = get_dbos_client()
+            del _client
             return ComponentHealth(
                 status=HealthStatus.HEALTHY,
-                details={"schema": "dbos", "workflows_enabled": True},
+                details={"mode": "server", "schema": "dbos", "enqueue_enabled": True},
             )
         except Exception as e:
             return ComponentHealth(
@@ -467,6 +474,10 @@ def _destroy_dbos(is_dbos_worker: bool) -> None:
             logger.info("DBOSClient destroyed")
         except Exception as e:
             logger.warning(f"Error destroying DBOSClient: {e}")
+        try:
+            destroy_dbos()
+        except Exception:
+            pass
 
 
 @asynccontextmanager
@@ -500,7 +511,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.health_checker = health_checker
     app.state.distributed_health = distributed_health
 
-    _register_health_checks()
+    _register_health_checks(is_dbos_worker)
 
     await distributed_health.start_heartbeat(health_checker.check_all)
     logger.info(f"Distributed health heartbeat started for instance {settings.INSTANCE_ID}")

@@ -24,7 +24,7 @@ from src.fact_checking.chunk_models import (
     PreviouslySeenChunk,
     compute_chunk_text_hash,
 )
-from src.fact_checking.chunking_service import ChunkingService
+from src.fact_checking.chunking_service import ChunkingService, _access_lock
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 
@@ -457,7 +457,8 @@ class ChunkEmbeddingService:
             List of ChunkEmbedding records (new or existing)
         """
         if chunk_texts is None:
-            chunk_texts = self.chunking_service.chunk_text(text)
+            with _access_lock:
+                chunk_texts = self.chunking_service.chunk_text(text)
 
         chunk_results = await self.get_or_create_chunks_batch(
             db=db,
@@ -528,6 +529,7 @@ class ChunkEmbeddingService:
         previously_seen_id: UUID,
         text: str,
         community_server_id: UUID | None = None,
+        chunk_texts: list[str] | None = None,
     ) -> list[ChunkEmbedding]:
         """
         Chunk text and create/reuse embeddings for a PreviouslySeenMessage.
@@ -548,11 +550,17 @@ class ChunkEmbeddingService:
             text: Text content to chunk and embed
             community_server_id: Community server UUID for LLM credentials,
                 or None for global fallback
+            chunk_texts: Pre-computed chunk texts. When provided, skips the
+                chunking_service.chunk_text() call. Callers that need to
+                control lock scope around NeuralChunker can chunk externally
+                and pass the results here.
 
         Returns:
             List of ChunkEmbedding records (new or existing)
         """
-        chunk_texts = self.chunking_service.chunk_text(text)
+        if chunk_texts is None:
+            with _access_lock:
+                chunk_texts = self.chunking_service.chunk_text(text)
 
         chunk_results = await self.get_or_create_chunks_batch(
             db=db,

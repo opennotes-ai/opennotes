@@ -108,18 +108,26 @@ def get_chunk_embedding_service() -> ChunkEmbeddingService:
     All service dependencies are also singletons, ensuring consistent caching
     behavior for LLM clients and avoiding repeated model loading.
 
-    Uses use_chunking_service_sync() to acquire _access_lock during singleton
-    creation, ensuring mutual exclusion with other callers (TASK-1058.12).
+    Lock ordering: acquires _service_lock and _access_lock (via
+    use_chunking_service_sync) independently to avoid ABBA deadlock with
+    callers that acquire _access_lock without _service_lock (TASK-1061.06).
     """
     global _chunk_embedding_service  # noqa: PLW0603
     if _chunk_embedding_service is None:
         with _service_lock:
+            if _chunk_embedding_service is not None:
+                return _chunk_embedding_service
+            llm_service = _get_llm_service()
+
+        with use_chunking_service_sync() as chunking_service:
+            service = ChunkEmbeddingService(
+                chunking_service=chunking_service,
+                llm_service=llm_service,
+            )
+
+        with _service_lock:
             if _chunk_embedding_service is None:
-                with use_chunking_service_sync() as chunking_service:
-                    _chunk_embedding_service = ChunkEmbeddingService(
-                        chunking_service=chunking_service,
-                        llm_service=_get_llm_service(),
-                    )
+                _chunk_embedding_service = service
     return _chunk_embedding_service
 
 
