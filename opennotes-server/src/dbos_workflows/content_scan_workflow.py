@@ -588,7 +588,7 @@ async def dispatch_content_scan_workflow(
         scan_types_json = json.dumps(scan_types)
 
         handle = await asyncio.to_thread(
-            client.start_workflow,
+            client.start_workflow,  # pyright: ignore[reportAttributeAccessIssue]
             content_scan_orchestration_workflow,
             str(scan_id),
             str(community_server_id),
