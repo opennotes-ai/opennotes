@@ -1,0 +1,17 @@
+{
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "standard",
+  "include": ["src"],
+  "exclude": ["**/node_modules", "**/__pycache__", "**/.venv", "**/scoring/**"],
+  "reportImportCycles": false,
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": false,
+  "reportMissingModuleSource": false,
+  "reportPrivateUsage": "warning",
+  "reportUnusedImport": "warning",
+  "reportUnusedClass": "warning",
+  "reportUnusedFunction": "warning",
+  "reportUnusedVariable": "warning",
+  "reportDuplicateImport": "error",
+  "reportUnnecessaryIsInstance": "warning"
+}
