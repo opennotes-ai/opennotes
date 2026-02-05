@@ -25,9 +25,9 @@ class TestScanTypeEnum:
         """CONVERSATION_FLASHPOINT should be in ALL_SCAN_TYPES."""
         assert ScanType.CONVERSATION_FLASHPOINT in ALL_SCAN_TYPES
 
-    def test_flashpoint_in_default_scan_types(self):
-        """CONVERSATION_FLASHPOINT should be in DEFAULT_SCAN_TYPES."""
-        assert ScanType.CONVERSATION_FLASHPOINT in DEFAULT_SCAN_TYPES
+    def test_flashpoint_not_in_default_scan_types(self):
+        """CONVERSATION_FLASHPOINT should NOT be in DEFAULT_SCAN_TYPES (phased rollout, opt-in)."""
+        assert ScanType.CONVERSATION_FLASHPOINT not in DEFAULT_SCAN_TYPES
 
     def test_all_enum_values_accounted_for(self):
         """ALL_SCAN_TYPES should contain all ScanType enum values."""
