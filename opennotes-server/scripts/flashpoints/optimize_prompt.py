@@ -45,6 +45,7 @@ def optimize_flashpoint_detector(
     max_train: int = 200,
     max_dev: int = 50,
     log_dir: Path | None = None,
+    reflection_minibatch_size: int = 5,
 ) -> FlashpointDetector:
     """Run GEPA optimization on the flashpoint detector.
 
@@ -81,7 +82,7 @@ def optimize_flashpoint_detector(
         "auto": auto,
         "num_threads": 6,
         "track_stats": True,
-        "reflection_minibatch_size": 3,
+        "reflection_minibatch_size": reflection_minibatch_size,
         "reflection_lm": reflection_lm,
     }
     if log_dir:
@@ -287,6 +288,12 @@ Examples:
         help="Print progress during evaluation",
     )
     parser.add_argument(
+        "--reflection-minibatch-size",
+        type=int,
+        default=5,
+        help="Number of examples per GEPA reflection minibatch (default: 5)",
+    )
+    parser.add_argument(
         "--log-dir",
         type=Path,
         default=Path(__file__).parent.parent.parent / "data" / "flashpoints" / "gepa_logs",
@@ -309,6 +316,7 @@ Examples:
             output_path=args.output,
             reflection_model=args.reflection_model,
             log_dir=args.log_dir,
+            reflection_minibatch_size=args.reflection_minibatch_size,
         )
 
     _, _, testset = load_flashpoint_datasets()
