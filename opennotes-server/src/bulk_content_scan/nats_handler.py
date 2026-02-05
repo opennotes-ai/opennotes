@@ -8,12 +8,16 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
+from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
 from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
 from src.community_config.models import CommunityConfig
 from src.config import settings
 from src.database import get_session_maker
+from src.dbos_workflows.content_scan_workflow import (
+    enqueue_content_scan_batch,
+    send_all_transmitted_signal,
+)
 from src.events.publisher import event_publisher
 from src.events.schemas import (
     BulkScanAllBatchesTransmittedEvent,
@@ -31,10 +35,6 @@ from src.fact_checking.embedding_service import EmbeddingService
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
-from src.tasks.content_monitoring_tasks import (
-    finalize_bulk_scan_task,
-    process_bulk_scan_batch_task,
-)
 
 logger = get_logger(__name__)
 
@@ -591,103 +591,95 @@ class BulkScanEventHandler:
         self.publisher = BulkScanResultsPublisher(nats_client)
         self.subscriber = event_subscriber
 
-    async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
-        """Handle incoming message batch by dispatching to TaskIQ.
+    async def _get_scan_types_for_community(self, community_server_id: UUID) -> list[str]:
+        """Determine scan types based on community server configuration.
 
-        Uses the hybrid NATS→TaskIQ pattern:
-        - NATS provides cross-service event routing from Discord bot
-        - TaskIQ provides retries, result storage, and tracing
+        Checks if flashpoint detection is enabled for the community and
+        includes CONVERSATION_FLASHPOINT scan type if so.
 
-        See ADR-004: NATS vs TaskIQ Usage Boundaries
+        Args:
+            community_server_id: Community server UUID
+
+        Returns:
+            List of scan type strings
         """
+        scan_types = list(DEFAULT_SCAN_TYPES)
+
+        try:
+            async with get_session_maker()() as session:
+                result = await session.execute(
+                    select(CommunityServer.flashpoint_detection_enabled).where(
+                        CommunityServer.id == community_server_id
+                    )
+                )
+                enabled = result.scalar_one_or_none()
+                if enabled:
+                    scan_types.append(ScanType.CONVERSATION_FLASHPOINT)
+        except Exception:
+            logger.warning(
+                "Failed to check flashpoint_detection_enabled for DBOS dispatch",
+                extra={"community_server_id": str(community_server_id)},
+                exc_info=True,
+            )
+
+        return [str(st) for st in scan_types]
+
+    async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
+        """Handle incoming message batch by enqueuing DBOS batch workflow.
+
+        Uses the NATS -> DBOS pattern:
+        - NATS provides cross-service event routing from Discord bot
+        - DBOS provides durable execution with retries and checkpointing
+        - Batch workflow sends batch_complete signal to orchestrator when done
+        """
+        scan_types = await self._get_scan_types_for_community(event.community_server_id)
+        orchestrator_workflow_id = str(event.scan_id)
+
         logger.info(
-            "Dispatching bulk scan batch to TaskIQ",
+            "Dispatching bulk scan batch to DBOS",
             extra={
                 "scan_id": str(event.scan_id),
                 "batch_number": event.batch_number,
                 "message_count": len(event.messages),
+                "scan_types": scan_types,
             },
         )
 
-        await process_bulk_scan_batch_task.kiq(
-            scan_id=str(event.scan_id),
-            community_server_id=str(event.community_server_id),
+        await enqueue_content_scan_batch(
+            orchestrator_workflow_id=orchestrator_workflow_id,
+            scan_id=event.scan_id,
+            community_server_id=event.community_server_id,
             batch_number=event.batch_number,
-            messages=[msg.model_dump() for msg in event.messages],
-            db_url=settings.DATABASE_URL,
-            redis_url=settings.REDIS_URL,
+            messages=[msg.model_dump(mode="json") for msg in event.messages],
+            scan_types=scan_types,
         )
 
     async def _handle_all_batches_transmitted(
         self, event: BulkScanAllBatchesTransmittedEvent
     ) -> None:
-        """Handle all_batches_transmitted event by setting flag and checking completion.
+        """Handle all_batches_transmitted event by sending signal to DBOS orchestrator.
 
-        Uses the hybrid NATS→TaskIQ pattern:
+        Uses the NATS -> DBOS pattern:
         - NATS delivers the transmitted event from Discord bot
-        - We set the transmitted flag in Redis
-        - If all batches are already processed, dispatch finalization to TaskIQ
+        - DBOS.send() delivers the all_transmitted signal to the orchestrator workflow
+        - The orchestrator handles finalization when all conditions are met
 
-        This implements the dual-completion-trigger pattern:
-        - Batch handler triggers finalization when last batch completes (after transmitted)
-        - Transmitted handler triggers finalization if all batches already done
+        The orchestrator workflow ID is the scan_id (set via SetWorkflowID at dispatch).
         """
         logger.info(
-            "Processing all_batches_transmitted",
+            "Sending all_transmitted signal to DBOS orchestrator",
             extra={
                 "scan_id": str(event.scan_id),
                 "messages_scanned": event.messages_scanned,
             },
         )
 
-        async with get_session_maker()() as session:
-            service = BulkContentScanService(
-                session=session,
-                embedding_service=self.embedding_service,
-                redis_client=self.redis_client,
-                llm_service=self.llm_service,
-                flashpoint_service=FlashpointDetectionService(),
-            )
+        orchestrator_workflow_id = str(event.scan_id)
 
-            await service.set_all_batches_transmitted(event.scan_id, event.messages_scanned)
-
-            processed_count = await service.get_processed_count(event.scan_id)
-            if processed_count >= event.messages_scanned:
-                should_dispatch = await service.try_set_finalize_dispatched(event.scan_id)
-                if should_dispatch:
-                    logger.info(
-                        "Transmitted handler dispatching finalization to TaskIQ",
-                        extra={
-                            "scan_id": str(event.scan_id),
-                            "processed_count": processed_count,
-                            "messages_scanned": event.messages_scanned,
-                        },
-                    )
-                    await finalize_bulk_scan_task.kiq(
-                        scan_id=str(event.scan_id),
-                        community_server_id=str(event.community_server_id),
-                        messages_scanned=event.messages_scanned,
-                        db_url=settings.DATABASE_URL,
-                        redis_url=settings.REDIS_URL,
-                    )
-                else:
-                    logger.info(
-                        "Transmitted handler skipping finalization (already dispatched)",
-                        extra={
-                            "scan_id": str(event.scan_id),
-                            "processed_count": processed_count,
-                            "messages_scanned": event.messages_scanned,
-                        },
-                    )
-            else:
-                logger.info(
-                    "Transmitted handler not triggering completion (batches still pending)",
-                    extra={
-                        "scan_id": str(event.scan_id),
-                        "processed_count": processed_count,
-                        "messages_scanned": event.messages_scanned,
-                    },
-                )
+        await send_all_transmitted_signal(
+            orchestrator_workflow_id=orchestrator_workflow_id,
+            messages_scanned=event.messages_scanned,
+        )
 
     def register(self) -> None:
         """Register bulk scan event handlers with the subscriber."""

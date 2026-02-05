@@ -32,6 +32,7 @@ from src.auth.permissions import is_service_account
 from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import get_latest_scan_for_community, has_recent_scan
+from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
 from src.bulk_content_scan.schemas import FlaggedMessage, MatchResult
 from src.bulk_content_scan.service import (
     BulkContentScanService,
@@ -48,11 +49,13 @@ from src.common.jsonapi import (
 )
 from src.config import settings
 from src.database import get_db
+from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import get_embedding_service, get_llm_service
 from src.fact_checking.models import FactCheckItem
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
+from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
@@ -583,6 +586,37 @@ async def initiate_scan(
             initiated_by_user_id=profile_id,
             scan_window_days=attrs.scan_window_days,
         )
+
+        scan_types: list[ScanType | str] = list(DEFAULT_SCAN_TYPES)
+        try:
+            cs_result = await session.execute(
+                select(CommunityServer.flashpoint_detection_enabled).where(
+                    CommunityServer.id == attrs.community_server_id
+                )
+            )
+            if cs_result.scalar_one_or_none():
+                scan_types.append(ScanType.CONVERSATION_FLASHPOINT)
+        except Exception:
+            logger.warning(
+                "Failed to check flashpoint_detection_enabled",
+                extra={"community_server_id": str(attrs.community_server_id)},
+                exc_info=True,
+            )
+
+        workflow_id = await dispatch_content_scan_workflow(
+            scan_id=scan_log.id,
+            community_server_id=attrs.community_server_id,
+            scan_types=[str(st) for st in scan_types],
+        )
+
+        if workflow_id:
+            logger.info(
+                "DBOS content scan workflow dispatched (JSON:API)",
+                extra={
+                    "scan_id": str(scan_log.id),
+                    "workflow_id": workflow_id,
+                },
+            )
 
         resource = BulkScanResource(
             type="bulk-scans",

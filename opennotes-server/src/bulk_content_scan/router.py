@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -16,6 +17,7 @@ from src.auth.permissions import is_service_account
 from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import has_recent_scan
+from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
 from src.bulk_content_scan.schemas import (
     BulkScanCreateRequest,
     BulkScanResponse,
@@ -29,8 +31,10 @@ from src.bulk_content_scan.service import (
 )
 from src.cache.redis_client import redis_client
 from src.database import get_db
+from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import get_embedding_service, get_llm_service
+from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
@@ -217,6 +221,37 @@ async def initiate_scan(
         initiated_by_user_id=profile_id,
         scan_window_days=body.scan_window_days,
     )
+
+    scan_types = list(DEFAULT_SCAN_TYPES)
+    try:
+        result = await session.execute(
+            sa_select(CommunityServer.flashpoint_detection_enabled).where(
+                CommunityServer.id == body.community_server_id
+            )
+        )
+        if result.scalar_one_or_none():
+            scan_types.append(ScanType.CONVERSATION_FLASHPOINT)
+    except Exception:
+        logger.warning(
+            "Failed to check flashpoint_detection_enabled",
+            extra={"community_server_id": str(body.community_server_id)},
+            exc_info=True,
+        )
+
+    workflow_id = await dispatch_content_scan_workflow(
+        scan_id=scan_log.id,
+        community_server_id=body.community_server_id,
+        scan_types=[str(st) for st in scan_types],
+    )
+
+    if workflow_id:
+        logger.info(
+            "DBOS content scan workflow dispatched",
+            extra={
+                "scan_id": str(scan_log.id),
+                "workflow_id": workflow_id,
+            },
+        )
 
     return BulkScanResponse(
         scan_id=scan_log.id,

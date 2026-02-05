@@ -43,9 +43,11 @@ class TestWorkerWorkflowRegistration:
             assert "extra" in log_call.kwargs
             assert "registered_workflows" in log_call.kwargs["extra"]
             workflows = log_call.kwargs["extra"]["registered_workflows"]
-            assert len(workflows) == 2
+            assert len(workflows) == 4
             assert "rechunk_fact_check_workflow" in workflows[0]
             assert "chunk_single_fact_check_workflow" in workflows[1]
+            assert "content_scan_orchestration_workflow" in workflows[2]
+            assert "process_content_scan_batch" in workflows[3]
 
     @pytest.mark.asyncio
     async def test_server_mode_does_not_import_workflows(self) -> None:

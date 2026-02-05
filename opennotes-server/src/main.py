@@ -310,11 +310,13 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
     if is_dbos_worker:
         # Import workflow modules to register @DBOS.workflow() decorated functions.
         # MUST happen before launch() so DBOS can find and execute queued workflows.
-        from src.dbos_workflows import rechunk_workflow
+        from src.dbos_workflows import content_scan_workflow, rechunk_workflow
 
         registered_workflows = [
             rechunk_workflow.RECHUNK_FACT_CHECK_WORKFLOW_NAME,
             rechunk_workflow.CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
+            content_scan_workflow.CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
+            content_scan_workflow.PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
         ]
         logger.info(
             "DBOS workflow modules loaded",
