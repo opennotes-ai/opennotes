@@ -11228,7 +11228,7 @@
           "flashpoint_detection_enabled": {
             "type": "boolean",
             "title": "Flashpoint Detection Enabled",
-            "default": true
+            "default": false
           },
           "created_at": {
             "anyOf": [

@@ -4348,7 +4348,7 @@ export interface components {
             is_public: boolean;
             /**
              * Flashpoint Detection Enabled
-             * @default true
+             * @default false
              */
             flashpoint_detection_enabled: boolean;
             /** Created At */

@@ -225,6 +225,11 @@ async def update_welcome_message(
 @router.patch(
     "/community-servers/{platform_community_server_id}/flashpoint-detection",
     response_model=FlashpointDetectionUpdateResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized — requires admin or service account"},
+        404: {"description": "Community server not found"},
+    },
 )
 async def update_flashpoint_detection(
     platform_community_server_id: str,
