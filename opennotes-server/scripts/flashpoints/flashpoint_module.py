@@ -4,6 +4,7 @@ This module re-exports the core DSPy components from the shared utility
 and defines training-specific metrics.
 """
 
+import os
 from typing import Any
 
 import dspy
@@ -84,15 +85,39 @@ def flashpoint_metric_with_feedback(
 
 DEFAULT_MODEL = "openai/gpt-5-mini"
 
+_API_KEY_ENV_VARS = {
+    "openai/": "OPENAI_API_KEY",
+    "anthropic/": "ANTHROPIC_API_KEY",
+}
+
+
+def _validate_api_key(model: str) -> None:
+    """Validate the required API key env var is set for *model*."""
+    for prefix, env_var in _API_KEY_ENV_VARS.items():
+        if model.startswith(prefix):
+            if not os.environ.get(env_var):
+                print(
+                    f"Error: {env_var} environment variable is required "
+                    f"for model {model!r}. "
+                    f"Set it with: export {env_var}=sk-..."
+                )
+                raise SystemExit(1)
+            return
+
 
 if __name__ == "__main__":
-    import os
+    import argparse
 
-    model = os.environ.get("FLASHPOINT_MODEL", DEFAULT_MODEL)
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: OPENAI_API_KEY environment variable is not set")
-        raise SystemExit(1)
+    parser = argparse.ArgumentParser(description="Run a quick flashpoint detection demo.")
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("FLASHPOINT_MODEL", DEFAULT_MODEL),
+        help=f"LLM model identifier (default: $FLASHPOINT_MODEL or {DEFAULT_MODEL})",
+    )
+    args = parser.parse_args()
+
+    model: str = args.model
+    _validate_api_key(model)
 
     lm = dspy.LM(model)
     dspy.configure(lm=lm)

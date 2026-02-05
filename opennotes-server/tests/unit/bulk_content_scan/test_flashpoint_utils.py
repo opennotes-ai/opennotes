@@ -1,5 +1,7 @@
 """Unit tests for flashpoint_utils.parse_bool."""
 
+import logging
+
 import pytest
 
 from src.bulk_content_scan.flashpoint_utils import parse_bool
@@ -22,14 +24,24 @@ class TestParseBool:
         assert parse_bool(value) is False
 
     @pytest.mark.parametrize(
-        ("value", "expected"),
+        "value",
         [
-            ("something", True),
-            ("", False),
+            "maybe",
+            "uncertain",
+            "something",
+            "The conversation might derail",
+            "I think so",
+            "possibly",
         ],
     )
-    def test_unrecognized_strings_fall_through_to_bool(self, value: str, expected: bool):
-        assert parse_bool(value) is expected
+    def test_unrecognized_strings_return_false(self, value: str, caplog):
+        with caplog.at_level(logging.WARNING, logger="src.bulk_content_scan.flashpoint_utils"):
+            result = parse_bool(value)
+        assert result is False
+        assert "unrecognized string" in caplog.text
+
+    def test_empty_string_returns_false(self):
+        assert parse_bool("") is False
 
     @pytest.mark.parametrize(
         ("value", "expected"),

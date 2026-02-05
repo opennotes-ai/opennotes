@@ -157,6 +157,7 @@ ignore = [
 "src/claim_relevance_check/prompt_optimization/augment_dataset.py" = ["PLR0912"]  # augment_dataset() has clear branch structure for interactive/non-interactive modes
 "src/dbos_workflows/**/*.py" = ["PLC0415", "PLW0603"]  # Lazy imports required to avoid circular deps; global state for singleton adapter
 "src/bulk_content_scan/flashpoint_service.py" = ["PLC0415", "PLW0603"]  # Lazy dspy import to avoid heavy ML deps at startup; global for singleton
+"src/bulk_content_scan/flashpoint_utils.py" = ["PLC0415"]  # Lazy dspy import to avoid heavy ML deps at startup
 
 [tool.ruff.format]
 quote-style = "double"
