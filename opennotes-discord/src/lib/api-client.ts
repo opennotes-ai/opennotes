@@ -166,7 +166,8 @@ export type RecentScanResponse = components['schemas']['RecentScanResponse'];
 export type NoteRequestsResultResponse = components['schemas']['NoteRequestsResultResponse'];
 export type SimilarityMatch = components['schemas']['SimilarityMatch'];
 export type OpenAIModerationMatch = components['schemas']['OpenAIModerationMatch'];
-export type MatchResult = SimilarityMatch | OpenAIModerationMatch;
+export type ConversationFlashpointMatch = components['schemas']['ConversationFlashpointMatch'];
+export type MatchResult = SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch;
 export type ScanErrorInfoSchema = components['schemas']['ScanErrorInfoSchema'];
 export type ScanErrorSummarySchema = components['schemas']['ScanErrorSummarySchema'];
 export type ExplanationResultResponse = components['schemas']['ExplanationResultResponse'];
@@ -1874,7 +1875,12 @@ export class ApiClient {
   async getFlashpointDetectionStatus(
     platformCommunityServerId: string,
     _context?: UserContext
-  ): Promise<CommunityServerJSONAPIResponse> {
-    return this.getCommunityServerByPlatformId(platformCommunityServerId, 'discord');
+  ): Promise<FlashpointDetectionUpdateResponse> {
+    const serverResponse = await this.getCommunityServerByPlatformId(platformCommunityServerId, 'discord');
+    return {
+      id: serverResponse.data.id,
+      platform_community_server_id: serverResponse.data.attributes.platform_community_server_id,
+      flashpoint_detection_enabled: serverResponse.data.attributes.flashpoint_detection_enabled,
+    };
   }
 }
