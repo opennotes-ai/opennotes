@@ -997,6 +997,50 @@ class TestSignalCoordination:
         assert finalize_kwargs["messages_scanned"] == 10
 
 
+class TestCountMismatchBreakCondition:
+    """Tests for the count mismatch break condition (batch_result is None + all_transmitted)."""
+
+    def test_breaks_on_count_mismatch_after_all_transmitted(self) -> None:
+        """Orchestrator breaks instead of looping indefinitely when counts don't match after all_transmitted."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[
+                {"processed": 3, "skipped": 0, "errors": 0, "flagged_count": 1, "batch_number": 1},
+                None,
+            ],
+            tx_responses=[
+                {"messages_scanned": 10},
+                None,
+            ],
+        )
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 3
+        assert finalize_kwargs["messages_scanned"] == 10
+
+
 class TestProgressTrackingThroughWorkflowSteps:
     """Tests that progress accumulates correctly across batch signals."""
 

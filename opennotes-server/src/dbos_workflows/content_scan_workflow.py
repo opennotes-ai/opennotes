@@ -169,6 +169,22 @@ def content_scan_orchestration_workflow(
             )
             break
 
+        if batch_result is None and all_transmitted and tx_signal is None:
+            logger.warning(
+                "Orchestrator detected count mismatch after all_transmitted - proceeding to finalization",
+                extra={
+                    "scan_id": scan_id,
+                    "messages_scanned": messages_scanned,
+                    "processed_count": processed_count,
+                    "skipped_count": skipped_count,
+                    "error_count": error_count,
+                    "actual_total": processed_count + skipped_count + error_count,
+                    "missing_count": messages_scanned
+                    - (processed_count + skipped_count + error_count),
+                },
+            )
+            break
+
     result = finalize_scan_step(
         scan_id=scan_id,
         community_server_id=community_server_id,
