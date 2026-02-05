@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import dspy
-
-from src.bulk_content_scan.flashpoint_utils import FlashpointDetector, parse_bool
-from src.bulk_content_scan.schemas import ConversationFlashpointMatch
 from src.monitoring import get_logger
 
 if TYPE_CHECKING:
-    from src.bulk_content_scan.schemas import BulkScanMessage
+    import dspy
+
+    from src.bulk_content_scan.flashpoint_utils import FlashpointDetector
+    from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
 
 logger = get_logger(__name__)
+
+_TRANSIENT_ERRORS = (ValueError, TimeoutError, ConnectionError, OSError)
 
 
 class FlashpointDetectionService:
@@ -47,6 +49,7 @@ class FlashpointDetectionService:
         self._lm: dspy.LM | None = None
         self._detector: FlashpointDetector | None = None
         self._optimized_path = optimized_model_path
+        self._init_lock = threading.Lock()
 
     def _get_default_optimized_path(self) -> Path:
         """Get the default path for the optimized detector."""
@@ -55,11 +58,23 @@ class FlashpointDetectionService:
         )
 
     def _get_detector(self) -> FlashpointDetector:
-        """Lazily initialize the detector."""
-        if self._detector is None:
-            self._lm = dspy.LM(self.model)
+        """Lazily initialize the detector (thread-safe)."""
+        if self._detector is not None:
+            return self._detector
 
-            self._detector = FlashpointDetector()
+        with self._init_lock:
+            if self._detector is not None:
+                return self._detector
+
+            import dspy as _dspy
+
+            from src.bulk_content_scan.flashpoint_utils import (
+                FlashpointDetector as _FlashpointDetector,
+            )
+
+            self._lm = _dspy.LM(self.model)
+
+            self._detector = _FlashpointDetector()
 
             optimized_path = self._optimized_path or self._get_default_optimized_path()
             if optimized_path.exists():
@@ -78,9 +93,11 @@ class FlashpointDetectionService:
 
     def _run_detector(
         self, detector: FlashpointDetector, context_str: str, current_msg: str
-    ) -> dspy.Prediction:
+    ) -> Any:
         """Run the detector synchronously (intended for use with asyncio.to_thread)."""
-        with dspy.context(lm=self._lm):
+        import dspy as _dspy
+
+        with _dspy.context(lm=self._lm):
             return detector(context=context_str, message=current_msg)
 
     async def detect_flashpoint(
@@ -99,7 +116,13 @@ class FlashpointDetectionService:
 
         Returns:
             ConversationFlashpointMatch if flashpoint detected, None otherwise
+
+        Raises:
+            Exception: Re-raises critical (non-transient) errors after logging.
         """
+        from src.bulk_content_scan.flashpoint_utils import parse_bool
+        from src.bulk_content_scan.schemas import ConversationFlashpointMatch
+
         if max_context is None:
             max_context = self.DEFAULT_MAX_CONTEXT
 
@@ -128,9 +151,49 @@ class FlashpointDetectionService:
                 context_messages=len(recent_context),
             )
 
-        except Exception as e:
-            logger.error(
-                "Flashpoint detection failed",
-                extra={"error": str(e), "message_id": message.message_id},
+        except _TRANSIENT_ERRORS as e:
+            logger.warning(
+                "Flashpoint detection failed (transient)",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "message_id": message.message_id,
+                },
             )
             return None
+
+        except Exception as e:
+            logger.error(
+                "Flashpoint detection failed (critical)",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "message_id": message.message_id,
+                },
+            )
+            raise
+
+
+_flashpoint_service: FlashpointDetectionService | None = None
+_singleton_lock = threading.Lock()
+
+
+def get_flashpoint_service(
+    model: str | None = None,
+    optimized_model_path: Path | None = None,
+) -> FlashpointDetectionService:
+    """Return a cached singleton FlashpointDetectionService."""
+    global _flashpoint_service
+
+    if _flashpoint_service is not None:
+        return _flashpoint_service
+
+    with _singleton_lock:
+        if _flashpoint_service is not None:
+            return _flashpoint_service
+        _flashpoint_service = FlashpointDetectionService(
+            model=model,
+            optimized_model_path=optimized_model_path,
+        )
+
+    return _flashpoint_service

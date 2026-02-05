@@ -9,8 +9,9 @@ import pytest
 
 from src.bulk_content_scan.flashpoint_service import (
     FlashpointDetectionService,
-    FlashpointDetector,
+    get_flashpoint_service,
 )
+from src.bulk_content_scan.flashpoint_utils import FlashpointDetector
 from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
 
 
@@ -211,12 +212,12 @@ class TestFlashpointDetectionService:
         assert result.context_messages == 3
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_exception(self):
-        """Returns None when detector raises an exception."""
+    async def test_returns_none_on_transient_error(self):
+        """Returns None when detector raises a transient error (e.g. ValueError)."""
         service = FlashpointDetectionService(model="openai/gpt-4o-mini")
 
         mock_detector = MagicMock()
-        mock_detector.side_effect = RuntimeError("LLM API error")
+        mock_detector.side_effect = ValueError("Bad LLM output")
 
         with (
             patch.object(service, "_get_detector", return_value=mock_detector),
@@ -227,7 +228,60 @@ class TestFlashpointDetectionService:
             result = await service.detect_flashpoint(message, [])
 
         assert result is None
+        mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_on_critical_error(self):
+        """Re-raises critical (non-transient) errors after logging."""
+        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = RuntimeError("LLM API auth failure")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message()
+
+            with pytest.raises(RuntimeError, match="LLM API auth failure"):
+                await service.detect_flashpoint(message, [])
+
         mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_timeout_error(self):
+        """Returns None when detector raises TimeoutError (transient)."""
+        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = TimeoutError("Request timed out")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+        ):
+            message = make_bulk_scan_message()
+
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_connection_error(self):
+        """Returns None when detector raises ConnectionError (transient)."""
+        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = ConnectionError("Connection refused")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+        ):
+            message = make_bulk_scan_message()
+
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_uses_author_username_in_context(self):
@@ -346,7 +400,7 @@ class TestGetDetectorLazyInit:
     FlashpointDetector.load (to prevent file I/O) are mocked.
     """
 
-    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    @patch("dspy.LM")
     def test_creates_detector_when_none_cached(self, mock_lm_cls: MagicMock, tmp_path: Path):
         """_get_detector creates a FlashpointDetector when _detector is None."""
         service = FlashpointDetectionService(
@@ -363,7 +417,7 @@ class TestGetDetectorLazyInit:
         mock_lm_cls.assert_called_once_with("openai/gpt-4o-mini")
         assert service._lm is mock_lm_cls.return_value
 
-    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    @patch("dspy.LM")
     def test_reuses_cached_detector_on_subsequent_calls(
         self, mock_lm_cls: MagicMock, tmp_path: Path
     ):
@@ -379,7 +433,7 @@ class TestGetDetectorLazyInit:
         assert first is second
         mock_lm_cls.assert_called_once()
 
-    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    @patch("dspy.LM")
     def test_loads_optimized_model_when_file_exists(self, mock_lm_cls: MagicMock, tmp_path: Path):
         """_get_detector calls .load() when the optimized model file exists."""
         optimized_path = tmp_path / "optimized_detector.json"
@@ -396,7 +450,7 @@ class TestGetDetectorLazyInit:
         assert isinstance(detector, FlashpointDetector)
         mock_load.assert_called_once_with(str(optimized_path))
 
-    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    @patch("dspy.LM")
     def test_skips_load_when_optimized_model_missing(self, mock_lm_cls: MagicMock, tmp_path: Path):
         """_get_detector uses base detector when optimized file does not exist."""
         missing_path = tmp_path / "optimized_detector.json"
@@ -413,7 +467,7 @@ class TestGetDetectorLazyInit:
         assert isinstance(detector, FlashpointDetector)
         mock_load.assert_not_called()
 
-    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    @patch("dspy.LM")
     def test_uses_default_path_when_no_path_provided(self, mock_lm_cls: MagicMock):
         """_get_detector uses _get_default_optimized_path when no path given."""
         service = FlashpointDetectionService(model="openai/gpt-4o-mini")
@@ -427,7 +481,7 @@ class TestGetDetectorLazyInit:
         assert default_path.parent.name == "flashpoints"
         assert default_path.parent.parent.name == "data"
 
-    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    @patch("dspy.LM")
     def test_detector_has_predict_attribute(self, mock_lm_cls: MagicMock, tmp_path: Path):
         """The real FlashpointDetector created by _get_detector has a predict module."""
         service = FlashpointDetectionService(
@@ -439,3 +493,30 @@ class TestGetDetectorLazyInit:
 
         assert hasattr(detector, "predict")
         assert isinstance(detector.predict, dspy.ChainOfThought)
+
+
+class TestGetFlashpointServiceSingleton:
+    """Tests for the get_flashpoint_service singleton factory."""
+
+    def test_returns_same_instance(self):
+        """Repeated calls return the same service instance."""
+        import src.bulk_content_scan.flashpoint_service as mod
+
+        mod._flashpoint_service = None
+        try:
+            svc1 = get_flashpoint_service()
+            svc2 = get_flashpoint_service()
+            assert svc1 is svc2
+        finally:
+            mod._flashpoint_service = None
+
+    def test_accepts_model_on_first_call(self):
+        """First call can configure the model."""
+        import src.bulk_content_scan.flashpoint_service as mod
+
+        mod._flashpoint_service = None
+        try:
+            svc = get_flashpoint_service(model="anthropic/claude-3-haiku")
+            assert svc.model == "anthropic/claude-3-haiku"
+        finally:
+            mod._flashpoint_service = None

@@ -10,6 +10,7 @@ mocked since these are unit tests for workflow logic.
 
 from __future__ import annotations
 
+import collections
 import json
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -65,7 +66,7 @@ class TestTimeoutConstants:
 def _make_recv_dispatcher(
     batch_responses: list[dict | None],
     tx_responses: list[dict | None],
-) -> callable:
+) -> collections.abc.Callable[..., dict | None]:
     """Build a DBOS.recv mock that dispatches by topic.
 
     The orchestration loop calls recv("batch_complete") then recv("all_transmitted")
