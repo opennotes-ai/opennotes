@@ -44,6 +44,8 @@ dmypy.json
 
 *.log
 
+data/flashpoints/
+
 .DS_Store
 .idea/
 .vscode/
