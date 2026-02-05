@@ -25,7 +25,7 @@ def upgrade() -> None:
     op.add_column(
         "community_servers",
         sa.Column(
-            "flashpoint_detection_enabled", sa.Boolean(), server_default="true", nullable=False
+            "flashpoint_detection_enabled", sa.Boolean(), server_default="false", nullable=False
         ),
     )
     # ### end Alembic commands ###

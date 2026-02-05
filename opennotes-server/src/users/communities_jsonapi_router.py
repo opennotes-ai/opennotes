@@ -51,7 +51,7 @@ class CommunityServerAttributes(BaseModel):
     description: str | None = None
     is_active: bool = True
     is_public: bool = True
-    flashpoint_detection_enabled: bool = True
+    flashpoint_detection_enabled: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

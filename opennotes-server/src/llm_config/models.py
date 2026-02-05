@@ -79,7 +79,7 @@ class CommunityServer(Base):
         Boolean, default=True, server_default="true", nullable=False
     )
     flashpoint_detection_enabled: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true", nullable=False
+        Boolean, default=False, server_default="false", nullable=False
     )
     welcome_message_id: Mapped[str | None] = mapped_column(
         String(30),
