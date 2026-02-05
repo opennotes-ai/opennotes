@@ -11380,6 +11380,7 @@
           },
           "context_messages": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Context Messages",
             "description": "Number of context messages analyzed"
           }

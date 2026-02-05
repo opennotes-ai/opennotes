@@ -1354,8 +1354,8 @@ async function handleContentMonitorFlashpoint(
         .addTextDisplayComponents(
           new TextDisplayBuilder().setContent(
             `**Status:** ${isEnabled ? 'Enabled' : 'Disabled'}\n\n` +
-            'Flashpoint detection monitors conversations for potential misinformation ' +
-            'escalation points and can help identify when community notes may be most needed.'
+            'Flashpoint detection identifies early signs of conversations derailing into conflict, ' +
+            'such as personal attacks, hostile escalation, and rule violations.'
           )
         );
 
@@ -1386,8 +1386,8 @@ async function handleContentMonitorFlashpoint(
           new TextDisplayBuilder().setContent(
             enabled
               ? 'Flashpoint detection is now **enabled** for this server.\n\n' +
-                'The system will monitor conversations for potential misinformation ' +
-                'escalation points and flag them for community notes.'
+                'The system will monitor conversations for early signs of conflict, ' +
+                'such as personal attacks, hostile escalation, and rule violations.'
               : 'Flashpoint detection is now **disabled** for this server.\n\n' +
                 'The system will no longer monitor conversations for escalation points. ' +
                 'Use `/config content-monitor flashpoint action:Enable` to re-enable.'

@@ -28,7 +28,9 @@ def load_cga_corpus() -> Corpus:
     return Corpus(filename=corpus_path)
 
 
-def extract_examples(corpus: Corpus, max_context_turns: int = 5) -> list[FlashpointExample]:
+def extract_examples(
+    corpus: Corpus, max_context_turns: int = 5, seed: int = 42
+) -> list[FlashpointExample]:
     """Extract training examples from the corpus.
 
     For each conversation:
@@ -42,6 +44,7 @@ def extract_examples(corpus: Corpus, max_context_turns: int = 5) -> list[Flashpo
     Returns:
         List of FlashpointExample dictionaries
     """
+    rng = random.Random(seed)
     examples: list[FlashpointExample] = []
 
     for convo in corpus.iter_conversations():
@@ -71,7 +74,7 @@ def extract_examples(corpus: Corpus, max_context_turns: int = 5) -> list[Flashpo
                     )
                 )
         elif len(utterances) > 3:
-            sample_indices = random.sample(range(1, len(utterances)), min(2, len(utterances) - 1))
+            sample_indices = rng.sample(range(1, len(utterances)), min(2, len(utterances) - 1))
             for idx in sample_indices:
                 context_start = max(0, idx - max_context_turns)
                 context_utts = utterances[context_start:idx]
@@ -101,9 +104,9 @@ def split_dataset(
     Uses reversed allocation (20% train, 30% dev, 50% test) as recommended
     for DSPy prompt optimization to avoid overfitting.
     """
-    random.seed(seed)
+    rng = random.Random(seed)
     shuffled = examples.copy()
-    random.shuffle(shuffled)
+    rng.shuffle(shuffled)
 
     n = len(shuffled)
     train_end = int(n * train_ratio)
@@ -139,6 +142,10 @@ def main() -> None:
     print("Extracting examples...")
     examples = extract_examples(corpus)
     print(f"Extracted {len(examples)} total examples")
+
+    if not examples:
+        print("WARNING: No examples extracted. Check corpus data and network connectivity.")
+        return
 
     positive = sum(1 for e in examples if e["will_derail"])
     print(

@@ -111,7 +111,7 @@ class ConversationFlashpointMatch(StrictInputSchema):
     will_derail: bool = Field(..., description="Whether conversation shows derailment signals")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Model confidence score")
     reasoning: str = Field(..., description="Explanation of detected signals")
-    context_messages: int = Field(..., description="Number of context messages analyzed")
+    context_messages: int = Field(..., ge=0, description="Number of context messages analyzed")
 
 
 class RelevanceCheckResult(StrictInputSchema):
