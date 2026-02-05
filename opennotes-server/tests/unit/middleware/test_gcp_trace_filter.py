@@ -299,8 +299,6 @@ class TestGCPTraceHeaderFilterEnvConfig:
     def test_defaults_to_enabled(self, mock_app: AsyncMock) -> None:
         """Should default to strip_headers=True when env var not set."""
         with patch.dict(os.environ, {}, clear=True):
-            if "STRIP_GCP_TRACE_HEADERS" in os.environ:
-                del os.environ["STRIP_GCP_TRACE_HEADERS"]
             middleware = GCPTraceHeaderFilter(mock_app)
             assert middleware.strip_headers is True
 

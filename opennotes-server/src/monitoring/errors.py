@@ -29,7 +29,7 @@ def record_span_error(exception: BaseException, span: Span | None = None) -> Non
     if span is None:
         span = trace.get_current_span()
 
-    if not span or not span.is_recording():
+    if not span.is_recording():
         return
 
     span.set_attribute("error.type", type(exception).__name__)
