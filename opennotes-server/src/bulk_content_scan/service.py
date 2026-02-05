@@ -244,13 +244,6 @@ class BulkContentScanService:
             messages = [messages]
 
         active_scan_types = list(scan_types)
-        if (
-            ScanType.CONVERSATION_FLASHPOINT in active_scan_types
-            and not await self._is_flashpoint_enabled(community_server_platform_id)
-        ):
-            active_scan_types = [
-                st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
-            ]
 
         original_count = len(messages)
 
