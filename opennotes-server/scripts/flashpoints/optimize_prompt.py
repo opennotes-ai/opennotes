@@ -113,6 +113,7 @@ def evaluate_detector(
     false_positives = 0
     false_negatives = 0
     true_negatives = 0
+    errors = 0
 
     for i, example in enumerate(testset):
         try:
@@ -136,13 +137,11 @@ def evaluate_detector(
                 print(f"Evaluated {i + 1}/{len(testset)} examples...")
 
         except Exception as e:
+            errors += 1
             print(f"Error evaluating example {i}: {e}")
-            if parse_bool(example.will_derail):
-                false_negatives += 1
-            else:
-                true_negatives += 1
 
-    accuracy = correct / len(testset) if testset else 0
+    evaluated = len(testset) - errors
+    accuracy = correct / evaluated if evaluated > 0 else 0
     precision = (
         true_positives / (true_positives + false_positives)
         if (true_positives + false_positives) > 0
@@ -164,7 +163,10 @@ def evaluate_detector(
         "false_positives": false_positives,
         "false_negatives": false_negatives,
         "true_negatives": true_negatives,
+        "errors": errors,
+        "error_rate": errors / len(testset) if testset else 0,
         "total": len(testset),
+        "evaluated": evaluated,
     }
 
 
@@ -182,7 +184,9 @@ def print_metrics(metrics: dict) -> None:
     print(f"  False Positives: {metrics['false_positives']}")
     print(f"  False Negatives: {metrics['false_negatives']}")
     print(f"  True Negatives:  {metrics['true_negatives']}")
-    print(f"\nTotal evaluated: {metrics['total']}")
+    print(f"\nTotal evaluated: {metrics['evaluated']}/{metrics['total']}")
+    if metrics["errors"] > 0:
+        print(f"\nErrors: {metrics['errors']} ({metrics['error_rate']:.1%})")
 
     if metrics["f1"] >= 0.75:
         print("\n*** QUALITY GATE PASSED: F1 >= 0.75 ***")
@@ -276,6 +280,14 @@ Examples:
     print(f"\nEvaluating on {len(testset)} test examples...")
     metrics = evaluate_detector(detector, testset, verbose=args.verbose)
     print_metrics(metrics)
+
+    error_rate_threshold = 0.05
+    if metrics["error_rate"] > error_rate_threshold:
+        print(
+            f"\n*** FAILED: Error rate {metrics['error_rate']:.1%} > {error_rate_threshold:.0%} threshold ***"
+        )
+        print("This indicates infrastructure issues (API rate limiting, model errors, etc.)")
+        return 2
 
     return 0 if metrics["f1"] >= 0.75 else 1
 

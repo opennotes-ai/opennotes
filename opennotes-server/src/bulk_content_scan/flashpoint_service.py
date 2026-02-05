@@ -30,7 +30,6 @@ class FlashpointDetectionService:
     DEFAULT_MODEL = "openai/gpt-5-mini"
     DEFAULT_MAX_CONTEXT = 5
     CONFIDENCE_DERAIL = 0.9
-    CONFIDENCE_NO_DERAIL = 0.2
 
     def __init__(
         self,
@@ -142,7 +141,7 @@ class FlashpointDetectionService:
             if not will_derail:
                 return None
 
-            confidence = self.CONFIDENCE_DERAIL if will_derail else self.CONFIDENCE_NO_DERAIL
+            confidence = self.CONFIDENCE_DERAIL
 
             return ConversationFlashpointMatch(
                 will_derail=will_derail,

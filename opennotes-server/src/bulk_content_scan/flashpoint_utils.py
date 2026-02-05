@@ -12,7 +12,12 @@ def parse_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
-        return value.lower() in ("true", "yes", "1")
+        lower = value.lower()
+        if lower in ("true", "yes", "1", "y"):
+            return True
+        if lower in ("false", "no", "0", "n"):
+            return False
+        return bool(value)
     return bool(value)
 
 
