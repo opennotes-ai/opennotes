@@ -1342,8 +1342,8 @@ async function handleContentMonitorFlashpoint(
 
   try {
     if (action === 'status') {
-      const serverResponse = await apiClient.getFlashpointDetectionStatus(guildId);
-      const isEnabled = serverResponse.data.attributes.flashpoint_detection_enabled;
+      const statusResponse = await apiClient.getFlashpointDetectionStatus(guildId);
+      const isEnabled = statusResponse.flashpoint_detection_enabled;
 
       const container = new ContainerBuilder()
         .setAccentColor(isEnabled ? V2_COLORS.HELPFUL : V2_COLORS.MEDIUM)
