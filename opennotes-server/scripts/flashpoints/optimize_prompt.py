@@ -272,10 +272,9 @@ Examples:
 
     args = parser.parse_args()
 
-    lm = dspy.LM(args.model)
-    dspy.configure(lm=lm)
-
     if args.eval_only:
+        lm = dspy.LM(args.model)
+        dspy.configure(lm=lm)
         print(f"Loading existing model from {args.eval_only}...")
         detector = FlashpointDetector()
         detector.load(str(args.eval_only))

@@ -32,14 +32,22 @@ def load_flashpoint_examples(jsonl_path: Path) -> list[dspy.Example]:
                 continue
             try:
                 data = json.loads(stripped)
+                example = dspy.Example(
+                    context=data["context"],
+                    message=data["current_message"],
+                    will_derail=data["will_derail"],
+                ).with_inputs("context", "message")
             except json.JSONDecodeError:
                 logger.warning("Skipping malformed JSON at %s line %d", jsonl_path, line_num)
                 continue
-            example = dspy.Example(
-                context=data["context"],
-                message=data["current_message"],
-                will_derail=data["will_derail"],
-            ).with_inputs("context", "message")
+            except KeyError as exc:
+                logger.warning(
+                    "Skipping record missing key %s at %s line %d",
+                    exc,
+                    jsonl_path,
+                    line_num,
+                )
+                continue
             examples.append(example)
     return examples
 

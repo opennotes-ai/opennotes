@@ -64,7 +64,10 @@ def extract_examples(
                 derail_idx = len(utterances) - 1
 
         if derailed and derail_idx is not None:
-            sample_points = range(max(1, derail_idx - 3), derail_idx)
+            sample_range = range(max(1, derail_idx - 3), derail_idx)
+            sample_points = (
+                list(sample_range) if sample_range else [min(derail_idx, len(utterances) - 1)]
+            )
             for idx in sample_points:
                 if idx >= len(utterances):
                     continue
@@ -81,7 +84,7 @@ def extract_examples(
                         derail_point=derail_idx,
                     )
                 )
-        elif len(utterances) > 3:
+        elif len(utterances) >= 3:
             sample_indices = rng.sample(range(1, len(utterances)), min(2, len(utterances) - 1))
             for idx in sample_indices:
                 context_start = max(0, idx - max_context_turns)
@@ -144,8 +147,6 @@ def main() -> None:
     """Main extraction pipeline."""
     print("Loading CGA-CMV corpus...")
     corpus = load_cga_corpus()
-
-    print(f"Corpus contains {len(list(corpus.iter_conversations()))} conversations")
 
     print("Extracting examples...")
     examples = extract_examples(corpus)
