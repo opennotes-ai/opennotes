@@ -14,62 +14,79 @@ LEVEL_TO_SEVERITY: dict[str, int] = {
 }
 
 
-class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-defined,misc]
-    def add_fields(
-        self,
-        log_data: dict[str, Any],
-        record: logging.LogRecord,
-        message_dict: dict[str, Any],
-    ) -> None:
-        super().add_fields(log_data, record, message_dict)
+_module_logger = logging.getLogger(__name__)
 
+
+class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-defined,misc]
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._gcp_project_id: str | None = None
         try:
             from src.config import get_settings
 
-            gcp_project = get_settings().GCP_PROJECT_ID
-        except (ImportError, LookupError):
-            gcp_project = None
+            self._gcp_project_id = get_settings().GCP_PROJECT_ID
+        except ImportError:
+            _module_logger.debug("Could not import settings module for GCP_PROJECT_ID")
+        except Exception as e:
+            _module_logger.debug("Could not load GCP_PROJECT_ID from settings: %s", e)
 
-        trace_id: str | None = None
-        span_id: str | None = None
-        trace_sampled: bool = False
-
+    def _get_trace_context(self, record: logging.LogRecord) -> tuple[str | None, str | None, bool]:
+        """Extract trace context from record or current span."""
         otel_trace_id = getattr(record, "otelTraceID", None)
         if otel_trace_id and otel_trace_id != "0":
-            trace_id = otel_trace_id
-            span_id = getattr(record, "otelSpanID", None)
-            trace_sampled = getattr(record, "otelTraceSampled", False) is True
+            return (
+                otel_trace_id,
+                getattr(record, "otelSpanID", None),
+                getattr(record, "otelTraceSampled", False) is True,
+            )
+
+        span = trace.get_current_span()
+        if span and span.get_span_context().is_valid:
+            span_context = span.get_span_context()
+            return (
+                format(span_context.trace_id, "032x"),
+                format(span_context.span_id, "016x"),
+                span_context.trace_flags.sampled,
+            )
+
+        return None, None, False
+
+    def _add_trace_fields(
+        self,
+        log_data: dict[str, Any],
+        trace_id: str | None,
+        span_id: str | None,
+        trace_sampled: bool,
+    ) -> None:
+        """Add trace fields in GCP or legacy format."""
+        if not trace_id:
+            return
+
+        if self._gcp_project_id:
+            log_data["logging.googleapis.com/trace"] = (
+                f"projects/{self._gcp_project_id}/traces/{trace_id}"
+            )
+            log_data["logging.googleapis.com/spanId"] = span_id
+            log_data["logging.googleapis.com/trace_sampled"] = trace_sampled
         else:
-            span = trace.get_current_span()
-            if span and span.get_span_context().is_valid:
-                span_context = span.get_span_context()
-                trace_id = format(span_context.trace_id, "032x")
-                span_id = format(span_context.span_id, "016x")
-                trace_sampled = span_context.trace_flags.sampled
+            log_data["trace_id"] = trace_id
+            log_data["span_id"] = span_id
 
-        if trace_id:
-            if gcp_project:
-                log_data["logging.googleapis.com/trace"] = (
-                    f"projects/{gcp_project}/traces/{trace_id}"
-                )
-                log_data["logging.googleapis.com/spanId"] = span_id
-                log_data["logging.googleapis.com/trace_sampled"] = trace_sampled
-            else:
-                log_data["trace_id"] = trace_id
-                log_data["span_id"] = span_id
-
-        log_data["severity_text"] = record.levelname
-        log_data["severity_number"] = LEVEL_TO_SEVERITY.get(record.levelname, 9)
-
+    def _add_request_id(self, log_data: dict[str, Any]) -> None:
+        """Add request_id to log data if available."""
         try:
             from src.middleware.request_id import get_request_id
 
             request_id = get_request_id()
             if request_id:
                 log_data["request_id"] = request_id
-        except (ImportError, LookupError):
-            pass
+        except ImportError:
+            _module_logger.debug("Could not import request_id module")
+        except Exception as e:
+            _module_logger.debug("Could not get request_id: %s", e)
 
+    def _add_instance_metadata(self, log_data: dict[str, Any]) -> None:
+        """Add instance metadata to log data if available."""
         try:
             from src.monitoring.instance import InstanceMetadata
 
@@ -78,8 +95,27 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
                 log_data["instance_id"] = instance_metadata.instance_id
                 if instance_metadata.hostname:
                     log_data["hostname"] = instance_metadata.hostname
-        except (ImportError, LookupError):
-            pass
+        except ImportError:
+            _module_logger.debug("Could not import InstanceMetadata module")
+        except Exception as e:
+            _module_logger.debug("Could not get instance metadata: %s", e)
+
+    def add_fields(
+        self,
+        log_data: dict[str, Any],
+        record: logging.LogRecord,
+        message_dict: dict[str, Any],
+    ) -> None:
+        super().add_fields(log_data, record, message_dict)
+
+        trace_id, span_id, trace_sampled = self._get_trace_context(record)
+        self._add_trace_fields(log_data, trace_id, span_id, trace_sampled)
+
+        log_data["severity_text"] = record.levelname
+        log_data["severity_number"] = LEVEL_TO_SEVERITY.get(record.levelname, 9)
+
+        self._add_request_id(log_data)
+        self._add_instance_metadata(log_data)
 
         log_data["severity"] = record.levelname
         log_data["logger"] = record.name
