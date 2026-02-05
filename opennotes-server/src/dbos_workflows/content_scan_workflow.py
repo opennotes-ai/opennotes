@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid as uuid_module
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -44,6 +45,7 @@ content_scan_queue = Queue(
 
 BATCH_RECV_TIMEOUT_SECONDS = 600
 SCAN_RECV_TIMEOUT_SECONDS = 0
+ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS = 1800
 
 
 @DBOS.workflow()
@@ -91,8 +93,25 @@ def content_scan_orchestration_workflow(
     all_transmitted = False
     messages_scanned = 0
     batches_completed = 0
+    wall_clock_start = time.monotonic()
 
     while True:
+        elapsed = time.monotonic() - wall_clock_start
+        if elapsed >= ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS:
+            logger.warning(
+                "Orchestrator exceeded maximum wall-clock timeout, aborting",
+                extra={
+                    "scan_id": scan_id,
+                    "elapsed_seconds": elapsed,
+                    "max_seconds": ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS,
+                    "processed_count": processed_count,
+                    "skipped_count": skipped_count,
+                    "error_count": error_count,
+                    "batches_completed": batches_completed,
+                },
+            )
+            break
+
         batch_result = DBOS.recv("batch_complete", timeout_seconds=BATCH_RECV_TIMEOUT_SECONDS)
 
         if batch_result is not None:
@@ -108,6 +127,7 @@ def content_scan_orchestration_workflow(
                     "scan_id": scan_id,
                     "batches_completed": batches_completed,
                     "processed_count": processed_count,
+                    "skipped_count": skipped_count,
                     "error_count": error_count,
                 },
             )
@@ -124,12 +144,13 @@ def content_scan_orchestration_workflow(
                 },
             )
 
-        if all_transmitted and (processed_count + error_count) >= messages_scanned:
+        if all_transmitted and (processed_count + skipped_count + error_count) >= messages_scanned:
             logger.info(
                 "All batches processed, proceeding to finalization",
                 extra={
                     "scan_id": scan_id,
                     "processed_count": processed_count,
+                    "skipped_count": skipped_count,
                     "error_count": error_count,
                     "messages_scanned": messages_scanned,
                 },
@@ -303,7 +324,7 @@ def process_batch_messages_step(
     """
     from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
     from src.bulk_content_scan.scan_types import ScanType
-    from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
+    from src.bulk_content_scan.schemas import BulkScanMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import RedisClient
     from src.config import get_settings
@@ -359,47 +380,46 @@ def process_batch_messages_step(
 
                 typed_messages = [BulkScanMessage.model_validate(msg) for msg in messages]
 
-                flagged: list[FlaggedMessage] = []
-                processed = 0
-                errors = 0
+                skipped_before = await service.get_skipped_count(scan_uuid)
 
-                for msg in typed_messages:
-                    try:
-                        msg_flagged = await service.process_messages(
-                            scan_id=scan_uuid,
-                            messages=[msg],
-                            community_server_platform_id=platform_id,
-                            scan_types=scan_types,
-                        )
-                        flagged.extend(msg_flagged)
-                        processed += 1
-                    except Exception as e:
-                        errors += 1
-                        logger.warning(
-                            "Error processing message in batch",
-                            extra={
-                                "scan_id": scan_id,
-                                "message_id": msg.message_id,
-                                "batch_number": batch_number,
-                                "error": str(e),
-                            },
-                        )
-                        await service.record_error(
-                            scan_id=scan_uuid,
-                            error_type=type(e).__name__,
-                            error_message=str(e),
-                            message_id=msg.message_id,
-                            batch_number=batch_number,
-                        )
+                try:
+                    flagged = await service.process_messages(
+                        scan_id=scan_uuid,
+                        messages=typed_messages,
+                        community_server_platform_id=platform_id,
+                        scan_types=scan_types,
+                    )
+                    processed = len(typed_messages)
+                    errors = 0
+                except Exception as e:
+                    flagged = []
+                    processed = 0
+                    errors = len(typed_messages)
+                    logger.warning(
+                        "Error processing batch",
+                        extra={
+                            "scan_id": scan_id,
+                            "batch_number": batch_number,
+                            "error": str(e),
+                        },
+                    )
+                    await service.record_error(
+                        scan_id=scan_uuid,
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        message_id=typed_messages[0].message_id if typed_messages else None,
+                        batch_number=batch_number,
+                    )
 
                 for msg in flagged:
                     await service.append_flagged_result(scan_uuid, msg)
 
-                skipped = await service.get_skipped_count(scan_uuid)
+                skipped_after = await service.get_skipped_count(scan_uuid)
+                skipped_delta = skipped_after - skipped_before
 
                 return {
                     "processed": processed,
-                    "skipped": skipped,
+                    "skipped": skipped_delta,
                     "errors": errors,
                     "flagged_count": len(flagged),
                     "batch_number": batch_number,
@@ -517,25 +537,25 @@ def finalize_scan_step(
                     status=status,
                 )
 
-                publisher = BulkScanResultsPublisher(redis_client.client)
-                await publisher.publish(
-                    scan_id=scan_uuid,
-                    messages_scanned=messages_scanned,
-                    messages_flagged=len(flagged),
-                    messages_skipped=actual_skipped,
-                    flagged_messages=flagged,
-                    error_summary=error_summary,
-                )
-
-                processing_finished_event = BulkScanProcessingFinishedEvent(
-                    event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
-                    scan_id=scan_uuid,
-                    community_server_id=community_uuid,
-                    messages_scanned=messages_scanned,
-                    messages_flagged=len(flagged),
-                    messages_skipped=actual_skipped,
-                )
                 async with create_worker_event_publisher() as worker_publisher:
+                    publisher = BulkScanResultsPublisher(worker_publisher.nats)
+                    await publisher.publish(
+                        scan_id=scan_uuid,
+                        messages_scanned=messages_scanned,
+                        messages_flagged=len(flagged),
+                        messages_skipped=actual_skipped,
+                        flagged_messages=flagged,
+                        error_summary=error_summary,
+                    )
+
+                    processing_finished_event = BulkScanProcessingFinishedEvent(
+                        event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
+                        scan_id=scan_uuid,
+                        community_server_id=community_uuid,
+                        messages_scanned=messages_scanned,
+                        messages_flagged=len(flagged),
+                        messages_skipped=actual_skipped,
+                    )
                     await worker_publisher.publish_event(processing_finished_event)
 
                 logger.info(
