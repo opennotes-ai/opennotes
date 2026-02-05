@@ -67,7 +67,7 @@ class BatchJob(Base, TimestampMixin):
         nullable=False,
     )
 
-    metadata_: Mapped[dict[str, str | int | bool | float]] = mapped_column(
+    metadata_: Mapped[dict[str, str | int | bool | float | list[str] | None]] = mapped_column(
         "metadata",
         JSONB,
         server_default=text("'{}'::jsonb"),
