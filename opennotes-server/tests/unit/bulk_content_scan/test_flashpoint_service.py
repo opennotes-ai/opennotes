@@ -1,5 +1,6 @@
 """Unit tests for FlashpointDetectionService."""
 
+import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,7 @@ import dspy
 import pytest
 
 from src.bulk_content_scan.flashpoint_service import (
+    _TRANSIENT_ERRORS,
     FlashpointDetectionService,
     get_flashpoint_service,
 )
@@ -19,7 +21,7 @@ def make_bulk_scan_message(
     message_id: str = "msg_1",
     content: str = "test message",
     author_id: str = "user_1",
-    author_username: str = "testuser",
+    author_username: str | None = "testuser",
 ) -> BulkScanMessage:
     """Create a BulkScanMessage for testing."""
     return BulkScanMessage(
@@ -213,11 +215,11 @@ class TestFlashpointDetectionService:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_transient_error(self):
-        """Returns None when detector raises a transient error (e.g. ValueError)."""
+        """Returns None when detector raises a transient error."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_detector = MagicMock()
-        mock_detector.side_effect = ValueError("Bad LLM output")
+        mock_detector.side_effect = TimeoutError("Request timed out")
 
         with (
             patch.object(service, "_get_detector", return_value=mock_detector),
@@ -409,7 +411,8 @@ class TestGetDetectorLazyInit:
         )
         assert service._detector is None
 
-        detector = service._get_detector()
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
+            detector = service._get_detector()
 
         assert detector is not None
         assert isinstance(detector, FlashpointDetector)
@@ -427,8 +430,9 @@ class TestGetDetectorLazyInit:
             optimized_model_path=tmp_path / "nonexistent.json",
         )
 
-        first = service._get_detector()
-        second = service._get_detector()
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
+            first = service._get_detector()
+            second = service._get_detector()
 
         assert first is second
         mock_lm_cls.assert_called_once()
@@ -444,7 +448,10 @@ class TestGetDetectorLazyInit:
             optimized_model_path=optimized_path,
         )
 
-        with patch.object(FlashpointDetector, "load") as mock_load:
+        with (
+            patch.object(FlashpointDetector, "load") as mock_load,
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
             detector = service._get_detector()
 
         assert isinstance(detector, FlashpointDetector)
@@ -461,7 +468,10 @@ class TestGetDetectorLazyInit:
             optimized_model_path=missing_path,
         )
 
-        with patch.object(FlashpointDetector, "load") as mock_load:
+        with (
+            patch.object(FlashpointDetector, "load") as mock_load,
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
             detector = service._get_detector()
 
         assert isinstance(detector, FlashpointDetector)
@@ -473,7 +483,10 @@ class TestGetDetectorLazyInit:
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
         assert service._optimized_path is None
 
-        with patch.object(FlashpointDetector, "load"):
+        with (
+            patch.object(FlashpointDetector, "load"),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+        ):
             service._get_detector()
 
         default_path = service._get_default_optimized_path()
@@ -489,7 +502,8 @@ class TestGetDetectorLazyInit:
             optimized_model_path=tmp_path / "nonexistent.json",
         )
 
-        detector = service._get_detector()
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
+            detector = service._get_detector()
 
         assert hasattr(detector, "predict")
         assert isinstance(detector.predict, dspy.ChainOfThought)
@@ -520,3 +534,553 @@ class TestGetFlashpointServiceSingleton:
             assert svc.model == "anthropic/claude-3-haiku"
         finally:
             mod._flashpoint_service = None
+
+    def test_warns_when_model_differs_from_singleton(self):
+        """Warning when singleton exists and different model requested."""
+        import src.bulk_content_scan.flashpoint_service as mod
+
+        mod._flashpoint_service = None
+        try:
+            get_flashpoint_service(model="openai/gpt-5-mini")
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                svc = get_flashpoint_service(model="anthropic/claude-3-haiku")
+
+            assert len(w) == 1
+            assert "singleton already created" in str(w[0].message)
+            assert "openai/gpt-5-mini" in str(w[0].message)
+            assert "anthropic/claude-3-haiku" in str(w[0].message)
+            assert svc.model == "openai/gpt-5-mini"
+        finally:
+            mod._flashpoint_service = None
+
+    def test_warns_when_path_differs_from_singleton(self):
+        """Warning when singleton exists and different path requested."""
+        import src.bulk_content_scan.flashpoint_service as mod
+
+        mod._flashpoint_service = None
+        try:
+            get_flashpoint_service(optimized_model_path=Path("/first/path.json"))
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                svc = get_flashpoint_service(optimized_model_path=Path("/different/path.json"))
+
+            assert len(w) == 1
+            assert "singleton already created" in str(w[0].message)
+            assert svc._optimized_path == Path("/first/path.json")
+        finally:
+            mod._flashpoint_service = None
+
+    def test_no_warning_when_same_model_requested(self):
+        """No warning when singleton exists and same model requested."""
+        import src.bulk_content_scan.flashpoint_service as mod
+
+        mod._flashpoint_service = None
+        try:
+            get_flashpoint_service(model="openai/gpt-5-mini")
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                get_flashpoint_service(model="openai/gpt-5-mini")
+
+            assert len(w) == 0
+        finally:
+            mod._flashpoint_service = None
+
+    def test_no_warning_when_no_args_on_subsequent_call(self):
+        """No warning when singleton exists and no args are passed."""
+        import src.bulk_content_scan.flashpoint_service as mod
+
+        mod._flashpoint_service = None
+        try:
+            get_flashpoint_service(model="openai/gpt-5-mini")
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                get_flashpoint_service()
+
+            assert len(w) == 0
+        finally:
+            mod._flashpoint_service = None
+
+
+class TestFlashpointRealisticExamples:
+    """Tests using realistic Discord conversation format (TASK-1067.67)."""
+
+    @pytest.mark.asyncio
+    async def test_escalating_argument_detected(self):
+        """Realistic Discord argument that escalates into personal attacks."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.will_derail = True
+        mock_prediction.reasoning = (
+            "Conversation shifting from topic disagreement to "
+            "personal attacks. User moved from 'I disagree' to "
+            "'you never know what you are talking about'."
+        )
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            context = [
+                make_bulk_scan_message(
+                    message_id="ctx_1",
+                    content="I think React is better for this use case",
+                    author_id="dev_alice",
+                    author_username="alice",
+                ),
+                make_bulk_scan_message(
+                    message_id="ctx_2",
+                    content="Nah Vue is way simpler, you just don't get it",
+                    author_id="dev_bob",
+                    author_username="bob",
+                ),
+                make_bulk_scan_message(
+                    message_id="ctx_3",
+                    content="I 'don't get it'? I've used React for 5 years",
+                    author_id="dev_alice",
+                    author_username="alice",
+                ),
+            ]
+            message = make_bulk_scan_message(
+                message_id="msg_trigger",
+                content=(
+                    "Years of experience don't mean anything if you "
+                    "never learn. You always push React on everyone."
+                ),
+                author_id="dev_bob",
+                author_username="bob",
+            )
+
+            result = await service.detect_flashpoint(message, context)
+
+        assert result is not None
+        assert isinstance(result, ConversationFlashpointMatch)
+        assert result.will_derail is True
+        assert result.confidence == FlashpointDetectionService.CONFIDENCE_DERAIL
+        assert result.context_messages == 3
+        assert "personal attacks" in result.reasoning
+
+    @pytest.mark.asyncio
+    async def test_healthy_debate_not_flagged(self):
+        """Realistic Discord debate that stays respectful."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.will_derail = False
+        mock_prediction.reasoning = "Constructive disagreement with mutual respect."
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            context = [
+                make_bulk_scan_message(
+                    message_id="ctx_1",
+                    content="I prefer PostgreSQL for this kind of workload",
+                    author_id="dba_carol",
+                    author_username="carol",
+                ),
+                make_bulk_scan_message(
+                    message_id="ctx_2",
+                    content=(
+                        "Fair point, but have you considered the "
+                        "read-heavy pattern? MongoDB might be worth it"
+                    ),
+                    author_id="dba_dave",
+                    author_username="dave",
+                ),
+            ]
+            message = make_bulk_scan_message(
+                message_id="msg_reply",
+                content=("That's a good point, let me benchmark both and share results"),
+                author_id="dba_carol",
+                author_username="carol",
+            )
+
+            result = await service.detect_flashpoint(message, context)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_context_truncation_uses_most_recent(self):
+        """With max_context=2, only the last 2 messages are included."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        captured_args: dict = {}
+
+        def capture_detector(*args, **kwargs):
+            captured_args.update(kwargs)
+            mock_result = MagicMock()
+            mock_result.will_derail = True
+            mock_result.reasoning = "Truncated context analysis"
+            return mock_result
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = capture_detector
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            context = [
+                make_bulk_scan_message(
+                    message_id="old_1",
+                    content="This old message should be excluded",
+                    author_username="old_user",
+                ),
+                make_bulk_scan_message(
+                    message_id="old_2",
+                    content="Another old message",
+                    author_username="old_user2",
+                ),
+                make_bulk_scan_message(
+                    message_id="recent_1",
+                    content="Recent message one",
+                    author_username="recent_user",
+                ),
+                make_bulk_scan_message(
+                    message_id="recent_2",
+                    content="Recent message two",
+                    author_username="recent_user2",
+                ),
+            ]
+            message = make_bulk_scan_message(
+                content="The trigger message",
+                author_username="trigger_user",
+            )
+
+            result = await service.detect_flashpoint(message, context, max_context=2)
+
+        assert result is not None
+        assert result.context_messages == 2
+        context_str = captured_args["context"]
+        assert "Recent message one" in context_str
+        assert "Recent message two" in context_str
+        assert "old message should be excluded" not in context_str
+
+    @pytest.mark.asyncio
+    async def test_transient_error_returns_none_gracefully(self):
+        """Transient network error returns None without raising."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = OSError("Network unreachable")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message(
+                content="Some message during network outage",
+                author_username="user_during_outage",
+            )
+
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is None
+        mock_logger.warning.assert_called_once()
+
+
+class TestConfidenceValue:
+    """Tests for confidence field behavior (TASK-1067.69)."""
+
+    @pytest.mark.asyncio
+    async def test_confidence_is_static_derail_value(self):
+        """Confidence is always CONFIDENCE_DERAIL when will_derail=True."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.will_derail = True
+        mock_prediction.reasoning = "Detected escalation"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message()
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.confidence == 0.9
+        assert result.confidence == FlashpointDetectionService.CONFIDENCE_DERAIL
+
+    @pytest.mark.asyncio
+    async def test_no_confidence_no_derail_constant(self):
+        """CONFIDENCE_NO_DERAIL does not exist."""
+        assert not hasattr(FlashpointDetectionService, "CONFIDENCE_NO_DERAIL")
+
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.will_derail = False
+        mock_prediction.reasoning = "Normal"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message()
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is None
+
+
+class TestValueErrorPropagation:
+    """Tests that ValueError is NOT a transient error (TASK-1067.70)."""
+
+    def test_value_error_not_in_transient_errors(self):
+        """ValueError is not in the _TRANSIENT_ERRORS tuple."""
+        assert ValueError not in _TRANSIENT_ERRORS
+
+    def test_transient_errors_contains_expected_types(self):
+        """_TRANSIENT_ERRORS contains exactly the expected types."""
+        assert TimeoutError in _TRANSIENT_ERRORS
+        assert ConnectionError in _TRANSIENT_ERRORS
+        assert OSError in _TRANSIENT_ERRORS
+        assert len(_TRANSIENT_ERRORS) == 3
+
+    @pytest.mark.asyncio
+    async def test_value_error_propagates_as_critical(self):
+        """ValueError raises as critical, not swallowed as transient."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = ValueError("Bad LLM output format")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message()
+
+            with pytest.raises(ValueError, match="Bad LLM output format"):
+                await service.detect_flashpoint(message, [])
+
+        mock_logger.error.assert_called_once()
+
+
+class TestConcurrencyGuard:
+    """Tests for thread-safe _get_detector initialization (TASK-1067.75)."""
+
+    @patch("dspy.LM")
+    def test_single_initialization_under_concurrent_access(
+        self, mock_lm_cls: MagicMock, tmp_path: Path
+    ):
+        """Concurrent calls to _get_detector produce one initialization."""
+        import concurrent.futures
+
+        service = FlashpointDetectionService(
+            model="openai/gpt-5-mini",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        detectors = []
+
+        def call_get_detector():
+            return service._get_detector()
+
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}),
+            concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor,
+        ):
+            futures = [executor.submit(call_get_detector) for _ in range(20)]
+            for f in concurrent.futures.as_completed(futures):
+                detectors.append(f.result())
+
+        assert all(d is detectors[0] for d in detectors)
+        mock_lm_cls.assert_called_once_with("openai/gpt-5-mini")
+
+    def test_init_lock_exists(self):
+        """Service has a threading.Lock for initialization."""
+        import threading
+
+        service = FlashpointDetectionService()
+        assert isinstance(service._init_lock, type(threading.Lock()))
+
+
+class TestApiKeyValidation:
+    """Tests for API key validation in _get_detector (TASK-1067.100)."""
+
+    def test_raises_when_openai_key_missing(self, tmp_path: Path):
+        """RuntimeError when OPENAI_API_KEY not set for openai/ model."""
+        service = FlashpointDetectionService(
+            model="openai/gpt-5-mini",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(RuntimeError, match="OPENAI_API_KEY"),
+        ):
+            service._get_detector()
+
+    def test_raises_when_anthropic_key_missing(self, tmp_path: Path):
+        """RuntimeError when ANTHROPIC_API_KEY not set."""
+        service = FlashpointDetectionService(
+            model="anthropic/claude-3-haiku",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"),
+        ):
+            service._get_detector()
+
+    @patch("dspy.LM")
+    def test_no_error_when_openai_key_set(self, mock_lm_cls: MagicMock, tmp_path: Path):
+        """No error when OPENAI_API_KEY is set."""
+        service = FlashpointDetectionService(
+            model="openai/gpt-5-mini",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test-key"}):
+            detector = service._get_detector()
+
+        assert detector is not None
+
+    @patch("dspy.LM")
+    def test_unknown_provider_skips_validation(self, mock_lm_cls: MagicMock, tmp_path: Path):
+        """Unknown model prefixes skip API key validation."""
+        service = FlashpointDetectionService(
+            model="together/llama-3-70b",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        with patch.dict("os.environ", {}, clear=True):
+            detector = service._get_detector()
+
+        assert detector is not None
+
+    @pytest.mark.asyncio
+    async def test_existing_tests_not_broken_by_validation(self):
+        """Tests that mock _get_detector bypass API key validation."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.will_derail = False
+        mock_prediction.reasoning = "Normal"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message()
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is None
+
+
+class TestCriticalErrorPropagation:
+    """Tests for critical error type propagation (TASK-1067.92).
+
+    Transient errors (TimeoutError, ConnectionError, OSError) return None.
+    All other exceptions propagate as critical errors.
+    """
+
+    @pytest.mark.asyncio
+    async def test_type_error_propagates(self):
+        """TypeError propagates as a critical error."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = TypeError("unsupported operand type")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message()
+            with pytest.raises(TypeError, match="unsupported operand type"):
+                await service.detect_flashpoint(message, [])
+
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_key_error_propagates(self):
+        """KeyError propagates as a critical error."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = KeyError("missing_field")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message()
+            with pytest.raises(KeyError, match="missing_field"):
+                await service.detect_flashpoint(message, [])
+
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_attribute_error_propagates(self):
+        """AttributeError propagates as a critical error."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = AttributeError("'NoneType' has no attribute 'will_derail'")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message()
+            with pytest.raises(AttributeError, match="has no attribute"):
+                await service.detect_flashpoint(message, [])
+
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_runtime_error_propagates(self):
+        """RuntimeError propagates as a critical error."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = RuntimeError("LLM API auth failure")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message()
+            with pytest.raises(RuntimeError, match="LLM API auth failure"):
+                await service.detect_flashpoint(message, [])
+
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_value_error_propagates_as_critical(self):
+        """ValueError propagates (programming error, not transient)."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = ValueError("invalid literal")
+
+        with (
+            patch.object(service, "_get_detector", return_value=mock_detector),
+            patch("src.bulk_content_scan.flashpoint_service.logger") as mock_logger,
+        ):
+            message = make_bulk_scan_message()
+            with pytest.raises(ValueError, match="invalid literal"):
+                await service.detect_flashpoint(message, [])
+
+        mock_logger.error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_os_error_is_transient(self):
+        """OSError is treated as transient (returns None)."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_detector = MagicMock()
+        mock_detector.side_effect = OSError("Network unreachable")
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message()
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is None

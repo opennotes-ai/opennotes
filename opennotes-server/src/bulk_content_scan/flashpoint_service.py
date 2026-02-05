@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,7 +19,12 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-_TRANSIENT_ERRORS = (ValueError, TimeoutError, ConnectionError, OSError)
+_TRANSIENT_ERRORS = (TimeoutError, ConnectionError, OSError)
+
+_API_KEY_ENV_VARS = {
+    "openai/": "OPENAI_API_KEY",
+    "anthropic/": "ANTHROPIC_API_KEY",
+}
 
 
 class FlashpointDetectionService:
@@ -25,6 +32,12 @@ class FlashpointDetectionService:
 
     Uses a DSPy-optimized prompt to identify early warning signs
     that a conversation may derail into conflict.
+
+    The ``confidence`` field on returned :class:`ConversationFlashpointMatch`
+    objects is a **static synthetic value** (``CONFIDENCE_DERAIL``). It does
+    not reflect the LLM's internal confidence and exists only to satisfy the
+    schema contract. The binary ``will_derail`` flag is the authoritative
+    signal.
     """
 
     DEFAULT_MODEL = "openai/gpt-5-mini"
@@ -56,6 +69,16 @@ class FlashpointDetectionService:
             Path(__file__).parent.parent.parent / "data" / "flashpoints" / "optimized_detector.json"
         )
 
+    def _validate_api_key(self) -> None:
+        """Validate that the required API key environment variable is set."""
+        for prefix, env_var in _API_KEY_ENV_VARS.items():
+            if self.model.startswith(prefix):
+                if not os.environ.get(env_var):
+                    raise RuntimeError(
+                        f"Environment variable {env_var} is required for model {self.model}"
+                    )
+                return
+
     def _get_detector(self) -> FlashpointDetector:
         """Lazily initialize the detector (thread-safe)."""
         if self._detector is not None:
@@ -64,6 +87,8 @@ class FlashpointDetectionService:
         with self._init_lock:
             if self._detector is not None:
                 return self._detector
+
+            self._validate_api_key()
 
             import dspy as _dspy
 
@@ -91,7 +116,10 @@ class FlashpointDetectionService:
         return self._detector
 
     def _run_detector(
-        self, detector: FlashpointDetector, context_str: str, current_msg: str
+        self,
+        detector: FlashpointDetector,
+        context_str: str,
+        current_msg: str,
     ) -> Any:
         """Run the detector synchronously (intended for use with asyncio.to_thread)."""
         import dspy as _dspy
@@ -118,6 +146,9 @@ class FlashpointDetectionService:
 
         Raises:
             Exception: Re-raises critical (non-transient) errors after logging.
+                Transient errors: TimeoutError, ConnectionError, OSError.
+                Critical errors (propagated): ValueError, TypeError, KeyError,
+                AttributeError, RuntimeError, and all other Exception subclasses.
         """
         from src.bulk_content_scan.flashpoint_utils import parse_bool
         from src.bulk_content_scan.schemas import ConversationFlashpointMatch
@@ -141,11 +172,9 @@ class FlashpointDetectionService:
             if not will_derail:
                 return None
 
-            confidence = self.CONFIDENCE_DERAIL
-
             return ConversationFlashpointMatch(
                 will_derail=will_derail,
-                confidence=confidence,
+                confidence=self.CONFIDENCE_DERAIL,
                 reasoning=result.reasoning,
                 context_messages=len(recent_context),
             )
@@ -185,6 +214,28 @@ def get_flashpoint_service(
     global _flashpoint_service
 
     if _flashpoint_service is not None:
+        requested_model = model or FlashpointDetectionService.DEFAULT_MODEL
+        if model is not None and requested_model != _flashpoint_service.model:
+            warnings.warn(
+                f"get_flashpoint_service() singleton already created with "
+                f"model={_flashpoint_service.model!r}; ignoring requested "
+                f"model={requested_model!r}",
+                UserWarning,
+                stacklevel=2,
+            )
+        if (
+            optimized_model_path is not None
+            and optimized_model_path != _flashpoint_service._optimized_path
+        ):
+            warnings.warn(
+                f"get_flashpoint_service() singleton already created with "
+                f"optimized_model_path="
+                f"{_flashpoint_service._optimized_path!r}; "
+                f"ignoring requested "
+                f"optimized_model_path={optimized_model_path!r}",
+                UserWarning,
+                stacklevel=2,
+            )
         return _flashpoint_service
 
     with _singleton_lock:
