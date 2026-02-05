@@ -1,0 +1,36 @@
+{
+  "predict.predict": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Predict whether a conversation is about to derail into conflict.",
+      "fields": [
+        {
+          "prefix": "Context:",
+          "description": "Previous messages in the conversation"
+        },
+        {
+          "prefix": "Message:",
+          "description": "The current message to analyze"
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "Brief explanation of the key signals detected"
+        },
+        {
+          "prefix": "Will Derail:",
+          "description": "True if the conversation shows signs of derailing"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.11",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}

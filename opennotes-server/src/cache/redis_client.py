@@ -506,3 +506,26 @@ class RedisClient:
 
 
 redis_client = RedisClient()
+
+_shared_redis: redis.Redis | None = None
+
+
+async def get_shared_redis_client(redis_url: str | None = None) -> redis.Redis:
+    """Return a long-lived Redis connection for use across DBOS steps.
+
+    Unlike RedisClient (which creates a new connection per step),
+    this function reuses a module-level connection and only reconnects
+    when the existing one is stale.
+    """
+    global _shared_redis  # noqa: PLW0603
+
+    if _shared_redis is not None:
+        try:
+            await _shared_redis.ping()
+            return _shared_redis
+        except Exception:
+            _shared_redis = None
+
+    url = redis_url or settings.REDIS_URL
+    _shared_redis = await create_redis_connection(url, decode_responses=False)
+    return _shared_redis

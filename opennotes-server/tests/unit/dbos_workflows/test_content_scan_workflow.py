@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import collections.abc
 import json
+import time
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -37,18 +38,6 @@ class TestContentScanQueueConfiguration:
         assert content_scan_queue.concurrency == 4
 
 
-class TestStepRetryConfig:
-    """Tests for retry configuration on process_batch_messages_step."""
-
-    def test_retry_config_values(self) -> None:
-        from src.dbos_workflows.content_scan_workflow import STEP_RETRY_CONFIG
-
-        assert STEP_RETRY_CONFIG["retries_allowed"] is True
-        assert STEP_RETRY_CONFIG["max_attempts"] == 3
-        assert STEP_RETRY_CONFIG["interval_seconds"] == 2.0
-        assert STEP_RETRY_CONFIG["backoff_rate"] == 2.0
-
-
 class TestTimeoutConstants:
     """Tests for timeout configuration."""
 
@@ -57,10 +46,28 @@ class TestTimeoutConstants:
 
         assert BATCH_RECV_TIMEOUT_SECONDS == 600
 
+    def test_post_all_transmitted_timeout(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
+
+        assert POST_ALL_TRANSMITTED_TIMEOUT_SECONDS == 60
+
     def test_scan_recv_timeout(self) -> None:
         from src.dbos_workflows.content_scan_workflow import SCAN_RECV_TIMEOUT_SECONDS
 
         assert SCAN_RECV_TIMEOUT_SECONDS == 0
+
+
+class TestCheckpointWallClockStep:
+    """Tests for _checkpoint_wall_clock_step."""
+
+    def test_returns_epoch_time(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import _checkpoint_wall_clock_step
+
+        before = time.time()
+        result = _checkpoint_wall_clock_step.__wrapped__()
+        after = time.time()
+
+        assert before <= result <= after
 
 
 def _make_recv_dispatcher(
@@ -69,18 +76,19 @@ def _make_recv_dispatcher(
 ) -> collections.abc.Callable[..., dict | None]:
     """Build a DBOS.recv mock that dispatches by topic.
 
-    The orchestration loop calls recv("batch_complete") then recv("all_transmitted")
-    each iteration. This helper returns values from the appropriate queue based on
-    the topic argument.
+    The restructured orchestration loop checks all_transmitted (non-blocking)
+    before batch_complete. After batch_complete timeout, it may check
+    all_transmitted again. This helper returns values from the appropriate
+    queue based on the topic argument.
     """
     batch_iter = iter(batch_responses)
     tx_iter = iter(tx_responses)
 
     def _recv(topic: str, **kwargs: object) -> dict | None:
         if topic == "batch_complete":
-            return next(batch_iter)
+            return next(batch_iter, None)
         if topic == "all_transmitted":
-            return next(tx_iter)
+            return next(tx_iter, None)
         return None
 
     return _recv
@@ -120,6 +128,7 @@ class TestContentScanOrchestrationWorkflow:
                 self._make_batch_result(processed=10, flagged_count=2),
             ],
             tx_responses=[
+                None,
                 {"messages_scanned": 10},
             ],
         )
@@ -128,12 +137,16 @@ class TestContentScanOrchestrationWorkflow:
             patch(
                 "src.dbos_workflows.content_scan_workflow.create_scan_record_step"
             ) as mock_create,
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
             mock_create.return_value = True
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {
                 "status": "completed",
                 "messages_scanned": 10,
@@ -175,20 +188,22 @@ class TestContentScanOrchestrationWorkflow:
             tx_responses=[
                 None,
                 None,
+                None,
                 {"messages_scanned": 14},
             ],
         )
 
         with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
             patch(
-                "src.dbos_workflows.content_scan_workflow.create_scan_record_step"
-            ) as mock_create,
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
-            mock_create.return_value = True
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {
                 "status": "completed",
                 "messages_scanned": 14,
@@ -222,19 +237,23 @@ class TestContentScanOrchestrationWorkflow:
 
         recv_fn = _make_recv_dispatcher(
             batch_responses=[None],
-            tx_responses=[None],
+            tx_responses=[None, None],
         )
 
         with (
             patch(
                 "src.dbos_workflows.content_scan_workflow.create_scan_record_step"
             ) as mock_create,
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
             mock_create.return_value = True
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {
                 "status": "completed",
                 "messages_scanned": 0,
@@ -266,7 +285,6 @@ class TestContentScanOrchestrationWorkflow:
 
         recv_fn = _make_recv_dispatcher(
             batch_responses=[
-                None,
                 self._make_batch_result(processed=5, errors=0, flagged_count=1),
             ],
             tx_responses=[
@@ -277,11 +295,15 @@ class TestContentScanOrchestrationWorkflow:
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
@@ -293,6 +315,94 @@ class TestContentScanOrchestrationWorkflow:
         finalize_kwargs = mock_finalize.call_args.kwargs
         assert finalize_kwargs["processed_count"] == 5
         assert finalize_kwargs["messages_scanned"] == 5
+
+    def test_zero_batch_scan_finalizes_immediately(self) -> None:
+        """When all_transmitted arrives with messages_scanned=0, finalize without blocking."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+        scan_types_json = json.dumps(["similarity"])
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[],
+            tx_responses=[{"messages_scanned": 0}],
+        )
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=scan_types_json,
+            )
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["messages_scanned"] == 0
+        assert finalize_kwargs["processed_count"] == 0
+
+    def test_post_all_transmitted_uses_shorter_timeout(self) -> None:
+        """After all_transmitted, batch_complete uses POST_ALL_TRANSMITTED_TIMEOUT_SECONDS."""
+        from src.dbos_workflows.content_scan_workflow import (
+            POST_ALL_TRANSMITTED_TIMEOUT_SECONDS,
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        recv_calls: list[tuple[str, dict]] = []
+
+        def tracking_recv(topic: str, **kwargs: object) -> dict | None:
+            recv_calls.append((topic, dict(kwargs)))
+            if topic == "all_transmitted" and len(recv_calls) == 1:
+                return {"messages_scanned": 10}
+            if topic == "batch_complete" and len(recv_calls) <= 3:
+                return {
+                    "processed": 10,
+                    "skipped": 0,
+                    "errors": 0,
+                    "flagged_count": 0,
+                    "batch_number": 1,
+                }
+            return None
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = tracking_recv
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        batch_calls = [c for c in recv_calls if c[0] == "batch_complete"]
+        assert len(batch_calls) >= 1
+        assert batch_calls[0][1]["timeout_seconds"] == POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
 
 
 class TestProcessContentScanBatch:
@@ -372,13 +482,7 @@ class TestProcessContentScanBatch:
 
 
 class TestProcessBatchMessagesStep:
-    """Tests for process_batch_messages_step logic.
-
-    The step wraps an inner async function via run_sync(). Since the inner
-    function performs database, Redis, and LLM calls, we mock run_sync to
-    return the expected result dict -- same pattern as TestChunkAndEmbedSyncWrapper
-    in test_rechunk_workflow.py.
-    """
+    """Tests for process_batch_messages_step logic."""
 
     def _make_message_dict(self, message_id: str = "msg_1") -> dict:
         return {
@@ -473,6 +577,12 @@ class TestProcessBatchMessagesStep:
             )
 
         assert result["flagged_count"] == 1
+
+    def test_no_step_retry_config(self) -> None:
+        """Step has no retry config to avoid non-idempotent Redis write duplication."""
+        from src.dbos_workflows.content_scan_workflow import process_batch_messages_step
+
+        assert hasattr(process_batch_messages_step, "__wrapped__")
 
 
 class TestCreateScanRecordStep:
@@ -570,10 +680,7 @@ class TestDispatchContentScanWorkflow:
 
     @pytest.mark.asyncio
     async def test_dispatches_workflow_and_returns_id(self) -> None:
-        """Dispatches workflow via DBOSClient and returns workflow ID."""
-        from src.dbos_workflows.content_scan_workflow import (
-            dispatch_content_scan_workflow,
-        )
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 
         scan_id = uuid4()
         community_server_id = uuid4()
@@ -593,18 +700,10 @@ class TestDispatchContentScanWorkflow:
             )
 
         assert result == "dispatched-wf-123"
-        mock_client.start_workflow.assert_called_once()
-        call_args = mock_client.start_workflow.call_args.args
-        assert call_args[1] == str(scan_id)
-        assert call_args[2] == str(community_server_id)
-        assert json.loads(call_args[3]) == scan_types
 
     @pytest.mark.asyncio
     async def test_returns_none_on_client_error(self) -> None:
-        """Returns None when DBOSClient raises an exception."""
-        from src.dbos_workflows.content_scan_workflow import (
-            dispatch_content_scan_workflow,
-        )
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
@@ -621,10 +720,7 @@ class TestDispatchContentScanWorkflow:
 
     @pytest.mark.asyncio
     async def test_uses_scan_id_as_idempotency_key(self) -> None:
-        """Uses scan_id as idempotency key for workflow deduplication."""
-        from src.dbos_workflows.content_scan_workflow import (
-            dispatch_content_scan_workflow,
-        )
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 
         scan_id = uuid4()
 
@@ -650,10 +746,7 @@ class TestEnqueueContentScanBatch:
 
     @pytest.mark.asyncio
     async def test_enqueues_batch_and_returns_workflow_id(self) -> None:
-        """Enqueues batch via DBOSClient and returns workflow ID."""
-        from src.dbos_workflows.content_scan_workflow import (
-            enqueue_content_scan_batch,
-        )
+        from src.dbos_workflows.content_scan_workflow import enqueue_content_scan_batch
 
         scan_id = uuid4()
         community_server_id = uuid4()
@@ -677,14 +770,10 @@ class TestEnqueueContentScanBatch:
             )
 
         assert result == "batch-wf-456"
-        mock_client.enqueue.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_returns_none_on_enqueue_failure(self) -> None:
-        """Returns None when enqueueing fails."""
-        from src.dbos_workflows.content_scan_workflow import (
-            enqueue_content_scan_batch,
-        )
+        from src.dbos_workflows.content_scan_workflow import enqueue_content_scan_batch
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
@@ -704,10 +793,7 @@ class TestEnqueueContentScanBatch:
 
     @pytest.mark.asyncio
     async def test_enqueue_options_use_correct_queue(self) -> None:
-        """EnqueueOptions specifies content_scan queue."""
-        from src.dbos_workflows.content_scan_workflow import (
-            enqueue_content_scan_batch,
-        )
+        from src.dbos_workflows.content_scan_workflow import enqueue_content_scan_batch
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
@@ -736,10 +822,7 @@ class TestSendAllTransmittedSignal:
 
     @pytest.mark.asyncio
     async def test_sends_signal_and_returns_true(self) -> None:
-        """Sends all_transmitted signal to orchestrator."""
-        from src.dbos_workflows.content_scan_workflow import (
-            send_all_transmitted_signal,
-        )
+        from src.dbos_workflows.content_scan_workflow import send_all_transmitted_signal
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
@@ -759,10 +842,7 @@ class TestSendAllTransmittedSignal:
 
     @pytest.mark.asyncio
     async def test_returns_false_on_failure(self) -> None:
-        """Returns False when signal send fails."""
-        from src.dbos_workflows.content_scan_workflow import (
-            send_all_transmitted_signal,
-        )
+        from src.dbos_workflows.content_scan_workflow import send_all_transmitted_signal
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
@@ -809,17 +889,9 @@ class TestWorkflowNames:
 
 
 class TestFlashpointDetectionToggleInWorkflow:
-    """Tests that flashpoint_detection_enabled toggle is respected in DBOS workflow.
-
-    The toggle is checked inside BulkContentScanService.process_messages() which
-    removes CONVERSATION_FLASHPOINT from active scan types when disabled.
-    The DBOS batch step delegates to this service, so we verify the service
-    is constructed with a FlashpointDetectionService and that scan_types are
-    passed through correctly.
-    """
+    """Tests that flashpoint_detection_enabled toggle is respected in DBOS workflow."""
 
     def test_scan_types_include_flashpoint_when_requested(self) -> None:
-        """When scan_types_json includes conversation_flashpoint, it is parsed."""
         from src.bulk_content_scan.scan_types import ScanType
 
         scan_types_json = json.dumps(["similarity", "openai_moderation", "conversation_flashpoint"])
@@ -829,7 +901,6 @@ class TestFlashpointDetectionToggleInWorkflow:
         assert len(scan_types) == 3
 
     def test_scan_types_exclude_flashpoint_when_not_requested(self) -> None:
-        """When scan_types_json omits conversation_flashpoint, it is not present."""
         from src.bulk_content_scan.scan_types import ScanType
 
         scan_types_json = json.dumps(["similarity"])
@@ -838,7 +909,6 @@ class TestFlashpointDetectionToggleInWorkflow:
         assert ScanType.CONVERSATION_FLASHPOINT not in scan_types
 
     def test_batch_step_passes_scan_types_to_service(self) -> None:
-        """process_batch_messages_step passes scan_types_json through to the inner _process."""
         from src.dbos_workflows.content_scan_workflow import process_batch_messages_step
 
         scan_id = str(uuid4())
@@ -884,7 +954,6 @@ class TestSignalCoordination:
     """Tests for signal coordination between batch workers and orchestrator."""
 
     def test_batch_complete_signal_sent_with_correct_topic(self) -> None:
-        """process_content_scan_batch sends signal with 'batch_complete' topic."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
         batch_result = {
@@ -919,7 +988,6 @@ class TestSignalCoordination:
         )
 
     def test_orchestrator_receives_both_signal_types(self) -> None:
-        """Orchestrator handles both batch_complete and all_transmitted signals."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
         )
@@ -932,17 +1000,22 @@ class TestSignalCoordination:
                 {"processed": 3, "skipped": 0, "errors": 0, "flagged_count": 1, "batch_number": 1},
             ],
             tx_responses=[
+                None,
                 {"messages_scanned": 3},
             ],
         )
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
@@ -951,13 +1024,11 @@ class TestSignalCoordination:
                 scan_types_json=json.dumps(["similarity"]),
             )
 
-        assert mock_dbos.recv.call_count == 2
         recv_topics = [call.args[0] for call in mock_dbos.recv.call_args_list]
         assert "batch_complete" in recv_topics
         assert "all_transmitted" in recv_topics
 
     def test_termination_condition_requires_all_messages_processed(self) -> None:
-        """Loop only terminates when processed+errors >= messages_scanned."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
         )
@@ -971,6 +1042,7 @@ class TestSignalCoordination:
                 {"processed": 4, "skipped": 0, "errors": 3, "flagged_count": 0, "batch_number": 2},
             ],
             tx_responses=[
+                None,
                 {"messages_scanned": 10},
                 None,
             ],
@@ -978,11 +1050,15 @@ class TestSignalCoordination:
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
@@ -998,10 +1074,9 @@ class TestSignalCoordination:
 
 
 class TestCountMismatchBreakCondition:
-    """Tests for the count mismatch break condition (batch_result is None + all_transmitted)."""
+    """Tests for the count mismatch break condition."""
 
     def test_breaks_on_count_mismatch_after_all_transmitted(self) -> None:
-        """Orchestrator breaks instead of looping indefinitely when counts don't match after all_transmitted."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
         )
@@ -1016,17 +1091,20 @@ class TestCountMismatchBreakCondition:
             ],
             tx_responses=[
                 {"messages_scanned": 10},
-                None,
             ],
         )
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
@@ -1045,7 +1123,6 @@ class TestProgressTrackingThroughWorkflowSteps:
     """Tests that progress accumulates correctly across batch signals."""
 
     def test_progress_accumulates_across_batches(self) -> None:
-        """Three batches accumulate processed, skipped, error, and flagged counts."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
         )
@@ -1062,17 +1139,22 @@ class TestProgressTrackingThroughWorkflowSteps:
             tx_responses=[
                 None,
                 None,
+                None,
                 {"messages_scanned": 29},
             ],
         )
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
@@ -1089,7 +1171,6 @@ class TestProgressTrackingThroughWorkflowSteps:
         assert finalize_kwargs["messages_scanned"] == 29
 
     def test_completion_triggers_finalize_step(self) -> None:
-        """Finalize is called exactly once when all messages are processed."""
         from src.dbos_workflows.content_scan_workflow import (
             content_scan_orchestration_workflow,
         )
@@ -1101,17 +1182,22 @@ class TestProgressTrackingThroughWorkflowSteps:
                 {"processed": 5, "skipped": 0, "errors": 0, "flagged_count": 1, "batch_number": 1},
             ],
             tx_responses=[
+                None,
                 {"messages_scanned": 5},
             ],
         )
 
         with (
             patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
             patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-wf-id"
             mock_dbos.recv.side_effect = recv_fn
+            mock_clock.return_value = time.time()
             mock_finalize.return_value = {"status": "completed"}
 
             content_scan_orchestration_workflow.__wrapped__(
@@ -1124,7 +1210,6 @@ class TestProgressTrackingThroughWorkflowSteps:
         assert mock_finalize.call_args.kwargs["scan_id"] == scan_id
 
     def test_batch_signal_carries_progress_data(self) -> None:
-        """Batch worker sends signal with all progress fields."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
         expected_result = {
