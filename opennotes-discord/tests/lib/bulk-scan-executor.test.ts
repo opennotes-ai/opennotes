@@ -164,6 +164,7 @@ describe('bulk-scan-executor', () => {
           name: 'Test Guild',
           is_active: true,
           is_public: true,
+          flashpoint_detection_enabled: false,
         },
       },
       jsonapi: { version: '1.1' },
