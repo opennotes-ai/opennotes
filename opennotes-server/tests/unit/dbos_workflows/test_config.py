@@ -38,9 +38,9 @@ TEST_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
 @pytest.fixture(autouse=True)
 def reset_settings_cache():
     """Reset settings singleton between tests to avoid state leakage."""
-    get_settings.cache_clear()
+    get_settings.cache_clear()  # type: ignore[attr-defined]
     yield
-    get_settings.cache_clear()
+    get_settings.cache_clear()  # type: ignore[attr-defined]
 
 
 def get_base_env() -> dict[str, str]:
