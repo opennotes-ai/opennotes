@@ -154,6 +154,7 @@ class DistributedRateLimitMiddleware(TaskiqMiddleware):
         redis_client: Redis,
         instance_id: str = "default",
     ) -> None:
+        super().__init__()
         self._redis: Redis = redis_client
         self._active_semaphores: dict[str, AsyncSemaphore] = {}
         self._instance_id = instance_id

@@ -31,15 +31,19 @@ scoring_path = (
 if str(scoring_path) not in sys.path:
     sys.path.insert(0, str(scoring_path))
 
-from scoring.constants import (  # noqa: E402
+from scoring.constants import (  # pyright: ignore[reportMissingImports]  # noqa: E402
     FinalScoringArgs,
     ModelResult,
     PrescoringArgs,
     PrescoringMetaOutput,
     scorerNameKey,
 )
-from scoring.mf_core_scorer import MFCoreScorer  # noqa: E402
-from scoring.pandas_utils import PandasPatcher  # noqa: E402
+from scoring.mf_core_scorer import (  # pyright: ignore[reportMissingImports]  # noqa: E402
+    MFCoreScorer,
+)
+from scoring.pandas_utils import (  # pyright: ignore[reportMissingImports]  # noqa: E402
+    PandasPatcher,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -401,9 +405,9 @@ class MFCoreScorerAdapter:
         notes_data = self._data_provider.get_all_notes(community_id)
         participant_ids = self._data_provider.get_all_participants(community_id)
 
-        ratings_df = self._ratings_builder.build(ratings_data)
-        note_status_df = self._note_status_builder.build(notes_data)
-        user_enrollment_df = self._user_enrollment_builder.build(participant_ids)
+        ratings_df = self._ratings_builder.build(ratings_data)  # pyright: ignore[reportOptionalMemberAccess]
+        note_status_df = self._note_status_builder.build(notes_data)  # pyright: ignore[reportOptionalMemberAccess]
+        user_enrollment_df = self._user_enrollment_builder.build(participant_ids)  # pyright: ignore[reportOptionalMemberAccess]
 
         all_note_ids = list(set(ratings_df["noteId"].tolist() + note_status_df["noteId"].tolist()))
         uuid_to_int, int_to_uuid = self._build_note_id_mapping(all_note_ids)
@@ -466,7 +470,7 @@ class MFCoreScorerAdapter:
             },
         )
 
-        prescore_result = self._scorer.prescore(prescoring_args)
+        prescore_result = self._scorer.prescore(prescoring_args)  # pyright: ignore[reportOptionalMemberAccess]
 
         if prescore_result.scoredNotes is not None:
             prescore_result.scoredNotes[scorerNameKey] = prescore_result.scorerName
@@ -492,7 +496,7 @@ class MFCoreScorerAdapter:
 
         logger.debug("Running score_final phase")
 
-        final_result = self._scorer.score_final(final_scoring_args)
+        final_result = self._scorer.score_final(final_scoring_args)  # pyright: ignore[reportOptionalMemberAccess]
 
         logger.debug(
             "Batch scoring complete",

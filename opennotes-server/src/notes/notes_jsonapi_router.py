@@ -20,7 +20,7 @@ Filter operators supported (via fastapi-filter style syntax):
 """
 
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -208,7 +208,7 @@ def _build_attribute_filters(
     filter_created_at_lte: datetime | None,
     filter_rated_by_not_in: list[UUID] | None,
     filter_rated_by: UUID | None = None,
-) -> list:
+) -> list[Any]:
     """Build a list of filter conditions for note attributes.
 
     Supports the following filter operators:

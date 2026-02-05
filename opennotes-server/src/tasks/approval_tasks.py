@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 from opentelemetry import trace
 from sqlalchemy import and_, bindparam, cast, func, select, update
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.types import Text
 
 from src.batch_jobs.constants import BULK_APPROVAL_JOB_TYPE
@@ -51,7 +51,7 @@ class JobNotFoundError(Exception):
 
 
 async def _start_job(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
 ) -> None:
@@ -66,7 +66,7 @@ async def _start_job(
 
 
 async def _update_progress(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
     completed_tasks: int,
@@ -86,7 +86,7 @@ async def _update_progress(
 
 
 async def _complete_job(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
     completed_tasks: int,
@@ -98,13 +98,13 @@ async def _complete_job(
         service = BatchJobService(db, progress_tracker)
         job = await service.get_job(job_id)
         if job:
-            job.metadata_ = {**job.metadata_, "stats": stats}
+            job.metadata_ = {**job.metadata_, "stats": stats}  # pyright: ignore[reportAttributeAccessIssue]
         await service.complete_job(job_id, completed_tasks, failed_tasks)
         await db.commit()
 
 
 async def _fail_job(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
     error_summary: dict[str, Any],
@@ -119,7 +119,7 @@ async def _fail_job(
 
 
 async def _update_job_total_tasks(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     job_id: UUID,
     total_tasks: int,
 ) -> None:
@@ -431,7 +431,7 @@ async def process_bulk_approval(
                     },
                 )
 
-            stats = {
+            stats: dict[str, Any] = {
                 "updated_count": updated_count,
                 "promoted_count": promoted_count if auto_promote else None,
                 "threshold": threshold,

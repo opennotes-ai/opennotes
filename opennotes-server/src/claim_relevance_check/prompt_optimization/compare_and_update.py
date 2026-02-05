@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import dspy
 
@@ -21,7 +22,7 @@ def evaluate_current_prompts(
     testset: list[dspy.Example],
     model: str = "openai/gpt-5-mini",
     dataset_path: Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Evaluate the current prompts.py approach on test data.
 
     This uses the DSPy module without any demos to simulate
@@ -45,7 +46,7 @@ def evaluate_optimized_module(
     module_path: Path,
     model: str = "openai/gpt-5-mini",
     dataset_path: Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Evaluate the optimized module on test data.
 
     Args:
@@ -63,7 +64,7 @@ def evaluate_optimized_module(
     return evaluate_model(module, testset)
 
 
-def format_metrics(results: dict) -> str:
+def format_metrics(results: dict[str, Any]) -> str:
     """Format evaluation results for display."""
     return (
         f"Accuracy: {results['accuracy']:.1%}, "

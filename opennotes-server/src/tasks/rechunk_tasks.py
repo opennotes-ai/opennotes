@@ -30,6 +30,7 @@ Deadlock Handling:
 import asyncio
 import random
 import threading
+from typing import Any
 from uuid import UUID
 
 from opentelemetry import trace
@@ -285,7 +286,7 @@ async def _process_previously_seen_item_with_retry(
 
 async def _handle_fact_check_rechunk_final_failure(
     message: TaskiqMessage,
-    result: TaskiqResult,
+    result: TaskiqResult[Any],
     exception: BaseException,
 ) -> None:
     """
@@ -360,7 +361,7 @@ async def _handle_fact_check_rechunk_final_failure(
 
 async def _handle_previously_seen_rechunk_final_failure(
     message: TaskiqMessage,
-    result: TaskiqResult,
+    result: TaskiqResult[Any],
     exception: BaseException,
 ) -> None:
     """
@@ -443,7 +444,7 @@ async def _handle_previously_seen_rechunk_final_failure(
 
 async def _handle_chunk_fact_check_item_final_failure(
     message: TaskiqMessage,
-    result: TaskiqResult,
+    result: TaskiqResult[Any],
     exception: BaseException,
 ) -> None:
     """
@@ -475,7 +476,7 @@ async def chunk_fact_check_item_task(
     fact_check_id: str,
     community_server_id: str | None,
     db_url: str,
-) -> dict:
+) -> dict[str, Any]:
     """
     TaskIQ task to chunk and embed a single fact check item.
 
@@ -579,7 +580,7 @@ async def process_fact_check_rechunk_task(
     batch_size: int,
     db_url: str,
     redis_url: str,
-) -> dict:
+) -> dict[str, Any]:
     """
     TaskIQ task to process fact check item re-chunking.
 
@@ -646,7 +647,7 @@ async def process_fact_check_rechunk_task(
         failed_count = 0
         offset = 0
 
-        item_errors: list[dict] = []
+        item_errors: list[dict[str, Any]] = []
         try:
             async with async_session() as db:
                 while True:
@@ -794,7 +795,7 @@ async def process_previously_seen_rechunk_task(
     batch_size: int,
     db_url: str,
     redis_url: str,
-) -> dict:
+) -> dict[str, Any]:
     """
     TaskIQ task to process previously seen message re-chunking.
 
@@ -860,7 +861,7 @@ async def process_previously_seen_rechunk_task(
 
         failed_count = 0
         offset = 0
-        item_errors: list[dict] = []
+        item_errors: list[dict[str, Any]] = []
 
         try:
             async with async_session() as db:

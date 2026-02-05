@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Protocol
+from typing import Any, Protocol
 
 import nats
 from nats.aio.client import Client as NATSClient
@@ -69,7 +69,7 @@ class NATSClientManager:
             f"Connecting to NATS cluster with {len(servers)} server(s): {servers} (auth: {has_auth})"
         )
 
-        connect_kwargs: dict[str, object] = {
+        connect_kwargs: dict[str, Any] = {
             "servers": servers,
             "connect_timeout": settings.NATS_CONNECT_TIMEOUT,
             "max_reconnect_attempts": settings.NATS_MAX_RECONNECT_ATTEMPTS,

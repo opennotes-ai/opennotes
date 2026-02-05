@@ -49,7 +49,7 @@ class TestChunkingServiceInitialization:
 
         mock_neural_chunker.assert_called_once_with(
             model="mirth/chonky_distilbert_base_uncased_1",
-            device_map=None,
+            device_map="auto",
             min_characters_per_chunk=50,
         )
         assert chunker is mock_instance

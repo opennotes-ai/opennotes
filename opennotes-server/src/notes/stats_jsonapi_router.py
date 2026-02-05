@@ -13,7 +13,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -147,7 +147,7 @@ async def get_notes_stats_jsonapi(
     Service accounts can see all stats.
     """
     try:
-        base_filters: list = []
+        base_filters: list[Any] = []
 
         if filter_date_from:
             base_filters.append(Note.created_at >= filter_date_from)
@@ -265,7 +265,7 @@ async def get_author_stats_jsonapi(
     Service accounts can see all stats.
     """
     try:
-        note_filters: list = [Note.author_id == author_id]
+        note_filters: list[Any] = [Note.author_id == author_id]
         community_filter = None
 
         if filter_community_server_id:

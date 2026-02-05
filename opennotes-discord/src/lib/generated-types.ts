@@ -3455,7 +3455,7 @@ export interface components {
              * @description Job-specific metadata (e.g., source file, options)
              */
             metadata?: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | string[] | null;
             };
             /**
              * Workflow Id
@@ -3544,14 +3544,14 @@ export interface components {
              * @description Job-specific metadata
              */
             metadata_?: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | string[] | null;
             };
             /**
              * Error Summary
              * @description Summary of errors if any
              */
             error_summary?: {
-                [key: string]: unknown;
+                [key: string]: string | number | string[];
             } | null;
             /**
              * Workflow Id

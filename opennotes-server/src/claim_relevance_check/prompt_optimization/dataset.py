@@ -6,6 +6,7 @@ import random
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import dspy
 import yaml
@@ -179,7 +180,7 @@ def load_examples_from_json(json_path: Path) -> list[RelevanceExample]:
     return examples
 
 
-def validate_dataset(examples: list[RelevanceExample]) -> dict:
+def validate_dataset(examples: list[RelevanceExample]) -> dict[str, Any]:
     """Validate dataset balance and quality.
 
     Args:
@@ -192,7 +193,7 @@ def validate_dataset(examples: list[RelevanceExample]) -> dict:
     n_positive = sum(1 for ex in examples if ex.is_relevant)
     n_negative = n_total - n_positive
 
-    results = {
+    results: dict[str, Any] = {
         "total": n_total,
         "true_positives": n_positive,
         "false_positives": n_negative,

@@ -147,7 +147,7 @@ class SessionManager:
             return []
 
         try:
-            session_ids = await self.redis.client.smembers(user_sessions_key)  # type: ignore[misc]
+            session_ids = await self.redis.client.smembers(user_sessions_key)  # pyright: ignore[reportGeneralTypeIssues]
             if not session_ids:
                 return []
 

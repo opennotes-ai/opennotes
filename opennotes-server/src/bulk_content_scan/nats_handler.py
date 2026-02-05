@@ -199,7 +199,7 @@ async def handle_message_batch_with_progress(
     threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
 
     flagged: list[FlaggedMessage] = []
-    all_scores: list[dict] = []
+    all_scores: list[dict[str, Any]] = []
     successful_count = 0
     error_count = 0
 

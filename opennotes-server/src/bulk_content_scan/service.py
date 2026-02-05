@@ -235,7 +235,7 @@ class BulkContentScanService:
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = ...,
         collect_scores: Literal[True] = ...,
-    ) -> tuple[list[FlaggedMessage], list[dict]]: ...
+    ) -> tuple[list[FlaggedMessage], list[dict[str, Any]]]: ...
 
     async def process_messages(
         self,
@@ -244,7 +244,7 @@ class BulkContentScanService:
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
         collect_scores: bool = False,
-    ) -> list[FlaggedMessage] | tuple[list[FlaggedMessage], list[dict]]:
+    ) -> list[FlaggedMessage] | tuple[list[FlaggedMessage], list[dict[str, Any]]]:
         """Process one or more messages through specified scan types.
 
         Uses the candidate-based flow:
@@ -289,7 +289,7 @@ class BulkContentScanService:
             )
 
         candidates: list[ScanCandidate] = []
-        all_scores: list[dict] = []
+        all_scores: list[dict[str, Any]] = []
 
         for msg in messages:
             if not msg.content or len(msg.content.strip()) < 10:
@@ -344,7 +344,7 @@ class BulkContentScanService:
         messages: BulkScanMessage | Sequence[BulkScanMessage],
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
-    ) -> tuple[list[FlaggedMessage], list[dict]]:
+    ) -> tuple[list[FlaggedMessage], list[dict[str, Any]]]:
         """Process messages and return both flagged results and all scores.
 
         DEPRECATED: Use process_messages(..., collect_scores=True) instead.
@@ -399,7 +399,7 @@ class BulkContentScanService:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
 
-    def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict:
+    def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict[str, Any]:
         """Build score_info dict from a ScanCandidate for debug mode.
 
         Args:
@@ -408,7 +408,7 @@ class BulkContentScanService:
         Returns:
             Dictionary with score info for debug output
         """
-        score_info: dict = {
+        score_info: dict[str, Any] = {
             "message_id": candidate.message.message_id,
             "channel_id": candidate.message.channel_id,
             "similarity_score": candidate.score,
@@ -431,7 +431,7 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
-    ) -> tuple[FlaggedMessage | None, dict]:
+    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run scanner and return both the flagged result and score info."""
         match scan_type:
             case ScanType.SIMILARITY:
@@ -455,9 +455,9 @@ class BulkContentScanService:
         scan_id: UUID,
         message: BulkScanMessage,
         community_server_platform_id: str,
-    ) -> tuple[FlaggedMessage | None, dict]:
+    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run similarity search and return both flagged result and score info."""
-        return await self._similarity_scan(  # type: ignore[return-value]
+        return await self._similarity_scan(  # pyright: ignore[reportReturnType]
             scan_id, message, community_server_platform_id, include_score=True
         )
 
@@ -471,7 +471,7 @@ class BulkContentScanService:
         """Run a specific scanner on a message."""
         match scan_type:
             case ScanType.SIMILARITY:
-                return await self._similarity_scan(  # type: ignore[return-value]
+                return await self._similarity_scan(  # pyright: ignore[reportReturnType]
                     scan_id, message, community_server_platform_id
                 )
             case ScanType.OPENAI_MODERATION:
@@ -486,7 +486,7 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         include_score: bool = False,
-    ) -> FlaggedMessage | None | tuple[FlaggedMessage | None, dict]:
+    ) -> FlaggedMessage | None | tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run similarity search on a message.
 
         Args:
@@ -502,7 +502,7 @@ class BulkContentScanService:
         threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
         indeterminate_threshold = calculate_indeterminate_threshold(threshold)
 
-        score_info: dict | None = None
+        score_info: dict[str, Any] | None = None
         if include_score:
             score_info = {
                 "message_id": message.message_id,
@@ -698,9 +698,9 @@ class BulkContentScanService:
         self,
         scan_id: UUID,
         message: BulkScanMessage,
-    ) -> tuple[FlaggedMessage | None, dict]:
+    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run OpenAI moderation and return both flagged result and score info."""
-        score_info: dict = {
+        score_info: dict[str, Any] = {
             "message_id": message.message_id,
             "channel_id": message.channel_id,
             "similarity_score": 0.0,
@@ -1361,8 +1361,8 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
     ) -> None:
         """Append a single flagged result to Redis list."""
         redis_key = _get_redis_results_key(scan_id)
-        await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())  # type: ignore[misc]
-        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+        await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
 
     async def complete_scan(
         self,
@@ -1428,9 +1428,9 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         redis_key = _get_redis_results_key(scan_id)
 
         for msg in flagged_messages:
-            await self.redis_client.lpush(redis_key, msg.model_dump_json())  # type: ignore[misc]
+            await self.redis_client.lpush(redis_key, msg.model_dump_json())  # pyright: ignore[reportGeneralTypeIssues]
         if flagged_messages:
-            await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+            await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
 
         logger.debug(
             "Stored flagged results for bulk scan",
@@ -1451,7 +1451,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         """
         redis_key = _get_redis_results_key(scan_id)
 
-        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)  # type: ignore[misc]
+        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)  # pyright: ignore[reportGeneralTypeIssues]
         results = []
         for raw_msg in raw_messages:
             msg_str = raw_msg.decode() if isinstance(raw_msg, bytes) else raw_msg
@@ -1485,11 +1485,11 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             "error_message": error_message[:500],
         }
 
-        await self.redis_client.lpush(errors_key, json.dumps(error_info))  # type: ignore[misc]
-        await self.redis_client.hincrby(counts_key, error_type, 1)  # type: ignore[misc]
+        await self.redis_client.lpush(errors_key, json.dumps(error_info))  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.hincrby(counts_key, error_type, 1)  # pyright: ignore[reportGeneralTypeIssues]
 
-        await self.redis_client.expire(errors_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
-        await self.redis_client.expire(counts_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+        await self.redis_client.expire(errors_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.expire(counts_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
 
         logger.debug(
             "Recorded scan error",
@@ -1509,8 +1509,8 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             count: Number of messages processed
         """
         processed_key = _get_redis_processed_count_key(scan_id)
-        await self.redis_client.incrby(processed_key, count)  # type: ignore[misc]
-        await self.redis_client.expire(processed_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+        await self.redis_client.incrby(processed_key, count)  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.expire(processed_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
 
     async def get_processed_count(self, scan_id: UUID) -> int:
         """Get the count of successfully processed messages.
@@ -1538,8 +1538,8 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             count: Number of messages skipped
         """
         skipped_key = _get_redis_skipped_count_key(scan_id)
-        await self.redis_client.incrby(skipped_key, count)  # type: ignore[misc]
-        await self.redis_client.expire(skipped_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+        await self.redis_client.incrby(skipped_key, count)  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.expire(skipped_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
 
     async def get_skipped_count(self, scan_id: UUID) -> int:
         """Get the count of skipped messages.
@@ -1621,7 +1621,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             messages_scanned: Total number of messages transmitted
         """
         transmitted_key = _get_redis_transmitted_key(scan_id)
-        await self.redis_client.set(transmitted_key, str(messages_scanned), ex=REDIS_TTL_SECONDS)  # type: ignore[misc]
+        await self.redis_client.set(transmitted_key, str(messages_scanned), ex=REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
 
     async def get_all_batches_transmitted(self, scan_id: UUID) -> tuple[bool, int | None]:
         """Check if all batches have been transmitted and get message count.
@@ -1675,10 +1675,10 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             False if already claimed (another handler will dispatch)
         """
         key = _get_redis_finalize_dispatched_key(scan_id)
-        result = await self.redis_client.set(key, "1", nx=True, ex=REDIS_TTL_SECONDS)  # type: ignore[misc]
+        result = await self.redis_client.set(key, "1", nx=True, ex=REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
         return result is True
 
-    async def get_error_summary(self, scan_id: UUID) -> dict:
+    async def get_error_summary(self, scan_id: UUID) -> dict[str, Any]:
         """Get error summary from Redis.
 
         Args:
@@ -1693,7 +1693,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         errors_key = _get_redis_errors_key(scan_id)
         counts_key = _get_redis_error_counts_key(scan_id)
 
-        error_counts = await self.redis_client.hgetall(counts_key)  # type: ignore[misc]
+        error_counts = await self.redis_client.hgetall(counts_key)  # pyright: ignore[reportGeneralTypeIssues]
         error_types: dict[str, int] = {}
         total_errors = 0
 
@@ -1703,7 +1703,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             error_types[type_str] = count_int
             total_errors += count_int
 
-        raw_errors = await self.redis_client.lrange(errors_key, 0, 4)  # type: ignore[misc]
+        raw_errors = await self.redis_client.lrange(errors_key, 0, 4)  # pyright: ignore[reportGeneralTypeIssues]
         sample_errors = []
         for raw_error in raw_errors:
             error_str = raw_error.decode() if isinstance(raw_error, bytes) else raw_error

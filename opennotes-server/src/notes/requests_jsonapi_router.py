@@ -291,7 +291,7 @@ def _build_attribute_filters(
     filter_requested_by: str | None,
     filter_requested_at_gte: datetime | None,
     filter_requested_at_lte: datetime | None,
-) -> list:
+) -> list[Any]:
     """Build a list of filter conditions for request attributes."""
     filters = []
 
@@ -551,7 +551,7 @@ async def create_request_jsonapi(
         }
 
         if attrs.metadata:
-            request_dict["request_metadata"] = attrs.metadata
+            request_dict["request_metadata"] = attrs.metadata  # pyright: ignore[reportArgumentType]
 
         note_request = Request(**request_dict)
         db.add(note_request)

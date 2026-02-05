@@ -270,7 +270,7 @@ class ChunkingService:
 
         return NeuralChunker(
             model=self._model,
-            device_map=self._device_map,  # type: ignore[arg-type]  # chonkie accepts None but types as str
+            device_map=self._device_map or "auto",
             min_characters_per_chunk=self._min_characters_per_chunk,
         )
 

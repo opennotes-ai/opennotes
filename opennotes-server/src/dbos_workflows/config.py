@@ -47,6 +47,9 @@ def _derive_http_otlp_endpoint(grpc_endpoint: str | None) -> str | None:
     endpoint = grpc_endpoint.rstrip("/")
     parsed = urlparse(endpoint)
 
+    if not parsed.scheme or not parsed.netloc:
+        return None
+
     if parsed.port != 4317:
         return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
 
@@ -196,11 +199,18 @@ def get_dbos_client() -> DBOSClient:
 
 
 def destroy_dbos_client() -> None:
+    """Gracefully destroy the DBOSClient singleton.
+
+    Calls destroy() on the client and clears the cache. The cache is
+    cleared even if destroy() raises an exception, ensuring a fresh
+    client can be created on the next get_dbos_client() call.
+    """
     global _dbos_client
     with _dbos_client_lock:
         if _dbos_client is not None:
-            _dbos_client.destroy()
+            client = _dbos_client
             _dbos_client = None
+            client.destroy()
 
 
 def reset_dbos_client() -> None:

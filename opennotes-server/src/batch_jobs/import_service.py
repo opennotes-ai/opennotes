@@ -102,7 +102,7 @@ class ImportBatchJobService:
 
         settings = get_settings()
 
-        metadata = {
+        metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "source": "fact_check_bureau",
             "batch_size": batch_size,
             "dry_run": dry_run,
@@ -197,7 +197,7 @@ class ImportBatchJobService:
 
         settings = get_settings()
 
-        metadata = {
+        metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
             "base_delay": base_delay,
@@ -267,7 +267,7 @@ class ImportBatchJobService:
 
         settings = get_settings()
 
-        metadata = {
+        metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
         }
@@ -348,7 +348,7 @@ class ImportBatchJobService:
 
         settings = get_settings()
 
-        metadata = {
+        metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "threshold": threshold,
             "auto_promote": auto_promote,
             "limit": limit,

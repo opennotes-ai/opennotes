@@ -37,12 +37,10 @@ rechunk_queue = Queue(
     concurrency=10,
 )
 
-EMBEDDING_RETRY_CONFIG = {
-    "retries_allowed": True,
-    "max_attempts": 5,
-    "interval_seconds": 1.0,
-    "backoff_rate": 2.0,
-}
+EMBEDDING_RETRIES_ALLOWED: bool = True
+EMBEDDING_MAX_ATTEMPTS: int = 5
+EMBEDDING_INTERVAL_SECONDS: float = 1.0
+EMBEDDING_BACKOFF_RATE: float = 2.0
 
 
 async def dispatch_dbos_rechunk_workflow(
@@ -253,7 +251,12 @@ def rechunk_fact_check_workflow(
     }
 
 
-@DBOS.step(**EMBEDDING_RETRY_CONFIG)
+@DBOS.step(
+    retries_allowed=EMBEDDING_RETRIES_ALLOWED,
+    max_attempts=EMBEDDING_MAX_ATTEMPTS,
+    interval_seconds=EMBEDDING_INTERVAL_SECONDS,
+    backoff_rate=EMBEDDING_BACKOFF_RATE,
+)
 def process_fact_check_item(
     item_id: str,
     community_server_id: str | None,

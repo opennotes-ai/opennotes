@@ -7,6 +7,7 @@ fact-check candidates.
 import logging
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, cast, func, select, update
@@ -142,9 +143,9 @@ def _build_filters(
     has_content: bool | None = None,
     published_date_from: datetime | None = None,
     published_date_to: datetime | None = None,
-) -> list:
+) -> list[Any]:
     """Build SQLAlchemy filter conditions for candidate queries."""
-    filters = []
+    filters: list[Any] = []
 
     if status is not None:
         filters.append(FactCheckedItemCandidate.status == status)
@@ -253,7 +254,7 @@ async def set_candidate_rating(
 
 async def _iter_candidates_for_bulk_approval(
     session: AsyncSession,
-    filters: list,
+    filters: list[Any],
     batch_size: int = BATCH_SIZE,
 ) -> AsyncIterator[list[FactCheckedItemCandidate]]:
     """Iterate candidates in batches using FOR UPDATE SKIP LOCKED to prevent TOCTOU.
