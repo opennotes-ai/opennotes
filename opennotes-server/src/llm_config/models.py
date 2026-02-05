@@ -73,10 +73,10 @@ class CommunityServer(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     settings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true", nullable=False
+        Boolean, default=True, server_default="1", nullable=False
     )
     is_public: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true", nullable=False
+        Boolean, default=True, server_default="1", nullable=False
     )
     flashpoint_detection_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
@@ -168,7 +168,7 @@ class CommunityServerLLMConfig(Base):
     encryption_key_id: Mapped[str] = mapped_column(String(100), nullable=False)
     api_key_preview: Mapped[str] = mapped_column(String(20), nullable=False)
     enabled: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true", nullable=False, index=True
+        Boolean, default=True, server_default="1", nullable=False, index=True
     )
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
 

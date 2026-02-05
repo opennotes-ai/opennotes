@@ -69,11 +69,11 @@ dependencies = [
 
 [project.optional-dependencies]
 flashpoints-dataset = [
-    "convokit>=3.5.0",
+    "convokit>=3.5.0,<4.0.0",
 ]
 scoring = [
     "torch==2.1.2",
-    "scipy>=1.11.4",
+    "scipy>=1.11.4,<3.0.0",
     "scikit-learn>=1.3.0",
     "joblib>=1.3.0",
     "pyarrow>=15.0.0",
@@ -94,7 +94,7 @@ dev = [
     "docker>=7.0.0",
     "psutil>=6.0.0",
     "torch==2.1.2",
-    "scipy>=1.11.4",
+    "scipy>=1.11.4,<3.0.0",
     "scikit-learn>=1.3.0",
     "pyarrow>=15.0.0",
     "wandb>=0.15.0",
@@ -186,7 +186,6 @@ reportUnnecessaryTypeIgnoreComment = false
 minversion = "7.0"
 addopts = "-ra -q --strict-markers --cov=src --cov-report=term-missing --cov-report=html"
 testpaths = ["tests"]
-pythonpath = ["."]
 asyncio_mode = "auto"
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -216,6 +215,8 @@ exclude_lines = [
 packages = ["src"]
 
 [tool.uv]
+# bitsandbytes: convokit -> transformers -> bitsandbytes pulls an incompatible version.
+# We don't use bitsandbytes at runtime (training quantization lib), so pin to known-good.
 override-dependencies = [
     "bitsandbytes==0.48.0",
 ]
@@ -229,7 +230,7 @@ build-backend = "hatchling.build"
 ml = [
     "chonkie[neural]>=1.3.0,<2.0.0",
     "scikit-learn>=1.7.2",
-    "scipy>=1.11.4",
+    "scipy>=1.11.4,<3.0.0",
     "torch>=2.1.2",
     "transformers>=4.36.0,<4.41.0",
 ]

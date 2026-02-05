@@ -1,17 +1,22 @@
 """Unit tests for flashpoint dataset extraction functions."""
 
+import importlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 convokit = pytest.importorskip("convokit", reason="convokit is an optional dependency")
 
-from scripts.flashpoints.extract_cga_dataset import (  # noqa: E402
-    FlashpointExample,
-    save_datasets,
-    split_dataset,
-)
+_repo_root = str(Path(__file__).resolve().parents[3])
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+_mod = importlib.import_module("scripts.flashpoints.extract_cga_dataset")
+FlashpointExample = _mod.FlashpointExample
+save_datasets = _mod.save_datasets
+split_dataset = _mod.split_dataset
 
 
 class TestSplitDataset:
