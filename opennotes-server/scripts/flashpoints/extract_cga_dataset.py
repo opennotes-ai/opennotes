@@ -7,9 +7,10 @@ DSPy-compatible training examples for conversation flashpoint detection.
 import json
 import random
 from pathlib import Path
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-from convokit import Corpus, download
+if TYPE_CHECKING:
+    from convokit import Corpus
 
 
 class FlashpointExample(TypedDict):
@@ -22,14 +23,16 @@ class FlashpointExample(TypedDict):
     derail_point: int | None
 
 
-def load_cga_corpus() -> Corpus:
+def load_cga_corpus() -> "Corpus":
     """Download and load the CGA-CMV corpus."""
+    from convokit import Corpus, download
+
     corpus_path = download("conversations-gone-awry-cmv-corpus")
     return Corpus(filename=corpus_path)
 
 
 def extract_examples(
-    corpus: Corpus, max_context_turns: int = 5, seed: int = 42
+    corpus: "Corpus", max_context_turns: int = 5, seed: int = 42
 ) -> list[FlashpointExample]:
     """Extract training examples from the corpus.
 
