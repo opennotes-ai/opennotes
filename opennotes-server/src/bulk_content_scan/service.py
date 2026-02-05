@@ -147,6 +147,7 @@ class BulkContentScanService:
         redis_client: Redis,
         moderation_service: Any | None = None,
         llm_service: LLMService | None = None,
+        flashpoint_service: Any | None = None,
     ) -> None:
         """Initialize the service.
 
@@ -156,12 +157,14 @@ class BulkContentScanService:
             redis_client: Redis client for temporary message storage
             moderation_service: Optional OpenAI moderation service for content moderation
             llm_service: Optional LLM service for relevance checking
+            flashpoint_service: Optional FlashpointDetectionService for conversation derailment detection
         """
         self.session = session
         self.embedding_service = embedding_service
         self.redis_client = redis_client
         self.moderation_service = moderation_service
         self.llm_service = llm_service
+        self.flashpoint_service = flashpoint_service
 
     async def initiate_scan(
         self,
@@ -291,24 +294,24 @@ class BulkContentScanService:
         candidates: list[ScanCandidate] = []
         all_scores: list[dict[str, Any]] = []
 
+        channel_context_map = self._build_channel_context_map(messages)
+
         for msg in messages:
             if not msg.content or len(msg.content.strip()) < 10:
                 if collect_scores:
-                    all_scores.append(
-                        {
-                            "message_id": msg.message_id,
-                            "channel_id": msg.channel_id,
-                            "similarity_score": 0.0,
-                            "is_flagged": False,
-                            "matched_claim": None,
-                        }
-                    )
+                    all_scores.append(self._build_empty_score_info(msg))
                 continue
+
+            context_messages = self._get_context_for_message(msg, channel_context_map)
 
             candidate_found = False
             for scan_type in scan_types:
                 candidate = await self._generate_candidate(
-                    scan_id, msg, community_server_platform_id, scan_type
+                    scan_id,
+                    msg,
+                    community_server_platform_id,
+                    scan_type,
+                    context_messages=context_messages,
                 )
                 if candidate:
                     candidates.append(candidate)
@@ -318,15 +321,7 @@ class BulkContentScanService:
                     break
 
             if not candidate_found and collect_scores:
-                all_scores.append(
-                    {
-                        "message_id": msg.message_id,
-                        "channel_id": msg.channel_id,
-                        "similarity_score": 0.0,
-                        "is_flagged": False,
-                        "matched_claim": None,
-                    }
-                )
+                all_scores.append(self._build_empty_score_info(msg))
 
         flagged = await self._filter_candidates_with_relevance(candidates, scan_id)
 
@@ -373,17 +368,19 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
+        context_messages: list[BulkScanMessage] | None = None,
     ) -> ScanCandidate | None:
         """Generate a ScanCandidate using the appropriate scanner.
 
-        This dispatches to _similarity_scan_candidate() or _moderation_scan_candidate()
-        based on scan_type.
+        This dispatches to _similarity_scan_candidate(), _moderation_scan_candidate(),
+        or _flashpoint_scan_candidate() based on scan_type.
 
         Args:
             scan_id: UUID of the scan
             message: The message to scan
             community_server_platform_id: CommunityServer.platform_community_server_id
             scan_type: Type of scan to run
+            context_messages: Previous messages in the channel for flashpoint detection
 
         Returns:
             ScanCandidate if match found, None otherwise
@@ -395,6 +392,10 @@ class BulkContentScanService:
                 )
             case ScanType.OPENAI_MODERATION:
                 return await self._moderation_scan_candidate(scan_id, message)
+            case ScanType.CONVERSATION_FLASHPOINT:
+                return await self._flashpoint_scan_candidate(
+                    scan_id, message, context_messages or []
+                )
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
@@ -424,6 +425,59 @@ class BulkContentScanService:
             score_info["moderation_scores"] = candidate.match_data.scores
 
         return score_info
+
+    def _build_empty_score_info(self, message: BulkScanMessage) -> dict:
+        """Build empty score info dict for messages that weren't candidates."""
+        return {
+            "message_id": message.message_id,
+            "channel_id": message.channel_id,
+            "similarity_score": 0.0,
+            "is_flagged": False,
+            "matched_claim": None,
+        }
+
+    def _build_channel_context_map(
+        self, messages: Sequence[BulkScanMessage]
+    ) -> dict[str, list[BulkScanMessage]]:
+        """Build a map of channel_id -> sorted messages for context lookup.
+
+        Args:
+            messages: Sequence of messages to organize by channel
+
+        Returns:
+            Dictionary mapping channel_id to list of messages sorted by timestamp
+        """
+        channel_messages: dict[str, list[BulkScanMessage]] = {}
+        for msg in messages:
+            if msg.channel_id not in channel_messages:
+                channel_messages[msg.channel_id] = []
+            channel_messages[msg.channel_id].append(msg)
+
+        for msgs in channel_messages.values():
+            msgs.sort(key=lambda m: m.timestamp)
+
+        return channel_messages
+
+    def _get_context_for_message(
+        self,
+        message: BulkScanMessage,
+        channel_context_map: dict[str, list[BulkScanMessage]],
+    ) -> list[BulkScanMessage]:
+        """Get previous messages in the same channel as context.
+
+        Args:
+            message: The message to get context for
+            channel_context_map: Map of channel_id -> sorted messages
+
+        Returns:
+            List of messages that occurred before this message in the same channel
+        """
+        channel_msgs = channel_context_map.get(message.channel_id, [])
+        msg_index = next(
+            (i for i, m in enumerate(channel_msgs) if m.message_id == message.message_id),
+            -1,
+        )
+        return channel_msgs[:msg_index] if msg_index > 0 else []
 
     async def _run_scanner_with_score(
         self,
@@ -910,6 +964,58 @@ class BulkContentScanService:
         except Exception as e:
             logger.warning(
                 "Error in moderation scan candidate",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None
+
+    async def _flashpoint_scan_candidate(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        context_messages: list[BulkScanMessage],
+    ) -> ScanCandidate | None:
+        """Run flashpoint detection and return a ScanCandidate.
+
+        Detects early warning signs that a conversation may derail into conflict
+        using a DSPy-optimized prompt trained on the Conversations Gone Awry corpus.
+
+        Args:
+            scan_id: UUID of the scan
+            message: The message to analyze
+            context_messages: Previous messages in the channel (time-ordered)
+
+        Returns:
+            ScanCandidate if flashpoint detected, None otherwise
+        """
+        if not self.flashpoint_service:
+            logger.debug(
+                "Flashpoint service not configured",
+                extra={"scan_id": str(scan_id)},
+            )
+            return None
+
+        try:
+            match = await self.flashpoint_service.detect_flashpoint(
+                message=message,
+                context_messages=context_messages,
+            )
+
+            if match is None:
+                return None
+
+            return ScanCandidate(
+                message=message,
+                scan_type=ScanType.CONVERSATION_FLASHPOINT.value,
+                match_data=match,
+                score=match.confidence,
+                matched_content=match.reasoning,
+                matched_source=None,
+            )
+
+        except Exception as e:
+            logger.warning(
+                "Error in flashpoint scan candidate",
                 extra={"scan_id": str(scan_id), "error": str(e)},
             )
 

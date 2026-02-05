@@ -4421,6 +4421,37 @@ export interface components {
             links?: components["schemas"]["JSONAPILinks"] | null;
         };
         /**
+         * ConversationFlashpointMatch
+         * @description Match result from conversation flashpoint detection scan.
+         */
+        ConversationFlashpointMatch: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scan_type: "conversation_flashpoint";
+            /**
+             * Will Derail
+             * @description Whether conversation shows derailment signals
+             */
+            will_derail: boolean;
+            /**
+             * Confidence
+             * @description Model confidence score
+             */
+            confidence: number;
+            /**
+             * Reasoning
+             * @description Explanation of detected signals
+             */
+            reasoning: string;
+            /**
+             * Context Messages
+             * @description Number of context messages analyzed
+             */
+            context_messages: number;
+        };
+        /**
          * DiscordOAuthInitResponse
          * @description Response schema for Discord OAuth2 flow initialization.
          */
@@ -4686,7 +4717,7 @@ export interface components {
              * Matches
              * @description List of match results from different scan types
              */
-            matches?: (components["schemas"]["SimilarityMatch"] | components["schemas"]["OpenAIModerationMatch"])[];
+            matches?: (components["schemas"]["SimilarityMatch"] | components["schemas"]["OpenAIModerationMatch"] | components["schemas"]["ConversationFlashpointMatch"])[];
         };
         /**
          * FlaggedMessageResource

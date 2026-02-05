@@ -8,7 +8,11 @@ class ScanType(StrEnum):
 
     SIMILARITY = "similarity"
     OPENAI_MODERATION = "openai_moderation"
+    CONVERSATION_FLASHPOINT = "conversation_flashpoint"
 
 
-DEFAULT_SCAN_TYPES: tuple[ScanType, ...] = (ScanType.SIMILARITY,)
+DEFAULT_SCAN_TYPES: tuple[ScanType, ...] = (
+    ScanType.SIMILARITY,
+    ScanType.CONVERSATION_FLASHPOINT,
+)
 ALL_SCAN_TYPES: tuple[ScanType, ...] = tuple(ScanType)

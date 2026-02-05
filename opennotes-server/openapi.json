@@ -11353,6 +11353,48 @@
         "title": "CommunityServerSingleResponse",
         "description": "JSON:API response for a single community server resource."
       },
+      "ConversationFlashpointMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "conversation_flashpoint",
+            "title": "Scan Type",
+            "default": "conversation_flashpoint"
+          },
+          "will_derail": {
+            "type": "boolean",
+            "title": "Will Derail",
+            "description": "Whether conversation shows derailment signals"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Model confidence score"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "description": "Explanation of detected signals"
+          },
+          "context_messages": {
+            "type": "integer",
+            "title": "Context Messages",
+            "description": "Number of context messages analyzed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "will_derail",
+          "confidence",
+          "reasoning",
+          "context_messages"
+        ],
+        "title": "ConversationFlashpointMatch",
+        "description": "Match result from conversation flashpoint detection scan."
+      },
       "DiscordOAuthInitResponse": {
         "properties": {
           "authorization_url": {
@@ -11787,11 +11829,15 @@
                 },
                 {
                   "$ref": "#/components/schemas/OpenAIModerationMatch"
+                },
+                {
+                  "$ref": "#/components/schemas/ConversationFlashpointMatch"
                 }
               ],
               "discriminator": {
                 "propertyName": "scan_type",
                 "mapping": {
+                  "conversation_flashpoint": "#/components/schemas/ConversationFlashpointMatch",
                   "openai_moderation": "#/components/schemas/OpenAIModerationMatch",
                   "similarity": "#/components/schemas/SimilarityMatch"
                 }
