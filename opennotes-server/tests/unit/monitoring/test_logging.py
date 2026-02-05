@@ -193,17 +193,22 @@ class TestOtelAttributeExtraction:
         assert log_data.get("logging.googleapis.com/spanId") == otel_span_id
         assert log_data.get("logging.googleapis.com/trace_sampled") is True
 
-    def test_otel_trace_sampled_handles_various_falsy_values(
+    def test_otel_trace_sampled_treats_non_true_values_as_false(
         self, formatter: CustomJsonFormatter, log_record: logging.LogRecord
     ) -> None:
+        """Test that only literal True is treated as sampled.
+
+        The implementation uses `is True` comparison, so any value that is not
+        literally True (including truthy strings like "False") results in False.
+        """
         log_record.otelTraceID = "a" * 32
         log_record.otelSpanID = "b" * 16
 
         mock_settings = MagicMock()
         mock_settings.GCP_PROJECT_ID = "test-project"
 
-        for falsy_value in [False, None, 0, "", "False"]:
-            log_record.otelTraceSampled = falsy_value
+        for non_true_value in [False, None, 0, "", "False"]:
+            log_record.otelTraceSampled = non_true_value
             log_data: dict[str, Any] = {}
 
             with patch("src.config.get_settings", return_value=mock_settings):
