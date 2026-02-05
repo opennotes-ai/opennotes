@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import dspy
 
+from src.bulk_content_scan.flashpoint_utils import FlashpointDetector, parse_bool
 from src.bulk_content_scan.schemas import ConversationFlashpointMatch
 from src.monitoring import get_logger
 
@@ -14,26 +16,6 @@ if TYPE_CHECKING:
     from src.bulk_content_scan.schemas import BulkScanMessage
 
 logger = get_logger(__name__)
-
-
-class FlashpointSignature(dspy.Signature):
-    """Predict whether a conversation is about to derail into conflict."""
-
-    context: str = dspy.InputField(desc="Previous messages in the conversation")
-    message: str = dspy.InputField(desc="The current message to analyze")
-    will_derail: bool = dspy.OutputField(desc="True if the conversation shows signs of derailing")
-    reasoning: str = dspy.OutputField(desc="Brief explanation of the key signals detected")
-
-
-class FlashpointDetector(dspy.Module):
-    """DSPy module for detecting conversation flashpoints."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.predict = dspy.ChainOfThought(FlashpointSignature)
-
-    def forward(self, context: str, message: str) -> dspy.Prediction:
-        return self.predict(context=context, message=message)
 
 
 class FlashpointDetectionService:
@@ -45,6 +27,8 @@ class FlashpointDetectionService:
 
     DEFAULT_MODEL = "openai/gpt-4o-mini"
     DEFAULT_MAX_CONTEXT = 5
+    CONFIDENCE_DERAIL = 0.9
+    CONFIDENCE_NO_DERAIL = 0.2
 
     def __init__(
         self,
@@ -89,6 +73,13 @@ class FlashpointDetectionService:
 
         return self._detector
 
+    def _run_detector(
+        self, detector: FlashpointDetector, context_str: str, current_msg: str
+    ) -> dspy.Prediction:
+        """Run the detector synchronously (intended for use with asyncio.to_thread)."""
+        with dspy.context(lm=self._lm):
+            return detector(context=context_str, message=current_msg)
+
     async def detect_flashpoint(
         self,
         message: BulkScanMessage,
@@ -118,19 +109,18 @@ class FlashpointDetectionService:
             current_msg = f"{message.author_username or message.author_id}: {message.content}"
 
             detector = self._get_detector()
-            with dspy.context(lm=self._lm):
-                result = detector(context=context_str, message=current_msg)
+            result = await asyncio.to_thread(self._run_detector, detector, context_str, current_msg)
 
-            will_derail = result.will_derail
-            if isinstance(will_derail, str):
-                will_derail = will_derail.lower() in ("true", "yes", "1")
+            will_derail = parse_bool(result.will_derail)
 
             if not will_derail:
                 return None
 
+            confidence = self.CONFIDENCE_DERAIL if will_derail else self.CONFIDENCE_NO_DERAIL
+
             return ConversationFlashpointMatch(
                 will_derail=will_derail,
-                confidence=0.8,
+                confidence=confidence,
                 reasoning=result.reasoning,
                 context_messages=len(recent_context),
             )

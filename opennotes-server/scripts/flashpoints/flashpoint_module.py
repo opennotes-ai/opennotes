@@ -1,59 +1,25 @@
 """DSPy signature and module for conversation flashpoint detection.
 
-This module defines the core DSPy components for detecting early warning
-signs that a conversation may derail into conflict.
+This module re-exports the core DSPy components from the shared utility
+and defines training-specific metrics.
 """
 
 from typing import Any
 
 import dspy
 
+from src.bulk_content_scan.flashpoint_utils import (
+    FlashpointDetector,
+    FlashpointSignature,
+    parse_bool,
+)
 
-class FlashpointSignature(dspy.Signature):
-    """Predict whether a conversation is about to derail into conflict.
-
-    Given the conversation context and a new message, determine if this
-    message shows signs that the conversation is heading toward:
-    - Personal attacks
-    - Rule-violating behavior
-    - Moderator intervention
-    - Hostile escalation
-    """
-
-    context: str = dspy.InputField(
-        desc="Previous messages in the conversation, formatted as 'speaker: message'"
-    )
-    message: str = dspy.InputField(desc="The current message to analyze for flashpoint signals")
-    will_derail: bool = dspy.OutputField(
-        desc="True if the conversation shows signs of derailing, False otherwise"
-    )
-    reasoning: str = dspy.OutputField(
-        desc="Brief explanation of the key signals detected (or lack thereof)"
-    )
-
-
-class FlashpointDetector(dspy.Module):
-    """DSPy module for detecting conversation flashpoints.
-
-    Uses ChainOfThought to reason step-by-step before predicting
-    whether a conversation will derail.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self.predict = dspy.ChainOfThought(FlashpointSignature)
-
-    def forward(self, context: str, message: str) -> dspy.Prediction:
-        return self.predict(context=context, message=message)
-
-
-def _parse_bool(value: Any) -> bool:
-    """Parse a value to boolean, handling string representations."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.lower() in ("true", "yes", "1")
-    return bool(value)
+__all__ = [
+    "FlashpointDetector",
+    "FlashpointSignature",
+    "flashpoint_metric",
+    "flashpoint_metric_with_feedback",
+]
 
 
 def flashpoint_metric(
@@ -66,8 +32,8 @@ def flashpoint_metric(
     Returns 1.0 for correct predictions, 0.0 for incorrect.
     Handles both boolean and string representations.
     """
-    expected = _parse_bool(example.will_derail)
-    predicted = _parse_bool(pred.will_derail)
+    expected = parse_bool(example.will_derail)
+    predicted = parse_bool(pred.will_derail)
     return 1.0 if predicted == expected else 0.0
 
 
@@ -93,8 +59,8 @@ def flashpoint_metric_with_feedback(
     Returns:
         dspy.Prediction with score (float) and feedback (str)
     """
-    expected = _parse_bool(example.will_derail)
-    predicted = _parse_bool(pred.will_derail)
+    expected = parse_bool(example.will_derail)
+    predicted = parse_bool(pred.will_derail)
 
     correct = predicted == expected
     score = 1.0 if correct else 0.0

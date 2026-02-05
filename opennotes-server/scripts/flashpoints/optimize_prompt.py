@@ -35,6 +35,8 @@ from flashpoint_module import (
     flashpoint_metric_with_feedback,
 )
 
+from src.bulk_content_scan.flashpoint_utils import parse_bool
+
 
 def optimize_flashpoint_detector(
     model: str = "openai/gpt-4o-mini",
@@ -100,15 +102,6 @@ def optimize_flashpoint_detector(
     return optimized
 
 
-def _parse_bool(value) -> bool:
-    """Parse a value to boolean, handling string representations."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.lower() in ("true", "yes", "1")
-    return bool(value)
-
-
 def evaluate_detector(
     detector: FlashpointDetector,
     testset: list[dspy.Example],
@@ -130,8 +123,8 @@ def evaluate_detector(
             score = flashpoint_metric(example, pred)
             correct += score
 
-            expected = _parse_bool(example.will_derail)
-            predicted = _parse_bool(pred.will_derail)
+            expected = parse_bool(example.will_derail)
+            predicted = parse_bool(pred.will_derail)
 
             if expected and predicted:
                 true_positives += 1
@@ -147,7 +140,7 @@ def evaluate_detector(
 
         except Exception as e:
             print(f"Error evaluating example {i}: {e}")
-            false_negatives += 1 if _parse_bool(example.will_derail) else 0
+            false_negatives += 1 if parse_bool(example.will_derail) else 0
 
     accuracy = correct / len(testset) if testset else 0
     precision = (
