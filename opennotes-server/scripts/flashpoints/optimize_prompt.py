@@ -26,15 +26,12 @@ from pathlib import Path
 
 import dspy
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from dspy_dataset import load_flashpoint_datasets
-from flashpoint_module import (
+from scripts.flashpoints.dspy_dataset import load_flashpoint_datasets
+from scripts.flashpoints.flashpoint_module import (
     FlashpointDetector,
     flashpoint_metric,
     flashpoint_metric_with_feedback,
 )
-
 from src.bulk_content_scan.flashpoint_utils import parse_bool
 
 
@@ -140,7 +137,10 @@ def evaluate_detector(
 
         except Exception as e:
             print(f"Error evaluating example {i}: {e}")
-            false_negatives += 1 if parse_bool(example.will_derail) else 0
+            if parse_bool(example.will_derail):
+                false_negatives += 1
+            else:
+                true_negatives += 1
 
     accuracy = correct / len(testset) if testset else 0
     precision = (

@@ -2306,7 +2306,7 @@ export interface paths {
          *
          *     Raises:
          *         401: If not authenticated
-         *         403: If not authorized (requires admin or service account)
+         *         403: If not authorized (requires service account)
          *         404: If community server not found
          */
         patch: operations["update_flashpoint_detection_api_v1_community_servers__platform_community_server_id__flashpoint_detection_patch"];
@@ -11701,7 +11701,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not authorized — requires admin or service account */
+            /** @description Not authorized — requires service account */
             403: {
                 headers: {
                     [name: string]: unknown;

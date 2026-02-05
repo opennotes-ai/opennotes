@@ -1,9 +1,12 @@
 """DSPy dataset loader for flashpoint detection training."""
 
 import json
+import logging
 from pathlib import Path
 
 import dspy
+
+logger = logging.getLogger(__name__)
 
 
 def load_flashpoint_examples(jsonl_path: Path) -> list[dspy.Example]:
@@ -14,11 +17,24 @@ def load_flashpoint_examples(jsonl_path: Path) -> list[dspy.Example]:
 
     Returns:
         List of dspy.Example objects with 'context', 'message', and 'will_derail' fields
+
+    Raises:
+        FileNotFoundError: If the JSONL file does not exist
     """
+    if not jsonl_path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {jsonl_path}")
+
     examples = []
     with jsonl_path.open() as f:
-        for line in f:
-            data = json.loads(line)
+        for line_num, raw_line in enumerate(f, 1):
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            try:
+                data = json.loads(stripped)
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed JSON at %s line %d", jsonl_path, line_num)
+                continue
             example = dspy.Example(
                 context=data["context"],
                 message=data["current_message"],
@@ -38,9 +54,15 @@ def load_flashpoint_datasets(
 
     Returns:
         Tuple of (trainset, devset, testset) as lists of dspy.Example
+
+    Raises:
+        FileNotFoundError: If the data directory or any dataset file does not exist
     """
     if data_dir is None:
         data_dir = Path(__file__).parent.parent.parent / "data" / "flashpoints"
+
+    if not data_dir.is_dir():
+        raise FileNotFoundError(f"Dataset directory not found: {data_dir}")
 
     trainset = load_flashpoint_examples(data_dir / "flashpoints_train.jsonl")
     devset = load_flashpoint_examples(data_dir / "flashpoints_dev.jsonl")

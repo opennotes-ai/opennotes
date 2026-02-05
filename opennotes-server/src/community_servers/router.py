@@ -227,7 +227,7 @@ async def update_welcome_message(
     response_model=FlashpointDetectionUpdateResponse,
     responses={
         401: {"description": "Not authenticated"},
-        403: {"description": "Not authorized — requires admin or service account"},
+        403: {"description": "Not authorized — requires service account"},
         404: {"description": "Community server not found"},
     },
 )
@@ -254,7 +254,7 @@ async def update_flashpoint_detection(
 
     Raises:
         401: If not authenticated
-        403: If not authorized (requires admin or service account)
+        403: If not authorized (requires service account)
         404: If community server not found
     """
     logger.info(

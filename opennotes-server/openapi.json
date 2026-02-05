@@ -6370,7 +6370,7 @@
           "community-servers"
         ],
         "summary": "Update Flashpoint Detection",
-        "description": "Update flashpoint detection setting for a community server.\n\nThis endpoint allows toggling the flashpoint detection feature that monitors\nconversations for potential misinformation escalation points.\n\nArgs:\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n    request_body: Contains the enabled flag\n    platform: Platform type (default: \"discord\")\n\nReturns:\n    Updated flashpoint detection status\n\nRaises:\n    401: If not authenticated\n    403: If not authorized (requires admin or service account)\n    404: If community server not found",
+        "description": "Update flashpoint detection setting for a community server.\n\nThis endpoint allows toggling the flashpoint detection feature that monitors\nconversations for potential misinformation escalation points.\n\nArgs:\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n    request_body: Contains the enabled flag\n    platform: Platform type (default: \"discord\")\n\nReturns:\n    Updated flashpoint detection status\n\nRaises:\n    401: If not authenticated\n    403: If not authorized (requires service account)\n    404: If community server not found",
         "operationId": "update_flashpoint_detection_api_v1_community_servers__platform_community_server_id__flashpoint_detection_patch",
         "security": [
           {
@@ -6441,7 +6441,7 @@
             "description": "Not authenticated"
           },
           "403": {
-            "description": "Not authorized \u2014 requires admin or service account"
+            "description": "Not authorized \u2014 requires service account"
           },
           "404": {
             "description": "Community server not found"

@@ -82,8 +82,19 @@ def flashpoint_metric_with_feedback(
     return dspy.Prediction(score=score, feedback=feedback)
 
 
+DEFAULT_MODEL = "openai/gpt-4o-mini"
+
+
 if __name__ == "__main__":
-    lm = dspy.LM("openai/gpt-4o-mini")
+    import os
+
+    model = os.environ.get("FLASHPOINT_MODEL", DEFAULT_MODEL)
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("Error: OPENAI_API_KEY environment variable is not set")
+        raise SystemExit(1)
+
+    lm = dspy.LM(model)
     dspy.configure(lm=lm)
 
     detector = FlashpointDetector()

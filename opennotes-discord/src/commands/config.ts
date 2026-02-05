@@ -1417,10 +1417,9 @@ async function handleContentMonitorFlashpoint(
       } else if (error.statusCode === 403) {
         await interaction.editReply({
           content:
-            `You need either:\n` +
-            `- Discord "Manage Server" permission, OR\n` +
-            `- Open Notes admin role for this server\n\n` +
-            `Ask a server admin for help.`,
+            `Unable to update flashpoint detection settings. ` +
+            `The bot may not be properly authenticated with the API.\n\n` +
+            `Please contact a server administrator.`,
         });
         return;
       }

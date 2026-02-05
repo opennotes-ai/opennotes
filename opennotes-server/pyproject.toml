@@ -59,7 +59,7 @@ dependencies = [
     "opentelemetry-semantic-conventions>=0.43b0",
     "pyroscope-io>=0.8.0",
     "traceloop-sdk>=0.35.0",
-    "dspy>=2.6.0",
+    "dspy>=2.6.0,<3.0.0",
     "ruamel.yaml>=0.18.0",
     "setuptools>=80.9.0",
     "trafilatura>=2.0.0,<3.0.0",
@@ -68,7 +68,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-flashpoints = [
+flashpoints-dataset = [
     "convokit>=3.5.0",
 ]
 scoring = [
