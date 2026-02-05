@@ -197,7 +197,7 @@ class ImportBatchJobService:
 
         settings = get_settings()
 
-        metadata = {
+        metadata: dict[str, str | int | bool | float] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
             "base_delay": base_delay,
@@ -267,7 +267,7 @@ class ImportBatchJobService:
 
         settings = get_settings()
 
-        metadata = {
+        metadata: dict[str, str | int | bool | float] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
         }
