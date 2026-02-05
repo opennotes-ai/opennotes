@@ -2276,6 +2276,41 @@ export interface paths {
         patch: operations["update_welcome_message_api_v1_community_servers__platform_community_server_id__welcome_message_patch"];
         trace?: never;
     };
+    "/api/v1/community-servers/{platform_community_server_id}/flashpoint-detection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Flashpoint Detection
+         * @description Update flashpoint detection setting for a community server.
+         *
+         *     This endpoint allows toggling the flashpoint detection feature that monitors
+         *     conversations for potential misinformation escalation points.
+         *
+         *     Args:
+         *         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
+         *         request_body: Contains the enabled flag
+         *
+         *     Returns:
+         *         Updated flashpoint detection status
+         *
+         *     Raises:
+         *         401: If not authenticated
+         *         403: If not authorized (requires admin or service account)
+         *         404: If community server not found
+         */
+        patch: operations["update_flashpoint_detection_api_v1_community_servers__platform_community_server_id__flashpoint_detection_patch"];
+        trace?: never;
+    };
     "/api/v1/community-servers/{community_server_id}/admins": {
         parameters: {
             query?: never;
@@ -4666,6 +4701,39 @@ export interface components {
             /** Id */
             id: string;
             attributes: components["schemas"]["FlaggedMessageAttributes"];
+        };
+        /**
+         * FlashpointDetectionUpdateRequest
+         * @description Request model for updating flashpoint detection setting.
+         */
+        FlashpointDetectionUpdateRequest: {
+            /**
+             * Enabled
+             * @description Whether to enable flashpoint detection for this community
+             */
+            enabled: boolean;
+        };
+        /**
+         * FlashpointDetectionUpdateResponse
+         * @description Response model for flashpoint detection update.
+         */
+        FlashpointDetectionUpdateResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal community server UUID
+             */
+            id: string;
+            /**
+             * Platform Community Server Id
+             * @description Platform-specific ID (e.g., Discord guild ID)
+             */
+            platform_community_server_id: string;
+            /**
+             * Flashpoint Detection Enabled
+             * @description Whether flashpoint detection is enabled
+             */
+            flashpoint_detection_enabled: boolean;
         };
         /**
          * FusionWeightResponse
@@ -11547,6 +11615,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WelcomeMessageUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_flashpoint_detection_api_v1_community_servers__platform_community_server_id__flashpoint_detection_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                platform_community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlashpointDetectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlashpointDetectionUpdateResponse"];
                 };
             };
             /** @description Validation Error */

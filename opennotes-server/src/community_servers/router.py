@@ -35,6 +35,28 @@ class CommunityServerLookupResponse(BaseModel):
     )
 
 
+class FlashpointDetectionUpdateRequest(BaseModel):
+    """Request model for updating flashpoint detection setting."""
+
+    enabled: bool = Field(
+        ..., description="Whether to enable flashpoint detection for this community"
+    )
+
+
+class FlashpointDetectionUpdateResponse(BaseModel):
+    """Response model for flashpoint detection update."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID = Field(..., description="Internal community server UUID")
+    platform_community_server_id: str = Field(
+        ..., description="Platform-specific ID (e.g., Discord guild ID)"
+    )
+    flashpoint_detection_enabled: bool = Field(
+        ..., description="Whether flashpoint detection is enabled"
+    )
+
+
 class WelcomeMessageUpdateRequest(BaseModel):
     """Request model for updating welcome message ID."""
 
@@ -197,4 +219,74 @@ async def update_welcome_message(
         id=community_server.id,
         platform_community_server_id=community_server.platform_community_server_id,
         welcome_message_id=community_server.welcome_message_id,
+    )
+
+
+@router.patch(
+    "/community-servers/{platform_community_server_id}/flashpoint-detection",
+    response_model=FlashpointDetectionUpdateResponse,
+)
+async def update_flashpoint_detection(
+    platform_community_server_id: str,
+    request_body: FlashpointDetectionUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FlashpointDetectionUpdateResponse:
+    """
+    Update flashpoint detection setting for a community server.
+
+    This endpoint allows toggling the flashpoint detection feature that monitors
+    conversations for potential misinformation escalation points.
+
+    Args:
+        platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
+        request_body: Contains the enabled flag
+
+    Returns:
+        Updated flashpoint detection status
+
+    Raises:
+        401: If not authenticated
+        403: If not authorized (requires admin or service account)
+        404: If community server not found
+    """
+    logger.info(
+        "Updating flashpoint detection setting",
+        extra={
+            "user_id": current_user.id,
+            "platform_community_server_id": platform_community_server_id,
+            "enabled": request_body.enabled,
+        },
+    )
+
+    community_server = await get_community_server_by_platform_id(
+        db=db,
+        community_server_id=platform_community_server_id,
+        platform="discord",
+        auto_create=False,
+    )
+
+    if not community_server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Community server not found: discord:{platform_community_server_id}",
+        )
+
+    community_server.flashpoint_detection_enabled = request_body.enabled
+    await db.commit()
+    await db.refresh(community_server)
+
+    logger.info(
+        "Flashpoint detection setting updated successfully",
+        extra={
+            "community_server_id": str(community_server.id),
+            "platform_community_server_id": platform_community_server_id,
+            "flashpoint_detection_enabled": community_server.flashpoint_detection_enabled,
+        },
+    )
+
+    return FlashpointDetectionUpdateResponse(
+        id=community_server.id,
+        platform_community_server_id=community_server.platform_community_server_id,
+        flashpoint_detection_enabled=community_server.flashpoint_detection_enabled,
     )

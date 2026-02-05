@@ -35,6 +35,7 @@ export type CommunityAdminResponse = components['schemas']['CommunityAdminRespon
 export type RemoveCommunityAdminResponse = components['schemas']['RemoveCommunityAdminResponse'];
 export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
 export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
+export type FlashpointDetectionUpdateResponse = components['schemas']['FlashpointDetectionUpdateResponse'];
 
 export interface ClearPreviewResult {
   wouldDeleteCount: number;
@@ -248,6 +249,7 @@ export interface CommunityServerAttributes {
   is_active: boolean;
   is_public: boolean;
   welcome_message_id?: string | null;
+  flashpoint_detection_enabled: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -1851,5 +1853,28 @@ export class ApiClient {
       deletedCount: response.deleted_count,
       message: response.message,
     };
+  }
+
+  async updateFlashpointDetection(
+    platformCommunityServerId: string,
+    enabled: boolean,
+    context?: UserContext
+  ): Promise<FlashpointDetectionUpdateResponse> {
+    return this.fetchWithRetry<FlashpointDetectionUpdateResponse>(
+      `/api/v1/community-servers/${platformCommunityServerId}/flashpoint-detection`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      },
+      1,
+      context
+    );
+  }
+
+  async getFlashpointDetectionStatus(
+    platformCommunityServerId: string,
+    _context?: UserContext
+  ): Promise<CommunityServerJSONAPIResponse> {
+    return this.getCommunityServerByPlatformId(platformCommunityServerId, 'discord');
   }
 }
