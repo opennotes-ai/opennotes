@@ -2,14 +2,14 @@
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete
 
 from src.llm_config.models import CommunityServer
 from src.users.models import User
 
 
 @pytest.fixture
-async def fp_service_account() -> User:
-    """Create a test service account for flashpoint detection tests."""
+async def fp_service_account():
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -25,7 +25,13 @@ async def fp_service_account() -> User:
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        return user
+        user_id = user.id
+
+    yield user
+
+    async with get_session_maker()() as db:
+        await db.execute(delete(User).where(User.id == user_id))
+        await db.commit()
 
 
 @pytest.fixture
@@ -43,8 +49,7 @@ async def fp_service_account_headers(fp_service_account: User):
 
 
 @pytest.fixture
-async def fp_regular_user() -> User:
-    """Create a regular (non-service-account) user."""
+async def fp_regular_user():
     from src.database import get_session_maker
 
     async_session_maker = get_session_maker()
@@ -60,7 +65,13 @@ async def fp_regular_user() -> User:
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        return user
+        user_id = user.id
+
+    yield user
+
+    async with get_session_maker()() as db:
+        await db.execute(delete(User).where(User.id == user_id))
+        await db.commit()
 
 
 @pytest.fixture
@@ -78,8 +89,7 @@ async def fp_regular_user_headers(fp_regular_user: User):
 
 
 @pytest.fixture
-async def fp_test_community_server() -> CommunityServer:
-    """Create a test community server for flashpoint detection tests."""
+async def fp_test_community_server():
     from uuid import uuid4
 
     from src.database import get_session_maker
@@ -97,7 +107,13 @@ async def fp_test_community_server() -> CommunityServer:
         db.add(server)
         await db.commit()
         await db.refresh(server)
-        return server
+        server_id = server.id
+
+    yield server
+
+    async with get_session_maker()() as db:
+        await db.execute(delete(CommunityServer).where(CommunityServer.id == server_id))
+        await db.commit()
 
 
 class TestFlashpointDetectionEndpoint:

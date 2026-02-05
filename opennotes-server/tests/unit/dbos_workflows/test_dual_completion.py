@@ -11,6 +11,8 @@ import json
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 
 def _make_recv_dispatcher(
     batch_responses: list[dict | None],
@@ -21,9 +23,9 @@ def _make_recv_dispatcher(
 
     def _recv(topic: str, **kwargs: object) -> dict | None:
         if topic == "batch_complete":
-            return next(batch_iter)
+            return next(batch_iter, None)
         if topic == "all_transmitted":
-            return next(tx_iter)
+            return next(tx_iter, None)
         return None
 
     return _recv
@@ -161,7 +163,8 @@ class TestDualWorkflowIsolation:
             assert second_send_call.args[0] == orch_id_b
             assert second_send_call.args[1] == batch_result_b
 
-    def test_workflow_uses_scan_id_as_idempotency_key(self) -> None:
+    @pytest.mark.asyncio
+    async def test_workflow_uses_scan_id_as_idempotency_key(self) -> None:
         """Each dispatch uses its own scan_id for idempotency, preventing cross-contamination."""
         from src.dbos_workflows.content_scan_workflow import (
             dispatch_content_scan_workflow,
@@ -177,25 +180,19 @@ class TestDualWorkflowIsolation:
             mock_client.start_workflow.return_value = mock_handle
             mock_get_client.return_value = mock_client
 
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(
-                dispatch_content_scan_workflow(
-                    scan_id=scan_id_a,
-                    community_server_id=uuid4(),
-                    scan_types=["similarity"],
-                )
+            await dispatch_content_scan_workflow(
+                scan_id=scan_id_a,
+                community_server_id=uuid4(),
+                scan_types=["similarity"],
             )
 
             first_call_kwargs = mock_client.start_workflow.call_args.kwargs
             assert first_call_kwargs["idempotency_key"] == str(scan_id_a)
 
-            asyncio.get_event_loop().run_until_complete(
-                dispatch_content_scan_workflow(
-                    scan_id=scan_id_b,
-                    community_server_id=uuid4(),
-                    scan_types=["similarity"],
-                )
+            await dispatch_content_scan_workflow(
+                scan_id=scan_id_b,
+                community_server_id=uuid4(),
+                scan_types=["similarity"],
             )
 
             second_call_kwargs = mock_client.start_workflow.call_args.kwargs
