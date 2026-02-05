@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
 from src.bulk_content_scan.service import BulkContentScanService
 from src.community_config.models import CommunityConfig
@@ -645,6 +646,7 @@ class BulkScanEventHandler:
                 embedding_service=self.embedding_service,
                 redis_client=self.redis_client,
                 llm_service=self.llm_service,
+                flashpoint_service=FlashpointDetectionService(),
             )
 
             await service.set_all_batches_transmitted(event.scan_id, event.messages_scanned)

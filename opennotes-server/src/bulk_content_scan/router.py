@@ -13,6 +13,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import has_recent_scan
 from src.bulk_content_scan.schemas import (
@@ -62,6 +63,7 @@ async def get_bulk_scan_service(
         embedding_service=embedding_service,
         redis_client=redis,
         llm_service=llm_service,
+        flashpoint_service=FlashpointDetectionService(),
     )
 
 

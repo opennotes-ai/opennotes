@@ -161,6 +161,7 @@ async def process_bulk_scan_batch_task(
     Returns:
         dict with status and messages_processed
     """
+    from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
     from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
     from src.bulk_content_scan.service import BulkContentScanService
     from src.cache.redis_client import RedisClient
@@ -198,6 +199,7 @@ async def process_bulk_scan_batch_task(
                     embedding_service=embedding_service,
                     redis_client=redis_client.client,  # pyright: ignore[reportArgumentType]
                     llm_service=llm_service,
+                    flashpoint_service=FlashpointDetectionService(),
                 )
 
                 typed_messages = [BulkScanMessage.model_validate(msg) for msg in messages]
@@ -340,6 +342,7 @@ async def finalize_bulk_scan_task(
     Returns:
         dict with status and results summary
     """
+    from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
     from src.bulk_content_scan.nats_handler import BulkScanResultsPublisher
     from src.bulk_content_scan.schemas import BulkScanStatus
     from src.bulk_content_scan.service import BulkContentScanService
@@ -376,6 +379,7 @@ async def finalize_bulk_scan_task(
                     embedding_service=embedding_service,
                     redis_client=redis_client.client,  # pyright: ignore[reportArgumentType]
                     llm_service=llm_service,
+                    flashpoint_service=FlashpointDetectionService(),
                 )
 
                 flagged = await service.get_flagged_results(scan_uuid)

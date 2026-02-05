@@ -14,6 +14,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
 from src.bulk_content_scan.schemas import (
@@ -147,7 +148,7 @@ class BulkContentScanService:
         redis_client: Redis,
         moderation_service: Any | None = None,
         llm_service: LLMService | None = None,
-        flashpoint_service: Any | None = None,
+        flashpoint_service: FlashpointDetectionService | None = None,
     ) -> None:
         """Initialize the service.
 
@@ -273,6 +274,15 @@ class BulkContentScanService:
         if isinstance(messages, BulkScanMessage):
             messages = [messages]
 
+        active_scan_types = list(scan_types)
+        if (
+            ScanType.CONVERSATION_FLASHPOINT in active_scan_types
+            and not await self._is_flashpoint_enabled(community_server_platform_id)
+        ):
+            active_scan_types = [
+                st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
+            ]
+
         original_count = len(messages)
 
         platform_message_ids = [msg.message_id for msg in messages]
@@ -294,7 +304,11 @@ class BulkContentScanService:
         candidates: list[ScanCandidate] = []
         all_scores: list[dict[str, Any]] = []
 
-        channel_context_map = self._build_channel_context_map(messages)
+        needs_context = ScanType.CONVERSATION_FLASHPOINT in active_scan_types
+        channel_context_map = self._build_channel_context_map(messages) if needs_context else {}
+        message_id_index = (
+            self._build_message_id_index(channel_context_map) if needs_context else None
+        )
 
         for msg in messages:
             if not msg.content or len(msg.content.strip()) < 10:
@@ -302,10 +316,14 @@ class BulkContentScanService:
                     all_scores.append(self._build_empty_score_info(msg))
                 continue
 
-            context_messages = self._get_context_for_message(msg, channel_context_map)
+            context_messages = (
+                self._get_context_for_message(msg, channel_context_map, message_id_index)
+                if needs_context
+                else None
+            )
 
             candidate_found = False
-            for scan_type in scan_types:
+            for scan_type in active_scan_types:
                 candidate = await self._generate_candidate(
                     scan_id,
                     msg,
@@ -462,22 +480,76 @@ class BulkContentScanService:
         self,
         message: BulkScanMessage,
         channel_context_map: dict[str, list[BulkScanMessage]],
+        message_id_index: dict[str, dict[str, int]] | None = None,
     ) -> list[BulkScanMessage]:
         """Get previous messages in the same channel as context.
 
         Args:
             message: The message to get context for
             channel_context_map: Map of channel_id -> sorted messages
+            message_id_index: Optional pre-built index of channel_id -> {message_id -> position}
+                for O(1) lookup instead of linear scan
 
         Returns:
             List of messages that occurred before this message in the same channel
         """
         channel_msgs = channel_context_map.get(message.channel_id, [])
-        msg_index = next(
-            (i for i, m in enumerate(channel_msgs) if m.message_id == message.message_id),
-            -1,
-        )
+        if message_id_index is not None:
+            channel_index = message_id_index.get(message.channel_id, {})
+            msg_index = channel_index.get(message.message_id, -1)
+        else:
+            msg_index = next(
+                (i for i, m in enumerate(channel_msgs) if m.message_id == message.message_id),
+                -1,
+            )
         return channel_msgs[:msg_index] if msg_index > 0 else []
+
+    def _build_message_id_index(
+        self,
+        channel_context_map: dict[str, list[BulkScanMessage]],
+    ) -> dict[str, dict[str, int]]:
+        """Pre-build a message_id-to-index dict for O(1) context lookup.
+
+        Instead of doing a linear scan per message (O(n^2) per batch),
+        this builds the index once so _get_context_for_message can do O(1) lookups.
+
+        Args:
+            channel_context_map: Map of channel_id -> sorted messages
+
+        Returns:
+            Dict mapping channel_id -> {message_id -> position_index}
+        """
+        index: dict[str, dict[str, int]] = {}
+        for channel_id, msgs in channel_context_map.items():
+            index[channel_id] = {m.message_id: i for i, m in enumerate(msgs)}
+        return index
+
+    async def _is_flashpoint_enabled(self, community_server_platform_id: str) -> bool:
+        """Check if flashpoint detection is enabled for the community server.
+
+        Args:
+            community_server_platform_id: The platform-specific community ID (e.g., Discord guild ID)
+
+        Returns:
+            True if flashpoint detection is enabled, False otherwise
+        """
+        from src.llm_config.models import CommunityServer  # noqa: PLC0415
+
+        try:
+            result = await self.session.execute(
+                select(CommunityServer.flashpoint_detection_enabled).where(
+                    CommunityServer.platform_community_server_id == community_server_platform_id
+                )
+            )
+            enabled = result.scalar_one_or_none()
+            return bool(enabled)
+        except Exception:
+            logger.warning(
+                "Failed to check flashpoint_detection_enabled, defaulting to disabled",
+                extra={"community_server_platform_id": community_server_platform_id},
+                exc_info=True,
+            )
+            return False
 
     async def _run_scanner_with_score(
         self,
@@ -494,6 +566,19 @@ class BulkContentScanService:
                 )
             case ScanType.OPENAI_MODERATION:
                 return await self._openai_moderation_scan_with_score(scan_id, message)
+            case ScanType.CONVERSATION_FLASHPOINT:
+                candidate = await self._flashpoint_scan_candidate(scan_id, message, [])
+                if candidate:
+                    flagged_msg = FlaggedMessage(
+                        message_id=message.message_id,
+                        channel_id=message.channel_id,
+                        content=message.content,
+                        author_id=message.author_id,
+                        timestamp=message.timestamp,
+                        matches=[candidate.match_data],
+                    )
+                    return flagged_msg, self._build_score_info_from_candidate(candidate)
+                return None, self._build_empty_score_info(message)
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None, {
@@ -530,6 +615,18 @@ class BulkContentScanService:
                 )
             case ScanType.OPENAI_MODERATION:
                 return await self._openai_moderation_scan(scan_id, message)
+            case ScanType.CONVERSATION_FLASHPOINT:
+                candidate = await self._flashpoint_scan_candidate(scan_id, message, [])
+                if candidate:
+                    return FlaggedMessage(
+                        message_id=message.message_id,
+                        channel_id=message.channel_id,
+                        content=message.content,
+                        author_id=message.author_id,
+                        timestamp=message.timestamp,
+                        matches=[candidate.match_data],
+                    )
+                return None
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
@@ -1058,21 +1155,26 @@ class BulkContentScanService:
                 },
             )
 
-            outcome, reasoning = await self._check_relevance_with_llm(
-                original_message=candidate.message.content,
-                matched_content=candidate.matched_content,
-                matched_source=candidate.matched_source,
-            )
+            if candidate.scan_type == ScanType.CONVERSATION_FLASHPOINT.value:
+                should_flag = True
+                reasoning = "Flashpoint candidates bypass relevance filter"
+                outcome = RelevanceOutcome.RELEVANT
+            else:
+                outcome, reasoning = await self._check_relevance_with_llm(
+                    original_message=candidate.message.content,
+                    matched_content=candidate.matched_content,
+                    matched_source=candidate.matched_source,
+                )
 
-            should_flag = self._evaluate_relevance_outcome(
-                outcome=outcome,
-                reasoning=reasoning,
-                similarity_score=candidate.score,
-                threshold=base_threshold,
-                indeterminate_threshold=indeterminate_threshold,
-                message_id=candidate.message.message_id,
-                scan_id=scan_id,
-            )
+                should_flag = self._evaluate_relevance_outcome(
+                    outcome=outcome,
+                    reasoning=reasoning,
+                    similarity_score=candidate.score,
+                    threshold=base_threshold,
+                    indeterminate_threshold=indeterminate_threshold,
+                    message_id=candidate.message.message_id,
+                    scan_id=scan_id,
+                )
 
             if should_flag:
                 try:
@@ -1822,7 +1924,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         }
 
 
-async def create_note_requests_from_flagged_messages(
+async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
     message_ids: list[str],
     scan_id: UUID,
     session: AsyncSession,
@@ -1909,6 +2011,10 @@ async def create_note_requests_from_flagged_messages(
                 match_score = first_match.max_score
                 matched_claim = ", ".join(first_match.flagged_categories)
                 matched_source = ""
+            elif first_match.scan_type == "conversation_flashpoint":
+                match_score = first_match.confidence
+                matched_claim = first_match.reasoning
+                matched_source = ""
 
         try:
             request = await RequestService.create_from_message(
@@ -1973,6 +2079,19 @@ async def create_note_requests_from_flagged_messages(
                                 "categories": first_match.categories,
                                 "scores": first_match.scores,
                                 "flagged_categories": first_match.flagged_categories,
+                            },
+                        )
+                    elif first_match.scan_type == "conversation_flashpoint":
+                        await event_publisher.publish_request_auto_created(
+                            request_id=request.request_id,
+                            platform_message_id=flagged_msg.message_id,
+                            community_server_id=platform_id,
+                            content=flagged_msg.content,
+                            scan_type="conversation_flashpoint",
+                            metadata={
+                                "confidence": first_match.confidence,
+                                "reasoning": first_match.reasoning,
+                                "context_messages": first_match.context_messages,
                             },
                         )
                     logger.info(

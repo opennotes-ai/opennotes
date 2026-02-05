@@ -11,8 +11,5 @@ class ScanType(StrEnum):
     CONVERSATION_FLASHPOINT = "conversation_flashpoint"
 
 
-DEFAULT_SCAN_TYPES: tuple[ScanType, ...] = (
-    ScanType.SIMILARITY,
-    ScanType.CONVERSATION_FLASHPOINT,
-)
+DEFAULT_SCAN_TYPES: tuple[ScanType, ...] = (ScanType.SIMILARITY,)
 ALL_SCAN_TYPES: tuple[ScanType, ...] = tuple(ScanType)
