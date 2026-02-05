@@ -663,6 +663,9 @@ async def metrics() -> Response:
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Any, exc: Exception) -> JSONResponse:
+    from src.monitoring import record_span_error
+
+    record_span_error(exc)
     logger.exception(f"Unhandled exception: {exc}")
     return JSONResponse(
         status_code=500,
