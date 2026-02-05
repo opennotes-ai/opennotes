@@ -1,11 +1,14 @@
 """Unit tests for GCP Cloud Run resource detection."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from urllib.error import URLError
 
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.semconv.resource import ResourceAttributes
 
 from src.monitoring.gcp_resource_detector import (
+    _get_instance_id,
+    _get_instance_id_from_metadata,
     detect_gcp_cloud_run_resource,
     is_cloud_run_environment,
 )
@@ -68,12 +71,18 @@ class TestDetectGcpCloudRunResource:
             attrs = dict(result.attributes)
             assert attrs[ResourceAttributes.FAAS_VERSION] == "test-service-00001-abc"
 
-    def test_includes_faas_instance_from_k_revision(self) -> None:
+    def test_faas_instance_falls_back_to_revision_when_no_instance_id(self) -> None:
         env = {
             "K_SERVICE": "test-service",
             "K_REVISION": "test-service-00001-xyz",
         }
-        with patch.dict("os.environ", env, clear=True):
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value=None,
+            ),
+        ):
             result = detect_gcp_cloud_run_resource()
             assert result is not None
             attrs = dict(result.attributes)
@@ -162,14 +171,21 @@ class TestDetectGcpCloudRunResource:
             attrs = dict(result.attributes)
             assert ResourceAttributes.CLOUD_RESOURCE_ID not in attrs
 
-    def test_full_cloud_run_environment(self) -> None:
+    def test_full_cloud_run_environment_with_instance_id(self) -> None:
         env = {
             "K_SERVICE": "opennotes-server",
             "K_REVISION": "opennotes-server-00042-def",
             "GOOGLE_CLOUD_PROJECT": "open-notes-core",
             "CLOUD_RUN_REGION": "us-central1",
+            "INSTANCE_ID": "00bf4bf02d54b1c89a80e2ca7a51b29a0979dee76f77",
         }
-        with patch.dict("os.environ", env, clear=True):
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value=None,
+            ),
+        ):
             result = detect_gcp_cloud_run_resource()
             assert result is not None
             attrs = dict(result.attributes)
@@ -180,7 +196,10 @@ class TestDetectGcpCloudRunResource:
             assert attrs[ResourceAttributes.CLOUD_REGION] == "us-central1"
             assert attrs[ResourceAttributes.FAAS_NAME] == "opennotes-server"
             assert attrs[ResourceAttributes.FAAS_VERSION] == "opennotes-server-00042-def"
-            assert attrs[ResourceAttributes.FAAS_INSTANCE] == "opennotes-server-00042-def"
+            assert (
+                attrs[ResourceAttributes.FAAS_INSTANCE]
+                == "00bf4bf02d54b1c89a80e2ca7a51b29a0979dee76f77"
+            )
             expected_resource_id = (
                 "//run.googleapis.com/projects/open-notes-core"
                 "/locations/us-central1/services/opennotes-server"
@@ -235,3 +254,131 @@ class TestResourceMerge:
             assert attrs[ResourceAttributes.CLOUD_ACCOUNT_ID] == "my-project"
             assert attrs[ResourceAttributes.CLOUD_REGION] == "asia-northeast1"
             assert attrs[ResourceAttributes.FAAS_NAME] == "cloud-run-service"
+
+
+class TestGetInstanceIdFromMetadata:
+    def test_returns_instance_id_from_metadata_server(self) -> None:
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"00bf4bf02d54b1c89a80e2ca7a51b29a0979dee76f77"
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+            result = _get_instance_id_from_metadata()
+            assert result == "00bf4bf02d54b1c89a80e2ca7a51b29a0979dee76f77"
+
+            call_args = mock_urlopen.call_args
+            request = call_args[0][0]
+            assert request.full_url.endswith("/instance/id")
+            assert request.headers.get("Metadata-flavor") == "Google"
+
+    def test_strips_whitespace_from_response(self) -> None:
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"  instance-123  \n"
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            result = _get_instance_id_from_metadata()
+            assert result == "instance-123"
+
+    def test_returns_none_on_url_error(self) -> None:
+        with patch("urllib.request.urlopen", side_effect=URLError("Connection refused")):
+            result = _get_instance_id_from_metadata()
+            assert result is None
+
+    def test_returns_none_on_timeout(self) -> None:
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("Timed out")):
+            result = _get_instance_id_from_metadata()
+            assert result is None
+
+    def test_returns_none_on_os_error(self) -> None:
+        with patch("urllib.request.urlopen", side_effect=OSError("Network unreachable")):
+            result = _get_instance_id_from_metadata()
+            assert result is None
+
+
+class TestGetInstanceId:
+    def test_prefers_instance_id_env_var(self) -> None:
+        env = {"INSTANCE_ID": "env-instance-id"}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata"
+            ) as mock_metadata,
+        ):
+            result = _get_instance_id(fallback="revision-123")
+            assert result == "env-instance-id"
+            mock_metadata.assert_not_called()
+
+    def test_uses_metadata_when_env_not_set(self) -> None:
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value="metadata-instance-id",
+            ),
+        ):
+            result = _get_instance_id(fallback="revision-123")
+            assert result == "metadata-instance-id"
+
+    def test_uses_fallback_when_both_unavailable(self) -> None:
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value=None,
+            ),
+        ):
+            result = _get_instance_id(fallback="revision-123")
+            assert result == "revision-123"
+
+    def test_returns_none_when_all_sources_unavailable(self) -> None:
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value=None,
+            ),
+        ):
+            result = _get_instance_id(fallback=None)
+            assert result is None
+
+
+class TestFaasInstancePriority:
+    def test_instance_id_env_takes_priority_over_revision(self) -> None:
+        env = {
+            "K_SERVICE": "test-service",
+            "K_REVISION": "test-service-00001-xyz",
+            "INSTANCE_ID": "env-instance-abc123",
+        }
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value=None,
+            ),
+        ):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert attrs[ResourceAttributes.FAAS_INSTANCE] == "env-instance-abc123"
+            assert attrs[ResourceAttributes.FAAS_VERSION] == "test-service-00001-xyz"
+
+    def test_metadata_instance_id_takes_priority_over_revision(self) -> None:
+        env = {
+            "K_SERVICE": "test-service",
+            "K_REVISION": "test-service-00001-xyz",
+        }
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(
+                "src.monitoring.gcp_resource_detector._get_instance_id_from_metadata",
+                return_value="metadata-instance-def456",
+            ),
+        ):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert attrs[ResourceAttributes.FAAS_INSTANCE] == "metadata-instance-def456"
+            assert attrs[ResourceAttributes.FAAS_VERSION] == "test-service-00001-xyz"

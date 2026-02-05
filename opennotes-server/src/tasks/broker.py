@@ -26,7 +26,6 @@ Usage:
 
 import functools
 import logging
-import os
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -282,7 +281,8 @@ def get_broker() -> PullBasedJetStreamBroker:
                 environment=settings.ENVIRONMENT,
                 otlp_endpoint=settings.OTLP_ENDPOINT,
                 otlp_headers=settings.OTLP_HEADERS,
-                sample_rate=float(os.getenv("TRACE_SAMPLE_RATE", "0.1")),
+                otlp_insecure=settings.OTLP_INSECURE,
+                sample_rate=settings.TRACING_SAMPLE_RATE,
             )
 
         if settings.TRACELOOP_ENABLED:

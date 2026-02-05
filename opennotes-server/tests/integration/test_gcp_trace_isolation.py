@@ -59,6 +59,7 @@ def instrumented_app(
     """Instrument the test app with OpenTelemetry."""
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
+    original_provider = trace.get_tracer_provider()
     trace.set_tracer_provider(tracer_provider)
 
     FastAPIInstrumentor.instrument_app(test_app)
@@ -66,6 +67,7 @@ def instrumented_app(
     yield test_app
 
     FastAPIInstrumentor.uninstrument_app(test_app)
+    trace.set_tracer_provider(original_provider)
 
 
 class TestGCPTraceIsolation:
@@ -98,7 +100,6 @@ class TestGCPTraceIsolation:
     async def test_gcp_traceparent_is_stripped(
         self,
         instrumented_app: FastAPI,
-        span_exporter: InMemorySpanExporter,
     ) -> None:
         """Requests with GCP traceparent should NOT inherit that trace ID."""
         wrapped_app = GCPTraceHeaderFilter(instrumented_app, strip_headers=True)
@@ -128,7 +129,6 @@ class TestGCPTraceIsolation:
     async def test_x_cloud_trace_context_is_stripped(
         self,
         instrumented_app: FastAPI,
-        span_exporter: InMemorySpanExporter,
     ) -> None:
         """Requests with X-Cloud-Trace-Context should NOT inherit that trace."""
         wrapped_app = GCPTraceHeaderFilter(instrumented_app, strip_headers=True)
@@ -153,7 +153,6 @@ class TestGCPTraceIsolation:
     async def test_filter_disabled_allows_trace_propagation(
         self,
         instrumented_app: FastAPI,
-        span_exporter: InMemorySpanExporter,
     ) -> None:
         """When filter is disabled, traceparent should propagate (legacy behavior)."""
         wrapped_app = GCPTraceHeaderFilter(instrumented_app, strip_headers=False)
@@ -252,6 +251,7 @@ class TestGCPTraceFilterWithRealApp:
             span_context = current_span.get_span_context()
             return {"trace_id": format(span_context.trace_id, "032x")}
 
+        original_provider = trace.get_tracer_provider()
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(InMemorySpanExporter()))
         trace.set_tracer_provider(provider)
@@ -269,3 +269,4 @@ class TestGCPTraceFilterWithRealApp:
             assert wrapped_app.strip_headers is True
         finally:
             FastAPIInstrumentor.uninstrument_app(app)
+            trace.set_tracer_provider(original_provider)
