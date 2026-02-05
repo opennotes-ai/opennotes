@@ -153,9 +153,9 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             )
             raise
 
-        tokens_used = response.usage.total_tokens if response.usage else 0  # type: ignore
-        finish_reason = response.choices[0].finish_reason or "stop"  # type: ignore
-        content = response.choices[0].message.content or ""  # type: ignore
+        tokens_used = response.usage.total_tokens if response.usage else 0  # type: ignore[reportAttributeAccessIssue]
+        finish_reason = response.choices[0].finish_reason or "stop"  # type: ignore[reportAttributeAccessIssue]
+        content = response.choices[0].message.content or ""  # type: ignore[reportAttributeAccessIssue]
         content_length = len(content)
 
         logger.info(
@@ -236,7 +236,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             )
             raise
 
-        async for chunk in response:  # type: ignore
+        async for chunk in response:  # type: ignore[reportGeneralClassIssue]
             if chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 

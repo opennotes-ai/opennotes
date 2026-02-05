@@ -92,7 +92,7 @@ def generate_example_with_llm(
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )
-        content = response.choices[0].message.content  # type: ignore
+        content = response.choices[0].message.content  # type: ignore[reportAttributeAccessIssue]
         if content is None:
             return None
         return json.loads(content)

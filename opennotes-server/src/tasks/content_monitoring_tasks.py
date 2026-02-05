@@ -196,7 +196,7 @@ async def process_bulk_scan_batch_task(
                 service = BulkContentScanService(
                     session=session,
                     embedding_service=embedding_service,
-                    redis_client=redis_client.client,  # type: ignore
+                    redis_client=redis_client.client,  # type: ignore[reportArgumentType]
                     llm_service=llm_service,
                 )
 
@@ -374,7 +374,7 @@ async def finalize_bulk_scan_task(
                 service = BulkContentScanService(
                     session=session,
                     embedding_service=embedding_service,
-                    redis_client=redis_client.client,  # type: ignore
+                    redis_client=redis_client.client,  # type: ignore[reportArgumentType]
                     llm_service=llm_service,
                 )
 

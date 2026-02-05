@@ -5,6 +5,8 @@ Determines when a community has enough notes to trigger MFCoreScorer
 batch scoring (threshold: 200 notes, from Community Notes minNumNotesForProdData).
 """
 
+from typing import Any
+
 DEFAULT_BATCH_THRESHOLD = 200
 
 
@@ -58,7 +60,7 @@ class BatchScoringTrigger:
         now_at_or_above = current_count >= self.threshold
         return was_below and now_at_or_above
 
-    def get_status(self, note_count: int) -> dict:
+    def get_status(self, note_count: int) -> dict[str, Any]:
         """
         Get the current batch scoring status for a community.
 

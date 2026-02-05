@@ -915,7 +915,7 @@ def _clear_settings_cache() -> None:
     _settings_initialized = False
 
 
-get_settings.cache_clear = _clear_settings_cache  # type: ignore[attr-defined]
+get_settings.cache_clear = _clear_settings_cache  # type: ignore[reportAttributeAccessIssue]
 
 
 def __getattr__(name: str) -> Any:

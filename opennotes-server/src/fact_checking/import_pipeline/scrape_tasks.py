@@ -165,7 +165,7 @@ async def apply_predicted_rating_if_available(
     )
     await session.commit()
 
-    if result.rowcount == 0:  # type: ignore
+    if result.rowcount == 0:  # type: ignore[reportAttributeAccessIssue]
         logger.debug(
             f"Skipped auto-applying rating for candidate {candidate.id}: "
             "rating already set by another process"
@@ -201,7 +201,7 @@ def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
         if user_agent is None:
             user_agent = get_random_user_agent()
 
-        config = trafilatura.settings.use_config()  # type: ignore
+        config = trafilatura.settings.use_config()  # type: ignore[reportAttributeAccessIssue]
         config.set("DEFAULT", "USER_AGENT", user_agent)
 
         downloaded = trafilatura.fetch_url(url, config=config)

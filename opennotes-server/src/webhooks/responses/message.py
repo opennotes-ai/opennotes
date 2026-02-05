@@ -21,9 +21,9 @@ def create_message_response(
     typed_embeds: list[Embed] | None = None
     if embeds:
         typed_embeds = (
-            [Embed(**e) for e in embeds]  # type: ignore[arg-type]
+            [Embed(**e) for e in embeds]  # type: ignore[reportCallIssue]
             if isinstance(embeds[0], dict)
-            else embeds  # type: ignore[assignment]
+            else embeds  # type: ignore[reportAssignmentType]
         )
 
     data = InteractionCallbackData(

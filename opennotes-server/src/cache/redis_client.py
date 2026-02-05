@@ -308,7 +308,7 @@ class RedisClient:
 
         try:
             str_mapping = {k: str(v) for k, v in mapping.items()}
-            return await self.circuit_breaker.call(self.client.hset, key, mapping=str_mapping)  # type: ignore[arg-type]
+            return await self.circuit_breaker.call(self.client.hset, key, mapping=str_mapping)  # type: ignore[reportArgumentType]
         except Exception as e:
             logger.error(f"Redis HSET failed for key '{key}': {e}")
             return 0
@@ -327,7 +327,7 @@ class RedisClient:
             return {}
 
         try:
-            result = await self.circuit_breaker.call(self.client.hgetall, key)  # type: ignore[arg-type]
+            result = await self.circuit_breaker.call(self.client.hgetall, key)  # type: ignore[reportArgumentType]
             return {
                 k.decode("utf-8") if isinstance(k, bytes) else k: v.decode("utf-8")
                 if isinstance(v, bytes)
@@ -354,7 +354,7 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
 
         try:
-            return await self.circuit_breaker.call(self.client.hincrby, key, field, amount)  # type: ignore[arg-type]
+            return await self.circuit_breaker.call(self.client.hincrby, key, field, amount)  # type: ignore[reportArgumentType]
         except Exception as e:
             logger.error(f"Redis HINCRBY failed for key '{key}' field '{field}': {e}")
             raise
@@ -476,7 +476,7 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
 
         try:
-            return await self.circuit_breaker.call(self.client.sadd, key, *members)  # type: ignore[arg-type]
+            return await self.circuit_breaker.call(self.client.sadd, key, *members)  # type: ignore[reportArgumentType]
         except Exception as e:
             logger.error(f"Redis SADD failed for key '{key}': {e}")
             raise
@@ -499,7 +499,7 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
 
         try:
-            return await self.circuit_breaker.call(self.client.sismember, key, member)  # type: ignore[arg-type]
+            return await self.circuit_breaker.call(self.client.sismember, key, member)  # type: ignore[reportArgumentType]
         except Exception as e:
             logger.error(f"Redis SISMEMBER failed for key '{key}': {e}")
             raise

@@ -104,7 +104,7 @@ class SafeOpenTelemetryMiddleware(OpenTelemetryMiddleware):
 
         if token is not None:
             try:
-                context_api.detach(token)  # type: ignore
+                context_api.detach(token)  # type: ignore[reportArgumentType]
             except ValueError as e:
                 if "was created in a different Context" in str(e):
                     logger.debug(
