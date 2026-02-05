@@ -154,6 +154,10 @@ class TestInitiateScanEndpoint:
                 "src.bulk_content_scan.jsonapi_router._get_profile_id_from_user",
                 new=AsyncMock(return_value=mock_profile_id),
             ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.dispatch_content_scan_workflow",
+                new=AsyncMock(return_value="mock-workflow-id"),
+            ),
         ):
             response = client.post(
                 "/api/v2/bulk-scans",
@@ -191,6 +195,10 @@ class TestInitiateScanEndpoint:
             patch(
                 "src.bulk_content_scan.jsonapi_router._get_profile_id_from_user",
                 new=AsyncMock(return_value=mock_profile_id),
+            ),
+            patch(
+                "src.bulk_content_scan.jsonapi_router.dispatch_content_scan_workflow",
+                new=AsyncMock(return_value="mock-workflow-id"),
             ),
         ):
             response = client.post(

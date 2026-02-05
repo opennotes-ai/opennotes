@@ -33,7 +33,7 @@ from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import get_latest_scan_for_community, has_recent_scan
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
-from src.bulk_content_scan.schemas import FlaggedMessage, MatchResult
+from src.bulk_content_scan.schemas import BulkScanStatus, FlaggedMessage, MatchResult
 from src.bulk_content_scan.service import (
     BulkContentScanService,
     create_note_requests_from_flagged_messages,
@@ -603,20 +603,49 @@ async def initiate_scan(
                 exc_info=True,
             )
 
-        workflow_id = await dispatch_content_scan_workflow(
-            scan_id=scan_log.id,
-            community_server_id=attrs.community_server_id,
-            scan_types=[str(st) for st in scan_types],
-        )
-
-        if workflow_id:
-            logger.info(
-                "DBOS content scan workflow dispatched (JSON:API)",
+        try:
+            workflow_id = await dispatch_content_scan_workflow(
+                scan_id=scan_log.id,
+                community_server_id=attrs.community_server_id,
+                scan_types=[str(st) for st in scan_types],
+            )
+        except Exception as e:
+            logger.error(
+                "DBOS workflow dispatch raised unexpected error (JSON:API)",
                 extra={
                     "scan_id": str(scan_log.id),
-                    "workflow_id": workflow_id,
+                    "error": str(e),
                 },
+                exc_info=True,
             )
+            scan_log.status = BulkScanStatus.FAILED
+            await session.commit()
+            return create_error_response(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                f"Failed to dispatch scan workflow: {e}",
+            )
+
+        if not workflow_id:
+            logger.error(
+                "DBOS workflow dispatch returned None (JSON:API)",
+                extra={"scan_id": str(scan_log.id)},
+            )
+            scan_log.status = BulkScanStatus.FAILED
+            await session.commit()
+            return create_error_response(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                "Failed to dispatch scan workflow. The scan record was created but processing could not be started.",
+            )
+
+        logger.info(
+            "DBOS content scan workflow dispatched (JSON:API)",
+            extra={
+                "scan_id": str(scan_log.id),
+                "workflow_id": workflow_id,
+            },
+        )
 
         resource = BulkScanResource(
             type="bulk-scans",

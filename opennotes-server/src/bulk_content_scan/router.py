@@ -22,6 +22,7 @@ from src.bulk_content_scan.schemas import (
     BulkScanCreateRequest,
     BulkScanResponse,
     BulkScanResultsResponse,
+    BulkScanStatus,
     CreateNoteRequestsRequest,
     NoteRequestsResponse,
 )
@@ -253,6 +254,8 @@ async def initiate_scan(
             },
             exc_info=True,
         )
+        scan_log.status = BulkScanStatus.FAILED
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to dispatch scan workflow: {e}",
@@ -263,6 +266,8 @@ async def initiate_scan(
             "DBOS workflow dispatch returned None",
             extra={"scan_id": str(scan_log.id)},
         )
+        scan_log.status = BulkScanStatus.FAILED
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to dispatch scan workflow. The scan record was created but processing could not be started.",
