@@ -278,6 +278,10 @@ class BulkContentScanService:
             self._build_message_id_index(channel_context_map) if needs_context else None
         )
 
+        content_scan_types = [
+            st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
+        ]
+
         for msg in messages:
             if not msg.content or len(msg.content.strip()) < 10:
                 if collect_scores:
@@ -292,9 +296,6 @@ class BulkContentScanService:
 
             candidate_found = False
 
-            content_scan_types = [
-                st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
-            ]
             for scan_type in content_scan_types:
                 candidate = await self._generate_candidate(
                     scan_id,
@@ -445,6 +446,14 @@ class BulkContentScanService:
     ) -> dict[str, list[BulkScanMessage]]:
         """Build a map of channel_id -> sorted messages for context lookup.
 
+        Design limitation: context is constructed only from messages within the
+        current batch -- not from the full channel history.  This means that
+        flashpoint detection quality degrades when a conversation spans batch
+        boundaries because the first messages of a new batch have zero prior
+        context even when earlier messages were processed in a preceding batch.
+        Callers should consider using larger batch sizes when flashpoint
+        detection is enabled to minimise context gaps.
+
         Args:
             messages: Sequence of messages to organize by channel
 
@@ -510,6 +519,22 @@ class BulkContentScanService:
             index[channel_id] = {m.message_id: i for i, m in enumerate(msgs)}
         return index
 
+    def _build_flagged_message_from_candidate(self, candidate: ScanCandidate) -> FlaggedMessage:
+        """Build a FlaggedMessage from a ScanCandidate.
+
+        Unified construction path used by _run_scanner, _run_scanner_with_score,
+        and _filter_candidates_with_relevance to ensure consistent FlaggedMessage
+        creation across all scan types including CONVERSATION_FLASHPOINT.
+        """
+        return FlaggedMessage(
+            message_id=candidate.message.message_id,
+            channel_id=candidate.message.channel_id,
+            content=candidate.message.content,
+            author_id=candidate.message.author_id,
+            timestamp=candidate.message.timestamp,
+            matches=[candidate.match_data],
+        )
+
     async def _run_scanner_with_score(
         self,
         scan_id: UUID,
@@ -531,14 +556,7 @@ class BulkContentScanService:
                     scan_id, message, context_messages or []
                 )
                 if candidate:
-                    flagged_msg = FlaggedMessage(
-                        message_id=message.message_id,
-                        channel_id=message.channel_id,
-                        content=message.content,
-                        author_id=message.author_id,
-                        timestamp=message.timestamp,
-                        matches=[candidate.match_data],
-                    )
+                    flagged_msg = self._build_flagged_message_from_candidate(candidate)
                     return flagged_msg, self._build_score_info_from_candidate(candidate)
                 return None, self._build_empty_score_info(message)
             case _:
@@ -583,14 +601,7 @@ class BulkContentScanService:
                     scan_id, message, context_messages or []
                 )
                 if candidate:
-                    return FlaggedMessage(
-                        message_id=message.message_id,
-                        channel_id=message.channel_id,
-                        content=message.content,
-                        author_id=message.author_id,
-                        timestamp=message.timestamp,
-                        matches=[candidate.match_data],
-                    )
+                    return self._build_flagged_message_from_candidate(candidate)
                 return None
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
@@ -1093,6 +1104,13 @@ class BulkContentScanService:
         This is the unified post-processing step that runs relevance checking
         on ALL candidates regardless of scan type.
 
+        Flashpoint bypass: candidates with scan_type CONVERSATION_FLASHPOINT
+        always set should_flag=True and skip the LLM relevance check.  This is
+        intentional -- flashpoint detection already performs its own LLM-based
+        analysis via FlashpointDetectionService, so a second relevance check
+        would be redundant and the similarity-oriented relevance prompt is not
+        applicable to conversation-derailment signals.
+
         For INDETERMINATE outcomes (when fact-check content triggers content filter),
         applies a tighter threshold: new_threshold = threshold + ((1-threshold)/2).
         This allows high-confidence matches to still be flagged even when the LLM
@@ -1143,14 +1161,7 @@ class BulkContentScanService:
 
             if should_flag:
                 try:
-                    flagged_msg = FlaggedMessage(
-                        message_id=candidate.message.message_id,
-                        channel_id=candidate.message.channel_id,
-                        content=candidate.message.content,
-                        author_id=candidate.message.author_id,
-                        timestamp=candidate.message.timestamp,
-                        matches=[candidate.match_data],
-                    )
+                    flagged_msg = self._build_flagged_message_from_candidate(candidate)
                     flagged.append(flagged_msg)
                 except Exception as build_error:
                     logger.error(
@@ -1850,7 +1861,24 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
             )
             generate_ai_notes = False
 
-    flagged_by_message_id = {msg.message_id: msg for msg in flagged_messages}
+    flagged_by_message_id: dict[str, FlaggedMessage] = {}
+    for msg in flagged_messages:
+        if msg.message_id in flagged_by_message_id:
+            existing = flagged_by_message_id[msg.message_id]
+            existing_types = {m.scan_type for m in existing.matches}
+            for match in msg.matches:
+                if match.scan_type not in existing_types:
+                    existing.matches.append(match)
+        else:
+            flagged_by_message_id[msg.message_id] = msg
+
+    seen_ids: set[str] = set()
+    deduplicated_ids: list[str] = []
+    for mid in message_ids:
+        if mid not in seen_ids:
+            seen_ids.add(mid)
+            deduplicated_ids.append(mid)
+    message_ids = deduplicated_ids
 
     created_ids: list[str] = []
     for msg_id in message_ids:
