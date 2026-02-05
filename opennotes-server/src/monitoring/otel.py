@@ -124,6 +124,13 @@ def setup_otel(
             }
         )
 
+        from src.monitoring.gcp_resource_detector import detect_gcp_cloud_run_resource
+
+        gcp_resource = detect_gcp_cloud_run_resource()
+        if gcp_resource is not None:
+            resource = resource.merge(gcp_resource)
+            logger.info("Merged GCP Cloud Run resource attributes into trace resource")
+
         sampler = ParentBasedTraceIdRatio(sample_rate)
         _tracer_provider = TracerProvider(resource=resource, sampler=sampler)
 
