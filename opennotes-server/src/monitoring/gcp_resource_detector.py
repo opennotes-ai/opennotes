@@ -20,12 +20,63 @@ from __future__ import annotations
 
 import logging
 import os
+import urllib.request
 from typing import TYPE_CHECKING
+from urllib.error import URLError
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.resources import Resource
 
 logger = logging.getLogger(__name__)
+
+METADATA_SERVER_URL = "http://metadata.google.internal/computeMetadata/v1"
+METADATA_INSTANCE_ID_PATH = "/instance/id"
+METADATA_TIMEOUT_SECONDS = 2.0
+
+
+def _get_instance_id_from_metadata() -> str | None:
+    """Fetch Cloud Run instance ID from GCP metadata server.
+
+    Returns:
+        Instance ID string, or None if unavailable.
+    """
+    url = f"{METADATA_SERVER_URL}{METADATA_INSTANCE_ID_PATH}"
+    request = urllib.request.Request(
+        url,
+        headers={"Metadata-Flavor": "Google"},
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=METADATA_TIMEOUT_SECONDS) as response:
+            return response.read().decode("utf-8").strip()
+    except (URLError, TimeoutError, OSError) as e:
+        logger.debug(f"Could not fetch instance ID from metadata server: {e}")
+        return None
+
+
+def _get_instance_id(fallback: str | None = None) -> str | None:
+    """Get Cloud Run instance ID from environment or metadata server.
+
+    Priority:
+        1. INSTANCE_ID environment variable (if set)
+        2. GCP metadata server
+        3. Fallback value (typically K_REVISION)
+
+    Args:
+        fallback: Value to return if instance ID unavailable from other sources.
+
+    Returns:
+        Instance ID string, or fallback if unavailable.
+    """
+    instance_id = os.getenv("INSTANCE_ID")
+    if instance_id:
+        return instance_id
+
+    instance_id = _get_instance_id_from_metadata()
+    if instance_id:
+        return instance_id
+
+    return fallback
 
 
 def is_cloud_run_environment() -> bool:
@@ -54,7 +105,7 @@ def detect_gcp_cloud_run_resource() -> Resource | None:
         - cloud.resource_id: Full Cloud Run resource path
         - faas.name: Service name
         - faas.version: Revision name
-        - faas.instance: Revision name (execution environment ID)
+        - faas.instance: Instance ID (from env/metadata) or revision as fallback
 
     Returns:
         Resource with GCP attributes, or None if not in Cloud Run.
@@ -81,7 +132,10 @@ def detect_gcp_cloud_run_resource() -> Resource | None:
 
         if revision:
             attributes[ResourceAttributes.FAAS_VERSION] = revision
-            attributes[ResourceAttributes.FAAS_INSTANCE] = revision
+
+        instance_id = _get_instance_id(fallback=revision)
+        if instance_id:
+            attributes[ResourceAttributes.FAAS_INSTANCE] = instance_id
 
         if project_id:
             attributes[ResourceAttributes.CLOUD_ACCOUNT_ID] = project_id
