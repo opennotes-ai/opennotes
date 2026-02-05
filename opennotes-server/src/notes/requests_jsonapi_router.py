@@ -551,7 +551,7 @@ async def create_request_jsonapi(
         }
 
         if attrs.metadata:
-            request_dict["request_metadata"] = attrs.metadata  # type: ignore[reportArgumentType]
+            request_dict["request_metadata"] = attrs.metadata  # pyright: ignore[reportArgumentType]
 
         note_request = Request(**request_dict)
         db.add(note_request)

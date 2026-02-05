@@ -258,7 +258,7 @@ class LLMUsageTracker:
                     )
                     update_result = await self.db.execute(update_stmt)
 
-                    if update_result.rowcount == 0:  # type: ignore[reportAttributeAccessIssue]
+                    if update_result.rowcount == 0:  # pyright: ignore[reportAttributeAccessIssue]
                         continue
 
                 return True, None
@@ -498,7 +498,7 @@ class LLMUsageTracker:
                     )
                     update_result = await self.db.execute(update_stmt)
 
-                    if update_result.rowcount == 0:  # type: ignore[reportAttributeAccessIssue]
+                    if update_result.rowcount == 0:  # pyright: ignore[reportAttributeAccessIssue]
                         continue
 
                     usage_log = LLMUsageLog(

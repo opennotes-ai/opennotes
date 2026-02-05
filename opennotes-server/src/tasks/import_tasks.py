@@ -171,7 +171,7 @@ async def _complete_job(
         service = BatchJobService(db, progress_tracker)
         job = await service.get_job(job_id)
         if job:
-            job.metadata_ = {**job.metadata_, "stats": stats}  # type: ignore[reportAttributeAccessIssue]
+            job.metadata_ = {**job.metadata_, "stats": stats}  # pyright: ignore[reportAttributeAccessIssue]
         await service.complete_job(job_id, completed_tasks, failed_tasks)
         await db.commit()
 

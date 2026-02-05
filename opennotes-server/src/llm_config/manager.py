@@ -86,7 +86,7 @@ class EvictingTTLCache(TTLCache[K, V]):  # type: ignore[misc]
     @overload
     def pop(self, key: K, default: None = None) -> V | None: ...
 
-    def pop(self, key: K, default: V | None = None) -> V | None:  # type: ignore[reportIncompatibleMethodOverride]
+    def pop(self, key: K, default: V | None = None) -> V | None:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Override to trigger eviction callback on pop."""
         if key in self:
             value = cast(V, self[key])

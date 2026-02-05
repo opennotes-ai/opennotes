@@ -20,10 +20,10 @@ def create_message_response(
     # Convert dict embeds to Embed objects if needed
     typed_embeds: list[Embed] | None = None
     if embeds:
-        typed_embeds = (
-            [Embed(**e) for e in embeds]  # type: ignore[reportCallIssue]
+        typed_embeds = (  # pyright: ignore[reportAssignmentType]
+            [Embed(**e) for e in embeds]  # pyright: ignore[reportCallIssue]
             if isinstance(embeds[0], dict)
-            else embeds  # type: ignore[reportAssignmentType]
+            else embeds
         )
 
     data = InteractionCallbackData(

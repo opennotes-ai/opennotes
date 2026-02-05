@@ -100,7 +100,7 @@ class DistributedRateLimiter:
             end
             """
 
-            result = await self.redis.eval(  # type: ignore[reportGeneralClassIssue]
+            result = await self.redis.eval(  # pyright: ignore[reportGeneralTypeIssues]
                 lua_script,
                 1,
                 key,
@@ -186,7 +186,7 @@ class DistributedRateLimiter:
             return {limit - current_count, reset_at}
             """
 
-            result = await self.redis.eval(  # type: ignore[reportGeneralClassIssue]
+            result = await self.redis.eval(  # pyright: ignore[reportGeneralTypeIssues]
                 lua_script,
                 1,
                 key,

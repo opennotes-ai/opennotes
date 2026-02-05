@@ -915,7 +915,7 @@ def _clear_settings_cache() -> None:
     _settings_initialized = False
 
 
-get_settings.cache_clear = _clear_settings_cache  # type: ignore[reportAttributeAccessIssue]
+get_settings.cache_clear = _clear_settings_cache  # pyright: ignore[reportFunctionMemberAccess]
 
 
 def __getattr__(name: str) -> Any:

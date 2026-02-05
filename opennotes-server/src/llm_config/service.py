@@ -403,14 +403,14 @@ class LLMService:
             api_key=llm_provider.api_key,
         )
 
-        description = response.choices[0].message.content or ""  # type: ignore[reportAttributeAccessIssue]
+        description = response.choices[0].message.content or ""  # pyright: ignore[reportAttributeAccessIssue]
 
         logger.info(
             "Image description generated successfully",
             extra={
                 "image_url": image_url[:100],
                 "community_server_id": str(community_server_id) if community_server_id else None,
-                "tokens_used": response.usage.total_tokens if response.usage else 0,  # type: ignore[reportAttributeAccessIssue]
+                "tokens_used": response.usage.total_tokens if response.usage else 0,  # pyright: ignore[reportAttributeAccessIssue]
                 "description_length": len(description),
             },
         )

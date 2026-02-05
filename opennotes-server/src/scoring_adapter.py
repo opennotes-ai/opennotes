@@ -10,14 +10,14 @@ import pandas as pd
 scoring_path = Path(__file__).parent.parent.parent / "communitynotes" / "scoring" / "src"
 sys.path.insert(0, str(scoring_path))
 
-from scoring.enums import Scorers  # type: ignore[reportMissingImports]  # noqa: E402
-from scoring.mf_base_scorer import (  # type: ignore[reportMissingImports]  # noqa: E402
+from scoring.enums import Scorers  # pyright: ignore[reportMissingImports]  # noqa: E402
+from scoring.mf_base_scorer import (  # pyright: ignore[reportMissingImports]  # noqa: E402
     MFBaseScorer,
 )
-from scoring.pandas_utils import (  # type: ignore[reportMissingImports]  # noqa: E402
+from scoring.pandas_utils import (  # pyright: ignore[reportMissingImports]  # noqa: E402
     PandasPatcher,
 )
-from scoring.run_scoring import (  # type: ignore[reportMissingImports]  # noqa: E402
+from scoring.run_scoring import (  # pyright: ignore[reportMissingImports]  # noqa: E402
     run_scoring,
 )
 
