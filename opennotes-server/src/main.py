@@ -88,6 +88,7 @@ from src.llm_config.service import LLMService
 from src.middleware.audit import AuditMiddleware
 from src.middleware.csrf import CSRFMiddleware
 from src.middleware.discord_context import DiscordContextMiddleware
+from src.middleware.gcp_trace_filter import wrap_app_with_gcp_trace_filter
 from src.middleware.internal_auth import InternalHeaderValidationMiddleware
 from src.middleware.rate_limiting import limiter
 from src.middleware.request_size import RequestSizeLimitMiddleware
@@ -646,6 +647,12 @@ app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
 # Health routes
 app.include_router(health_router)
 
+# Wrap app with GCP trace header filter at ASGI level (outermost layer).
+# This strips GCP-injected traceparent headers before OpenTelemetry can extract them,
+# ensuring each HTTP request starts a new independent trace.
+# Must be applied AFTER all middleware/routes are configured.
+asgi_app = wrap_app_with_gcp_trace_filter(app)
+
 
 @app.get("/metrics")
 async def metrics() -> Response:
@@ -719,7 +726,7 @@ if __name__ == "__main__":
     reload_excludes = _load_gitignore_patterns() if settings.DEBUG else None
 
     uvicorn.run(
-        "src.main:app",
+        "src.main:asgi_app",
         host=settings.SERVER_HOST,
         port=settings.SERVER_PORT,
         reload=settings.DEBUG,
