@@ -64,8 +64,24 @@ echo "Cleaned up generated .env files"
 [tasks."_db:ensure-postgres"]
 description = "Internal: Ensure PostgreSQL is available (container or DATABASE_URL)"
 run = '''
-# If DATABASE_URL is set, assume postgres is available externally (e.g., CI)
+# If DATABASE_URL is set, validate that the hostname is resolvable
 if [ -n "${DATABASE_URL:-}" ]; then
+    DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+    if [ -n "$DB_HOST" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "127.0.0.1" ]; then
+        if ! ping -c1 -W1 "$DB_HOST" >/dev/null 2>&1; then
+            echo "Error: Cannot resolve hostname '$DB_HOST' from DATABASE_URL." >&2
+            echo "" >&2
+            echo "This typically happens when .env.yaml uses Docker-internal hostnames" >&2
+            echo "(e.g., 'postgres') which only resolve inside Docker containers." >&2
+            echo "" >&2
+            echo "Fix: Update .env.yaml to use 'localhost' instead of '$DB_HOST':" >&2
+            echo "    DATABASE_URL=postgresql+asyncpg://...@localhost:5432/..." >&2
+            echo "" >&2
+            echo "Containers receive their own URLs via OpenTofu env vars," >&2
+            echo "so this change only affects host-side tools (mise, alembic, pytest)." >&2
+            exit 1
+        fi
+    fi
     echo "DATABASE_URL is set, using external PostgreSQL." >&2
     exit 0
 fi
