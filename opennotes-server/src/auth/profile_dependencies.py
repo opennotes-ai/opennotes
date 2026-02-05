@@ -19,12 +19,11 @@ from src.database import get_db
 from src.users.crud import get_user_by_id
 from src.users.models import User
 from src.users.profile_crud import (
-    create_profile_with_identity,
     get_identity_by_provider,
     get_profile_by_id,
 )
 from src.users.profile_models import UserProfile
-from src.users.profile_schemas import AuthProvider, UserProfileCreate
+from src.users.profile_schemas import AuthProvider
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -129,64 +128,3 @@ async def _get_profile_from_user(db: AsyncSession, user: User) -> UserProfile | 
         return existing_identity.profile
 
     return None
-
-
-async def _get_or_create_profile_from_user(db: AsyncSession, user: User) -> UserProfile | None:
-    """
-    Get existing profile for a user or create one if it doesn't exist.
-
-    This bridges the legacy User-based authentication with the new
-    UserProfile system. It automatically migrates legacy users to profiles on first access.
-
-    Args:
-        db: Database session
-        user: User object with authentication info
-
-    Returns:
-        UserProfile if found or created, None if creation failed
-    """
-    existing_profile = await _get_profile_from_user(db, user)
-    if existing_profile:
-        return existing_profile
-
-    return await _migrate_user_to_profile(db, user)
-
-
-async def _migrate_user_to_profile(db: AsyncSession, user: User) -> UserProfile:
-    if user.discord_id:
-        provider = AuthProvider.DISCORD
-        provider_user_id = user.discord_id
-    else:
-        provider = AuthProvider.EMAIL
-        provider_user_id = user.email
-
-    existing_identity = await get_identity_by_provider(db, provider, provider_user_id)
-
-    if existing_identity:
-        return existing_identity.profile
-
-    profile_create = UserProfileCreate(
-        display_name=user.username,
-        avatar_url=None,
-        bio=None,
-        role=user.role,
-        is_opennotes_admin=False,
-        is_human=True,
-        is_active=True,
-        is_banned=False,
-        banned_at=None,
-        banned_reason=None,
-    )
-
-    profile, _ = await create_profile_with_identity(
-        db,
-        profile_create,
-        provider,
-        provider_user_id,
-        credentials={
-            "migrated_from_user_id": user.id,
-            "migration_timestamp": str(user.created_at),
-        },
-    )
-
-    return profile

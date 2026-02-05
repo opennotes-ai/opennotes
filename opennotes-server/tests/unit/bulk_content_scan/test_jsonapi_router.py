@@ -151,7 +151,7 @@ class TestInitiateScanEndpoint:
                 new=AsyncMock(return_value=mock_community_member),
             ),
             patch(
-                "src.bulk_content_scan.jsonapi_router._get_profile_id_from_user",
+                "src.bulk_content_scan.jsonapi_router.get_profile_id_from_user",
                 new=AsyncMock(return_value=mock_profile_id),
             ),
         ):
@@ -189,7 +189,7 @@ class TestInitiateScanEndpoint:
                 new=AsyncMock(return_value=mock_community_member),
             ),
             patch(
-                "src.bulk_content_scan.jsonapi_router._get_profile_id_from_user",
+                "src.bulk_content_scan.jsonapi_router.get_profile_id_from_user",
                 new=AsyncMock(return_value=mock_profile_id),
             ),
         ):

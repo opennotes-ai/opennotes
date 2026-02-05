@@ -284,81 +284,6 @@ async def _process_previously_seen_item_with_retry(
         raise last_exception
 
 
-async def _handle_fact_check_rechunk_final_failure(
-    message: TaskiqMessage,
-    result: TaskiqResult[Any],
-    exception: BaseException,
-) -> None:
-    """
-    Called by RetryWithFinalCallbackMiddleware when all retries are exhausted.
-    Marks the job as failed and releases the lock.
-    """
-    job_id = message.kwargs.get("job_id")
-    redis_url = message.kwargs.get("redis_url")
-    db_url = message.kwargs.get("db_url")
-
-    if not job_id or not redis_url or not db_url:
-        logger.error("Missing job_id, redis_url, or db_url in final failure handler")
-        return
-
-    try:
-        job_uuid = UUID(job_id)
-    except ValueError:
-        logger.error(
-            "Invalid job_id format in final failure handler",
-            extra={"job_id": job_id},
-        )
-        return
-
-    settings = get_settings()
-    engine = create_async_engine(
-        db_url,
-        pool_pre_ping=True,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
-    )
-    async_session = async_sessionmaker(engine, expire_on_commit=False)
-
-    redis_client = RedisClient()
-    try:
-        await redis_client.connect(redis_url)
-        progress_tracker = BatchJobProgressTracker(redis_client)
-
-        progress = await progress_tracker.get_progress(job_uuid)
-        completed_count = progress.processed_count if progress else 0
-
-        async with async_session() as session:
-            batch_job_service = BatchJobService(session, progress_tracker)
-
-            try:
-                await batch_job_service.fail_job(
-                    job_uuid,
-                    error_summary={"error": str(exception)},
-                    completed_tasks=completed_count,
-                )
-                await session.commit()
-            except Exception as e:
-                await session.rollback()
-                logger.error(
-                    "Failed to mark job as failed",
-                    extra={"job_id": job_id, "error": str(e)},
-                )
-
-        await progress_tracker.clear_item_tracking(job_uuid)
-
-        logger.error(
-            "Fact check rechunk job failed after all retries exhausted",
-            extra={
-                "job_id": job_id,
-                "completed_count": completed_count,
-                "error": str(exception),
-            },
-        )
-    finally:
-        await redis_client.disconnect()
-        await engine.dispose()
-
-
 async def _handle_previously_seen_rechunk_final_failure(
     message: TaskiqMessage,
     result: TaskiqResult[Any],
@@ -440,31 +365,6 @@ async def _handle_previously_seen_rechunk_final_failure(
     finally:
         await redis_client.disconnect()
         await engine.dispose()
-
-
-async def _handle_chunk_fact_check_item_final_failure(
-    message: TaskiqMessage,
-    result: TaskiqResult[Any],
-    exception: BaseException,
-) -> None:
-    """
-    Called by RetryWithFinalCallbackMiddleware when all retries are exhausted
-    for single-item chunking tasks.
-
-    Unlike batch tasks, this doesn't update job status (no BatchJob exists).
-    It logs the permanent failure for visibility.
-    """
-    fact_check_id = message.kwargs.get("fact_check_id")
-    community_server_id = message.kwargs.get("community_server_id")
-
-    logger.error(
-        "Chunk fact check item task failed after all retries exhausted",
-        extra={
-            "fact_check_id": fact_check_id,
-            "community_server_id": community_server_id,
-            "error": str(exception),
-        },
-    )
 
 
 retry_callback_registry.register(

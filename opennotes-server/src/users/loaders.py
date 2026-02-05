@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 from src.users.profile_models import CommunityMember, UserIdentity, UserProfile
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm.strategy_options import _AbstractLoad
+    from sqlalchemy.orm.strategy_options import _AbstractLoad  # pyright: ignore[reportPrivateUsage]
 
 
 def profile_identities() -> tuple[_AbstractLoad, ...]:

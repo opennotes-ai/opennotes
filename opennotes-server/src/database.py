@@ -64,7 +64,7 @@ class EncryptedJSONB(TypeDecorator[dict[str, Any] | None]):
         if value is None:
             return None
 
-        if not isinstance(value, dict) or "encrypted" not in value:
+        if not isinstance(value, dict) or "encrypted" not in value:  # pyright: ignore[reportUnnecessaryIsInstance]
             return value
 
         encrypted_str = value["encrypted"]
@@ -199,7 +199,7 @@ async def close_db() -> None:
     _async_session_maker = None
 
 
-def _reset_database_for_test_loop() -> None:
+def _reset_database_for_test_loop() -> None:  # pyright: ignore[reportUnusedFunction]
     """
     Reset database engine and session maker for a new test event loop.
 

@@ -60,9 +60,7 @@ def _verify_legacy_sha256(plain_password: str, hashed_password: str) -> tuple[bo
 def _verify_bcrypt(plain_password: str, hashed_password: str) -> tuple[bool, bool]:
     """Verify password against bcrypt hash."""
     plain_password_bytes = plain_password.encode("utf-8")
-    hashed_password_bytes = (
-        hashed_password.encode("utf-8") if isinstance(hashed_password, str) else hashed_password
-    )
+    hashed_password_bytes = hashed_password.encode("utf-8")
     try:
         is_valid = bcrypt.checkpw(plain_password_bytes, hashed_password_bytes)
         return (is_valid, False)

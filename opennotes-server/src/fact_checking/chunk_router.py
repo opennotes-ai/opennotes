@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
-    _get_profile_id_from_user,
+    get_profile_id_from_user,
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
@@ -423,7 +423,7 @@ async def cancel_rechunk_job(
             request=request,
         )
     elif not getattr(user, "is_service_account", False):
-        profile_id = await _get_profile_id_from_user(db, user)
+        profile_id = await get_profile_id_from_user(db, user)
         profile = await get_profile_by_id(db, profile_id) if profile_id else None
         if not profile or not profile.is_opennotes_admin:
             raise HTTPException(

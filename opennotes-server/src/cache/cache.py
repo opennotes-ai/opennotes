@@ -42,7 +42,7 @@ class CacheManager:
                     logger.info("Redis cache started successfully")
                     self._started = True
 
-    def _generate_key(self, prefix: str, *args: Any, **kwargs: Any) -> str:
+    def generate_key(self, prefix: str, *args: Any, **kwargs: Any) -> str:
         key_parts = [str(arg) for arg in args]
         key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
         key_string = ":".join(key_parts)
@@ -235,7 +235,7 @@ def cached(
             if key_builder:
                 cache_key = key_builder(*args, **kwargs)
             else:
-                cache_key = cache_manager._generate_key(prefix, *args, **kwargs)
+                cache_key = cache_manager.generate_key(prefix, *args, **kwargs)
 
             # Fast path: check cache without lock
             cached_value = await cache_manager.get(cache_key)

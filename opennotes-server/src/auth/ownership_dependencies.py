@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
-    _get_profile_id_from_user,
+    get_profile_id_from_user,
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
@@ -94,7 +94,7 @@ async def verify_note_ownership(
         return note
 
     # Get user's profile ID for ownership check
-    user_profile_id = await _get_profile_id_from_user(db, current_user)
+    user_profile_id = await get_profile_id_from_user(db, current_user)
 
     # Check ownership via author_id (profile-based)
     if _is_owner_by_profile(note.author_id, user_profile_id):
@@ -160,7 +160,7 @@ async def verify_rating_ownership(
         return rating
 
     # Get user's profile ID for ownership check
-    user_profile_id = await _get_profile_id_from_user(db, current_user)
+    user_profile_id = await get_profile_id_from_user(db, current_user)
 
     # Check ownership via rater_id
     if _is_owner_by_profile(rating.rater_id, user_profile_id):

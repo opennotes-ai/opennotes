@@ -174,7 +174,7 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
 
         try:
-            value_bytes = value.encode("utf-8") if isinstance(value, str) else value
+            value_bytes = value.encode("utf-8")
             if ttl:
                 await self.circuit_breaker.call(self.client.setex, key, ttl, value_bytes)
             else:

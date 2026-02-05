@@ -164,6 +164,7 @@ pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["src"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.venv", "**/scoring/**"]
+extraPaths = ["../communitynotes/scoring/src"]
 reportImportCycles = false
 reportMissingImports = "warning"
 reportMissingTypeStubs = false

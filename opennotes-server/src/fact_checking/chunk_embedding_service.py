@@ -24,7 +24,7 @@ from src.fact_checking.chunk_models import (
     PreviouslySeenChunk,
     compute_chunk_text_hash,
 )
-from src.fact_checking.chunking_service import ChunkingService, _access_lock
+from src.fact_checking.chunking_service import ChunkingService, access_lock
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
 
@@ -457,7 +457,7 @@ class ChunkEmbeddingService:
             List of ChunkEmbedding records (new or existing)
         """
         if chunk_texts is None:
-            with _access_lock:
+            with access_lock:
                 chunk_texts = self.chunking_service.chunk_text(text)
 
         chunk_results = await self.get_or_create_chunks_batch(
@@ -559,7 +559,7 @@ class ChunkEmbeddingService:
             List of ChunkEmbedding records (new or existing)
         """
         if chunk_texts is None:
-            with _access_lock:
+            with access_lock:
                 chunk_texts = self.chunking_service.chunk_text(text)
 
         chunk_results = await self.get_or_create_chunks_batch(

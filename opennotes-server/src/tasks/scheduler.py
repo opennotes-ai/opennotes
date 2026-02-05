@@ -23,7 +23,7 @@ It's separate from the worker process and should be deployed as its own service.
 from taskiq import TaskiqScheduler
 from taskiq.schedule_sources import LabelScheduleSource
 
-import src.tasks.scheduler_tasks  # noqa: F401
+import src.tasks.scheduler_tasks  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from src.tasks.broker import get_broker
 
 scheduler = TaskiqScheduler(

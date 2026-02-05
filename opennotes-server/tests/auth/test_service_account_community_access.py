@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
-    _get_profile_id_from_user,
+    get_profile_id_from_user,
     verify_community_membership,
 )
 from src.auth.permissions import is_service_account as _is_service_account
@@ -77,7 +77,7 @@ class TestServiceAccountProfileCreation:
             )
 
             # First call should create profile and identity
-            profile_id = await _get_profile_id_from_user(db, user)
+            profile_id = await get_profile_id_from_user(db, user)
             assert profile_id is not None
 
             # Verify profile was created with is_human=False
@@ -95,7 +95,7 @@ class TestServiceAccountProfileCreation:
             assert identity.profile_id == profile_id
 
             # Second call should return same profile_id
-            profile_id_2 = await _get_profile_id_from_user(db, user)
+            profile_id_2 = await get_profile_id_from_user(db, user)
             assert profile_id_2 == profile_id
 
     async def test_regular_user_not_auto_created(self, setup_database):
@@ -112,7 +112,7 @@ class TestServiceAccountProfileCreation:
             )
 
             # Should return None since no identity exists and not a service account
-            profile_id = await _get_profile_id_from_user(db, user)
+            profile_id = await get_profile_id_from_user(db, user)
             assert profile_id is None
 
 
