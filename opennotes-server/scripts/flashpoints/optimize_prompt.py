@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import dspy
+from tqdm import tqdm
 
 from scripts.flashpoints.dspy_dataset import load_flashpoint_datasets
 from scripts.flashpoints.flashpoint_module import (
@@ -123,7 +124,8 @@ def evaluate_detector(
     true_negatives = 0
     errors = 0
 
-    for i, example in enumerate(testset):
+    pbar = tqdm(testset, desc="Evaluating", unit="ex")
+    for i, example in enumerate(pbar):
         try:
             pred = detector(context=example.context, message=example.message)
             score = flashpoint_metric(example, pred)
@@ -141,12 +143,33 @@ def evaluate_detector(
             else:
                 true_negatives += 1
 
-            if verbose and (i + 1) % 20 == 0:
-                print(f"Evaluated {i + 1}/{len(testset)} examples...")
-
         except Exception as e:
             errors += 1
-            print(f"Error evaluating example {i}: {e}")
+            tqdm.write(f"Error evaluating example {i}: {e}")
+
+        evaluated = (i + 1) - errors
+        if evaluated > 0:
+            p = (
+                true_positives / (true_positives + false_positives)
+                if (true_positives + false_positives) > 0
+                else 0
+            )
+            r = (
+                true_positives / (true_positives + false_negatives)
+                if (true_positives + false_negatives) > 0
+                else 0
+            )
+            f1 = 2 * p * r / (p + r) if (p + r) > 0 else 0
+            pbar.set_postfix(
+                TP=true_positives,
+                FP=false_positives,
+                FN=false_negatives,
+                TN=true_negatives,
+                P=f"{p:.0%}",
+                R=f"{r:.0%}",
+                F1=f"{f1:.0%}",
+                err=errors,
+            )
 
     evaluated = len(testset) - errors
     accuracy = correct / evaluated if evaluated > 0 else 0
