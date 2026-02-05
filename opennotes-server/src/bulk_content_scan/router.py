@@ -14,7 +14,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
-from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
+from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import has_recent_scan
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
@@ -67,7 +67,7 @@ async def get_bulk_scan_service(
         embedding_service=embedding_service,
         redis_client=redis,
         llm_service=llm_service,
-        flashpoint_service=FlashpointDetectionService(),
+        flashpoint_service=get_flashpoint_service(),
     )
 
 
@@ -238,20 +238,43 @@ async def initiate_scan(
             exc_info=True,
         )
 
-    workflow_id = await dispatch_content_scan_workflow(
-        scan_id=scan_log.id,
-        community_server_id=body.community_server_id,
-        scan_types=[str(st) for st in scan_types],
-    )
-
-    if workflow_id:
-        logger.info(
-            "DBOS content scan workflow dispatched",
+    try:
+        workflow_id = await dispatch_content_scan_workflow(
+            scan_id=scan_log.id,
+            community_server_id=body.community_server_id,
+            scan_types=[str(st) for st in scan_types],
+        )
+    except Exception as e:
+        logger.error(
+            "DBOS workflow dispatch raised unexpected error",
             extra={
                 "scan_id": str(scan_log.id),
-                "workflow_id": workflow_id,
+                "error": str(e),
             },
+            exc_info=True,
         )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to dispatch scan workflow: {e}",
+        )
+
+    if not workflow_id:
+        logger.error(
+            "DBOS workflow dispatch returned None",
+            extra={"scan_id": str(scan_log.id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to dispatch scan workflow. The scan record was created but processing could not be started.",
+        )
+
+    logger.info(
+        "DBOS content scan workflow dispatched",
+        extra={
+            "scan_id": str(scan_log.id),
+            "workflow_id": workflow_id,
+        },
+    )
 
     return BulkScanResponse(
         scan_id=scan_log.id,
