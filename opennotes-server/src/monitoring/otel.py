@@ -79,6 +79,7 @@ def setup_otel(
         return False
 
     try:
+        from grpc import Compression as GrpcCompression
         from opentelemetry import baggage, context, propagate, trace
         from opentelemetry.baggage.propagation import W3CBaggagePropagator
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
@@ -95,6 +96,10 @@ def setup_otel(
         from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
         from opentelemetry.semconv.resource import ResourceAttributes
         from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+        from src.config import get_settings
+
+        settings = get_settings()
 
         class BaggageSpanProcessor(SpanProcessor):
             """Copy baggage items to span attributes for visibility."""
@@ -124,6 +129,13 @@ def setup_otel(
             }
         )
 
+        from src.monitoring.gcp_resource_detector import detect_gcp_cloud_run_resource
+
+        gcp_resource = detect_gcp_cloud_run_resource()
+        if gcp_resource is not None:
+            resource = resource.merge(gcp_resource)
+            logger.info("Merged GCP Cloud Run resource attributes into trace resource")
+
         sampler = ParentBasedTraceIdRatio(sample_rate)
         _tracer_provider = TracerProvider(resource=resource, sampler=sampler)
 
@@ -133,9 +145,33 @@ def setup_otel(
         endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
         if endpoint:
             headers = _parse_headers(otlp_headers or os.getenv("OTEL_EXPORTER_OTLP_HEADERS"))
-            _otlp_exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers, insecure=True)
-            _tracer_provider.add_span_processor(BatchSpanProcessor(_otlp_exporter))
-            logger.info(f"OTLP exporter configured: {endpoint}")
+
+            compression = None
+            if settings.OTEL_EXPORTER_COMPRESSION == "gzip":
+                compression = GrpcCompression.Gzip
+
+            _otlp_exporter = OTLPSpanExporter(
+                endpoint=endpoint,
+                headers=headers,
+                insecure=True,
+                compression=compression,
+            )
+
+            batch_processor = BatchSpanProcessor(
+                _otlp_exporter,
+                max_queue_size=settings.OTEL_BSP_MAX_QUEUE_SIZE,
+                schedule_delay_millis=settings.OTEL_BSP_SCHEDULE_DELAY_MILLIS,
+                max_export_batch_size=settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
+                export_timeout_millis=settings.OTEL_BSP_EXPORT_TIMEOUT_MILLIS,
+            )
+            _tracer_provider.add_span_processor(batch_processor)
+
+            logger.info(
+                f"OTLP exporter configured: {endpoint}, "
+                f"compression={settings.OTEL_EXPORTER_COMPRESSION}, "
+                f"queue_size={settings.OTEL_BSP_MAX_QUEUE_SIZE}, "
+                f"batch_size={settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE}"
+            )
         else:
             logger.info("OTLP endpoint not configured - OTLP export disabled")
 
@@ -182,10 +218,26 @@ def _parse_headers(headers_str: str | None) -> dict[str, str] | None:
     return headers if headers else None
 
 
-def shutdown_otel() -> None:
-    """Gracefully shutdown the tracer provider."""
+def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
+    """Gracefully shutdown the tracer provider with force flush.
+
+    Args:
+        flush_timeout_millis: Timeout for force_flush(). Defaults to
+            OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS from settings.
+    """
     global _tracer_provider
     if _tracer_provider is not None:
+        if flush_timeout_millis is None:
+            from src.config import get_settings
+
+            flush_timeout_millis = get_settings().OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS
+
+        try:
+            _tracer_provider.force_flush(timeout_millis=flush_timeout_millis)
+            logger.info("OpenTelemetry spans flushed before shutdown")
+        except Exception as e:
+            logger.warning(f"Failed to flush spans during shutdown: {e}")
+
         _tracer_provider.shutdown()
         logger.info("OpenTelemetry tracer provider shut down")
 

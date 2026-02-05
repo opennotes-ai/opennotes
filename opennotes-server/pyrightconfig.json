@@ -1,8 +1,10 @@
 {
+  "venvPath": ".",
+  "venv": ".venv",
   "pythonVersion": "3.11",
   "typeCheckingMode": "standard",
   "include": ["src"],
-  "exclude": ["**/node_modules", "**/__pycache__", "**/.venv", "**/scoring/**"],
+  "exclude": [".venv", "**/__pycache__", ".pytest_cache", ".hypothesis", "**/node_modules", "**/scoring/**"],
   "reportImportCycles": false,
   "reportMissingImports": "warning",
   "reportMissingTypeStubs": false,

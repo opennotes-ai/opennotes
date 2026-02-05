@@ -5,6 +5,7 @@ from typing import cast
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.monitoring.errors import record_span_error
 from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import (
     active_requests,
@@ -56,6 +57,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 error_type=type(e).__name__, endpoint=path, instance_id=instance_id
             ).inc()
 
+            record_span_error(e)
             raise
 
         finally:

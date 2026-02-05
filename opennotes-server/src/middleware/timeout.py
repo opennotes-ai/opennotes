@@ -7,6 +7,7 @@ from starlette.types import ASGIApp
 
 from src.config import settings
 from src.monitoring import get_logger
+from src.monitoring.errors import record_span_error
 from src.monitoring.instance import InstanceMetadata
 from src.monitoring.metrics import errors_total
 
@@ -24,6 +25,9 @@ class TimeoutMiddleware(BaseHTTPMiddleware):
         try:
             return await asyncio.wait_for(call_next(request), timeout=self.timeout_seconds)
         except TimeoutError:
+            timeout_exc = TimeoutError(f"Request timeout after {self.timeout_seconds}s")
+            record_span_error(timeout_exc)
+
             logger.warning(
                 f"Request timeout after {self.timeout_seconds}s",
                 extra={

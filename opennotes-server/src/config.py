@@ -618,6 +618,46 @@ class Settings(BaseSettings):
         description="Disable OpenTelemetry SDK. Useful for tests or environments without collectors.",
     )
 
+    OTEL_BSP_MAX_QUEUE_SIZE: int = Field(
+        default=4096,
+        description="Maximum queue size for BatchSpanProcessor. "
+        "Prevents data loss during traffic spikes. Default: 4096 (2x OTel default).",
+        ge=1,
+    )
+    OTEL_BSP_SCHEDULE_DELAY_MILLIS: int = Field(
+        default=2500,
+        description="Delay in milliseconds between consecutive exports. "
+        "Default: 2500ms (half OTel default for better latency).",
+        ge=100,
+    )
+    OTEL_BSP_MAX_EXPORT_BATCH_SIZE: int = Field(
+        default=1024,
+        description="Maximum batch size for span exports. "
+        "Must be <= max_queue_size. Default: 1024 (matches Cloud Trace capability).",
+        ge=1,
+    )
+    OTEL_BSP_EXPORT_TIMEOUT_MILLIS: int = Field(
+        default=30000,
+        description="Maximum time in milliseconds for an export operation. Default: 30000.",
+        ge=1000,
+    )
+    OTEL_EXPORTER_COMPRESSION: Literal["none", "gzip"] = Field(
+        default="gzip",
+        description="OTLP exporter compression. 'gzip' provides 60-80% bandwidth reduction.",
+    )
+    OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS: int = Field(
+        default=30000,
+        description="Timeout in milliseconds for force_flush() during shutdown. Default: 30000.",
+        ge=1000,
+    )
+
+    GCP_PROJECT_ID: str | None = Field(
+        default=None,
+        description="GCP project ID for Cloud Trace log correlation. "
+        "Auto-detected from GOOGLE_CLOUD_PROJECT environment variable in Cloud Run.",
+        validation_alias=AliasChoices("GCP_PROJECT_ID", "GOOGLE_CLOUD_PROJECT"),
+    )
+
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")
     SMTP_USERNAME: str | None = Field(default=None, description="SMTP authentication username")
