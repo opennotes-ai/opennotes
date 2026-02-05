@@ -18,6 +18,7 @@ from src.dbos_workflows.config import (
     _derive_http_otlp_endpoint,
     create_dbos_instance,
     destroy_dbos,
+    destroy_dbos_client,
     get_dbos,
     get_dbos_client,
     get_dbos_config,
@@ -123,6 +124,16 @@ class TestDeriveHttpOtlpEndpoint:
         """Strips query string to return base URL only."""
         result = _derive_http_otlp_endpoint("http://tempo:4317?timeout=30")
         assert result == "http://tempo:4318"
+
+    def test_handles_missing_scheme(self) -> None:
+        """Returns malformed URL when scheme is missing (urlparse parses as path)."""
+        result = _derive_http_otlp_endpoint("tempo:4317")
+        assert result == "tempo:"
+
+    def test_handles_no_port_specified(self) -> None:
+        """Handles URL without explicit port."""
+        result = _derive_http_otlp_endpoint("http://tempo")
+        assert result == "http://tempo"
 
 
 class TestGetDbosConfig:
@@ -411,6 +422,40 @@ class TestDbosClientSingleton:
 
             assert first is not second
             assert mock_client_class.call_count == 2
+
+    def test_destroy_dbos_client_calls_destroy(self) -> None:
+        """destroy_dbos_client() calls destroy() on the client."""
+        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+
+            reset_dbos_client()
+            get_dbos_client()
+            destroy_dbos_client()
+
+            mock_client.destroy.assert_called_once()
+
+    def test_destroy_dbos_client_clears_instance(self) -> None:
+        """destroy_dbos_client() clears the cached instance after destroying."""
+        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
+            mock_client_1 = MagicMock()
+            mock_client_2 = MagicMock()
+            mock_client_class.side_effect = [mock_client_1, mock_client_2]
+
+            reset_dbos_client()
+            get_dbos_client()
+            destroy_dbos_client()
+            second = get_dbos_client()
+
+            assert second is mock_client_2
+
+    def test_destroy_dbos_client_noop_when_no_instance(self) -> None:
+        """destroy_dbos_client() is a no-op when no instance exists."""
+        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
+            reset_dbos_client()
+            destroy_dbos_client()
+
+            mock_client_class.return_value.destroy.assert_not_called()
 
 
 class TestThreadSafety:
