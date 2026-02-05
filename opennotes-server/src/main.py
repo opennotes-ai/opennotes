@@ -24,6 +24,7 @@ if _otel_settings.ENABLE_TRACING and not _otel_settings.TESTING:
         environment=_otel_settings.ENVIRONMENT,
         otlp_endpoint=_otel_settings.OTLP_ENDPOINT,
         otlp_headers=_otel_settings.OTLP_HEADERS,
+        otlp_insecure=_otel_settings.OTLP_INSECURE,
         sample_rate=_otel_settings.TRACING_SAMPLE_RATE,
         enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
     )
