@@ -10,6 +10,7 @@ import os
 import tempfile
 import warnings
 from pathlib import Path
+from typing import Any
 
 import litellm
 from ruamel.yaml import YAML
@@ -60,7 +61,7 @@ def generate_example_with_llm(
     example_id: str,
     context: str = "",
     model: str = "openai/gpt-5-mini",
-) -> dict | None:
+) -> dict[str, Any] | None:
     """Generate a single training example using an LLM.
 
     Args:
@@ -91,7 +92,7 @@ def generate_example_with_llm(
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )
-        content = response.choices[0].message.content  # type: ignore[union-attr]
+        content = response.choices[0].message.content  # pyright: ignore[reportAttributeAccessIssue]
         if content is None:
             return None
         return json.loads(content)
@@ -106,7 +107,7 @@ def generate_example_with_llm(
         return None
 
 
-def validate_example_fields(example: dict) -> tuple[bool, str]:
+def validate_example_fields(example: dict[str, Any]) -> tuple[bool, str]:
     """Validate that an LLM-generated example has all required fields.
 
     Args:
@@ -131,7 +132,7 @@ def validate_example_fields(example: dict) -> tuple[bool, str]:
     return True, ""
 
 
-def interactive_review(example: dict) -> str:
+def interactive_review(example: dict[str, Any]) -> str:
     """Present an example for interactive review.
 
     Args:
@@ -165,7 +166,7 @@ def interactive_review(example: dict) -> str:
         print("Invalid choice. Enter A, R, E, or Q.")
 
 
-def edit_example(example: dict) -> dict:
+def edit_example(example: dict[str, Any]) -> dict[str, Any]:
     """Allow user to edit an example interactively."""
     print("\nEditing example. Press Enter to keep current value.\n")
 
@@ -196,7 +197,7 @@ def edit_example(example: dict) -> dict:
     return example
 
 
-def append_to_dataset(example: dict, dataset_path: Path) -> None:
+def append_to_dataset(example: dict[str, Any], dataset_path: Path) -> None:
     """Append an example to the YAML dataset file with file locking and atomic write.
 
     Uses file locking to prevent concurrent corruption and writes to a temp file

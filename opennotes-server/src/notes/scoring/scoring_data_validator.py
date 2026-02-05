@@ -6,6 +6,7 @@ Community Notes matrix factorization scoring.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import pandas as pd
 
@@ -34,7 +35,7 @@ class ValidationResult:
     total_raters: int = 0
     total_ratings: int = 0
 
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, Any]:
         """
         Get a summary of the validation result.
 

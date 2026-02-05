@@ -25,7 +25,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware") as mock_retry,
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
@@ -79,7 +79,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
@@ -123,7 +123,7 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
         ):
             settings = MagicMock()
@@ -297,7 +297,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://invalid-host:4222"
@@ -345,7 +345,7 @@ class TestBrokerConnectionFailure:
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis_class,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://localhost:4222"
@@ -390,7 +390,7 @@ class TestRetryMiddlewareConfiguration:
             patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware") as mock_retry,
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):
@@ -432,7 +432,7 @@ class TestBrokerAuthentication:
             patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
         ):

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import dspy
 from dspy.teleprompt import BootstrapFewShot, LabeledFewShot
@@ -68,7 +69,7 @@ def optimize_relevance_module(
     method: str = "bootstrap",
     model: str = "openai/gpt-5-mini",
     dataset_path: Path | None = None,
-) -> tuple[dspy.Module, dict]:
+) -> tuple[dspy.Module, dict[str, Any]]:
     """Main optimization function.
 
     Args:
@@ -119,13 +120,13 @@ def load_optimized_module(path: Path) -> dspy.Module:
     return module
 
 
-def extract_prompts_from_module(module: dspy.Module) -> dict:
+def extract_prompts_from_module(module: dspy.Module) -> dict[str, Any]:
     """Extract the optimized prompts from a compiled module.
 
     This extracts the system prompt (signature docstring) and
     few-shot examples that can be used in the production code.
     """
-    result: dict = {
+    result: dict[str, Any] = {
         "signature_docstring": RelevanceCheck.__doc__,
         "demos": [],
     }

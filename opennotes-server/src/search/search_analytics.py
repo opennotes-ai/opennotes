@@ -26,7 +26,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from src.cache.redis_client import RedisClient
 from src.config import get_settings
@@ -201,18 +201,18 @@ async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntr
                 "alpha_usage": {},
             }
 
-        stats["total_searches"] += 1
-        stats["total_results"] += entry.result_count
+        stats["total_searches"] += 1  # pyright: ignore[reportOperatorIssue]
+        stats["total_results"] += entry.result_count  # pyright: ignore[reportOperatorIssue]
 
         if entry.score_spread is not None:
             n = stats["total_searches"]
             old_avg = stats["avg_score_spread"]
-            stats["avg_score_spread"] = old_avg + (entry.score_spread - old_avg) / n
+            stats["avg_score_spread"] = old_avg + (entry.score_spread - old_avg) / n  # pyright: ignore[reportOperatorIssue]
 
         alpha_key = str(entry.alpha)
-        if alpha_key not in stats["alpha_usage"]:
-            stats["alpha_usage"][alpha_key] = 0
-        stats["alpha_usage"][alpha_key] += 1
+        if alpha_key not in stats["alpha_usage"]:  # pyright: ignore[reportOperatorIssue]
+            stats["alpha_usage"][alpha_key] = 0  # pyright: ignore[reportIndexIssue]
+        stats["alpha_usage"][alpha_key] += 1  # pyright: ignore[reportIndexIssue]
 
         await redis.set(SEARCH_STATS_KEY, json.dumps(stats))
 
@@ -227,7 +227,7 @@ async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntr
         )
 
 
-async def get_search_stats(redis: RedisClient) -> dict | None:
+async def get_search_stats(redis: RedisClient) -> dict[str, Any] | None:
     """
     Get aggregate search statistics.
 

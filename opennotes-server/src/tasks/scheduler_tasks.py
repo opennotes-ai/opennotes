@@ -18,6 +18,7 @@ Examples:
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -47,7 +48,7 @@ logger = get_logger(__name__)
 )
 async def cleanup_stale_batch_jobs_task(
     stale_threshold_hours: float = DEFAULT_STALE_JOB_THRESHOLD_HOURS,
-) -> dict:
+) -> dict[str, Any]:
     """
     Scheduled task to clean up stale batch jobs.
 
@@ -134,7 +135,7 @@ async def cleanup_stale_batch_jobs_task(
 )
 async def monitor_stuck_batch_jobs_task(
     threshold_minutes: int = DEFAULT_STUCK_JOB_THRESHOLD_MINUTES,
-) -> dict:
+) -> dict[str, Any]:
     """
     Scheduled task to monitor for stuck batch jobs.
 

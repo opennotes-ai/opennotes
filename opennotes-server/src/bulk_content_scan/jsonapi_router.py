@@ -1045,7 +1045,7 @@ async def generate_explanation(
                 f"Fact check item {attrs.fact_check_item_id} not found",
             )
 
-        fact_check_data = {
+        fact_check_data: dict[str, str | float | None] = {
             "id": str(fact_check_item.id),
             "title": fact_check_item.title,
             "content": fact_check_item.content,

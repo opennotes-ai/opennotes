@@ -46,12 +46,17 @@ class TestEmbeddingRetryConfig:
 
     def test_retry_config_values(self) -> None:
         """Retry config has correct values for exponential backoff."""
-        from src.dbos_workflows.rechunk_workflow import EMBEDDING_RETRY_CONFIG
+        from src.dbos_workflows.rechunk_workflow import (
+            EMBEDDING_BACKOFF_RATE,
+            EMBEDDING_INTERVAL_SECONDS,
+            EMBEDDING_MAX_ATTEMPTS,
+            EMBEDDING_RETRIES_ALLOWED,
+        )
 
-        assert EMBEDDING_RETRY_CONFIG["retries_allowed"] is True
-        assert EMBEDDING_RETRY_CONFIG["max_attempts"] == 5
-        assert EMBEDDING_RETRY_CONFIG["interval_seconds"] == 1.0
-        assert EMBEDDING_RETRY_CONFIG["backoff_rate"] == 2.0
+        assert EMBEDDING_RETRIES_ALLOWED is True
+        assert EMBEDDING_MAX_ATTEMPTS == 5
+        assert EMBEDDING_INTERVAL_SECONDS == 1.0
+        assert EMBEDDING_BACKOFF_RATE == 2.0
 
 
 class TestProcessFactCheckItem:

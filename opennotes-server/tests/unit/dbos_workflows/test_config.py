@@ -18,6 +18,7 @@ from src.dbos_workflows.config import (
     _derive_http_otlp_endpoint,
     create_dbos_instance,
     destroy_dbos,
+    destroy_dbos_client,
     get_dbos,
     get_dbos_client,
     get_dbos_config,
@@ -37,9 +38,9 @@ TEST_DATABASE_URL = "postgresql+asyncpg://user:pass@localhost:5432/testdb"
 @pytest.fixture(autouse=True)
 def reset_settings_cache():
     """Reset settings singleton between tests to avoid state leakage."""
-    get_settings.cache_clear()
+    get_settings.cache_clear()  # type: ignore[attr-defined]
     yield
-    get_settings.cache_clear()
+    get_settings.cache_clear()  # type: ignore[attr-defined]
 
 
 def get_base_env() -> dict[str, str]:
@@ -124,6 +125,16 @@ class TestDeriveHttpOtlpEndpoint:
         result = _derive_http_otlp_endpoint("http://tempo:4317?timeout=30")
         assert result == "http://tempo:4318"
 
+    def test_handles_missing_scheme(self) -> None:
+        """Returns None when scheme is missing (invalid URL)."""
+        result = _derive_http_otlp_endpoint("tempo:4317")
+        assert result is None
+
+    def test_handles_no_port_specified(self) -> None:
+        """Handles URL without explicit port."""
+        result = _derive_http_otlp_endpoint("http://tempo")
+        assert result == "http://tempo"
+
 
 class TestGetDbosConfig:
     """Tests for get_dbos_config() function."""
@@ -136,6 +147,8 @@ class TestGetDbosConfig:
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
 
             config: dict[str, Any] = dict(get_dbos_config())
 
@@ -151,6 +164,8 @@ class TestGetDbosConfig:
             mock_settings.PROJECT_NAME = None
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
 
             config: dict[str, Any] = dict(get_dbos_config())
             db_url = config.get("system_database_url", "")
@@ -159,44 +174,19 @@ class TestGetDbosConfig:
             assert "postgresql://" in db_url
             assert db_url == "postgresql://user:pass@host:5432/db"
 
-    def test_app_name_uses_otel_service_name_when_set(self) -> None:
-        """Config uses OTEL_SERVICE_NAME when explicitly set."""
+    def test_app_name_uses_dbos_app_name_setting(self) -> None:
+        """Config uses DBOS_APP_NAME setting directly."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = "custom-otel-name"
-            mock_settings.PROJECT_NAME = "Open Notes Server"
+            mock_settings.DBOS_APP_NAME = "custom-dbos-app"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
 
             result = dict(get_dbos_config())
 
-            assert result.get("name") == "custom-otel-name"
-
-    def test_app_name_falls_back_to_project_name(self) -> None:
-        """Config falls back to PROJECT_NAME when OTEL_SERVICE_NAME is not set."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = None
-            mock_settings.PROJECT_NAME = "Open Notes Server"
-            mock_settings.OTLP_ENDPOINT = None
-            mock_settings.DBOS_CONDUCTOR_KEY = None
-
-            result = dict(get_dbos_config())
-
-            assert result.get("name") == "Open Notes Server"
-
-    def test_app_name_falls_back_to_default_when_both_unset(self) -> None:
-        """Config uses default 'opennotes-server' when both OTEL_SERVICE_NAME and PROJECT_NAME are None."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = None
-            mock_settings.PROJECT_NAME = None
-            mock_settings.OTLP_ENDPOINT = None
-            mock_settings.DBOS_CONDUCTOR_KEY = None
-
-            result = dict(get_dbos_config())
-
-            assert result.get("name") == "opennotes-server"
+            assert result.get("name") == "custom-dbos-app"
 
     def test_raises_if_database_url_missing(self) -> None:
         """Raises ValueError if DATABASE_URL is not configured."""
@@ -222,6 +212,8 @@ class TestGetDbosConfig:
             mock_settings.OTEL_SERVICE_NAME = "opennotes-server"
             mock_settings.PROJECT_NAME = "Open Notes Server"
             mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
 
             config: dict[str, Any] = dict(get_dbos_config())
 
@@ -237,6 +229,8 @@ class TestGetDbosConfig:
             mock_settings.OTEL_SERVICE_NAME = None
             mock_settings.PROJECT_NAME = "Open Notes Server"
             mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
 
             config: dict[str, Any] = dict(get_dbos_config())
 
@@ -251,6 +245,8 @@ class TestGetDbosConfig:
             mock_settings.PROJECT_NAME = "Test Project"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = "test-conductor-api-key-123"
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
 
             config: dict[str, Any] = dict(get_dbos_config())
 
@@ -436,6 +432,63 @@ class TestDbosClientSingleton:
 
             assert first is not second
             assert mock_client_class.call_count == 2
+
+    def test_destroy_dbos_client_calls_destroy(self) -> None:
+        """destroy_dbos_client() calls destroy() on the client."""
+        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+
+            reset_dbos_client()
+            get_dbos_client()
+            destroy_dbos_client()
+
+            mock_client.destroy.assert_called_once()
+
+    def test_destroy_dbos_client_clears_instance(self) -> None:
+        """destroy_dbos_client() clears the cached instance after destroying."""
+        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
+            mock_client_1 = MagicMock()
+            mock_client_2 = MagicMock()
+            mock_client_class.side_effect = [mock_client_1, mock_client_2]
+
+            reset_dbos_client()
+            first = get_dbos_client()
+            assert first is mock_client_1
+            assert mock_client_class.call_count == 1
+
+            destroy_dbos_client()
+            second = get_dbos_client()
+
+            assert second is mock_client_2
+            assert first is not second
+            assert mock_client_class.call_count == 2
+
+    def test_destroy_dbos_client_clears_instance_even_on_exception(self) -> None:
+        """destroy_dbos_client() clears the cache even if destroy() raises."""
+        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
+            mock_client_1 = MagicMock()
+            mock_client_1.destroy.side_effect = RuntimeError("Connection lost")
+            mock_client_2 = MagicMock()
+            mock_client_class.side_effect = [mock_client_1, mock_client_2]
+
+            reset_dbos_client()
+            get_dbos_client()
+
+            with pytest.raises(RuntimeError, match="Connection lost"):
+                destroy_dbos_client()
+
+            second = get_dbos_client()
+            assert second is mock_client_2
+            assert mock_client_class.call_count == 2
+
+    def test_destroy_dbos_client_noop_when_no_instance(self) -> None:
+        """destroy_dbos_client() is a no-op when no instance exists."""
+        with patch("src.dbos_workflows.config.DBOSClient") as mock_client_class:
+            reset_dbos_client()
+            destroy_dbos_client()
+
+            mock_client_class.return_value.destroy.assert_not_called()
 
 
 class TestThreadSafety:

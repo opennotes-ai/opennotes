@@ -121,7 +121,7 @@ async def get_rechunk_job_status(
 
     if community_server_id is not None:
         await verify_community_admin_by_uuid(
-            community_server_id=UUID(community_server_id),
+            community_server_id=UUID(str(community_server_id)),
             current_user=user,
             db=db,
             request=request,
@@ -417,7 +417,7 @@ async def cancel_rechunk_job(
 
     if community_server_id is not None:
         await verify_community_admin_by_uuid(
-            community_server_id=UUID(community_server_id),
+            community_server_id=UUID(str(community_server_id)),
             current_user=user,
             db=db,
             request=request,

@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC as UTC_TZ
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -217,7 +217,9 @@ class EventPublisher:
             author_id=author_id,
             platform_message_id=platform_message_id,
             summary=summary,
-            classification=classification,  # type: ignore[arg-type]
+            classification=cast(
+                Literal["NOT_MISLEADING", "MISINFORMED_OR_POTENTIALLY_MISLEADING"], classification
+            ),
             metadata=metadata or {},
         )
         return await self.publish_event(event)
@@ -233,7 +235,9 @@ class EventPublisher:
             event_id=secrets.token_urlsafe(16),
             note_id=note_id,
             rater_id=rater_id,
-            helpfulness_level=helpfulness_level,  # type: ignore[arg-type]
+            helpfulness_level=cast(
+                Literal["HELPFUL", "SOMEWHAT_HELPFUL", "NOT_HELPFUL"], helpfulness_level
+            ),
             metadata=metadata or {},
         )
         return await self.publish_event(event)
@@ -296,7 +300,7 @@ class EventPublisher:
             event_id=secrets.token_urlsafe(16),
             note_id=note_id,
             score=score,
-            confidence=confidence,  # type: ignore[arg-type]
+            confidence=cast(Literal["no_data", "provisional", "standard"], confidence),
             algorithm=algorithm,
             rating_count=rating_count,
             tier=tier,
@@ -351,7 +355,7 @@ class EventPublisher:
             event_id=secrets.token_urlsafe(16),
             request_id=request_id,
             platform_message_id=platform_message_id,
-            scan_type=scan_type,  # type: ignore[arg-type]
+            scan_type=cast(Literal["similarity", "openai_moderation"], scan_type),
             fact_check_item_id=fact_check_item_id,
             community_server_id=community_server_id,
             content=content,

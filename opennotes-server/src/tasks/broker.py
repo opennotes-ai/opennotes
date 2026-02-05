@@ -104,7 +104,7 @@ class SafeOpenTelemetryMiddleware(OpenTelemetryMiddleware):
 
         if token is not None:
             try:
-                context_api.detach(token)  # type: ignore[arg-type]
+                context_api.detach(token)  # pyright: ignore[reportArgumentType]
             except ValueError as e:
                 if "was created in a different Context" in str(e):
                     logger.debug(
@@ -188,7 +188,7 @@ def _create_broker() -> PullBasedJetStreamBroker:
         result_backend_kwargs["ssl_cert_reqs"] = redis_kwargs.get("ssl_cert_reqs", "required")
         logger.info("TaskIQ Redis result backend configured with SSL CA cert")
 
-    result_backend: RedisAsyncResultBackend = RedisAsyncResultBackend(**result_backend_kwargs)
+    result_backend: RedisAsyncResultBackend[Any] = RedisAsyncResultBackend(**result_backend_kwargs)
 
     rate_limiter_redis_kwargs = get_redis_connection_kwargs(
         settings.REDIS_URL,
@@ -348,6 +348,8 @@ class LazyTask:
     def __init__(self, func: Callable[..., Any], task_name: str) -> None:
         self._func = func
         self._task_name = task_name
+        self.__name__ = func.__name__
+        self.__wrapped__ = func
         functools.update_wrapper(self, func)
 
     def _get_registered_task(self) -> Any:
