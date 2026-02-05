@@ -60,6 +60,7 @@ class FlashpointDetectionService:
                 to the opennotes-server root.
         """
         self.model = model or self.DEFAULT_MODEL
+        self._lm: dspy.LM | None = None
         self._detector: FlashpointDetector | None = None
         self._optimized_path = optimized_model_path
 
@@ -72,8 +73,7 @@ class FlashpointDetectionService:
     def _get_detector(self) -> FlashpointDetector:
         """Lazily initialize the detector."""
         if self._detector is None:
-            lm = dspy.LM(self.model)
-            dspy.configure(lm=lm)
+            self._lm = dspy.LM(self.model)
 
             self._detector = FlashpointDetector()
 
@@ -118,7 +118,8 @@ class FlashpointDetectionService:
             current_msg = f"{message.author_username or message.author_id}: {message.content}"
 
             detector = self._get_detector()
-            result = detector(context=context_str, message=current_msg)
+            with dspy.context(lm=self._lm):
+                result = detector(context=context_str, message=current_msg)
 
             will_derail = result.will_derail
             if isinstance(will_derail, str):
