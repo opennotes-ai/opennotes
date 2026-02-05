@@ -23,20 +23,40 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
     ) -> None:
         super().add_fields(log_data, record, message_dict)
 
+        try:
+            from src.config import get_settings
+
+            gcp_project = get_settings().GCP_PROJECT_ID
+        except (ImportError, LookupError):
+            gcp_project = None
+
+        trace_id: str | None = None
+        span_id: str | None = None
+        trace_sampled: bool = False
+
         otel_trace_id = getattr(record, "otelTraceID", None)
         if otel_trace_id and otel_trace_id != "0":
-            log_data["otelTraceID"] = otel_trace_id
-            log_data["otelSpanID"] = getattr(record, "otelSpanID", None)
-            log_data["otelServiceName"] = getattr(record, "otelServiceName", None)
-            log_data["otelTraceSampled"] = getattr(record, "otelTraceSampled", None)
-            log_data["trace_id"] = otel_trace_id
-            log_data["span_id"] = getattr(record, "otelSpanID", None)
+            trace_id = otel_trace_id
+            span_id = getattr(record, "otelSpanID", None)
+            trace_sampled = getattr(record, "otelTraceSampled", False) is True
         else:
             span = trace.get_current_span()
             if span and span.get_span_context().is_valid:
                 span_context = span.get_span_context()
-                log_data["trace_id"] = format(span_context.trace_id, "032x")
-                log_data["span_id"] = format(span_context.span_id, "016x")
+                trace_id = format(span_context.trace_id, "032x")
+                span_id = format(span_context.span_id, "016x")
+                trace_sampled = span_context.trace_flags.sampled
+
+        if trace_id:
+            if gcp_project:
+                log_data["logging.googleapis.com/trace"] = (
+                    f"projects/{gcp_project}/traces/{trace_id}"
+                )
+                log_data["logging.googleapis.com/spanId"] = span_id
+                log_data["logging.googleapis.com/trace_sampled"] = trace_sampled
+            else:
+                log_data["trace_id"] = trace_id
+                log_data["span_id"] = span_id
 
         log_data["severity_text"] = record.levelname
         log_data["severity_number"] = LEVEL_TO_SEVERITY.get(record.levelname, 9)

@@ -618,6 +618,13 @@ class Settings(BaseSettings):
         description="Disable OpenTelemetry SDK. Useful for tests or environments without collectors.",
     )
 
+    GCP_PROJECT_ID: str | None = Field(
+        default=None,
+        description="GCP project ID for Cloud Trace log correlation. "
+        "Auto-detected from GOOGLE_CLOUD_PROJECT environment variable in Cloud Run.",
+        validation_alias=AliasChoices("GCP_PROJECT_ID", "GOOGLE_CLOUD_PROJECT"),
+    )
+
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")
     SMTP_USERNAME: str | None = Field(default=None, description="SMTP authentication username")
