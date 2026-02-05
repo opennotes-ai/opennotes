@@ -4346,6 +4346,11 @@ export interface components {
              * @default true
              */
             is_public: boolean;
+            /**
+             * Flashpoint Detection Enabled
+             * @default true
+             */
+            flashpoint_detection_enabled: boolean;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -11684,6 +11689,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FlashpointDetectionUpdateResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authorized — requires admin or service account */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Community server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

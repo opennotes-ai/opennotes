@@ -6425,6 +6425,15 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Not authorized \u2014 requires admin or service account"
+          },
+          "404": {
+            "description": "Community server not found"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -11214,6 +11223,11 @@
           "is_public": {
             "type": "boolean",
             "title": "Is Public",
+            "default": true
+          },
+          "flashpoint_detection_enabled": {
+            "type": "boolean",
+            "title": "Flashpoint Detection Enabled",
             "default": true
           },
           "created_at": {
