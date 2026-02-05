@@ -258,7 +258,7 @@ class LLMUsageTracker:
                     )
                     update_result = await self.db.execute(update_stmt)
 
-                    if update_result.rowcount == 0:  # type: ignore[attr-defined]
+                    if update_result.rowcount == 0:  # type: ignore
                         continue
 
                 return True, None
@@ -498,7 +498,7 @@ class LLMUsageTracker:
                     )
                     update_result = await self.db.execute(update_stmt)
 
-                    if update_result.rowcount == 0:  # type: ignore[attr-defined]
+                    if update_result.rowcount == 0:  # type: ignore
                         continue
 
                     usage_log = LLMUsageLog(

@@ -153,9 +153,9 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             )
             raise
 
-        tokens_used = response.usage.total_tokens if response.usage else 0  # type: ignore[union-attr]
-        finish_reason = response.choices[0].finish_reason or "stop"  # type: ignore[union-attr]
-        content = response.choices[0].message.content or ""  # type: ignore[union-attr]
+        tokens_used = response.usage.total_tokens if response.usage else 0  # type: ignore
+        finish_reason = response.choices[0].finish_reason or "stop"  # type: ignore
+        content = response.choices[0].message.content or ""  # type: ignore
         content_length = len(content)
 
         logger.info(
@@ -176,7 +176,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
 
         return LLMResponse(
             content=content,
-            model=response.model or model,  # type: ignore[arg-type]
+            model=response.model or model,  # type: ignore
             tokens_used=tokens_used,
             finish_reason=finish_reason,
             provider=self._provider_name,
@@ -236,7 +236,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
             )
             raise
 
-        async for chunk in response:  # type: ignore[union-attr]
+        async for chunk in response:  # type: ignore
             if chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 

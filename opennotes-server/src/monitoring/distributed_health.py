@@ -81,9 +81,9 @@ class DistributedHealthCoordinator:
                 return
 
             instance_key = f"{self.INSTANCE_HEALTH_PREFIX}{self.instance_id}"
-            await redis_client.client.sadd(self.INSTANCES_KEY, self.instance_id)  # type: ignore[misc]
+            await redis_client.client.sadd(self.INSTANCES_KEY, self.instance_id)  # type: ignore
 
-            instances = await redis_client.client.smembers(self.INSTANCES_KEY)  # type: ignore[misc]
+            instances = await redis_client.client.smembers(self.INSTANCES_KEY)  # type: ignore
             active_instances = []
 
             for instance_id in instances:
@@ -92,7 +92,7 @@ class DistributedHealthCoordinator:
                 if exists:
                     active_instances.append(instance_id)
                 else:
-                    await redis_client.client.srem(self.INSTANCES_KEY, instance_id)  # type: ignore[misc]
+                    await redis_client.client.srem(self.INSTANCES_KEY, instance_id)  # type: ignore
 
         except Exception:
             pass
@@ -102,7 +102,7 @@ class DistributedHealthCoordinator:
             if not redis_client.client:
                 return {}
 
-            instances = await redis_client.client.smembers(self.INSTANCES_KEY)  # type: ignore[misc]
+            instances = await redis_client.client.smembers(self.INSTANCES_KEY)  # type: ignore
             instances_health = {}
             current_time = time.time()
 
@@ -136,7 +136,7 @@ class DistributedHealthCoordinator:
                     except json.JSONDecodeError:
                         pass
                 else:
-                    await redis_client.client.srem(self.INSTANCES_KEY, instance_id)  # type: ignore[misc]
+                    await redis_client.client.srem(self.INSTANCES_KEY, instance_id)  # type: ignore
 
             return instances_health
 

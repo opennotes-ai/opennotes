@@ -13,13 +13,13 @@ connections to work reliably in distributed worker environments.
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import func, select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.batch_jobs.constants import DEFAULT_SCRAPE_CONCURRENCY, SCRAPE_URL_TIMEOUT_SECONDS
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
@@ -96,7 +96,7 @@ class JobNotFoundError(Exception):
 
 
 async def _update_job_total_tasks(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     job_id: UUID,
     total_tasks: int,
 ) -> None:
@@ -120,7 +120,7 @@ async def _update_job_total_tasks(
 
 
 async def _start_job(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
 ) -> None:
@@ -139,7 +139,7 @@ async def _start_job(
 
 
 async def _update_progress(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
     completed_tasks: int,
@@ -159,7 +159,7 @@ async def _update_progress(
 
 
 async def _complete_job(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
     completed_tasks: int,
@@ -171,13 +171,13 @@ async def _complete_job(
         service = BatchJobService(db, progress_tracker)
         job = await service.get_job(job_id)
         if job:
-            job.metadata_ = {**job.metadata_, "stats": stats}
+            job.metadata_ = {**job.metadata_, "stats": stats}  # type: ignore[assignment]
         await service.complete_job(job_id, completed_tasks, failed_tasks)
         await db.commit()
 
 
 async def _fail_job(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     progress_tracker: BatchJobProgressTracker,
     job_id: UUID,
     error_summary: dict[str, Any],
@@ -204,7 +204,7 @@ def _aggregate_errors(
 
 
 async def _recover_stuck_scraping_candidates(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     timeout_minutes: int = SCRAPING_TIMEOUT_MINUTES,
 ) -> int:
     """Recover candidates stuck in SCRAPING state due to task crash.
@@ -231,14 +231,17 @@ async def _recover_stuck_scraping_candidates(
             .where(FactCheckedItemCandidate.updated_at < cutoff_time)
             .with_for_update(skip_locked=True)
         )
-        result = await db.execute(
-            update(FactCheckedItemCandidate)
-            .where(FactCheckedItemCandidate.id.in_(subquery))
-            .values(
-                status=CandidateStatus.PENDING.value,
-                content=None,
-                error_message="Recovered from stuck SCRAPING state",
-            )
+        result = cast(
+            CursorResult[Any],
+            await db.execute(
+                update(FactCheckedItemCandidate)
+                .where(FactCheckedItemCandidate.id.in_(subquery))
+                .values(
+                    status=CandidateStatus.PENDING.value,
+                    content=None,
+                    error_message="Recovered from stuck SCRAPING state",
+                )
+            ),
         )
         await db.commit()
         recovered_count = result.rowcount
@@ -256,7 +259,7 @@ async def _recover_stuck_scraping_candidates(
 
 
 async def _recover_stuck_promoting_candidates(
-    session: async_sessionmaker,
+    session: async_sessionmaker[AsyncSession],
     timeout_minutes: int = PROMOTING_TIMEOUT_MINUTES,
 ) -> int:
     """Recover candidates stuck in PROMOTING state due to task crash.
@@ -283,13 +286,16 @@ async def _recover_stuck_promoting_candidates(
             .where(FactCheckedItemCandidate.updated_at < cutoff_time)
             .with_for_update(skip_locked=True)
         )
-        result = await db.execute(
-            update(FactCheckedItemCandidate)
-            .where(FactCheckedItemCandidate.id.in_(subquery))
-            .values(
-                status=CandidateStatus.SCRAPED.value,
-                error_message="Recovered from stuck PROMOTING state",
-            )
+        result = cast(
+            CursorResult[Any],
+            await db.execute(
+                update(FactCheckedItemCandidate)
+                .where(FactCheckedItemCandidate.id.in_(subquery))
+                .values(
+                    status=CandidateStatus.SCRAPED.value,
+                    error_message="Recovered from stuck PROMOTING state",
+                )
+            ),
         )
         await db.commit()
         recovered_count = result.rowcount
@@ -479,7 +485,7 @@ async def process_fact_check_import(
 
             row_accounting_valid = _check_row_accounting(job_id, stats, span)
 
-            final_stats = {
+            final_stats: dict[str, Any] = {
                 "total_rows": stats.total_rows,
                 "valid_rows": stats.valid_rows,
                 "invalid_rows": stats.invalid_rows,

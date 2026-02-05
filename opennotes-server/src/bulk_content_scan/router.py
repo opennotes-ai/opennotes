@@ -318,7 +318,7 @@ async def check_recent_scan(
     http_request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user_for_bulk_scan)],
-) -> dict:
+) -> dict[str, bool]:
     """Check if community has a recent scan within the configured window.
 
     Authorization: Requires admin access to the specified community.

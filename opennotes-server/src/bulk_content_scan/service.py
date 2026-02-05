@@ -235,7 +235,7 @@ class BulkContentScanService:
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = ...,
         collect_scores: Literal[True] = ...,
-    ) -> tuple[list[FlaggedMessage], list[dict]]: ...
+    ) -> tuple[list[FlaggedMessage], list[dict[str, Any]]]: ...
 
     async def process_messages(
         self,
@@ -244,7 +244,7 @@ class BulkContentScanService:
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
         collect_scores: bool = False,
-    ) -> list[FlaggedMessage] | tuple[list[FlaggedMessage], list[dict]]:
+    ) -> list[FlaggedMessage] | tuple[list[FlaggedMessage], list[dict[str, Any]]]:
         """Process one or more messages through specified scan types.
 
         Uses the candidate-based flow:
@@ -289,7 +289,7 @@ class BulkContentScanService:
             )
 
         candidates: list[ScanCandidate] = []
-        all_scores: list[dict] = []
+        all_scores: list[dict[str, Any]] = []
 
         for msg in messages:
             if not msg.content or len(msg.content.strip()) < 10:
@@ -344,7 +344,7 @@ class BulkContentScanService:
         messages: BulkScanMessage | Sequence[BulkScanMessage],
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
-    ) -> tuple[list[FlaggedMessage], list[dict]]:
+    ) -> tuple[list[FlaggedMessage], list[dict[str, Any]]]:
         """Process messages and return both flagged results and all scores.
 
         DEPRECATED: Use process_messages(..., collect_scores=True) instead.
@@ -399,7 +399,7 @@ class BulkContentScanService:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
 
-    def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict:
+    def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict[str, Any]:
         """Build score_info dict from a ScanCandidate for debug mode.
 
         Args:
@@ -408,7 +408,7 @@ class BulkContentScanService:
         Returns:
             Dictionary with score info for debug output
         """
-        score_info: dict = {
+        score_info: dict[str, Any] = {
             "message_id": candidate.message.message_id,
             "channel_id": candidate.message.channel_id,
             "similarity_score": candidate.score,
@@ -431,7 +431,7 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
-    ) -> tuple[FlaggedMessage | None, dict]:
+    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run scanner and return both the flagged result and score info."""
         match scan_type:
             case ScanType.SIMILARITY:
@@ -455,7 +455,7 @@ class BulkContentScanService:
         scan_id: UUID,
         message: BulkScanMessage,
         community_server_platform_id: str,
-    ) -> tuple[FlaggedMessage | None, dict]:
+    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run similarity search and return both flagged result and score info."""
         return await self._similarity_scan(  # type: ignore[return-value]
             scan_id, message, community_server_platform_id, include_score=True
@@ -486,7 +486,7 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         include_score: bool = False,
-    ) -> FlaggedMessage | None | tuple[FlaggedMessage | None, dict]:
+    ) -> FlaggedMessage | None | tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run similarity search on a message.
 
         Args:
@@ -502,7 +502,7 @@ class BulkContentScanService:
         threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
         indeterminate_threshold = calculate_indeterminate_threshold(threshold)
 
-        score_info: dict | None = None
+        score_info: dict[str, Any] | None = None
         if include_score:
             score_info = {
                 "message_id": message.message_id,
@@ -698,9 +698,9 @@ class BulkContentScanService:
         self,
         scan_id: UUID,
         message: BulkScanMessage,
-    ) -> tuple[FlaggedMessage | None, dict]:
+    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
         """Run OpenAI moderation and return both flagged result and score info."""
-        score_info: dict = {
+        score_info: dict[str, Any] = {
             "message_id": message.message_id,
             "channel_id": message.channel_id,
             "similarity_score": 0.0,
@@ -1678,7 +1678,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         result = await self.redis_client.set(key, "1", nx=True, ex=REDIS_TTL_SECONDS)  # type: ignore[misc]
         return result is True
 
-    async def get_error_summary(self, scan_id: UUID) -> dict:
+    async def get_error_summary(self, scan_id: UUID) -> dict[str, Any]:
         """Get error summary from Redis.
 
         Args:

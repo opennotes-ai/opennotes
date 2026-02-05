@@ -13,11 +13,12 @@ import asyncio
 import hashlib
 import logging
 import random
+from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
 import trafilatura
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from taskiq import AsyncTaskiqTask, TaskiqResultTimeoutError
 
@@ -109,7 +110,7 @@ async def update_candidate_status(
     updated_at since SQLAlchemy's onupdate callback only fires for
     ORM-level attribute changes, not direct SQL updates.
     """
-    values: dict = {"status": status.value, "updated_at": func.now()}
+    values: dict[str, Any] = {"status": status.value, "updated_at": func.now()}
     if content is not None:
         values["content"] = content
     if error_message is not None:
@@ -156,7 +157,7 @@ async def apply_predicted_rating_if_available(
     if rating is None:
         return None
 
-    result: CursorResult = await session.execute(  # type: ignore[type-arg]
+    result = await session.execute(
         update(FactCheckedItemCandidate)
         .where(FactCheckedItemCandidate.id == candidate.id)
         .where(FactCheckedItemCandidate.rating.is_(None))
@@ -164,7 +165,7 @@ async def apply_predicted_rating_if_available(
     )
     await session.commit()
 
-    if result.rowcount == 0:
+    if result.rowcount == 0:  # type: ignore
         logger.debug(
             f"Skipped auto-applying rating for candidate {candidate.id}: "
             "rating already set by another process"
@@ -200,7 +201,7 @@ def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
         if user_agent is None:
             user_agent = get_random_user_agent()
 
-        config = trafilatura.settings.use_config()  # type: ignore[attr-defined]
+        config = trafilatura.settings.use_config()  # type: ignore
         config.set("DEFAULT", "USER_AGENT", user_agent)
 
         downloaded = trafilatura.fetch_url(url, config=config)
@@ -238,7 +239,7 @@ async def fetch_url_content(
     url: str,
     domain: str,
     base_delay: float = DEFAULT_BASE_DELAY,
-) -> dict:
+) -> dict[str, Any]:
     """Fetch URL content with per-domain rate limiting.
 
     This task is rate-limited per domain to ensure politeness when scraping.
@@ -297,7 +298,7 @@ async def fetch_url_content(
     return {"error": "Failed to extract content from URL"}
 
 
-async def _mark_scrape_failed(cid: UUID, error_message: str) -> dict:
+async def _mark_scrape_failed(cid: UUID, error_message: str) -> dict[str, Any]:
     """Update candidate status to SCRAPE_FAILED and return error result."""
     async for session in get_db():
         await update_candidate_status(
@@ -308,8 +309,8 @@ async def _mark_scrape_failed(cid: UUID, error_message: str) -> dict:
 
 
 async def _process_scrape_result(
-    cid: UUID, candidate_id: str, fetch_result, auto_promote: bool
-) -> dict:
+    cid: UUID, candidate_id: str, fetch_result: Any, auto_promote: bool
+) -> dict[str, Any]:
     """Process fetch result and update candidate accordingly."""
     content = fetch_result.return_value.get("content") if fetch_result.return_value else None
 
@@ -342,7 +343,7 @@ async def _process_scrape_result(
 
 async def _validate_and_dispatch_scrape(
     cid: UUID, candidate_id: str, base_delay: float, auto_promote: bool
-) -> tuple[dict | None, AsyncTaskiqTask[dict] | None, str | None]:
+) -> tuple[dict[str, Any] | None, AsyncTaskiqTask[dict[str, Any]] | None, str | None]:
     """Validate candidate and dispatch fetch task if needed.
 
     Returns:
@@ -389,7 +390,7 @@ async def scrape_candidate_content(
     auto_promote: bool = True,
     base_delay: float = DEFAULT_BASE_DELAY,
     scrape_timeout: int = DEFAULT_SCRAPE_TIMEOUT,
-) -> dict:
+) -> dict[str, Any]:
     """Scrape article content for a candidate and optionally promote.
 
     This task:
@@ -452,7 +453,7 @@ async def enqueue_scrape_batch(
     batch_size: int = 100,
     base_delay: float = DEFAULT_BASE_DELAY,
     scrape_timeout: int = DEFAULT_SCRAPE_TIMEOUT,
-) -> dict:
+) -> dict[str, Any]:
     """Enqueue scrape tasks for pending candidates.
 
     Finds candidates with status=pending and no content,
@@ -466,7 +467,7 @@ async def enqueue_scrape_batch(
     Returns:
         Dict with count of enqueued tasks.
     """
-    enqueue_result: dict = {"enqueued": 0}
+    enqueue_result: dict[str, Any] = {"enqueued": 0}
 
     async for session in get_db():
         result = await session.execute(
