@@ -11,6 +11,7 @@ import {
   ContainerBuilder,
   TextDisplayBuilder,
   SectionBuilder,
+  GuildMember,
 } from 'discord.js';
 import { apiClient } from '../api-client.js';
 import { GuildConfigService } from '../services/GuildConfigService.js';
@@ -27,6 +28,7 @@ import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } fr
 import { config } from '../config.js';
 import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator } from '../utils/v2-components.js';
 import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
+import { hasManageGuildPermission } from '../lib/permissions.js';
 
 const configService = new GuildConfigService(apiClient);
 const guildSetupService = new GuildSetupService();
@@ -1338,6 +1340,14 @@ async function handleContentMonitorFlashpoint(
   guildId: string,
   errorId: string
 ): Promise<void> {
+  const member = interaction.member as GuildMember | null;
+  if (!hasManageGuildPermission(member)) {
+    await interaction.editReply({
+      content: 'You need the "Manage Server" permission to manage flashpoint detection settings.',
+    });
+    return;
+  }
+
   const action = interaction.options.getString('action', true);
 
   try {

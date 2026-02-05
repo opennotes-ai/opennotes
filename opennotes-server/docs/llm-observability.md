@@ -47,7 +47,7 @@ Each LLM span includes:
 ```
 gen_ai.system: "openai"
 gen_ai.request.model: "gpt-5-mini"
-gen_ai.response.model: "gpt-5-mini-2024-07-18"
+gen_ai.response.model: "gpt-5-mini"
 gen_ai.usage.prompt_tokens: 150
 gen_ai.usage.completion_tokens: 75
 gen_ai.usage.total_tokens: 225

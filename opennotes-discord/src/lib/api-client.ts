@@ -1874,7 +1874,6 @@ export class ApiClient {
 
   async getFlashpointDetectionStatus(
     platformCommunityServerId: string,
-    _context?: UserContext,
     platform: string = 'discord'
   ): Promise<FlashpointDetectionUpdateResponse> {
     const serverResponse = await this.getCommunityServerByPlatformId(platformCommunityServerId, platform);
