@@ -250,13 +250,6 @@ class BulkContentScanService:
             messages = [messages]
 
         active_scan_types = list(scan_types)
-        if (
-            ScanType.CONVERSATION_FLASHPOINT in active_scan_types
-            and not await self._is_flashpoint_enabled(community_server_platform_id)
-        ):
-            active_scan_types = [
-                st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
-            ]
 
         original_count = len(messages)
 
@@ -327,7 +320,7 @@ class BulkContentScanService:
                 )
                 if fp_candidate:
                     candidates.append(fp_candidate)
-                    if collect_scores and not candidate_found:
+                    if collect_scores:
                         all_scores.append(self._build_score_info_from_candidate(fp_candidate))
                     candidate_found = True
 
@@ -516,33 +509,6 @@ class BulkContentScanService:
         for channel_id, msgs in channel_context_map.items():
             index[channel_id] = {m.message_id: i for i, m in enumerate(msgs)}
         return index
-
-    async def _is_flashpoint_enabled(self, community_server_platform_id: str) -> bool:
-        """Check if flashpoint detection is enabled for the community server.
-
-        Args:
-            community_server_platform_id: The platform-specific community ID (e.g., Discord guild ID)
-
-        Returns:
-            True if flashpoint detection is enabled, False otherwise
-        """
-        from src.llm_config.models import CommunityServer  # noqa: PLC0415
-
-        try:
-            result = await self.session.execute(
-                select(CommunityServer.flashpoint_detection_enabled).where(
-                    CommunityServer.platform_community_server_id == community_server_platform_id
-                )
-            )
-            enabled = result.scalar_one_or_none()
-            return bool(enabled)
-        except Exception:
-            logger.warning(
-                "Failed to check flashpoint_detection_enabled, defaulting to disabled",
-                extra={"community_server_platform_id": community_server_platform_id},
-                exc_info=True,
-            )
-            return False
 
     async def _run_scanner_with_score(
         self,
