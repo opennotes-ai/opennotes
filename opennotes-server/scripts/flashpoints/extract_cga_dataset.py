@@ -27,7 +27,7 @@ def load_cga_corpus() -> "Corpus":
     """Download and load the CGA-CMV corpus."""
     from convokit import Corpus, download
 
-    corpus_path = download("conversations-gone-awry-cmv-corpus")
+    corpus_path = download("conversations-gone-awry-cmv-corpus-large")
     return Corpus(filename=corpus_path)
 
 
@@ -57,6 +57,11 @@ def extract_examples(
 
         derailed = convo.meta.get("annotation", {}).get("derail", False)
         derail_idx = convo.meta.get("annotation", {}).get("derail_idx")
+
+        if not derailed and not derail_idx:
+            derailed = convo.meta.get("has_removed_comment", False)
+            if derailed:
+                derail_idx = len(utterances) - 1
 
         if derailed and derail_idx is not None:
             sample_points = range(max(1, derail_idx - 3), derail_idx)

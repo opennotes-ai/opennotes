@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 import dspy
 
@@ -42,6 +43,7 @@ def optimize_flashpoint_detector(
     reflection_model: str | None = None,
     max_train: int = 200,
     max_dev: int = 50,
+    log_dir: Path | None = None,
 ) -> FlashpointDetector:
     """Run GEPA optimization on the flashpoint detector.
 
@@ -52,6 +54,7 @@ def optimize_flashpoint_detector(
         reflection_model: Model to use for GEPA reflection (defaults to gpt-5.1)
         max_train: Maximum training examples to use
         max_dev: Maximum dev examples to use
+        log_dir: Directory for GEPA checkpoints (enables resume on restart)
 
     Returns:
         The optimized FlashpointDetector module
@@ -72,14 +75,19 @@ def optimize_flashpoint_detector(
         max_tokens=32000,
     )
 
-    optimizer = dspy.GEPA(
-        metric=flashpoint_metric_with_feedback,
-        auto=auto,
-        num_threads=4,
-        track_stats=True,
-        reflection_minibatch_size=3,
-        reflection_lm=reflection_lm,
-    )
+    gepa_kwargs: dict[str, Any] = {
+        "metric": flashpoint_metric_with_feedback,
+        "auto": auto,
+        "num_threads": 6,
+        "track_stats": True,
+        "reflection_minibatch_size": 3,
+        "reflection_lm": reflection_lm,
+    }
+    if log_dir:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        gepa_kwargs["log_dir"] = str(log_dir)
+
+    optimizer = dspy.GEPA(**gepa_kwargs)
 
     detector = FlashpointDetector()
 
@@ -255,6 +263,12 @@ Examples:
         action="store_true",
         help="Print progress during evaluation",
     )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path(__file__).parent.parent.parent / "data" / "flashpoints" / "gepa_logs",
+        help="Directory for GEPA checkpoints/resume (default: data/flashpoints/gepa_logs)",
+    )
 
     args = parser.parse_args()
 
@@ -272,6 +286,7 @@ Examples:
             auto=args.auto,
             output_path=args.output,
             reflection_model=args.reflection_model,
+            log_dir=args.log_dir,
         )
 
     _, _, testset = load_flashpoint_datasets()
