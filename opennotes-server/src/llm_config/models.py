@@ -78,6 +78,9 @@ class CommunityServer(Base):
     is_public: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False
     )
+    flashpoint_detection_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
     welcome_message_id: Mapped[str | None] = mapped_column(
         String(30),
         nullable=True,

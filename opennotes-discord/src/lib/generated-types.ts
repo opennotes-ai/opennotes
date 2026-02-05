@@ -4347,6 +4347,11 @@ export interface components {
              * @description Whether the community server is active
              */
             is_active: boolean;
+            /**
+             * Flashpoint Detection Enabled
+             * @description Whether flashpoint detection is enabled for this community
+             */
+            flashpoint_detection_enabled: boolean;
         };
         /**
          * CommunityServerResource

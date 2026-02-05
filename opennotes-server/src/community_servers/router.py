@@ -30,6 +30,9 @@ class CommunityServerLookupResponse(BaseModel):
     )
     name: str = Field(..., description="Community server name")
     is_active: bool = Field(..., description="Whether the community server is active")
+    flashpoint_detection_enabled: bool = Field(
+        ..., description="Whether flashpoint detection is enabled for this community"
+    )
 
 
 class WelcomeMessageUpdateRequest(BaseModel):
@@ -116,6 +119,7 @@ async def lookup_community_server(
         platform_community_server_id=community_server.platform_community_server_id,
         name=community_server.name,
         is_active=community_server.is_active,
+        flashpoint_detection_enabled=community_server.flashpoint_detection_enabled,
     )
 
 

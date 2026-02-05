@@ -11203,6 +11203,11 @@
             "type": "boolean",
             "title": "Is Active",
             "description": "Whether the community server is active"
+          },
+          "flashpoint_detection_enabled": {
+            "type": "boolean",
+            "title": "Flashpoint Detection Enabled",
+            "description": "Whether flashpoint detection is enabled for this community"
           }
         },
         "type": "object",
@@ -11211,7 +11216,8 @@
           "platform",
           "platform_community_server_id",
           "name",
-          "is_active"
+          "is_active",
+          "flashpoint_detection_enabled"
         ],
         "title": "CommunityServerLookupResponse",
         "description": "Response model for community server lookup."
