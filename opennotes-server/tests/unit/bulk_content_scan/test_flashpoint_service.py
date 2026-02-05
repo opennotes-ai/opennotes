@@ -1,12 +1,16 @@
 """Unit tests for FlashpointDetectionService."""
 
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import dspy
 import pytest
 
-from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
+from src.bulk_content_scan.flashpoint_service import (
+    FlashpointDetectionService,
+    FlashpointDetector,
+)
 from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
 
 
@@ -332,3 +336,106 @@ class TestFlashpointDetectionServiceInit:
         """Custom model can be specified."""
         service = FlashpointDetectionService(model="anthropic/claude-3-haiku")
         assert service.model == "anthropic/claude-3-haiku"
+
+
+class TestGetDetectorLazyInit:
+    """Tests for _get_detector lazy initialization paths.
+
+    These tests exercise the real _get_detector method rather than
+    mocking it away. Only dspy.LM (to prevent API calls) and
+    FlashpointDetector.load (to prevent file I/O) are mocked.
+    """
+
+    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    def test_creates_detector_when_none_cached(self, mock_lm_cls: MagicMock, tmp_path: Path):
+        """_get_detector creates a FlashpointDetector when _detector is None."""
+        service = FlashpointDetectionService(
+            model="openai/gpt-4o-mini",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+        assert service._detector is None
+
+        detector = service._get_detector()
+
+        assert detector is not None
+        assert isinstance(detector, FlashpointDetector)
+        assert service._detector is detector
+        mock_lm_cls.assert_called_once_with("openai/gpt-4o-mini")
+        assert service._lm is mock_lm_cls.return_value
+
+    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    def test_reuses_cached_detector_on_subsequent_calls(
+        self, mock_lm_cls: MagicMock, tmp_path: Path
+    ):
+        """_get_detector returns the same cached instance on repeated calls."""
+        service = FlashpointDetectionService(
+            model="openai/gpt-4o-mini",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        first = service._get_detector()
+        second = service._get_detector()
+
+        assert first is second
+        mock_lm_cls.assert_called_once()
+
+    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    def test_loads_optimized_model_when_file_exists(self, mock_lm_cls: MagicMock, tmp_path: Path):
+        """_get_detector calls .load() when the optimized model file exists."""
+        optimized_path = tmp_path / "optimized_detector.json"
+        optimized_path.write_text("{}")
+
+        service = FlashpointDetectionService(
+            model="openai/gpt-4o-mini",
+            optimized_model_path=optimized_path,
+        )
+
+        with patch.object(FlashpointDetector, "load") as mock_load:
+            detector = service._get_detector()
+
+        assert isinstance(detector, FlashpointDetector)
+        mock_load.assert_called_once_with(str(optimized_path))
+
+    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    def test_skips_load_when_optimized_model_missing(self, mock_lm_cls: MagicMock, tmp_path: Path):
+        """_get_detector uses base detector when optimized file does not exist."""
+        missing_path = tmp_path / "optimized_detector.json"
+        assert not missing_path.exists()
+
+        service = FlashpointDetectionService(
+            model="openai/gpt-4o-mini",
+            optimized_model_path=missing_path,
+        )
+
+        with patch.object(FlashpointDetector, "load") as mock_load:
+            detector = service._get_detector()
+
+        assert isinstance(detector, FlashpointDetector)
+        mock_load.assert_not_called()
+
+    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    def test_uses_default_path_when_no_path_provided(self, mock_lm_cls: MagicMock):
+        """_get_detector uses _get_default_optimized_path when no path given."""
+        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        assert service._optimized_path is None
+
+        with patch.object(FlashpointDetector, "load"):
+            service._get_detector()
+
+        default_path = service._get_default_optimized_path()
+        assert default_path.name == "optimized_detector.json"
+        assert default_path.parent.name == "flashpoints"
+        assert default_path.parent.parent.name == "data"
+
+    @patch("src.bulk_content_scan.flashpoint_service.dspy.LM")
+    def test_detector_has_predict_attribute(self, mock_lm_cls: MagicMock, tmp_path: Path):
+        """The real FlashpointDetector created by _get_detector has a predict module."""
+        service = FlashpointDetectionService(
+            model="openai/gpt-4o-mini",
+            optimized_model_path=tmp_path / "nonexistent.json",
+        )
+
+        detector = service._get_detector()
+
+        assert hasattr(detector, "predict")
+        assert isinstance(detector.predict, dspy.ChainOfThought)
