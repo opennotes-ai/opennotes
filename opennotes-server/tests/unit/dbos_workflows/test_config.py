@@ -159,44 +159,19 @@ class TestGetDbosConfig:
             assert "postgresql://" in db_url
             assert db_url == "postgresql://user:pass@host:5432/db"
 
-    def test_app_name_uses_otel_service_name_when_set(self) -> None:
-        """Config uses OTEL_SERVICE_NAME when explicitly set."""
+    def test_app_name_uses_dbos_app_name_setting(self) -> None:
+        """Config uses DBOS_APP_NAME setting directly."""
         with patch("src.dbos_workflows.config.settings") as mock_settings:
             mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = "custom-otel-name"
-            mock_settings.PROJECT_NAME = "Open Notes Server"
+            mock_settings.DBOS_APP_NAME = "custom-dbos-app"
             mock_settings.OTLP_ENDPOINT = None
             mock_settings.DBOS_CONDUCTOR_KEY = None
+            mock_settings.VERSION = "1.0.0"
+            mock_settings.ENVIRONMENT = "test"
 
             result = dict(get_dbos_config())
 
-            assert result.get("name") == "custom-otel-name"
-
-    def test_app_name_falls_back_to_project_name(self) -> None:
-        """Config falls back to PROJECT_NAME when OTEL_SERVICE_NAME is not set."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = None
-            mock_settings.PROJECT_NAME = "Open Notes Server"
-            mock_settings.OTLP_ENDPOINT = None
-            mock_settings.DBOS_CONDUCTOR_KEY = None
-
-            result = dict(get_dbos_config())
-
-            assert result.get("name") == "Open Notes Server"
-
-    def test_app_name_falls_back_to_default_when_both_unset(self) -> None:
-        """Config uses default 'opennotes-server' when both OTEL_SERVICE_NAME and PROJECT_NAME are None."""
-        with patch("src.dbos_workflows.config.settings") as mock_settings:
-            mock_settings.DATABASE_URL = TEST_DATABASE_URL
-            mock_settings.OTEL_SERVICE_NAME = None
-            mock_settings.PROJECT_NAME = None
-            mock_settings.OTLP_ENDPOINT = None
-            mock_settings.DBOS_CONDUCTOR_KEY = None
-
-            result = dict(get_dbos_config())
-
-            assert result.get("name") == "opennotes-server"
+            assert result.get("name") == "custom-dbos-app"
 
     def test_raises_if_database_url_missing(self) -> None:
         """Raises ValueError if DATABASE_URL is not configured."""
