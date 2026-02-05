@@ -87,7 +87,7 @@ def _get_baggage_span_processor() -> "SpanProcessor":
 
     if BaggageSpanProcessor._instance is None:
         BaggageSpanProcessor._instance = _BaggageSpanProcessorImpl()
-    return BaggageSpanProcessor._instance  # type: ignore[return-value]
+    return BaggageSpanProcessor._instance  # pyright: ignore[reportReturnType]
 
 
 def setup_otel(

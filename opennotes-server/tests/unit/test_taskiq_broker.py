@@ -25,9 +25,12 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware") as mock_retry,
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
+            patch("src.tasks.broker.SafeOpenTelemetryMiddleware"),
+            patch("src.tasks.broker.DistributedRateLimitMiddleware"),
+            patch("src.tasks.broker.aioredis"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -64,7 +67,6 @@ class TestBrokerConfiguration:
             assert call_kwargs["stream_name"] == "TEST_STREAM"
             assert call_kwargs["durable"] == "opennotes-taskiq-worker"
             assert call_kwargs["connect_timeout"] == 15
-            assert call_kwargs["stream_config"].max_age == 604800
 
             mock_retry.assert_called_once()
             call_kwargs = mock_retry.call_args.kwargs
@@ -79,14 +81,19 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
+            patch("src.tasks.broker.SafeOpenTelemetryMiddleware"),
+            patch("src.tasks.broker.DistributedRateLimitMiddleware"),
+            patch("src.tasks.broker.aioredis"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
+            settings.NATS_SERVERS = ["nats://test:4222"]
             settings.REDIS_URL = "rediss://secure-redis:6380"
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
+            settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_CONNECT_TIMEOUT = 10
@@ -123,18 +130,24 @@ class TestBrokerConfiguration:
             patch("src.tasks.broker.get_settings") as mock_settings,
             patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis,
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
+            patch("src.tasks.broker.SafeOpenTelemetryMiddleware"),
+            patch("src.tasks.broker.DistributedRateLimitMiddleware"),
+            patch("src.tasks.broker.aioredis"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
+            settings.NATS_SERVERS = ["nats://test:4222"]
             settings.REDIS_URL = "redis://localhost:6379"
             settings.TASKIQ_STREAM_NAME = "TEST_STREAM"
+            settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_CONNECT_TIMEOUT = 10
             settings.NATS_USERNAME = None
             settings.NATS_PASSWORD = None
+            settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
             mock_redis_kwargs.return_value = {}
 
@@ -287,22 +300,29 @@ class TestBrokerConnectionFailure:
         When NATS is unavailable, broker.startup() should raise an
         exception rather than silently failing.
         """
-        from src.tasks.broker import reset_broker
+        from src.tasks.broker import _create_broker, reset_broker
 
         reset_broker()
 
         with (
             patch("src.tasks.broker._broker_instance", None),
+            patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
+            patch("src.tasks.broker.SafeOpenTelemetryMiddleware"),
+            patch("src.tasks.broker.DistributedRateLimitMiddleware"),
+            patch("src.tasks.broker.aioredis"),
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://invalid-host:4222"
+            settings.NATS_SERVERS = ["nats://invalid-host:4222"]
             settings.REDIS_URL = "redis://localhost:6379"
             settings.TASKIQ_STREAM_NAME = "TEST"
+            settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_CONNECT_TIMEOUT = 10
@@ -310,6 +330,7 @@ class TestBrokerConnectionFailure:
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {}
 
             mock_broker = MagicMock()
             mock_broker.with_result_backend.return_value = mock_broker
@@ -319,9 +340,7 @@ class TestBrokerConnectionFailure:
             )
             mock_broker_class.return_value = mock_broker
 
-            from src.tasks.broker import get_broker
-
-            broker = get_broker()
+            broker = _create_broker()
 
             with pytest.raises(ConnectionRefusedError):
                 await broker.startup()
@@ -335,22 +354,29 @@ class TestBrokerConnectionFailure:
 
         The result backend connection failure should propagate appropriately.
         """
-        from src.tasks.broker import reset_broker
+        from src.tasks.broker import _create_broker, reset_broker
 
         reset_broker()
 
         with (
             patch("src.tasks.broker._broker_instance", None),
+            patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend") as mock_redis_class,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker_class,
+            patch("src.tasks.broker.SafeOpenTelemetryMiddleware"),
+            patch("src.tasks.broker.DistributedRateLimitMiddleware"),
+            patch("src.tasks.broker.aioredis"),
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker_class,
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://localhost:4222"
+            settings.NATS_SERVERS = ["nats://localhost:4222"]
             settings.REDIS_URL = "redis://invalid-host:6379"
             settings.TASKIQ_STREAM_NAME = "TEST"
+            settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 3
             settings.NATS_CONNECT_TIMEOUT = 10
@@ -358,6 +384,7 @@ class TestBrokerConnectionFailure:
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {}
 
             mock_backend = MagicMock()
             mock_redis_class.return_value = mock_backend
@@ -370,9 +397,7 @@ class TestBrokerConnectionFailure:
             )
             mock_broker_class.return_value = mock_broker
 
-            from src.tasks.broker import get_broker
-
-            broker = get_broker()
+            broker = _create_broker()
 
             with pytest.raises(ConnectionRefusedError):
                 await broker.startup()
@@ -389,15 +414,21 @@ class TestRetryMiddlewareConfiguration:
             patch("src.tasks.broker._broker_instance", None),
             patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware") as mock_retry,
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
+            patch("src.tasks.broker.SafeOpenTelemetryMiddleware"),
+            patch("src.tasks.broker.DistributedRateLimitMiddleware"),
+            patch("src.tasks.broker.aioredis"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://localhost:4222"
+            settings.NATS_SERVERS = ["nats://localhost:4222"]
             settings.REDIS_URL = "redis://localhost:6379"
             settings.TASKIQ_STREAM_NAME = "TEST"
+            settings.TASKIQ_STREAM_MAX_AGE_SECONDS = 604800
             settings.TASKIQ_RESULT_EXPIRY = 3600
             settings.TASKIQ_DEFAULT_RETRY_COUNT = 10
             settings.NATS_CONNECT_TIMEOUT = 10
@@ -405,6 +436,7 @@ class TestRetryMiddlewareConfiguration:
             settings.NATS_PASSWORD = None
             settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {}
 
             mock_broker_instance = MagicMock()
             mock_broker_instance.with_result_backend.return_value = mock_broker_instance
@@ -431,10 +463,14 @@ class TestBrokerAuthentication:
             patch("src.tasks.broker._broker_instance", None),
             patch("src.tasks.broker._registered_task_objects", {}),
             patch("src.tasks.broker.get_settings") as mock_settings,
+            patch("src.tasks.broker.get_redis_connection_kwargs") as mock_redis_kwargs,
             patch("src.tasks.broker.RedisAsyncResultBackend"),
-            patch("src.tasks.broker.PullBasedJetStreamBroker") as mock_broker,
+            patch("src.tasks.broker.ResilientJetStreamBroker") as mock_broker,
             patch("src.tasks.broker.RetryWithFinalCallbackMiddleware"),
             patch("src.tasks.broker.TaskIQMetricsMiddleware"),
+            patch("src.tasks.broker.SafeOpenTelemetryMiddleware"),
+            patch("src.tasks.broker.DistributedRateLimitMiddleware"),
+            patch("src.tasks.broker.aioredis"),
         ):
             settings = MagicMock()
             settings.NATS_URL = "nats://test:4222"
@@ -449,6 +485,7 @@ class TestBrokerAuthentication:
             settings.NATS_PASSWORD = "testpass"
             settings.INSTANCE_ID = "test-instance"
             mock_settings.return_value = settings
+            mock_redis_kwargs.return_value = {}
 
             mock_broker_instance = MagicMock()
             mock_broker_instance.with_result_backend.return_value = mock_broker_instance
@@ -466,7 +503,6 @@ class TestBrokerAuthentication:
             assert call_kwargs["connect_timeout"] == 30
             assert call_kwargs["user"] == "testuser"
             assert call_kwargs["password"] == "testpass"
-            assert call_kwargs["stream_config"].max_age == 604800
 
 
 class TestSafeOpenTelemetryMiddleware:
