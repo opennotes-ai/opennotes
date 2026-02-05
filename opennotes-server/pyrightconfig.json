@@ -13,5 +13,6 @@
   "reportUnusedFunction": "warning",
   "reportUnusedVariable": "warning",
   "reportDuplicateImport": "error",
-  "reportUnnecessaryIsInstance": "warning"
+  "reportUnnecessaryIsInstance": "warning",
+  "reportUnnecessaryTypeIgnoreComment": false
 }

@@ -175,6 +175,7 @@ reportUnusedFunction = "warning"
 reportUnusedVariable = "warning"
 reportDuplicateImport = "error"
 reportUnnecessaryIsInstance = "warning"
+reportUnnecessaryTypeIgnoreComment = false
 
 [tool.pytest.ini_options]
 minversion = "7.0"
