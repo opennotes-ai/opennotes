@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 from src.notes.models import Note, Rating, Request
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm.strategy_options import _AbstractLoad
+    from sqlalchemy.orm.strategy_options import _AbstractLoad  # pyright: ignore[reportPrivateUsage]
 
 
 def ratings() -> tuple[_AbstractLoad, ...]:

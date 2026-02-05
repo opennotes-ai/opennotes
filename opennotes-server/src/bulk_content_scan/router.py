@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
-    _get_profile_id_from_user,
+    get_profile_id_from_user,
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
@@ -131,7 +131,7 @@ async def verify_scan_owner_or_admin_access(
     if is_service_account(current_user):
         return
 
-    user_profile_id = await _get_profile_id_from_user(db, current_user)
+    user_profile_id = await get_profile_id_from_user(db, current_user)
 
     if user_profile_id and scan.initiated_by_user_id == user_profile_id:
         return
@@ -192,7 +192,7 @@ async def initiate_scan(
         request=http_request,
     )
 
-    profile_id = await _get_profile_id_from_user(session, current_user)
+    profile_id = await get_profile_id_from_user(session, current_user)
     if not profile_id:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

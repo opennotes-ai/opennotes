@@ -219,7 +219,7 @@ def request_to_resource(req: Request) -> RequestResource:
         attributes=RequestAttributes(
             request_id=req.request_id,
             requested_by=req.requested_by,
-            status=req.status if isinstance(req.status, str) else req.status.value,
+            status=req.status,
             note_id=str(req.note_id) if req.note_id else None,
             community_server_id=str(req.community_server_id) if req.community_server_id else None,
             requested_at=req.requested_at,

@@ -110,7 +110,7 @@ class TestVerifyCommunityMembershipByUUID:
 
         with (
             patch(
-                "src.auth.community_dependencies._get_profile_id_from_user",
+                "src.auth.community_dependencies.get_profile_id_from_user",
                 return_value=profile_id,
             ),
             patch(
@@ -168,7 +168,7 @@ class TestVerifyCommunityMembershipByUUID:
         mock_request.headers = {}
 
         with patch(
-            "src.auth.community_dependencies._get_profile_id_from_user",
+            "src.auth.community_dependencies.get_profile_id_from_user",
             return_value=None,
         ):
             with pytest.raises(HTTPException) as exc_info:
@@ -196,7 +196,7 @@ class TestVerifyCommunityMembershipByUUID:
 
         with (
             patch(
-                "src.auth.community_dependencies._get_profile_id_from_user",
+                "src.auth.community_dependencies.get_profile_id_from_user",
                 return_value=profile_id,
             ),
             patch(
@@ -236,7 +236,7 @@ class TestVerifyCommunityMembershipByUUID:
 
         with (
             patch(
-                "src.auth.community_dependencies._get_profile_id_from_user",
+                "src.auth.community_dependencies.get_profile_id_from_user",
                 return_value=profile_id,
             ),
             patch(
@@ -280,7 +280,7 @@ class TestVerifyCommunityMembershipByUUID:
 
         with (
             patch(
-                "src.auth.community_dependencies._get_profile_id_from_user",
+                "src.auth.community_dependencies.get_profile_id_from_user",
                 return_value=profile_id,
             ),
             patch(
@@ -328,7 +328,7 @@ class TestVerifyCommunityMembershipByUUID:
 
         with (
             patch(
-                "src.auth.community_dependencies._get_profile_id_from_user",
+                "src.auth.community_dependencies.get_profile_id_from_user",
                 return_value=profile_id,
             ),
             patch(
@@ -378,7 +378,7 @@ class TestVerifyCommunityMembershipByUUIDDoesNotCheckAdmin:
 
         with (
             patch(
-                "src.auth.community_dependencies._get_profile_id_from_user",
+                "src.auth.community_dependencies.get_profile_id_from_user",
                 return_value=profile_id,
             ),
             patch(

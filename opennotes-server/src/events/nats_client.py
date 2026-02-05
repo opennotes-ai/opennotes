@@ -238,7 +238,7 @@ class NATSClientManager:
         if not self.js:
             return False
         try:
-            jsm = self.js._jsm
+            jsm = self.js._jsm  # pyright: ignore[reportPrivateUsage]
             await jsm.consumer_info(settings.NATS_STREAM_NAME, consumer_name)
             return True
         except Exception:
@@ -357,7 +357,7 @@ class NATSClientManager:
             return True
 
         try:
-            jsm = self.js._jsm
+            jsm = self.js._jsm  # pyright: ignore[reportPrivateUsage]
             for subject, info in self.active_subscriptions.items():
                 try:
                     await jsm.consumer_info(settings.NATS_STREAM_NAME, info.consumer_name)
@@ -381,7 +381,7 @@ class NATSClientManager:
             return 0
 
         resubscribe_count = 0
-        jsm = self.js._jsm
+        jsm = self.js._jsm  # pyright: ignore[reportPrivateUsage]
 
         subjects_to_resubscribe: list[tuple[str, SubscriptionInfo]] = []
 

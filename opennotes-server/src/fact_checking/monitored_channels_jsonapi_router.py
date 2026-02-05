@@ -252,7 +252,7 @@ async def _handle_http_exception(e: HTTPException, db: AsyncSession) -> JSONResp
     """Handle HTTPException with rollback and proper status phrase mapping."""
     await db.rollback()
     title = _get_http_status_phrase(e.status_code)
-    detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+    detail = str(e.detail)
     return create_error_response(e.status_code, title, detail)
 
 

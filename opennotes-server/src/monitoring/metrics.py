@@ -6,10 +6,6 @@ __all__ = ["CollectorRegistry", "Counter", "Gauge", "Histogram", "generate_lates
 registry = CollectorRegistry()
 
 
-def _get_instance_labels() -> list[str]:
-    return ["instance_id"]
-
-
 http_requests_total = Counter(
     "http_requests_total",
     "Total HTTP requests",

@@ -25,7 +25,7 @@ Concurrency Model (TASK-1058.18):
     - use_chunking_service_sync() - sync context manager for sync code paths
       Directly acquires the threading lock.
 
-    Both context managers use the same underlying lock (_access_lock), ensuring
+    Both context managers use the same underlying lock (access_lock), ensuring
     mutual exclusion between async and sync callers. This prevents race conditions
     where an async caller and sync caller could access the singleton simultaneously.
 
@@ -63,7 +63,7 @@ logger = get_logger(__name__)
 
 _chunking_service_singleton: "ChunkingService | None" = None
 _singleton_lock = threading.Lock()
-_access_lock = threading.Lock()  # Unified lock for all access patterns (TASK-1058.18)
+access_lock = threading.Lock()  # Unified lock for all access patterns (TASK-1058.18)
 
 NETWORK_RETRY_EXCEPTIONS = (OSError, ConnectionError, TimeoutError)
 
@@ -422,7 +422,7 @@ async def use_chunking_service(
     important because the model may not be thread-safe and concurrent access
     could cause issues or excessive memory usage.
 
-    Uses the unified _access_lock (threading.Lock) acquired via run_in_executor
+    Uses the unified access_lock (threading.Lock) acquired via run_in_executor
     to avoid blocking the event loop while waiting. This provides mutual exclusion
     with sync callers using use_chunking_service_sync().
 
@@ -439,7 +439,7 @@ async def use_chunking_service(
         ...     chunks = service.chunk_text("Text to chunk")
     """
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _access_lock.acquire)
+    await loop.run_in_executor(None, access_lock.acquire)
     try:
         yield get_chunking_service(
             model=model,
@@ -447,7 +447,7 @@ async def use_chunking_service(
             min_characters_per_chunk=min_characters_per_chunk,
         )
     finally:
-        _access_lock.release()
+        access_lock.release()
 
 
 @contextmanager
@@ -460,7 +460,7 @@ def use_chunking_service_sync(
     Sync context manager for lock-gated access to the ChunkingService.
 
     This is designed for use in synchronous DBOS workflow steps where async
-    context managers are not available. Uses the unified _access_lock
+    context managers are not available. Uses the unified access_lock
     (threading.Lock) to ensure mutual exclusion with async callers.
 
     Args:
@@ -475,7 +475,7 @@ def use_chunking_service_sync(
         >>> with use_chunking_service_sync() as service:
         ...     chunks = service.chunk_text("Text to chunk")
     """
-    with _access_lock:
+    with access_lock:
         yield get_chunking_service(
             model=model,
             device_map=device_map,

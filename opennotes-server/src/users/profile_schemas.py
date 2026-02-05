@@ -18,7 +18,7 @@ from enum import Enum as PyEnum
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.base_schemas import StrictInputSchema, TimestampSchema
 
@@ -205,14 +205,6 @@ class UserIdentityCreate(UserIdentityBase, StrictInputSchema):
 
     profile_id: UUID = Field(..., description="Associated user profile ID")
 
-    @field_validator("credentials")
-    @classmethod
-    def validate_credentials(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Ensure credentials is a valid JSON object if provided."""
-        if v is not None and not isinstance(v, dict):
-            raise ValueError("credentials must be a JSON object")
-        return v
-
 
 class UserIdentityUpdate(StrictInputSchema):
     """Schema for updating an existing user identity (credentials only)."""
@@ -220,14 +212,6 @@ class UserIdentityUpdate(StrictInputSchema):
     credentials: dict[str, Any] | None = Field(
         None, description="Provider-specific credential data"
     )
-
-    @field_validator("credentials")
-    @classmethod
-    def validate_credentials(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Ensure credentials is a valid JSON object if provided."""
-        if v is not None and not isinstance(v, dict):
-            raise ValueError("credentials must be a JSON object")
-        return v
 
 
 class UserIdentityInDB(UserIdentityBase, TimestampSchema):
@@ -279,14 +263,6 @@ class IdentityLinkRequest(StrictInputSchema):
         None, description="Provider-specific credential data"
     )
 
-    @field_validator("credentials")
-    @classmethod
-    def validate_credentials(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Ensure credentials is a valid JSON object if provided."""
-        if v is not None and not isinstance(v, dict):
-            raise ValueError("credentials must be a JSON object")
-        return v
-
 
 # ============================================================================
 # CommunityMember Schemas
@@ -321,14 +297,6 @@ class CommunityMemberCreate(CommunityMemberBase, StrictInputSchema):
         default_factory=lambda: datetime.now(UTC), description="When the user joined"
     )
 
-    @field_validator("permissions")
-    @classmethod
-    def validate_permissions(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Ensure permissions is a valid JSON object if provided."""
-        if v is not None and not isinstance(v, dict):
-            raise ValueError("permissions must be a JSON object")
-        return v
-
 
 class CommunityMemberUpdate(StrictInputSchema):
     """Schema for updating an existing community membership (all fields optional)."""
@@ -339,14 +307,6 @@ class CommunityMemberUpdate(StrictInputSchema):
     reputation_in_community: int | None = Field(None, description="Community-specific reputation")
     banned_at: datetime | None = Field(None, description="Ban timestamp")
     banned_reason: str | None = Field(None, description="Reason for ban")
-
-    @field_validator("permissions")
-    @classmethod
-    def validate_permissions(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Ensure permissions is a valid JSON object if provided."""
-        if v is not None and not isinstance(v, dict):
-            raise ValueError("permissions must be a JSON object")
-        return v
 
 
 class CommunityMemberInDB(CommunityMemberBase, TimestampSchema):

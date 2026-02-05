@@ -31,7 +31,7 @@ from sqlalchemy import and_, desc, exists, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
-    _get_profile_id_from_user,
+    get_profile_id_from_user,
     get_user_community_ids,
     verify_community_admin_by_uuid,
     verify_community_membership_by_uuid,
@@ -667,7 +667,7 @@ async def force_publish_note_jsonapi(
 
         await verify_community_admin_by_uuid(note.community_server_id, current_user, db, request)
 
-        admin_profile_id = await _get_profile_id_from_user(db, current_user)
+        admin_profile_id = await get_profile_id_from_user(db, current_user)
         if not admin_profile_id:
             return create_error_response(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,

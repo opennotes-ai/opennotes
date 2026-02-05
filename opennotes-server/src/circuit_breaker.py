@@ -91,6 +91,12 @@ class CircuitBreaker:
                 self._record_failure()
             raise e
 
+    async def reset(self) -> None:
+        async with self._lock:
+            self.failure_count = 0
+            self.state = CircuitState.CLOSED
+            self.last_failure_time = None
+
     def __call__(
         self,
         func: Callable[P, Awaitable[T]],
@@ -164,12 +170,8 @@ class CircuitBreakerRegistry:
 
     async def reset(self, name: str) -> None:
         if name in self._breakers:
-            breaker = self._breakers[name]
-            async with breaker._lock:
-                breaker.failure_count = 0
-                breaker.state = CircuitState.CLOSED
-                breaker.last_failure_time = None
-                logger.info(f"Circuit breaker '{name}' manually reset")
+            await self._breakers[name].reset()
+            logger.info(f"Circuit breaker '{name}' manually reset")
 
     async def reset_all(self) -> None:
         for name in self._breakers:

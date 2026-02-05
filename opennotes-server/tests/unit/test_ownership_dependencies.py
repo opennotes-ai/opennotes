@@ -163,13 +163,13 @@ class TestVerifyNoteOwnership:
         with (
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
-                "src.auth.ownership_dependencies._get_profile_id_from_user",
+                "src.auth.ownership_dependencies.get_profile_id_from_user",
                 return_value=author_id,
             ),
             # Also patch in community_dependencies since verify_community_admin_by_uuid
-            # calls _get_profile_id_from_user using its own module reference
+            # calls get_profile_id_from_user using its own module reference
             patch(
-                "src.auth.community_dependencies._get_profile_id_from_user",
+                "src.auth.community_dependencies.get_profile_id_from_user",
                 return_value=author_id,
             ),
         ):
@@ -238,7 +238,7 @@ class TestVerifyNoteOwnership:
         with (
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
-                "src.auth.ownership_dependencies._get_profile_id_from_user",
+                "src.auth.ownership_dependencies.get_profile_id_from_user",
                 return_value=uuid4(),
             ),
             patch(
@@ -277,7 +277,7 @@ class TestVerifyNoteOwnership:
         with (
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
-                "src.auth.ownership_dependencies._get_profile_id_from_user",
+                "src.auth.ownership_dependencies.get_profile_id_from_user",
                 return_value=uuid4(),
             ),
             patch(
@@ -316,7 +316,7 @@ class TestVerifyRatingOwnership:
         with (
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
-                "src.auth.ownership_dependencies._get_profile_id_from_user",
+                "src.auth.ownership_dependencies.get_profile_id_from_user",
                 return_value=profile_id,
             ),
         ):
@@ -345,7 +345,7 @@ class TestVerifyRatingOwnership:
         with (
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
-                "src.auth.ownership_dependencies._get_profile_id_from_user",
+                "src.auth.ownership_dependencies.get_profile_id_from_user",
                 return_value=rater_id,
             ),
         ):
@@ -395,7 +395,7 @@ class TestVerifyRatingOwnership:
         with (
             patch("src.auth.ownership_dependencies.is_service_account", return_value=False),
             patch(
-                "src.auth.ownership_dependencies._get_profile_id_from_user",
+                "src.auth.ownership_dependencies.get_profile_id_from_user",
                 return_value=uuid4(),
             ),
             patch(

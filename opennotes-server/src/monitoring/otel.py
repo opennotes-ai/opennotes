@@ -52,7 +52,7 @@ class BaggageSpanProcessor:
     to avoid import errors when OpenTelemetry packages are not installed.
     """
 
-    _instance: "BaggageSpanProcessor | None" = None
+    instance: "BaggageSpanProcessor | None" = None
 
     def on_start(self, span: "Span", parent_context: "context.Context | None" = None) -> None:
         from opentelemetry import baggage
@@ -85,9 +85,9 @@ def _get_baggage_span_processor() -> "SpanProcessor":
     class _BaggageSpanProcessorImpl(SpanProcessorBase, BaggageSpanProcessor):
         """Concrete implementation that inherits from both SpanProcessor and BaggageSpanProcessor."""
 
-    if BaggageSpanProcessor._instance is None:
-        BaggageSpanProcessor._instance = _BaggageSpanProcessorImpl()
-    return BaggageSpanProcessor._instance  # pyright: ignore[reportReturnType]
+    if BaggageSpanProcessor.instance is None:
+        BaggageSpanProcessor.instance = _BaggageSpanProcessorImpl()
+    return BaggageSpanProcessor.instance  # pyright: ignore[reportReturnType]
 
 
 def setup_otel(
@@ -301,7 +301,7 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
         _tracer_provider = None
         _otlp_exporter = None
         _otel_initialized = False
-        BaggageSpanProcessor._instance = None
+        BaggageSpanProcessor.instance = None
         logger.debug("OpenTelemetry state reset, ready for reinitialization")
 
 

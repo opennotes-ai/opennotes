@@ -323,7 +323,7 @@ class TestCancelRechunkJobEndpoint:
 
     @pytest.mark.asyncio
     @patch("src.fact_checking.chunk_router.get_profile_by_id")
-    @patch("src.fact_checking.chunk_router._get_profile_id_from_user")
+    @patch("src.fact_checking.chunk_router.get_profile_id_from_user")
     async def test_opennotes_admin_can_cancel_global_job(
         self,
         mock_get_profile_id,

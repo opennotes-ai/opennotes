@@ -50,7 +50,7 @@ from src.users.profile_schemas import (
 logger = logging.getLogger(__name__)
 
 
-async def _get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None:
+async def get_profile_id_from_user(db: AsyncSession, user: User) -> UUID | None:
     """
     Convert a User to profile_id by looking up their identity.
 
@@ -278,7 +278,7 @@ async def verify_community_membership(
             detail=f"Failed to create or retrieve community server {community_server_id}",
         )
 
-    profile_id = await _get_profile_id_from_user(db, current_user)
+    profile_id = await get_profile_id_from_user(db, current_user)
     if not profile_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -402,7 +402,7 @@ async def verify_community_membership_by_uuid(
             detail=f"Community server {community_server_id} not found",
         )
 
-    profile_id = await _get_profile_id_from_user(db, current_user)
+    profile_id = await get_profile_id_from_user(db, current_user)
     if not profile_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -468,7 +468,7 @@ async def verify_community_admin_by_uuid(
             detail=f"Community server {community_server_id} not found",
         )
 
-    profile_id = await _get_profile_id_from_user(db, current_user)
+    profile_id = await get_profile_id_from_user(db, current_user)
     if not profile_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -530,7 +530,7 @@ async def get_user_community_ids(
     if is_service_account(current_user):
         return []
 
-    profile_id = await _get_profile_id_from_user(db, current_user)
+    profile_id = await get_profile_id_from_user(db, current_user)
     if not profile_id:
         return []
 
