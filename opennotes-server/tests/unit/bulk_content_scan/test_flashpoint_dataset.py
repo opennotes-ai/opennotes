@@ -3,7 +3,11 @@
 import json
 from pathlib import Path
 
-from scripts.flashpoints.extract_cga_dataset import (
+import pytest
+
+convokit = pytest.importorskip("convokit", reason="convokit is an optional dependency")
+
+from scripts.flashpoints.extract_cga_dataset import (  # noqa: E402
     FlashpointExample,
     save_datasets,
     split_dataset,
