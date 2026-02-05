@@ -265,3 +265,22 @@ class TestFlashpointDetectionEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == str(fp_test_community_server.id)
+
+    @pytest.mark.asyncio
+    async def test_flashpoint_detection_invalid_request_body(
+        self,
+        fp_service_account_headers: dict,
+        fp_test_community_server: CommunityServer,
+    ):
+        """Returns 422 for invalid request body (missing required 'enabled' field)."""
+        from src.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.patch(
+                f"/api/v1/community-servers/{fp_test_community_server.platform_community_server_id}/flashpoint-detection",
+                headers=fp_service_account_headers,
+                json={"invalid_field": "not_a_bool"},
+            )
+
+        assert response.status_code == 422

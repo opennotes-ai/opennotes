@@ -10,7 +10,7 @@ mocked since these are unit tests for workflow logic.
 
 from __future__ import annotations
 
-import collections
+import collections.abc
 import json
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -995,3 +995,122 @@ class TestSignalCoordination:
         assert finalize_kwargs["processed_count"] == 7
         assert finalize_kwargs["error_count"] == 3
         assert finalize_kwargs["messages_scanned"] == 10
+
+
+class TestProgressTrackingThroughWorkflowSteps:
+    """Tests that progress accumulates correctly across batch signals."""
+
+    def test_progress_accumulates_across_batches(self) -> None:
+        """Three batches accumulate processed, skipped, error, and flagged counts."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[
+                {"processed": 10, "skipped": 1, "errors": 0, "flagged_count": 2, "batch_number": 1},
+                {"processed": 8, "skipped": 2, "errors": 1, "flagged_count": 3, "batch_number": 2},
+                {"processed": 5, "skipped": 0, "errors": 2, "flagged_count": 0, "batch_number": 3},
+            ],
+            tx_responses=[
+                None,
+                None,
+                {"messages_scanned": 29},
+            ],
+        )
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 23
+        assert finalize_kwargs["skipped_count"] == 3
+        assert finalize_kwargs["error_count"] == 3
+        assert finalize_kwargs["flagged_count"] == 5
+        assert finalize_kwargs["messages_scanned"] == 29
+
+    def test_completion_triggers_finalize_step(self) -> None:
+        """Finalize is called exactly once when all messages are processed."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+
+        recv_fn = _make_recv_dispatcher(
+            batch_responses=[
+                {"processed": 5, "skipped": 0, "errors": 0, "flagged_count": 1, "batch_number": 1},
+            ],
+            tx_responses=[
+                {"messages_scanned": 5},
+            ],
+        )
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = recv_fn
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=str(uuid4()),
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        mock_finalize.assert_called_once()
+        assert mock_finalize.call_args.kwargs["scan_id"] == scan_id
+
+    def test_batch_signal_carries_progress_data(self) -> None:
+        """Batch worker sends signal with all progress fields."""
+        from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
+
+        expected_result = {
+            "processed": 7,
+            "skipped": 1,
+            "errors": 2,
+            "flagged_count": 3,
+            "batch_number": 4,
+        }
+
+        with (
+            patch(
+                "src.dbos_workflows.content_scan_workflow.process_batch_messages_step"
+            ) as mock_step,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_step.return_value = expected_result
+
+            process_content_scan_batch.__wrapped__(
+                orchestrator_workflow_id="orch-wf-id",
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=4,
+                messages_json="[]",
+                scan_types_json='["similarity"]',
+            )
+
+        signal_data = mock_dbos.send.call_args.args[1]
+        assert signal_data["processed"] == 7
+        assert signal_data["skipped"] == 1
+        assert signal_data["errors"] == 2
+        assert signal_data["flagged_count"] == 3
+        assert signal_data["batch_number"] == 4

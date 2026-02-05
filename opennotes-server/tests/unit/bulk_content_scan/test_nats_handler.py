@@ -91,7 +91,7 @@ class TestHandleMessageBatch:
         assert call_kwargs["batch_number"] == event.batch_number
 
     @pytest.mark.asyncio
-    async def test_dispatch_failure_marks_scan_failed(self) -> None:
+    async def test_dispatch_failure_propagates_exception(self) -> None:
         handler = _make_handler()
         event = _make_batch_event()
 
@@ -99,28 +99,16 @@ class TestHandleMessageBatch:
             patch(
                 "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
                 new_callable=AsyncMock,
-                return_value=None,
+                side_effect=RuntimeError("DBOS connection refused"),
             ),
             patch.object(
                 handler, "_get_scan_types_for_community", new_callable=AsyncMock
             ) as mock_scan_types,
-            patch.object(handler, "_mark_scan_failed", new_callable=AsyncMock) as mock_mark_failed,
-            patch.object(handler.publisher, "publish", new_callable=AsyncMock) as mock_publish,
         ):
             mock_scan_types.return_value = ["similarity"]
 
-            with pytest.raises(RuntimeError, match="DBOS enqueue failed"):
+            with pytest.raises(RuntimeError, match="DBOS connection refused"):
                 await handler._handle_message_batch(event)
-
-        mock_mark_failed.assert_called_once_with(
-            event.scan_id,
-            f"DBOS enqueue failed for batch {event.batch_number}",
-        )
-        mock_publish.assert_called_once()
-        publish_kwargs = mock_publish.call_args.kwargs
-        assert publish_kwargs["scan_id"] == event.scan_id
-        assert publish_kwargs["error_summary"] is not None
-        assert publish_kwargs["error_summary"].total_errors == 1
 
     @pytest.mark.asyncio
     async def test_dispatch_passes_scan_types_from_community(self) -> None:
@@ -144,6 +132,28 @@ class TestHandleMessageBatch:
 
         call_kwargs = mock_enqueue.call_args.kwargs
         assert call_kwargs["scan_types"] == expected_types
+
+    @pytest.mark.asyncio
+    async def test_dispatch_passes_serialized_messages(self) -> None:
+        handler = _make_handler()
+        event = _make_batch_event(message_count=3)
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
+                new_callable=AsyncMock,
+                return_value="wf-456",
+            ) as mock_enqueue,
+            patch.object(
+                handler, "_get_scan_types_for_community", new_callable=AsyncMock
+            ) as mock_scan_types,
+        ):
+            mock_scan_types.return_value = ["similarity"]
+
+            await handler._handle_message_batch(event)
+
+        call_kwargs = mock_enqueue.call_args.kwargs
+        assert len(call_kwargs["messages"]) == 3
 
 
 class TestHandleAllBatchesTransmitted:
@@ -173,11 +183,9 @@ class TestHandleAllBatchesTransmitted:
         )
 
     @pytest.mark.asyncio
-    async def test_clears_scan_types_cache(self) -> None:
+    async def test_uses_scan_id_as_orchestrator_workflow_id(self) -> None:
         handler = _make_handler()
         scan_id = uuid4()
-        handler._scan_types_cache[scan_id] = ["similarity"]
-
         event = BulkScanAllBatchesTransmittedEvent(
             event_id=f"evt_{uuid4().hex[:12]}",
             scan_id=scan_id,
@@ -189,10 +197,11 @@ class TestHandleAllBatchesTransmitted:
             "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
             new_callable=AsyncMock,
             return_value=True,
-        ):
+        ) as mock_signal:
             await handler._handle_all_batches_transmitted(event)
 
-        assert scan_id not in handler._scan_types_cache
+        call_kwargs = mock_signal.call_args.kwargs
+        assert call_kwargs["orchestrator_workflow_id"] == str(scan_id)
 
 
 class TestGetScanTypesForCommunity:
@@ -202,7 +211,6 @@ class TestGetScanTypesForCommunity:
     async def test_includes_flashpoint_when_enabled(self) -> None:
         handler = _make_handler()
         community_server_id = uuid4()
-        scan_id = uuid4()
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = True
@@ -220,7 +228,7 @@ class TestGetScanTypesForCommunity:
             "src.bulk_content_scan.nats_handler.get_session_maker",
             return_value=mock_session_maker,
         ):
-            result = await handler._get_scan_types_for_community(community_server_id, scan_id)
+            result = await handler._get_scan_types_for_community(community_server_id)
 
         assert "conversation_flashpoint" in result
 
@@ -228,7 +236,6 @@ class TestGetScanTypesForCommunity:
     async def test_excludes_flashpoint_when_disabled(self) -> None:
         handler = _make_handler()
         community_server_id = uuid4()
-        scan_id = uuid4()
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = False
@@ -246,27 +253,15 @@ class TestGetScanTypesForCommunity:
             "src.bulk_content_scan.nats_handler.get_session_maker",
             return_value=mock_session_maker,
         ):
-            result = await handler._get_scan_types_for_community(community_server_id, scan_id)
+            result = await handler._get_scan_types_for_community(community_server_id)
 
         assert "conversation_flashpoint" not in result
         assert "similarity" in result
 
     @pytest.mark.asyncio
-    async def test_caches_result_by_scan_id(self) -> None:
-        handler = _make_handler()
-        scan_id = uuid4()
-        cached_types = ["similarity", "openai_moderation"]
-        handler._scan_types_cache[scan_id] = cached_types
-
-        result = await handler._get_scan_types_for_community(uuid4(), scan_id)
-
-        assert result == cached_types
-
-    @pytest.mark.asyncio
     async def test_defaults_to_disabled_on_db_error(self) -> None:
         handler = _make_handler()
         community_server_id = uuid4()
-        scan_id = uuid4()
 
         mock_session_maker = MagicMock(side_effect=RuntimeError("DB connection failed"))
 
@@ -274,10 +269,35 @@ class TestGetScanTypesForCommunity:
             "src.bulk_content_scan.nats_handler.get_session_maker",
             return_value=mock_session_maker,
         ):
-            result = await handler._get_scan_types_for_community(community_server_id, scan_id)
+            result = await handler._get_scan_types_for_community(community_server_id)
 
         assert "conversation_flashpoint" not in result
         assert "similarity" in result
+
+    @pytest.mark.asyncio
+    async def test_returns_string_scan_types(self) -> None:
+        handler = _make_handler()
+        community_server_id = uuid4()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = True
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await handler._get_scan_types_for_community(community_server_id)
+
+        assert all(isinstance(st, str) for st in result)
 
 
 class TestRegister:
