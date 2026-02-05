@@ -275,6 +275,32 @@ class TestGetScanTypesForCommunity:
         assert "similarity" in result
 
     @pytest.mark.asyncio
+    async def test_excludes_flashpoint_when_server_not_found(self) -> None:
+        handler = _make_handler()
+        community_server_id = uuid4()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await handler._get_scan_types_for_community(community_server_id)
+
+        assert "conversation_flashpoint" not in result
+        assert "similarity" in result
+
+    @pytest.mark.asyncio
     async def test_returns_string_scan_types(self) -> None:
         handler = _make_handler()
         community_server_id = uuid4()

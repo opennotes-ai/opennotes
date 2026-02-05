@@ -258,7 +258,7 @@ async def initiate_scan(
         await session.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to dispatch scan workflow: {e}",
+            detail="Failed to dispatch scan workflow",
         )
 
     if not workflow_id:

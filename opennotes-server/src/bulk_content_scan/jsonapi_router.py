@@ -587,7 +587,7 @@ async def initiate_scan(
             scan_window_days=attrs.scan_window_days,
         )
 
-        scan_types: list[ScanType | str] = list(DEFAULT_SCAN_TYPES)
+        scan_types: list[ScanType] = list(DEFAULT_SCAN_TYPES)
         try:
             cs_result = await session.execute(
                 select(CommunityServer.flashpoint_detection_enabled).where(
@@ -623,7 +623,7 @@ async def initiate_scan(
             return create_error_response(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "Internal Server Error",
-                f"Failed to dispatch scan workflow: {e}",
+                "Failed to dispatch scan workflow",
             )
 
         if not workflow_id:

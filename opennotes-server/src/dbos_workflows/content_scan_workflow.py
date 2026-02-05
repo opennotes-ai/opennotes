@@ -488,11 +488,13 @@ def finalize_scan_step(
         ScanErrorSummary,
     )
     from src.fact_checking.embedding_service import EmbeddingService
+    from src.monitoring.metrics import bulk_scan_finalization_dispatch_total
     from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)
     community_uuid = UUID(community_server_id)
+    instance_id = settings.INSTANCE_ID
 
     async def _finalize() -> dict[str, Any]:
         redis_client = RedisClient()
@@ -597,7 +599,15 @@ def finalize_scan_step(
         finally:
             await redis_client.disconnect()
 
-    return run_sync(_finalize())
+    try:
+        result = run_sync(_finalize())
+        bulk_scan_finalization_dispatch_total.labels(
+            outcome="success", instance_id=instance_id
+        ).inc()
+        return result
+    except Exception:
+        bulk_scan_finalization_dispatch_total.labels(outcome="error", instance_id=instance_id).inc()
+        raise
 
 
 async def dispatch_content_scan_workflow(
