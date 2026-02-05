@@ -1,5 +1,4 @@
 import asyncio
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,30 +11,21 @@ from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from slowapi.errors import RateLimitExceeded
 
-_testing = os.getenv("TESTING", "false").lower() == "true"
-_otel_enabled = os.getenv("ENABLE_TRACING", "true").lower() == "true"
+from src.config import get_settings
 
-if _otel_enabled and not _testing:
+_otel_settings = get_settings()
+
+if _otel_settings.ENABLE_TRACING and not _otel_settings.TESTING:
     from src.monitoring.otel import setup_otel
 
-    _service_name = os.getenv("OTEL_SERVICE_NAME", "opennotes-server")
-    _service_version = os.getenv("SERVICE_VERSION", "0.0.1")
-    _environment = os.getenv("ENVIRONMENT", "development")
-    _otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTLP_ENDPOINT")
-    _otlp_headers = os.getenv("OTEL_EXPORTER_OTLP_HEADERS") or os.getenv("OTLP_HEADERS")
-    _sample_rate = float(
-        os.getenv("TRACING_SAMPLE_RATE") or os.getenv("TRACE_SAMPLE_RATE") or "1.0"
-    )
-    _console_export = os.getenv("ENABLE_CONSOLE_TRACING", "false").lower() == "true"
-
     setup_otel(
-        service_name=_service_name,
-        service_version=_service_version,
-        environment=_environment,
-        otlp_endpoint=_otlp_endpoint,
-        otlp_headers=_otlp_headers,
-        sample_rate=_sample_rate,
-        enable_console_export=_console_export,
+        service_name=_otel_settings.OTEL_SERVICE_NAME or _otel_settings.PROJECT_NAME,
+        service_version=_otel_settings.VERSION,
+        environment=_otel_settings.ENVIRONMENT,
+        otlp_endpoint=_otel_settings.OTLP_ENDPOINT,
+        otlp_headers=_otel_settings.OTLP_HEADERS,
+        sample_rate=_otel_settings.TRACING_SAMPLE_RATE,
+        enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
     )
 
 LoggingInstrumentor().instrument(set_logging_format=False)
