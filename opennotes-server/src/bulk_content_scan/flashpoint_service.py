@@ -63,12 +63,15 @@ class FlashpointDetectionService:
 
             optimized_path = self._optimized_path or self._get_default_optimized_path()
             if optimized_path.exists():
-                logger.info("Loading optimized flashpoint detector", path=str(optimized_path))
+                logger.info(
+                    "Loading optimized flashpoint detector",
+                    extra={"path": str(optimized_path)},
+                )
                 self._detector.load(str(optimized_path))
             else:
                 logger.info(
                     "Using base flashpoint detector (optimized model not found)",
-                    expected_path=str(optimized_path),
+                    extra={"expected_path": str(optimized_path)},
                 )
 
         return self._detector
@@ -128,7 +131,6 @@ class FlashpointDetectionService:
         except Exception as e:
             logger.error(
                 "Flashpoint detection failed",
-                error=str(e),
-                message_id=message.message_id,
+                extra={"error": str(e), "message_id": message.message_id},
             )
             return None
