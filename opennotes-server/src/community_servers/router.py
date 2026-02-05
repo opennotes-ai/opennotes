@@ -236,6 +236,7 @@ async def update_flashpoint_detection(
     request_body: FlashpointDetectionUpdateRequest,
     current_user: Annotated[User, Depends(get_current_user_or_api_key)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    platform: str = Query("discord", description="Platform type"),
 ) -> FlashpointDetectionUpdateResponse:
     """
     Update flashpoint detection setting for a community server.
@@ -246,6 +247,7 @@ async def update_flashpoint_detection(
     Args:
         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
         request_body: Contains the enabled flag
+        platform: Platform type (default: "discord")
 
     Returns:
         Updated flashpoint detection status
@@ -261,20 +263,27 @@ async def update_flashpoint_detection(
             "user_id": current_user.id,
             "platform_community_server_id": platform_community_server_id,
             "enabled": request_body.enabled,
+            "platform": platform,
         },
     )
+
+    if not current_user.is_service_account:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only service accounts can update flashpoint detection settings",
+        )
 
     community_server = await get_community_server_by_platform_id(
         db=db,
         community_server_id=platform_community_server_id,
-        platform="discord",
+        platform=platform,
         auto_create=False,
     )
 
     if not community_server:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Community server not found: discord:{platform_community_server_id}",
+            detail=f"Community server not found: {platform}:{platform_community_server_id}",
         )
 
     community_server.flashpoint_detection_enabled = request_body.enabled

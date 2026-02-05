@@ -2299,6 +2299,7 @@ export interface paths {
          *     Args:
          *         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
          *         request_body: Contains the enabled flag
+         *         platform: Platform type (default: "discord")
          *
          *     Returns:
          *         Updated flashpoint detection status
@@ -11666,7 +11667,10 @@ export interface operations {
     };
     update_flashpoint_detection_api_v1_community_servers__platform_community_server_id__flashpoint_detection_patch: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Platform type */
+                platform?: string;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
