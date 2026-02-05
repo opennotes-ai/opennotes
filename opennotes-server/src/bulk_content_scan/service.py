@@ -20,6 +20,7 @@ from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
 from src.bulk_content_scan.schemas import (
     BulkScanMessage,
     BulkScanStatus,
+    ConversationFlashpointMatch,
     FlaggedMessage,
     OpenAIModerationMatch,
     RelevanceCheckResult,
@@ -210,7 +211,7 @@ class BulkContentScanService:
         collect_scores: Literal[True] = ...,
     ) -> tuple[list[FlaggedMessage], list[dict]]: ...
 
-    async def process_messages(
+    async def process_messages(  # noqa: PLR0912
         self,
         scan_id: UUID,
         messages: BulkScanMessage | Sequence[BulkScanMessage],
@@ -229,6 +230,11 @@ class BulkContentScanService:
         The filtering logic is IDENTICAL regardless of collect_scores setting.
         Debug mode only affects whether score information is collected and returned.
 
+        Flashpoint detection runs independently of other scan types. Content scan types
+        (similarity, moderation) use first-match-wins with break. Flashpoint always runs
+        when enabled, so both a content match and a flashpoint match can be produced for
+        the same message.
+
         Args:
             scan_id: UUID of the scan
             messages: Single BulkScanMessage OR sequence of messages
@@ -244,6 +250,13 @@ class BulkContentScanService:
             messages = [messages]
 
         active_scan_types = list(scan_types)
+        if (
+            ScanType.CONVERSATION_FLASHPOINT in active_scan_types
+            and not await self._is_flashpoint_enabled(community_server_platform_id)
+        ):
+            active_scan_types = [
+                st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
+            ]
 
         original_count = len(messages)
 
@@ -285,7 +298,11 @@ class BulkContentScanService:
             )
 
             candidate_found = False
-            for scan_type in active_scan_types:
+
+            content_scan_types = [
+                st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
+            ]
+            for scan_type in content_scan_types:
                 candidate = await self._generate_candidate(
                     scan_id,
                     msg,
@@ -299,6 +316,20 @@ class BulkContentScanService:
                         all_scores.append(self._build_score_info_from_candidate(candidate))
                     candidate_found = True
                     break
+
+            if ScanType.CONVERSATION_FLASHPOINT in active_scan_types:
+                fp_candidate = await self._generate_candidate(
+                    scan_id,
+                    msg,
+                    community_server_platform_id,
+                    ScanType.CONVERSATION_FLASHPOINT,
+                    context_messages=context_messages,
+                )
+                if fp_candidate:
+                    candidates.append(fp_candidate)
+                    if collect_scores and not candidate_found:
+                        all_scores.append(self._build_score_info_from_candidate(fp_candidate))
+                    candidate_found = True
 
             if not candidate_found and collect_scores:
                 all_scores.append(self._build_empty_score_info(msg))
@@ -519,6 +550,7 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
+        context_messages: list[BulkScanMessage] | None = None,
     ) -> tuple[FlaggedMessage | None, dict]:
         """Run scanner and return both the flagged result and score info."""
         match scan_type:
@@ -529,7 +561,9 @@ class BulkContentScanService:
             case ScanType.OPENAI_MODERATION:
                 return await self._openai_moderation_scan_with_score(scan_id, message)
             case ScanType.CONVERSATION_FLASHPOINT:
-                candidate = await self._flashpoint_scan_candidate(scan_id, message, [])
+                candidate = await self._flashpoint_scan_candidate(
+                    scan_id, message, context_messages or []
+                )
                 if candidate:
                     flagged_msg = FlaggedMessage(
                         message_id=message.message_id,
@@ -568,6 +602,7 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
+        context_messages: list[BulkScanMessage] | None = None,
     ) -> FlaggedMessage | None:
         """Run a specific scanner on a message."""
         match scan_type:
@@ -578,7 +613,9 @@ class BulkContentScanService:
             case ScanType.OPENAI_MODERATION:
                 return await self._openai_moderation_scan(scan_id, message)
             case ScanType.CONVERSATION_FLASHPOINT:
-                candidate = await self._flashpoint_scan_candidate(scan_id, message, [])
+                candidate = await self._flashpoint_scan_candidate(
+                    scan_id, message, context_messages or []
+                )
                 if candidate:
                     return FlaggedMessage(
                         message_id=message.message_id,
@@ -1870,15 +1907,15 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
         first_match = None
         if flagged_msg.matches:
             first_match = flagged_msg.matches[0]
-            if first_match.scan_type == "similarity":
+            if isinstance(first_match, SimilarityMatch):
                 match_score = first_match.score
                 matched_claim = first_match.matched_claim
                 matched_source = first_match.matched_source
-            elif first_match.scan_type == "openai_moderation":
+            elif isinstance(first_match, OpenAIModerationMatch):
                 match_score = first_match.max_score
                 matched_claim = ", ".join(first_match.flagged_categories)
                 matched_source = ""
-            elif first_match.scan_type == "conversation_flashpoint":
+            elif isinstance(first_match, ConversationFlashpointMatch):
                 match_score = first_match.confidence
                 matched_claim = first_match.reasoning
                 matched_source = ""
@@ -1922,7 +1959,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
 
             if generate_ai_notes and first_match and platform_id:
                 try:
-                    if first_match.scan_type == "similarity" and first_match.fact_check_item_id:
+                    if isinstance(first_match, SimilarityMatch) and first_match.fact_check_item_id:
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
@@ -1935,7 +1972,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                             similarity_score=first_match.score,
                             dataset_name=first_match.matched_source or "bulk_scan",
                         )
-                    elif first_match.scan_type == "openai_moderation":
+                    elif isinstance(first_match, OpenAIModerationMatch):
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
@@ -1948,7 +1985,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                                 "flagged_categories": first_match.flagged_categories,
                             },
                         )
-                    elif first_match.scan_type == "conversation_flashpoint":
+                    elif isinstance(first_match, ConversationFlashpointMatch):
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
