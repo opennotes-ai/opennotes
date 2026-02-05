@@ -126,7 +126,7 @@ run = "uv run python generate_openapi.py"
 
 [tasks."docs:check"]
 description = "Check if OpenAPI schema is in sync with FastAPI app"
-run = "uv run python scripts/check-openapi-sync.py"
+run = "uv run python scripts/check_openapi_sync.py"
 
 # ========================================
 # SDK Tasks

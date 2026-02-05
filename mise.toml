@@ -167,7 +167,7 @@ description = "Start development environment and generate types"
 run = '''
 # Generate OpenAPI spec and TypeScript types
 echo "Generating OpenAPI spec and TypeScript types..."
-cd {{vars.server_dir}} && uv run python scripts/generate-openapi.py --output openapi.json
+cd {{vars.server_dir}} && uv run python scripts/generate_openapi.py --output openapi.json
 cd ../{{vars.discord_dir}} && pnpm types:generate
 
 echo ""
@@ -587,7 +587,7 @@ description = "Generate OpenAPI specification and TypeScript types"
 dir = "{{vars.server_dir}}"
 run = '''
 echo "Generating OpenAPI specification..."
-uv run python scripts/generate-openapi.py --output openapi.json
+uv run python scripts/generate_openapi.py --output openapi.json
 
 echo "Regenerating TypeScript types for Discord bot..."
 cd ../{{vars.discord_dir}} && pnpm types:generate

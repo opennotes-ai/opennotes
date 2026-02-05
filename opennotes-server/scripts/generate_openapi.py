@@ -6,10 +6,10 @@ This script starts the FastAPI app and exports its OpenAPI schema to a JSON file
 The schema can be used to validate API clients and generate documentation.
 
 Usage:
-    uv run python scripts/generate-openapi.py [--output OUTPUT_PATH]
+    uv run python scripts/generate_openapi.py [--output OUTPUT_PATH]
 
 Example:
-    uv run python scripts/generate-openapi.py --output openapi.json
+    uv run python scripts/generate_openapi.py --output openapi.json
 """
 
 import json
