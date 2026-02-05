@@ -12,7 +12,7 @@ Usage:
     uv run python scripts/flashpoints/optimize_prompt.py
 
     # Run with custom model and auto level
-    uv run python scripts/flashpoints/optimize_prompt.py --model openai/gpt-4o --auto heavy
+    uv run python scripts/flashpoints/optimize_prompt.py --model openai/gpt-5.1 --auto heavy
 
     # Evaluate an existing optimized model
     uv run python scripts/flashpoints/optimize_prompt.py --eval-only data/flashpoints/optimized_detector.json
@@ -36,7 +36,7 @@ from src.bulk_content_scan.flashpoint_utils import parse_bool
 
 
 def optimize_flashpoint_detector(
-    model: str = "openai/gpt-4o-mini",
+    model: str = "openai/gpt-5-mini",
     auto: str = "medium",
     output_path: Path | None = None,
     reflection_model: str | None = None,
@@ -49,7 +49,7 @@ def optimize_flashpoint_detector(
         model: The LLM model to use for the detector
         auto: GEPA optimization level (light, medium, heavy)
         output_path: Where to save the optimized program
-        reflection_model: Model to use for GEPA reflection (defaults to gpt-4o)
+        reflection_model: Model to use for GEPA reflection (defaults to gpt-5.1)
         max_train: Maximum training examples to use
         max_dev: Maximum dev examples to use
 
@@ -67,7 +67,7 @@ def optimize_flashpoint_detector(
     print(f"Using {len(trainset)} training, {len(devset)} dev examples for optimization")
 
     reflection_lm = dspy.LM(
-        reflection_model or "openai/gpt-4o",
+        reflection_model or "openai/gpt-5.1",
         temperature=1.0,
         max_tokens=32000,
     )
@@ -200,7 +200,7 @@ Examples:
   uv run python scripts/flashpoints/optimize_prompt.py
 
   # Use a different model
-  uv run python scripts/flashpoints/optimize_prompt.py --model openai/gpt-4o
+  uv run python scripts/flashpoints/optimize_prompt.py --model openai/gpt-5.1
 
   # Heavy optimization for better results
   uv run python scripts/flashpoints/optimize_prompt.py --auto heavy
@@ -211,13 +211,13 @@ Examples:
     )
     parser.add_argument(
         "--model",
-        default="openai/gpt-4o-mini",
-        help="LLM model to use for the detector (default: openai/gpt-4o-mini)",
+        default="openai/gpt-5-mini",
+        help="LLM model to use for the detector (default: openai/gpt-5-mini)",
     )
     parser.add_argument(
         "--reflection-model",
         default=None,
-        help="LLM model for GEPA reflection (default: openai/gpt-4o)",
+        help="LLM model for GEPA reflection (default: openai/gpt-5.1)",
     )
     parser.add_argument(
         "--auto",

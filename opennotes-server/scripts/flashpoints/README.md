@@ -23,11 +23,11 @@ Ensure dependencies are installed:
 
 ```bash
 cd opennotes-server
-uv sync
+uv sync --extra flashpoints-dataset
 ```
 
 Required packages (in `pyproject.toml`):
-- `convokit>=3.0.0` - Cornell Conversational Analysis Toolkit
+- `convokit>=3.5.0` - Cornell Conversational Analysis Toolkit (optional extra: `flashpoints-dataset`)
 - `dspy>=2.6.0` - Stanford NLP's DSPy framework
 
 ## Usage
@@ -53,24 +53,24 @@ The reversed allocation (smaller train, larger test) follows DSPy best practices
 Run GEPA optimization to find the best prompt instructions:
 
 ```bash
-# Default settings (gpt-4o-mini, medium optimization)
+# Default settings (gpt-5-mini, medium optimization)
 uv run python scripts/flashpoints/optimize_prompt.py
 
 # With custom model
-uv run python scripts/flashpoints/optimize_prompt.py --model openai/gpt-4o
+uv run python scripts/flashpoints/optimize_prompt.py --model openai/gpt-5.1
 
 # Heavy optimization for better results (takes longer)
 uv run python scripts/flashpoints/optimize_prompt.py --auto heavy
 
 # Use a different reflection model for GEPA
-uv run python scripts/flashpoints/optimize_prompt.py --reflection-model openai/gpt-4o
+uv run python scripts/flashpoints/optimize_prompt.py --reflection-model openai/gpt-5.1
 ```
 
 **Options:**
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model` | `openai/gpt-4o-mini` | LLM for the detector |
-| `--reflection-model` | `openai/gpt-4o` | LLM for GEPA reflection |
+| `--model` | `openai/gpt-5-mini` | LLM for the detector |
+| `--reflection-model` | `openai/gpt-5.1` | LLM for GEPA reflection |
 | `--auto` | `medium` | Optimization level: light, medium, heavy |
 | `--output` | `data/flashpoints/optimized_detector.json` | Where to save the optimized model |
 

@@ -214,6 +214,11 @@ exclude_lines = [
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+[tool.uv]
+override-dependencies = [
+    "bitsandbytes==0.48.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

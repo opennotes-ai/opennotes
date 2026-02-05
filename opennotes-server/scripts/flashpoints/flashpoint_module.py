@@ -82,7 +82,7 @@ def flashpoint_metric_with_feedback(
     return dspy.Prediction(score=score, feedback=feedback)
 
 
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_MODEL = "openai/gpt-5-mini"
 
 
 if __name__ == "__main__":

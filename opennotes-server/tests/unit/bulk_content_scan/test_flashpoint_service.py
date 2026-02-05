@@ -39,7 +39,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_detect_flashpoint_returns_match_when_derailing(self):
         """Returns ConversationFlashpointMatch when detector predicts derailing."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = True
@@ -73,7 +73,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_detect_flashpoint_returns_none_when_not_derailing(self):
         """Returns None when detector predicts conversation will not derail."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = False
@@ -101,7 +101,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_handles_string_bool_response_true(self):
         """String 'True' from LLM is correctly converted to boolean True."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = "True"
@@ -123,7 +123,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_handles_string_bool_response_false(self):
         """String 'False' from LLM is correctly converted to boolean False."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = "False"
@@ -144,7 +144,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_handles_string_bool_response_yes(self):
         """String 'yes' from LLM is correctly converted to boolean True."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = "yes"
@@ -166,7 +166,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_handles_string_bool_response_one(self):
         """String '1' from LLM is correctly converted to boolean True."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = "1"
@@ -188,7 +188,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_context_limited_to_max_context(self):
         """Only most recent max_context messages are used."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = True
@@ -214,7 +214,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_returns_none_on_transient_error(self):
         """Returns None when detector raises a transient error (e.g. ValueError)."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_detector = MagicMock()
         mock_detector.side_effect = ValueError("Bad LLM output")
@@ -233,7 +233,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_raises_on_critical_error(self):
         """Re-raises critical (non-transient) errors after logging."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_detector = MagicMock()
         mock_detector.side_effect = RuntimeError("LLM API auth failure")
@@ -252,7 +252,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_returns_none_on_timeout_error(self):
         """Returns None when detector raises TimeoutError (transient)."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_detector = MagicMock()
         mock_detector.side_effect = TimeoutError("Request timed out")
@@ -269,7 +269,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_returns_none_on_connection_error(self):
         """Returns None when detector raises ConnectionError (transient)."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_detector = MagicMock()
         mock_detector.side_effect = ConnectionError("Connection refused")
@@ -286,7 +286,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_uses_author_username_in_context(self):
         """Context string uses author_username when available."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         captured_context = None
 
@@ -320,7 +320,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_falls_back_to_author_id(self):
         """Context string uses author_id when author_username is None."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         captured_context = None
 
@@ -358,7 +358,7 @@ class TestFlashpointDetectionService:
     @pytest.mark.asyncio
     async def test_empty_context_allowed(self):
         """Detection works with empty context list."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
         mock_prediction.will_derail = True
@@ -382,9 +382,9 @@ class TestFlashpointDetectionServiceInit:
     """Tests for FlashpointDetectionService initialization."""
 
     def test_default_model(self):
-        """Default model should be gpt-4o-mini."""
+        """Default model should be gpt-5-mini."""
         service = FlashpointDetectionService()
-        assert service.model == "openai/gpt-4o-mini"
+        assert service.model == "openai/gpt-5-mini"
 
     def test_custom_model(self):
         """Custom model can be specified."""
@@ -404,7 +404,7 @@ class TestGetDetectorLazyInit:
     def test_creates_detector_when_none_cached(self, mock_lm_cls: MagicMock, tmp_path: Path):
         """_get_detector creates a FlashpointDetector when _detector is None."""
         service = FlashpointDetectionService(
-            model="openai/gpt-4o-mini",
+            model="openai/gpt-5-mini",
             optimized_model_path=tmp_path / "nonexistent.json",
         )
         assert service._detector is None
@@ -414,7 +414,7 @@ class TestGetDetectorLazyInit:
         assert detector is not None
         assert isinstance(detector, FlashpointDetector)
         assert service._detector is detector
-        mock_lm_cls.assert_called_once_with("openai/gpt-4o-mini")
+        mock_lm_cls.assert_called_once_with("openai/gpt-5-mini")
         assert service._lm is mock_lm_cls.return_value
 
     @patch("dspy.LM")
@@ -423,7 +423,7 @@ class TestGetDetectorLazyInit:
     ):
         """_get_detector returns the same cached instance on repeated calls."""
         service = FlashpointDetectionService(
-            model="openai/gpt-4o-mini",
+            model="openai/gpt-5-mini",
             optimized_model_path=tmp_path / "nonexistent.json",
         )
 
@@ -440,7 +440,7 @@ class TestGetDetectorLazyInit:
         optimized_path.write_text("{}")
 
         service = FlashpointDetectionService(
-            model="openai/gpt-4o-mini",
+            model="openai/gpt-5-mini",
             optimized_model_path=optimized_path,
         )
 
@@ -457,7 +457,7 @@ class TestGetDetectorLazyInit:
         assert not missing_path.exists()
 
         service = FlashpointDetectionService(
-            model="openai/gpt-4o-mini",
+            model="openai/gpt-5-mini",
             optimized_model_path=missing_path,
         )
 
@@ -470,7 +470,7 @@ class TestGetDetectorLazyInit:
     @patch("dspy.LM")
     def test_uses_default_path_when_no_path_provided(self, mock_lm_cls: MagicMock):
         """_get_detector uses _get_default_optimized_path when no path given."""
-        service = FlashpointDetectionService(model="openai/gpt-4o-mini")
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
         assert service._optimized_path is None
 
         with patch.object(FlashpointDetector, "load"):
@@ -485,7 +485,7 @@ class TestGetDetectorLazyInit:
     def test_detector_has_predict_attribute(self, mock_lm_cls: MagicMock, tmp_path: Path):
         """The real FlashpointDetector created by _get_detector has a predict module."""
         service = FlashpointDetectionService(
-            model="openai/gpt-4o-mini",
+            model="openai/gpt-5-mini",
             optimized_model_path=tmp_path / "nonexistent.json",
         )
 

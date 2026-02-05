@@ -20,7 +20,7 @@ class TestGenerateScanExplanation:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="This message contains a claim that has been fact-checked as false.",
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=50,
                 finish_reason="stop",
                 provider="openai",
@@ -61,7 +61,7 @@ class TestGenerateScanExplanation:
         mock_llm_service.complete = AsyncMock(
             return_value=LLMResponse(
                 content="Explanation text",
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 tokens_used=30,
                 finish_reason="stop",
                 provider="openai",

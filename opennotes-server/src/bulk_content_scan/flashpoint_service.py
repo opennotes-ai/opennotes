@@ -27,7 +27,7 @@ class FlashpointDetectionService:
     that a conversation may derail into conflict.
     """
 
-    DEFAULT_MODEL = "openai/gpt-4o-mini"
+    DEFAULT_MODEL = "openai/gpt-5-mini"
     DEFAULT_MAX_CONTEXT = 5
     CONFIDENCE_DERAIL = 0.9
     CONFIDENCE_NO_DERAIL = 0.2
