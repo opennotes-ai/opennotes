@@ -46,6 +46,7 @@ from scripts.flashpoints.flashpoint_module import (
     FlashpointTrainerProgram,
     comparative_flashpoint_metric,
     flashpoint_metric,
+    set_reasoning_log_path,
 )
 from src.bulk_content_scan.flashpoint_utils import (
     TwoStageFlashpointDetector,
@@ -243,6 +244,11 @@ def optimize_flashpoint_detector(
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
         gepa_kwargs["log_dir"] = str(log_dir)
+
+    if log_dir:
+        reasoning_log = log_dir / "reasoning_traces.jsonl"
+        set_reasoning_log_path(reasoning_log)
+        print(f"Reasoning traces: {reasoning_log}")
 
     optimizer = dspy.GEPA(**gepa_kwargs)
 

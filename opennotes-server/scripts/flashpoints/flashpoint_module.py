@@ -21,7 +21,9 @@ programmatic — the reflection LM does all the analytical heavy lifting
 when it reads the feedback during instruction proposal.
 """
 
+import json
 import os
+from pathlib import Path
 from typing import Any
 
 import dspy
@@ -40,6 +42,7 @@ __all__ = [
     "FlashpointTrainerProgram",
     "comparative_flashpoint_metric",
     "flashpoint_metric",
+    "set_reasoning_log_path",
 ]
 
 
@@ -66,8 +69,18 @@ def flashpoint_metric(
     return 1.0 if predicted_score < 50 else 0.0
 
 
+REASONING_TRUNCATION_LIMIT = 2000
+
+_reasoning_log_path: dict[str, Path | None] = {"path": None}
+
+
+def set_reasoning_log_path(path: Path | None) -> None:
+    """Set the JSONL file path for logging full reasoning traces."""
+    _reasoning_log_path["path"] = path
+
+
 def _extract_reasoning(pred_trace: Any) -> tuple[str, str]:
-    """Extract reasoning from the pred_trace for both derailing and non-derailing runs.
+    """Extract full reasoning from the pred_trace for both derailing and non-derailing runs.
 
     pred_trace is list[tuple[Predict, dict[str, Any], Prediction]].
     The FlashpointTrainerProgram runs the detector twice, so there may be
@@ -79,7 +92,7 @@ def _extract_reasoning(pred_trace: Any) -> tuple[str, str]:
     for _, _, output in pred_trace:
         r = getattr(output, "reasoning", None)
         if r:
-            reasoning_parts.append(str(r)[:300])
+            reasoning_parts.append(str(r))
         else:
             reasoning_parts.append("N/A")
     if len(reasoning_parts) >= 2:
@@ -87,6 +100,42 @@ def _extract_reasoning(pred_trace: Any) -> tuple[str, str]:
     if len(reasoning_parts) == 1:
         return (reasoning_parts[0], "N/A")
     return ("N/A", "N/A")
+
+
+def _truncate_reasoning(reasoning: str) -> str:
+    if reasoning == "N/A" or len(reasoning) <= REASONING_TRUNCATION_LIMIT:
+        return reasoning
+    half = REASONING_TRUNCATION_LIMIT // 2
+    return reasoning[:half] + " [...] " + reasoning[-half:]
+
+
+def _log_reasoning(
+    derailing_score: int,
+    non_derailing_score: int,
+    derailing_reasoning: str,
+    non_derailing_reasoning: str,
+) -> None:
+    """Append a JSONL entry with full and truncated reasoning for diagnostics."""
+    log_path = _reasoning_log_path["path"]
+    if log_path is None:
+        return
+    entry = {
+        "derailing_score": derailing_score,
+        "non_derailing_score": non_derailing_score,
+        "score_diff": derailing_score - non_derailing_score,
+        "derailing_reasoning_full": derailing_reasoning,
+        "derailing_reasoning_truncated": _truncate_reasoning(derailing_reasoning),
+        "derailing_reasoning_len": len(derailing_reasoning),
+        "non_derailing_reasoning_full": non_derailing_reasoning,
+        "non_derailing_reasoning_truncated": _truncate_reasoning(non_derailing_reasoning),
+        "non_derailing_reasoning_len": len(non_derailing_reasoning),
+        "was_truncated": (
+            len(derailing_reasoning) > REASONING_TRUNCATION_LIMIT
+            or len(non_derailing_reasoning) > REASONING_TRUNCATION_LIMIT
+        ),
+    }
+    with log_path.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 
 def _build_feedback(
@@ -115,8 +164,8 @@ def _build_feedback(
         f"(difference: {score_diff:+d}).\n"
     )
 
-    feedback += f"Derailing reasoning: {derailing_reasoning}\n"
-    feedback += f"Non-derailing reasoning: {non_derailing_reasoning}\n"
+    feedback += f"Derailing reasoning: {_truncate_reasoning(derailing_reasoning)}\n"
+    feedback += f"Non-derailing reasoning: {_truncate_reasoning(non_derailing_reasoning)}\n"
 
     if score_diff <= 0:
         feedback += (
@@ -158,6 +207,14 @@ def comparative_flashpoint_metric(
     feedback_score = 1.0 if score_diff > 0 else 0.0
 
     derailing_reasoning, non_derailing_reasoning = _extract_reasoning(pred_trace)
+
+    if _reasoning_log_path["path"] is not None and derailing_reasoning != "N/A":
+        _log_reasoning(
+            derailing_score,
+            non_derailing_score,
+            derailing_reasoning,
+            non_derailing_reasoning,
+        )
 
     feedback = _build_feedback(
         derailing_score,
