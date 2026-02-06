@@ -40,12 +40,12 @@ class TestExtractReasoning:
         trace = [(MagicMock(), {}, pred)]
         assert _extract_reasoning(trace) == ("N/A", "N/A")
 
-    def test_truncates_long_reasoning(self):
+    def test_no_longer_truncates_in_extract(self):
         pred = MagicMock()
-        pred.reasoning = "x" * 500
+        pred.reasoning = "x" * 5000
         trace = [(MagicMock(), {}, pred)]
         r1, _ = _extract_reasoning(trace)
-        assert len(r1) == 300
+        assert len(r1) == 5000
 
 
 class TestBuildFeedback:
