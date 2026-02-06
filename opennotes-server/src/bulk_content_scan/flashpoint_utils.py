@@ -123,3 +123,106 @@ class FlashpointDetector:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
+
+
+class EscalationSummarySignature:
+    """Lazy wrapper for the escalation summary signature."""
+
+    _cls: type | None = None
+
+    @classmethod
+    def get(cls) -> type:
+        if cls._cls is None:
+            dspy = _import_dspy()
+
+            class _EscalationSummarySignature(dspy.Signature):
+                """Extract key escalation signals and conflict trajectory from this conversation."""
+
+                context: str = dspy.InputField(desc="Previous messages in the conversation")
+                message: str = dspy.InputField(desc="The current message to analyze")
+                escalation_summary: str = dspy.OutputField(
+                    desc="Key escalation signals, conflict trajectory, and tone shifts"
+                )
+
+            cls._cls = _EscalationSummarySignature
+        return cls._cls
+
+
+class ScoringSignature:
+    """Lazy wrapper for the scoring-from-summary signature."""
+
+    _cls: type | None = None
+
+    @classmethod
+    def get(cls) -> type:
+        if cls._cls is None:
+            dspy = _import_dspy()
+
+            class _ScoringSignature(dspy.Signature):
+                """Rate derailment risk based on extracted escalation signals."""
+
+                escalation_summary: str = dspy.InputField(
+                    desc="Summary of escalation signals and conflict trajectory"
+                )
+                message: str = dspy.InputField(desc="The current message to analyze")
+                derailment_score: int = dspy.OutputField(
+                    desc="Derailment risk score from 0 (no risk) to 100 (certain derailment)",
+                )
+                reasoning: str = dspy.OutputField(
+                    desc="Brief explanation of the key escalation signals detected"
+                )
+
+            cls._cls = _ScoringSignature
+        return cls._cls
+
+
+class TwoStageFlashpointDetector:
+    """Two-stage flashpoint detector: summarize escalation signals, then score.
+
+    Stage 1 (summarize): Extracts key escalation signals from the conversation.
+    Stage 2 (score): Scores derailment risk based on the extracted signals.
+
+    This gives GEPA two components to optimize independently, enabling
+    it to learn both what signals matter and how to score them.
+
+    Same external API as FlashpointDetector (context, message -> derailment_score, reasoning).
+    """
+
+    def __init__(self) -> None:
+        dspy = _import_dspy()
+        summary_sig = EscalationSummarySignature.get()
+        scoring_sig = ScoringSignature.get()
+
+        class _Inner(dspy.Module):
+            def __init__(self_inner) -> None:  # noqa: N805
+                super().__init__()
+                self_inner.summarize = dspy.ChainOfThought(summary_sig)
+                self_inner.score = dspy.ChainOfThought(scoring_sig)
+
+            def forward(self_inner, context: str, message: str) -> dspy.Prediction:  # noqa: N805
+                summary = self_inner.summarize(context=context, message=message)
+                return self_inner.score(
+                    escalation_summary=summary.escalation_summary,
+                    message=message,
+                )
+
+        self._inner = _Inner()
+        self.summarize = self._inner.summarize
+        self.score = self._inner.score
+
+    def forward(self, context: str, message: str) -> dspy.Prediction:
+        return self._inner.forward(context=context, message=message)
+
+    def load(self, path: str) -> None:
+        self._inner.load(path)
+        self.summarize = self._inner.summarize
+        self.score = self._inner.score
+
+    def save(self, path: str) -> None:
+        self._inner.save(path)
+
+    def __call__(self, context: str, message: str) -> dspy.Prediction:
+        return self.forward(context=context, message=message)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)

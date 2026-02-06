@@ -44,10 +44,132 @@ from scripts.flashpoints.dspy_dataset import (
 from scripts.flashpoints.flashpoint_module import (
     FlashpointDetector,
     FlashpointTrainerProgram,
-    comparative_flashpoint_metric,
     flashpoint_metric,
+    make_comparative_metric,
 )
-from src.bulk_content_scan.flashpoint_utils import parse_derailment_score
+from src.bulk_content_scan.flashpoint_utils import (
+    TwoStageFlashpointDetector,
+    parse_derailment_score,
+)
+
+
+class _TerseProposerSignature(dspy.Signature):
+    """Analyze failure examples and rewrite the instruction in a few concise sentences."""
+
+    current_instruction: str = dspy.InputField(desc="The current instruction for this component")
+    failure_summary: str = dspy.InputField(
+        desc="Summary of failure patterns from recent examples with feedback"
+    )
+    new_instruction: str = dspy.OutputField(
+        desc="A few concise sentences (2-3 max) that address the failure patterns. Be direct and terse."
+    )
+
+
+class TerseInstructionProposer:
+    """Instruction proposer that produces extremely terse, few-sentence prompts.
+
+    Analyzes the reflective dataset (failures + feedback) like the default proposer,
+    but constrains output to brief, direct instructions (2-3 sentences max).
+    Empirically, short prompts have shown competitive or better performance than
+    verbose multi-paragraph ones.
+    """
+
+    def __init__(self, reflection_lm: dspy.LM) -> None:
+        self.reflection_lm = reflection_lm
+        self.proposer = dspy.ChainOfThought(_TerseProposerSignature)
+
+    def __call__(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        updated: dict[str, str] = {}
+
+        with dspy.context(lm=self.reflection_lm):
+            for component_name in components_to_update:
+                current = candidate.get(component_name, "")
+                examples = reflective_dataset.get(component_name, [])
+
+                failure_lines = []
+                for ex in examples[-10:]:
+                    feedback = getattr(ex, "Feedback", getattr(ex, "feedback", ""))
+                    if feedback and ("WRONG" in str(feedback) or "TIED" in str(feedback)):
+                        failure_lines.append(str(feedback)[:200])
+
+                if not failure_lines:
+                    failure_lines = ["No clear failure patterns detected."]
+
+                failure_summary = "\n".join(failure_lines)
+
+                result = self.proposer(
+                    current_instruction=current,
+                    failure_summary=failure_summary,
+                )
+                updated[component_name] = result.new_instruction
+
+        return updated
+
+
+class _ShortProposerSignature(dspy.Signature):
+    """Analyze failure examples and rewrite the instruction as a few short paragraphs."""
+
+    current_instruction: str = dspy.InputField(desc="The current instruction for this component")
+    failure_summary: str = dspy.InputField(
+        desc="Summary of failure patterns from recent examples with feedback"
+    )
+    new_instruction: str = dspy.OutputField(
+        desc=(
+            "An improved instruction in 2-4 short paragraphs that addresses the failure patterns. "
+            "You may vary the length — use fewer paragraphs if the instruction is simple, "
+            "more if nuance is needed. Keep each paragraph to 1-3 sentences."
+        )
+    )
+
+
+class ShortInstructionProposer:
+    """Instruction proposer that produces short, paragraph-length prompts.
+
+    Similar to TerseInstructionProposer but allows 2-4 short paragraphs.
+    The length of the output is part of what the proposer is allowed to vary
+    based on the complexity of the failure patterns.
+    """
+
+    def __init__(self, reflection_lm: dspy.LM) -> None:
+        self.reflection_lm = reflection_lm
+        self.proposer = dspy.ChainOfThought(_ShortProposerSignature)
+
+    def __call__(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        updated: dict[str, str] = {}
+
+        with dspy.context(lm=self.reflection_lm):
+            for component_name in components_to_update:
+                current = candidate.get(component_name, "")
+                examples = reflective_dataset.get(component_name, [])
+
+                failure_lines = []
+                for ex in examples[-10:]:
+                    feedback = getattr(ex, "Feedback", getattr(ex, "feedback", ""))
+                    if feedback and ("WRONG" in str(feedback) or "TIED" in str(feedback)):
+                        failure_lines.append(str(feedback)[:200])
+
+                if not failure_lines:
+                    failure_lines = ["No clear failure patterns detected."]
+
+                failure_summary = "\n".join(failure_lines)
+
+                result = self.proposer(
+                    current_instruction=current,
+                    failure_summary=failure_summary,
+                )
+                updated[component_name] = result.new_instruction
+
+        return updated
 
 
 def optimize_flashpoint_detector(
@@ -61,7 +183,11 @@ def optimize_flashpoint_detector(
     reflection_minibatch_size: int = 5,
     num_threads: int = 6,
     finetune: bool = False,
-) -> FlashpointDetector:
+    component_selector: str = "round_robin",
+    proposer: str = "default",
+    two_stage: bool = False,
+    feedback_mode: str = "static",
+) -> FlashpointDetector | TwoStageFlashpointDetector:
     """Run GEPA optimization on the flashpoint detector with comparative training.
 
     Uses paired/contrastive examples where each derailing conversation is
@@ -79,9 +205,13 @@ def optimize_flashpoint_detector(
         reflection_minibatch_size: Examples per GEPA reflection cycle
         num_threads: Threads for parallel evaluation
         finetune: Whether to run BootstrapFinetune as a second pass
+        component_selector: "round_robin" (one component per iteration) or "all" (all at once)
+        proposer: "default" (GEPA built-in), "terse" (few sentences), or "short" (few paragraphs)
+        two_stage: Use two-stage detector (summarizer + scorer) for two GEPA components
+        feedback_mode: "static" for factual-only feedback, "dynamic" for LLM-generated
 
     Returns:
-        The optimized FlashpointDetector module
+        The optimized detector module
     """
     lm = dspy.LM(model)
     dspy.configure(lm=lm)
@@ -99,25 +229,37 @@ def optimize_flashpoint_detector(
         max_tokens=32000,
     )
 
+    metric_fn = make_comparative_metric(feedback_mode)
+
     gepa_kwargs: dict[str, Any] = {
-        "metric": comparative_flashpoint_metric,
+        "metric": metric_fn,
         "auto": auto,
         "num_threads": num_threads,
         "track_stats": True,
         "reflection_minibatch_size": reflection_minibatch_size,
         "reflection_lm": reflection_lm,
+        "component_selector": component_selector,
     }
+    if proposer == "terse":
+        gepa_kwargs["instruction_proposer"] = TerseInstructionProposer(reflection_lm)
+    elif proposer == "short":
+        gepa_kwargs["instruction_proposer"] = ShortInstructionProposer(reflection_lm)
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
         gepa_kwargs["log_dir"] = str(log_dir)
 
     optimizer = dspy.GEPA(**gepa_kwargs)
 
-    detector = FlashpointDetector()
+    detector = TwoStageFlashpointDetector() if two_stage else FlashpointDetector()
     trainer = FlashpointTrainerProgram(detector)
 
     print(f"Starting GEPA optimization (auto={auto}, model={model})...")
     print(f"Reflection LM: {reflection_model or 'openai/gpt-5.2'}")
+    print(
+        f"Component selector: {component_selector}, Proposer: {proposer}, Feedback: {feedback_mode}"
+    )
+    if two_stage:
+        print("Detector: two-stage (summarizer + scorer)")
     print("This may take a while depending on the auto level and dataset size.")
 
     optimized_trainer = optimizer.compile(
@@ -129,9 +271,7 @@ def optimize_flashpoint_detector(
     optimized_detector = optimized_trainer.detector
 
     if finetune:
-        optimized_detector = _run_finetune(
-            optimized_detector, model, paired_train, comparative_flashpoint_metric
-        )
+        optimized_detector = _run_finetune(optimized_detector, model, paired_train, metric_fn)
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -177,7 +317,7 @@ def _run_finetune(
 
 
 def _evaluate_single(
-    detector: FlashpointDetector, idx: int, example: dspy.Example
+    detector: FlashpointDetector | TwoStageFlashpointDetector, idx: int, example: dspy.Example
 ) -> tuple[int, float | None, int | None, str | None]:
     """Evaluate a single example. Returns (idx, score, category, error_msg)."""
     try:
@@ -201,7 +341,7 @@ def _evaluate_single(
 
 
 def evaluate_detector(
-    detector: FlashpointDetector,
+    detector: FlashpointDetector | TwoStageFlashpointDetector,
     testset: list[dspy.Example],
     verbose: bool = False,
     num_threads: int = 1,
@@ -289,7 +429,7 @@ def evaluate_detector(
 
 
 def _collect_scores(
-    detector: FlashpointDetector,
+    detector: FlashpointDetector | TwoStageFlashpointDetector,
     testset: list[dspy.Example],
     num_threads: int = 8,
 ) -> list[tuple[bool, int]]:
@@ -319,7 +459,7 @@ def _collect_scores(
 
 
 def evaluate_safety_at_audit_budget(
-    detector: FlashpointDetector,
+    detector: FlashpointDetector | TwoStageFlashpointDetector,
     testset: list[dspy.Example],
     fpr_levels: list[float] | None = None,
     num_threads: int = 8,
@@ -518,6 +658,41 @@ Examples:
         help="Directory for GEPA checkpoints/resume (default: data/flashpoints/gepa_logs)",
     )
     parser.add_argument(
+        "--max-train",
+        type=int,
+        default=200,
+        help="Maximum paired training examples to use (default: 200)",
+    )
+    parser.add_argument(
+        "--max-dev",
+        type=int,
+        default=50,
+        help="Maximum paired dev examples to use (default: 50)",
+    )
+    parser.add_argument(
+        "--component-selector",
+        default="round_robin",
+        choices=["round_robin", "all"],
+        help="GEPA component selection strategy (default: round_robin)",
+    )
+    parser.add_argument(
+        "--proposer",
+        default="default",
+        choices=["default", "terse", "short"],
+        help="Instruction proposer: default (GEPA built-in), terse (few sentences), or short (few paragraphs)",
+    )
+    parser.add_argument(
+        "--two-stage",
+        action="store_true",
+        help="Use two-stage detector (context summarizer + scorer) for two GEPA components",
+    )
+    parser.add_argument(
+        "--feedback-mode",
+        default="static",
+        choices=["static", "dynamic"],
+        help="Metric feedback mode: static (factual-only) or dynamic (LLM-generated diagnostic feedback)",
+    )
+    parser.add_argument(
         "--finetune",
         action="store_true",
         help="Run BootstrapFinetune as a second pass after GEPA optimization",
@@ -541,7 +716,7 @@ Examples:
         lm = dspy.LM(args.model)
         dspy.configure(lm=lm)
         print(f"Loading existing model from {args.eval_only}...")
-        detector = FlashpointDetector()
+        detector = TwoStageFlashpointDetector() if args.two_stage else FlashpointDetector()
         detector.load(str(args.eval_only))
         print("Model loaded successfully.")
     else:
@@ -550,10 +725,16 @@ Examples:
             auto=args.auto,
             output_path=args.output,
             reflection_model=args.reflection_model,
+            max_train=args.max_train,
+            max_dev=args.max_dev,
             log_dir=args.log_dir,
             reflection_minibatch_size=args.reflection_minibatch_size,
             num_threads=args.num_threads,
             finetune=args.finetune,
+            component_selector=args.component_selector,
+            proposer=args.proposer,
+            two_stage=args.two_stage,
+            feedback_mode=args.feedback_mode,
         )
 
     _, _, testset = load_flashpoint_datasets()

@@ -90,6 +90,10 @@ uv run python scripts/flashpoints/optimize_prompt.py --safety-curves --fpr-level
 | `--reflection-model` | `openai/gpt-5.2` | LLM for GEPA reflection |
 | `--auto` | `medium` | Optimization level: light, medium, heavy |
 | `--output` | `data/flashpoints/optimized_detector.json` | Where to save the optimized model |
+| `--max-train` | `200` | Maximum paired training examples |
+| `--max-dev` | `50` | Maximum paired dev examples |
+| `--component-selector` | `round_robin` | GEPA component selection: `round_robin` or `all` |
+| `--proposer` | `default` | Instruction proposer: `default`, `terse` (few sentences), or `short` (few paragraphs) |
 | `--finetune` | off | Run BootstrapFinetune as second pass after GEPA |
 | `--safety-curves` | off | Print safety-at-audit-budget curves after evaluation |
 | `--fpr-levels` | `0.005 0.01 0.02 0.03 0.05` | FPR thresholds for safety curves |

@@ -5,9 +5,19 @@ and defines training-specific metrics including:
 - Simple accuracy metric for evaluation
 - Comparative metric with ScoreWithFeedback for GEPA optimization
 - FlashpointTrainerProgram for paired/contrastive training
+
+Feedback philosophy: the comparative metric provides factual outcome data
+(scores, difference, correctness) without prescribing what conversational
+signals the reflection LM should look for. The reflection LM is capable
+of identifying important patterns on its own — hardcoding a checklist of
+escalation signals constrains its ability to discover what actually matters.
+
+For dynamic feedback mode, a FeedbackGenerator DSPy module generates
+diagnostic feedback via LLM, making the feedback itself evolvable.
 """
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 import dspy
@@ -16,6 +26,7 @@ from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 from src.bulk_content_scan.flashpoint_utils import (
     FlashpointDetector,
     FlashpointSignature,
+    TwoStageFlashpointDetector,
     parse_derailment_score,
 )
 
@@ -25,6 +36,7 @@ __all__ = [
     "FlashpointTrainerProgram",
     "comparative_flashpoint_metric",
     "flashpoint_metric",
+    "make_comparative_metric",
 ]
 
 
@@ -51,6 +63,124 @@ def flashpoint_metric(
     return 1.0 if predicted_score < 50 else 0.0
 
 
+def _extract_reasoning(pred_trace: Any) -> tuple[str, str]:
+    """Extract reasoning from the pred_trace for both derailing and non-derailing runs.
+
+    pred_trace is list[tuple[Predict, dict[str, Any], Prediction]].
+    The FlashpointTrainerProgram runs the detector twice, so there may be
+    two trace entries. Returns (derailing_reasoning, non_derailing_reasoning).
+    """
+    if not pred_trace:
+        return ("N/A", "N/A")
+    reasoning_parts = []
+    for _, _, output in pred_trace:
+        r = getattr(output, "reasoning", None)
+        if r:
+            reasoning_parts.append(str(r)[:300])
+        else:
+            reasoning_parts.append("N/A")
+    if len(reasoning_parts) >= 2:
+        return (reasoning_parts[0], reasoning_parts[1])
+    if len(reasoning_parts) == 1:
+        return (reasoning_parts[0], "N/A")
+    return ("N/A", "N/A")
+
+
+def _static_feedback(
+    derailing_score: int,
+    non_derailing_score: int,
+    score_diff: int,
+    derailing_reasoning: str,
+    non_derailing_reasoning: str,
+) -> str:
+    """Build factual-only feedback without prescriptive guidance."""
+    if score_diff > 0:
+        label = "CORRECT"
+    elif score_diff == 0:
+        label = "TIED (WRONG)"
+    else:
+        label = "WRONG"
+
+    feedback = (
+        f"{label}: Derailing conversation scored {derailing_score}/100, "
+        f"non-derailing scored {non_derailing_score}/100 "
+        f"(difference: {score_diff:+d}).\n"
+    )
+
+    if score_diff <= 0:
+        feedback += "The derailing conversation should have scored higher.\n"
+
+    feedback += f"Derailing reasoning: {derailing_reasoning}\n"
+    feedback += f"Non-derailing reasoning: {non_derailing_reasoning}\n"
+
+    if score_diff > 0 and score_diff < 20:
+        feedback += f"Margin is narrow ({score_diff} points).\n"
+
+    return feedback
+
+
+class _FeedbackSignature(dspy.Signature):
+    """Analyze a flashpoint detection error and provide diagnostic feedback."""
+
+    derailing_score: int = dspy.InputField(desc="Score assigned to the derailing conversation")
+    non_derailing_score: int = dspy.InputField(
+        desc="Score assigned to the non-derailing conversation"
+    )
+    score_difference: int = dspy.InputField(
+        desc="derailing_score - non_derailing_score (positive means correct ordering)"
+    )
+    derailing_reasoning: str = dspy.InputField(
+        desc="Model's reasoning for the derailing conversation"
+    )
+    non_derailing_reasoning: str = dspy.InputField(
+        desc="Model's reasoning for the non-derailing conversation"
+    )
+    feedback: str = dspy.OutputField(
+        desc=(
+            "Diagnostic analysis of what the model got wrong and why. "
+            "Identify the key signals in the conversations that were missed or misweighted."
+        )
+    )
+
+
+class FeedbackGenerator:
+    """Generates diagnostic feedback via LLM for GEPA reflection.
+
+    Uses dspy.Predict internally, making the feedback generation itself
+    a parameterizable DSPy component whose instructions can evolve
+    if this module is compiled/optimized.
+    """
+
+    def __init__(self) -> None:
+        self._predict = dspy.Predict(_FeedbackSignature)
+
+    def __call__(
+        self,
+        derailing_score: int,
+        non_derailing_score: int,
+        score_diff: int,
+        derailing_reasoning: str,
+        non_derailing_reasoning: str,
+    ) -> str:
+        result = self._predict(
+            derailing_score=derailing_score,
+            non_derailing_score=non_derailing_score,
+            score_difference=score_diff,
+            derailing_reasoning=derailing_reasoning,
+            non_derailing_reasoning=non_derailing_reasoning,
+        )
+        return str(result.feedback)
+
+
+_feedback_generator_cache: dict[str, FeedbackGenerator] = {}
+
+
+def _get_feedback_generator() -> FeedbackGenerator:
+    if "instance" not in _feedback_generator_cache:
+        _feedback_generator_cache["instance"] = FeedbackGenerator()
+    return _feedback_generator_cache["instance"]
+
+
 def comparative_flashpoint_metric(
     gold: dspy.Example,
     pred: dspy.Prediction,
@@ -64,60 +194,93 @@ def comparative_flashpoint_metric(
     conversation pair. The monitor should assign a higher score to the
     derailing conversation.
 
-    Returns ScoreWithFeedback with:
-    - score: 1.0 if derailing_score > non_derailing_score, else 0.0
-    - feedback: Rich textual guidance for GEPA reflection including
-      score comparison, escalation signals, and coaching guidance
+    Feedback is factual-only: scores, difference, and reasoning excerpts.
+    No prescriptive checklists — the reflection LM identifies important
+    patterns on its own.
     """
     derailing_score = parse_derailment_score(pred.derailing_score)
     non_derailing_score = parse_derailment_score(pred.non_derailing_score)
-
     score_diff = derailing_score - non_derailing_score
     feedback_score = 1.0 if score_diff > 0 else 0.0
 
-    feedback = ""
+    derailing_reasoning, non_derailing_reasoning = _extract_reasoning(pred_trace)
+
+    feedback = _static_feedback(
+        derailing_score,
+        non_derailing_score,
+        score_diff,
+        derailing_reasoning,
+        non_derailing_reasoning,
+    )
+
+    return ScoreWithFeedback(score=feedback_score, feedback=feedback)
+
+
+def _dynamic_comparative_metric(
+    gold: dspy.Example,
+    pred: dspy.Prediction,
+    trace: Any = None,
+    pred_name: str | None = None,
+    pred_trace: Any = None,
+) -> ScoreWithFeedback:
+    """GEPA-compatible comparative metric with LLM-generated feedback.
+
+    On correct predictions, returns factual feedback. On errors, invokes
+    a FeedbackGenerator DSPy module to produce diagnostic analysis,
+    making the feedback itself evolvable.
+    """
+    derailing_score = parse_derailment_score(pred.derailing_score)
+    non_derailing_score = parse_derailment_score(pred.non_derailing_score)
+    score_diff = derailing_score - non_derailing_score
+    feedback_score = 1.0 if score_diff > 0 else 0.0
+
+    derailing_reasoning, non_derailing_reasoning = _extract_reasoning(pred_trace)
 
     if score_diff > 0:
-        feedback += "CORRECT: "
-    elif score_diff == 0:
-        feedback += "TIED (WRONG): "
-    else:
-        feedback += "WRONG: "
-
-    feedback += (
-        f"You rated the derailing conversation at {derailing_score}/100 "
-        f"and the non-derailing conversation at {non_derailing_score}/100 "
-        f"(difference: {score_diff:+d}).\n"
-    )
-
-    if score_diff <= 0:
-        feedback += (
-            "\nThe derailing conversation should have received a HIGHER score. "
-            "Look for escalation signals such as:\n"
-            "- Shift from topic disagreement to personal attacks\n"
-            "- Increasingly aggressive or dismissive language\n"
-            "- Absolutist language ('always', 'never', 'you people')\n"
-            "- Questioning competence or motives rather than ideas\n"
-            "\nThe non-derailing conversation should have received a LOWER score. "
-            "Constructive disagreement features:\n"
-            "- Focus on ideas rather than people\n"
-            "- Acknowledgment of other viewpoints\n"
-            "- Absence of personal attacks or dismissiveness\n"
-            "\nTry to use the full 0-100 range. Precision matters most "
-            "at moderate scores (30-70) where separation is hardest.\n"
+        feedback = _static_feedback(
+            derailing_score,
+            non_derailing_score,
+            score_diff,
+            derailing_reasoning,
+            non_derailing_reasoning,
         )
     else:
-        feedback += "Good separation between derailing and non-derailing conversations.\n"
-        if score_diff < 20:
-            feedback += (
-                f"However, the gap ({score_diff} points) is small. "
-                "Try to increase separation for more confident classification.\n"
+        try:
+            generator = _get_feedback_generator()
+            feedback = generator(
+                derailing_score=derailing_score,
+                non_derailing_score=non_derailing_score,
+                score_diff=score_diff,
+                derailing_reasoning=derailing_reasoning,
+                non_derailing_reasoning=non_derailing_reasoning,
+            )
+        except Exception:
+            feedback = _static_feedback(
+                derailing_score,
+                non_derailing_score,
+                score_diff,
+                derailing_reasoning,
+                non_derailing_reasoning,
             )
 
-    return ScoreWithFeedback(
-        score=feedback_score,
-        feedback=feedback,
-    )
+    return ScoreWithFeedback(score=feedback_score, feedback=feedback)
+
+
+def make_comparative_metric(
+    feedback_mode: str = "static",
+) -> Callable:
+    """Factory that returns the appropriate comparative metric function.
+
+    Args:
+        feedback_mode: "static" for factual-only feedback (default),
+            "dynamic" for LLM-generated diagnostic feedback.
+
+    Returns:
+        A GEPA-compatible metric function.
+    """
+    if feedback_mode == "dynamic":
+        return _dynamic_comparative_metric
+    return comparative_flashpoint_metric
 
 
 class FlashpointTrainerProgram(dspy.Module):
@@ -128,7 +291,7 @@ class FlashpointTrainerProgram(dspy.Module):
     conversation) and returns both scores for comparative training.
     """
 
-    def __init__(self, detector: FlashpointDetector) -> None:
+    def __init__(self, detector: FlashpointDetector | TwoStageFlashpointDetector) -> None:
         super().__init__()
         self.detector = detector._inner
 
