@@ -51,6 +51,7 @@ export class MessageMonitorService {
   private processingInterval?: NodeJS.Timeout;
   private isProcessing: boolean = false;
   private readonly maxQueueSize: number = 1000;
+  private readonly MIN_CC_SCORE_THRESHOLD = 0.4;
 
   // Batch processing configuration
   private readonly BATCH_SIZE: number = 10;
@@ -432,16 +433,27 @@ export class MessageMonitorService {
 
       const matches = similarityResponse.data.attributes.matches;
       if (matches.length > 0) {
-        logger.info('Found similarity matches for message', {
-          messageId: messageContent.messageId,
-          channelId: messageContent.channelId,
-          guildId: messageContent.guildId,
-          matchCount: matches.length,
-          topScore: matches[0].similarity_score,
-          topMatch: matches[0].title,
-        });
+        const topScore = matches[0].similarity_score;
 
-        await this.createNoteRequestForMatch(messageContent, similarityResponse);
+        if (topScore >= this.MIN_CC_SCORE_THRESHOLD) {
+          logger.info('Found similarity matches for message', {
+            messageId: messageContent.messageId,
+            channelId: messageContent.channelId,
+            guildId: messageContent.guildId,
+            matchCount: matches.length,
+            topScore,
+            topMatch: matches[0].title,
+          });
+
+          await this.createNoteRequestForMatch(messageContent, similarityResponse);
+        } else {
+          logger.debug('Similarity match below CC score threshold, skipping note request', {
+            messageId: messageContent.messageId,
+            channelId: messageContent.channelId,
+            topScore,
+            minCcScore: this.MIN_CC_SCORE_THRESHOLD,
+          });
+        }
       } else {
         logger.debug('No similarity matches found for message', {
           messageId: messageContent.messageId,

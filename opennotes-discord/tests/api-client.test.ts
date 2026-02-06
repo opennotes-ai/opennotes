@@ -1458,6 +1458,97 @@ describe('ApiClient Wrapper', () => {
       expect(sentBody.data.attributes.requested_by).toBe('00000000-0000-0001-aaaa-000000000456');
     });
 
+    it('should send first-class fact-check fields when fact_check_metadata is provided', async () => {
+      const request = {
+        messageId: '123456789012345678',
+        userId: '00000000-0000-0001-aaaa-000000000456',
+        community_server_id: 'guild-123',
+        fact_check_metadata: {
+          dataset_item_id: 'item-42',
+          similarity_score: 0.85,
+          dataset_name: 'snopes',
+          rating: 'FALSE',
+        },
+      };
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'requests',
+          id: 'req-1',
+          attributes: {
+            request_id: 'discord-123456789012345678-1234567890',
+            requested_by: 'user-456',
+            status: 'PENDING',
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 201,
+          headers: { 'Content-Type': 'application/vnd.api+json' }
+        })
+      );
+
+      await apiClient.requestNote(request);
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const fetchInit = fetchCall?.[1] as RequestInit | undefined;
+      expect(fetchInit).toBeDefined();
+      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+
+      expect(sentBody.data.attributes.similarity_score).toBe(0.85);
+      expect(sentBody.data.attributes.dataset_name).toBe('snopes');
+      expect(sentBody.data.attributes.dataset_item_id).toBe('item-42');
+      expect(sentBody.data.attributes.metadata).toEqual({
+        dataset_item_id: 'item-42',
+        similarity_score: 0.85,
+        dataset_name: 'snopes',
+        rating: 'FALSE',
+      });
+    });
+
+    it('should not send first-class fact-check fields when fact_check_metadata is absent', async () => {
+      const request = {
+        messageId: '123456789012345678',
+        userId: '00000000-0000-0001-aaaa-000000000456',
+        community_server_id: 'guild-123',
+      };
+
+      const mockJsonApiResponse = {
+        data: {
+          type: 'requests',
+          id: 'req-1',
+          attributes: {
+            request_id: 'discord-123456789012345678-1234567890',
+            requested_by: 'user-456',
+            status: 'PENDING',
+          },
+        },
+        jsonapi: { version: '1.1' },
+      };
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify(mockJsonApiResponse), {
+          status: 201,
+          headers: { 'Content-Type': 'application/vnd.api+json' }
+        })
+      );
+
+      await apiClient.requestNote(request);
+
+      const fetchCall = mockFetch.mock.calls[0];
+      const fetchInit = fetchCall?.[1] as RequestInit | undefined;
+      expect(fetchInit).toBeDefined();
+      const sentBody = JSON.parse((fetchInit as RequestInit & { body: string }).body);
+
+      expect(sentBody.data.attributes.similarity_score).toBeUndefined();
+      expect(sentBody.data.attributes.dataset_name).toBeUndefined();
+      expect(sentBody.data.attributes.dataset_item_id).toBeUndefined();
+      expect(sentBody.data.attributes.metadata).toBeUndefined();
+    });
+
     it('should request a note without a reason', async () => {
       const request = {
         messageId: '123456789012345678',
