@@ -228,3 +228,86 @@ class TwoStageFlashpointDetector:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
+
+
+class CategoricalRiskSignature:
+    """Lazy wrapper for categorical risk assessment signature."""
+
+    _cls: type | None = None
+
+    @classmethod
+    def get(cls) -> type:
+        if cls._cls is None:
+            dspy = _import_dspy()
+
+            class _CategoricalRiskSignature(dspy.Signature):
+                """Assess the risk level of this conversation potentially derailing into conflict."""
+
+                context: str = dspy.InputField(desc="Previous messages in the conversation")
+                message: str = dspy.InputField(desc="The current message to analyze")
+                risk_level: str = dspy.OutputField(
+                    desc="Select one: 'Low Risk', 'Guarded', 'Heated', 'Hostile', 'Dangerous'"
+                )
+                reasoning: str = dspy.OutputField(desc="Why this risk level fits")
+
+            cls._cls = _CategoricalRiskSignature
+        return cls._cls
+
+
+RISK_LEVEL_MAPPING: dict[str, int] = {
+    "Low Risk": 10,
+    "Guarded": 30,
+    "Heated": 60,
+    "Hostile": 85,
+    "Dangerous": 100,
+}
+
+RISK_LEVEL_DEFAULT = 50
+
+
+class RubricDetector:
+    """Rubric-based flashpoint detector using categorical classification.
+
+    Forces the LLM to choose a risk category instead of guessing a number.
+    The category maps deterministically to a numeric score. This gives GEPA
+    a cleaner optimization target.
+
+    Same external API as FlashpointDetector (context, message -> derailment_score, reasoning).
+    """
+
+    def __init__(self) -> None:
+        dspy = _import_dspy()
+        sig = CategoricalRiskSignature.get()
+
+        class _Inner(dspy.Module):
+            def __init__(self_inner) -> None:  # noqa: N805
+                super().__init__()
+                self_inner.assess = dspy.ChainOfThought(sig)
+
+            def forward(self_inner, context: str, message: str):  # noqa: N805
+                pred = self_inner.assess(context=context, message=message)
+                score = RISK_LEVEL_MAPPING.get(pred.risk_level, RISK_LEVEL_DEFAULT)
+                return dspy.Prediction(
+                    derailment_score=score,
+                    reasoning=pred.reasoning,
+                    risk_level=pred.risk_level,
+                )
+
+        self._inner = _Inner()
+        self.assess = self._inner.assess
+
+    def forward(self, context: str, message: str):
+        return self._inner.forward(context=context, message=message)
+
+    def load(self, path: str) -> None:
+        self._inner.load(path)
+        self.assess = self._inner.assess
+
+    def save(self, path: str) -> None:
+        self._inner.save(path)
+
+    def __call__(self, context: str, message: str):
+        return self.forward(context=context, message=message)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)

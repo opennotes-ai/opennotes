@@ -3,6 +3,7 @@
 import logging
 from unittest.mock import MagicMock
 
+import dspy
 import pytest
 
 from src.bulk_content_scan.flashpoint_utils import parse_bool, parse_derailment_score
@@ -191,3 +192,68 @@ class TestTwoStageFlashpointDetector:
             context="some context",
             message="some message",
         )
+
+
+class TestRubricDetector:
+    """Tests for RubricDetector categorical classification."""
+
+    def test_risk_level_mapping_covers_all_categories(self):
+        from src.bulk_content_scan.flashpoint_utils import RISK_LEVEL_MAPPING
+
+        assert set(RISK_LEVEL_MAPPING.keys()) == {
+            "Low Risk",
+            "Guarded",
+            "Heated",
+            "Hostile",
+            "Dangerous",
+        }
+
+    def test_risk_level_mapping_values_are_ordered(self):
+        from src.bulk_content_scan.flashpoint_utils import RISK_LEVEL_MAPPING
+
+        values = list(RISK_LEVEL_MAPPING.values())
+        assert values == sorted(values)
+
+    def test_unknown_category_falls_back_to_default(self):
+        from src.bulk_content_scan.flashpoint_utils import RISK_LEVEL_DEFAULT, RISK_LEVEL_MAPPING
+
+        assert RISK_LEVEL_MAPPING.get("Unknown Category", RISK_LEVEL_DEFAULT) == 50
+
+    def test_rubric_detector_has_assess_attribute(self):
+        from src.bulk_content_scan.flashpoint_utils import RubricDetector
+
+        detector = RubricDetector()
+        assert hasattr(detector, "assess")
+        assert isinstance(detector.assess, dspy.ChainOfThought)
+
+    def test_rubric_detector_inner_module_exists(self):
+        from src.bulk_content_scan.flashpoint_utils import RubricDetector
+
+        detector = RubricDetector()
+        assert hasattr(detector, "_inner")
+
+    def test_rubric_detector_forward_with_mock(self):
+        from src.bulk_content_scan.flashpoint_utils import RubricDetector
+
+        detector = RubricDetector()
+        mock_result = MagicMock()
+        mock_result.risk_level = "Hostile"
+        mock_result.reasoning = "Personal attacks detected"
+        detector._inner.assess = MagicMock(return_value=mock_result)
+
+        result = detector(context="user1: hello", message="user2: you're an idiot")
+        assert result.derailment_score == 85
+        assert result.reasoning == "Personal attacks detected"
+        assert result.risk_level == "Hostile"
+
+    def test_rubric_detector_unknown_category_returns_default(self):
+        from src.bulk_content_scan.flashpoint_utils import RubricDetector
+
+        detector = RubricDetector()
+        mock_result = MagicMock()
+        mock_result.risk_level = "Somewhat Risky"
+        mock_result.reasoning = "test"
+        detector._inner.assess = MagicMock(return_value=mock_result)
+
+        result = detector(context="test", message="test")
+        assert result.derailment_score == 50

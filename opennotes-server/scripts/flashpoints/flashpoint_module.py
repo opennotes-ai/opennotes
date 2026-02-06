@@ -32,6 +32,7 @@ from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 from src.bulk_content_scan.flashpoint_utils import (
     FlashpointDetector,
     FlashpointSignature,
+    RubricDetector,
     TwoStageFlashpointDetector,
     parse_derailment_score,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "FlashpointDetector",
     "FlashpointSignature",
     "FlashpointTrainerProgram",
+    "RubricDetector",
     "comparative_flashpoint_metric",
     "flashpoint_metric",
     "set_reasoning_log_path",
@@ -235,7 +237,9 @@ class FlashpointTrainerProgram(dspy.Module):
     conversation) and returns both scores for comparative training.
     """
 
-    def __init__(self, detector: FlashpointDetector | TwoStageFlashpointDetector) -> None:
+    def __init__(
+        self, detector: FlashpointDetector | TwoStageFlashpointDetector | RubricDetector
+    ) -> None:
         super().__init__()
         self.detector = detector._inner
 

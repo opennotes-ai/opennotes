@@ -49,6 +49,7 @@ from scripts.flashpoints.flashpoint_module import (
     set_reasoning_log_path,
 )
 from src.bulk_content_scan.flashpoint_utils import (
+    RubricDetector,
     TwoStageFlashpointDetector,
     parse_derailment_score,
 )
@@ -186,11 +187,11 @@ def optimize_flashpoint_detector(
     finetune: bool = False,
     component_selector: str = "round_robin",
     proposer: str = "default",
-    two_stage: bool = False,
+    detector_type: str = "single",
     bootstrap: bool = False,
     max_bootstrapped_demos: int = 4,
     max_labeled_demos: int = 4,
-) -> FlashpointDetector | TwoStageFlashpointDetector:
+) -> FlashpointDetector | TwoStageFlashpointDetector | RubricDetector:
     """Run GEPA optimization on the flashpoint detector with comparative training.
 
     Uses paired/contrastive examples where each derailing conversation is
@@ -210,7 +211,7 @@ def optimize_flashpoint_detector(
         finetune: Whether to run BootstrapFinetune as a second pass
         component_selector: "round_robin" (one component per iteration) or "all" (all at once)
         proposer: "default" (GEPA built-in), "terse" (few sentences), or "short" (few paragraphs)
-        two_stage: Use two-stage detector (summarizer + scorer) for two GEPA components
+        detector_type: Detector architecture: "single", "two-stage", or "rubric"
         bootstrap: Run BootstrapFewShot pre-pass to seed GEPA with high-quality demos
         max_bootstrapped_demos: Max bootstrapped demonstrations per predictor
         max_labeled_demos: Max labeled demonstrations per predictor
@@ -258,7 +259,12 @@ def optimize_flashpoint_detector(
 
     optimizer = dspy.GEPA(**gepa_kwargs)
 
-    detector = TwoStageFlashpointDetector() if two_stage else FlashpointDetector()
+    if detector_type == "two-stage":
+        detector = TwoStageFlashpointDetector()
+    elif detector_type == "rubric":
+        detector = RubricDetector()
+    else:
+        detector = FlashpointDetector()
     trainer = FlashpointTrainerProgram(detector)
 
     if bootstrap:
@@ -280,8 +286,8 @@ def optimize_flashpoint_detector(
     print(f"Starting GEPA optimization (auto={auto}, model={model})...")
     print(f"Reflection LM: {reflection_model or 'openai/gpt-5.2'}")
     print(f"Component selector: {component_selector}, Proposer: {proposer}")
-    if two_stage:
-        print("Detector: two-stage (summarizer + scorer)")
+    if detector_type != "single":
+        print(f"Detector: {detector_type}")
     print("This may take a while depending on the auto level and dataset size.")
 
     optimized_trainer = optimizer.compile(
@@ -341,7 +347,9 @@ def _run_finetune(
 
 
 def _evaluate_single(
-    detector: FlashpointDetector | TwoStageFlashpointDetector, idx: int, example: dspy.Example
+    detector: FlashpointDetector | TwoStageFlashpointDetector | RubricDetector,
+    idx: int,
+    example: dspy.Example,
 ) -> tuple[int, float | None, int | None, str | None]:
     """Evaluate a single example. Returns (idx, score, category, error_msg)."""
     try:
@@ -365,7 +373,7 @@ def _evaluate_single(
 
 
 def evaluate_detector(
-    detector: FlashpointDetector | TwoStageFlashpointDetector,
+    detector: FlashpointDetector | TwoStageFlashpointDetector | RubricDetector,
     testset: list[dspy.Example],
     verbose: bool = False,
     num_threads: int = 1,
@@ -453,7 +461,7 @@ def evaluate_detector(
 
 
 def _collect_scores(
-    detector: FlashpointDetector | TwoStageFlashpointDetector,
+    detector: FlashpointDetector | TwoStageFlashpointDetector | RubricDetector,
     testset: list[dspy.Example],
     num_threads: int = 8,
 ) -> list[tuple[bool, int]]:
@@ -483,7 +491,7 @@ def _collect_scores(
 
 
 def evaluate_safety_at_audit_budget(
-    detector: FlashpointDetector | TwoStageFlashpointDetector,
+    detector: FlashpointDetector | TwoStageFlashpointDetector | RubricDetector,
     testset: list[dspy.Example],
     fpr_levels: list[float] | None = None,
     num_threads: int = 8,
@@ -706,9 +714,10 @@ Examples:
         help="Instruction proposer: default (GEPA built-in), terse (few sentences), or short (few paragraphs)",
     )
     parser.add_argument(
-        "--two-stage",
-        action="store_true",
-        help="Use two-stage detector (context summarizer + scorer) for two GEPA components",
+        "--detector-type",
+        default="single",
+        choices=["single", "two-stage", "rubric"],
+        help="Detector architecture: single (default), two-stage (summarizer+scorer), or rubric (categorical)",
     )
     parser.add_argument(
         "--finetune",
@@ -751,7 +760,12 @@ Examples:
         lm = dspy.LM(args.model)
         dspy.configure(lm=lm)
         print(f"Loading existing model from {args.eval_only}...")
-        detector = TwoStageFlashpointDetector() if args.two_stage else FlashpointDetector()
+        if args.detector_type == "two-stage":
+            detector = TwoStageFlashpointDetector()
+        elif args.detector_type == "rubric":
+            detector = RubricDetector()
+        else:
+            detector = FlashpointDetector()
         detector.load(str(args.eval_only))
         print("Model loaded successfully.")
     else:
@@ -768,7 +782,7 @@ Examples:
             finetune=args.finetune,
             component_selector=args.component_selector,
             proposer=args.proposer,
-            two_stage=args.two_stage,
+            detector_type=args.detector_type,
             bootstrap=args.bootstrap,
             max_bootstrapped_demos=args.max_bootstrapped_demos,
             max_labeled_demos=args.max_labeled_demos,
