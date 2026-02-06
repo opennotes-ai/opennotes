@@ -191,6 +191,7 @@ def optimize_flashpoint_detector(
     bootstrap: bool = False,
     max_bootstrapped_demos: int = 4,
     max_labeled_demos: int = 4,
+    num_candidate_programs: int = 8,
 ) -> FlashpointDetector | TwoStageFlashpointDetector | RubricDetector:
     """Run GEPA optimization on the flashpoint detector with comparative training.
 
@@ -212,9 +213,10 @@ def optimize_flashpoint_detector(
         component_selector: "round_robin" (one component per iteration) or "all" (all at once)
         proposer: "default" (GEPA built-in), "terse" (few sentences), or "short" (few paragraphs)
         detector_type: Detector architecture: "single", "two-stage", or "rubric"
-        bootstrap: Run BootstrapFewShot pre-pass to seed GEPA with high-quality demos
+        bootstrap: Run BootstrapFewShotWithRandomSearch pre-pass to seed GEPA with demos
         max_bootstrapped_demos: Max bootstrapped demonstrations per predictor
         max_labeled_demos: Max labeled demonstrations per predictor
+        num_candidate_programs: Number of candidate demo sets to evaluate in bootstrap
 
     Returns:
         The optimized detector module
@@ -268,17 +270,20 @@ def optimize_flashpoint_detector(
     trainer = FlashpointTrainerProgram(detector)
 
     if bootstrap:
-        from dspy.teleprompt import BootstrapFewShot
+        from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 
-        bootstrap_opt = BootstrapFewShot(
+        bootstrap_opt = BootstrapFewShotWithRandomSearch(
             metric=flashpoint_metric,
             max_bootstrapped_demos=max_bootstrapped_demos,
             max_labeled_demos=max_labeled_demos,
+            num_candidate_programs=num_candidate_programs,
+            num_threads=num_threads,
             max_rounds=1,
         )
         print(
-            f"Running BootstrapFewShot pre-pass "
-            f"(max_bootstrapped={max_bootstrapped_demos}, max_labeled={max_labeled_demos})..."
+            f"Running BootstrapFewShotWithRandomSearch pre-pass "
+            f"(max_bootstrapped={max_bootstrapped_demos}, max_labeled={max_labeled_demos}, "
+            f"candidates={num_candidate_programs}, threads={num_threads})..."
         )
         trainer = bootstrap_opt.compile(trainer, trainset=paired_train)
         print("Bootstrap complete. Seeding GEPA with bootstrapped program.")
@@ -727,7 +732,7 @@ Examples:
     parser.add_argument(
         "--bootstrap",
         action="store_true",
-        help="Run BootstrapFewShot pre-pass to seed GEPA with high-quality demonstrations",
+        help="Run parallel BootstrapFewShotWithRandomSearch pre-pass to seed GEPA with demonstrations",
     )
     parser.add_argument(
         "--max-bootstrapped-demos",
@@ -740,6 +745,12 @@ Examples:
         type=int,
         default=4,
         help="Max labeled demonstrations per predictor (default: 4)",
+    )
+    parser.add_argument(
+        "--num-candidate-programs",
+        type=int,
+        default=8,
+        help="Number of candidate demo sets to evaluate in bootstrap (default: 8)",
     )
     parser.add_argument(
         "--safety-curves",
@@ -786,6 +797,7 @@ Examples:
             bootstrap=args.bootstrap,
             max_bootstrapped_demos=args.max_bootstrapped_demos,
             max_labeled_demos=args.max_labeled_demos,
+            num_candidate_programs=args.num_candidate_programs,
         )
 
     _, _, testset = load_flashpoint_datasets()
