@@ -740,6 +740,28 @@ class TestDispatchContentScanWorkflow:
         options = mock_client.enqueue.call_args.args[0]
         assert options["deduplication_id"] == str(scan_id)
 
+    @pytest.mark.asyncio
+    async def test_uses_scan_id_as_workflow_id(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
+
+        scan_id = uuid4()
+
+        with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_handle = MagicMock()
+            mock_handle.workflow_id = str(scan_id)
+            mock_client.enqueue.return_value = mock_handle
+            mock_get_client.return_value = mock_client
+
+            await dispatch_content_scan_workflow(
+                scan_id=scan_id,
+                community_server_id=uuid4(),
+                scan_types=["similarity"],
+            )
+
+        options = mock_client.enqueue.call_args.args[0]
+        assert options["workflow_id"] == str(scan_id)
+
 
 class TestEnqueueContentScanBatch:
     """Tests for enqueue_content_scan_batch async helper."""
