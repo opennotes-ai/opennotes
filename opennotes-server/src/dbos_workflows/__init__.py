@@ -66,7 +66,6 @@ from src.dbos_workflows.content_scan_workflow import (
     send_all_transmitted_signal,
     similarity_scan_step,
     store_messages_in_redis,
-    store_messages_redis_step,
 )
 from src.dbos_workflows.rechunk_workflow import (
     CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
@@ -105,5 +104,4 @@ __all__ = [
     "send_all_transmitted_signal",
     "similarity_scan_step",
     "store_messages_in_redis",
-    "store_messages_redis_step",
 ]

@@ -131,7 +131,6 @@ class TestDualWorkflowIsolation:
         filter_result_b = {"flagged_count": 0, "errors": 0}
 
         with (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch(
                 "src.dbos_workflows.content_scan_workflow.preprocess_batch_step"
             ) as mock_preprocess,
@@ -150,7 +149,7 @@ class TestDualWorkflowIsolation:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=1,
-                messages_json="[]",
+                messages_redis_key="test:messages:a",
                 scan_types_json='["similarity"]',
             )
 
@@ -166,7 +165,7 @@ class TestDualWorkflowIsolation:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=1,
-                messages_json="[]",
+                messages_redis_key="test:messages:b",
                 scan_types_json='["similarity"]',
             )
 

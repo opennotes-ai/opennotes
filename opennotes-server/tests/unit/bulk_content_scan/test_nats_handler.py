@@ -84,7 +84,7 @@ class TestHandleMessageBatch:
                 new_callable=AsyncMock,
             ),
             patch(
-                "src.bulk_content_scan.nats_handler._get_batch_redis_key", return_value="test:key"
+                "src.bulk_content_scan.nats_handler.get_batch_redis_key", return_value="test:key"
             ),
         ):
             mock_scan_types.return_value = ["similarity"]
@@ -117,7 +117,7 @@ class TestHandleMessageBatch:
                 new_callable=AsyncMock,
             ),
             patch(
-                "src.bulk_content_scan.nats_handler._get_batch_redis_key", return_value="test:key"
+                "src.bulk_content_scan.nats_handler.get_batch_redis_key", return_value="test:key"
             ),
         ):
             mock_scan_types.return_value = ["similarity"]
@@ -145,7 +145,7 @@ class TestHandleMessageBatch:
                 new_callable=AsyncMock,
             ),
             patch(
-                "src.bulk_content_scan.nats_handler._get_batch_redis_key", return_value="test:key"
+                "src.bulk_content_scan.nats_handler.get_batch_redis_key", return_value="test:key"
             ),
         ):
             mock_scan_types.return_value = expected_types
@@ -174,7 +174,7 @@ class TestHandleMessageBatch:
                 new_callable=AsyncMock,
             ) as mock_store,
             patch(
-                "src.bulk_content_scan.nats_handler._get_batch_redis_key",
+                "src.bulk_content_scan.nats_handler.get_batch_redis_key",
                 return_value="test:messages:key",
             ),
         ):
