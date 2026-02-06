@@ -1,6 +1,7 @@
-"""Unit tests for flashpoint_utils.parse_bool and parse_derailment_score."""
+"""Unit tests for flashpoint_utils."""
 
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -128,3 +129,65 @@ class TestParseDerailmentScore:
         with caplog.at_level(logging.WARNING, logger="src.bulk_content_scan.flashpoint_utils"):
             result = parse_derailment_score(None)
         assert result == 0
+
+
+class TestTwoStageFlashpointDetector:
+    """Tests for TwoStageFlashpointDetector context pass-through and ScoringSignature fields."""
+
+    def test_scoring_signature_has_context_field(self):
+        from src.bulk_content_scan.flashpoint_utils import ScoringSignature
+
+        sig = ScoringSignature.get()
+        field_names = list(sig.input_fields.keys())
+        assert "context" in field_names
+
+    def test_scoring_signature_has_escalation_analysis_field(self):
+        from src.bulk_content_scan.flashpoint_utils import ScoringSignature
+
+        sig = ScoringSignature.get()
+        field_names = list(sig.input_fields.keys())
+        assert "escalation_analysis" in field_names
+        assert "escalation_summary" not in field_names
+
+    def test_forward_passes_context_to_scorer(self):
+        from src.bulk_content_scan.flashpoint_utils import TwoStageFlashpointDetector
+
+        detector = TwoStageFlashpointDetector()
+
+        mock_summary_result = MagicMock()
+        mock_summary_result.escalation_summary = "test analysis"
+        detector._inner.summarize = MagicMock(return_value=mock_summary_result)
+
+        mock_score_result = MagicMock()
+        mock_score_result.derailment_score = 75
+        mock_score_result.reasoning = "test"
+        detector._inner.score = MagicMock(return_value=mock_score_result)
+
+        detector(context="user1: hello\nuser2: shut up", message="user1: you're terrible")
+
+        detector._inner.score.assert_called_once_with(
+            context="user1: hello\nuser2: shut up",
+            message="user1: you're terrible",
+            escalation_analysis="test analysis",
+        )
+
+    def test_forward_passes_context_to_summarizer(self):
+        from src.bulk_content_scan.flashpoint_utils import TwoStageFlashpointDetector
+
+        detector = TwoStageFlashpointDetector()
+
+        mock_summary_result = MagicMock()
+        mock_summary_result.escalation_summary = "signals detected"
+        detector._inner.summarize = MagicMock(return_value=mock_summary_result)
+
+        mock_score_result = MagicMock()
+        mock_score_result.derailment_score = 30
+        mock_score_result.reasoning = "low risk"
+        detector._inner.score = MagicMock(return_value=mock_score_result)
+
+        detector(context="some context", message="some message")
+
+        detector._inner.summarize.assert_called_once_with(
+            context="some context",
+            message="some message",
+        )

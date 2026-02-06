@@ -159,18 +159,19 @@ class ScoringSignature:
             dspy = _import_dspy()
 
             class _ScoringSignature(dspy.Signature):
-                """Rate derailment risk based on extracted escalation signals."""
+                """Rate derailment risk based on conversation history and escalation analysis."""
 
-                escalation_summary: str = dspy.InputField(
-                    desc="Summary of escalation signals and conflict trajectory"
+                context: str = dspy.InputField(
+                    desc="The verbatim previous messages in the conversation"
                 )
                 message: str = dspy.InputField(desc="The current message to analyze")
+                escalation_analysis: str = dspy.InputField(
+                    desc="Analysis of conflict signals and trajectory"
+                )
                 derailment_score: int = dspy.OutputField(
-                    desc="Derailment risk score from 0 (no risk) to 100 (certain derailment)",
+                    desc="Score 0-100. 0=Civil, 50=Heated disagreement, 100=Active hostility/Safety risk",
                 )
-                reasoning: str = dspy.OutputField(
-                    desc="Brief explanation of the key escalation signals detected"
-                )
+                reasoning: str = dspy.OutputField(desc="Justification for the score")
 
             cls._cls = _ScoringSignature
         return cls._cls
@@ -202,8 +203,9 @@ class TwoStageFlashpointDetector:
             def forward(self_inner, context: str, message: str) -> dspy.Prediction:  # noqa: N805
                 summary = self_inner.summarize(context=context, message=message)
                 return self_inner.score(
-                    escalation_summary=summary.escalation_summary,
+                    context=context,
                     message=message,
+                    escalation_analysis=summary.escalation_summary,
                 )
 
         self._inner = _Inner()
