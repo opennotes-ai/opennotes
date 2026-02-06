@@ -44,8 +44,8 @@ from scripts.flashpoints.dspy_dataset import (
 from scripts.flashpoints.flashpoint_module import (
     FlashpointDetector,
     FlashpointTrainerProgram,
+    comparative_flashpoint_metric,
     flashpoint_metric,
-    make_comparative_metric,
 )
 from src.bulk_content_scan.flashpoint_utils import (
     TwoStageFlashpointDetector,
@@ -186,7 +186,6 @@ def optimize_flashpoint_detector(
     component_selector: str = "round_robin",
     proposer: str = "default",
     two_stage: bool = False,
-    feedback_mode: str = "static",
 ) -> FlashpointDetector | TwoStageFlashpointDetector:
     """Run GEPA optimization on the flashpoint detector with comparative training.
 
@@ -208,7 +207,6 @@ def optimize_flashpoint_detector(
         component_selector: "round_robin" (one component per iteration) or "all" (all at once)
         proposer: "default" (GEPA built-in), "terse" (few sentences), or "short" (few paragraphs)
         two_stage: Use two-stage detector (summarizer + scorer) for two GEPA components
-        feedback_mode: "static" for factual-only feedback, "dynamic" for LLM-generated
 
     Returns:
         The optimized detector module
@@ -229,10 +227,8 @@ def optimize_flashpoint_detector(
         max_tokens=32000,
     )
 
-    metric_fn = make_comparative_metric(feedback_mode)
-
     gepa_kwargs: dict[str, Any] = {
-        "metric": metric_fn,
+        "metric": comparative_flashpoint_metric,
         "auto": auto,
         "num_threads": num_threads,
         "track_stats": True,
@@ -255,9 +251,7 @@ def optimize_flashpoint_detector(
 
     print(f"Starting GEPA optimization (auto={auto}, model={model})...")
     print(f"Reflection LM: {reflection_model or 'openai/gpt-5.2'}")
-    print(
-        f"Component selector: {component_selector}, Proposer: {proposer}, Feedback: {feedback_mode}"
-    )
+    print(f"Component selector: {component_selector}, Proposer: {proposer}")
     if two_stage:
         print("Detector: two-stage (summarizer + scorer)")
     print("This may take a while depending on the auto level and dataset size.")
@@ -271,7 +265,9 @@ def optimize_flashpoint_detector(
     optimized_detector = optimized_trainer.detector
 
     if finetune:
-        optimized_detector = _run_finetune(optimized_detector, model, paired_train, metric_fn)
+        optimized_detector = _run_finetune(
+            optimized_detector, model, paired_train, comparative_flashpoint_metric
+        )
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -687,12 +683,6 @@ Examples:
         help="Use two-stage detector (context summarizer + scorer) for two GEPA components",
     )
     parser.add_argument(
-        "--feedback-mode",
-        default="static",
-        choices=["static", "dynamic"],
-        help="Metric feedback mode: static (factual-only) or dynamic (LLM-generated diagnostic feedback)",
-    )
-    parser.add_argument(
         "--finetune",
         action="store_true",
         help="Run BootstrapFinetune as a second pass after GEPA optimization",
@@ -734,7 +724,6 @@ Examples:
             component_selector=args.component_selector,
             proposer=args.proposer,
             two_stage=args.two_stage,
-            feedback_mode=args.feedback_mode,
         )
 
     _, _, testset = load_flashpoint_datasets()
