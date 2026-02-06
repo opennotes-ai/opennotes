@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -110,69 +111,88 @@ def optimize_flashpoint_detector(
     return optimized
 
 
+def _evaluate_single(
+    detector: FlashpointDetector, idx: int, example: dspy.Example
+) -> tuple[int, float | None, int | None, str | None]:
+    """Evaluate a single example. Returns (idx, score, error_msg)."""
+    try:
+        pred = detector(context=example.context, message=example.message)
+        score = flashpoint_metric(example, pred)
+        expected = parse_bool(example.will_derail)
+        predicted = parse_bool(pred.will_derail)
+
+        if expected and predicted:
+            category = 0  # TP
+        elif not expected and predicted:
+            category = 1  # FP
+        elif expected and not predicted:
+            category = 2  # FN
+        else:
+            category = 3  # TN
+
+        return (idx, score, category, None)
+    except Exception as e:
+        return (idx, None, None, str(e))
+
+
 def evaluate_detector(
     detector: FlashpointDetector,
     testset: list[dspy.Example],
     verbose: bool = False,
+    num_threads: int = 1,
 ) -> dict:
     """Evaluate the detector on the test set.
 
     Returns accuracy, precision, recall, F1, and confusion matrix.
     """
     correct = 0
-    true_positives = 0
-    false_positives = 0
-    false_negatives = 0
-    true_negatives = 0
     errors = 0
+    counters = [0, 0, 0, 0]  # TP, FP, FN, TN
 
-    pbar = tqdm(testset, desc="Evaluating", unit="ex")
-    for i, example in enumerate(pbar):
-        try:
-            pred = detector(context=example.context, message=example.message)
-            score = flashpoint_metric(example, pred)
-            correct += score
-
-            expected = parse_bool(example.will_derail)
-            predicted = parse_bool(pred.will_derail)
-
-            if expected and predicted:
-                true_positives += 1
-            elif not expected and predicted:
-                false_positives += 1
-            elif expected and not predicted:
-                false_negatives += 1
-            else:
-                true_negatives += 1
-
-        except Exception as e:
+    def _update_progress(pbar, idx, score, category, error_msg):
+        nonlocal correct, errors
+        if error_msg is not None:
             errors += 1
-            tqdm.write(f"Error evaluating example {i}: {e}")
+            tqdm.write(f"Error evaluating example {idx}: {error_msg}")
+        else:
+            correct += score
+            counters[category] += 1
 
-        evaluated = (i + 1) - errors
-        if evaluated > 0:
-            p = (
-                true_positives / (true_positives + false_positives)
-                if (true_positives + false_positives) > 0
-                else 0
-            )
-            r = (
-                true_positives / (true_positives + false_negatives)
-                if (true_positives + false_negatives) > 0
-                else 0
-            )
+        if sum(counters) > 0:
+            tp, fp, fn, tn = counters
+            p = tp / (tp + fp) if (tp + fp) > 0 else 0
+            r = tp / (tp + fn) if (tp + fn) > 0 else 0
             f1 = 2 * p * r / (p + r) if (p + r) > 0 else 0
             pbar.set_postfix(
-                TP=true_positives,
-                FP=false_positives,
-                FN=false_negatives,
-                TN=true_negatives,
+                TP=tp,
+                FP=fp,
+                FN=fn,
+                TN=tn,
                 P=f"{p:.0%}",
                 R=f"{r:.0%}",
                 F1=f"{f1:.0%}",
                 err=errors,
             )
+        pbar.update(1)
 
+    pbar = tqdm(total=len(testset), desc="Evaluating", unit="ex")
+
+    if num_threads <= 1:
+        for i, example in enumerate(testset):
+            idx, score, category, error_msg = _evaluate_single(detector, i, example)
+            _update_progress(pbar, idx, score, category, error_msg)
+    else:
+        with ThreadPoolExecutor(max_workers=num_threads) as pool:
+            futures = {
+                pool.submit(_evaluate_single, detector, i, ex): i for i, ex in enumerate(testset)
+            }
+            for future in as_completed(futures):
+                idx, score, category, error_msg = future.result()
+                _update_progress(pbar, idx, score, category, error_msg)
+
+    pbar.close()
+
+    true_positives, false_positives, false_negatives, true_negatives = counters
     evaluated = len(testset) - errors
     accuracy = correct / evaluated if evaluated > 0 else 0
     precision = (
@@ -301,6 +321,12 @@ Examples:
         help="Number of threads for GEPA optimization (default: 6)",
     )
     parser.add_argument(
+        "--num-eval-threads",
+        type=int,
+        default=8,
+        help="Number of threads for parallel evaluation (default: 8)",
+    )
+    parser.add_argument(
         "--log-dir",
         type=Path,
         default=Path(__file__).parent.parent.parent / "data" / "flashpoints" / "gepa_logs",
@@ -330,8 +356,10 @@ Examples:
     _, _, testset = load_flashpoint_datasets()
     testset = testset[: args.max_test]
 
-    print(f"\nEvaluating on {len(testset)} test examples...")
-    metrics = evaluate_detector(detector, testset, verbose=args.verbose)
+    print(f"\nEvaluating on {len(testset)} test examples ({args.num_eval_threads} threads)...")
+    metrics = evaluate_detector(
+        detector, testset, verbose=args.verbose, num_threads=args.num_eval_threads
+    )
     print_metrics(metrics)
 
     error_rate_threshold = 0.05
