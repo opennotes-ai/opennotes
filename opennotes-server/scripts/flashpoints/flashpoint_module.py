@@ -130,7 +130,7 @@ class FlashpointTrainerProgram(dspy.Module):
 
     def __init__(self, detector: FlashpointDetector) -> None:
         super().__init__()
-        self.detector = detector
+        self.detector = detector._inner
 
     def forward(
         self,
