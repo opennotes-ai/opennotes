@@ -62,6 +62,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 REDIS_BATCH_TTL_SECONDS = 86400
+REDIS_REPLAY_TTL_SECONDS = 7 * 24 * 3600
 
 content_scan_queue = Queue(
     name="content_scan",
@@ -75,7 +76,7 @@ SCAN_RECV_TIMEOUT_SECONDS = 30
 ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS = 1800
 
 
-def _get_batch_redis_key(scan_id: str, batch_number: int, suffix: str) -> str:
+def get_batch_redis_key(scan_id: str, batch_number: int, suffix: str) -> str:
     from src.config import get_settings
 
     env = get_settings().ENVIRONMENT
@@ -99,6 +100,7 @@ async def load_messages_from_redis(
     data = await redis_client.get(key)
     if data is None:
         raise ValueError(f"Redis key {key} not found or expired")
+    await redis_client.expire(key, REDIS_REPLAY_TTL_SECONDS)
     raw = data.decode() if isinstance(data, bytes) else data
     return json.loads(raw)
 
@@ -351,7 +353,7 @@ def process_content_scan_batch(
     scan_id: str,
     community_server_id: str,
     batch_number: int,
-    messages_json: str,
+    messages_redis_key: str,
     scan_types_json: str,
 ) -> dict[str, Any]:
     """DBOS queued workflow for processing a single content scan batch.
@@ -371,7 +373,7 @@ def process_content_scan_batch(
         scan_id: UUID string of the scan
         community_server_id: UUID string of the community server
         batch_number: Batch number being processed
-        messages_json: JSON-encoded list of message dicts OR a Redis key
+        messages_redis_key: Redis key where messages are stored
         scan_types_json: JSON-encoded list of scan type strings
 
     Returns:
@@ -388,71 +390,100 @@ def process_content_scan_batch(
 
     scan_types = json.loads(scan_types_json)
 
-    messages_redis_key = _get_batch_redis_key(scan_id, batch_number, "messages")
+    errors = 0
+    flagged_count = 0
+    message_count = 0
+    skipped_count = 0
+    step_errors: list[str] = []
+    preprocess_result: dict[str, Any] | None = None
 
-    is_redis_key = not messages_json.startswith("[")
-    if not is_redis_key:
-        store_messages_redis_step(messages_redis_key, messages_json)
-
-    preprocess_result = preprocess_batch_step(
-        scan_id=scan_id,
-        community_server_id=community_server_id,
-        batch_number=batch_number,
-        messages_redis_key=messages_redis_key,
-        scan_types_json=scan_types_json,
-    )
-
-    message_count = preprocess_result.get("message_count", 0)
-    skipped_count = preprocess_result.get("skipped_count", 0)
-
-    if message_count == 0:
-        result = {
-            "processed": 0,
-            "skipped": skipped_count,
-            "errors": 0,
-            "flagged_count": 0,
-            "batch_number": batch_number,
-        }
-    else:
-        filtered_messages_key = preprocess_result["filtered_messages_key"]
-        context_maps_key = preprocess_result.get("context_maps_key", "")
-
-        similarity_result: dict[str, Any] = {"similarity_candidates_key": "", "candidate_count": 0}
-        flashpoint_result: dict[str, Any] = {"flashpoint_candidates_key": "", "candidate_count": 0}
-
-        if "similarity" in scan_types:
-            similarity_result = similarity_scan_step(
-                scan_id=scan_id,
-                community_server_id=community_server_id,
-                batch_number=batch_number,
-                filtered_messages_key=filtered_messages_key,
-                context_maps_key=context_maps_key,
-            )
-
-        if "conversation_flashpoint" in scan_types:
-            flashpoint_result = flashpoint_scan_step(
-                scan_id=scan_id,
-                community_server_id=community_server_id,
-                batch_number=batch_number,
-                filtered_messages_key=filtered_messages_key,
-                context_maps_key=context_maps_key,
-            )
-
-        filter_result = relevance_filter_step(
+    try:
+        preprocess_result = preprocess_batch_step(
             scan_id=scan_id,
             community_server_id=community_server_id,
             batch_number=batch_number,
-            similarity_candidates_key=similarity_result.get("similarity_candidates_key", ""),
-            flashpoint_candidates_key=flashpoint_result.get("flashpoint_candidates_key", ""),
+            messages_redis_key=messages_redis_key,
+            scan_types_json=scan_types_json,
         )
+    except Exception as e:
+        logger.error("preprocess_batch_step failed", exc_info=True)
+        step_errors.append(f"preprocess: {e}")
 
-        result = {
-            "processed": message_count,
-            "skipped": skipped_count,
-            "errors": filter_result.get("errors", 0),
-            "flagged_count": filter_result.get("flagged_count", 0),
-            "batch_number": batch_number,
-        }
+    if preprocess_result is not None:
+        message_count = preprocess_result.get("message_count", 0)
+        skipped_count = preprocess_result.get("skipped_count", 0)
+
+        if message_count > 0:
+            filtered_messages_key = preprocess_result["filtered_messages_key"]
+            context_maps_key = preprocess_result.get("context_maps_key", "")
+
+            similarity_result: dict[str, Any] = {
+                "similarity_candidates_key": "",
+                "candidate_count": 0,
+            }
+            flashpoint_result: dict[str, Any] = {
+                "flashpoint_candidates_key": "",
+                "candidate_count": 0,
+            }
+
+            if "similarity" in scan_types:
+                try:
+                    similarity_result = similarity_scan_step(
+                        scan_id=scan_id,
+                        community_server_id=community_server_id,
+                        batch_number=batch_number,
+                        filtered_messages_key=filtered_messages_key,
+                        context_maps_key=context_maps_key,
+                    )
+                except Exception as e:
+                    logger.error("similarity_scan_step failed", exc_info=True)
+                    step_errors.append(f"similarity: {e}")
+
+            if "conversation_flashpoint" in scan_types:
+                try:
+                    flashpoint_result = flashpoint_scan_step(
+                        scan_id=scan_id,
+                        community_server_id=community_server_id,
+                        batch_number=batch_number,
+                        filtered_messages_key=filtered_messages_key,
+                        context_maps_key=context_maps_key,
+                    )
+                except Exception as e:
+                    logger.error("flashpoint_scan_step failed", exc_info=True)
+                    step_errors.append(f"flashpoint: {e}")
+
+            try:
+                filter_result = relevance_filter_step(
+                    scan_id=scan_id,
+                    community_server_id=community_server_id,
+                    batch_number=batch_number,
+                    similarity_candidates_key=similarity_result.get(
+                        "similarity_candidates_key", ""
+                    ),
+                    flashpoint_candidates_key=flashpoint_result.get(
+                        "flashpoint_candidates_key", ""
+                    ),
+                )
+                flagged_count = filter_result.get("flagged_count", 0)
+                errors = filter_result.get("errors", 0) + len(step_errors)
+            except Exception as e:
+                logger.error("relevance_filter_step failed", exc_info=True)
+                step_errors.append(f"relevance: {e}")
+                errors = len(step_errors)
+        else:
+            errors = len(step_errors)
+    else:
+        errors = len(step_errors)
+
+    result: dict[str, Any] = {
+        "processed": message_count,
+        "skipped": skipped_count,
+        "errors": errors,
+        "flagged_count": flagged_count,
+        "batch_number": batch_number,
+    }
+    if step_errors:
+        result["step_errors"] = step_errors
 
     DBOS.send(
         orchestrator_workflow_id,
@@ -467,6 +498,7 @@ def process_content_scan_batch(
             "batch_number": batch_number,
             "processed": result.get("processed", 0),
             "flagged_count": result.get("flagged_count", 0),
+            "step_errors": step_errors if step_errors else None,
         },
     )
 
@@ -631,35 +663,6 @@ def process_batch_messages_step(
 
 
 @DBOS.step()
-def store_messages_redis_step(messages_redis_key: str, messages_json: str) -> str:
-    """Store raw messages JSON in Redis for inter-step message passing.
-
-    This step checkpoints the Redis write so that on replay the write is
-    skipped (the key is already populated or will be re-populated by
-    the preprocess step).
-
-    Args:
-        messages_redis_key: Redis key to store messages under
-        messages_json: JSON-encoded list of message dicts
-
-    Returns:
-        The Redis key where messages were stored
-    """
-    from src.cache.redis_client import get_shared_redis_client
-    from src.config import get_settings
-
-    settings = get_settings()
-
-    async def _store() -> str:
-        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
-        messages = json.loads(messages_json)
-        await store_messages_in_redis(redis_conn, messages_redis_key, messages)
-        return messages_redis_key
-
-    return run_sync(_store())
-
-
-@DBOS.step()
 def preprocess_batch_step(
     scan_id: str,
     community_server_id: str,
@@ -736,14 +739,13 @@ def preprocess_batch_step(
         needs_context = ScanType.CONVERSATION_FLASHPOINT in scan_types
         channel_context_map: dict[str, list[dict[str, Any]]] = {}
         if needs_context and typed_messages:
-            temp_service = BulkContentScanService.__new__(BulkContentScanService)
-            raw_map = temp_service._build_channel_context_map(typed_messages)
+            raw_map = BulkContentScanService._build_channel_context_map(typed_messages)
             channel_context_map = {
                 ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
             }
 
-        filtered_key = _get_batch_redis_key(scan_id, batch_number, "filtered")
-        context_key = _get_batch_redis_key(scan_id, batch_number, "context")
+        filtered_key = get_batch_redis_key(scan_id, batch_number, "filtered")
+        context_key = get_batch_redis_key(scan_id, batch_number, "context")
 
         filtered_dicts = [m.model_dump(mode="json") for m in typed_messages]
         await store_messages_in_redis(redis_conn, filtered_key, filtered_dicts)
@@ -837,7 +839,7 @@ def similarity_scan_step(
                 if candidate:
                     candidates.append(candidate)
 
-        candidates_key = _get_batch_redis_key(scan_id, batch_number, "similarity_candidates")
+        candidates_key = get_batch_redis_key(scan_id, batch_number, "similarity_candidates")
         candidates_data = [c.model_dump(mode="json") for c in candidates]
         await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
 
@@ -933,7 +935,7 @@ def flashpoint_scan_step(
                 if candidate:
                     candidates.append(candidate)
 
-        candidates_key = _get_batch_redis_key(scan_id, batch_number, "flashpoint_candidates")
+        candidates_key = get_batch_redis_key(scan_id, batch_number, "flashpoint_candidates")
         candidates_data = [c.model_dump(mode="json") for c in candidates]
         await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
 
@@ -993,29 +995,32 @@ def relevance_filter_step(
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
 
         all_candidates: list[ScanCandidate] = []
+        errors = 0
 
         if similarity_candidates_key:
             try:
                 sim_data = await load_messages_from_redis(redis_conn, similarity_candidates_key)
                 all_candidates.extend(ScanCandidate.model_validate(c) for c in sim_data)
             except ValueError:
-                logger.info(
-                    "No similarity candidates found in Redis",
+                logger.warning(
+                    "Similarity candidates Redis key expired or missing",
                     extra={"scan_id": scan_id, "key": similarity_candidates_key},
                 )
+                errors += 1
 
         if flashpoint_candidates_key:
             try:
                 fp_data = await load_messages_from_redis(redis_conn, flashpoint_candidates_key)
                 all_candidates.extend(ScanCandidate.model_validate(c) for c in fp_data)
             except ValueError:
-                logger.info(
-                    "No flashpoint candidates found in Redis",
+                logger.warning(
+                    "Flashpoint candidates Redis key expired or missing",
                     extra={"scan_id": scan_id, "key": flashpoint_candidates_key},
                 )
+                errors += 1
 
         if not all_candidates:
-            return {"flagged_count": 0, "errors": 0}
+            return {"flagged_count": 0, "errors": errors}
 
         async with get_session_maker()() as session:
             llm_service = _get_llm_service()
@@ -1278,15 +1283,14 @@ async def enqueue_content_scan_batch(
     community_server_id: UUID,
     batch_number: int,
     scan_types: list[str],
-    messages_redis_key: str = "",
-    messages: list[dict[str, Any]] | None = None,
+    messages_redis_key: str,
 ) -> str | None:
     """Enqueue a content scan batch for processing via DBOS queue.
 
-    Accepts either a Redis key (preferred) or raw message dicts. When a
-    Redis key is provided, the workflow reads messages from Redis instead
-    of receiving them via the DBOS checkpoint (keeping large payloads out
-    of the DBOS system tables).
+    Messages must already be stored in Redis under messages_redis_key.
+    The workflow reads messages from Redis instead of receiving them via
+    the DBOS checkpoint (keeping large payloads out of the DBOS system
+    tables).
 
     Args:
         orchestrator_workflow_id: Workflow ID of the orchestrator to signal on completion
@@ -1294,8 +1298,7 @@ async def enqueue_content_scan_batch(
         community_server_id: UUID of the community server
         batch_number: Batch number
         scan_types: List of scan type strings
-        messages_redis_key: Redis key where messages are stored (preferred)
-        messages: List of message dicts (fallback, for backward compat)
+        messages_redis_key: Redis key where messages are stored
 
     Returns:
         The DBOS workflow_id if successfully enqueued, None on failure
@@ -1305,12 +1308,6 @@ async def enqueue_content_scan_batch(
 
     try:
         client = get_dbos_client()
-        if messages_redis_key:
-            messages_json = messages_redis_key
-        elif messages is not None:
-            messages_json = json.dumps(messages)
-        else:
-            messages_json = "[]"
         scan_types_json = json.dumps(scan_types)
 
         options: EnqueueOptions = {
@@ -1325,13 +1322,9 @@ async def enqueue_content_scan_batch(
             str(scan_id),
             str(community_server_id),
             batch_number,
-            messages_json,
+            messages_redis_key,
             scan_types_json,
         )
-
-        msg_count = 0
-        if messages is not None:
-            msg_count = len(messages)
 
         logger.info(
             "Content scan batch enqueued via DBOS",
@@ -1339,8 +1332,7 @@ async def enqueue_content_scan_batch(
                 "scan_id": str(scan_id),
                 "batch_number": batch_number,
                 "workflow_id": handle.workflow_id,
-                "message_count": msg_count,
-                "uses_redis_key": bool(messages_redis_key),
+                "messages_redis_key": messages_redis_key,
             },
         )
 

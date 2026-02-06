@@ -502,29 +502,29 @@ class TestContentScanOrchestrationWorkflow:
 class TestRedisHelpers:
     """Tests for Redis helper functions used by per-strategy steps."""
 
-    def test_get_batch_redis_key_format(self) -> None:
-        from src.dbos_workflows.content_scan_workflow import _get_batch_redis_key
+    def testget_batch_redis_key_format(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import get_batch_redis_key
 
         with patch("src.config.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(ENVIRONMENT="test")
-            key = _get_batch_redis_key("scan-abc", 3, "messages")
+            key = get_batch_redis_key("scan-abc", 3, "messages")
 
         assert key == "test:bulk_scan:messages:scan-abc:3"
 
-    def test_get_batch_redis_key_different_suffixes(self) -> None:
-        from src.dbos_workflows.content_scan_workflow import _get_batch_redis_key
+    def testget_batch_redis_key_different_suffixes(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import get_batch_redis_key
 
         with patch("src.config.get_settings") as mock_settings:
             mock_settings.return_value = MagicMock(ENVIRONMENT="prod")
 
-            assert _get_batch_redis_key("s1", 1, "filtered") == "prod:bulk_scan:filtered:s1:1"
-            assert _get_batch_redis_key("s1", 1, "context") == "prod:bulk_scan:context:s1:1"
+            assert get_batch_redis_key("s1", 1, "filtered") == "prod:bulk_scan:filtered:s1:1"
+            assert get_batch_redis_key("s1", 1, "context") == "prod:bulk_scan:context:s1:1"
             assert (
-                _get_batch_redis_key("s1", 1, "similarity_candidates")
+                get_batch_redis_key("s1", 1, "similarity_candidates")
                 == "prod:bulk_scan:similarity_candidates:s1:1"
             )
             assert (
-                _get_batch_redis_key("s1", 1, "flashpoint_candidates")
+                get_batch_redis_key("s1", 1, "flashpoint_candidates")
                 == "prod:bulk_scan:flashpoint_candidates:s1:1"
             )
 
@@ -551,9 +551,30 @@ class TestRedisHelpers:
         messages = [{"message_id": "m1", "content": "hello"}]
         mock_redis = MagicMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(messages).encode())
+        mock_redis.expire = AsyncMock(return_value=True)
 
         result = await load_messages_from_redis(mock_redis, "test:key")
         assert result == messages
+
+    @pytest.mark.asyncio
+    async def test_load_messages_from_redis_refreshes_ttl(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            REDIS_REPLAY_TTL_SECONDS,
+            load_messages_from_redis,
+        )
+
+        messages = [{"message_id": "m1", "content": "hello"}]
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(return_value=json.dumps(messages).encode())
+        mock_redis.expire = AsyncMock(return_value=True)
+
+        await load_messages_from_redis(mock_redis, "test:key")
+        mock_redis.expire.assert_called_once_with("test:key", REDIS_REPLAY_TTL_SECONDS)
+
+    def test_redis_replay_ttl_is_7_days(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import REDIS_REPLAY_TTL_SECONDS
+
+        assert REDIS_REPLAY_TTL_SECONDS == 7 * 24 * 3600
 
     @pytest.mark.asyncio
     async def test_load_messages_from_redis_expired_key(self) -> None:
@@ -577,13 +598,11 @@ class TestProcessContentScanBatch:
     def _patch_all_steps(self):
         """Patch all per-strategy steps for workflow-level tests."""
         return (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step"),
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step"),
             patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key"),
         )
 
     def test_calls_per_strategy_steps_in_order(self) -> None:
@@ -592,13 +611,10 @@ class TestProcessContentScanBatch:
 
         scan_id = str(uuid4())
         community_server_id = str(uuid4())
-        messages_json = json.dumps([{"message_id": "msg1", "content": "test"}])
+        redis_key = "test:bulk_scan:messages:scan:1"
         scan_types_json = json.dumps(["similarity"])
 
         with (
-            patch(
-                "src.dbos_workflows.content_scan_workflow.store_messages_redis_step"
-            ) as mock_store,
             patch(
                 "src.dbos_workflows.content_scan_workflow.preprocess_batch_step"
             ) as mock_preprocess,
@@ -606,9 +622,7 @@ class TestProcessContentScanBatch:
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
         ):
-            mock_key.return_value = "test:bulk_scan:messages:scan:1"
             mock_preprocess.return_value = {
                 "filtered_messages_key": "test:filtered",
                 "context_maps_key": "test:context",
@@ -623,11 +637,10 @@ class TestProcessContentScanBatch:
                 scan_id=scan_id,
                 community_server_id=community_server_id,
                 batch_number=1,
-                messages_json=messages_json,
+                messages_redis_key=redis_key,
                 scan_types_json=scan_types_json,
             )
 
-        mock_store.assert_called_once()
         mock_preprocess.assert_called_once()
         mock_sim.assert_called_once()
         mock_fp.assert_not_called()
@@ -636,59 +649,18 @@ class TestProcessContentScanBatch:
         assert result["flagged_count"] == 1
         mock_dbos.send.assert_called_once()
 
-    def test_stores_messages_in_redis_when_json_payload(self) -> None:
-        """When messages_json is raw JSON, store_messages_redis_step is called."""
-        from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
-
-        messages_json = json.dumps([{"message_id": "msg1", "content": "test"}])
-
-        with (
-            patch(
-                "src.dbos_workflows.content_scan_workflow.store_messages_redis_step"
-            ) as mock_store,
-            patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
-            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
-        ):
-            mock_key.return_value = "test:messages:key"
-            mock_pre.return_value = {
-                "filtered_messages_key": "k",
-                "context_maps_key": "k",
-                "message_count": 1,
-                "skipped_count": 0,
-            }
-            mock_filter.return_value = {"flagged_count": 0, "errors": 0}
-
-            process_content_scan_batch.__wrapped__(
-                orchestrator_workflow_id="orch",
-                scan_id=str(uuid4()),
-                community_server_id=str(uuid4()),
-                batch_number=1,
-                messages_json=messages_json,
-                scan_types_json=json.dumps(["similarity"]),
-            )
-
-        mock_store.assert_called_once_with("test:messages:key", messages_json)
-
-    def test_skips_store_when_redis_key_provided(self) -> None:
-        """When messages_json is a Redis key (not JSON array), skip store step."""
+    def test_passes_redis_key_to_preprocess_step(self) -> None:
+        """Batch workflow passes messages_redis_key to preprocess step."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
         redis_key = "test:bulk_scan:messages:scan-id:1"
 
         with (
-            patch(
-                "src.dbos_workflows.content_scan_workflow.store_messages_redis_step"
-            ) as mock_store,
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
         ):
-            mock_key.return_value = redis_key
             mock_pre.return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
@@ -702,11 +674,11 @@ class TestProcessContentScanBatch:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=1,
-                messages_json=redis_key,
+                messages_redis_key=redis_key,
                 scan_types_json=json.dumps(["similarity"]),
             )
 
-        mock_store.assert_not_called()
+        assert mock_pre.call_args.kwargs["messages_redis_key"] == redis_key
 
     def test_includes_flashpoint_step_when_scan_type_requested(self) -> None:
         """Flashpoint step is called when conversation_flashpoint is in scan_types."""
@@ -715,15 +687,12 @@ class TestProcessContentScanBatch:
         scan_types_json = json.dumps(["similarity", "conversation_flashpoint"])
 
         with (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step") as mock_sim,
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
         ):
-            mock_key.return_value = "test:key"
             mock_pre.return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
@@ -739,7 +708,7 @@ class TestProcessContentScanBatch:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=1,
-                messages_json=json.dumps([{"message_id": "m1", "content": "test"}]),
+                messages_redis_key="test:messages:key",
                 scan_types_json=scan_types_json,
             )
 
@@ -754,14 +723,11 @@ class TestProcessContentScanBatch:
         orchestrator_wf_id = "orchestrator-wf-123"
 
         with (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
         ):
-            mock_key.return_value = "test:key"
             mock_pre.return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
@@ -775,7 +741,7 @@ class TestProcessContentScanBatch:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=1,
-                messages_json=json.dumps([]),
+                messages_redis_key="test:messages:key",
                 scan_types_json=json.dumps(["similarity"]),
             )
 
@@ -789,15 +755,12 @@ class TestProcessContentScanBatch:
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
         with (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step") as mock_sim,
             patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step") as mock_fp,
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
         ):
-            mock_key.return_value = "test:key"
             mock_pre.return_value = {
                 "filtered_messages_key": "",
                 "context_maps_key": "",
@@ -810,7 +773,7 @@ class TestProcessContentScanBatch:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=1,
-                messages_json=json.dumps([]),
+                messages_redis_key="test:messages:key",
                 scan_types_json=json.dumps(["similarity"]),
             )
 
@@ -820,28 +783,28 @@ class TestProcessContentScanBatch:
         assert result["processed"] == 0
         assert result["skipped"] == 5
 
-    def test_propagates_step_error(self) -> None:
-        """Batch workflow propagates errors from a step."""
+    def test_sends_signal_on_preprocess_error(self) -> None:
+        """Batch workflow sends signal to orchestrator even when preprocess fails."""
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
         with (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
-            patch("src.dbos_workflows.content_scan_workflow.DBOS"),
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
-            mock_key.return_value = "test:key"
             mock_pre.side_effect = RuntimeError("Step failed")
 
-            with pytest.raises(RuntimeError, match="Step failed"):
-                process_content_scan_batch.__wrapped__(
-                    orchestrator_workflow_id="wf-123",
-                    scan_id=str(uuid4()),
-                    community_server_id=str(uuid4()),
-                    batch_number=1,
-                    messages_json="[]",
-                    scan_types_json='["similarity"]',
-                )
+            result = process_content_scan_batch.__wrapped__(
+                orchestrator_workflow_id="wf-123",
+                scan_id=str(uuid4()),
+                community_server_id=str(uuid4()),
+                batch_number=1,
+                messages_redis_key="test:key",
+                scan_types_json='["similarity"]',
+            )
+
+        assert result["errors"] >= 1
+        assert "preprocess" in result.get("step_errors", [""])[0]
+        mock_dbos.send.assert_called_once()
 
 
 class TestProcessBatchMessagesStep:
@@ -1135,8 +1098,6 @@ class TestEnqueueContentScanBatch:
 
         scan_id = uuid4()
         community_server_id = uuid4()
-        messages = [{"message_id": "m1", "content": "test"}]
-        scan_types = ["similarity"]
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
@@ -1150,8 +1111,8 @@ class TestEnqueueContentScanBatch:
                 scan_id=scan_id,
                 community_server_id=community_server_id,
                 batch_number=1,
-                messages=messages,
-                scan_types=scan_types,
+                messages_redis_key="test:messages:key",
+                scan_types=["similarity"],
             )
 
         assert result == "batch-wf-456"
@@ -1170,7 +1131,7 @@ class TestEnqueueContentScanBatch:
                 scan_id=uuid4(),
                 community_server_id=uuid4(),
                 batch_number=1,
-                messages=[],
+                messages_redis_key="test:messages:key",
                 scan_types=["similarity"],
             )
 
@@ -1192,7 +1153,7 @@ class TestEnqueueContentScanBatch:
                 scan_id=uuid4(),
                 community_server_id=uuid4(),
                 batch_number=1,
-                messages=[],
+                messages_redis_key="test:messages:key",
                 scan_types=["similarity"],
             )
 
@@ -1343,14 +1304,11 @@ class TestSignalCoordination:
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
         with (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
         ):
-            mock_key.return_value = "test:key"
             mock_pre.return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
@@ -1364,7 +1322,7 @@ class TestSignalCoordination:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=3,
-                messages_json="[]",
+                messages_redis_key="test:messages:key",
                 scan_types_json='["similarity"]',
             )
 
@@ -1598,14 +1556,11 @@ class TestProgressTrackingThroughWorkflowSteps:
         from src.dbos_workflows.content_scan_workflow import process_content_scan_batch
 
         with (
-            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch("src.dbos_workflows.content_scan_workflow.preprocess_batch_step") as mock_pre,
             patch("src.dbos_workflows.content_scan_workflow.similarity_scan_step"),
             patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
-            patch("src.dbos_workflows.content_scan_workflow._get_batch_redis_key") as mock_key,
         ):
-            mock_key.return_value = "test:key"
             mock_pre.return_value = {
                 "filtered_messages_key": "k",
                 "context_maps_key": "k",
@@ -1619,7 +1574,7 @@ class TestProgressTrackingThroughWorkflowSteps:
                 scan_id=str(uuid4()),
                 community_server_id=str(uuid4()),
                 batch_number=4,
-                messages_json="[]",
+                messages_redis_key="test:messages:key",
                 scan_types_json='["similarity"]',
             )
 
@@ -1629,32 +1584,6 @@ class TestProgressTrackingThroughWorkflowSteps:
         assert signal_data["errors"] == 2
         assert signal_data["flagged_count"] == 3
         assert signal_data["batch_number"] == 4
-
-
-class TestStoreMessagesRedisStep:
-    """Tests for store_messages_redis_step DBOS step."""
-
-    def test_stores_messages_and_returns_key(self) -> None:
-        from src.dbos_workflows.content_scan_workflow import store_messages_redis_step
-
-        messages_json = json.dumps([{"message_id": "m1", "content": "hello"}])
-
-        with patch("src.dbos_workflows.content_scan_workflow.run_sync") as mock_run_sync:
-            mock_run_sync.return_value = "test:messages:key"
-
-            result = store_messages_redis_step.__wrapped__("test:messages:key", messages_json)
-
-        assert result == "test:messages:key"
-        mock_run_sync.assert_called_once()
-
-    def test_delegates_to_run_sync(self) -> None:
-        from src.dbos_workflows.content_scan_workflow import store_messages_redis_step
-
-        with patch("src.dbos_workflows.content_scan_workflow.run_sync") as mock_run_sync:
-            mock_run_sync.return_value = "k"
-            store_messages_redis_step.__wrapped__("k", "[]")
-
-        mock_run_sync.assert_called_once()
 
 
 class TestPreprocessBatchStep:
@@ -1906,15 +1835,13 @@ class TestEnqueueContentScanBatchRedisKey:
         assert enqueue_args[5] == redis_key
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_messages_json(self) -> None:
+    async def test_messages_redis_key_is_required(self) -> None:
         from src.dbos_workflows.content_scan_workflow import enqueue_content_scan_batch
-
-        messages = [{"message_id": "m1", "content": "test"}]
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
             mock_handle = MagicMock()
-            mock_handle.workflow_id = "batch-wf-fallback"
+            mock_handle.workflow_id = "batch-wf-required"
             mock_client.enqueue.return_value = mock_handle
             mock_get_client.return_value = mock_client
 
@@ -1923,10 +1850,10 @@ class TestEnqueueContentScanBatchRedisKey:
                 scan_id=uuid4(),
                 community_server_id=uuid4(),
                 batch_number=1,
-                messages=messages,
+                messages_redis_key="test:required:key",
                 scan_types=["similarity"],
             )
 
-        assert result == "batch-wf-fallback"
+        assert result == "batch-wf-required"
         enqueue_args = mock_client.enqueue.call_args.args
-        assert enqueue_args[5] == json.dumps(messages)
+        assert enqueue_args[5] == "test:required:key"

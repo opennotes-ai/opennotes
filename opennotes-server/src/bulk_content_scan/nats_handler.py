@@ -14,8 +14,8 @@ from src.community_config.models import CommunityConfig
 from src.config import settings
 from src.database import get_session_maker
 from src.dbos_workflows.content_scan_workflow import (
-    _get_batch_redis_key,
     enqueue_content_scan_batch,
+    get_batch_redis_key,
     send_all_transmitted_signal,
     store_messages_in_redis,
 )
@@ -211,9 +211,7 @@ class BulkScanEventHandler:
         orchestrator_workflow_id = str(event.scan_id)
 
         messages_data = [msg.model_dump(mode="json") for msg in event.messages]
-        messages_redis_key = _get_batch_redis_key(
-            str(event.scan_id), event.batch_number, "messages"
-        )
+        messages_redis_key = get_batch_redis_key(str(event.scan_id), event.batch_number, "messages")
         await store_messages_in_redis(self.redis_client, messages_redis_key, messages_data)
 
         logger.info(
@@ -227,14 +225,24 @@ class BulkScanEventHandler:
             },
         )
 
-        await enqueue_content_scan_batch(
-            orchestrator_workflow_id=orchestrator_workflow_id,
-            scan_id=event.scan_id,
-            community_server_id=event.community_server_id,
-            batch_number=event.batch_number,
-            messages_redis_key=messages_redis_key,
-            scan_types=scan_types,
-        )
+        try:
+            await enqueue_content_scan_batch(
+                orchestrator_workflow_id=orchestrator_workflow_id,
+                scan_id=event.scan_id,
+                community_server_id=event.community_server_id,
+                batch_number=event.batch_number,
+                messages_redis_key=messages_redis_key,
+                scan_types=scan_types,
+            )
+        except Exception:
+            try:
+                await self.redis_client.delete(messages_redis_key)
+            except Exception:
+                logger.warning(
+                    "Failed to clean up Redis key %s after enqueue failure",
+                    messages_redis_key,
+                )
+            raise
 
     async def _handle_all_batches_transmitted(
         self, event: BulkScanAllBatchesTransmittedEvent

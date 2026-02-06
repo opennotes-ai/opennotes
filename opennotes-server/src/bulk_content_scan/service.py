@@ -441,8 +441,9 @@ class BulkContentScanService:
             "matched_claim": None,
         }
 
+    @staticmethod
     def _build_channel_context_map(
-        self, messages: Sequence[BulkScanMessage]
+        messages: Sequence[BulkScanMessage],
     ) -> dict[str, list[BulkScanMessage]]:
         """Build a map of channel_id -> sorted messages for context lookup.
 
