@@ -192,11 +192,11 @@ def test_dbos_health_endpoint_returns_schema_info(client: TestClient) -> None:
 
 
 def test_detailed_health_includes_dbos(client: TestClient) -> None:
-    """Test /health/detailed includes DBOS in services list."""
+    """Test /health/detailed includes DBOS in components list."""
     response = client.get("/health/detailed")
     assert response.status_code == 200
     data = response.json()
-    assert "services" in data
-    services = data["services"]
-    assert "dbos" in services
-    assert services["dbos"]["status"] in ("healthy", "degraded", "unhealthy")
+    assert "components" in data
+    components = data["components"]
+    assert "dbos" in components
+    assert components["dbos"]["status"] in ("healthy", "degraded", "unhealthy")
