@@ -100,7 +100,7 @@ jobs:
       - name: Install Python dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e ".[dev]"
 
       - name: Run pre-commit
@@ -152,7 +152,7 @@ jobs:
       - name: Install dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e ".[dev]"
 
       - name: Run ruff format check
@@ -253,7 +253,7 @@ jobs:
       - name: Install dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e ".[dev]"
 
       - name: Run unit tests with coverage
@@ -329,7 +329,7 @@ jobs:
       - name: Install dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e ".[dev]"
 
       - name: Build PostgreSQL with pgvector and pgroonga
@@ -447,7 +447,7 @@ jobs:
       - name: Install dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e ".[dev]"
 
       - name: Build PostgreSQL with pgvector and pgroonga
@@ -513,7 +513,7 @@ jobs:
       - name: Install dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e .
 
       - name: Run schema consistency validation
@@ -643,7 +643,7 @@ jobs:
       - name: Install dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e ".[dev]"
 
       - name: Run bandit
@@ -729,7 +729,7 @@ jobs:
       - name: Install dependencies
         working-directory: opennotes-server
         run: |
-          uv venv
+          uv venv --allow-existing --relocatable
           uv pip install -e .
 
       - name: Generate OpenAPI specification
