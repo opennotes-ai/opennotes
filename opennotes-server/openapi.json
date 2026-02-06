@@ -8878,7 +8878,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Health Check Health Get"
+                  "$ref": "#/components/schemas/HealthCheckResponse"
                 }
               }
             }
@@ -12042,9 +12042,9 @@
             "description": "Overall system status"
           },
           "timestamp": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Timestamp"
+            "type": "number",
+            "title": "Timestamp",
+            "description": "Unix epoch timestamp"
           },
           "version": {
             "type": "string",
@@ -12063,28 +12063,25 @@
             "title": "Environment",
             "description": "Environment name"
           },
-          "services": {
+          "components": {
             "additionalProperties": {
               "$ref": "#/components/schemas/ServiceStatus"
             },
             "type": "object",
-            "title": "Services",
-            "description": "Individual service statuses"
+            "title": "Components",
+            "description": "Component statuses"
           },
-          "components": {
+          "uptime_seconds": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/ServiceStatus"
-                },
-                "type": "object"
+                "type": "number"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Components",
-            "description": "Component statuses (alias for services)"
+            "title": "Uptime Seconds",
+            "description": "Server uptime in seconds"
           }
         },
         "type": "object",
@@ -17857,9 +17854,28 @@
             "title": "Message",
             "description": "Additional status message"
           },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message if unhealthy"
+          },
           "details": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Details",
             "description": "Additional details"
           }

@@ -4823,9 +4823,9 @@ export interface components {
             status: string;
             /**
              * Timestamp
-             * Format: date-time
+             * @description Unix epoch timestamp
              */
-            timestamp?: string;
+            timestamp?: number;
             /**
              * Version
              * @description API version
@@ -4837,19 +4837,17 @@ export interface components {
              */
             environment?: string | null;
             /**
-             * Services
-             * @description Individual service statuses
-             */
-            services?: {
-                [key: string]: components["schemas"]["ServiceStatus"];
-            };
-            /**
              * Components
-             * @description Component statuses (alias for services)
+             * @description Component statuses
              */
             components?: {
                 [key: string]: components["schemas"]["ServiceStatus"];
-            } | null;
+            };
+            /**
+             * Uptime Seconds
+             * @description Server uptime in seconds
+             */
+            uptime_seconds?: number | null;
         };
         /**
          * HelpfulnessLevel
@@ -7729,12 +7727,17 @@ export interface components {
              */
             message?: string | null;
             /**
+             * Error
+             * @description Error message if unhealthy
+             */
+            error?: string | null;
+            /**
              * Details
              * @description Additional details
              */
             details?: {
                 [key: string]: unknown;
-            };
+            } | null;
         };
         /** SetConfigRequest */
         SetConfigRequest: {
@@ -12975,7 +12978,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HealthCheckResponse"];
                 };
             };
         };

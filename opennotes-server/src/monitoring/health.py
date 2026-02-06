@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
 from src.config import settings
@@ -20,22 +20,28 @@ class HealthStatus(str, Enum):
     UNHEALTHY = "unhealthy"
 
 
-class ComponentHealth(BaseModel):
+class ServiceStatus(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    status: HealthStatus
-    latency_ms: float | None = None
-    error: str | None = None
-    details: dict[str, Any] | None = None
+    status: str = Field(..., description="Service status: 'healthy', 'degraded', or 'unhealthy'")
+    latency_ms: float | None = Field(None, description="Response latency in milliseconds")
+    message: str | None = Field(None, description="Additional status message")
+    error: str | None = Field(None, description="Error message if unhealthy")
+    details: dict[str, Any] | None = Field(None, description="Additional details")
 
 
-class MonitoringHealthCheckResponse(BaseModel):
+ComponentHealth = ServiceStatus
+
+
+class HealthCheckResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    status: HealthStatus
-    timestamp: float
-    version: str
-    environment: str
-    components: dict[str, ComponentHealth]
-    uptime_seconds: float
+    status: str = Field(..., description="Overall system status")
+    timestamp: float = Field(default_factory=time.time, description="Unix epoch timestamp")
+    version: str = Field(..., description="API version")
+    environment: str | None = Field(None, description="Environment name")
+    components: dict[str, ServiceStatus] = Field(
+        default_factory=dict, description="Component statuses"
+    )
+    uptime_seconds: float | None = Field(None, description="Server uptime in seconds")
 
 
 class HealthChecker:
@@ -190,7 +196,7 @@ class HealthChecker:
                 error=str(e),
             )
 
-    async def check_all(self) -> MonitoringHealthCheckResponse:
+    async def check_all(self) -> HealthCheckResponse:
         components: dict[str, ComponentHealth] = {}
         tasks = {}
 
@@ -209,7 +215,7 @@ class HealthChecker:
         overall_status = self._determine_overall_status(components)
         uptime = time.time() - self.start_time
 
-        return MonitoringHealthCheckResponse(
+        return HealthCheckResponse(
             status=overall_status,
             timestamp=time.time(),
             version=self.version,
