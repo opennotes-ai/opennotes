@@ -79,6 +79,13 @@ class TestHandleMessageBatch:
             patch.object(
                 handler, "_get_scan_types_for_community", new_callable=AsyncMock
             ) as mock_scan_types,
+            patch(
+                "src.bulk_content_scan.nats_handler.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler._get_batch_redis_key", return_value="test:key"
+            ),
         ):
             mock_scan_types.return_value = ["similarity"]
 
@@ -89,6 +96,7 @@ class TestHandleMessageBatch:
         assert call_kwargs["orchestrator_workflow_id"] == str(event.scan_id)
         assert call_kwargs["scan_id"] == event.scan_id
         assert call_kwargs["batch_number"] == event.batch_number
+        assert call_kwargs["messages_redis_key"] == "test:key"
 
     @pytest.mark.asyncio
     async def test_dispatch_failure_propagates_exception(self) -> None:
@@ -104,6 +112,13 @@ class TestHandleMessageBatch:
             patch.object(
                 handler, "_get_scan_types_for_community", new_callable=AsyncMock
             ) as mock_scan_types,
+            patch(
+                "src.bulk_content_scan.nats_handler.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler._get_batch_redis_key", return_value="test:key"
+            ),
         ):
             mock_scan_types.return_value = ["similarity"]
 
@@ -125,6 +140,13 @@ class TestHandleMessageBatch:
             patch.object(
                 handler, "_get_scan_types_for_community", new_callable=AsyncMock
             ) as mock_scan_types,
+            patch(
+                "src.bulk_content_scan.nats_handler.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler._get_batch_redis_key", return_value="test:key"
+            ),
         ):
             mock_scan_types.return_value = expected_types
 
@@ -134,7 +156,7 @@ class TestHandleMessageBatch:
         assert call_kwargs["scan_types"] == expected_types
 
     @pytest.mark.asyncio
-    async def test_dispatch_passes_serialized_messages(self) -> None:
+    async def test_dispatch_stores_messages_in_redis_before_enqueue(self) -> None:
         handler = _make_handler()
         event = _make_batch_event(message_count=3)
 
@@ -147,13 +169,27 @@ class TestHandleMessageBatch:
             patch.object(
                 handler, "_get_scan_types_for_community", new_callable=AsyncMock
             ) as mock_scan_types,
+            patch(
+                "src.bulk_content_scan.nats_handler.store_messages_in_redis",
+                new_callable=AsyncMock,
+            ) as mock_store,
+            patch(
+                "src.bulk_content_scan.nats_handler._get_batch_redis_key",
+                return_value="test:messages:key",
+            ),
         ):
             mock_scan_types.return_value = ["similarity"]
 
             await handler._handle_message_batch(event)
 
+        mock_store.assert_called_once()
+        store_args = mock_store.call_args
+        assert store_args.args[0] == handler.redis_client
+        assert store_args.args[1] == "test:messages:key"
+        assert len(store_args.args[2]) == 3
+
         call_kwargs = mock_enqueue.call_args.kwargs
-        assert len(call_kwargs["messages"]) == 3
+        assert call_kwargs["messages_redis_key"] == "test:messages:key"
 
 
 class TestHandleAllBatchesTransmitted:
