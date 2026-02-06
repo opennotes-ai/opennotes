@@ -882,32 +882,33 @@ class TestSendAllTransmittedSignal:
 class TestWorkflowNames:
     """Tests for exported workflow name constants."""
 
-    def test_orchestration_workflow_name_contains_function(self) -> None:
+    def test_orchestration_workflow_name_matches_qualname(self) -> None:
         from src.dbos_workflows.content_scan_workflow import (
             CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
+            content_scan_orchestration_workflow,
         )
 
-        assert "content_scan_orchestration_workflow" in CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME
+        assert (
+            content_scan_orchestration_workflow.__qualname__
+            == CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME
+        )
 
-    def test_batch_workflow_name_contains_function(self) -> None:
+    def test_batch_workflow_name_matches_qualname(self) -> None:
         from src.dbos_workflows.content_scan_workflow import (
+            PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
+            process_content_scan_batch,
+        )
+
+        assert process_content_scan_batch.__qualname__ == PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME
+
+    def test_workflow_names_are_bare_function_names(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import (
+            CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
             PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
         )
 
-        assert "process_content_scan_batch" in PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME
-
-    def test_workflow_names_include_module_path(self) -> None:
-        from src.dbos_workflows.content_scan_workflow import (
-            CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
-            PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
-        )
-
-        assert CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME.startswith(
-            "src.dbos_workflows.content_scan_workflow."
-        )
-        assert PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME.startswith(
-            "src.dbos_workflows.content_scan_workflow."
-        )
+        assert CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME == "content_scan_orchestration_workflow"
+        assert PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME == "process_content_scan_batch"
 
 
 class TestFlashpointDetectionToggleInWorkflow:
