@@ -94,3 +94,6 @@ class FlashpointDetector:
 
     def __call__(self, context: str, message: str) -> dspy.Prediction:
         return self.forward(context=context, message=message)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
