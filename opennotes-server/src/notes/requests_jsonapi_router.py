@@ -132,7 +132,7 @@ class RequestCreateAttributes(StrictInputSchema):
         None, description="Match similarity score", ge=0.0, le=1.0
     )
     dataset_name: str | None = Field(None, description="Source dataset name", max_length=100)
-    dataset_item_id: str | None = Field(None, description="Fact-check item UUID", max_length=36)
+    dataset_item_id: str | None = Field(None, description="Fact-check item ID", max_length=36)
 
 
 class RequestCreateData(BaseModel):
@@ -185,6 +185,9 @@ class RequestAttributes(BaseModel):
     content: str | None = None
     platform_message_id: str | None = None
     metadata: dict[str, Any] | None = None
+    similarity_score: float | None = None
+    dataset_name: str | None = None
+    dataset_item_id: str | None = None
 
 
 class RequestResource(BaseModel):
@@ -235,6 +238,9 @@ def request_to_resource(req: Request) -> RequestResource:
             if req.message_archive
             else None,
             metadata=req.request_metadata,
+            similarity_score=req.similarity_score,
+            dataset_name=req.dataset_name,
+            dataset_item_id=req.dataset_item_id,
         ),
     )
 

@@ -139,7 +139,7 @@ def _make_mock_fact_check_item():
 
 
 @pytest.mark.asyncio
-class TestFactCheckMatchCosineSimlarity:
+class TestFactCheckMatchCosineSimilarity:
     """Test that FactCheckMatch includes both similarity_score (CC) and cosine_similarity."""
 
     async def test_fact_check_match_has_both_scores(self):
@@ -174,7 +174,7 @@ class TestFactCheckMatchCosineSimlarity:
         assert match.similarity_score == min(0.35 * CC_SCORE_SCALE_FACTOR, 1.0)
         assert match.cosine_similarity == 0.82
 
-    async def test_cosine_similarity_gte_cc_score_when_keyword_low(self):
+    async def test_cosine_similarity_higher_than_cc_score_for_low_keyword_scenario(self):
         """cosine_similarity should be >= similarity_score when keyword relevance is low."""
         from src.fact_checking.embedding_service import EmbeddingService
 
@@ -206,7 +206,7 @@ class TestFactCheckMatchCosineSimlarity:
         assert match.cosine_similarity >= match.similarity_score
 
     async def test_hybrid_search_result_default_semantic_score(self):
-        """HybridSearchResult should default semantic_score to 0.0."""
+        """HybridSearchResult should default semantic_score to None."""
         item = _make_mock_fact_check_item()
         result = HybridSearchResult(item=item, cc_score=0.5)
-        assert result.semantic_score == 0.0
+        assert result.semantic_score is None

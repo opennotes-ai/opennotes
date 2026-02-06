@@ -4694,9 +4694,9 @@ export interface components {
             similarity_score: number;
             /**
              * Cosine Similarity
-             * @description Raw cosine similarity score (0.0-1.0)
+             * @description Raw cosine similarity score (0.0-1.0), None when no semantic match
              */
-            cosine_similarity: number;
+            cosine_similarity?: number | null;
         };
         /**
          * FlaggedMessageAttributes
@@ -7265,6 +7265,12 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+            /** Similarity Score */
+            similarity_score?: number | null;
+            /** Dataset Name */
+            dataset_name?: string | null;
+            /** Dataset Item Id */
+            dataset_item_id?: string | null;
         };
         /**
          * RequestCreateAttributes
@@ -7330,7 +7336,7 @@ export interface components {
             dataset_name?: string | null;
             /**
              * Dataset Item Id
-             * @description Fact-check item UUID
+             * @description Fact-check item ID
              */
             dataset_item_id?: string | null;
         };

@@ -11813,11 +11813,18 @@
             "description": "CC fusion score (0.0-1.0)"
           },
           "cosine_similarity": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Cosine Similarity",
-            "description": "Raw cosine similarity score (0.0-1.0)"
+            "description": "Raw cosine similarity score (0.0-1.0), None when no semantic match"
           }
         },
         "type": "object",
@@ -11827,8 +11834,7 @@
           "dataset_tags",
           "title",
           "content",
-          "similarity_score",
-          "cosine_similarity"
+          "similarity_score"
         ],
         "title": "FactCheckMatchResource",
         "description": "JSON:API-compatible fact-check match in search results."
@@ -17007,6 +17013,39 @@
               }
             ],
             "title": "Metadata"
+          },
+          "similarity_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity Score"
+          },
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Name"
+          },
+          "dataset_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Item Id"
           }
         },
         "type": "object",
@@ -17147,7 +17186,7 @@
               }
             ],
             "title": "Dataset Item Id",
-            "description": "Fact-check item UUID"
+            "description": "Fact-check item ID"
           }
         },
         "additionalProperties": false,

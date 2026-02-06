@@ -290,6 +290,7 @@ class EmbeddingService:
                         "score_threshold": score_threshold,
                         "matches_found": len(matches),
                         "top_score": matches[0].similarity_score if matches else None,
+                        "cosine_similarity": matches[0].cosine_similarity if matches else None,
                         "hybrid_search_count": len(hybrid_results),
                         "alpha": DEFAULT_ALPHA,
                     },
