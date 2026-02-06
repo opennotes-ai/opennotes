@@ -266,6 +266,7 @@ class EmbeddingService:
                         embedding_provider=result.item.embedding_provider,
                         embedding_model=result.item.embedding_model,
                         similarity_score=min(result.cc_score * CC_SCORE_SCALE_FACTOR, 1.0),
+                        cosine_similarity=result.semantic_score,
                     )
                     for result in hybrid_results
                 ]

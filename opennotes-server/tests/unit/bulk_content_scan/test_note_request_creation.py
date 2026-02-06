@@ -1,7 +1,9 @@
-"""Tests for create_note_requests_from_flagged_messages shared function.
+"""Tests for create_note_requests_from_flagged_messages shared function
+and RequestCreateAttributes first-class fields.
 
 This module tests the shared note request creation logic extracted from
-router.py and jsonapi_router.py (task-849.05).
+router.py and jsonapi_router.py (task-849.05), plus the first-class
+similarity_score/dataset_name/dataset_item_id fields on RequestCreateAttributes.
 """
 
 from datetime import UTC, datetime
@@ -500,3 +502,96 @@ class TestCreateNoteRequestsFromFlaggedMessages:
             )
 
         assert captured_kwargs["request_metadata"]["generate_ai_notes"] is False
+
+
+class TestRequestCreateAttributesFirstClassFields:
+    """Test that RequestCreateAttributes supports first-class similarity/dataset fields."""
+
+    def test_accepts_similarity_score(self):
+        """RequestCreateAttributes should accept similarity_score as a first-class field."""
+        from src.notes.requests_jsonapi_router import RequestCreateAttributes
+
+        attrs = RequestCreateAttributes(
+            request_id="test-001",
+            requested_by="user-001",
+            community_server_id="guild-001",
+            similarity_score=0.85,
+        )
+        assert attrs.similarity_score == 0.85
+
+    def test_accepts_dataset_name(self):
+        """RequestCreateAttributes should accept dataset_name as a first-class field."""
+        from src.notes.requests_jsonapi_router import RequestCreateAttributes
+
+        attrs = RequestCreateAttributes(
+            request_id="test-001",
+            requested_by="user-001",
+            community_server_id="guild-001",
+            dataset_name="snopes",
+        )
+        assert attrs.dataset_name == "snopes"
+
+    def test_accepts_dataset_item_id(self):
+        """RequestCreateAttributes should accept dataset_item_id as a first-class field."""
+        from src.notes.requests_jsonapi_router import RequestCreateAttributes
+
+        item_id = str(uuid4())
+        attrs = RequestCreateAttributes(
+            request_id="test-001",
+            requested_by="user-001",
+            community_server_id="guild-001",
+            dataset_item_id=item_id,
+        )
+        assert attrs.dataset_item_id == item_id
+
+    def test_fields_default_to_none(self):
+        """First-class fields should default to None when not provided."""
+        from src.notes.requests_jsonapi_router import RequestCreateAttributes
+
+        attrs = RequestCreateAttributes(
+            request_id="test-001",
+            requested_by="user-001",
+            community_server_id="guild-001",
+        )
+        assert attrs.similarity_score is None
+        assert attrs.dataset_name is None
+        assert attrs.dataset_item_id is None
+
+    def test_similarity_score_validation_bounds(self):
+        """similarity_score should be validated between 0.0 and 1.0."""
+        from pydantic import ValidationError
+
+        from src.notes.requests_jsonapi_router import RequestCreateAttributes
+
+        with pytest.raises(ValidationError):
+            RequestCreateAttributes(
+                request_id="test-001",
+                requested_by="user-001",
+                community_server_id="guild-001",
+                similarity_score=1.5,
+            )
+
+        with pytest.raises(ValidationError):
+            RequestCreateAttributes(
+                request_id="test-001",
+                requested_by="user-001",
+                community_server_id="guild-001",
+                similarity_score=-0.1,
+            )
+
+    def test_all_fields_together(self):
+        """All three first-class fields can be provided together."""
+        from src.notes.requests_jsonapi_router import RequestCreateAttributes
+
+        item_id = str(uuid4())
+        attrs = RequestCreateAttributes(
+            request_id="test-001",
+            requested_by="user-001",
+            community_server_id="guild-001",
+            similarity_score=0.72,
+            dataset_name="politifact",
+            dataset_item_id=item_id,
+        )
+        assert attrs.similarity_score == 0.72
+        assert attrs.dataset_name == "politifact"
+        assert attrs.dataset_item_id == item_id

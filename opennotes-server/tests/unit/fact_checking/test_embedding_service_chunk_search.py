@@ -9,9 +9,13 @@ This migration enables:
 - Better semantic matching through content chunking
 """
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
+
+from src.fact_checking.repository import HybridSearchResult
 
 
 @pytest.mark.asyncio
@@ -108,3 +112,101 @@ class TestEmbeddingServiceChunkSearchImport:
         assert hasattr(embedding_service, "hybrid_search_with_chunks"), (
             "embedding_service should import hybrid_search_with_chunks from repository"
         )
+
+
+def _make_mock_fact_check_item():
+    from src.fact_checking.models import FactCheckItem
+
+    return FactCheckItem(
+        id=uuid4(),
+        dataset_name="snopes",
+        dataset_tags=["snopes"],
+        title="Test fact check",
+        content="Test content",
+        summary="Test summary",
+        rating="False",
+        source_url="https://example.com",
+        published_date=datetime.now(UTC),
+        author="Test Author",
+        embedding=None,
+        embedding_provider="openai",
+        embedding_model="text-embedding-3-small",
+        extra_metadata={},
+        search_vector=None,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+
+
+@pytest.mark.asyncio
+class TestFactCheckMatchCosineSimlarity:
+    """Test that FactCheckMatch includes both similarity_score (CC) and cosine_similarity."""
+
+    async def test_fact_check_match_has_both_scores(self):
+        """FactCheckMatch should have both similarity_score and cosine_similarity fields."""
+        from src.fact_checking.embedding_service import CC_SCORE_SCALE_FACTOR, EmbeddingService
+
+        mock_llm_service = MagicMock()
+        service = EmbeddingService(mock_llm_service)
+        mock_db = AsyncMock()
+        mock_embedding = [0.1] * 1536
+
+        item = _make_mock_fact_check_item()
+        mock_result = HybridSearchResult(item=item, cc_score=0.35, semantic_score=0.82)
+
+        with (
+            patch.object(service, "generate_embedding", return_value=mock_embedding),
+            patch(
+                "src.fact_checking.embedding_service.hybrid_search_with_chunks",
+                return_value=[mock_result],
+            ),
+        ):
+            response = await service.similarity_search(
+                db=mock_db,
+                query_text="test query",
+                community_server_id="123456789",
+                dataset_tags=["snopes"],
+                score_threshold=0.0,
+            )
+
+        assert len(response.matches) == 1
+        match = response.matches[0]
+        assert match.similarity_score == min(0.35 * CC_SCORE_SCALE_FACTOR, 1.0)
+        assert match.cosine_similarity == 0.82
+
+    async def test_cosine_similarity_gte_cc_score_when_keyword_low(self):
+        """cosine_similarity should be >= similarity_score when keyword relevance is low."""
+        from src.fact_checking.embedding_service import EmbeddingService
+
+        mock_llm_service = MagicMock()
+        service = EmbeddingService(mock_llm_service)
+        mock_db = AsyncMock()
+        mock_embedding = [0.1] * 1536
+
+        item = _make_mock_fact_check_item()
+        mock_result = HybridSearchResult(item=item, cc_score=0.24, semantic_score=0.65)
+
+        with (
+            patch.object(service, "generate_embedding", return_value=mock_embedding),
+            patch(
+                "src.fact_checking.embedding_service.hybrid_search_with_chunks",
+                return_value=[mock_result],
+            ),
+        ):
+            response = await service.similarity_search(
+                db=mock_db,
+                query_text="test query",
+                community_server_id="123456789",
+                dataset_tags=["snopes"],
+                score_threshold=0.0,
+            )
+
+        assert len(response.matches) == 1
+        match = response.matches[0]
+        assert match.cosine_similarity >= match.similarity_score
+
+    async def test_hybrid_search_result_default_semantic_score(self):
+        """HybridSearchResult should default semantic_score to 0.0."""
+        item = _make_mock_fact_check_item()
+        result = HybridSearchResult(item=item, cc_score=0.5)
+        assert result.semantic_score == 0.0

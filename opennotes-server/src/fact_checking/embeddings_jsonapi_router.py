@@ -170,8 +170,9 @@ class FactCheckMatchResource(BaseModel):
     author: str | None = Field(None, description="Author name")
     embedding_provider: str | None = Field(None, description="LLM provider used for embedding")
     embedding_model: str | None = Field(None, description="Model name used for embedding")
-    similarity_score: float = Field(
-        ..., description="Cosine similarity score (0.0-1.0)", ge=0.0, le=1.0
+    similarity_score: float = Field(..., description="CC fusion score (0.0-1.0)", ge=0.0, le=1.0)
+    cosine_similarity: float = Field(
+        ..., description="Raw cosine similarity score (0.0-1.0)", ge=0.0, le=1.0
     )
 
 
@@ -327,6 +328,7 @@ async def similarity_search_jsonapi(
                 embedding_provider=match.embedding_provider,
                 embedding_model=match.embedding_model,
                 similarity_score=match.similarity_score,
+                cosine_similarity=match.cosine_similarity,
             )
             for match in response.matches
         ]

@@ -128,6 +128,11 @@ class RequestCreateAttributes(StrictInputSchema):
     platform_author_id: str | None = Field(None, description="Platform author ID")
     platform_timestamp: datetime | None = Field(None, description="Platform message timestamp")
     metadata: dict[str, Any] | None = Field(None, description="Request metadata")
+    similarity_score: float | None = Field(
+        None, description="Match similarity score", ge=0.0, le=1.0
+    )
+    dataset_name: str | None = Field(None, description="Source dataset name", max_length=100)
+    dataset_item_id: str | None = Field(None, description="Fact-check item UUID", max_length=36)
 
 
 class RequestCreateData(BaseModel):
@@ -552,6 +557,12 @@ async def create_request_jsonapi(
 
         if attrs.metadata:
             request_dict["request_metadata"] = attrs.metadata  # pyright: ignore[reportArgumentType]
+        if attrs.similarity_score is not None:
+            request_dict["similarity_score"] = attrs.similarity_score
+        if attrs.dataset_name is not None:
+            request_dict["dataset_name"] = attrs.dataset_name
+        if attrs.dataset_item_id is not None:
+            request_dict["dataset_item_id"] = attrs.dataset_item_id
 
         note_request = Request(**request_dict)
         db.add(note_request)

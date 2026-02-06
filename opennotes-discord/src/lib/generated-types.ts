@@ -4689,9 +4689,14 @@ export interface components {
             embedding_model?: string | null;
             /**
              * Similarity Score
-             * @description Cosine similarity score (0.0-1.0)
+             * @description CC fusion score (0.0-1.0)
              */
             similarity_score: number;
+            /**
+             * Cosine Similarity
+             * @description Raw cosine similarity score (0.0-1.0)
+             */
+            cosine_similarity: number;
         };
         /**
          * FlaggedMessageAttributes
@@ -7313,6 +7318,21 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Similarity Score
+             * @description Match similarity score
+             */
+            similarity_score?: number | null;
+            /**
+             * Dataset Name
+             * @description Source dataset name
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Item Id
+             * @description Fact-check item UUID
+             */
+            dataset_item_id?: string | null;
         };
         /**
          * RequestCreateData
