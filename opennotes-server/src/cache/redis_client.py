@@ -539,7 +539,7 @@ async def get_shared_redis_client(redis_url: str | None = None) -> redis.Redis:
 
     if _shared_redis is not None and current_loop is not _shared_redis_loop:
         try:
-            await _shared_redis.close()
+            await asyncio.wait_for(_shared_redis.close(), timeout=5.0)
         except Exception:
             pass
         _shared_redis = None

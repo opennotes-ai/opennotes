@@ -63,6 +63,11 @@ class FlashpointDetectionService:
         self._optimized_path = optimized_model_path
         self._init_lock = threading.Lock()
 
+    def warm_up(self) -> None:
+        """Eagerly initialize the detector so DSPy import + model loading
+        happens at startup rather than silently hanging during a scan."""
+        self._get_detector()
+
     def _get_default_optimized_path(self) -> Path:
         """Get the default path for the optimized detector."""
         return (
