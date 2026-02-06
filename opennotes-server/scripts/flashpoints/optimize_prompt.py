@@ -187,6 +187,9 @@ def optimize_flashpoint_detector(
     component_selector: str = "round_robin",
     proposer: str = "default",
     two_stage: bool = False,
+    bootstrap: bool = False,
+    max_bootstrapped_demos: int = 4,
+    max_labeled_demos: int = 4,
 ) -> FlashpointDetector | TwoStageFlashpointDetector:
     """Run GEPA optimization on the flashpoint detector with comparative training.
 
@@ -208,6 +211,9 @@ def optimize_flashpoint_detector(
         component_selector: "round_robin" (one component per iteration) or "all" (all at once)
         proposer: "default" (GEPA built-in), "terse" (few sentences), or "short" (few paragraphs)
         two_stage: Use two-stage detector (summarizer + scorer) for two GEPA components
+        bootstrap: Run BootstrapFewShot pre-pass to seed GEPA with high-quality demos
+        max_bootstrapped_demos: Max bootstrapped demonstrations per predictor
+        max_labeled_demos: Max labeled demonstrations per predictor
 
     Returns:
         The optimized detector module
@@ -254,6 +260,22 @@ def optimize_flashpoint_detector(
 
     detector = TwoStageFlashpointDetector() if two_stage else FlashpointDetector()
     trainer = FlashpointTrainerProgram(detector)
+
+    if bootstrap:
+        from dspy.teleprompt import BootstrapFewShot
+
+        bootstrap_opt = BootstrapFewShot(
+            metric=flashpoint_metric,
+            max_bootstrapped_demos=max_bootstrapped_demos,
+            max_labeled_demos=max_labeled_demos,
+            max_rounds=1,
+        )
+        print(
+            f"Running BootstrapFewShot pre-pass "
+            f"(max_bootstrapped={max_bootstrapped_demos}, max_labeled={max_labeled_demos})..."
+        )
+        trainer = bootstrap_opt.compile(trainer, trainset=paired_train)
+        print("Bootstrap complete. Seeding GEPA with bootstrapped program.")
 
     print(f"Starting GEPA optimization (auto={auto}, model={model})...")
     print(f"Reflection LM: {reflection_model or 'openai/gpt-5.2'}")
@@ -694,6 +716,23 @@ Examples:
         help="Run BootstrapFinetune as a second pass after GEPA optimization",
     )
     parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Run BootstrapFewShot pre-pass to seed GEPA with high-quality demonstrations",
+    )
+    parser.add_argument(
+        "--max-bootstrapped-demos",
+        type=int,
+        default=4,
+        help="Max bootstrapped demonstrations per predictor (default: 4)",
+    )
+    parser.add_argument(
+        "--max-labeled-demos",
+        type=int,
+        default=4,
+        help="Max labeled demonstrations per predictor (default: 4)",
+    )
+    parser.add_argument(
         "--safety-curves",
         action="store_true",
         help="Evaluate with ROC-style safety-at-audit-budget curves",
@@ -730,6 +769,9 @@ Examples:
             component_selector=args.component_selector,
             proposer=args.proposer,
             two_stage=args.two_stage,
+            bootstrap=args.bootstrap,
+            max_bootstrapped_demos=args.max_bootstrapped_demos,
+            max_labeled_demos=args.max_labeled_demos,
         )
 
     _, _, testset = load_flashpoint_datasets()
