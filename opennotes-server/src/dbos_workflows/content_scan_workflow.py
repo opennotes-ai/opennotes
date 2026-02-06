@@ -639,6 +639,7 @@ async def dispatch_content_scan_workflow(
         options: EnqueueOptions = {
             "queue_name": "content_scan",
             "workflow_name": CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
+            "workflow_id": str(scan_id),
             "deduplication_id": str(scan_id),
         }
         handle = await asyncio.to_thread(
