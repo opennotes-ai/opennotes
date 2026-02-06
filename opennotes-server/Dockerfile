@@ -69,6 +69,7 @@ COPY opennotes-server/alembic/ ./alembic/
 COPY opennotes-server/scripts/ ./scripts/
 COPY opennotes-server/docker-entrypoint.sh ./
 COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
+COPY opennotes-server/data/flashpoints/optimized_detector.json ./data/flashpoints/optimized_detector.json
 
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
@@ -106,6 +107,7 @@ COPY opennotes-server/alembic/ ./alembic/
 COPY opennotes-server/scripts/ ./scripts/
 COPY opennotes-server/docker-entrypoint.sh ./
 COPY communitynotes/scoring/src/ /communitynotes/scoring/src/
+COPY opennotes-server/data/flashpoints/optimized_detector.json ./data/flashpoints/optimized_detector.json
 
 RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
