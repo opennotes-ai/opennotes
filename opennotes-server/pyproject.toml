@@ -11,7 +11,7 @@ dependencies = [
     "pydantic[email]>=2.5.0",
     "pydantic-settings>=2.1.0",
     "pandas>=2.2.2",
-    "numpy>=1.26.4",
+    "numpy>=1.26.4,<2.0.0",
     "redis>=5.0.0",
     "cryptography>=41.0.0",
     "sqlalchemy[asyncio]>=2.0.0",
@@ -219,6 +219,7 @@ packages = ["src"]
 # We don't use bitsandbytes at runtime (training quantization lib), so pin to known-good.
 override-dependencies = [
     "bitsandbytes==0.48.0",
+    "numpy>=1.26.4,<2.0.0",
 ]
 
 [build-system]
