@@ -96,12 +96,9 @@ def _validate_api_key(model: str) -> None:
     for prefix, env_var in _API_KEY_ENV_VARS.items():
         if model.startswith(prefix):
             if not os.environ.get(env_var):
-                print(
-                    f"Error: {env_var} environment variable is required "
-                    f"for model {model!r}. "
-                    f"Set it with: export {env_var}=sk-..."
+                raise SystemExit(
+                    f"Error: {env_var} environment variable is required for model {model!r}"
                 )
-                raise SystemExit(1)
             return
 
 
