@@ -33,16 +33,14 @@ class FlashpointDetectionService:
     Uses a DSPy-optimized prompt to identify early warning signs
     that a conversation may derail into conflict.
 
-    The ``confidence`` field on returned :class:`ConversationFlashpointMatch`
-    objects is a **static synthetic value** (``CONFIDENCE_DERAIL``). It does
-    not reflect the LLM's internal confidence and exists only to satisfy the
-    schema contract. The binary ``will_derail`` flag is the authoritative
-    signal.
+    Returns a continuous ``derailment_score`` (0-100) rather than a
+    binary flag, enabling downstream consumers to apply their own
+    thresholds and produce ROC-style safety-at-audit-budget curves.
     """
 
     DEFAULT_MODEL = "openai/gpt-5-mini"
     DEFAULT_MAX_CONTEXT = 5
-    CONFIDENCE_DERAIL = 0.9
+    DEFAULT_SCORE_THRESHOLD = 50
 
     def __init__(
         self,
@@ -132,6 +130,7 @@ class FlashpointDetectionService:
         message: BulkScanMessage,
         context_messages: list[BulkScanMessage],
         max_context: int | None = None,
+        score_threshold: int | None = None,
     ) -> ConversationFlashpointMatch | None:
         """Detect if a message shows conversation flashpoint signals.
 
@@ -140,9 +139,12 @@ class FlashpointDetectionService:
             context_messages: Previous messages in the conversation (time-ordered)
             max_context: Maximum number of context messages to include
                 (defaults to DEFAULT_MAX_CONTEXT)
+            score_threshold: Minimum derailment_score to flag (defaults to
+                DEFAULT_SCORE_THRESHOLD). Messages scoring below this are
+                not returned.
 
         Returns:
-            ConversationFlashpointMatch if flashpoint detected, None otherwise
+            ConversationFlashpointMatch if derailment_score >= threshold, None otherwise
 
         Raises:
             Exception: Re-raises critical (non-transient) errors after logging.
@@ -150,11 +152,13 @@ class FlashpointDetectionService:
                 Critical errors (propagated): ValueError, TypeError, KeyError,
                 AttributeError, RuntimeError, and all other Exception subclasses.
         """
-        from src.bulk_content_scan.flashpoint_utils import parse_bool
+        from src.bulk_content_scan.flashpoint_utils import parse_derailment_score
         from src.bulk_content_scan.schemas import ConversationFlashpointMatch
 
         if max_context is None:
             max_context = self.DEFAULT_MAX_CONTEXT
+        if score_threshold is None:
+            score_threshold = self.DEFAULT_SCORE_THRESHOLD
 
         try:
             recent_context = context_messages[-max_context:] if context_messages else []
@@ -167,14 +171,13 @@ class FlashpointDetectionService:
             detector = self._get_detector()
             result = await asyncio.to_thread(self._run_detector, detector, context_str, current_msg)
 
-            will_derail = parse_bool(result.will_derail)
+            derailment_score = parse_derailment_score(result.derailment_score)
 
-            if not will_derail:
+            if derailment_score < score_threshold:
                 return None
 
             return ConversationFlashpointMatch(
-                will_derail=will_derail,
-                confidence=self.CONFIDENCE_DERAIL,
+                derailment_score=derailment_score,
                 reasoning=result.reasoning,
                 context_messages=len(recent_context),
             )

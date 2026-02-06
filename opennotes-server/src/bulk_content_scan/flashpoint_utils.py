@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DERAILMENT_SCORE_MIN = 0
+DERAILMENT_SCORE_MAX = 100
+
 
 def parse_bool(value: Any) -> bool:
     """Parse a value to boolean, handling string representations from LLM output."""
@@ -24,6 +27,29 @@ def parse_bool(value: Any) -> bool:
         logger.warning("parse_bool: unrecognized string %r, defaulting to False", value)
         return False
     return bool(value)
+
+
+def parse_derailment_score(value: Any) -> int:
+    """Parse a derailment score from LLM output, clamping to [0, 100]."""
+    if isinstance(value, int):
+        return max(DERAILMENT_SCORE_MIN, min(DERAILMENT_SCORE_MAX, value))
+    if isinstance(value, float):
+        return max(DERAILMENT_SCORE_MIN, min(DERAILMENT_SCORE_MAX, round(value)))
+    if isinstance(value, str):
+        value = value.strip()
+        try:
+            numeric = int(float(value))
+            return max(DERAILMENT_SCORE_MIN, min(DERAILMENT_SCORE_MAX, numeric))
+        except (ValueError, OverflowError):
+            logger.warning("parse_derailment_score: unrecognized string %r, defaulting to 0", value)
+            return 0
+    try:
+        return max(DERAILMENT_SCORE_MIN, min(DERAILMENT_SCORE_MAX, int(value)))
+    except (TypeError, ValueError):
+        logger.warning(
+            "parse_derailment_score: unrecognized type %s, defaulting to 0", type(value).__name__
+        )
+        return 0
 
 
 def _import_dspy():
@@ -43,15 +69,15 @@ class FlashpointSignature:
             dspy = _import_dspy()
 
             class _FlashpointSignature(dspy.Signature):
-                """Predict whether a conversation is about to derail into conflict."""
+                """Rate how likely a conversation is to derail into conflict on a scale of 0-100."""
 
                 context: str = dspy.InputField(desc="Previous messages in the conversation")
                 message: str = dspy.InputField(desc="The current message to analyze")
-                will_derail: bool = dspy.OutputField(
-                    desc="True if the conversation shows signs of derailing"
+                derailment_score: int = dspy.OutputField(
+                    desc="Derailment risk score from 0 (no risk) to 100 (certain derailment)",
                 )
                 reasoning: str = dspy.OutputField(
-                    desc="Brief explanation of the key signals detected"
+                    desc="Brief explanation of the key escalation signals detected"
                 )
 
             cls._cls = _FlashpointSignature

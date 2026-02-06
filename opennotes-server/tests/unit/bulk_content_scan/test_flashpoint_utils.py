@@ -1,10 +1,10 @@
-"""Unit tests for flashpoint_utils.parse_bool."""
+"""Unit tests for flashpoint_utils.parse_bool and parse_derailment_score."""
 
 import logging
 
 import pytest
 
-from src.bulk_content_scan.flashpoint_utils import parse_bool
+from src.bulk_content_scan.flashpoint_utils import parse_bool, parse_derailment_score
 
 
 class TestParseBool:
@@ -58,3 +58,73 @@ class TestParseBool:
     )
     def test_non_string_types(self, value, expected: bool):
         assert parse_bool(value) is expected
+
+
+class TestParseDerailmentScore:
+    """Tests for parse_derailment_score covering int, float, string, clamping."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (0, 0),
+            (50, 50),
+            (100, 100),
+            (42, 42),
+        ],
+    )
+    def test_int_passthrough(self, value: int, expected: int):
+        assert parse_derailment_score(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (-10, 0),
+            (150, 100),
+            (-1, 0),
+            (101, 100),
+        ],
+    )
+    def test_int_clamping(self, value: int, expected: int):
+        assert parse_derailment_score(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (49.5, 50),
+            (0.0, 0),
+            (100.0, 100),
+            (99.9, 100),
+            (0.4, 0),
+        ],
+    )
+    def test_float_rounding(self, value: float, expected: int):
+        assert parse_derailment_score(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("0", 0),
+            ("50", 50),
+            ("100", 100),
+            ("42", 42),
+            (" 75 ", 75),
+            ("33.7", 33),
+        ],
+    )
+    def test_string_parsing(self, value: str, expected: int):
+        assert parse_derailment_score(value) == expected
+
+    def test_string_clamping(self):
+        assert parse_derailment_score("-5") == 0
+        assert parse_derailment_score("200") == 100
+
+    def test_unrecognized_string_returns_zero(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="src.bulk_content_scan.flashpoint_utils"):
+            result = parse_derailment_score("high risk")
+        assert result == 0
+        assert "unrecognized string" in caplog.text
+
+    def test_none_returns_zero(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="src.bulk_content_scan.flashpoint_utils"):
+            result = parse_derailment_score(None)
+        assert result == 0

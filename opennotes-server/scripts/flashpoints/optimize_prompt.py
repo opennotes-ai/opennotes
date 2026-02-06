@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Optimize flashpoint detection prompt using DSPy GEPA.
+"""Optimize flashpoint detection prompt using DSPy GEPA with comparative scoring.
 
-This script uses the GEPA optimizer to find the best prompt instructions
-for the flashpoint detection task. GEPA is preferred over MIPRO because:
-- More sample-efficient (works well with smaller training sets)
-- Better at structured outputs (bool + reasoning)
-- Excels at multi-step reasoning tasks
+Uses the GEPA optimizer with paired/contrastive training: each derailing
+conversation is paired with a non-derailing one, and the optimizer learns
+to assign higher derailment scores (0-100) to derailing conversations.
+
+Key improvements over binary classification:
+- Continuous 0-100 scoring enables flexible thresholding
+- Comparative training with rich textual feedback
+- Separate stronger reflection LM (gpt-5.2) for GEPA
+- Optional BootstrapFinetune second pass
+- ROC-style safety-at-audit-budget evaluation
 
 Usage:
     # Run optimization with default settings
@@ -16,6 +21,9 @@ Usage:
 
     # Evaluate an existing optimized model
     uv run python scripts/flashpoints/optimize_prompt.py --eval-only data/flashpoints/optimized_detector.json
+
+    # Run with BootstrapFinetune second pass
+    uv run python scripts/flashpoints/optimize_prompt.py --finetune
 """
 
 from __future__ import annotations
@@ -29,13 +37,17 @@ from typing import Any
 import dspy
 from tqdm import tqdm
 
-from scripts.flashpoints.dspy_dataset import load_flashpoint_datasets
+from scripts.flashpoints.dspy_dataset import (
+    load_flashpoint_datasets,
+    load_paired_flashpoint_datasets,
+)
 from scripts.flashpoints.flashpoint_module import (
     FlashpointDetector,
+    FlashpointTrainerProgram,
+    comparative_flashpoint_metric,
     flashpoint_metric,
-    flashpoint_metric_with_feedback,
 )
-from src.bulk_content_scan.flashpoint_utils import parse_bool
+from src.bulk_content_scan.flashpoint_utils import parse_derailment_score
 
 
 def optimize_flashpoint_detector(
@@ -48,17 +60,25 @@ def optimize_flashpoint_detector(
     log_dir: Path | None = None,
     reflection_minibatch_size: int = 5,
     num_threads: int = 6,
+    finetune: bool = False,
 ) -> FlashpointDetector:
-    """Run GEPA optimization on the flashpoint detector.
+    """Run GEPA optimization on the flashpoint detector with comparative training.
+
+    Uses paired/contrastive examples where each derailing conversation is
+    paired with a non-derailing one. The GEPA optimizer uses a separate
+    reflection LM to iteratively improve the prompt.
 
     Args:
-        model: The LLM model to use for the detector
+        model: The LLM model to use for the detector (student model)
         auto: GEPA optimization level (light, medium, heavy)
         output_path: Where to save the optimized program
-        reflection_model: Model to use for GEPA reflection (defaults to gpt-5.1)
-        max_train: Maximum training examples to use
-        max_dev: Maximum dev examples to use
+        reflection_model: Model for GEPA reflection (defaults to gpt-5.2)
+        max_train: Maximum paired training examples to use
+        max_dev: Maximum paired dev examples to use
         log_dir: Directory for GEPA checkpoints (enables resume on restart)
+        reflection_minibatch_size: Examples per GEPA reflection cycle
+        num_threads: Threads for parallel evaluation
+        finetune: Whether to run BootstrapFinetune as a second pass
 
     Returns:
         The optimized FlashpointDetector module
@@ -66,21 +86,21 @@ def optimize_flashpoint_detector(
     lm = dspy.LM(model)
     dspy.configure(lm=lm)
 
-    trainset, devset, _ = load_flashpoint_datasets()
-    print(f"Loaded {len(trainset)} training examples, {len(devset)} dev examples")
+    paired_train, paired_dev = load_paired_flashpoint_datasets()
+    print(f"Loaded {len(paired_train)} paired training, {len(paired_dev)} paired dev examples")
 
-    trainset = trainset[:max_train]
-    devset = devset[:max_dev]
-    print(f"Using {len(trainset)} training, {len(devset)} dev examples for optimization")
+    paired_train = paired_train[:max_train]
+    paired_dev = paired_dev[:max_dev]
+    print(f"Using {len(paired_train)} training, {len(paired_dev)} dev paired examples")
 
     reflection_lm = dspy.LM(
-        reflection_model or "openai/gpt-5.1",
+        reflection_model or "openai/gpt-5.2",
         temperature=1.0,
         max_tokens=32000,
     )
 
     gepa_kwargs: dict[str, Any] = {
-        "metric": flashpoint_metric_with_feedback,
+        "metric": comparative_flashpoint_metric,
         "auto": auto,
         "num_threads": num_threads,
         "track_stats": True,
@@ -94,38 +114,83 @@ def optimize_flashpoint_detector(
     optimizer = dspy.GEPA(**gepa_kwargs)
 
     detector = FlashpointDetector()
+    trainer = FlashpointTrainerProgram(detector)
 
     print(f"Starting GEPA optimization (auto={auto}, model={model})...")
+    print(f"Reflection LM: {reflection_model or 'openai/gpt-5.2'}")
     print("This may take a while depending on the auto level and dataset size.")
-    optimized = optimizer.compile(
-        detector,
-        trainset=trainset,
-        valset=devset,
+
+    optimized_trainer = optimizer.compile(
+        trainer,
+        trainset=paired_train,
+        valset=paired_dev,
     )
+
+    optimized_detector = optimized_trainer.detector
+
+    if finetune:
+        optimized_detector = _run_finetune(
+            optimized_detector, model, paired_train, comparative_flashpoint_metric
+        )
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        optimized.save(str(output_path))
+        optimized_detector.save(str(output_path))
         print(f"Saved optimized program to {output_path}")
 
-    return optimized
+    return optimized_detector
+
+
+def _run_finetune(
+    detector: FlashpointDetector,
+    model: str,
+    paired_train: list[dspy.Example],
+    metric: Any,
+) -> FlashpointDetector:
+    """Run BootstrapFinetune as a second pass after GEPA prompt optimization.
+
+    Distills the GEPA-optimized prompt into a finetuned student model
+    for improved performance beyond prompt-only optimization.
+    """
+    from dspy.teleprompt import BootstrapFinetune
+
+    print("\nRunning BootstrapFinetune second pass...")
+
+    def finetune_metric(
+        gold: dspy.Example, pred: dspy.Prediction, trace: Any = None
+    ) -> float | bool:
+        result = metric(gold, pred, trace)
+        if trace is not None and result.score < 1.0:
+            return False
+        return result.score
+
+    trainer = FlashpointTrainerProgram(detector)
+    finetune_optimizer = BootstrapFinetune(metric=finetune_metric)
+
+    finetuned_trainer = finetune_optimizer.compile(
+        trainer,
+        trainset=paired_train,
+    )
+
+    print("BootstrapFinetune complete.")
+    return finetuned_trainer.detector
 
 
 def _evaluate_single(
     detector: FlashpointDetector, idx: int, example: dspy.Example
 ) -> tuple[int, float | None, int | None, str | None]:
-    """Evaluate a single example. Returns (idx, score, error_msg)."""
+    """Evaluate a single example. Returns (idx, score, category, error_msg)."""
     try:
         pred = detector(context=example.context, message=example.message)
         score = flashpoint_metric(example, pred)
-        expected = parse_bool(example.will_derail)
-        predicted = parse_bool(pred.will_derail)
+        expected_derailing = getattr(example, "will_derail", False)
+        predicted_score = parse_derailment_score(pred.derailment_score)
 
-        if expected and predicted:
+        if expected_derailing and predicted_score >= 50:
             category = 0  # TP
-        elif not expected and predicted:
+        elif not expected_derailing and predicted_score >= 50:
             category = 1  # FP
-        elif expected and not predicted:
+        elif expected_derailing and predicted_score < 50:
             category = 2  # FN
         else:
             category = 3  # TN
@@ -223,6 +288,101 @@ def evaluate_detector(
     }
 
 
+def _collect_scores(
+    detector: FlashpointDetector,
+    testset: list[dspy.Example],
+    num_threads: int = 8,
+) -> list[tuple[bool, int]]:
+    """Collect (expected_derailing, predicted_score) pairs for ROC analysis."""
+    results: list[tuple[bool, int]] = []
+
+    def _score_single(ex):
+        pred = detector(context=ex.context, message=ex.message)
+        return (
+            bool(getattr(ex, "will_derail", False)),
+            parse_derailment_score(pred.derailment_score),
+        )
+
+    if num_threads <= 1:
+        for ex in tqdm(testset, desc="Collecting scores", unit="ex"):
+            results.append(_score_single(ex))
+    else:
+        with ThreadPoolExecutor(max_workers=num_threads) as pool:
+            futures = [pool.submit(_score_single, ex) for ex in testset]
+            for future in tqdm(as_completed(futures), total=len(testset), desc="Collecting scores"):
+                try:
+                    results.append(future.result())
+                except Exception as e:
+                    tqdm.write(f"Error: {e}")
+
+    return results
+
+
+def evaluate_safety_at_audit_budget(
+    detector: FlashpointDetector,
+    testset: list[dspy.Example],
+    fpr_levels: list[float] | None = None,
+    num_threads: int = 8,
+) -> dict:
+    """Evaluate using ROC-style safety-at-audit-budget curves.
+
+    For each FPR level, finds the threshold that achieves at most that
+    false positive rate, then reports the true positive rate (safety)
+    at that threshold.
+
+    Args:
+        detector: The flashpoint detector to evaluate
+        testset: Test examples with will_derail labels
+        fpr_levels: FPR budget levels to evaluate (default: 0.5%-5%)
+        num_threads: Threads for parallel scoring
+
+    Returns:
+        Dict with per-FPR-level results and overall metrics
+    """
+    if fpr_levels is None:
+        fpr_levels = [0.005, 0.01, 0.02, 0.03, 0.05]
+
+    scores = _collect_scores(detector, testset, num_threads=num_threads)
+
+    positives = [(s, label) for label, s in scores if label]
+    negatives = [(s, label) for label, s in scores if not label]
+    n_pos = len(positives)
+    n_neg = len(negatives)
+
+    if n_pos == 0 or n_neg == 0:
+        return {"error": "Need both positive and negative examples", "fpr_levels": {}}
+
+    neg_scores = sorted([s for s, _ in negatives], reverse=True)
+    pos_scores = [s for s, _ in positives]
+
+    results: dict[str, Any] = {"fpr_levels": {}, "n_positive": n_pos, "n_negative": n_neg}
+
+    for fpr_budget in fpr_levels:
+        max_fp = int(n_neg * fpr_budget)
+
+        if max_fp >= len(neg_scores):
+            threshold = 0
+        elif max_fp == 0:
+            threshold = neg_scores[0] + 1
+        else:
+            threshold = neg_scores[max_fp - 1]
+
+        tp = sum(1 for s in pos_scores if s >= threshold)
+        fp = sum(1 for s, _ in negatives if s >= threshold)
+        tpr = tp / n_pos
+        actual_fpr = fp / n_neg
+
+        results["fpr_levels"][f"{fpr_budget:.1%}"] = {
+            "threshold": threshold,
+            "tpr_safety": tpr,
+            "actual_fpr": actual_fpr,
+            "true_positives": tp,
+            "false_positives": fp,
+        }
+
+    return results
+
+
 def print_metrics(metrics: dict) -> None:
     """Print evaluation metrics in a formatted way."""
     print("\n" + "=" * 50)
@@ -247,9 +407,31 @@ def print_metrics(metrics: dict) -> None:
         print(f"\n*** QUALITY GATE FAILED: F1 = {metrics['f1']:.2%} < 0.75 ***")
 
 
+def print_safety_curves(safety_results: dict) -> None:
+    """Print ROC-style safety-at-audit-budget results."""
+    print("\n" + "=" * 50)
+    print("SAFETY-AT-AUDIT-BUDGET CURVES")
+    print("=" * 50)
+    print(f"Positive examples: {safety_results['n_positive']}")
+    print(f"Negative examples: {safety_results['n_negative']}")
+    print()
+    print(
+        f"{'FPR Budget':>12} {'Threshold':>10} {'TPR (Safety)':>14} "
+        f"{'Actual FPR':>12} {'TP':>6} {'FP':>6}"
+    )
+    print("-" * 65)
+
+    for fpr_label, data in safety_results["fpr_levels"].items():
+        print(
+            f"{fpr_label:>12} {data['threshold']:>10} "
+            f"{data['tpr_safety']:>14.2%} {data['actual_fpr']:>12.2%} "
+            f"{data['true_positives']:>6} {data['false_positives']:>6}"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Optimize flashpoint detection prompt using DSPy GEPA",
+        description="Optimize flashpoint detection with GEPA comparative scoring",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -259,11 +441,14 @@ Examples:
   # Use a different model
   uv run python scripts/flashpoints/optimize_prompt.py --model openai/gpt-5.1
 
-  # Heavy optimization for better results
-  uv run python scripts/flashpoints/optimize_prompt.py --auto heavy
+  # Heavy optimization with BootstrapFinetune
+  uv run python scripts/flashpoints/optimize_prompt.py --auto heavy --finetune
 
   # Evaluate existing model without re-optimizing
   uv run python scripts/flashpoints/optimize_prompt.py --eval-only data/flashpoints/optimized_detector.json
+
+  # ROC-style evaluation only
+  uv run python scripts/flashpoints/optimize_prompt.py --eval-only data/flashpoints/optimized_detector.json --safety-curves
         """,
     )
     parser.add_argument(
@@ -274,7 +459,7 @@ Examples:
     parser.add_argument(
         "--reflection-model",
         default=None,
-        help="LLM model for GEPA reflection (default: openai/gpt-5.1)",
+        help="LLM model for GEPA reflection (default: openai/gpt-5.2)",
     )
     parser.add_argument(
         "--auto",
@@ -332,6 +517,23 @@ Examples:
         default=Path(__file__).parent.parent.parent / "data" / "flashpoints" / "gepa_logs",
         help="Directory for GEPA checkpoints/resume (default: data/flashpoints/gepa_logs)",
     )
+    parser.add_argument(
+        "--finetune",
+        action="store_true",
+        help="Run BootstrapFinetune as a second pass after GEPA optimization",
+    )
+    parser.add_argument(
+        "--safety-curves",
+        action="store_true",
+        help="Evaluate with ROC-style safety-at-audit-budget curves",
+    )
+    parser.add_argument(
+        "--fpr-levels",
+        type=float,
+        nargs="+",
+        default=None,
+        help="FPR budget levels for safety curves (default: 0.005 0.01 0.02 0.03 0.05)",
+    )
 
     args = parser.parse_args()
 
@@ -351,6 +553,7 @@ Examples:
             log_dir=args.log_dir,
             reflection_minibatch_size=args.reflection_minibatch_size,
             num_threads=args.num_threads,
+            finetune=args.finetune,
         )
 
     _, _, testset = load_flashpoint_datasets()
@@ -362,10 +565,24 @@ Examples:
     )
     print_metrics(metrics)
 
+    if args.safety_curves:
+        print("\nRunning safety-at-audit-budget evaluation...")
+        safety_results = evaluate_safety_at_audit_budget(
+            detector,
+            testset,
+            fpr_levels=args.fpr_levels,
+            num_threads=args.num_eval_threads,
+        )
+        if "error" in safety_results:
+            print(f"\nSafety curve error: {safety_results['error']}")
+        else:
+            print_safety_curves(safety_results)
+
     error_rate_threshold = 0.05
     if metrics["error_rate"] > error_rate_threshold:
         print(
-            f"\n*** FAILED: Error rate {metrics['error_rate']:.1%} > {error_rate_threshold:.0%} threshold ***"
+            f"\n*** FAILED: Error rate {metrics['error_rate']:.1%} "
+            f"> {error_rate_threshold:.0%} threshold ***"
         )
         print("This indicates infrastructure issues (API rate limiting, model errors, etc.)")
         return 2

@@ -52,6 +52,55 @@ def load_flashpoint_examples(jsonl_path: Path) -> list[dspy.Example]:
     return examples
 
 
+def load_paired_flashpoint_examples(jsonl_path: Path) -> list[dspy.Example]:
+    """Load paired/contrastive flashpoint examples from JSONL file.
+
+    Args:
+        jsonl_path: Path to the paired JSONL file
+
+    Returns:
+        List of dspy.Example objects with derailing/non-derailing paired fields
+
+    Raises:
+        FileNotFoundError: If the JSONL file does not exist
+    """
+    if not jsonl_path.exists():
+        raise FileNotFoundError(f"Paired dataset file not found: {jsonl_path}")
+
+    examples = []
+    with jsonl_path.open() as f:
+        for line_num, raw_line in enumerate(f, 1):
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            try:
+                data = json.loads(stripped)
+                example = dspy.Example(
+                    derailing_context=data["derailing_context"],
+                    derailing_message=data["derailing_message"],
+                    non_derailing_context=data["non_derailing_context"],
+                    non_derailing_message=data["non_derailing_message"],
+                ).with_inputs(
+                    "derailing_context",
+                    "derailing_message",
+                    "non_derailing_context",
+                    "non_derailing_message",
+                )
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed JSON at %s line %d", jsonl_path, line_num)
+                continue
+            except KeyError as exc:
+                logger.warning(
+                    "Skipping paired record missing key %s at %s line %d",
+                    exc,
+                    jsonl_path,
+                    line_num,
+                )
+                continue
+            examples.append(example)
+    return examples
+
+
 def load_flashpoint_datasets(
     data_dir: Path | None = None,
 ) -> tuple[list[dspy.Example], list[dspy.Example], list[dspy.Example]]:
@@ -79,8 +128,42 @@ def load_flashpoint_datasets(
     return trainset, devset, testset
 
 
+def load_paired_flashpoint_datasets(
+    data_dir: Path | None = None,
+) -> tuple[list[dspy.Example], list[dspy.Example]]:
+    """Load paired/contrastive train/dev datasets.
+
+    Args:
+        data_dir: Directory containing the JSONL files. Defaults to data/flashpoints/
+
+    Returns:
+        Tuple of (paired_trainset, paired_devset) as lists of dspy.Example
+
+    Raises:
+        FileNotFoundError: If the data directory or any dataset file does not exist
+    """
+    if data_dir is None:
+        data_dir = Path(__file__).parent.parent.parent / "data" / "flashpoints"
+
+    if not data_dir.is_dir():
+        raise FileNotFoundError(f"Dataset directory not found: {data_dir}")
+
+    paired_train = load_paired_flashpoint_examples(data_dir / "flashpoints_paired_train.jsonl")
+    paired_dev = load_paired_flashpoint_examples(data_dir / "flashpoints_paired_dev.jsonl")
+
+    return paired_train, paired_dev
+
+
 if __name__ == "__main__":
     train, dev, test = load_flashpoint_datasets()
     print(f"Loaded: {len(train)} train, {len(dev)} dev, {len(test)} test")
     if train:
         print(f"\nSample example:\n{train[0]}")
+
+    try:
+        paired_train, paired_dev = load_paired_flashpoint_datasets()
+        print(f"\nPaired: {len(paired_train)} train, {len(paired_dev)} dev")
+        if paired_train:
+            print(f"\nSample paired example:\n{paired_train[0]}")
+    except FileNotFoundError:
+        print("\nNo paired datasets found (run extract_cga_dataset.py first)")

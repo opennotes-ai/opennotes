@@ -4437,18 +4437,13 @@ export interface components {
              */
             scan_type: "conversation_flashpoint";
             /**
-             * Will Derail
-             * @description Whether conversation shows derailment signals
+             * Derailment Score
+             * @description Derailment risk score (0-100)
              */
-            will_derail: boolean;
-            /**
-             * Confidence
-             * @description Model confidence score
-             */
-            confidence: number;
+            derailment_score: number;
             /**
              * Reasoning
-             * @description Explanation of detected signals
+             * @description Explanation of detected escalation signals
              */
             reasoning: string;
             /**
