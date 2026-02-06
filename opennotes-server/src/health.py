@@ -3,11 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.batch_jobs.rechunk_service import (
@@ -22,6 +20,7 @@ from src.database import get_db
 from src.dbos_workflows.config import get_dbos
 from src.events.nats_client import nats_client
 from src.monitoring import DistributedHealthCoordinator, HealthChecker
+from src.monitoring.health import HealthCheckResponse, ServiceStatus
 from src.monitoring.metrics import (
     batch_job_stuck_count,
     batch_job_stuck_duration_seconds,
@@ -43,31 +42,10 @@ def get_distributed_health(request: Request) -> DistributedHealthCoordinator:
     return request.app.state.distributed_health
 
 
-class ServiceStatus(BaseModel):
-    status: str = Field(..., description="Service status: 'healthy', 'degraded', or 'unhealthy'")
-    latency_ms: float | None = Field(None, description="Response latency in milliseconds")
-    message: str | None = Field(None, description="Additional status message")
-    details: dict[str, Any] = Field(default_factory=dict, description="Additional details")
-
-
-class HealthCheckResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    status: str = Field(..., description="Overall system status")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    version: str = Field(..., description="API version")
-    environment: str | None = Field(None, description="Environment name")
-    services: dict[str, ServiceStatus] = Field(
-        default_factory=dict, description="Individual service statuses"
-    )
-    components: dict[str, ServiceStatus] | None = Field(
-        None, description="Component statuses (alias for services)"
-    )
-
-
-@router.get("/health")
+@router.get("/health", response_model=HealthCheckResponse)
 async def health_check(
     health_checker: Annotated[HealthChecker, Depends(get_health_checker)],
-) -> Any:
+) -> HealthCheckResponse:
     """Comprehensive health check that checks all registered components."""
     return await health_checker.check_all()
 
@@ -125,7 +103,6 @@ async def simple_health_check() -> HealthCheckResponse:
         status="healthy",
         version=settings.VERSION,
         environment=settings.ENVIRONMENT,
-        services={},
         components={},
     )
 
@@ -438,15 +415,13 @@ async def detailed_health(
     return HealthCheckResponse(
         status=overall_status,
         version=settings.VERSION,
-        environment=None,
-        services={
+        components={
             "redis": redis_status,
             "nats": nats_status,
             "taskiq": taskiq_status,
             "dbos": dbos_status,
             "batch_jobs": batch_jobs_status,
         },
-        components=None,
     )
 
 

@@ -53,7 +53,7 @@ class DistributedHealthCoordinator:
             instance_info = {
                 "instance_id": self.instance_id,
                 "timestamp": time.time(),
-                "status": health_data.status.value
+                "status": health_data.status
                 if isinstance(health_data, ComponentHealth)
                 else str(health_data),
                 "version": settings.VERSION,
