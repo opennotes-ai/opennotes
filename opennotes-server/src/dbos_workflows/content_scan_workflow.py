@@ -393,18 +393,38 @@ def process_batch_messages_step(
     messages = json.loads(messages_json)
     scan_types = [ScanType(st) for st in json.loads(scan_types_json)]
 
+    _diag = {"scan_id": scan_id, "batch_number": batch_number}
+
+    try:
+        loop = asyncio.get_running_loop()
+        logger.info(
+            "process_batch_messages_step: running event loop detected",
+            extra={**_diag, "loop": str(loop)},
+        )
+    except RuntimeError:
+        logger.info("process_batch_messages_step: no running event loop", extra=_diag)
+
     async def _process() -> dict[str, Any]:
         from sqlalchemy import select
 
-        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+        logger.info("_process: entered async function", extra=_diag)
 
+        logger.info("_process: acquiring redis client", extra=_diag)
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+        logger.info("_process: redis client acquired", extra=_diag)
+
+        logger.info("_process: opening db session", extra=_diag)
         async with get_session_maker()() as session:
+            logger.info("_process: db session opened, querying platform_id", extra=_diag)
             result = await session.execute(
                 select(CommunityServer.platform_community_server_id).where(
                     CommunityServer.id == community_uuid
                 )
             )
             platform_id = result.scalar_one_or_none()
+            logger.info(
+                "_process: platform_id query done", extra={**_diag, "platform_id": str(platform_id)}
+            )
 
             if not platform_id:
                 logger.error(
@@ -419,6 +439,7 @@ def process_batch_messages_step(
                     "batch_number": batch_number,
                 }
 
+            logger.info("_process: initializing services", extra=_diag)
             llm_service = _get_llm_service()
             embedding_service = EmbeddingService(llm_service)
             flashpoint_service = get_flashpoint_service()
@@ -429,10 +450,19 @@ def process_batch_messages_step(
                 llm_service=llm_service,
                 flashpoint_service=flashpoint_service,
             )
+            logger.info("_process: services initialized, starting process_messages", extra=_diag)
 
             typed_messages = [BulkScanMessage.model_validate(msg) for msg in messages]
 
             try:
+                logger.info(
+                    "_process: calling process_messages",
+                    extra={
+                        **_diag,
+                        "message_count": len(typed_messages),
+                        "scan_types": [str(st) for st in scan_types],
+                    },
+                )
                 flagged = await service.process_messages(
                     scan_id=scan_uuid,
                     messages=typed_messages,
@@ -441,6 +471,10 @@ def process_batch_messages_step(
                 )
                 processed = len(typed_messages)
                 errors = 0
+                logger.info(
+                    "_process: process_messages completed",
+                    extra={**_diag, "processed": processed, "flagged_count": len(flagged)},
+                )
             except Exception as e:
                 flagged = []
                 processed = 0

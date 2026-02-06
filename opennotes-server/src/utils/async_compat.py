@@ -10,11 +10,14 @@ from __future__ import annotations
 import asyncio
 import atexit
 import concurrent.futures
+import logging
 import threading
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+
+_logger = logging.getLogger(__name__)
 
 _thread_local = threading.local()
 _thread_local_loops: list[asyncio.AbstractEventLoop] = []
@@ -68,13 +71,27 @@ def run_sync(coro: Coroutine[Any, Any, T], *, timeout: float = 300.0) -> T:
         Any exception raised by the coroutine
     """
     try:
-        asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
+        _logger.info(
+            "run_sync: running event loop detected, submitting to executor (thread=%s, loop=%s)",
+            threading.current_thread().name,
+            id(loop),
+        )
     except RuntimeError:
         if not hasattr(_thread_local, "loop") or _thread_local.loop.is_closed():
             _thread_local.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(_thread_local.loop)
             _register_loop(_thread_local.loop)
+        _logger.info(
+            "run_sync: no running loop, using thread-local loop (thread=%s)",
+            threading.current_thread().name,
+        )
         return _thread_local.loop.run_until_complete(coro)
 
+    _logger.info(
+        "run_sync: submitting to ThreadPoolExecutor (active=%d, max=%d)",
+        _executor._work_queue.qsize(),
+        _executor._max_workers,
+    )
     future = _executor.submit(asyncio.run, coro)
     return future.result(timeout=timeout)
