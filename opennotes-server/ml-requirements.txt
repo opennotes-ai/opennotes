@@ -3,6 +3,7 @@
 # CPU-only PyTorch - no CUDA libraries (saves ~4.7GB)
 
 chonkie==1.3.1
+numpy==1.26.4
 scikit-learn==1.7.2
 scipy==1.11.4
 torch==2.1.2

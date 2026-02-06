@@ -14,11 +14,11 @@ class TestLLMProviderFactoryCreate:
         provider = LLMProviderFactory.create(
             provider_name="openai",
             api_key="test-key",
-            default_model="gpt-4o",
+            default_model="gpt-5.1",
             settings={"timeout": 30.0},
         )
         assert isinstance(provider, LiteLLMProvider)
-        assert provider.default_model == "gpt-4o"
+        assert provider.default_model == "gpt-5.1"
         assert provider._provider_name == "openai"
 
     def test_create_anthropic_returns_litellm_provider(self) -> None:
@@ -62,11 +62,11 @@ class TestLLMProviderFactoryCreate:
         provider = LLMProviderFactory.create(
             provider_name="litellm",
             api_key="test-key",
-            default_model="openai/gpt-4o",
+            default_model="openai/gpt-5.1",
             settings={"timeout": 30.0},
         )
         assert isinstance(provider, LiteLLMProvider)
-        assert provider.default_model == "openai/gpt-4o"
+        assert provider.default_model == "openai/gpt-5.1"
         assert provider._provider_name == "litellm"
 
     def test_unknown_provider_raises_valueerror(self) -> None:
@@ -84,7 +84,7 @@ class TestLLMProviderFactoryCreate:
         provider = LLMProviderFactory.create(
             provider_name="openai",
             api_key="test-key",
-            default_model="gpt-4o",
+            default_model="gpt-5.1",
             settings={"timeout": 60.0, "max_tokens": 2048, "temperature": 0.5},
         )
         assert provider.settings.timeout == 60.0

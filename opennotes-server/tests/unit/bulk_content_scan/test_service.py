@@ -2112,3 +2112,410 @@ class TestProcessMessagesSkipsExistingRequests:
         call_args = mock_redis.incrby.call_args
         assert call_args[0][1] == 3
         assert str(scan_id) in call_args[0][0]
+
+
+class TestFlashpointRelevanceBypass:
+    """Test that flashpoint candidates bypass the LLM relevance check (TASK-1067.73)."""
+
+    @pytest.mark.asyncio
+    async def test_flashpoint_candidates_always_have_should_flag_true(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Flashpoint candidates must always set should_flag=True, bypassing relevance check."""
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import (
+            BulkScanMessage,
+            ConversationFlashpointMatch,
+            FlaggedMessage,
+            ScanCandidate,
+        )
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        msg = BulkScanMessage(
+            message_id="msg_fp_1",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="You are completely wrong and don't know what you are talking about",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+        )
+
+        fp_match = ConversationFlashpointMatch(
+            will_derail=True,
+            confidence=0.85,
+            reasoning="Detected hostile language patterns",
+            context_messages=3,
+        )
+
+        candidate = ScanCandidate(
+            message=msg,
+            scan_type=ScanType.CONVERSATION_FLASHPOINT.value,
+            match_data=fp_match,
+            score=0.85,
+            matched_content="Detected hostile language patterns",
+            matched_source=None,
+        )
+
+        scan_id = uuid4()
+        flagged = await service._filter_candidates_with_relevance([candidate], scan_id)
+
+        assert len(flagged) == 1
+        assert isinstance(flagged[0], FlaggedMessage)
+        assert flagged[0].message_id == "msg_fp_1"
+        assert flagged[0].matches[0].scan_type == "conversation_flashpoint"
+
+    @pytest.mark.asyncio
+    async def test_flashpoint_bypass_does_not_call_llm(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Flashpoint candidates must NOT trigger the LLM relevance check."""
+        from unittest.mock import patch as mock_patch
+
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import (
+            BulkScanMessage,
+            ConversationFlashpointMatch,
+            ScanCandidate,
+        )
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        mock_llm = AsyncMock()
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            llm_service=mock_llm,
+        )
+
+        msg = BulkScanMessage(
+            message_id="msg_fp_2",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="This is aggressive content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+        )
+
+        fp_match = ConversationFlashpointMatch(
+            will_derail=True,
+            confidence=0.9,
+            reasoning="Escalating hostility",
+            context_messages=5,
+        )
+
+        candidate = ScanCandidate(
+            message=msg,
+            scan_type=ScanType.CONVERSATION_FLASHPOINT.value,
+            match_data=fp_match,
+            score=0.9,
+            matched_content="Escalating hostility",
+            matched_source=None,
+        )
+
+        scan_id = uuid4()
+        with mock_patch.object(service, "_check_relevance_with_llm") as mock_check:
+            await service._filter_candidates_with_relevance([candidate], scan_id)
+            mock_check.assert_not_called()
+
+
+class TestDeduplicateFlaggedMessages:
+    """Test deduplication of flagged messages by message_id (TASK-1067.88)."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_message_ids_are_deduplicated(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Duplicate message_ids in input should only create one note request."""
+        from unittest.mock import patch as mock_patch
+
+        from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
+        from src.bulk_content_scan.service import create_note_requests_from_flagged_messages
+
+        similarity_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
+        )
+        flagged = FlaggedMessage(
+            message_id="msg_dup",
+            channel_id="ch_1",
+            content="Test content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            matches=[similarity_match],
+        )
+
+        mock_request = MagicMock()
+        mock_request.request_id = "req_123"
+
+        with mock_patch(
+            "src.notes.request_service.RequestService.create_from_message",
+            new_callable=AsyncMock,
+            return_value=mock_request,
+        ) as mock_create:
+            result = await create_note_requests_from_flagged_messages(
+                message_ids=["msg_dup", "msg_dup", "msg_dup"],
+                scan_id=uuid4(),
+                session=mock_session,
+                user_id=uuid4(),
+                community_server_id=uuid4(),
+                flagged_messages=[flagged],
+            )
+
+        assert len(result) == 1
+        mock_create.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_dual_match_messages_merge_matches(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """When a message has both similarity and flashpoint matches, matches are merged."""
+        from src.bulk_content_scan.schemas import (
+            ConversationFlashpointMatch,
+            FlaggedMessage,
+            SimilarityMatch,
+        )
+        from src.bulk_content_scan.service import create_note_requests_from_flagged_messages
+
+        sim_match = SimilarityMatch(
+            score=0.85,
+            matched_claim="Claim",
+            matched_source="https://example.com",
+            fact_check_item_id=SAMPLE_FACT_CHECK_ID,
+        )
+        fp_match = ConversationFlashpointMatch(
+            will_derail=True,
+            confidence=0.9,
+            reasoning="Escalation detected",
+            context_messages=3,
+        )
+
+        flagged_sim = FlaggedMessage(
+            message_id="msg_dual",
+            channel_id="ch_1",
+            content="Dual match content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            matches=[sim_match],
+        )
+        flagged_fp = FlaggedMessage(
+            message_id="msg_dual",
+            channel_id="ch_1",
+            content="Dual match content",
+            author_id="user_1",
+            timestamp=datetime.now(UTC),
+            matches=[fp_match],
+        )
+
+        mock_request = MagicMock()
+        mock_request.request_id = "req_456"
+
+        from unittest.mock import patch as mock_patch
+
+        with mock_patch(
+            "src.notes.request_service.RequestService.create_from_message",
+            new_callable=AsyncMock,
+            return_value=mock_request,
+        ) as mock_create:
+            result = await create_note_requests_from_flagged_messages(
+                message_ids=["msg_dual"],
+                scan_id=uuid4(),
+                session=mock_session,
+                user_id=uuid4(),
+                community_server_id=uuid4(),
+                flagged_messages=[flagged_sim, flagged_fp],
+            )
+
+        assert len(result) == 1
+        mock_create.assert_called_once()
+
+
+class TestBatchContextLimitation:
+    """Test _build_channel_context_map batch-scoped behavior (TASK-1067.89)."""
+
+    def test_context_map_only_contains_batch_messages(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Context map should only contain messages from the current batch."""
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        batch_messages = [
+            BulkScanMessage(
+                message_id=f"msg_{i}",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content=f"Message {i} content for testing",
+                author_id="user_1",
+                timestamp=datetime(2024, 1, 1, i, 0, 0, tzinfo=UTC),
+            )
+            for i in range(3)
+        ]
+
+        context_map = service._build_channel_context_map(batch_messages)
+
+        assert "ch_1" in context_map
+        assert len(context_map["ch_1"]) == 3
+        msg_ids = [m.message_id for m in context_map["ch_1"]]
+        assert msg_ids == ["msg_0", "msg_1", "msg_2"]
+
+    def test_first_message_in_batch_has_no_context(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """The first message in a batch should have no prior context."""
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        batch_messages = [
+            BulkScanMessage(
+                message_id=f"msg_{i}",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content=f"Message {i} content for testing",
+                author_id="user_1",
+                timestamp=datetime(2024, 1, 1, i, 0, 0, tzinfo=UTC),
+            )
+            for i in range(3)
+        ]
+
+        context_map = service._build_channel_context_map(batch_messages)
+        first_msg = batch_messages[0]
+        context = service._get_context_for_message(first_msg, context_map)
+
+        assert context == []
+
+
+class TestContentScanTypesHoisted:
+    """Test that content_scan_types is computed once outside the loop (TASK-1067.90)."""
+
+    @pytest.mark.asyncio
+    async def test_content_scan_types_excludes_flashpoint(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """Content scan types list should exclude CONVERSATION_FLASHPOINT."""
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+        from src.fact_checking.embedding_schemas import SimilaritySearchResponse
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[],
+                query_text="Test",
+                dataset_tags=[],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+                total_matches=0,
+            )
+        )
+
+        mock_flashpoint_service = AsyncMock()
+        mock_flashpoint_service.detect_flashpoint = AsyncMock(return_value=None)
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+            flashpoint_service=mock_flashpoint_service,
+        )
+
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id=f"msg_{i}",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content=f"Test message content number {i} for scanning",
+                author_id="user_1",
+                timestamp=datetime(2024, 1, 1, i, 0, 0, tzinfo=UTC),
+            )
+            for i in range(3)
+        ]
+
+        await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id="guild_123",
+            scan_types=[ScanType.SIMILARITY, ScanType.CONVERSATION_FLASHPOINT],
+        )
+
+        assert mock_embedding_service.similarity_search.call_count == 3
+        assert mock_flashpoint_service.detect_flashpoint.call_count == 3
+
+
+class TestUnifiedFlaggedMessageConstruction:
+    """Test unified FlaggedMessage construction via _build_flagged_message_from_candidate (TASK-1067.102)."""
+
+    def test_build_flagged_message_from_candidate(
+        self, mock_session, mock_embedding_service, mock_redis
+    ):
+        """_build_flagged_message_from_candidate should produce correct FlaggedMessage."""
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import (
+            BulkScanMessage,
+            ConversationFlashpointMatch,
+            FlaggedMessage,
+            ScanCandidate,
+        )
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=mock_redis,
+        )
+
+        msg = BulkScanMessage(
+            message_id="msg_unified",
+            channel_id="ch_1",
+            community_server_id="guild_123",
+            content="Unified construction test content",
+            author_id="user_1",
+            timestamp=datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC),
+        )
+
+        fp_match = ConversationFlashpointMatch(
+            will_derail=True,
+            confidence=0.88,
+            reasoning="Hostile escalation pattern",
+            context_messages=4,
+        )
+
+        candidate = ScanCandidate(
+            message=msg,
+            scan_type=ScanType.CONVERSATION_FLASHPOINT.value,
+            match_data=fp_match,
+            score=0.88,
+            matched_content="Hostile escalation pattern",
+            matched_source=None,
+        )
+
+        result = service._build_flagged_message_from_candidate(candidate)
+
+        assert isinstance(result, FlaggedMessage)
+        assert result.message_id == "msg_unified"
+        assert result.channel_id == "ch_1"
+        assert result.content == "Unified construction test content"
+        assert result.author_id == "user_1"
+        assert len(result.matches) == 1
+        assert result.matches[0].scan_type == "conversation_flashpoint"
+        assert result.matches[0].confidence == 0.88

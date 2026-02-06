@@ -77,7 +77,7 @@ class TestLiteLLMProvider:
         """Create a test provider instance."""
         return LiteLLMProvider(
             api_key="test-api-key",
-            default_model="openai/gpt-4o",
+            default_model="openai/gpt-5.1",
             settings=LiteLLMProviderSettings(),
         )
 
@@ -91,14 +91,14 @@ class TestLiteLLMProvider:
                 finish_reason="stop",
             )
         ]
-        response.model = "gpt-4o"
+        response.model = "gpt-5.1"
         response.usage = MagicMock(total_tokens=25)
         return response
 
     def test_filter_none_params_removes_none_values(self, provider: LiteLLMProvider) -> None:
         """_filter_none_params should remove all None values."""
         params = {
-            "model": "gpt-4o",
+            "model": "gpt-5.1",
             "temperature": 0.7,
             "presence_penalty": None,
             "frequency_penalty": None,
@@ -106,7 +106,7 @@ class TestLiteLLMProvider:
         }
         filtered = provider._filter_none_params(params)
         assert filtered == {
-            "model": "gpt-4o",
+            "model": "gpt-5.1",
             "temperature": 0.7,
             "top_p": 0.9,
         }
@@ -167,7 +167,7 @@ class TestLiteLLMProvider:
             response = await provider.complete(messages)
 
             assert response.content == "Hello! How can I help you?"
-            assert response.model == "gpt-4o"
+            assert response.model == "gpt-5.1"
             assert response.tokens_used == 25
             assert response.finish_reason == "stop"
             assert response.provider == "litellm"
@@ -184,7 +184,7 @@ class TestLiteLLMProvider:
             await provider.complete(messages)
 
             call_kwargs = mock_litellm.acompletion.call_args.kwargs
-            assert call_kwargs["model"] == "openai/gpt-4o"
+            assert call_kwargs["model"] == "openai/gpt-5.1"
 
     @pytest.mark.asyncio
     async def test_complete_uses_param_model_when_specified(
@@ -206,7 +206,7 @@ class TestLiteLLMProvider:
         """complete() should handle response with missing usage data."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock(message=MagicMock(content="Hi"), finish_reason="stop")]
-        mock_response.model = "gpt-4o"
+        mock_response.model = "gpt-5.1"
         mock_response.usage = None
 
         with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
@@ -222,7 +222,7 @@ class TestLiteLLMProvider:
         """complete() should handle response with empty content."""
         mock_response = MagicMock()
         mock_response.choices = [MagicMock(message=MagicMock(content=None), finish_reason="stop")]
-        mock_response.model = "gpt-4o"
+        mock_response.model = "gpt-5.1"
         mock_response.usage = MagicMock(total_tokens=10)
 
         with patch("src.llm_config.providers.litellm_provider.litellm") as mock_litellm:
@@ -379,7 +379,7 @@ class TestLiteLLMProvider:
 
         provider = LiteLLMProvider(
             api_key="test-key",
-            default_model="gpt-4o",
+            default_model="gpt-5.1",
             settings=LiteLLMProviderSettings(),
             provider_name="openai",
         )
@@ -395,7 +395,7 @@ class TestLiteLLMProvider:
 
         provider = LiteLLMProvider(
             api_key="test-key",
-            default_model="gpt-4o",
+            default_model="gpt-5.1",
             settings=LiteLLMProviderSettings(),
         )
 
@@ -413,7 +413,7 @@ class TestLiteLLMProvider:
 
         openai_provider = LiteLLMProvider(
             api_key="test-key",
-            default_model="gpt-4o",
+            default_model="gpt-5.1",
             settings=LiteLLMProviderSettings(),
             provider_name="openai",
         )

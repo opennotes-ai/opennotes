@@ -44,6 +44,12 @@ dmypy.json
 
 *.log
 
+# Flashpoint training data (generated, not committed)
+data/flashpoints/*
+# Keep the optimized detector artifact (committed to git per project requirements)
+!data/flashpoints/.gitkeep
+!data/flashpoints/optimized_detector.json
+
 .DS_Store
 .idea/
 .vscode/

@@ -29,9 +29,11 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.repository import get_latest_scan_for_community, has_recent_scan
-from src.bulk_content_scan.schemas import FlaggedMessage, MatchResult
+from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
+from src.bulk_content_scan.schemas import BulkScanStatus, FlaggedMessage, MatchResult
 from src.bulk_content_scan.service import (
     BulkContentScanService,
     create_note_requests_from_flagged_messages,
@@ -47,11 +49,13 @@ from src.common.jsonapi import (
 )
 from src.config import settings
 from src.database import get_db
+from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 from src.fact_checking.embedding_service import EmbeddingService
 from src.fact_checking.embeddings_jsonapi_router import get_embedding_service, get_llm_service
 from src.fact_checking.models import FactCheckItem
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.manager import LLMClientManager
+from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
@@ -481,6 +485,7 @@ async def get_bulk_scan_service(
         embedding_service=embedding_service,
         redis_client=redis,
         llm_service=llm_service,
+        flashpoint_service=get_flashpoint_service(),
     )
 
 
@@ -580,6 +585,66 @@ async def initiate_scan(
             community_server_id=attrs.community_server_id,
             initiated_by_user_id=profile_id,
             scan_window_days=attrs.scan_window_days,
+        )
+
+        scan_types: list[ScanType] = list(DEFAULT_SCAN_TYPES)
+        try:
+            cs_result = await session.execute(
+                select(CommunityServer.flashpoint_detection_enabled).where(
+                    CommunityServer.id == attrs.community_server_id
+                )
+            )
+            if cs_result.scalar_one_or_none():
+                scan_types.append(ScanType.CONVERSATION_FLASHPOINT)
+        except Exception:
+            logger.warning(
+                "Failed to check flashpoint_detection_enabled",
+                extra={"community_server_id": str(attrs.community_server_id)},
+                exc_info=True,
+            )
+
+        try:
+            workflow_id = await dispatch_content_scan_workflow(
+                scan_id=scan_log.id,
+                community_server_id=attrs.community_server_id,
+                scan_types=[str(st) for st in scan_types],
+            )
+        except Exception as e:
+            logger.error(
+                "DBOS workflow dispatch raised unexpected error (JSON:API)",
+                extra={
+                    "scan_id": str(scan_log.id),
+                    "error": str(e),
+                },
+                exc_info=True,
+            )
+            scan_log.status = BulkScanStatus.FAILED
+            await session.commit()
+            return create_error_response(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                "Failed to dispatch scan workflow",
+            )
+
+        if not workflow_id:
+            logger.error(
+                "DBOS workflow dispatch returned None (JSON:API)",
+                extra={"scan_id": str(scan_log.id)},
+            )
+            scan_log.status = BulkScanStatus.FAILED
+            await session.commit()
+            return create_error_response(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                "Failed to dispatch scan workflow. The scan record was created but processing could not be started.",
+            )
+
+        logger.info(
+            "DBOS content scan workflow dispatched (JSON:API)",
+            extra={
+                "scan_id": str(scan_log.id),
+                "workflow_id": workflow_id,
+            },
         )
 
         resource = BulkScanResource(

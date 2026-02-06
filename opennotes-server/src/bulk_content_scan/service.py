@@ -14,11 +14,13 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bulk_content_scan.flashpoint_service import FlashpointDetectionService
 from src.bulk_content_scan.models import BulkContentScanLog
 from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
 from src.bulk_content_scan.schemas import (
     BulkScanMessage,
     BulkScanStatus,
+    ConversationFlashpointMatch,
     FlaggedMessage,
     OpenAIModerationMatch,
     RelevanceCheckResult,
@@ -94,37 +96,6 @@ def _get_redis_error_counts_key(scan_id: UUID) -> str:
     return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:error_counts:{scan_id}"
 
 
-def _get_redis_processed_count_key(scan_id: UUID) -> str:
-    """Get environment-prefixed Redis key for processed message count.
-
-    Format: {environment}:{prefix}:processed:{scan_id}
-    Example: production:bulk_scan:processed:abc-123
-    """
-    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:processed:{scan_id}"
-
-
-def _get_redis_transmitted_key(scan_id: UUID) -> str:
-    """Get environment-prefixed Redis key for all_batches_transmitted flag.
-
-    Format: {environment}:{prefix}:all_batches_transmitted:{scan_id}
-    Example: production:bulk_scan:all_batches_transmitted:abc-123
-    """
-    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:all_batches_transmitted:{scan_id}"
-
-
-def _get_redis_finalize_dispatched_key(scan_id: UUID) -> str:
-    """Get environment-prefixed Redis key for finalize_dispatched flag.
-
-    This key is used for idempotency to prevent double dispatch of
-    finalize_bulk_scan_task when both batch and transmitted handlers
-    attempt to dispatch simultaneously.
-
-    Format: {environment}:{prefix}:finalize_dispatched:{scan_id}
-    Example: production:bulk_scan:finalize_dispatched:abc-123
-    """
-    return f"{settings.ENVIRONMENT}:{REDIS_KEY_PREFIX}:finalize_dispatched:{scan_id}"
-
-
 def _get_redis_skipped_count_key(scan_id: UUID) -> str:
     """Get environment-prefixed Redis key for skipped message count.
 
@@ -147,6 +118,7 @@ class BulkContentScanService:
         redis_client: Redis,
         moderation_service: Any | None = None,
         llm_service: LLMService | None = None,
+        flashpoint_service: FlashpointDetectionService | None = None,
     ) -> None:
         """Initialize the service.
 
@@ -156,12 +128,14 @@ class BulkContentScanService:
             redis_client: Redis client for temporary message storage
             moderation_service: Optional OpenAI moderation service for content moderation
             llm_service: Optional LLM service for relevance checking
+            flashpoint_service: Optional FlashpointDetectionService for conversation derailment detection
         """
         self.session = session
         self.embedding_service = embedding_service
         self.redis_client = redis_client
         self.moderation_service = moderation_service
         self.llm_service = llm_service
+        self.flashpoint_service = flashpoint_service
 
     async def initiate_scan(
         self,
@@ -235,16 +209,16 @@ class BulkContentScanService:
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = ...,
         collect_scores: Literal[True] = ...,
-    ) -> tuple[list[FlaggedMessage], list[dict[str, Any]]]: ...
+    ) -> tuple[list[FlaggedMessage], list[dict]]: ...
 
-    async def process_messages(
+    async def process_messages(  # noqa: PLR0912
         self,
         scan_id: UUID,
         messages: BulkScanMessage | Sequence[BulkScanMessage],
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
         collect_scores: bool = False,
-    ) -> list[FlaggedMessage] | tuple[list[FlaggedMessage], list[dict[str, Any]]]:
+    ) -> list[FlaggedMessage] | tuple[list[FlaggedMessage], list[dict]]:
         """Process one or more messages through specified scan types.
 
         Uses the candidate-based flow:
@@ -255,6 +229,11 @@ class BulkContentScanService:
 
         The filtering logic is IDENTICAL regardless of collect_scores setting.
         Debug mode only affects whether score information is collected and returned.
+
+        Flashpoint detection runs independently of other scan types. Content scan types
+        (similarity, moderation) use first-match-wins with break. Flashpoint always runs
+        when enabled, so both a content match and a flashpoint match can be produced for
+        the same message.
 
         Args:
             scan_id: UUID of the scan
@@ -269,6 +248,8 @@ class BulkContentScanService:
         """
         if isinstance(messages, BulkScanMessage):
             messages = [messages]
+
+        active_scan_types = list(scan_types)
 
         original_count = len(messages)
 
@@ -289,26 +270,39 @@ class BulkContentScanService:
             )
 
         candidates: list[ScanCandidate] = []
-        all_scores: list[dict[str, Any]] = []
+        all_scores: list[dict] = []
+
+        needs_context = ScanType.CONVERSATION_FLASHPOINT in active_scan_types
+        channel_context_map = self._build_channel_context_map(messages) if needs_context else {}
+        message_id_index = (
+            self._build_message_id_index(channel_context_map) if needs_context else None
+        )
+
+        content_scan_types = [
+            st for st in active_scan_types if st != ScanType.CONVERSATION_FLASHPOINT
+        ]
 
         for msg in messages:
             if not msg.content or len(msg.content.strip()) < 10:
                 if collect_scores:
-                    all_scores.append(
-                        {
-                            "message_id": msg.message_id,
-                            "channel_id": msg.channel_id,
-                            "similarity_score": 0.0,
-                            "is_flagged": False,
-                            "matched_claim": None,
-                        }
-                    )
+                    all_scores.append(self._build_empty_score_info(msg))
                 continue
 
+            context_messages = (
+                self._get_context_for_message(msg, channel_context_map, message_id_index)
+                if needs_context
+                else None
+            )
+
             candidate_found = False
-            for scan_type in scan_types:
+
+            for scan_type in content_scan_types:
                 candidate = await self._generate_candidate(
-                    scan_id, msg, community_server_platform_id, scan_type
+                    scan_id,
+                    msg,
+                    community_server_platform_id,
+                    scan_type,
+                    context_messages=context_messages,
                 )
                 if candidate:
                     candidates.append(candidate)
@@ -317,16 +311,22 @@ class BulkContentScanService:
                     candidate_found = True
                     break
 
-            if not candidate_found and collect_scores:
-                all_scores.append(
-                    {
-                        "message_id": msg.message_id,
-                        "channel_id": msg.channel_id,
-                        "similarity_score": 0.0,
-                        "is_flagged": False,
-                        "matched_claim": None,
-                    }
+            if ScanType.CONVERSATION_FLASHPOINT in active_scan_types:
+                fp_candidate = await self._generate_candidate(
+                    scan_id,
+                    msg,
+                    community_server_platform_id,
+                    ScanType.CONVERSATION_FLASHPOINT,
+                    context_messages=context_messages,
                 )
+                if fp_candidate:
+                    candidates.append(fp_candidate)
+                    if collect_scores:
+                        all_scores.append(self._build_score_info_from_candidate(fp_candidate))
+                    candidate_found = True
+
+            if not candidate_found and collect_scores:
+                all_scores.append(self._build_empty_score_info(msg))
 
         flagged = await self._filter_candidates_with_relevance(candidates, scan_id)
 
@@ -344,7 +344,7 @@ class BulkContentScanService:
         messages: BulkScanMessage | Sequence[BulkScanMessage],
         community_server_platform_id: str,
         scan_types: Sequence[ScanType] = DEFAULT_SCAN_TYPES,
-    ) -> tuple[list[FlaggedMessage], list[dict[str, Any]]]:
+    ) -> tuple[list[FlaggedMessage], list[dict]]:
         """Process messages and return both flagged results and all scores.
 
         DEPRECATED: Use process_messages(..., collect_scores=True) instead.
@@ -373,17 +373,19 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
+        context_messages: list[BulkScanMessage] | None = None,
     ) -> ScanCandidate | None:
         """Generate a ScanCandidate using the appropriate scanner.
 
-        This dispatches to _similarity_scan_candidate() or _moderation_scan_candidate()
-        based on scan_type.
+        This dispatches to _similarity_scan_candidate(), _moderation_scan_candidate(),
+        or _flashpoint_scan_candidate() based on scan_type.
 
         Args:
             scan_id: UUID of the scan
             message: The message to scan
             community_server_platform_id: CommunityServer.platform_community_server_id
             scan_type: Type of scan to run
+            context_messages: Previous messages in the channel for flashpoint detection
 
         Returns:
             ScanCandidate if match found, None otherwise
@@ -395,11 +397,15 @@ class BulkContentScanService:
                 )
             case ScanType.OPENAI_MODERATION:
                 return await self._moderation_scan_candidate(scan_id, message)
+            case ScanType.CONVERSATION_FLASHPOINT:
+                return await self._flashpoint_scan_candidate(
+                    scan_id, message, context_messages or []
+                )
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
 
-    def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict[str, Any]:
+    def _build_score_info_from_candidate(self, candidate: ScanCandidate) -> dict:
         """Build score_info dict from a ScanCandidate for debug mode.
 
         Args:
@@ -408,7 +414,7 @@ class BulkContentScanService:
         Returns:
             Dictionary with score info for debug output
         """
-        score_info: dict[str, Any] = {
+        score_info: dict = {
             "message_id": candidate.message.message_id,
             "channel_id": candidate.message.channel_id,
             "similarity_score": candidate.score,
@@ -425,13 +431,118 @@ class BulkContentScanService:
 
         return score_info
 
+    def _build_empty_score_info(self, message: BulkScanMessage) -> dict:
+        """Build empty score info dict for messages that weren't candidates."""
+        return {
+            "message_id": message.message_id,
+            "channel_id": message.channel_id,
+            "similarity_score": 0.0,
+            "is_flagged": False,
+            "matched_claim": None,
+        }
+
+    def _build_channel_context_map(
+        self, messages: Sequence[BulkScanMessage]
+    ) -> dict[str, list[BulkScanMessage]]:
+        """Build a map of channel_id -> sorted messages for context lookup.
+
+        Design limitation: context is constructed only from messages within the
+        current batch -- not from the full channel history.  This means that
+        flashpoint detection quality degrades when a conversation spans batch
+        boundaries because the first messages of a new batch have zero prior
+        context even when earlier messages were processed in a preceding batch.
+        Callers should consider using larger batch sizes when flashpoint
+        detection is enabled to minimise context gaps.
+
+        Args:
+            messages: Sequence of messages to organize by channel
+
+        Returns:
+            Dictionary mapping channel_id to list of messages sorted by timestamp
+        """
+        channel_messages: dict[str, list[BulkScanMessage]] = {}
+        for msg in messages:
+            if msg.channel_id not in channel_messages:
+                channel_messages[msg.channel_id] = []
+            channel_messages[msg.channel_id].append(msg)
+
+        for msgs in channel_messages.values():
+            msgs.sort(key=lambda m: m.timestamp)
+
+        return channel_messages
+
+    def _get_context_for_message(
+        self,
+        message: BulkScanMessage,
+        channel_context_map: dict[str, list[BulkScanMessage]],
+        message_id_index: dict[str, dict[str, int]] | None = None,
+    ) -> list[BulkScanMessage]:
+        """Get previous messages in the same channel as context.
+
+        Args:
+            message: The message to get context for
+            channel_context_map: Map of channel_id -> sorted messages
+            message_id_index: Optional pre-built index of channel_id -> {message_id -> position}
+                for O(1) lookup instead of linear scan
+
+        Returns:
+            List of messages that occurred before this message in the same channel
+        """
+        channel_msgs = channel_context_map.get(message.channel_id, [])
+        if message_id_index is not None:
+            channel_index = message_id_index.get(message.channel_id, {})
+            msg_index = channel_index.get(message.message_id, -1)
+        else:
+            msg_index = next(
+                (i for i, m in enumerate(channel_msgs) if m.message_id == message.message_id),
+                -1,
+            )
+        return channel_msgs[:msg_index] if msg_index > 0 else []
+
+    def _build_message_id_index(
+        self,
+        channel_context_map: dict[str, list[BulkScanMessage]],
+    ) -> dict[str, dict[str, int]]:
+        """Pre-build a message_id-to-index dict for O(1) context lookup.
+
+        Instead of doing a linear scan per message (O(n^2) per batch),
+        this builds the index once so _get_context_for_message can do O(1) lookups.
+
+        Args:
+            channel_context_map: Map of channel_id -> sorted messages
+
+        Returns:
+            Dict mapping channel_id -> {message_id -> position_index}
+        """
+        index: dict[str, dict[str, int]] = {}
+        for channel_id, msgs in channel_context_map.items():
+            index[channel_id] = {m.message_id: i for i, m in enumerate(msgs)}
+        return index
+
+    def _build_flagged_message_from_candidate(self, candidate: ScanCandidate) -> FlaggedMessage:
+        """Build a FlaggedMessage from a ScanCandidate.
+
+        Unified construction path used by _run_scanner, _run_scanner_with_score,
+        and _filter_candidates_with_relevance to ensure consistent FlaggedMessage
+        creation across all scan types including CONVERSATION_FLASHPOINT.
+        """
+        return FlaggedMessage(
+            message_id=candidate.message.message_id,
+            channel_id=candidate.message.channel_id,
+            content=candidate.message.content,
+            author_id=candidate.message.author_id,
+            timestamp=candidate.message.timestamp,
+            matches=[candidate.match_data],
+        )
+
     async def _run_scanner_with_score(
         self,
         scan_id: UUID,
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
-    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
+        context_messages: list[BulkScanMessage] | None = None,
+    ) -> tuple[FlaggedMessage | None, dict]:
         """Run scanner and return both the flagged result and score info."""
         match scan_type:
             case ScanType.SIMILARITY:
@@ -440,6 +551,14 @@ class BulkContentScanService:
                 )
             case ScanType.OPENAI_MODERATION:
                 return await self._openai_moderation_scan_with_score(scan_id, message)
+            case ScanType.CONVERSATION_FLASHPOINT:
+                candidate = await self._flashpoint_scan_candidate(
+                    scan_id, message, context_messages or []
+                )
+                if candidate:
+                    flagged_msg = self._build_flagged_message_from_candidate(candidate)
+                    return flagged_msg, self._build_score_info_from_candidate(candidate)
+                return None, self._build_empty_score_info(message)
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None, {
@@ -455,9 +574,9 @@ class BulkContentScanService:
         scan_id: UUID,
         message: BulkScanMessage,
         community_server_platform_id: str,
-    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
+    ) -> tuple[FlaggedMessage | None, dict]:
         """Run similarity search and return both flagged result and score info."""
-        return await self._similarity_scan(  # pyright: ignore[reportReturnType]
+        return await self._similarity_scan(  # type: ignore[return-value]
             scan_id, message, community_server_platform_id, include_score=True
         )
 
@@ -467,15 +586,23 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         scan_type: ScanType,
+        context_messages: list[BulkScanMessage] | None = None,
     ) -> FlaggedMessage | None:
         """Run a specific scanner on a message."""
         match scan_type:
             case ScanType.SIMILARITY:
-                return await self._similarity_scan(  # pyright: ignore[reportReturnType]
+                return await self._similarity_scan(  # type: ignore[return-value]
                     scan_id, message, community_server_platform_id
                 )
             case ScanType.OPENAI_MODERATION:
                 return await self._openai_moderation_scan(scan_id, message)
+            case ScanType.CONVERSATION_FLASHPOINT:
+                candidate = await self._flashpoint_scan_candidate(
+                    scan_id, message, context_messages or []
+                )
+                if candidate:
+                    return self._build_flagged_message_from_candidate(candidate)
+                return None
             case _:
                 logger.warning(f"Unknown scan type: {scan_type}")
                 return None
@@ -486,7 +613,7 @@ class BulkContentScanService:
         message: BulkScanMessage,
         community_server_platform_id: str,
         include_score: bool = False,
-    ) -> FlaggedMessage | None | tuple[FlaggedMessage | None, dict[str, Any]]:
+    ) -> FlaggedMessage | None | tuple[FlaggedMessage | None, dict]:
         """Run similarity search on a message.
 
         Args:
@@ -502,7 +629,7 @@ class BulkContentScanService:
         threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
         indeterminate_threshold = calculate_indeterminate_threshold(threshold)
 
-        score_info: dict[str, Any] | None = None
+        score_info: dict | None = None
         if include_score:
             score_info = {
                 "message_id": message.message_id,
@@ -698,9 +825,9 @@ class BulkContentScanService:
         self,
         scan_id: UUID,
         message: BulkScanMessage,
-    ) -> tuple[FlaggedMessage | None, dict[str, Any]]:
+    ) -> tuple[FlaggedMessage | None, dict]:
         """Run OpenAI moderation and return both flagged result and score info."""
-        score_info: dict[str, Any] = {
+        score_info: dict = {
             "message_id": message.message_id,
             "channel_id": message.channel_id,
             "similarity_score": 0.0,
@@ -915,6 +1042,58 @@ class BulkContentScanService:
 
         return None
 
+    async def _flashpoint_scan_candidate(
+        self,
+        scan_id: UUID,
+        message: BulkScanMessage,
+        context_messages: list[BulkScanMessage],
+    ) -> ScanCandidate | None:
+        """Run flashpoint detection and return a ScanCandidate.
+
+        Detects early warning signs that a conversation may derail into conflict
+        using a DSPy-optimized prompt trained on the Conversations Gone Awry corpus.
+
+        Args:
+            scan_id: UUID of the scan
+            message: The message to analyze
+            context_messages: Previous messages in the channel (time-ordered)
+
+        Returns:
+            ScanCandidate if flashpoint detected, None otherwise
+        """
+        if not self.flashpoint_service:
+            logger.debug(
+                "Flashpoint service not configured",
+                extra={"scan_id": str(scan_id)},
+            )
+            return None
+
+        try:
+            match = await self.flashpoint_service.detect_flashpoint(
+                message=message,
+                context_messages=context_messages,
+            )
+
+            if match is None:
+                return None
+
+            return ScanCandidate(
+                message=message,
+                scan_type=ScanType.CONVERSATION_FLASHPOINT.value,
+                match_data=match,
+                score=match.confidence,
+                matched_content=match.reasoning,
+                matched_source=None,
+            )
+
+        except Exception as e:
+            logger.warning(
+                "Error in flashpoint scan candidate",
+                extra={"scan_id": str(scan_id), "error": str(e)},
+            )
+
+        return None
+
     async def _filter_candidates_with_relevance(
         self,
         candidates: list[ScanCandidate],
@@ -924,6 +1103,13 @@ class BulkContentScanService:
 
         This is the unified post-processing step that runs relevance checking
         on ALL candidates regardless of scan type.
+
+        Flashpoint bypass: candidates with scan_type CONVERSATION_FLASHPOINT
+        always set should_flag=True and skip the LLM relevance check.  This is
+        intentional -- flashpoint detection already performs its own LLM-based
+        analysis via FlashpointDetectionService, so a second relevance check
+        would be redundant and the similarity-oriented relevance prompt is not
+        applicable to conversation-derailment signals.
 
         For INDETERMINATE outcomes (when fact-check content triggers content filter),
         applies a tighter threshold: new_threshold = threshold + ((1-threshold)/2).
@@ -952,32 +1138,30 @@ class BulkContentScanService:
                 },
             )
 
-            outcome, reasoning = await self._check_relevance_with_llm(
-                original_message=candidate.message.content,
-                matched_content=candidate.matched_content,
-                matched_source=candidate.matched_source,
-            )
+            if candidate.scan_type == ScanType.CONVERSATION_FLASHPOINT.value:
+                should_flag = True
+                reasoning = "Flashpoint candidates bypass relevance filter"
+                outcome = RelevanceOutcome.RELEVANT
+            else:
+                outcome, reasoning = await self._check_relevance_with_llm(
+                    original_message=candidate.message.content,
+                    matched_content=candidate.matched_content,
+                    matched_source=candidate.matched_source,
+                )
 
-            should_flag = self._evaluate_relevance_outcome(
-                outcome=outcome,
-                reasoning=reasoning,
-                similarity_score=candidate.score,
-                threshold=base_threshold,
-                indeterminate_threshold=indeterminate_threshold,
-                message_id=candidate.message.message_id,
-                scan_id=scan_id,
-            )
+                should_flag = self._evaluate_relevance_outcome(
+                    outcome=outcome,
+                    reasoning=reasoning,
+                    similarity_score=candidate.score,
+                    threshold=base_threshold,
+                    indeterminate_threshold=indeterminate_threshold,
+                    message_id=candidate.message.message_id,
+                    scan_id=scan_id,
+                )
 
             if should_flag:
                 try:
-                    flagged_msg = FlaggedMessage(
-                        message_id=candidate.message.message_id,
-                        channel_id=candidate.message.channel_id,
-                        content=candidate.message.content,
-                        author_id=candidate.message.author_id,
-                        timestamp=candidate.message.timestamp,
-                        matches=[candidate.match_data],
-                    )
+                    flagged_msg = self._build_flagged_message_from_candidate(candidate)
                     flagged.append(flagged_msg)
                 except Exception as build_error:
                     logger.error(
@@ -1361,8 +1545,8 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
     ) -> None:
         """Append a single flagged result to Redis list."""
         redis_key = _get_redis_results_key(scan_id)
-        await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())  # pyright: ignore[reportGeneralTypeIssues]
-        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.lpush(redis_key, flagged_message.model_dump_json())  # type: ignore[misc]
+        await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
 
     async def complete_scan(
         self,
@@ -1428,9 +1612,9 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         redis_key = _get_redis_results_key(scan_id)
 
         for msg in flagged_messages:
-            await self.redis_client.lpush(redis_key, msg.model_dump_json())  # pyright: ignore[reportGeneralTypeIssues]
+            await self.redis_client.lpush(redis_key, msg.model_dump_json())  # type: ignore[misc]
         if flagged_messages:
-            await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
+            await self.redis_client.expire(redis_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
 
         logger.debug(
             "Stored flagged results for bulk scan",
@@ -1451,7 +1635,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         """
         redis_key = _get_redis_results_key(scan_id)
 
-        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)  # pyright: ignore[reportGeneralTypeIssues]
+        raw_messages = await self.redis_client.lrange(redis_key, 0, -1)  # type: ignore[misc]
         results = []
         for raw_msg in raw_messages:
             msg_str = raw_msg.decode() if isinstance(raw_msg, bytes) else raw_msg
@@ -1485,11 +1669,11 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             "error_message": error_message[:500],
         }
 
-        await self.redis_client.lpush(errors_key, json.dumps(error_info))  # pyright: ignore[reportGeneralTypeIssues]
-        await self.redis_client.hincrby(counts_key, error_type, 1)  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.lpush(errors_key, json.dumps(error_info))  # type: ignore[misc]
+        await self.redis_client.hincrby(counts_key, error_type, 1)  # type: ignore[misc]
 
-        await self.redis_client.expire(errors_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
-        await self.redis_client.expire(counts_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.expire(errors_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
+        await self.redis_client.expire(counts_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
 
         logger.debug(
             "Recorded scan error",
@@ -1500,32 +1684,6 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
                 "batch_number": batch_number,
             },
         )
-
-    async def increment_processed_count(self, scan_id: UUID, count: int = 1) -> None:
-        """Increment the count of successfully processed messages.
-
-        Args:
-            scan_id: UUID of the scan
-            count: Number of messages processed
-        """
-        processed_key = _get_redis_processed_count_key(scan_id)
-        await self.redis_client.incrby(processed_key, count)  # pyright: ignore[reportGeneralTypeIssues]
-        await self.redis_client.expire(processed_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
-
-    async def get_processed_count(self, scan_id: UUID) -> int:
-        """Get the count of successfully processed messages.
-
-        Args:
-            scan_id: UUID of the scan
-
-        Returns:
-            Number of successfully processed messages
-        """
-        processed_key = _get_redis_processed_count_key(scan_id)
-        count = await self.redis_client.get(processed_key)
-        if count is None:
-            return 0
-        return int(count.decode() if isinstance(count, bytes) else count)
 
     async def increment_skipped_count(self, scan_id: UUID, count: int = 1) -> None:
         """Increment the count of skipped messages.
@@ -1538,8 +1696,8 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             count: Number of messages skipped
         """
         skipped_key = _get_redis_skipped_count_key(scan_id)
-        await self.redis_client.incrby(skipped_key, count)  # pyright: ignore[reportGeneralTypeIssues]
-        await self.redis_client.expire(skipped_key, REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
+        await self.redis_client.incrby(skipped_key, count)  # type: ignore[misc]
+        await self.redis_client.expire(skipped_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
 
     async def get_skipped_count(self, scan_id: UUID) -> int:
         """Get the count of skipped messages.
@@ -1609,76 +1767,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             )
             return set()
 
-    async def set_all_batches_transmitted(self, scan_id: UUID, messages_scanned: int) -> None:
-        """Set the all_batches_transmitted flag for a scan with message count.
-
-        This flag indicates that the Discord bot has finished transmitting
-        all message batches. Used for dual-completion-trigger pattern.
-        Stores messages_scanned so batch handler can retrieve it.
-
-        Args:
-            scan_id: UUID of the scan
-            messages_scanned: Total number of messages transmitted
-        """
-        transmitted_key = _get_redis_transmitted_key(scan_id)
-        await self.redis_client.set(transmitted_key, str(messages_scanned), ex=REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
-
-    async def get_all_batches_transmitted(self, scan_id: UUID) -> tuple[bool, int | None]:
-        """Check if all batches have been transmitted and get message count.
-
-        Args:
-            scan_id: UUID of the scan
-
-        Returns:
-            Tuple of (is_transmitted, messages_scanned).
-            messages_scanned is None if flag is not set.
-        """
-        transmitted_key = _get_redis_transmitted_key(scan_id)
-        value = await self.redis_client.get(transmitted_key)
-        if value is None:
-            return (False, None)
-        messages_scanned = int(value.decode() if isinstance(value, bytes) else value)
-        return (True, messages_scanned)
-
-    async def try_set_finalize_dispatched(self, scan_id: UUID) -> bool:
-        """Atomically attempt to claim the finalization dispatch responsibility.
-
-        Uses Redis SETNX (SET if Not eXists) for distributed coordination.
-        This is the standard "claim this work" pattern for distributed systems:
-
-        1. Multiple batch handlers may complete around the same time
-        2. Each checks if all batches are processed and transmission is complete
-        3. All eligible handlers atomically attempt to claim finalization
-        4. SETNX guarantees exactly ONE handler wins (gets True)
-        5. Others get False and skip dispatch (finalization already claimed)
-
-        Why SETNX is correct (not a race condition):
-        - Redis SETNX is atomic at the server level
-        - If N handlers call simultaneously, exactly 1 gets True, N-1 get False
-        - This is the textbook distributed locking pattern
-
-        Why database SELECT FOR UPDATE is unnecessary here:
-        - The batch handler doesn't have a database session (Redis-only path)
-        - Adding DB access would complicate the code significantly
-        - The scan TTL (REDIS_TTL_SECONDS) bounds any failure scenarios
-        - The finalize task updates the database as its final step
-
-        Edge case: If the winner crashes before dispatching the task, the key
-        expires after REDIS_TTL_SECONDS and a retry/cleanup could re-attempt.
-        For bulk scans, this best-effort behavior is acceptable.
-
-        Args:
-            scan_id: UUID of the scan
-
-        Returns:
-            True if this call claimed finalization (caller should dispatch)
-            False if already claimed (another handler will dispatch)
-        """
-        key = _get_redis_finalize_dispatched_key(scan_id)
-        result = await self.redis_client.set(key, "1", nx=True, ex=REDIS_TTL_SECONDS)  # pyright: ignore[reportGeneralTypeIssues]
-        return result is True
-
-    async def get_error_summary(self, scan_id: UUID) -> dict[str, Any]:
+    async def get_error_summary(self, scan_id: UUID) -> dict:
         """Get error summary from Redis.
 
         Args:
@@ -1693,7 +1782,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         errors_key = _get_redis_errors_key(scan_id)
         counts_key = _get_redis_error_counts_key(scan_id)
 
-        error_counts = await self.redis_client.hgetall(counts_key)  # pyright: ignore[reportGeneralTypeIssues]
+        error_counts = await self.redis_client.hgetall(counts_key)  # type: ignore[misc]
         error_types: dict[str, int] = {}
         total_errors = 0
 
@@ -1703,7 +1792,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             error_types[type_str] = count_int
             total_errors += count_int
 
-        raw_errors = await self.redis_client.lrange(errors_key, 0, 4)  # pyright: ignore[reportGeneralTypeIssues]
+        raw_errors = await self.redis_client.lrange(errors_key, 0, 4)  # type: ignore[misc]
         sample_errors = []
         for raw_error in raw_errors:
             error_str = raw_error.decode() if isinstance(raw_error, bytes) else raw_error
@@ -1716,7 +1805,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         }
 
 
-async def create_note_requests_from_flagged_messages(
+async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
     message_ids: list[str],
     scan_id: UUID,
     session: AsyncSession,
@@ -1772,7 +1861,24 @@ async def create_note_requests_from_flagged_messages(
             )
             generate_ai_notes = False
 
-    flagged_by_message_id = {msg.message_id: msg for msg in flagged_messages}
+    flagged_by_message_id: dict[str, FlaggedMessage] = {}
+    for msg in flagged_messages:
+        if msg.message_id in flagged_by_message_id:
+            existing = flagged_by_message_id[msg.message_id]
+            existing_types = {m.scan_type for m in existing.matches}
+            for match in msg.matches:
+                if match.scan_type not in existing_types:
+                    existing.matches.append(match)
+        else:
+            flagged_by_message_id[msg.message_id] = msg
+
+    seen_ids: set[str] = set()
+    deduplicated_ids: list[str] = []
+    for mid in message_ids:
+        if mid not in seen_ids:
+            seen_ids.add(mid)
+            deduplicated_ids.append(mid)
+    message_ids = deduplicated_ids
 
     created_ids: list[str] = []
     for msg_id in message_ids:
@@ -1795,13 +1901,17 @@ async def create_note_requests_from_flagged_messages(
         first_match = None
         if flagged_msg.matches:
             first_match = flagged_msg.matches[0]
-            if first_match.scan_type == "similarity":
+            if isinstance(first_match, SimilarityMatch):
                 match_score = first_match.score
                 matched_claim = first_match.matched_claim
                 matched_source = first_match.matched_source
-            elif first_match.scan_type == "openai_moderation":
+            elif isinstance(first_match, OpenAIModerationMatch):
                 match_score = first_match.max_score
                 matched_claim = ", ".join(first_match.flagged_categories)
+                matched_source = ""
+            elif isinstance(first_match, ConversationFlashpointMatch):
+                match_score = first_match.confidence
+                matched_claim = first_match.reasoning
                 matched_source = ""
 
         try:
@@ -1843,7 +1953,7 @@ async def create_note_requests_from_flagged_messages(
 
             if generate_ai_notes and first_match and platform_id:
                 try:
-                    if first_match.scan_type == "similarity" and first_match.fact_check_item_id:
+                    if isinstance(first_match, SimilarityMatch) and first_match.fact_check_item_id:
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
@@ -1856,7 +1966,7 @@ async def create_note_requests_from_flagged_messages(
                             similarity_score=first_match.score,
                             dataset_name=first_match.matched_source or "bulk_scan",
                         )
-                    elif first_match.scan_type == "openai_moderation":
+                    elif isinstance(first_match, OpenAIModerationMatch):
                         await event_publisher.publish_request_auto_created(
                             request_id=request.request_id,
                             platform_message_id=flagged_msg.message_id,
@@ -1867,6 +1977,19 @@ async def create_note_requests_from_flagged_messages(
                                 "categories": first_match.categories,
                                 "scores": first_match.scores,
                                 "flagged_categories": first_match.flagged_categories,
+                            },
+                        )
+                    elif isinstance(first_match, ConversationFlashpointMatch):
+                        await event_publisher.publish_request_auto_created(
+                            request_id=request.request_id,
+                            platform_message_id=flagged_msg.message_id,
+                            community_server_id=platform_id,
+                            content=flagged_msg.content,
+                            scan_type="conversation_flashpoint",
+                            metadata={
+                                "confidence": first_match.confidence,
+                                "reasoning": first_match.reasoning,
+                                "context_messages": first_match.context_messages,
                             },
                         )
                     logger.info(

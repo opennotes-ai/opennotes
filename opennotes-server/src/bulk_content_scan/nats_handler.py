@@ -1,28 +1,27 @@
 """NATS event handlers for Bulk Content Scan."""
 
 import uuid as uuid_module
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bulk_content_scan.schemas import BulkScanMessage, BulkScanStatus, FlaggedMessage
-from src.bulk_content_scan.service import BulkContentScanService
+from src.bulk_content_scan.scan_types import DEFAULT_SCAN_TYPES, ScanType
+from src.bulk_content_scan.schemas import FlaggedMessage
 from src.community_config.models import CommunityConfig
 from src.config import settings
 from src.database import get_session_maker
-from src.events.publisher import event_publisher
+from src.dbos_workflows.content_scan_workflow import (
+    enqueue_content_scan_batch,
+    send_all_transmitted_signal,
+)
 from src.events.schemas import (
     BulkScanAllBatchesTransmittedEvent,
     BulkScanMessageBatchEvent,
-    BulkScanProcessingFinishedEvent,
-    BulkScanProgressEvent,
     BulkScanResultsEvent,
     EventType,
-    MessageScoreInfo,
-    ScanErrorInfo,
     ScanErrorSummary,
 )
 from src.events.subscriber import event_subscriber
@@ -30,49 +29,8 @@ from src.fact_checking.embedding_service import EmbeddingService
 from src.llm_config.models import CommunityServer
 from src.llm_config.service import LLMService
 from src.monitoring import get_logger
-from src.tasks.content_monitoring_tasks import (
-    finalize_bulk_scan_task,
-    process_bulk_scan_batch_task,
-)
 
 logger = get_logger(__name__)
-
-
-class BatchProcessingError(Exception):
-    """Exception raised when batch processing fails.
-
-    Raising this exception causes the NATS message to be NAKed for retry,
-    preventing silent batch dropping.
-    """
-
-
-class EventPublisher(Protocol):
-    """Protocol for event publishing."""
-
-    async def publish(self, **kwargs: Any) -> None:
-        """Publish an event."""
-        ...
-
-
-async def get_platform_id(
-    session: AsyncSession,
-    community_server_id: UUID,
-) -> str | None:
-    """Get platform ID from community server UUID.
-
-    Args:
-        session: Database session
-        community_server_id: Community server UUID
-
-    Returns:
-        Platform ID (e.g., Discord guild ID) or None if not found
-    """
-    result = await session.execute(
-        select(CommunityServer.platform_community_server_id).where(
-            CommunityServer.id == community_server_id
-        )
-    )
-    return result.scalar_one_or_none()
 
 
 async def get_vibecheck_debug_mode(
@@ -101,391 +59,6 @@ async def get_vibecheck_debug_mode(
     if value is None:
         return False
     return value.lower() in ("true", "1", "yes")
-
-
-async def handle_message_batch(
-    event: BulkScanMessageBatchEvent,
-    service: BulkContentScanService,
-) -> None:
-    """Handle message batch by processing each message immediately.
-
-    Args:
-        event: Message batch event
-        service: Bulk scan service
-    """
-    logger.info(
-        "Processing message batch",
-        extra={
-            "scan_id": str(event.scan_id),
-            "batch_number": event.batch_number,
-            "message_count": len(event.messages),
-        },
-    )
-
-    platform_id = await get_platform_id(service.session, event.community_server_id)
-    if not platform_id:
-        error_msg = f"Platform ID not found for community server {event.community_server_id}"
-        logger.error(
-            error_msg,
-            extra={
-                "scan_id": str(event.scan_id),
-                "community_server_id": str(event.community_server_id),
-            },
-        )
-        raise BatchProcessingError(error_msg)
-
-    typed_messages = [BulkScanMessage.model_validate(msg) for msg in event.messages]
-
-    flagged = await service.process_messages(
-        scan_id=event.scan_id,
-        messages=typed_messages,
-        community_server_platform_id=platform_id,
-    )
-
-    for msg in flagged:
-        await service.append_flagged_result(event.scan_id, msg)
-
-    logger.debug(
-        "Batch processed",
-        extra={
-            "scan_id": str(event.scan_id),
-            "messages_processed": len(event.messages),
-            "messages_flagged": len(flagged),
-        },
-    )
-
-
-async def handle_message_batch_with_progress(
-    event: BulkScanMessageBatchEvent,
-    service: BulkContentScanService,
-    nats_client: Any,
-    platform_id: str,
-    debug_mode: bool,
-    publisher: EventPublisher | None = None,
-) -> None:
-    """Handle message batch with optional progress event emission.
-
-    When debug_mode is True, this function processes messages and publishes
-    a progress event containing similarity scores for ALL messages (not just
-    flagged ones).
-
-    This function processes messages individually to track per-message errors
-    while still allowing successful messages to be processed.
-
-    After processing, checks if all_batches_transmitted flag is set and
-    all messages are processed - if so, triggers scan completion (dual-completion
-    trigger pattern to fix race condition). The messages_scanned count is
-    retrieved from Redis where it was stored by the transmitted handler.
-
-    Args:
-        event: Message batch event
-        service: Bulk scan service
-        nats_client: NATS client for publishing progress events
-        platform_id: Platform ID for the community server
-        debug_mode: Whether vibecheck_debug_mode is enabled
-        publisher: Event publisher for results (for completion trigger)
-    """
-    logger.info(
-        "Processing message batch with progress",
-        extra={
-            "scan_id": str(event.scan_id),
-            "batch_number": event.batch_number,
-            "message_count": len(event.messages),
-            "debug_mode": debug_mode,
-        },
-    )
-
-    typed_messages = [BulkScanMessage.model_validate(msg) for msg in event.messages]
-    threshold = settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD
-
-    flagged: list[FlaggedMessage] = []
-    all_scores: list[dict[str, Any]] = []
-    successful_count = 0
-    error_count = 0
-
-    for msg in typed_messages:
-        try:
-            if debug_mode:
-                msg_flagged, msg_scores = await service.process_messages_with_scores(
-                    scan_id=event.scan_id,
-                    messages=[msg],
-                    community_server_platform_id=platform_id,
-                )
-                flagged.extend(msg_flagged)
-                all_scores.extend(msg_scores)
-            else:
-                msg_flagged = await service.process_messages(
-                    scan_id=event.scan_id,
-                    messages=[msg],
-                    community_server_platform_id=platform_id,
-                )
-                flagged.extend(msg_flagged)
-            successful_count += 1
-        except Exception as e:
-            error_count += 1
-            error_type = type(e).__name__
-            logger.warning(
-                "Error processing message in batch",
-                extra={
-                    "scan_id": str(event.scan_id),
-                    "message_id": msg.message_id,
-                    "batch_number": event.batch_number,
-                    "error_type": error_type,
-                    "error": str(e),
-                },
-            )
-            await service.record_error(
-                scan_id=event.scan_id,
-                error_type=error_type,
-                error_message=str(e),
-                message_id=msg.message_id,
-                batch_number=event.batch_number,
-            )
-            if debug_mode:
-                all_scores.append(
-                    {
-                        "message_id": msg.message_id,
-                        "channel_id": msg.channel_id,
-                        "similarity_score": 0.0,
-                        "is_flagged": False,
-                        "matched_claim": None,
-                    }
-                )
-
-    await service.increment_processed_count(event.scan_id, successful_count)
-
-    processed_count = await service.get_processed_count(event.scan_id)
-    skipped_count = await service.get_skipped_count(event.scan_id)
-    channel_ids = list({msg.channel_id for msg in typed_messages})
-
-    message_score_infos: list[MessageScoreInfo] = []
-    if debug_mode and all_scores:
-        message_score_infos = [
-            MessageScoreInfo(
-                message_id=score["message_id"],
-                channel_id=score["channel_id"],
-                similarity_score=score["similarity_score"],
-                threshold=threshold,
-                is_flagged=score["is_flagged"],
-                matched_claim=score.get("matched_claim"),
-                moderation_flagged=score.get("moderation_flagged"),
-                moderation_categories=score.get("moderation_categories"),
-                moderation_scores=score.get("moderation_scores"),
-            )
-            for score in all_scores
-        ]
-
-    progress_event = BulkScanProgressEvent(
-        event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
-        scan_id=event.scan_id,
-        community_server_id=event.community_server_id,
-        platform_community_server_id=platform_id,
-        batch_number=event.batch_number,
-        messages_in_batch=len(typed_messages),
-        messages_processed=processed_count,
-        messages_skipped=skipped_count,
-        channel_ids=channel_ids,
-        message_scores=message_score_infos,
-        threshold_used=threshold,
-    )
-
-    await event_publisher.publish_event(progress_event)
-
-    logger.debug(
-        "Published progress event",
-        extra={
-            "scan_id": str(event.scan_id),
-            "batch_number": event.batch_number,
-            "messages_processed": processed_count,
-            "channel_ids": channel_ids,
-            "scores_count": len(message_score_infos),
-        },
-    )
-
-    for msg in flagged:
-        await service.append_flagged_result(event.scan_id, msg)
-
-    logger.debug(
-        "Batch processed with progress",
-        extra={
-            "scan_id": str(event.scan_id),
-            "messages_processed": len(event.messages),
-            "messages_successful": successful_count,
-            "messages_errored": error_count,
-            "messages_flagged": len(flagged),
-            "messages_skipped": skipped_count,
-        },
-    )
-
-    if publisher is not None:
-        transmitted, transmitted_messages = await service.get_all_batches_transmitted(event.scan_id)
-        if transmitted and transmitted_messages is not None:
-            processed_count = await service.get_processed_count(event.scan_id)
-            if processed_count >= transmitted_messages:
-                logger.info(
-                    "Batch handler triggering completion (transmitted flag set)",
-                    extra={
-                        "scan_id": str(event.scan_id),
-                        "processed_count": processed_count,
-                        "messages_scanned": transmitted_messages,
-                    },
-                )
-                await finalize_scan(
-                    scan_id=event.scan_id,
-                    community_server_id=event.community_server_id,
-                    messages_scanned=transmitted_messages,
-                    service=service,
-                    publisher=publisher,
-                )
-
-
-async def finalize_scan(
-    scan_id: UUID,
-    community_server_id: UUID,
-    messages_scanned: int,
-    service: BulkContentScanService,
-    publisher: EventPublisher,
-) -> None:
-    """Finalize a scan and publish results.
-
-    This is called by whichever handler finishes last (batch or transmitted).
-    Implements the dual-completion-trigger pattern to fix the race condition.
-
-    Args:
-        scan_id: UUID of the scan
-        community_server_id: Community server UUID
-        messages_scanned: Total messages scanned
-        service: Bulk scan service
-        publisher: Event publisher for results
-    """
-    flagged = await service.get_flagged_results(scan_id)
-    error_summary_data = await service.get_error_summary(scan_id)
-    processed_count = await service.get_processed_count(scan_id)
-    skipped_count = await service.get_skipped_count(scan_id)
-
-    total_errors = error_summary_data.get("total_errors", 0)
-    error_types = error_summary_data.get("error_types", {})
-    sample_errors = error_summary_data.get("sample_errors", [])
-
-    error_summary = None
-    if total_errors > 0:
-        error_summary = ScanErrorSummary(
-            total_errors=total_errors,
-            error_types=error_types,
-            sample_errors=[
-                ScanErrorInfo(
-                    error_type=err.get("error_type", "Unknown"),
-                    message_id=err.get("message_id"),
-                    batch_number=err.get("batch_number"),
-                    error_message=err.get("error_message", ""),
-                )
-                for err in sample_errors
-            ],
-        )
-
-    status = BulkScanStatus.COMPLETED
-    if messages_scanned > 0 and processed_count == 0 and total_errors > 0:
-        status = BulkScanStatus.FAILED
-        logger.warning(
-            "Scan marked as failed - 100% of messages had errors",
-            extra={
-                "scan_id": str(scan_id),
-                "messages_scanned": messages_scanned,
-                "total_errors": total_errors,
-            },
-        )
-
-    await service.complete_scan(
-        scan_id=scan_id,
-        messages_scanned=messages_scanned,
-        messages_flagged=len(flagged),
-        status=status,
-    )
-
-    await publisher.publish(
-        scan_id=scan_id,
-        messages_scanned=messages_scanned,
-        messages_flagged=len(flagged),
-        messages_skipped=skipped_count,
-        flagged_messages=flagged,
-        error_summary=error_summary,
-    )
-
-    processing_finished_event = BulkScanProcessingFinishedEvent(
-        event_id=f"evt_{uuid_module.uuid4().hex[:12]}",
-        scan_id=scan_id,
-        community_server_id=community_server_id,
-        messages_scanned=messages_scanned,
-        messages_flagged=len(flagged),
-        messages_skipped=skipped_count,
-    )
-    await event_publisher.publish_event(processing_finished_event)
-
-    logger.info(
-        "Scan finalized",
-        extra={
-            "scan_id": str(scan_id),
-            "messages_scanned": messages_scanned,
-            "messages_flagged": len(flagged),
-            "messages_skipped": skipped_count,
-            "status": status,
-            "total_errors": total_errors,
-        },
-    )
-
-
-async def handle_all_batches_transmitted(
-    event: BulkScanAllBatchesTransmittedEvent,
-    service: BulkContentScanService,
-    publisher: EventPublisher,
-) -> None:
-    """Handle all_batches_transmitted event from Discord bot.
-
-    Sets the transmitted flag and checks if all batches are already processed.
-    If so, triggers scan completion. Otherwise, the batch handler will trigger
-    completion when the last batch is processed.
-
-    Args:
-        event: All batches transmitted event
-        service: Bulk scan service
-        publisher: Event publisher for results
-    """
-    logger.info(
-        "Processing all_batches_transmitted",
-        extra={
-            "scan_id": str(event.scan_id),
-            "messages_scanned": event.messages_scanned,
-        },
-    )
-
-    await service.set_all_batches_transmitted(event.scan_id, event.messages_scanned)
-
-    processed_count = await service.get_processed_count(event.scan_id)
-    if processed_count >= event.messages_scanned:
-        logger.info(
-            "Transmitted handler triggering completion (all batches processed)",
-            extra={
-                "scan_id": str(event.scan_id),
-                "processed_count": processed_count,
-                "messages_scanned": event.messages_scanned,
-            },
-        )
-        await finalize_scan(
-            scan_id=event.scan_id,
-            community_server_id=event.community_server_id,
-            messages_scanned=event.messages_scanned,
-            service=service,
-            publisher=publisher,
-        )
-    else:
-        logger.info(
-            "Transmitted handler not triggering completion (batches still pending)",
-            extra={
-                "scan_id": str(event.scan_id),
-                "processed_count": processed_count,
-                "messages_scanned": event.messages_scanned,
-            },
-        )
 
 
 class BulkScanResultsPublisher:
@@ -590,102 +163,95 @@ class BulkScanEventHandler:
         self.publisher = BulkScanResultsPublisher(nats_client)
         self.subscriber = event_subscriber
 
-    async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
-        """Handle incoming message batch by dispatching to TaskIQ.
+    async def _get_scan_types_for_community(self, community_server_id: UUID) -> list[str]:
+        """Determine scan types based on community server configuration.
 
-        Uses the hybrid NATS→TaskIQ pattern:
-        - NATS provides cross-service event routing from Discord bot
-        - TaskIQ provides retries, result storage, and tracing
+        Checks if flashpoint detection is enabled for the community and
+        includes CONVERSATION_FLASHPOINT scan type if so.
 
-        See ADR-004: NATS vs TaskIQ Usage Boundaries
+        Args:
+            community_server_id: Community server UUID
+
+        Returns:
+            List of scan type strings
         """
+        scan_types = list(DEFAULT_SCAN_TYPES)
+
+        try:
+            async with get_session_maker()() as session:
+                result = await session.execute(
+                    select(CommunityServer.flashpoint_detection_enabled).where(
+                        CommunityServer.id == community_server_id
+                    )
+                )
+                enabled = result.scalar_one_or_none()
+                if enabled:
+                    scan_types.append(ScanType.CONVERSATION_FLASHPOINT)
+        except Exception:
+            logger.warning(
+                "Failed to check flashpoint_detection_enabled for DBOS dispatch",
+                extra={"community_server_id": str(community_server_id)},
+                exc_info=True,
+            )
+
+        return [str(st) for st in scan_types]
+
+    async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
+        """Handle incoming message batch by enqueuing DBOS batch workflow.
+
+        Uses the NATS -> DBOS pattern:
+        - NATS provides cross-service event routing from Discord bot
+        - DBOS provides durable execution with retries and checkpointing
+        - Batch workflow sends batch_complete signal to orchestrator when done
+        """
+        scan_types = await self._get_scan_types_for_community(event.community_server_id)
+        orchestrator_workflow_id = str(event.scan_id)
+
         logger.info(
-            "Dispatching bulk scan batch to TaskIQ",
+            "Dispatching bulk scan batch to DBOS",
             extra={
                 "scan_id": str(event.scan_id),
                 "batch_number": event.batch_number,
                 "message_count": len(event.messages),
+                "scan_types": scan_types,
             },
         )
 
-        await process_bulk_scan_batch_task.kiq(
-            scan_id=str(event.scan_id),
-            community_server_id=str(event.community_server_id),
+        await enqueue_content_scan_batch(
+            orchestrator_workflow_id=orchestrator_workflow_id,
+            scan_id=event.scan_id,
+            community_server_id=event.community_server_id,
             batch_number=event.batch_number,
-            messages=[msg.model_dump() for msg in event.messages],
-            db_url=settings.DATABASE_URL,
-            redis_url=settings.REDIS_URL,
+            messages=[msg.model_dump(mode="json") for msg in event.messages],
+            scan_types=scan_types,
         )
 
     async def _handle_all_batches_transmitted(
         self, event: BulkScanAllBatchesTransmittedEvent
     ) -> None:
-        """Handle all_batches_transmitted event by setting flag and checking completion.
+        """Handle all_batches_transmitted event by sending signal to DBOS orchestrator.
 
-        Uses the hybrid NATS→TaskIQ pattern:
+        Uses the NATS -> DBOS pattern:
         - NATS delivers the transmitted event from Discord bot
-        - We set the transmitted flag in Redis
-        - If all batches are already processed, dispatch finalization to TaskIQ
+        - DBOS.send() delivers the all_transmitted signal to the orchestrator workflow
+        - The orchestrator handles finalization when all conditions are met
 
-        This implements the dual-completion-trigger pattern:
-        - Batch handler triggers finalization when last batch completes (after transmitted)
-        - Transmitted handler triggers finalization if all batches already done
+        The orchestrator workflow ID is the scan_id (set via SetWorkflowID at dispatch).
         """
         logger.info(
-            "Processing all_batches_transmitted",
+            "Sending all_transmitted signal to DBOS orchestrator",
             extra={
                 "scan_id": str(event.scan_id),
                 "messages_scanned": event.messages_scanned,
             },
         )
 
-        async with get_session_maker()() as session:
-            service = BulkContentScanService(
-                session=session,
-                embedding_service=self.embedding_service,
-                redis_client=self.redis_client,
-                llm_service=self.llm_service,
-            )
+        orchestrator_workflow_id = str(event.scan_id)
 
-            await service.set_all_batches_transmitted(event.scan_id, event.messages_scanned)
-
-            processed_count = await service.get_processed_count(event.scan_id)
-            if processed_count >= event.messages_scanned:
-                should_dispatch = await service.try_set_finalize_dispatched(event.scan_id)
-                if should_dispatch:
-                    logger.info(
-                        "Transmitted handler dispatching finalization to TaskIQ",
-                        extra={
-                            "scan_id": str(event.scan_id),
-                            "processed_count": processed_count,
-                            "messages_scanned": event.messages_scanned,
-                        },
-                    )
-                    await finalize_bulk_scan_task.kiq(
-                        scan_id=str(event.scan_id),
-                        community_server_id=str(event.community_server_id),
-                        messages_scanned=event.messages_scanned,
-                        db_url=settings.DATABASE_URL,
-                        redis_url=settings.REDIS_URL,
-                    )
-                else:
-                    logger.info(
-                        "Transmitted handler skipping finalization (already dispatched)",
-                        extra={
-                            "scan_id": str(event.scan_id),
-                            "processed_count": processed_count,
-                            "messages_scanned": event.messages_scanned,
-                        },
-                    )
-            else:
-                logger.info(
-                    "Transmitted handler not triggering completion (batches still pending)",
-                    extra={
-                        "scan_id": str(event.scan_id),
-                        "processed_count": processed_count,
-                        "messages_scanned": event.messages_scanned,
-                    },
-                )
+        await send_all_transmitted_signal(
+            orchestrator_workflow_id=orchestrator_workflow_id,
+            messages_scanned=event.messages_scanned,
+        )
 
     def register(self) -> None:
         """Register bulk scan event handlers with the subscriber."""

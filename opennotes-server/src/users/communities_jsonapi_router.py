@@ -51,6 +51,7 @@ class CommunityServerAttributes(BaseModel):
     description: str | None = None
     is_active: bool = True
     is_public: bool = True
+    flashpoint_detection_enabled: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -85,6 +86,7 @@ def community_server_to_resource(server: CommunityServer) -> CommunityServerReso
             description=server.description,
             is_active=server.is_active,
             is_public=server.is_public,
+            flashpoint_detection_enabled=server.flashpoint_detection_enabled,
             created_at=server.created_at,
             updated_at=server.updated_at,
         ),

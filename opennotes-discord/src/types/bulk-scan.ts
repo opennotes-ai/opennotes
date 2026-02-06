@@ -149,6 +149,7 @@ export interface BulkScanInitiateResponse {
 export type {
   SimilarityMatch,
   OpenAIModerationMatch,
+  ConversationFlashpointMatch,
   MatchResult,
   ScanErrorInfoSchema as ScanErrorInfo,
   ScanErrorSummarySchema as ScanErrorSummary,

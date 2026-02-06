@@ -6364,6 +6364,101 @@
         }
       }
     },
+    "/api/v1/community-servers/{platform_community_server_id}/flashpoint-detection": {
+      "patch": {
+        "tags": [
+          "community-servers"
+        ],
+        "summary": "Update Flashpoint Detection",
+        "description": "Update flashpoint detection setting for a community server.\n\nThis endpoint allows toggling the flashpoint detection feature that monitors\nconversations for potential misinformation escalation points.\n\nArgs:\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n    request_body: Contains the enabled flag\n    platform: Platform type (default: \"discord\")\n\nReturns:\n    Updated flashpoint detection status\n\nRaises:\n    401: If not authenticated\n    403: If not authorized (requires service account)\n    404: If community server not found",
+        "operationId": "update_flashpoint_detection_api_v1_community_servers__platform_community_server_id__flashpoint_detection_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform_community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Platform Community Server Id"
+            }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Platform type",
+              "default": "discord",
+              "title": "Platform"
+            },
+            "description": "Platform type"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlashpointDetectionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlashpointDetectionUpdateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Not authorized \u2014 requires service account"
+          },
+          "404": {
+            "description": "Community server not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/community-servers/{community_server_id}/admins": {
       "post": {
         "tags": [
@@ -11142,6 +11237,11 @@
             "title": "Is Public",
             "default": true
           },
+          "flashpoint_detection_enabled": {
+            "type": "boolean",
+            "title": "Flashpoint Detection Enabled",
+            "default": false
+          },
           "created_at": {
             "anyOf": [
               {
@@ -11203,6 +11303,11 @@
             "type": "boolean",
             "title": "Is Active",
             "description": "Whether the community server is active"
+          },
+          "flashpoint_detection_enabled": {
+            "type": "boolean",
+            "title": "Flashpoint Detection Enabled",
+            "description": "Whether flashpoint detection is enabled for this community"
           }
         },
         "type": "object",
@@ -11211,7 +11316,8 @@
           "platform",
           "platform_community_server_id",
           "name",
-          "is_active"
+          "is_active",
+          "flashpoint_detection_enabled"
         ],
         "title": "CommunityServerLookupResponse",
         "description": "Response model for community server lookup."
@@ -11272,6 +11378,49 @@
         ],
         "title": "CommunityServerSingleResponse",
         "description": "JSON:API response for a single community server resource."
+      },
+      "ConversationFlashpointMatch": {
+        "properties": {
+          "scan_type": {
+            "type": "string",
+            "const": "conversation_flashpoint",
+            "title": "Scan Type",
+            "default": "conversation_flashpoint"
+          },
+          "will_derail": {
+            "type": "boolean",
+            "title": "Will Derail",
+            "description": "Whether conversation shows derailment signals"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "description": "Model confidence score"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "description": "Explanation of detected signals"
+          },
+          "context_messages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Context Messages",
+            "description": "Number of context messages analyzed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "will_derail",
+          "confidence",
+          "reasoning",
+          "context_messages"
+        ],
+        "title": "ConversationFlashpointMatch",
+        "description": "Match result from conversation flashpoint detection scan."
       },
       "DiscordOAuthInitResponse": {
         "properties": {
@@ -11707,11 +11856,15 @@
                 },
                 {
                   "$ref": "#/components/schemas/OpenAIModerationMatch"
+                },
+                {
+                  "$ref": "#/components/schemas/ConversationFlashpointMatch"
                 }
               ],
               "discriminator": {
                 "propertyName": "scan_type",
                 "mapping": {
+                  "conversation_flashpoint": "#/components/schemas/ConversationFlashpointMatch",
                   "openai_moderation": "#/components/schemas/OpenAIModerationMatch",
                   "similarity": "#/components/schemas/SimilarityMatch"
                 }
@@ -11754,6 +11907,49 @@
         ],
         "title": "FlaggedMessageResource",
         "description": "JSON:API resource object for a flagged message."
+      },
+      "FlashpointDetectionUpdateRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether to enable flashpoint detection for this community"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "FlashpointDetectionUpdateRequest",
+        "description": "Request model for updating flashpoint detection setting."
+      },
+      "FlashpointDetectionUpdateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Internal community server UUID"
+          },
+          "platform_community_server_id": {
+            "type": "string",
+            "title": "Platform Community Server Id",
+            "description": "Platform-specific ID (e.g., Discord guild ID)"
+          },
+          "flashpoint_detection_enabled": {
+            "type": "boolean",
+            "title": "Flashpoint Detection Enabled",
+            "description": "Whether flashpoint detection is enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "platform_community_server_id",
+          "flashpoint_detection_enabled"
+        ],
+        "title": "FlashpointDetectionUpdateResponse",
+        "description": "Response model for flashpoint detection update."
       },
       "FusionWeightResponse": {
         "properties": {

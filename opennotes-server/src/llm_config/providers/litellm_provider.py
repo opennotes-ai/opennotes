@@ -43,7 +43,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
 
     LiteLLM handles model prefixes, parameter translation, and provider-specific
     quirks internally. Models can be specified with or without provider prefixes
-    (e.g., "gpt-4o" or "openai/gpt-4o").
+    (e.g., "gpt-5.1" or "openai/gpt-5.1").
     """
 
     def __init__(
@@ -58,7 +58,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
 
         Args:
             api_key: API key for the underlying provider
-            default_model: Default model (e.g., "gpt-4o", "claude-3-opus-20240229")
+            default_model: Default model (e.g., "gpt-5.1", "claude-3-opus-20240229")
             settings: Provider settings
             provider_name: Name of the underlying provider for tracking (e.g., "openai", "anthropic")
         """

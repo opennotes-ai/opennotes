@@ -29,6 +29,7 @@ function createMockCommunityServerResponse(
         name,
         is_active: isActive,
         is_public: true,
+        flashpoint_detection_enabled: false,
       },
     },
     jsonapi: { version: '1.1' },

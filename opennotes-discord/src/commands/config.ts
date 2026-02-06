@@ -11,6 +11,7 @@ import {
   ContainerBuilder,
   TextDisplayBuilder,
   SectionBuilder,
+  GuildMember,
 } from 'discord.js';
 import { apiClient } from '../api-client.js';
 import { GuildConfigService } from '../services/GuildConfigService.js';
@@ -27,6 +28,7 @@ import { generateErrorId, extractErrorDetails, formatErrorForUser, ApiError } fr
 import { config } from '../config.js';
 import { v2MessageFlags, V2_COLORS, createDivider, createSmallSeparator } from '../utils/v2-components.js';
 import { resolveCommunityServerId } from '../lib/community-server-resolver.js';
+import { hasManageGuildPermission } from '../lib/permissions.js';
 
 const configService = new GuildConfigService(apiClient);
 const guildSetupService = new GuildSetupService();
@@ -184,6 +186,22 @@ export const data = new SlashCommandBuilder()
         subcommand
           .setName('enable-all')
           .setDescription('Enable content monitoring for all text channels in this server')
+      )
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('flashpoint')
+          .setDescription('Toggle conversation flashpoint detection')
+          .addStringOption(option =>
+            option
+              .setName('action')
+              .setDescription('Enable or disable flashpoint detection')
+              .setRequired(true)
+              .addChoices(
+                { name: 'Enable', value: 'enable' },
+                { name: 'Disable', value: 'disable' },
+                { name: 'Status', value: 'status' }
+              )
+          )
       )
   )
   .addSubcommandGroup(group =>
@@ -1153,6 +1171,9 @@ async function handleContentMonitorSubcommands(
     case 'enable-all':
       await handleContentMonitorEnableAll(interaction, guildId, errorId);
       break;
+    case 'flashpoint':
+      await handleContentMonitorFlashpoint(interaction, guildId, errorId);
+      break;
     default:
       await interaction.editReply({
         content: 'Unknown subcommand.',
@@ -1312,6 +1333,109 @@ async function handleContentMonitorEnableAll(
     guild_id: guildId,
     user_id: interaction.user.id,
   });
+}
+
+async function handleContentMonitorFlashpoint(
+  interaction: ChatInputCommandInteraction,
+  guildId: string,
+  errorId: string
+): Promise<void> {
+  const member = interaction.member as GuildMember | null;
+  if (!hasManageGuildPermission(member)) {
+    await interaction.editReply({
+      content: 'You need the "Manage Server" permission to manage flashpoint detection settings.',
+    });
+    return;
+  }
+
+  const action = interaction.options.getString('action', true);
+
+  try {
+    if (action === 'status') {
+      const statusResponse = await apiClient.getFlashpointDetectionStatus(guildId);
+      const isEnabled = statusResponse.flashpoint_detection_enabled;
+
+      const container = new ContainerBuilder()
+        .setAccentColor(isEnabled ? V2_COLORS.HELPFUL : V2_COLORS.MEDIUM)
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent('## Flashpoint Detection Status')
+        )
+        .addSeparatorComponents(createSmallSeparator())
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            `**Status:** ${isEnabled ? 'Enabled' : 'Disabled'}\n\n` +
+            'Flashpoint detection identifies early signs of conversations derailing into conflict, ' +
+            'such as personal attacks, hostile escalation, and rule violations.'
+          )
+        );
+
+      await interaction.editReply({
+        components: [container.toJSON()],
+        flags: v2MessageFlags({ ephemeral: true }),
+      });
+
+      logger.info('Flashpoint detection status checked', {
+        error_id: errorId,
+        guild_id: guildId,
+        user_id: interaction.user.id,
+        enabled: isEnabled,
+      });
+    } else {
+      const enabled = action === 'enable';
+      const response = await apiClient.updateFlashpointDetection(guildId, enabled);
+
+      const container = new ContainerBuilder()
+        .setAccentColor(enabled ? V2_COLORS.HELPFUL : V2_COLORS.MEDIUM)
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            enabled ? '## Flashpoint Detection Enabled' : '## Flashpoint Detection Disabled'
+          )
+        )
+        .addSeparatorComponents(createSmallSeparator())
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            enabled
+              ? 'Flashpoint detection is now **enabled** for this server.\n\n' +
+                'The system will monitor conversations for early signs of conflict, ' +
+                'such as personal attacks, hostile escalation, and rule violations.'
+              : 'Flashpoint detection is now **disabled** for this server.\n\n' +
+                'The system will no longer monitor conversations for escalation points. ' +
+                'Use `/config content-monitor flashpoint action:Enable` to re-enable.'
+          )
+        );
+
+      await interaction.editReply({
+        components: [container.toJSON()],
+        flags: v2MessageFlags({ ephemeral: true }),
+      });
+
+      logger.info('Flashpoint detection setting updated', {
+        error_id: errorId,
+        guild_id: guildId,
+        user_id: interaction.user.id,
+        enabled: response.flashpoint_detection_enabled,
+      });
+    }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.statusCode === 404) {
+        await interaction.editReply({
+          content:
+            'This server is not registered yet. Please run `/config content-monitor enable-all` first.',
+        });
+        return;
+      } else if (error.statusCode === 403) {
+        await interaction.editReply({
+          content:
+            `Unable to update flashpoint detection settings. ` +
+            `The bot may not be properly authenticated with the API.\n\n` +
+            `Please contact a server administrator.`,
+        });
+        return;
+      }
+    }
+    throw error;
+  }
 }
 
 async function handleNotePublisherSubcommands(

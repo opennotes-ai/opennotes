@@ -1,386 +1,343 @@
-"""Tests for Bulk Content Scan NATS event handlers."""
+"""Tests for NATS handler dispatch logic in bulk content scan.
 
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+Tests the BulkScanEventHandler class: DBOS workflow dispatch, dispatch failure
+handling, scan type determination based on flashpoint_detection_enabled, and
+signal forwarding to the DBOS orchestrator.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from src.bulk_content_scan.schemas import BulkScanStatus, FlaggedMessage
+from src.events.schemas import (
+    BulkScanAllBatchesTransmittedEvent,
+    BulkScanMessageBatchEvent,
+)
 
 
-@pytest.fixture
-def mock_service():
-    """Create a mock BulkContentScanService."""
-    service = AsyncMock()
-    service.process_messages = AsyncMock(return_value=[])
-    service.append_flagged_result = AsyncMock()
-    service.get_flagged_results = AsyncMock(return_value=[])
-    service.complete_scan = AsyncMock()
-    service.record_error = AsyncMock()
-    service.increment_processed_count = AsyncMock()
-    service.get_error_summary = AsyncMock(
-        return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
+def _make_handler():
+    from src.bulk_content_scan.nats_handler import BulkScanEventHandler
+
+    return BulkScanEventHandler(
+        embedding_service=MagicMock(),
+        redis_client=MagicMock(),
+        nats_client=AsyncMock(),
+        llm_service=MagicMock(),
     )
-    service.get_processed_count = AsyncMock(return_value=0)
-    service.get_skipped_count = AsyncMock(return_value=0)
-    return service
 
 
-@pytest.fixture
-def mock_publisher():
-    """Create a mock event publisher."""
-    publisher = AsyncMock()
-    publisher.publish = AsyncMock()
-    return publisher
+def _make_batch_event(
+    scan_id=None,
+    community_server_id=None,
+    batch_number=1,
+    message_count=2,
+) -> BulkScanMessageBatchEvent:
+    from src.bulk_content_scan.schemas import BulkScanMessage
 
+    scan_id = scan_id or uuid4()
+    community_server_id = community_server_id or uuid4()
 
-@pytest.fixture
-def sample_messages():
-    """Create sample message dicts for testing."""
-    return [
-        {
-            "message_id": "msg_1",
-            "channel_id": "ch_1",
-            "community_server_id": "srv_1",
-            "content": "Test message 1 with enough content",
-            "author_id": "user_1",
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
-        {
-            "message_id": "msg_2",
-            "channel_id": "ch_1",
-            "community_server_id": "srv_1",
-            "content": "Test message 2 with enough content",
-            "author_id": "user_2",
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+    messages = [
+        BulkScanMessage(
+            message_id=f"msg_{i}",
+            channel_id="ch_1",
+            community_server_id="platform_123",
+            content=f"test message {i}",
+            author_id=f"author_{i}",
+            author_username=f"user_{i}",
+            timestamp="2025-01-01T00:00:00Z",
+        )
+        for i in range(message_count)
     ]
 
-
-@pytest.fixture
-def sample_flagged_message():
-    """Create a sample FlaggedMessage for testing."""
-    return FlaggedMessage(
-        message_id="msg_1",
-        channel_id="ch_1",
-        content="Test flagged content",
-        author_id="user_1",
-        timestamp=datetime.now(UTC),
-        match_score=0.85,
-        matched_claim="Test claim",
-        matched_source="https://example.com",
+    return BulkScanMessageBatchEvent(
+        event_id=f"evt_{uuid4().hex[:12]}",
+        scan_id=scan_id,
+        community_server_id=community_server_id,
+        batch_number=batch_number,
+        messages=messages,
     )
 
 
 class TestHandleMessageBatch:
-    """Test handling of BULK_SCAN_MESSAGE_BATCH events with streaming behavior."""
+    """Tests for _handle_message_batch dispatch logic."""
 
     @pytest.mark.asyncio
-    async def test_processes_messages_immediately(self, mock_service, sample_messages):
-        """Verify process_messages() is called for each batch (not collect_messages)."""
-        from src.bulk_content_scan.nats_handler import handle_message_batch
-        from src.events.schemas import BulkScanMessageBatchEvent
-
-        scan_id = uuid4()
-        community_server_id = uuid4()
-
-        event = BulkScanMessageBatchEvent(
-            event_id="evt_123",
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages=sample_messages,
-            batch_number=1,
-            is_final_batch=False,
-        )
-
-        with patch(
-            "src.bulk_content_scan.nats_handler.get_platform_id",
-            new=AsyncMock(return_value="test_platform_123"),
-        ):
-            await handle_message_batch(event, mock_service)
-
-        mock_service.process_messages.assert_called_once()
-        call_kwargs = mock_service.process_messages.call_args[1]
-        assert call_kwargs["scan_id"] == scan_id
-        assert call_kwargs["community_server_platform_id"] == "test_platform_123"
-        assert len(call_kwargs["messages"]) == 2
-
-    @pytest.mark.asyncio
-    async def test_stores_flagged_results_per_batch(
-        self, mock_service, sample_messages, sample_flagged_message
-    ):
-        """Verify append_flagged_result() is called for each flagged message."""
-        from src.bulk_content_scan.nats_handler import handle_message_batch
-        from src.events.schemas import BulkScanMessageBatchEvent
-
-        scan_id = uuid4()
-        community_server_id = uuid4()
-
-        flagged_messages = [sample_flagged_message]
-        mock_service.process_messages = AsyncMock(return_value=flagged_messages)
-
-        event = BulkScanMessageBatchEvent(
-            event_id="evt_123",
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages=sample_messages,
-            batch_number=1,
-            is_final_batch=False,
-        )
-
-        with patch(
-            "src.bulk_content_scan.nats_handler.get_platform_id",
-            new=AsyncMock(return_value="test_platform_123"),
-        ):
-            await handle_message_batch(event, mock_service)
-
-        assert mock_service.append_flagged_result.call_count == 1
-        mock_service.append_flagged_result.assert_called_once_with(scan_id, sample_flagged_message)
-
-    @pytest.mark.asyncio
-    async def test_raises_error_when_platform_id_not_found(self, mock_service, sample_messages):
-        """Verify BatchProcessingError is raised when platform_id lookup fails.
-
-        This ensures the message is NAKed for retry instead of being silently dropped.
-        """
-        from src.bulk_content_scan.nats_handler import (
-            BatchProcessingError,
-            handle_message_batch,
-        )
-        from src.events.schemas import BulkScanMessageBatchEvent
-
-        scan_id = uuid4()
-        community_server_id = uuid4()
-
-        event = BulkScanMessageBatchEvent(
-            event_id="evt_123",
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages=sample_messages,
-            batch_number=1,
-            is_final_batch=False,
-        )
+    async def test_successful_dispatch_enqueues_batch(self) -> None:
+        handler = _make_handler()
+        event = _make_batch_event()
 
         with (
             patch(
-                "src.bulk_content_scan.nats_handler.get_platform_id",
-                new=AsyncMock(return_value=None),
-            ),
-            pytest.raises(BatchProcessingError) as exc_info,
+                "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
+                new_callable=AsyncMock,
+                return_value="batch-wf-123",
+            ) as mock_enqueue,
+            patch.object(
+                handler, "_get_scan_types_for_community", new_callable=AsyncMock
+            ) as mock_scan_types,
         ):
-            await handle_message_batch(event, mock_service)
+            mock_scan_types.return_value = ["similarity"]
 
-        assert "Platform ID not found" in str(exc_info.value)
-        assert str(community_server_id) in str(exc_info.value)
-        mock_service.process_messages.assert_not_called()
-        mock_service.append_flagged_result.assert_not_called()
+            await handler._handle_message_batch(event)
+
+        mock_enqueue.assert_called_once()
+        call_kwargs = mock_enqueue.call_args.kwargs
+        assert call_kwargs["orchestrator_workflow_id"] == str(event.scan_id)
+        assert call_kwargs["scan_id"] == event.scan_id
+        assert call_kwargs["batch_number"] == event.batch_number
 
     @pytest.mark.asyncio
-    async def test_raises_error_when_process_messages_fails(self, mock_service, sample_messages):
-        """Verify exceptions from process_messages propagate to cause NAK.
-
-        This ensures failed batch processing doesn't silently drop batches.
-        """
-        from src.bulk_content_scan.nats_handler import handle_message_batch
-        from src.events.schemas import BulkScanMessageBatchEvent
-
-        scan_id = uuid4()
-        community_server_id = uuid4()
-
-        mock_service.process_messages = AsyncMock(
-            side_effect=RuntimeError("Embedding service unavailable")
-        )
-
-        event = BulkScanMessageBatchEvent(
-            event_id="evt_123",
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages=sample_messages,
-            batch_number=1,
-            is_final_batch=False,
-        )
+    async def test_dispatch_failure_propagates_exception(self) -> None:
+        handler = _make_handler()
+        event = _make_batch_event()
 
         with (
             patch(
-                "src.bulk_content_scan.nats_handler.get_platform_id",
-                new=AsyncMock(return_value="test_platform_123"),
+                "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("DBOS connection refused"),
             ),
-            pytest.raises(RuntimeError) as exc_info,
+            patch.object(
+                handler, "_get_scan_types_for_community", new_callable=AsyncMock
+            ) as mock_scan_types,
         ):
-            await handle_message_batch(event, mock_service)
+            mock_scan_types.return_value = ["similarity"]
 
-        assert "Embedding service unavailable" in str(exc_info.value)
+            with pytest.raises(RuntimeError, match="DBOS connection refused"):
+                await handler._handle_message_batch(event)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_passes_scan_types_from_community(self) -> None:
+        handler = _make_handler()
+        event = _make_batch_event()
+        expected_types = ["similarity", "conversation_flashpoint"]
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
+                new_callable=AsyncMock,
+                return_value="wf-123",
+            ) as mock_enqueue,
+            patch.object(
+                handler, "_get_scan_types_for_community", new_callable=AsyncMock
+            ) as mock_scan_types,
+        ):
+            mock_scan_types.return_value = expected_types
+
+            await handler._handle_message_batch(event)
+
+        call_kwargs = mock_enqueue.call_args.kwargs
+        assert call_kwargs["scan_types"] == expected_types
+
+    @pytest.mark.asyncio
+    async def test_dispatch_passes_serialized_messages(self) -> None:
+        handler = _make_handler()
+        event = _make_batch_event(message_count=3)
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
+                new_callable=AsyncMock,
+                return_value="wf-456",
+            ) as mock_enqueue,
+            patch.object(
+                handler, "_get_scan_types_for_community", new_callable=AsyncMock
+            ) as mock_scan_types,
+        ):
+            mock_scan_types.return_value = ["similarity"]
+
+            await handler._handle_message_batch(event)
+
+        call_kwargs = mock_enqueue.call_args.kwargs
+        assert len(call_kwargs["messages"]) == 3
 
 
 class TestHandleAllBatchesTransmitted:
-    """Test handling of BULK_SCAN_ALL_BATCHES_TRANSMITTED events."""
+    """Tests for _handle_all_batches_transmitted signal forwarding."""
 
     @pytest.mark.asyncio
-    async def test_sets_transmitted_flag(self, mock_service, mock_publisher):
-        """Verify set_all_batches_transmitted is called."""
-        from src.bulk_content_scan.nats_handler import handle_all_batches_transmitted
-        from src.events.schemas import BulkScanAllBatchesTransmittedEvent
-
+    async def test_sends_signal_to_orchestrator(self) -> None:
+        handler = _make_handler()
         scan_id = uuid4()
-        community_server_id = uuid4()
-
-        mock_service.set_all_batches_transmitted = AsyncMock()
-        mock_service.get_processed_count = AsyncMock(return_value=0)
-
         event = BulkScanAllBatchesTransmittedEvent(
-            event_id="evt_123",
+            event_id=f"evt_{uuid4().hex[:12]}",
             scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages_scanned=100,
+            community_server_id=uuid4(),
+            messages_scanned=42,
         )
 
-        await handle_all_batches_transmitted(event, mock_service, mock_publisher)
+        with patch(
+            "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_signal:
+            await handler._handle_all_batches_transmitted(event)
 
-        mock_service.set_all_batches_transmitted.assert_called_once_with(scan_id, 100)
+        mock_signal.assert_called_once_with(
+            orchestrator_workflow_id=str(scan_id),
+            messages_scanned=42,
+        )
 
     @pytest.mark.asyncio
-    async def test_triggers_completion_when_all_processed(
-        self, mock_service, mock_publisher, sample_flagged_message
-    ):
-        """Verify completion triggers when all messages already processed."""
-        from unittest.mock import patch
-
-        from src.bulk_content_scan.nats_handler import handle_all_batches_transmitted
-        from src.events.schemas import BulkScanAllBatchesTransmittedEvent
-
+    async def test_uses_scan_id_as_orchestrator_workflow_id(self) -> None:
+        handler = _make_handler()
         scan_id = uuid4()
-        community_server_id = uuid4()
-        messages_scanned = 100
-
-        mock_service.set_all_batches_transmitted = AsyncMock()
-        mock_service.get_processed_count = AsyncMock(return_value=messages_scanned)
-        mock_service.get_flagged_results = AsyncMock(return_value=[sample_flagged_message])
-        mock_service.get_error_summary = AsyncMock(
-            return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
-        )
-
         event = BulkScanAllBatchesTransmittedEvent(
-            event_id="evt_123",
+            event_id=f"evt_{uuid4().hex[:12]}",
             scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages_scanned=messages_scanned,
+            community_server_id=uuid4(),
+            messages_scanned=10,
         )
 
-        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_event_publisher:
-            mock_event_publisher.publish_event = AsyncMock()
-            await handle_all_batches_transmitted(event, mock_service, mock_publisher)
+        with patch(
+            "src.bulk_content_scan.nats_handler.send_all_transmitted_signal",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_signal:
+            await handler._handle_all_batches_transmitted(event)
 
-        mock_service.complete_scan.assert_called_once_with(
-            scan_id=scan_id,
-            messages_scanned=messages_scanned,
-            messages_flagged=1,
-            status=BulkScanStatus.COMPLETED,
-        )
+        call_kwargs = mock_signal.call_args.kwargs
+        assert call_kwargs["orchestrator_workflow_id"] == str(scan_id)
+
+
+class TestGetScanTypesForCommunity:
+    """Tests for _get_scan_types_for_community flashpoint toggle check."""
 
     @pytest.mark.asyncio
-    async def test_does_not_trigger_when_processing_pending(self, mock_service, mock_publisher):
-        """Verify no completion when batches still processing."""
-        from src.bulk_content_scan.nats_handler import handle_all_batches_transmitted
-        from src.events.schemas import BulkScanAllBatchesTransmittedEvent
-
-        scan_id = uuid4()
+    async def test_includes_flashpoint_when_enabled(self) -> None:
+        handler = _make_handler()
         community_server_id = uuid4()
 
-        mock_service.set_all_batches_transmitted = AsyncMock()
-        mock_service.get_processed_count = AsyncMock(return_value=50)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = True
 
-        event = BulkScanAllBatchesTransmittedEvent(
-            event_id="evt_123",
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages_scanned=100,
-        )
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
 
-        await handle_all_batches_transmitted(event, mock_service, mock_publisher)
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        mock_service.set_all_batches_transmitted.assert_called_once()
-        mock_service.complete_scan.assert_not_called()
-        mock_publisher.publish.assert_not_called()
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
 
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await handler._get_scan_types_for_community(community_server_id)
 
-class TestBulkScanHandlerRegistration:
-    """Test that handlers can be registered with EventSubscriber."""
-
-    def test_handler_functions_are_async(self):
-        """All handlers must be async functions."""
-        import asyncio
-
-        from src.bulk_content_scan.nats_handler import (
-            handle_all_batches_transmitted,
-            handle_message_batch,
-        )
-
-        assert asyncio.iscoroutinefunction(handle_message_batch)
-        assert asyncio.iscoroutinefunction(handle_all_batches_transmitted)
-
-
-class TestSkippedCountInEvents:
-    """Test that skipped_count is called by handlers - task-867.03."""
+        assert "conversation_flashpoint" in result
 
     @pytest.mark.asyncio
-    async def test_batch_handler_with_progress_calls_get_skipped_count(
-        self, mock_service, sample_messages
-    ):
-        """Verify handle_message_batch_with_progress calls get_skipped_count for progress events."""
-        from src.bulk_content_scan.nats_handler import handle_message_batch_with_progress
-        from src.events.schemas import BulkScanMessageBatchEvent
-
-        scan_id = uuid4()
+    async def test_excludes_flashpoint_when_disabled(self) -> None:
+        handler = _make_handler()
         community_server_id = uuid4()
 
-        event = BulkScanMessageBatchEvent(
-            event_id="evt_123",
-            scan_id=scan_id,
-            community_server_id=community_server_id,
-            messages=sample_messages,
-            batch_number=1,
-            is_final_batch=False,
-        )
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = False
 
-        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_event_publisher:
-            mock_event_publisher.publish_event = AsyncMock()
-            await handle_message_batch_with_progress(
-                event=event,
-                service=mock_service,
-                nats_client=AsyncMock(),
-                platform_id="test_platform_123",
-                debug_mode=False,
-            )
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
 
-        mock_service.get_skipped_count.assert_called_once_with(scan_id)
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await handler._get_scan_types_for_community(community_server_id)
+
+        assert "conversation_flashpoint" not in result
+        assert "similarity" in result
 
     @pytest.mark.asyncio
-    async def test_finalize_calls_get_skipped_count(self, mock_service, mock_publisher):
-        """Verify finalize_scan calls get_skipped_count for results events."""
-        from src.bulk_content_scan.nats_handler import finalize_scan
-
-        scan_id = uuid4()
+    async def test_defaults_to_disabled_on_db_error(self) -> None:
+        handler = _make_handler()
         community_server_id = uuid4()
 
-        mock_service.get_flagged_results = AsyncMock(return_value=[])
-        mock_service.get_error_summary = AsyncMock(
-            return_value={"total_errors": 0, "error_types": {}, "sample_errors": []}
-        )
-        mock_service.get_processed_count = AsyncMock(return_value=100)
-        mock_service.try_set_finalize_dispatched = AsyncMock(return_value=True)
+        mock_session_maker = MagicMock(side_effect=RuntimeError("DB connection failed"))
 
-        with patch("src.bulk_content_scan.nats_handler.event_publisher") as mock_event_publisher:
-            mock_event_publisher.publish_event = AsyncMock()
-            await finalize_scan(
-                scan_id=scan_id,
-                community_server_id=community_server_id,
-                messages_scanned=100,
-                service=mock_service,
-                publisher=mock_publisher,
-            )
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await handler._get_scan_types_for_community(community_server_id)
 
-        mock_service.get_skipped_count.assert_called_once_with(scan_id)
-        mock_publisher.publish.assert_called_once()
-        publish_kwargs = mock_publisher.publish.call_args[1]
-        assert "messages_skipped" in publish_kwargs
+        assert "conversation_flashpoint" not in result
+        assert "similarity" in result
+
+    @pytest.mark.asyncio
+    async def test_excludes_flashpoint_when_server_not_found(self) -> None:
+        handler = _make_handler()
+        community_server_id = uuid4()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await handler._get_scan_types_for_community(community_server_id)
+
+        assert "conversation_flashpoint" not in result
+        assert "similarity" in result
+
+    @pytest.mark.asyncio
+    async def test_returns_string_scan_types(self) -> None:
+        handler = _make_handler()
+        community_server_id = uuid4()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = True
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session_maker = MagicMock(return_value=mock_session_ctx)
+
+        with patch(
+            "src.bulk_content_scan.nats_handler.get_session_maker",
+            return_value=mock_session_maker,
+        ):
+            result = await handler._get_scan_types_for_community(community_server_id)
+
+        assert all(isinstance(st, str) for st in result)
+
+
+class TestRegister:
+    """Tests for handler registration."""
+
+    def test_registers_both_event_handlers(self) -> None:
+        handler = _make_handler()
+
+        with patch.object(handler.subscriber, "register_handler") as mock_register:
+            handler.register()
+
+        assert mock_register.call_count == 2
+        registered_types = {call.args[0] for call in mock_register.call_args_list}
+        from src.events.schemas import EventType
+
+        assert EventType.BULK_SCAN_MESSAGE_BATCH in registered_types
+        assert EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED in registered_types

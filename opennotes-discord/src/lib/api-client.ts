@@ -35,6 +35,7 @@ export type CommunityAdminResponse = components['schemas']['CommunityAdminRespon
 export type RemoveCommunityAdminResponse = components['schemas']['RemoveCommunityAdminResponse'];
 export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
 export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
+export type FlashpointDetectionUpdateResponse = components['schemas']['FlashpointDetectionUpdateResponse'];
 
 export interface ClearPreviewResult {
   wouldDeleteCount: number;
@@ -165,7 +166,8 @@ export type RecentScanResponse = components['schemas']['RecentScanResponse'];
 export type NoteRequestsResultResponse = components['schemas']['NoteRequestsResultResponse'];
 export type SimilarityMatch = components['schemas']['SimilarityMatch'];
 export type OpenAIModerationMatch = components['schemas']['OpenAIModerationMatch'];
-export type MatchResult = SimilarityMatch | OpenAIModerationMatch;
+export type ConversationFlashpointMatch = components['schemas']['ConversationFlashpointMatch'];
+export type MatchResult = SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch;
 export type ScanErrorInfoSchema = components['schemas']['ScanErrorInfoSchema'];
 export type ScanErrorSummarySchema = components['schemas']['ScanErrorSummarySchema'];
 export type ExplanationResultResponse = components['schemas']['ExplanationResultResponse'];
@@ -248,6 +250,7 @@ export interface CommunityServerAttributes {
   is_active: boolean;
   is_public: boolean;
   welcome_message_id?: string | null;
+  flashpoint_detection_enabled: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -1850,6 +1853,34 @@ export class ApiClient {
     return {
       deletedCount: response.deleted_count,
       message: response.message,
+    };
+  }
+
+  async updateFlashpointDetection(
+    platformCommunityServerId: string,
+    enabled: boolean,
+    context?: UserContext
+  ): Promise<FlashpointDetectionUpdateResponse> {
+    return this.fetchWithRetry<FlashpointDetectionUpdateResponse>(
+      `/api/v1/community-servers/${platformCommunityServerId}/flashpoint-detection`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      },
+      1,
+      context
+    );
+  }
+
+  async getFlashpointDetectionStatus(
+    platformCommunityServerId: string,
+    platform: string = 'discord'
+  ): Promise<FlashpointDetectionUpdateResponse> {
+    const serverResponse = await this.getCommunityServerByPlatformId(platformCommunityServerId, platform);
+    return {
+      id: serverResponse.data.id,
+      platform_community_server_id: serverResponse.data.attributes.platform_community_server_id,
+      flashpoint_detection_enabled: serverResponse.data.attributes.flashpoint_detection_enabled,
     };
   }
 }

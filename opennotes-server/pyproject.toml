@@ -11,7 +11,7 @@ dependencies = [
     "pydantic[email]>=2.5.0",
     "pydantic-settings>=2.1.0",
     "pandas>=2.2.2",
-    "numpy>=1.26.4",
+    "numpy>=1.26.4,<2.0.0",
     "redis>=5.0.0",
     "cryptography>=41.0.0",
     "sqlalchemy[asyncio]>=2.0.0",
@@ -59,7 +59,7 @@ dependencies = [
     "opentelemetry-semantic-conventions>=0.43b0",
     "pyroscope-io>=0.8.0",
     "traceloop-sdk>=0.35.0",
-    "dspy>=2.6.0",
+    "dspy>=3.0.0",
     "ruamel.yaml>=0.18.0",
     "setuptools>=80.9.0",
     "trafilatura>=2.0.0,<3.0.0",
@@ -68,9 +68,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+flashpoints-dataset = [
+    "convokit>=3.5.0,<4.0.0",
+]
 scoring = [
     "torch==2.1.2",
-    "scipy==1.11.4",
+    "scipy>=1.11.4,<3.0.0",
     "scikit-learn>=1.3.0",
     "joblib>=1.3.0",
     "pyarrow>=15.0.0",
@@ -91,7 +94,7 @@ dev = [
     "docker>=7.0.0",
     "psutil>=6.0.0",
     "torch==2.1.2",
-    "scipy==1.11.4",
+    "scipy>=1.11.4,<3.0.0",
     "scikit-learn>=1.3.0",
     "pyarrow>=15.0.0",
     "wandb>=0.15.0",
@@ -153,6 +156,8 @@ ignore = [
 "src/main.py" = ["E402", "PLC0415"]  # LoggingInstrumentor must be called before imports; lazy pyroscope import for optional profiling
 "src/claim_relevance_check/prompt_optimization/augment_dataset.py" = ["PLR0912"]  # augment_dataset() has clear branch structure for interactive/non-interactive modes
 "src/dbos_workflows/**/*.py" = ["PLC0415", "PLW0603"]  # Lazy imports required to avoid circular deps; global state for singleton adapter
+"src/bulk_content_scan/flashpoint_service.py" = ["PLC0415", "PLW0603"]  # Lazy dspy import to avoid heavy ML deps at startup; global for singleton
+"src/bulk_content_scan/flashpoint_utils.py" = ["PLC0415"]  # Lazy dspy import to avoid heavy ML deps at startup
 
 [tool.ruff.format]
 quote-style = "double"
@@ -210,6 +215,14 @@ exclude_lines = [
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+[tool.uv]
+# bitsandbytes: convokit -> transformers -> bitsandbytes pulls an incompatible version.
+# We don't use bitsandbytes at runtime (training quantization lib), so pin to known-good.
+override-dependencies = [
+    "bitsandbytes==0.48.0",
+    "numpy>=1.26.4,<2.0.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -219,7 +232,7 @@ build-backend = "hatchling.build"
 ml = [
     "chonkie[neural]>=1.3.0,<2.0.0",
     "scikit-learn>=1.7.2",
-    "scipy>=1.11.4",
+    "scipy>=1.11.4,<3.0.0",
     "torch>=2.1.2",
     "transformers>=4.36.0,<4.41.0",
 ]

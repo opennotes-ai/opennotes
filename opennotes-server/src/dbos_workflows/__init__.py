@@ -32,6 +32,10 @@ Workflows:
     rechunk_fact_check_workflow: Batch rechunking of fact-check items
     dispatch_dbos_rechunk_workflow: Create BatchJob and enqueue workflow
     enqueue_single_fact_check_chunk: Enqueue single item for chunking
+    content_scan_orchestration_workflow: Orchestrate content scan pipeline
+    dispatch_content_scan_workflow: Start orchestration workflow
+    enqueue_content_scan_batch: Enqueue batch for processing
+    send_all_transmitted_signal: Signal orchestrator that all batches transmitted
 """
 
 from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter
@@ -48,6 +52,15 @@ from src.dbos_workflows.config import (
     reset_dbos,
     reset_dbos_client,
 )
+from src.dbos_workflows.content_scan_workflow import (
+    CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
+    PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
+    content_scan_orchestration_workflow,
+    dispatch_content_scan_workflow,
+    enqueue_content_scan_batch,
+    process_content_scan_batch,
+    send_all_transmitted_signal,
+)
 from src.dbos_workflows.rechunk_workflow import (
     CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
     RECHUNK_FACT_CHECK_WORKFLOW_NAME,
@@ -58,18 +71,25 @@ from src.dbos_workflows.rechunk_workflow import (
 
 __all__ = [
     "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
+    "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
+    "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
     "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
     "BatchJobDBOSAdapter",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",
+    "content_scan_orchestration_workflow",
     "destroy_dbos",
     "destroy_dbos_client",
+    "dispatch_content_scan_workflow",
     "dispatch_dbos_rechunk_workflow",
+    "enqueue_content_scan_batch",
     "enqueue_single_fact_check_chunk",
     "get_dbos",
     "get_dbos_client",
+    "process_content_scan_batch",
     "rechunk_fact_check_workflow",
     "reset_dbos",
     "reset_dbos_client",
+    "send_all_transmitted_signal",
 ]

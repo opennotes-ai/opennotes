@@ -267,6 +267,7 @@ describe('vibecheck command', () => {
           name: 'Test Server',
           is_active: true,
           is_public: true,
+          flashpoint_detection_enabled: false,
         },
       },
       jsonapi: { version: '1.1' },

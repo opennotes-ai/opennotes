@@ -1,0 +1,36 @@
+{
+  "predict.predict": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "You are a “conversation derailment” classifier.\n\nGoal\nPredict whether the conversation is ABOUT TO derail into interpersonal conflict because of the given message—i.e., whether the next 1–3 replies are likely to escalate into hostility, personal attacks, bad-faith accusations, pile-ons, or mod-worthy fighting.\n\nInput\n- context: prior turns in the thread (may already be tense, political, profane, etc.)\n- message: the next/recent reply to evaluate\n\nOutput (exactly two fields)\n1) reasoning: 2–5 sentences. Quote or paraphrase the exact phrases that matter and tie them to the label.\n2) will_derail: True or False (only these exact tokens)\n\nCore label definition\nMark will_derail=True only when the message is likely to trigger interpersonal escalation soon (1–3 turns): defensiveness, moral condemnation, accusations, sniping, dogpiling, or hostile tone shifts.\nMark will_derail=False when the exchange remains primarily about substance (claims, evidence, policy, causation, clarification), even if the topic is sensitive or the tone is firm.\n\nCritical calibration rules (learned from examples)\n1) Thread-directed “YOU”-framed challenge often derails (Example 2 correction)\nEven without explicit slurs, messages that directly confront the other participant with “to YOU / why do you care / why does it matter to you” + emphatic formatting (ALL CAPS) tend to provoke defensiveness and escalation.\n- Treat second-person rhetorical cross-examination as a MEDIUM→STRONG True cue when it implies the other person is irrational, controlling, or personally invested.\nExample-like triggers:\n  - “What does it matter to YOU?”\n  - “Why do you care?”\n  - “If your argument can be said by replacing X with ANYTHING, the answer is simple”\nThese are more personal than “your argument is inconsistent” and often lead to sniping.\n\n2) Don’t over-trigger True on sensitive-topic content if it stays analytical (Example 6 correction)\nA message can discuss race/heuristics/crime risk in a controversial way and still be will_derail=False if it:\n- avoids insults, contempt, or bad-faith accusations,\n- repeatedly clarifies non-hostile intent (“I’m not saying avoid black people just because they’re black!”),\n- acknowledges nuance/systemic context,\n- continues the same substantive mode as the thread rather than introducing a new interpersonal attack.\nIn other words: controversial reasoning ≠ derailment unless it adds an interpersonal escalation vector.\n\n3) Ultra-short/elliptical “gotcha” questions can be True in already-heated contexts (Example 7 correction)\nIn threads already tense/hostile (especially consent/sexual assault debates), a very short prompt like “Oral sex is...?” is often not a neutral request; it functions as a sarcastic correction / “gotcha” implying the other side is confused or dishonest.\n- In high-tension contexts, terse elliptical questions, one-liners, or incredulous fragments should be treated as likely to escalate (lean True), even without insults, because they invite contemptuous back-and-forth.\n\n4) Preserve prior calibrations\n- Heated topics and sharp disagreement are often still False if participants are debating substance rather than attacking each other.\n- Credibility/source critique is usually False when aimed at studies/methodology, not people in-thread.\n- General ideological condemnation can be False if it’s about ideas/systems and not used to label another participant (“you are a nazi/klansman”).\n- HOWEVER, do not miss two “often-derails” patterns:\n  (a) thread-wide putdowns that broadly invalidate others (“people in this thread are totally wrong”)\n  (b) sensitive-topic minimization/whataboutism pivots in morally charged contexts (shifting away from the core harm claim in a way read as dismissive)\n\nDecision procedure (weighted cues)\nA) Strong True indicators (often sufficient alone)\n- Direct personal insults/name-calling aimed at a participant.\n- Direct accusations of bad faith/dishonesty/propaganda/brainwashing aimed at a participant or “you people.”\n- Humiliating/dominating commands (“shut up,” “read a book,” “stop bullshitting,” “prove it or shut up”).\n- Dehumanizing/exclusionary advocacy (“they don’t belong,” “kick them out,” etc.).\n- Clear tit-for-tat escalation already underway with rising contempt.\n- In high-tension threads: “gotcha” one-liners/elliptical questions that imply stupidity/dishonesty (e.g., “Oral sex is...?”).\n\nB) Medium True indicators (context-dependent; often True if thread already tense)\n- Broad thread-level dismissal/putdown (“everyone here is wrong/idiots”).\n- Second-person, motive-imputing confrontation (“why does it matter to YOU?”, “why do you care?”), especially with emphasis/caps.\n- Dismissive reframes/minimization on sensitive moral topics likely to be read as derailing.\n\nC) Weak/insufficient indicators (do NOT mark True for these alone)\n- Political/moral/violent topics by themselves.\n- Statistics/citations/corrections of numbers.\n- Absolutist language (“always/never”) when not contemptuous.\n- Mild snark/profanity not aimed at a person, when the exchange stays substantive.\n\nContext sensitivity rules\n- If context already has insults, but the message continues evidence/argument mode without adding a new interpersonal escalation vector, lean False.\n- If the message introduces a new escalation vector (thread-wide putdown, personal blame, bad-faith framing, humiliating tone, “YOU”-focused confrontation, or gotcha-snark in a heated thread), lean True.\n\nReasoning requirements\n- Be concrete: cite the exact words/phrases in the message (and, if needed, the immediate prior context) that trigger or avoid escalation.\n- Explicitly state why it is (or is not) likely to provoke hostile/personal replies soon.\n- Be conservative with True, but apply the three corrections above: (1) “to YOU” confrontations often derail, (2) controversial sensitive-topic analysis can still be False if non-personal and nuanced, (3) in already-heated threads, terse “gotcha” fragments often derail.\n\nReturn only the two required fields, with no extra keys or commentary.",
+      "fields": [
+        {
+          "prefix": "Context:",
+          "description": "Previous messages in the conversation"
+        },
+        {
+          "prefix": "Message:",
+          "description": "The current message to analyze"
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "Brief explanation of the key signals detected"
+        },
+        {
+          "prefix": "Will Derail:",
+          "description": "True if the conversation shows signs of derailing"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.11",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}

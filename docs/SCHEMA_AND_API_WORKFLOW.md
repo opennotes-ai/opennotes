@@ -514,7 +514,7 @@ FastAPI automatically generates OpenAPI specifications from Pydantic models:
 
 **When it's generated:**
 - Automatically on server startup
-- Via `scripts/generate-openapi.py` script
+- Via `scripts/generate_openapi.py` script
 - During deployment via `mise run deploy:server`
 
 **What it contains:**
@@ -633,7 +633,7 @@ async def create_feature(feature: NewFeatureCreate):
 
 ```bash
 cd opennotes-server
-uv run python scripts/generate-openapi.py --output openapi.json
+uv run python scripts/generate_openapi.py --output openapi.json
 
 cd ../opennotes-discord
 pnpm types:generate
@@ -705,14 +705,14 @@ With automated validation, these issues are caught during development and in PR 
 
 #### Generate OpenAPI Specification
 
-**Location:** `opennotes/opennotes-server/scripts/generate-openapi.py`
+**Location:** `opennotes/opennotes-server/scripts/generate_openapi.py`
 
 **Purpose:** Exports the FastAPI application's OpenAPI schema to a JSON file.
 
 **Usage:**
 ```bash
 # From opennotes-server directory
-uv run python scripts/generate-openapi.py --output openapi.json
+uv run python scripts/generate_openapi.py --output openapi.json
 
 # Or using mise task
 mise run api:generate-spec
@@ -876,7 +876,7 @@ Errors:
 | Command | Description |
 |---------|-------------|
 | `mise run api:generate-spec` | Generate OpenAPI specification |
-| `uv run python scripts/generate-openapi.py --output openapi.json` | Manual OpenAPI generation |
+| `uv run python scripts/generate_openapi.py --output openapi.json` | Manual OpenAPI generation |
 
 ### Discord Bot Commands (TypeScript)
 
@@ -901,7 +901,7 @@ Errors:
 vim opennotes-server/src/notes/schemas.py
 
 # 2. Generate OpenAPI spec
-cd opennotes-server && uv run python scripts/generate-openapi.py --output openapi.json
+cd opennotes-server && uv run python scripts/generate_openapi.py --output openapi.json
 
 # 3. Generate TypeScript types
 cd ../opennotes-discord && pnpm types:generate
@@ -969,7 +969,7 @@ pnpm test
 
 **Solution:**
 ```bash
-cd opennotes-server && uv run python scripts/generate-openapi.py --output openapi.json
+cd opennotes-server && uv run python scripts/generate_openapi.py --output openapi.json
 cd ../opennotes-discord && pnpm types:generate
 ```
 
@@ -1141,7 +1141,7 @@ The Discord bot provides the following commands:
 - **Generated Types:** `opennotes-discord/src/lib/generated-types.ts`
 - **API Client:** `opennotes-discord/src/lib/api-client.ts`
 - **Validation Script:** `opennotes/scripts/validate-api-endpoints.py`
-- **OpenAPI Generator:** `opennotes-server/scripts/generate-openapi.py`
+- **OpenAPI Generator:** `opennotes-server/scripts/generate_openapi.py`
 
 ### External References
 

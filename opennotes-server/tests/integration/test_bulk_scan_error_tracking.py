@@ -145,30 +145,6 @@ class TestBulkScanErrorTracking:
         assert len(error_summary["sample_errors"]) == 5
 
     @pytest.mark.asyncio
-    async def test_increment_processed_count(
-        self,
-        bulk_scan_service: BulkContentScanService,
-        scan_id,
-        redis_client: Any,
-    ):
-        """Test that increment_processed_count tracks successful messages."""
-        await bulk_scan_service.increment_processed_count(scan_id, 5)
-        await bulk_scan_service.increment_processed_count(scan_id, 3)
-
-        count = await bulk_scan_service.get_processed_count(scan_id)
-        assert count == 8
-
-    @pytest.mark.asyncio
-    async def test_get_processed_count_returns_zero_when_empty(
-        self,
-        bulk_scan_service: BulkContentScanService,
-    ):
-        """Test that get_processed_count returns 0 when no count exists."""
-        nonexistent_scan_id = uuid4()
-        count = await bulk_scan_service.get_processed_count(nonexistent_scan_id)
-        assert count == 0
-
-    @pytest.mark.asyncio
     async def test_get_error_summary_returns_empty_when_no_errors(
         self,
         bulk_scan_service: BulkContentScanService,

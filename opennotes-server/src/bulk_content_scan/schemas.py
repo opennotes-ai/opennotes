@@ -104,6 +104,16 @@ class OpenAIModerationMatch(StrictInputSchema):
     )
 
 
+class ConversationFlashpointMatch(StrictInputSchema):
+    """Match result from conversation flashpoint detection scan."""
+
+    scan_type: Literal["conversation_flashpoint"] = "conversation_flashpoint"
+    will_derail: bool = Field(..., description="Whether conversation shows derailment signals")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Model confidence score")
+    reasoning: str = Field(..., description="Explanation of detected signals")
+    context_messages: int = Field(..., ge=0, description="Number of context messages analyzed")
+
+
 class RelevanceCheckResult(StrictInputSchema):
     """Result from LLM relevance check for hybrid search matches."""
 
@@ -118,7 +128,7 @@ class RelevanceCheckResult(StrictInputSchema):
 
 
 MatchResult = Annotated[
-    SimilarityMatch | OpenAIModerationMatch,
+    SimilarityMatch | OpenAIModerationMatch | ConversationFlashpointMatch,
     Discriminator("scan_type"),
 ]
 
