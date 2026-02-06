@@ -159,6 +159,7 @@ describe('MessageMonitorService - CC Score Threshold', () => {
               rating: 'FALSE',
               source_url: 'https://example.com/claim',
               similarity_score: score,
+              cosine_similarity: score,
             },
           ],
           query_text: 'test',

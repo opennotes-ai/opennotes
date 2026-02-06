@@ -51,7 +51,7 @@ export class MessageMonitorService {
   private processingInterval?: NodeJS.Timeout;
   private isProcessing: boolean = false;
   private readonly maxQueueSize: number = 1000;
-  private readonly MIN_CC_SCORE_THRESHOLD = 0.4;
+  private static readonly MIN_CC_SCORE_THRESHOLD = 0.4;
 
   // Batch processing configuration
   private readonly BATCH_SIZE: number = 10;
@@ -433,9 +433,10 @@ export class MessageMonitorService {
 
       const matches = similarityResponse.data.attributes.matches;
       if (matches.length > 0) {
+        matches.sort((a, b) => b.similarity_score - a.similarity_score);
         const topScore = matches[0].similarity_score;
 
-        if (topScore >= this.MIN_CC_SCORE_THRESHOLD) {
+        if (topScore >= MessageMonitorService.MIN_CC_SCORE_THRESHOLD) {
           logger.info('Found similarity matches for message', {
             messageId: messageContent.messageId,
             channelId: messageContent.channelId,
@@ -451,7 +452,7 @@ export class MessageMonitorService {
             messageId: messageContent.messageId,
             channelId: messageContent.channelId,
             topScore,
-            minCcScore: this.MIN_CC_SCORE_THRESHOLD,
+            minCcScore: MessageMonitorService.MIN_CC_SCORE_THRESHOLD,
           });
         }
       } else {
