@@ -198,3 +198,144 @@ def test_missing_auth_header_does_not_log_warning(monkeypatch, caplog):
     assert len(verification_failure_logs) == 0, (
         "No warning should be logged when auth header is missing (anonymous request)"
     )
+
+
+@pytest.mark.unit
+def test_api_key_with_bearer_token_skips_jwt_verification(monkeypatch, caplog):
+    """When X-API-Key is present alongside Bearer token, skip JWT verification (GCP IAM scenario)."""
+    from src import config
+
+    test_settings = config.Settings(
+        _env_file=None,
+        ENVIRONMENT="development",
+        JWT_SECRET_KEY=TEST_JWT_SECRET_KEY,
+        CREDENTIALS_ENCRYPTION_KEY=TEST_CREDENTIALS_ENCRYPTION_KEY,
+        ENCRYPTION_MASTER_KEY=TEST_ENCRYPTION_MASTER_KEY,
+    )
+    monkeypatch.setattr(config, "settings", test_settings)
+
+    from src.middleware.audit import AuditMiddleware
+
+    app = FastAPI()
+    app.add_middleware(AuditMiddleware)
+
+    @app.post("/test")
+    async def test_endpoint():
+        return {"status": "ok"}
+
+    with patch("src.middleware.audit.verify_token", new_callable=AsyncMock) as mock_verify:
+        mock_verify.return_value = None
+
+        with caplog.at_level(logging.WARNING, logger="src.middleware.audit"):
+            client = TestClient(app)
+            response = client.post(
+                "/test",
+                headers={
+                    "Authorization": "Bearer gcp-iam-identity-token",
+                    "X-API-Key": "opk_test_secretkey123",
+                },
+                json={"data": "test"},
+            )
+
+        assert response.status_code == 200
+
+        mock_verify.assert_not_called()
+
+        verification_failure_logs = [
+            record for record in caplog.records if "Token verification failed" in record.message
+        ]
+        assert len(verification_failure_logs) == 0, (
+            "No warning should be logged when X-API-Key authenticates the request"
+        )
+
+
+@pytest.mark.unit
+def test_internal_auth_with_bearer_token_skips_jwt_verification(monkeypatch, caplog):
+    """When X-Internal-Auth is present alongside Bearer token, skip JWT verification."""
+    from src import config
+
+    test_settings = config.Settings(
+        _env_file=None,
+        ENVIRONMENT="development",
+        JWT_SECRET_KEY=TEST_JWT_SECRET_KEY,
+        CREDENTIALS_ENCRYPTION_KEY=TEST_CREDENTIALS_ENCRYPTION_KEY,
+        ENCRYPTION_MASTER_KEY=TEST_ENCRYPTION_MASTER_KEY,
+    )
+    monkeypatch.setattr(config, "settings", test_settings)
+
+    from src.middleware.audit import AuditMiddleware
+
+    app = FastAPI()
+    app.add_middleware(AuditMiddleware)
+
+    @app.post("/test")
+    async def test_endpoint():
+        return {"status": "ok"}
+
+    with patch("src.middleware.audit.verify_token", new_callable=AsyncMock) as mock_verify:
+        mock_verify.return_value = None
+
+        with caplog.at_level(logging.WARNING, logger="src.middleware.audit"):
+            client = TestClient(app)
+            response = client.post(
+                "/test",
+                headers={
+                    "Authorization": "Bearer gcp-iam-identity-token",
+                    "X-Internal-Auth": "some-internal-token",
+                },
+                json={"data": "test"},
+            )
+
+        assert response.status_code == 200
+
+        mock_verify.assert_not_called()
+
+        verification_failure_logs = [
+            record for record in caplog.records if "Token verification failed" in record.message
+        ]
+        assert len(verification_failure_logs) == 0, (
+            "No warning should be logged when X-Internal-Auth authenticates the request"
+        )
+
+
+@pytest.mark.unit
+def test_bearer_only_still_verifies_and_warns(monkeypatch, caplog):
+    """When only Bearer token is present (no service auth headers), JWT verification still happens."""
+    from src import config
+
+    test_settings = config.Settings(
+        _env_file=None,
+        ENVIRONMENT="development",
+        JWT_SECRET_KEY=TEST_JWT_SECRET_KEY,
+        CREDENTIALS_ENCRYPTION_KEY=TEST_CREDENTIALS_ENCRYPTION_KEY,
+        ENCRYPTION_MASTER_KEY=TEST_ENCRYPTION_MASTER_KEY,
+    )
+    monkeypatch.setattr(config, "settings", test_settings)
+
+    from src.middleware.audit import AuditMiddleware
+
+    app = FastAPI()
+    app.add_middleware(AuditMiddleware)
+
+    @app.post("/test")
+    async def test_endpoint():
+        return {"status": "ok"}
+
+    with patch("src.middleware.audit.verify_token", new_callable=AsyncMock) as mock_verify:
+        mock_verify.return_value = None
+
+        with caplog.at_level(logging.WARNING, logger="src.middleware.audit"):
+            client = TestClient(app)
+            response = client.post(
+                "/test",
+                headers={"Authorization": "Bearer bad-app-jwt"},
+                json={"data": "test"},
+            )
+
+        assert response.status_code == 200
+
+        mock_verify.assert_called_once_with("bad-app-jwt")
+
+        assert any("Token verification failed" in record.message for record in caplog.records), (
+            "Warning should still be logged for genuine JWT verification failures"
+        )
