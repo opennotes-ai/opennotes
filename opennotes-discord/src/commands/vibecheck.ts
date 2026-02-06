@@ -276,7 +276,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
           `**Scan ID:** \`${result.scanId}\`\n` +
           `**Messages scanned:** ${result.messagesScanned}\n` +
           `**Period:** Last ${days} day${days !== 1 ? 's' : ''}\n\n` +
-          `No potential misinformation was detected.${warningText}`,
+          `No flashpoints or potential misinformation were detected.${warningText}`,
       });
       return;
     }

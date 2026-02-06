@@ -45,7 +45,7 @@ content_scan_queue = Queue(
 
 BATCH_RECV_TIMEOUT_SECONDS = 600
 POST_ALL_TRANSMITTED_TIMEOUT_SECONDS = 60
-SCAN_RECV_TIMEOUT_SECONDS = 0
+SCAN_RECV_TIMEOUT_SECONDS = 30
 ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS = 1800
 
 
@@ -107,111 +107,129 @@ def content_scan_orchestration_workflow(
     batches_completed = 0
     wall_clock_start = _checkpoint_wall_clock_step()
 
-    while True:
-        elapsed = time.time() - wall_clock_start
-        if elapsed >= ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS:
-            logger.warning(
-                "Orchestrator exceeded maximum wall-clock timeout, aborting",
-                extra={
-                    "scan_id": scan_id,
-                    "elapsed_seconds": elapsed,
-                    "max_seconds": ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS,
-                    "processed_count": processed_count,
-                    "skipped_count": skipped_count,
-                    "error_count": error_count,
-                    "batches_completed": batches_completed,
-                },
-            )
-            break
-
-        tx_signal = DBOS.recv("all_transmitted", timeout_seconds=SCAN_RECV_TIMEOUT_SECONDS)
-        if tx_signal is not None:
-            all_transmitted = True
-            messages_scanned = tx_signal.get("messages_scanned", 0)
-            logger.info(
-                "Orchestrator received all_transmitted",
-                extra={
-                    "scan_id": scan_id,
-                    "messages_scanned": messages_scanned,
-                },
-            )
-
-        total_accounted = processed_count + skipped_count + error_count
-        if all_transmitted and total_accounted >= messages_scanned:
-            if total_accounted > messages_scanned:
-                logger.warning(
-                    "Overcounting detected: accounted total exceeds messages_scanned",
-                    extra={
-                        "scan_id": scan_id,
-                        "total_accounted": total_accounted,
-                        "messages_scanned": messages_scanned,
-                    },
-                )
-            logger.info(
-                "All batches processed, proceeding to finalization",
-                extra={
-                    "scan_id": scan_id,
-                    "processed_count": processed_count,
-                    "skipped_count": skipped_count,
-                    "error_count": error_count,
-                    "messages_scanned": messages_scanned,
-                },
-            )
-            break
-
-        batch_timeout = (
-            POST_ALL_TRANSMITTED_TIMEOUT_SECONDS if all_transmitted else BATCH_RECV_TIMEOUT_SECONDS
-        )
-        batch_result = DBOS.recv("batch_complete", timeout_seconds=batch_timeout)
-
-        if batch_result is not None:
-            processed_count += batch_result.get("processed", 0)
-            skipped_count += batch_result.get("skipped", 0)
-            error_count += batch_result.get("errors", 0)
-            flagged_count += batch_result.get("flagged_count", 0)
-            batches_completed += 1
-
-            logger.info(
-                "Orchestrator received batch_complete",
-                extra={
-                    "scan_id": scan_id,
-                    "batches_completed": batches_completed,
-                    "processed_count": processed_count,
-                    "skipped_count": skipped_count,
-                    "error_count": error_count,
-                },
-            )
-            continue
-
-        if not all_transmitted:
-            logger.warning(
-                "Orchestrator timed out waiting for batch_complete",
-                extra={
-                    "scan_id": scan_id,
-                    "processed_count": processed_count,
-                    "all_transmitted": all_transmitted,
-                    "timeout_seconds": batch_timeout,
-                },
-            )
-            break
-
-        tx_recheck = DBOS.recv("all_transmitted", timeout_seconds=SCAN_RECV_TIMEOUT_SECONDS)
-        if tx_recheck is not None:
-            messages_scanned = tx_recheck.get("messages_scanned", messages_scanned)
-
-        logger.warning(
-            "Orchestrator detected count mismatch after all_transmitted - proceeding to finalization",
+    tx_signal = DBOS.recv("all_transmitted", timeout_seconds=SCAN_RECV_TIMEOUT_SECONDS)
+    if tx_signal is not None:
+        all_transmitted = True
+        messages_scanned = tx_signal.get("messages_scanned", 0)
+        logger.info(
+            "Orchestrator received all_transmitted",
             extra={
                 "scan_id": scan_id,
                 "messages_scanned": messages_scanned,
-                "processed_count": processed_count,
-                "skipped_count": skipped_count,
-                "error_count": error_count,
-                "actual_total": processed_count + skipped_count + error_count,
-                "missing_count": messages_scanned - (processed_count + skipped_count + error_count),
             },
         )
-        break
+        if messages_scanned == 0:
+            logger.info(
+                "Zero-message scan, skipping to finalization",
+                extra={"scan_id": scan_id},
+            )
+
+    if not (all_transmitted and messages_scanned == 0):
+        while True:
+            elapsed = time.time() - wall_clock_start
+            if elapsed >= ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS:
+                logger.warning(
+                    "Orchestrator exceeded maximum wall-clock timeout, aborting",
+                    extra={
+                        "scan_id": scan_id,
+                        "elapsed_seconds": elapsed,
+                        "max_seconds": ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS,
+                        "processed_count": processed_count,
+                        "skipped_count": skipped_count,
+                        "error_count": error_count,
+                        "batches_completed": batches_completed,
+                    },
+                )
+                break
+
+            if not all_transmitted:
+                tx_signal = DBOS.recv("all_transmitted", timeout_seconds=0)
+                if tx_signal is not None:
+                    all_transmitted = True
+                    messages_scanned = tx_signal.get("messages_scanned", 0)
+                    logger.info(
+                        "Orchestrator received all_transmitted",
+                        extra={
+                            "scan_id": scan_id,
+                            "messages_scanned": messages_scanned,
+                        },
+                    )
+
+            total_accounted = processed_count + skipped_count + error_count
+            if all_transmitted and total_accounted >= messages_scanned:
+                if total_accounted > messages_scanned:
+                    logger.warning(
+                        "Overcounting detected: accounted total exceeds messages_scanned",
+                        extra={
+                            "scan_id": scan_id,
+                            "total_accounted": total_accounted,
+                            "messages_scanned": messages_scanned,
+                        },
+                    )
+                logger.info(
+                    "All batches processed, proceeding to finalization",
+                    extra={
+                        "scan_id": scan_id,
+                        "processed_count": processed_count,
+                        "skipped_count": skipped_count,
+                        "error_count": error_count,
+                        "messages_scanned": messages_scanned,
+                    },
+                )
+                break
+
+            batch_timeout = (
+                POST_ALL_TRANSMITTED_TIMEOUT_SECONDS
+                if all_transmitted
+                else BATCH_RECV_TIMEOUT_SECONDS
+            )
+            batch_result = DBOS.recv("batch_complete", timeout_seconds=batch_timeout)
+
+            if batch_result is not None:
+                processed_count += batch_result.get("processed", 0)
+                skipped_count += batch_result.get("skipped", 0)
+                error_count += batch_result.get("errors", 0)
+                flagged_count += batch_result.get("flagged_count", 0)
+                batches_completed += 1
+
+                logger.info(
+                    "Orchestrator received batch_complete",
+                    extra={
+                        "scan_id": scan_id,
+                        "batches_completed": batches_completed,
+                        "processed_count": processed_count,
+                        "skipped_count": skipped_count,
+                        "error_count": error_count,
+                    },
+                )
+                continue
+
+            if not all_transmitted:
+                logger.warning(
+                    "Orchestrator timed out waiting for batch_complete",
+                    extra={
+                        "scan_id": scan_id,
+                        "processed_count": processed_count,
+                        "all_transmitted": all_transmitted,
+                        "timeout_seconds": batch_timeout,
+                    },
+                )
+                break
+
+            logger.warning(
+                "Orchestrator detected count mismatch after all_transmitted - proceeding to finalization",
+                extra={
+                    "scan_id": scan_id,
+                    "messages_scanned": messages_scanned,
+                    "processed_count": processed_count,
+                    "skipped_count": skipped_count,
+                    "error_count": error_count,
+                    "actual_total": processed_count + skipped_count + error_count,
+                    "missing_count": messages_scanned
+                    - (processed_count + skipped_count + error_count),
+                },
+            )
+            break
 
     result = finalize_scan_step(
         scan_id=scan_id,

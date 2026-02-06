@@ -116,7 +116,7 @@ export function formatScanStatus(options: FormatScanStatusOptions): FormatScanSt
         `**Scan ID:** \`${scanId}\`\n` +
         daysText +
         `**Messages scanned:** ${messagesScanned}\n\n` +
-        `No flagged content found. No potential misinformation was detected.${errorText}${warningText}`,
+        `No flagged content found. No flashpoints or potential misinformation were detected.${errorText}${warningText}`,
     };
   }
 

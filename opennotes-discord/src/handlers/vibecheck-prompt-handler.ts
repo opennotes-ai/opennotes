@@ -258,7 +258,7 @@ async function handleStart(
 
     if (result.flaggedMessages.length === 0) {
       await interaction.message.edit({
-        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${state.selectedDays} day${state.selectedDays !== 1 ? 's' : ''}\n\nNo potential misinformation was detected. Your community looks healthy!${warningText}`,
+        content: `**Scan Complete**\n\n**Scan ID:** \`${result.scanId}\`\n**Messages scanned:** ${result.messagesScanned}\n**Period:** Last ${state.selectedDays} day${state.selectedDays !== 1 ? 's' : ''}\n\nNo flashpoints or potential misinformation were detected. Your community looks healthy!${warningText}`,
       });
     } else {
       await interaction.message.edit({

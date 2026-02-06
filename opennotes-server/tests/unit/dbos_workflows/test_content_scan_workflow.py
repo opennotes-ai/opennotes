@@ -54,7 +54,7 @@ class TestTimeoutConstants:
     def test_scan_recv_timeout(self) -> None:
         from src.dbos_workflows.content_scan_workflow import SCAN_RECV_TIMEOUT_SECONDS
 
-        assert SCAN_RECV_TIMEOUT_SECONDS == 0
+        assert SCAN_RECV_TIMEOUT_SECONDS == 30
 
 
 class TestCheckpointWallClockStep:
@@ -354,6 +354,100 @@ class TestContentScanOrchestrationWorkflow:
         finalize_kwargs = mock_finalize.call_args.kwargs
         assert finalize_kwargs["messages_scanned"] == 0
         assert finalize_kwargs["processed_count"] == 0
+
+    def test_zero_message_scan_skips_batch_loop(self) -> None:
+        """Zero-message scan never enters the batch loop or calls batch_complete recv."""
+        from src.dbos_workflows.content_scan_workflow import (
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        recv_calls: list[tuple[str, dict]] = []
+
+        def tracking_recv(topic: str, **kwargs: object) -> dict | None:
+            recv_calls.append((topic, dict(kwargs)))
+            if topic == "all_transmitted":
+                return {"messages_scanned": 0}
+            return None
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = tracking_recv
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        batch_calls = [c for c in recv_calls if c[0] == "batch_complete"]
+        assert len(batch_calls) == 0
+        mock_finalize.assert_called_once()
+
+    def test_all_transmitted_received_on_first_wait(self) -> None:
+        """When all_transmitted arrives within initial 30s, it is consumed before batch loop."""
+        from src.dbos_workflows.content_scan_workflow import (
+            SCAN_RECV_TIMEOUT_SECONDS,
+            content_scan_orchestration_workflow,
+        )
+
+        scan_id = str(uuid4())
+        community_server_id = str(uuid4())
+
+        recv_calls: list[tuple[str, dict]] = []
+
+        def tracking_recv(topic: str, **kwargs: object) -> dict | None:
+            recv_calls.append((topic, dict(kwargs)))
+            if topic == "all_transmitted" and len(recv_calls) == 1:
+                return {"messages_scanned": 5}
+            if topic == "batch_complete":
+                return {
+                    "processed": 5,
+                    "skipped": 0,
+                    "errors": 0,
+                    "flagged_count": 1,
+                    "batch_number": 1,
+                }
+            return None
+
+        with (
+            patch("src.dbos_workflows.content_scan_workflow.create_scan_record_step"),
+            patch(
+                "src.dbos_workflows.content_scan_workflow._checkpoint_wall_clock_step"
+            ) as mock_clock,
+            patch("src.dbos_workflows.content_scan_workflow.finalize_scan_step") as mock_finalize,
+            patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-wf-id"
+            mock_dbos.recv.side_effect = tracking_recv
+            mock_clock.return_value = time.time()
+            mock_finalize.return_value = {"status": "completed"}
+
+            content_scan_orchestration_workflow.__wrapped__(
+                scan_id=scan_id,
+                community_server_id=community_server_id,
+                scan_types_json=json.dumps(["similarity"]),
+            )
+
+        first_call = recv_calls[0]
+        assert first_call[0] == "all_transmitted"
+        assert first_call[1]["timeout_seconds"] == SCAN_RECV_TIMEOUT_SECONDS
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["processed_count"] == 5
+        assert finalize_kwargs["messages_scanned"] == 5
 
     def test_post_all_transmitted_uses_shorter_timeout(self) -> None:
         """After all_transmitted, batch_complete uses POST_ALL_TRANSMITTED_TIMEOUT_SECONDS."""
