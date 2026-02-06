@@ -1112,6 +1112,9 @@ export class ApiClient {
 
     if (request.fact_check_metadata) {
       requestAttributes.metadata = request.fact_check_metadata;
+      requestAttributes.similarity_score = request.fact_check_metadata.similarity_score;
+      requestAttributes.dataset_name = request.fact_check_metadata.dataset_name;
+      requestAttributes.dataset_item_id = request.fact_check_metadata.dataset_item_id;
     }
 
     validateRequestCreate(requestAttributes);

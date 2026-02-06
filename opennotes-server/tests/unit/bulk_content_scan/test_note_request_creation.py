@@ -1,7 +1,9 @@
-"""Tests for create_note_requests_from_flagged_messages shared function.
+"""Tests for create_note_requests_from_flagged_messages shared function
+and RequestCreateAttributes first-class fields.
 
 This module tests the shared note request creation logic extracted from
-router.py and jsonapi_router.py (task-849.05).
+router.py and jsonapi_router.py (task-849.05), plus the first-class
+similarity_score/dataset_name/dataset_item_id fields on RequestCreateAttributes.
 """
 
 from datetime import UTC, datetime

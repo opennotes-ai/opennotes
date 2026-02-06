@@ -71,6 +71,9 @@ class HybridSearchResult:
 
     item: FactCheckItem
     cc_score: float  # Convex Combination score in [0, 1] range
+    semantic_score: float | None = (
+        None  # Raw cosine similarity before CC fusion, None when keyword-only match
+    )
 
 
 async def hybrid_search(
@@ -218,6 +221,7 @@ async def hybrid_search(
             fci.search_vector,
             fci.created_at,
             fci.updated_at,
+            s.similarity AS semantic_score,
             -- Convex Combination: alpha * semantic + (1-alpha) * keyword
             :alpha * COALESCE(s.similarity, 0.0) + (1.0 - :alpha) * COALESCE(k.keyword_norm, 0.0) AS cc_score
         FROM fact_check_items fci
@@ -282,7 +286,15 @@ async def hybrid_search(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        results.append(HybridSearchResult(item=item, cc_score=float(row.cc_score)))
+        results.append(
+            HybridSearchResult(
+                item=item,
+                cc_score=float(row.cc_score),
+                semantic_score=float(row.semantic_score)
+                if row.semantic_score is not None
+                else None,
+            )
+        )
 
     logger.info(
         "Hybrid search completed",
@@ -521,6 +533,7 @@ async def hybrid_search_with_chunks(
             fci.search_vector,
             fci.created_at,
             fci.updated_at,
+            ss.semantic_score AS semantic_score,
             -- Convex Combination: alpha * semantic + (1-alpha) * keyword
             :alpha * COALESCE(ss.semantic_score, 0.0) + (1.0 - :alpha) * COALESCE(ks.keyword_norm, 0.0) AS cc_score
         FROM fact_check_items fci
@@ -588,7 +601,15 @@ async def hybrid_search_with_chunks(
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-        results.append(HybridSearchResult(item=item, cc_score=float(row.cc_score)))
+        results.append(
+            HybridSearchResult(
+                item=item,
+                cc_score=float(row.cc_score),
+                semantic_score=float(row.semantic_score)
+                if row.semantic_score is not None
+                else None,
+            )
+        )
 
     logger.info(
         "Chunk-based hybrid search completed",

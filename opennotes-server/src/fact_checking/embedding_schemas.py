@@ -66,8 +66,12 @@ class FactCheckMatch(SQLAlchemySchema):
     embedding_model: str | None = Field(
         None, description="Model name used for embedding (e.g., 'text-embedding-3-small')"
     )
-    similarity_score: float = Field(
-        ..., description="Cosine similarity score (0.0-1.0)", ge=0.0, le=1.0
+    similarity_score: float = Field(..., description="CC fusion score (0.0-1.0)", ge=0.0, le=1.0)
+    cosine_similarity: float | None = Field(
+        None,
+        description="Raw cosine similarity score (0.0-1.0), None when no semantic match",
+        ge=0.0,
+        le=1.0,
     )
 
 

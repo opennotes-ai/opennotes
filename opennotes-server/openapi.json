@@ -11810,7 +11810,21 @@
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Similarity Score",
-            "description": "Cosine similarity score (0.0-1.0)"
+            "description": "CC fusion score (0.0-1.0)"
+          },
+          "cosine_similarity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cosine Similarity",
+            "description": "Raw cosine similarity score (0.0-1.0), None when no semantic match"
           }
         },
         "type": "object",
@@ -16999,6 +17013,39 @@
               }
             ],
             "title": "Metadata"
+          },
+          "similarity_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity Score"
+          },
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Name"
+          },
+          "dataset_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Item Id"
           }
         },
         "type": "object",
@@ -17100,6 +17147,46 @@
             ],
             "title": "Metadata",
             "description": "Request metadata"
+          },
+          "similarity_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity Score",
+            "description": "Match similarity score"
+          },
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Name",
+            "description": "Source dataset name"
+          },
+          "dataset_item_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Item Id",
+            "description": "Fact-check item ID"
           }
         },
         "additionalProperties": false,

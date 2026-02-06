@@ -505,6 +505,46 @@
         ],
         "title": "Metadata",
         "description": "Request metadata"
+      },
+      "similarity_score": {
+        "anyOf": [
+          {
+            "type": "number",
+            "maximum": 1,
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Similarity Score",
+        "description": "Match similarity score"
+      },
+      "dataset_name": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 100
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Dataset Name",
+        "description": "Source dataset name"
+      },
+      "dataset_item_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 36
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Dataset Item Id",
+        "description": "Fact-check item UUID"
       }
     },
     "additionalProperties": false,
@@ -1447,6 +1487,46 @@
         ],
         "title": "Metadata",
         "description": "Request metadata"
+      },
+      "similarity_score": {
+        "anyOf": [
+          {
+            "type": "number",
+            "maximum": 1,
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Similarity Score",
+        "description": "Match similarity score"
+      },
+      "dataset_name": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 100
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Dataset Name",
+        "description": "Source dataset name"
+      },
+      "dataset_item_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 36
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Dataset Item Id",
+        "description": "Fact-check item UUID"
       }
     },
     "additionalProperties": false,

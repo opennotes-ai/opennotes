@@ -266,6 +266,7 @@ class EmbeddingService:
                         embedding_provider=result.item.embedding_provider,
                         embedding_model=result.item.embedding_model,
                         similarity_score=min(result.cc_score * CC_SCORE_SCALE_FACTOR, 1.0),
+                        cosine_similarity=result.semantic_score,
                     )
                     for result in hybrid_results
                 ]
@@ -289,6 +290,7 @@ class EmbeddingService:
                         "score_threshold": score_threshold,
                         "matches_found": len(matches),
                         "top_score": matches[0].similarity_score if matches else None,
+                        "cosine_similarity": matches[0].cosine_similarity if matches else None,
                         "hybrid_search_count": len(hybrid_results),
                         "alpha": DEFAULT_ALPHA,
                     },
