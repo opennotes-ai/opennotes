@@ -98,12 +98,9 @@ def get_dbos_config() -> DBOSConfig:
     if settings.OTLP_ENDPOINT:
         http_base = _derive_http_otlp_endpoint(settings.OTLP_ENDPOINT)
         if http_base:
+            config["enable_otlp"] = True
             config["otlp_traces_endpoints"] = [f"{http_base}/v1/traces"]
             config["otlp_logs_endpoints"] = [f"{http_base}/v1/logs"]
-        else:
-            config["disable_otlp"] = True
-    else:
-        config["disable_otlp"] = True
 
     return config
 
@@ -112,7 +109,7 @@ def create_dbos_instance() -> DBOS:
     """Create and return DBOS instance (do not launch yet)."""
     config = get_dbos_config()
     if settings.DBOS_CONDUCTOR_KEY:
-        return DBOS(config=config, conductor_key=settings.DBOS_CONDUCTOR_KEY)
+        config["conductor_key"] = settings.DBOS_CONDUCTOR_KEY
     return DBOS(config=config)
 
 
