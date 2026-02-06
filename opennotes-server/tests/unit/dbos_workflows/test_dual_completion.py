@@ -114,28 +114,37 @@ class TestDualWorkflowIsolation:
         orch_id_a = "orchestrator-a"
         orch_id_b = "orchestrator-b"
 
-        batch_result_a = {
-            "processed": 5,
-            "skipped": 0,
-            "errors": 0,
-            "flagged_count": 1,
-            "batch_number": 1,
+        preprocess_result_a = {
+            "message_count": 5,
+            "skipped_count": 0,
+            "filtered_messages_key": "test:filtered:a",
+            "context_maps_key": "test:context:a",
         }
-        batch_result_b = {
-            "processed": 3,
-            "skipped": 1,
-            "errors": 0,
-            "flagged_count": 0,
-            "batch_number": 1,
+        preprocess_result_b = {
+            "message_count": 3,
+            "skipped_count": 1,
+            "filtered_messages_key": "test:filtered:b",
+            "context_maps_key": "test:context:b",
         }
+        similarity_result = {"similarity_candidates_key": "test:sim", "candidate_count": 2}
+        filter_result_a = {"flagged_count": 1, "errors": 0}
+        filter_result_b = {"flagged_count": 0, "errors": 0}
 
         with (
+            patch("src.dbos_workflows.content_scan_workflow.store_messages_redis_step"),
             patch(
-                "src.dbos_workflows.content_scan_workflow.process_batch_messages_step"
-            ) as mock_step,
+                "src.dbos_workflows.content_scan_workflow.preprocess_batch_step"
+            ) as mock_preprocess,
+            patch(
+                "src.dbos_workflows.content_scan_workflow.similarity_scan_step"
+            ) as mock_similarity,
+            patch("src.dbos_workflows.content_scan_workflow.flashpoint_scan_step"),
+            patch("src.dbos_workflows.content_scan_workflow.relevance_filter_step") as mock_filter,
             patch("src.dbos_workflows.content_scan_workflow.DBOS") as mock_dbos,
         ):
-            mock_step.return_value = batch_result_a
+            mock_preprocess.return_value = preprocess_result_a
+            mock_similarity.return_value = similarity_result
+            mock_filter.return_value = filter_result_a
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id=orch_id_a,
                 scan_id=str(uuid4()),
@@ -147,9 +156,11 @@ class TestDualWorkflowIsolation:
 
             first_send_call = mock_dbos.send.call_args_list[-1]
             assert first_send_call.args[0] == orch_id_a
-            assert first_send_call.args[1] == batch_result_a
+            assert first_send_call.args[1]["processed"] == 5
+            assert first_send_call.args[1]["flagged_count"] == 1
 
-            mock_step.return_value = batch_result_b
+            mock_preprocess.return_value = preprocess_result_b
+            mock_filter.return_value = filter_result_b
             process_content_scan_batch.__wrapped__(
                 orchestrator_workflow_id=orch_id_b,
                 scan_id=str(uuid4()),
@@ -161,7 +172,8 @@ class TestDualWorkflowIsolation:
 
             second_send_call = mock_dbos.send.call_args_list[-1]
             assert second_send_call.args[0] == orch_id_b
-            assert second_send_call.args[1] == batch_result_b
+            assert second_send_call.args[1]["processed"] == 3
+            assert second_send_call.args[1]["flagged_count"] == 0
 
     @pytest.mark.asyncio
     async def test_workflow_uses_scan_id_as_idempotency_key(self) -> None:
