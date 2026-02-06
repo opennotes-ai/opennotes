@@ -43,7 +43,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         user_id = None
         auth_header = request.headers.get("authorization")
-        if auth_header and auth_header.startswith("Bearer "):
+        has_service_auth = request.headers.get("x-api-key") or request.headers.get(
+            "x-internal-auth"
+        )
+        if auth_header and auth_header.startswith("Bearer ") and not has_service_auth:
             token = auth_header.split(" ")[1]
             token_data = await verify_token(token)
             if token_data:
