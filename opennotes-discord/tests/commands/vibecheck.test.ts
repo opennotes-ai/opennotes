@@ -297,11 +297,11 @@ describe('vibecheck command', () => {
     mockBotChannelService.findChannel.mockReturnValue(undefined);
 
     mockFormatScanStatus.mockReturnValue({
-      content: '**Scan Complete**\n\n**Scan ID:** `test-scan-123`\n**Messages scanned:** 100\n\nNo potential misinformation was detected.',
+      content: '**Scan Complete**\n\n**Scan ID:** `test-scan-123`\n**Messages scanned:** 100\n\nNo flashpoints or potential misinformation were detected.',
     });
 
     mockFormatScanStatusPaginated.mockReturnValue({
-      pages: { pages: ['No potential misinformation was detected.'], totalPages: 1 },
+      pages: { pages: ['No flashpoints or potential misinformation were detected.'], totalPages: 1 },
       header: '**Scan Complete**\n\n**Scan ID:** `test-scan-123`\n**Messages scanned:** 100\n**Flagged:** 0\n',
       actionButtons: undefined,
       scanId: 'test-scan-123',
