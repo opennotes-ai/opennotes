@@ -40,6 +40,20 @@ Cloud database providers (including Supabase, which we use) terminate idle conne
 3. **Minimal latency:** Reconnection takes ~1 second
 4. **Expected behavior:** This is a natural consequence of cloud infrastructure connection management
 
+### Mitigation: `notification_listener_polling_interval_sec` (DBOS 2.11.0+)
+
+DBOS 2.11.0 added a `notification_listener_polling_interval_sec` config option that controls how frequently the notification listener polls, which can reduce the window where a dropped connection causes delays:
+
+```python
+config: DBOSConfig = {
+    "name": "opennotes-server",
+    "system_database_url": sync_url,
+    "notification_listener_polling_interval_sec": 1.0,
+}
+```
+
+This does not prevent the connection drop itself, but shortens the time until reconnection is detected.
+
 ### Potential Future Improvements
 
 The ideal fix would be for DBOS to expose a `notification_connection_args` configuration option, allowing users to set TCP keepalive parameters:

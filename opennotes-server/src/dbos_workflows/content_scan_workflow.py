@@ -790,7 +790,5 @@ async def send_all_transmitted_signal(
         return False
 
 
-CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME: str = (
-    f"{__name__}.{content_scan_orchestration_workflow.__name__}"
-)
-PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME: str = f"{__name__}.{process_content_scan_batch.__name__}"
+CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME: str = content_scan_orchestration_workflow.__qualname__
+PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME: str = process_content_scan_batch.__qualname__

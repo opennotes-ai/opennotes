@@ -529,7 +529,5 @@ async def enqueue_single_fact_check_chunk(
         return None
 
 
-RECHUNK_FACT_CHECK_WORKFLOW_NAME: str = f"{__name__}.{rechunk_fact_check_workflow.__name__}"
-CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME: str = (
-    f"{__name__}.{chunk_single_fact_check_workflow.__name__}"
-)
+RECHUNK_FACT_CHECK_WORKFLOW_NAME: str = rechunk_fact_check_workflow.__qualname__
+CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME: str = chunk_single_fact_check_workflow.__qualname__

@@ -217,7 +217,7 @@ class TestGetDbosConfig:
 
             config: dict[str, Any] = dict(get_dbos_config())
 
-            assert "disable_otlp" not in config
+            assert config.get("enable_otlp") is True
             assert config["otlp_traces_endpoints"] == ["http://tempo:4318/v1/traces"]
             assert config["otlp_logs_endpoints"] == ["http://tempo:4318/v1/logs"]
 
@@ -234,7 +234,7 @@ class TestGetDbosConfig:
 
             config: dict[str, Any] = dict(get_dbos_config())
 
-            assert config["disable_otlp"] is True
+            assert "enable_otlp" not in config
             assert "otlp_traces_endpoints" not in config
             assert "otlp_logs_endpoints" not in config
 
@@ -250,7 +250,9 @@ class TestGetDbosConfig:
 
             config: dict[str, Any] = dict(get_dbos_config())
 
-            assert "conductor_key" not in config
+            assert (
+                "conductor_key" not in config
+            )  # conductor_key is set in create_dbos_instance, not get_dbos_config
 
 
 class TestDbosInstance:
@@ -315,7 +317,7 @@ class TestDbosInstance:
             mock_dbos_class.assert_called_once_with(config=mock_config)
 
     def test_create_dbos_instance_passes_conductor_key(self) -> None:
-        """create_dbos_instance() passes conductor_key to DBOS constructor when set."""
+        """create_dbos_instance() adds conductor_key to config dict when set."""
         with (
             patch("src.dbos_workflows.config.DBOS") as mock_dbos_class,
             patch("src.dbos_workflows.config.get_dbos_config") as mock_get_config,
@@ -330,9 +332,8 @@ class TestDbosInstance:
 
             create_dbos_instance()
 
-            mock_dbos_class.assert_called_once_with(
-                config=mock_config, conductor_key="test-key-123"
-            )
+            assert mock_config["conductor_key"] == "test-key-123"
+            mock_dbos_class.assert_called_once_with(config=mock_config)
 
     def test_create_dbos_instance_omits_conductor_key_when_empty(self) -> None:
         """create_dbos_instance() omits conductor_key when empty string."""
