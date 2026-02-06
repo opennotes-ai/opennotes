@@ -68,7 +68,7 @@ class FactCheckMatch(SQLAlchemySchema):
     )
     similarity_score: float = Field(..., description="CC fusion score (0.0-1.0)", ge=0.0, le=1.0)
     cosine_similarity: float = Field(
-        ..., description="Raw cosine similarity score (0.0-1.0)", ge=0.0, le=1.0
+        0.0, description="Raw cosine similarity score (0.0-1.0)", ge=0.0, le=1.0
     )
 
 
