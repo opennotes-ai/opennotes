@@ -74,10 +74,10 @@ class FlashpointSignature:
                 context: str = dspy.InputField(desc="Previous messages in the conversation")
                 message: str = dspy.InputField(desc="The current message to analyze")
                 derailment_score: int = dspy.OutputField(
-                    desc="Derailment risk score from 0 (no risk) to 100 (certain derailment)",
+                    desc="Score 0-100. 0=Civil, 50=Heated disagreement, 100=Active hostility/Safety risk",
                 )
                 reasoning: str = dspy.OutputField(
-                    desc="Brief explanation of the key escalation signals detected"
+                    desc="Justification for the score based on escalation signals detected"
                 )
 
             cls._cls = _FlashpointSignature
@@ -141,7 +141,7 @@ class EscalationSummarySignature:
                 context: str = dspy.InputField(desc="Previous messages in the conversation")
                 message: str = dspy.InputField(desc="The current message to analyze")
                 escalation_summary: str = dspy.OutputField(
-                    desc="Key escalation signals, conflict trajectory, and tone shifts"
+                    desc="Key escalation signals, conflict trajectory, tone shifts, and any de-escalation attempts"
                 )
 
             cls._cls = _EscalationSummarySignature
