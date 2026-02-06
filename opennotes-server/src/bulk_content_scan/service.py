@@ -1081,7 +1081,7 @@ class BulkContentScanService:
                 message=message,
                 scan_type=ScanType.CONVERSATION_FLASHPOINT.value,
                 match_data=match,
-                score=match.confidence,
+                score=match.derailment_score / 100.0,
                 matched_content=match.reasoning,
                 matched_source=None,
             )
@@ -1910,7 +1910,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                 matched_claim = ", ".join(first_match.flagged_categories)
                 matched_source = ""
             elif isinstance(first_match, ConversationFlashpointMatch):
-                match_score = first_match.confidence
+                match_score = first_match.derailment_score / 100.0
                 matched_claim = first_match.reasoning
                 matched_source = ""
 
@@ -1987,7 +1987,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                             content=flagged_msg.content,
                             scan_type="conversation_flashpoint",
                             metadata={
-                                "confidence": first_match.confidence,
+                                "derailment_score": first_match.derailment_score,
                                 "reasoning": first_match.reasoning,
                                 "context_messages": first_match.context_messages,
                             },

@@ -11387,22 +11387,17 @@
             "title": "Scan Type",
             "default": "conversation_flashpoint"
           },
-          "will_derail": {
-            "type": "boolean",
-            "title": "Will Derail",
-            "description": "Whether conversation shows derailment signals"
-          },
-          "confidence": {
-            "type": "number",
-            "maximum": 1.0,
+          "derailment_score": {
+            "type": "integer",
+            "maximum": 100.0,
             "minimum": 0.0,
-            "title": "Confidence",
-            "description": "Model confidence score"
+            "title": "Derailment Score",
+            "description": "Derailment risk score (0-100)"
           },
           "reasoning": {
             "type": "string",
             "title": "Reasoning",
-            "description": "Explanation of detected signals"
+            "description": "Explanation of detected escalation signals"
           },
           "context_messages": {
             "type": "integer",
@@ -11414,8 +11409,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "will_derail",
-          "confidence",
+          "derailment_score",
           "reasoning",
           "context_messages"
         ],

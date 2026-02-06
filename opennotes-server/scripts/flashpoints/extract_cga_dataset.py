@@ -23,6 +23,22 @@ class FlashpointExample(TypedDict):
     derail_point: int | None
 
 
+class PairedFlashpointExample(TypedDict):
+    """A paired/contrastive training example for comparative scoring.
+
+    Each example pairs a derailing conversation snippet with a
+    non-derailing one from the same corpus, enabling the GEPA
+    optimizer to learn discriminative features via contrastive training.
+    """
+
+    derailing_context: str
+    derailing_message: str
+    derailing_conversation_id: str
+    non_derailing_context: str
+    non_derailing_message: str
+    non_derailing_conversation_id: str
+
+
 def load_cga_corpus() -> "Corpus":
     """Download and load the CGA-CMV corpus."""
     from convokit import Corpus, download
@@ -126,11 +142,54 @@ def split_dataset(
     return shuffled[:train_end], shuffled[train_end:dev_end], shuffled[dev_end:]
 
 
+def create_paired_dataset(
+    examples: list[FlashpointExample],
+    seed: int = 42,
+) -> list[PairedFlashpointExample]:
+    """Create paired/contrastive examples from unpaired examples.
+
+    Each derailing example is paired with a randomly selected non-derailing
+    example from the corpus. This enables comparative training where the
+    GEPA optimizer learns to assign higher derailment scores to derailing
+    conversations relative to non-derailing ones.
+
+    Args:
+        examples: List of unpaired FlashpointExample dicts
+        seed: Random seed for reproducible pairing
+
+    Returns:
+        List of PairedFlashpointExample dicts
+    """
+    rng = random.Random(seed)
+    derailing = [e for e in examples if e["will_derail"]]
+    non_derailing = [e for e in examples if not e["will_derail"]]
+
+    if not non_derailing:
+        return []
+
+    paired: list[PairedFlashpointExample] = []
+    for pos in derailing:
+        neg = rng.choice(non_derailing)
+        paired.append(
+            PairedFlashpointExample(
+                derailing_context=pos["context"],
+                derailing_message=pos["current_message"],
+                derailing_conversation_id=pos["conversation_id"],
+                non_derailing_context=neg["context"],
+                non_derailing_message=neg["current_message"],
+                non_derailing_conversation_id=neg["conversation_id"],
+            )
+        )
+    return paired
+
+
 def save_datasets(
     train: list[FlashpointExample],
     dev: list[FlashpointExample],
     test: list[FlashpointExample],
     output_dir: Path,
+    paired_train: list[PairedFlashpointExample] | None = None,
+    paired_dev: list[PairedFlashpointExample] | None = None,
 ) -> None:
     """Save datasets as JSONL files."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -141,6 +200,20 @@ def save_datasets(
             for example in data:
                 f.write(json.dumps(example) + "\n")
         print(f"Saved {len(data)} examples to {path}")
+
+    if paired_train is not None:
+        path = output_dir / "flashpoints_paired_train.jsonl"
+        with path.open("w") as f:
+            for example in paired_train:
+                f.write(json.dumps(example) + "\n")
+        print(f"Saved {len(paired_train)} paired training examples to {path}")
+
+    if paired_dev is not None:
+        path = output_dir / "flashpoints_paired_dev.jsonl"
+        with path.open("w") as f:
+            for example in paired_dev:
+                f.write(json.dumps(example) + "\n")
+        print(f"Saved {len(paired_dev)} paired dev examples to {path}")
 
 
 def main() -> None:
@@ -166,8 +239,13 @@ def main() -> None:
     train, dev, test = split_dataset(examples)
     print(f"Split: {len(train)} train, {len(dev)} dev, {len(test)} test")
 
+    print("Creating paired/contrastive datasets...")
+    paired_train = create_paired_dataset(train)
+    paired_dev = create_paired_dataset(dev, seed=43)
+    print(f"Paired: {len(paired_train)} train, {len(paired_dev)} dev")
+
     output_dir = Path(__file__).parent.parent.parent / "data" / "flashpoints"
-    save_datasets(train, dev, test, output_dir)
+    save_datasets(train, dev, test, output_dir, paired_train=paired_train, paired_dev=paired_dev)
     print(f"\nDatasets saved to {output_dir}")
 
 

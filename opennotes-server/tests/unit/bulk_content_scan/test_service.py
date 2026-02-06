@@ -2147,8 +2147,7 @@ class TestFlashpointRelevanceBypass:
         )
 
         fp_match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.85,
+            derailment_score=85,
             reasoning="Detected hostile language patterns",
             context_messages=3,
         )
@@ -2203,8 +2202,7 @@ class TestFlashpointRelevanceBypass:
         )
 
         fp_match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.9,
+            derailment_score=90,
             reasoning="Escalating hostility",
             context_messages=5,
         )
@@ -2291,8 +2289,7 @@ class TestDeduplicateFlaggedMessages:
             fact_check_item_id=SAMPLE_FACT_CHECK_ID,
         )
         fp_match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.9,
+            derailment_score=90,
             reasoning="Escalation detected",
             context_messages=3,
         )
@@ -2494,8 +2491,7 @@ class TestUnifiedFlaggedMessageConstruction:
         )
 
         fp_match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.88,
+            derailment_score=88,
             reasoning="Hostile escalation pattern",
             context_messages=4,
         )
@@ -2518,4 +2514,4 @@ class TestUnifiedFlaggedMessageConstruction:
         assert result.author_id == "user_1"
         assert len(result.matches) == 1
         assert result.matches[0].scan_type == "conversation_flashpoint"
-        assert result.matches[0].confidence == 0.88
+        assert result.matches[0].derailment_score == 88
