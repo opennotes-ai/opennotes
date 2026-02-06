@@ -177,7 +177,7 @@ class TestDualWorkflowIsolation:
             mock_client = MagicMock()
             mock_handle = MagicMock()
             mock_handle.workflow_id = "wf-1"
-            mock_client.start_workflow.return_value = mock_handle
+            mock_client.enqueue.return_value = mock_handle
             mock_get_client.return_value = mock_client
 
             await dispatch_content_scan_workflow(
@@ -186,8 +186,8 @@ class TestDualWorkflowIsolation:
                 scan_types=["similarity"],
             )
 
-            first_call_kwargs = mock_client.start_workflow.call_args.kwargs
-            assert first_call_kwargs["idempotency_key"] == str(scan_id_a)
+            first_options = mock_client.enqueue.call_args.args[0]
+            assert first_options["deduplication_id"] == str(scan_id_a)
 
             await dispatch_content_scan_workflow(
                 scan_id=scan_id_b,
@@ -195,8 +195,8 @@ class TestDualWorkflowIsolation:
                 scan_types=["similarity"],
             )
 
-            second_call_kwargs = mock_client.start_workflow.call_args.kwargs
-            assert second_call_kwargs["idempotency_key"] == str(scan_id_b)
+            second_options = mock_client.enqueue.call_args.args[0]
+            assert second_options["deduplication_id"] == str(scan_id_b)
             assert str(scan_id_a) != str(scan_id_b)
 
     def test_finalize_called_with_correct_scan_id(self) -> None:

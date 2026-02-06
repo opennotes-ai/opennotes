@@ -690,7 +690,7 @@ class TestDispatchContentScanWorkflow:
             mock_client = MagicMock()
             mock_handle = MagicMock()
             mock_handle.workflow_id = "dispatched-wf-123"
-            mock_client.start_workflow.return_value = mock_handle
+            mock_client.enqueue.return_value = mock_handle
             mock_get_client.return_value = mock_client
 
             result = await dispatch_content_scan_workflow(
@@ -707,7 +707,7 @@ class TestDispatchContentScanWorkflow:
 
         with patch("src.dbos_workflows.config.get_dbos_client") as mock_get_client:
             mock_client = MagicMock()
-            mock_client.start_workflow.side_effect = RuntimeError("Connection refused")
+            mock_client.enqueue.side_effect = RuntimeError("Connection refused")
             mock_get_client.return_value = mock_client
 
             result = await dispatch_content_scan_workflow(
@@ -728,7 +728,7 @@ class TestDispatchContentScanWorkflow:
             mock_client = MagicMock()
             mock_handle = MagicMock()
             mock_handle.workflow_id = "wf-idempotent"
-            mock_client.start_workflow.return_value = mock_handle
+            mock_client.enqueue.return_value = mock_handle
             mock_get_client.return_value = mock_client
 
             await dispatch_content_scan_workflow(
@@ -737,8 +737,8 @@ class TestDispatchContentScanWorkflow:
                 scan_types=["similarity"],
             )
 
-        call_kwargs = mock_client.start_workflow.call_args.kwargs
-        assert call_kwargs["idempotency_key"] == str(scan_id)
+        options = mock_client.enqueue.call_args.args[0]
+        assert options["deduplication_id"] == str(scan_id)
 
 
 class TestEnqueueContentScanBatch:

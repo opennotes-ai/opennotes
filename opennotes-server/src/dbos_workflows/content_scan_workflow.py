@@ -27,7 +27,7 @@ import uuid as uuid_module
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from dbos import DBOS, Queue
+from dbos import DBOS, EnqueueOptions, Queue
 
 from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
@@ -636,13 +636,17 @@ async def dispatch_content_scan_workflow(
         client = get_dbos_client()
         scan_types_json = json.dumps(scan_types)
 
+        options: EnqueueOptions = {
+            "queue_name": "content_scan",
+            "workflow_name": CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
+            "deduplication_id": str(scan_id),
+        }
         handle = await asyncio.to_thread(
-            client.start_workflow,  # pyright: ignore[reportAttributeAccessIssue]
-            content_scan_orchestration_workflow,
+            client.enqueue,
+            options,
             str(scan_id),
             str(community_server_id),
             scan_types_json,
-            idempotency_key=str(scan_id),
         )
 
         logger.info(
@@ -689,7 +693,6 @@ async def enqueue_content_scan_batch(
     Returns:
         The DBOS workflow_id if successfully enqueued, None on failure
     """
-    from dbos import EnqueueOptions
 
     from src.dbos_workflows.config import get_dbos_client
 
