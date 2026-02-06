@@ -352,6 +352,15 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
         except Exception as e:
             logger.error(f"DBOS initialization failed: {e}")
             raise RuntimeError(f"DBOS initialization failed: {e}") from e
+
+        try:
+            from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
+
+            fp_service = get_flashpoint_service()
+            await asyncio.to_thread(fp_service.warm_up)
+            logger.info("Flashpoint detector loaded at startup")
+        except Exception as e:
+            logger.error(f"Flashpoint detector warm-up failed: {e}", exc_info=True)
     else:
         try:
             get_dbos_client()
