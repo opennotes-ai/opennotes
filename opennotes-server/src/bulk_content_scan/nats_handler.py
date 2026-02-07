@@ -15,7 +15,9 @@ from src.config import settings
 from src.database import get_session_maker
 from src.dbos_workflows.content_scan_workflow import (
     enqueue_content_scan_batch,
+    get_batch_redis_key,
     send_all_transmitted_signal,
+    store_messages_in_redis,
 )
 from src.events.schemas import (
     BulkScanAllBatchesTransmittedEvent,
@@ -199,13 +201,18 @@ class BulkScanEventHandler:
     async def _handle_message_batch(self, event: BulkScanMessageBatchEvent) -> None:
         """Handle incoming message batch by enqueuing DBOS batch workflow.
 
-        Uses the NATS -> DBOS pattern:
+        Uses the NATS -> Redis -> DBOS pattern:
         - NATS provides cross-service event routing from Discord bot
+        - Redis stores large message payloads (keeping them out of DBOS tables)
         - DBOS provides durable execution with retries and checkpointing
         - Batch workflow sends batch_complete signal to orchestrator when done
         """
         scan_types = await self._get_scan_types_for_community(event.community_server_id)
         orchestrator_workflow_id = str(event.scan_id)
+
+        messages_data = [msg.model_dump(mode="json") for msg in event.messages]
+        messages_redis_key = get_batch_redis_key(str(event.scan_id), event.batch_number, "messages")
+        await store_messages_in_redis(self.redis_client, messages_redis_key, messages_data)
 
         logger.info(
             "Dispatching bulk scan batch to DBOS",
@@ -214,17 +221,28 @@ class BulkScanEventHandler:
                 "batch_number": event.batch_number,
                 "message_count": len(event.messages),
                 "scan_types": scan_types,
+                "messages_redis_key": messages_redis_key,
             },
         )
 
-        await enqueue_content_scan_batch(
-            orchestrator_workflow_id=orchestrator_workflow_id,
-            scan_id=event.scan_id,
-            community_server_id=event.community_server_id,
-            batch_number=event.batch_number,
-            messages=[msg.model_dump(mode="json") for msg in event.messages],
-            scan_types=scan_types,
-        )
+        try:
+            await enqueue_content_scan_batch(
+                orchestrator_workflow_id=orchestrator_workflow_id,
+                scan_id=event.scan_id,
+                community_server_id=event.community_server_id,
+                batch_number=event.batch_number,
+                messages_redis_key=messages_redis_key,
+                scan_types=scan_types,
+            )
+        except Exception:
+            try:
+                await self.redis_client.delete(messages_redis_key)
+            except Exception:
+                logger.warning(
+                    "Failed to clean up Redis key %s after enqueue failure",
+                    messages_redis_key,
+                )
+            raise
 
     async def _handle_all_batches_transmitted(
         self, event: BulkScanAllBatchesTransmittedEvent
