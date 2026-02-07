@@ -259,3 +259,65 @@ class TestDualWorkflowIsolation:
                 )
 
         assert finalize_scan_ids == [scan_id_a, scan_id_b]
+
+
+class TestGetBatchRedisKeyInDualWorkflows:
+    """Tests that get_batch_redis_key (renamed from _get_batch_redis_key) produces
+    unique keys per scan, preventing cross-contamination in dual-workflow scenarios.
+    """
+
+    def test_get_batch_redis_key_is_importable_by_new_name(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import get_batch_redis_key
+
+        assert callable(get_batch_redis_key)
+
+    def test_different_scans_produce_different_redis_keys(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import get_batch_redis_key
+
+        scan_id_a = str(uuid4())
+        scan_id_b = str(uuid4())
+
+        with patch("src.config.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(ENVIRONMENT="test")
+
+            key_a = get_batch_redis_key(scan_id_a, 1, "messages")
+            key_b = get_batch_redis_key(scan_id_b, 1, "messages")
+
+        assert key_a != key_b
+        assert scan_id_a in key_a
+        assert scan_id_b in key_b
+
+    def test_same_scan_different_suffixes_produce_different_keys(self) -> None:
+        from src.dbos_workflows.content_scan_workflow import get_batch_redis_key
+
+        scan_id = str(uuid4())
+
+        with patch("src.config.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(ENVIRONMENT="test")
+
+            filtered_key = get_batch_redis_key(scan_id, 1, "filtered")
+            context_key = get_batch_redis_key(scan_id, 1, "context")
+            sim_key = get_batch_redis_key(scan_id, 1, "similarity_candidates")
+
+        assert len({filtered_key, context_key, sim_key}) == 3
+
+    def test_batch_workers_use_independent_redis_namespaces(self) -> None:
+        """Two batch workers for different scans use non-overlapping Redis keys."""
+        from src.dbos_workflows.content_scan_workflow import get_batch_redis_key
+
+        scan_a = str(uuid4())
+        scan_b = str(uuid4())
+
+        with patch("src.config.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(ENVIRONMENT="test")
+
+            keys_a = {
+                get_batch_redis_key(scan_a, 1, suffix)
+                for suffix in ("messages", "filtered", "context", "similarity_candidates")
+            }
+            keys_b = {
+                get_batch_redis_key(scan_b, 1, suffix)
+                for suffix in ("messages", "filtered", "context", "similarity_candidates")
+            }
+
+        assert keys_a.isdisjoint(keys_b)

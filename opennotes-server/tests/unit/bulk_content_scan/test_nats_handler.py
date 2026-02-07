@@ -160,11 +160,21 @@ class TestHandleMessageBatch:
         handler = _make_handler()
         event = _make_batch_event(message_count=3)
 
+        call_order: list[str] = []
+
+        async def tracking_store(*args, **kwargs):
+            call_order.append("store")
+            return "test:messages:key"
+
+        async def tracking_enqueue(**kwargs):
+            call_order.append("enqueue")
+            return "wf-456"
+
         with (
             patch(
                 "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
                 new_callable=AsyncMock,
-                return_value="wf-456",
+                side_effect=tracking_enqueue,
             ) as mock_enqueue,
             patch.object(
                 handler, "_get_scan_types_for_community", new_callable=AsyncMock
@@ -172,6 +182,7 @@ class TestHandleMessageBatch:
             patch(
                 "src.bulk_content_scan.nats_handler.store_messages_in_redis",
                 new_callable=AsyncMock,
+                side_effect=tracking_store,
             ) as mock_store,
             patch(
                 "src.bulk_content_scan.nats_handler.get_batch_redis_key",
@@ -190,6 +201,70 @@ class TestHandleMessageBatch:
 
         call_kwargs = mock_enqueue.call_args.kwargs
         assert call_kwargs["messages_redis_key"] == "test:messages:key"
+
+        assert call_order == ["store", "enqueue"]
+
+    @pytest.mark.asyncio
+    async def test_store_messages_failure_prevents_enqueue(self) -> None:
+        handler = _make_handler()
+        event = _make_batch_event(message_count=2)
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
+                new_callable=AsyncMock,
+            ) as mock_enqueue,
+            patch.object(
+                handler, "_get_scan_types_for_community", new_callable=AsyncMock
+            ) as mock_scan_types,
+            patch(
+                "src.bulk_content_scan.nats_handler.store_messages_in_redis",
+                new_callable=AsyncMock,
+                side_effect=ConnectionError("Redis unavailable"),
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.get_batch_redis_key",
+                return_value="test:key",
+            ),
+        ):
+            mock_scan_types.return_value = ["similarity"]
+
+            with pytest.raises(ConnectionError, match="Redis unavailable"):
+                await handler._handle_message_batch(event)
+
+        mock_enqueue.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_enqueue_failure_cleans_up_redis_key(self) -> None:
+        handler = _make_handler()
+        handler.redis_client = AsyncMock()
+        event = _make_batch_event(message_count=2)
+
+        with (
+            patch(
+                "src.bulk_content_scan.nats_handler.enqueue_content_scan_batch",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("DBOS unreachable"),
+            ),
+            patch.object(
+                handler, "_get_scan_types_for_community", new_callable=AsyncMock
+            ) as mock_scan_types,
+            patch(
+                "src.bulk_content_scan.nats_handler.store_messages_in_redis",
+                new_callable=AsyncMock,
+                return_value="test:messages:key",
+            ),
+            patch(
+                "src.bulk_content_scan.nats_handler.get_batch_redis_key",
+                return_value="test:messages:key",
+            ),
+        ):
+            mock_scan_types.return_value = ["similarity"]
+
+            with pytest.raises(RuntimeError, match="DBOS unreachable"):
+                await handler._handle_message_batch(event)
+
+        handler.redis_client.delete.assert_awaited_once_with("test:messages:key")
 
 
 class TestHandleAllBatchesTransmitted:
