@@ -1097,6 +1097,196 @@ describe('bulk-scan-executor', () => {
     });
   });
 
+  describe('executeBulkScan - message sorting by channel and timestamp', () => {
+    function createMockMessageWithTimestamp(
+      id: string,
+      content: string,
+      timestamp: Date,
+      authorId: string = 'user-123'
+    ) {
+      return {
+        id,
+        content,
+        author: { id: authorId, username: 'testuser', bot: false },
+        createdAt: timestamp,
+        attachments: new Collection(),
+        embeds: [],
+      };
+    }
+
+    function createMockChannelWithTimestampedMessages(
+      channelId: string,
+      messages: Map<string, any>
+    ) {
+      const messageArray = Array.from(messages.entries());
+      let fetchCallCount = 0;
+
+      return {
+        id: channelId,
+        name: `channel-${channelId}`,
+        type: ChannelType.GuildText,
+        viewable: true,
+        messages: {
+          fetch: jest.fn<(opts: any) => Promise<Collection<string, any>>>()
+            .mockImplementation(async () => {
+              fetchCallCount++;
+              if (fetchCallCount === 1) {
+                const subset = messageArray.slice(0, Math.min(100, messageArray.length));
+                return new Collection(subset);
+              }
+              return new Collection();
+            }),
+        },
+      };
+    }
+
+    it('should sort messages by channel_id then timestamp ascending in published batches', async () => {
+      const baseTime = new Date('2026-01-15T12:00:00Z').getTime();
+
+      const chCMessages = new Map();
+      for (let i = 0; i < 3; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        chCMessages.set(
+          id,
+          createMockMessageWithTimestamp(id, `ChC msg ${i}`, new Date(baseTime + i * 60000))
+        );
+      }
+
+      const chAMessages = new Map();
+      for (let i = 0; i < 3; i++) {
+        const id = generateRecentSnowflake((i + 10) * 1000);
+        chAMessages.set(
+          id,
+          createMockMessageWithTimestamp(id, `ChA msg ${i}`, new Date(baseTime + i * 60000 + 30000))
+        );
+      }
+
+      const chBMessages = new Map();
+      for (let i = 0; i < 2; i++) {
+        const id = generateRecentSnowflake((i + 20) * 1000);
+        chBMessages.set(
+          id,
+          createMockMessageWithTimestamp(id, `ChB msg ${i}`, new Date(baseTime + i * 60000 + 15000))
+        );
+      }
+
+      const channelC = createMockChannelWithTimestampedMessages('ch-c', chCMessages);
+      const channelA = createMockChannelWithTimestampedMessages('ch-a', chAMessages);
+      const channelB = createMockChannelWithTimestampedMessages('ch-b', chBMessages);
+
+      const guild = createMockGuild(
+        new Map([['ch-c', channelC], ['ch-a', channelA], ['ch-b', channelB]])
+      );
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalledTimes(1);
+      const batch = mockPublishBulkScanBatch.mock.calls[0][1];
+      const batchMessages = batch.messages;
+
+      expect(batchMessages.length).toBe(8);
+
+      const channelIds = batchMessages.map((m: any) => m.channel_id);
+      const chAStart = channelIds.indexOf('ch-a');
+      const chBStart = channelIds.indexOf('ch-b');
+      const chCStart = channelIds.indexOf('ch-c');
+
+      expect(chAStart).toBeLessThan(chBStart);
+      expect(chBStart).toBeLessThan(chCStart);
+
+      const chAMsgs = batchMessages.filter((m: any) => m.channel_id === 'ch-a');
+      for (let i = 1; i < chAMsgs.length; i++) {
+        const prevTime = new Date(chAMsgs[i - 1].timestamp).getTime();
+        const currTime = new Date(chAMsgs[i].timestamp).getTime();
+        expect(currTime).toBeGreaterThanOrEqual(prevTime);
+      }
+
+      const chBMsgs = batchMessages.filter((m: any) => m.channel_id === 'ch-b');
+      for (let i = 1; i < chBMsgs.length; i++) {
+        const prevTime = new Date(chBMsgs[i - 1].timestamp).getTime();
+        const currTime = new Date(chBMsgs[i].timestamp).getTime();
+        expect(currTime).toBeGreaterThanOrEqual(prevTime);
+      }
+
+      const chCMsgs = batchMessages.filter((m: any) => m.channel_id === 'ch-c');
+      for (let i = 1; i < chCMsgs.length; i++) {
+        const prevTime = new Date(chCMsgs[i - 1].timestamp).getTime();
+        const currTime = new Date(chCMsgs[i].timestamp).getTime();
+        expect(currTime).toBeGreaterThanOrEqual(prevTime);
+      }
+    });
+
+    it('should keep messages from the same channel grouped across batch boundaries', async () => {
+      const baseTime = new Date('2026-01-15T12:00:00Z').getTime();
+
+      const chAMessages = new Map();
+      for (let i = 0; i < 40; i++) {
+        const id = generateRecentSnowflake(i * 1000);
+        chAMessages.set(
+          id,
+          createMockMessageWithTimestamp(id, `ChA msg ${i}`, new Date(baseTime + i * 1000))
+        );
+      }
+
+      const chBMessages = new Map();
+      for (let i = 0; i < 40; i++) {
+        const id = generateRecentSnowflake((i + 100) * 1000);
+        chBMessages.set(
+          id,
+          createMockMessageWithTimestamp(id, `ChB msg ${i}`, new Date(baseTime + i * 1000))
+        );
+      }
+
+      const chCMessages = new Map();
+      for (let i = 0; i < 40; i++) {
+        const id = generateRecentSnowflake((i + 200) * 1000);
+        chCMessages.set(
+          id,
+          createMockMessageWithTimestamp(id, `ChC msg ${i}`, new Date(baseTime + i * 1000))
+        );
+      }
+
+      const channelA = createMockChannelWithTimestampedMessages('ch-a', chAMessages);
+      const channelB = createMockChannelWithTimestampedMessages('ch-b', chBMessages);
+      const channelC = createMockChannelWithTimestampedMessages('ch-c', chCMessages);
+
+      const guild = createMockGuild(
+        new Map([['ch-a', channelA], ['ch-b', channelB], ['ch-c', channelC]])
+      );
+
+      await executeBulkScan({
+        guild: guild as any,
+        days: 7,
+        initiatorId: 'user-123',
+        errorId: 'err-test-123',
+      });
+
+      expect(mockPublishBulkScanBatch).toHaveBeenCalledTimes(2);
+
+      const batch1 = mockPublishBulkScanBatch.mock.calls[0][1];
+      const batch2 = mockPublishBulkScanBatch.mock.calls[1][1];
+
+      expect(batch1.messages.length).toBe(BULK_SCAN_BATCH_SIZE);
+      expect(batch2.messages.length).toBe(20);
+
+      const batch1ChannelIds = batch1.messages.map((m: any) => m.channel_id);
+      expect(batch1ChannelIds.filter((id: string) => id === 'ch-a').length).toBe(40);
+      expect(batch1ChannelIds.filter((id: string) => id === 'ch-b').length).toBe(40);
+      expect(batch1ChannelIds.filter((id: string) => id === 'ch-c').length).toBe(20);
+
+      const batch2ChannelIds = batch2.messages.map((m: any) => m.channel_id);
+      expect(batch2ChannelIds.every((id: string) => id === 'ch-c')).toBe(true);
+
+      expect(batch1.is_final_batch).toBe(false);
+      expect(batch2.is_final_batch).toBe(true);
+    });
+  });
+
   describe('executeBulkScan - bot channel exclusion', () => {
     it('should skip channels in excludeChannelIds list', async () => {
       const botChannelMessages = new Map();
