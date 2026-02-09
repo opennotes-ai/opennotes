@@ -235,7 +235,7 @@ function formatFlaggedMessageEntry(
   let flashpointLine = '';
   if (firstMatch?.scan_type === 'conversation_flashpoint') {
     flashpointLine = `\n   Risk Level: **${firstMatch.risk_level}**` +
-      `\n   Explanation: ${firstMatch.reasoning}`;
+      `\n   Reasoning: ${firstMatch.reasoning}`;
   }
 
   return `**${index + 1}.** Preview: "${preview}"\n` +
