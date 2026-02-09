@@ -2736,9 +2736,11 @@ class TestCrossBatchContextCache:
         enriched3 = await service._enrich_context_from_cache(context_map3, "server_abc")
         await service._populate_cross_batch_cache(batch3, "server_abc")
 
+        assert len(enriched3["ch_1"]) == 5
         msg_ids = [m.message_id for m in enriched3["ch_1"]]
-        assert "msg_5" in msg_ids
-        assert len(enriched3["ch_1"]) > 1
+        assert set(msg_ids) == {"msg_1", "msg_2", "msg_3", "msg_4", "msg_5"}
+        timestamps = [m.timestamp for m in enriched3["ch_1"]]
+        assert timestamps == sorted(timestamps)
 
     @pytest.mark.asyncio
     async def test_populate_graceful_on_redis_error(self, mock_session, mock_embedding_service):
@@ -2829,3 +2831,99 @@ class TestCrossBatchContextCache:
         assert await stateful_redis.zcard(key_ch1) == 2
         assert await stateful_redis.zcard(key_ch2) == 1
         assert await stateful_redis.zcard(key_ch3) == 1
+
+    @pytest.mark.asyncio
+    async def test_process_messages_calls_cache_methods_for_flashpoint(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        service.get_existing_request_message_ids = AsyncMock(return_value=set())
+        service._populate_cross_batch_cache = AsyncMock()
+        service._enrich_context_from_cache = AsyncMock(side_effect=lambda ctx_map, _cs_id: ctx_map)
+        service._generate_candidate = AsyncMock(return_value=None)
+        service._filter_candidates_with_relevance = AsyncMock(return_value=[])
+
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message content that is long enough",
+                author_id="user_1",
+                timestamp=datetime(2024, 1, 1, 0, 1, 0, tzinfo=UTC),
+            ),
+        ]
+
+        await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id="guild_123",
+            scan_types=[ScanType.CONVERSATION_FLASHPOINT],
+        )
+
+        service._populate_cross_batch_cache.assert_awaited_once()
+        service._enrich_context_from_cache.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_process_messages_skips_cache_methods_without_flashpoint(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+        from src.fact_checking.embedding_schemas import (
+            SimilaritySearchResponse,
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[],
+                query_text="Test message",
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+                total_matches=0,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        service.get_existing_request_message_ids = AsyncMock(return_value=set())
+        service._populate_cross_batch_cache = AsyncMock()
+        service._enrich_context_from_cache = AsyncMock()
+
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message content that is long enough",
+                author_id="user_1",
+                timestamp=datetime(2024, 1, 1, 0, 1, 0, tzinfo=UTC),
+            ),
+        ]
+
+        await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id="guild_123",
+            scan_types=[ScanType.SIMILARITY],
+        )
+
+        service._populate_cross_batch_cache.assert_not_awaited()
+        service._enrich_context_from_cache.assert_not_awaited()

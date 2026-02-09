@@ -1989,6 +1989,8 @@ class TestPreprocessBatchStepInnerLogic:
         mock_service_cls = MagicMock(return_value=mock_service_instance)
         mock_service_cls.build_channel_context_map = real_build_context_map
 
+        community_server_id = str(uuid4())
+
         with (
             patch(
                 "src.cache.redis_client.get_shared_redis_client",
@@ -2030,7 +2032,7 @@ class TestPreprocessBatchStepInnerLogic:
 
             result = preprocess_batch_step.__wrapped__(
                 scan_id=str(uuid4()),
-                community_server_id=str(uuid4()),
+                community_server_id=community_server_id,
                 batch_number=1,
                 messages_redis_key="test:messages",
                 scan_types_json=json.dumps(["similarity", "conversation_flashpoint"]),
@@ -2041,6 +2043,23 @@ class TestPreprocessBatchStepInnerLogic:
         context_map = context_data_captured[0][0]
         assert "ch_A" in context_map
         assert "ch_B" in context_map
+
+        mock_service_instance._populate_cross_batch_cache.assert_awaited_once()
+        populate_args = mock_service_instance._populate_cross_batch_cache.call_args
+        typed_messages_arg = populate_args[0][0]
+        assert len(typed_messages_arg) == 2
+        assert typed_messages_arg[0].message_id == "msg_1"
+        assert typed_messages_arg[1].message_id == "msg_2"
+        platform_id_arg = populate_args[0][1]
+        assert platform_id_arg is not None
+
+        mock_service_instance._enrich_context_from_cache.assert_awaited_once()
+        enrich_args = mock_service_instance._enrich_context_from_cache.call_args
+        ctx_map_arg = enrich_args[0][0]
+        assert isinstance(ctx_map_arg, dict)
+        assert "ch_A" in ctx_map_arg
+        assert "ch_B" in ctx_map_arg
+        assert enrich_args[0][1] == platform_id_arg
 
     def test_returns_empty_when_all_filtered(self) -> None:
         from src.dbos_workflows.content_scan_workflow import preprocess_batch_step
