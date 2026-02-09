@@ -1,7 +1,7 @@
 """Pydantic schemas for Bulk Content Scan API endpoints."""
 
 from datetime import datetime
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -10,7 +10,7 @@ from pydantic import ConfigDict, Discriminator, Field, field_validator
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
 
-class BulkScanStatus(str, Enum):
+class BulkScanStatus(StrEnum):
     """Status values for a bulk content scan."""
 
     PENDING = "pending"
@@ -19,7 +19,7 @@ class BulkScanStatus(str, Enum):
     FAILED = "failed"
 
 
-class RelevanceOutcome(str, Enum):
+class RelevanceOutcome(StrEnum):
     """Outcome of LLM relevance check for content filtering.
 
     Used to distinguish between different reasons why a relevance check
