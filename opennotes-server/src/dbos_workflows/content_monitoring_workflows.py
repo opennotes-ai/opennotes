@@ -531,11 +531,11 @@ def call_persist_audit_log(
     user_id: str | None,
     action: str,
     resource: str,
+    db_url: str,
     resource_id: str | None = None,
     details: str | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
-    db_url: str = "",
     created_at_iso: str | None = None,
 ) -> None:
     from src.dbos_workflows.config import get_dbos_client
