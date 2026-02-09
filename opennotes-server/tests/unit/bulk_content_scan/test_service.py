@@ -2148,6 +2148,7 @@ class TestFlashpointRelevanceBypass:
 
         fp_match = ConversationFlashpointMatch(
             derailment_score=85,
+            risk_level="Hostile",
             reasoning="Detected hostile language patterns",
             context_messages=3,
         )
@@ -2203,6 +2204,7 @@ class TestFlashpointRelevanceBypass:
 
         fp_match = ConversationFlashpointMatch(
             derailment_score=90,
+            risk_level="Dangerous",
             reasoning="Escalating hostility",
             context_messages=5,
         )
@@ -2290,6 +2292,7 @@ class TestDeduplicateFlaggedMessages:
         )
         fp_match = ConversationFlashpointMatch(
             derailment_score=90,
+            risk_level="Dangerous",
             reasoning="Escalation detected",
             context_messages=3,
         )
@@ -2492,6 +2495,7 @@ class TestUnifiedFlaggedMessageConstruction:
 
         fp_match = ConversationFlashpointMatch(
             derailment_score=88,
+            risk_level="Dangerous",
             reasoning="Hostile escalation pattern",
             context_messages=4,
         )

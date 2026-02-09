@@ -1,7 +1,7 @@
 """Pydantic schemas for Bulk Content Scan API endpoints."""
 
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -30,6 +30,16 @@ class RelevanceOutcome(str, Enum):
     NOT_RELEVANT = "not_relevant"
     INDETERMINATE = "indeterminate"
     CONTENT_FILTERED = "content_filtered"
+
+
+class RiskLevel(StrEnum):
+    """Categorical risk level for conversation flashpoint detection."""
+
+    LOW_RISK = "Low Risk"
+    GUARDED = "Guarded"
+    HEATED = "Heated"
+    HOSTILE = "Hostile"
+    DANGEROUS = "Dangerous"
 
 
 class BulkScanMessage(StrictInputSchema):
@@ -109,6 +119,7 @@ class ConversationFlashpointMatch(StrictInputSchema):
 
     scan_type: Literal["conversation_flashpoint"] = "conversation_flashpoint"
     derailment_score: int = Field(..., ge=0, le=100, description="Derailment risk score (0-100)")
+    risk_level: RiskLevel = Field(..., description="Categorical risk assessment level")
     reasoning: str = Field(..., description="Explanation of detected escalation signals")
     context_messages: int = Field(..., ge=0, description="Number of context messages analyzed")
 

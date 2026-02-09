@@ -14,7 +14,7 @@ from src.monitoring import get_logger
 if TYPE_CHECKING:
     import dspy
 
-    from src.bulk_content_scan.flashpoint_utils import FlashpointDetector
+    from src.bulk_content_scan.flashpoint_utils import RubricDetector
     from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
 
 logger = get_logger(__name__)
@@ -57,7 +57,7 @@ class FlashpointDetectionService:
         """
         self.model = model or self.DEFAULT_MODEL
         self._lm: dspy.LM | None = None
-        self._detector: FlashpointDetector | None = None
+        self._detector: RubricDetector | None = None
         self._optimized_path = optimized_model_path
         self._init_lock = threading.Lock()
 
@@ -82,7 +82,7 @@ class FlashpointDetectionService:
                     )
                 return
 
-    def _get_detector(self) -> FlashpointDetector:
+    def _get_detector(self) -> RubricDetector:
         """Lazily initialize the detector (thread-safe)."""
         if self._detector is not None:
             return self._detector
@@ -96,12 +96,12 @@ class FlashpointDetectionService:
             import dspy as _dspy
 
             from src.bulk_content_scan.flashpoint_utils import (
-                FlashpointDetector as _FlashpointDetector,
+                RubricDetector as _RubricDetector,
             )
 
             self._lm = _dspy.LM(self.model)
 
-            self._detector = _FlashpointDetector()
+            self._detector = _RubricDetector()
 
             optimized_path = self._optimized_path or self._get_default_optimized_path()
             if optimized_path.exists():
@@ -120,7 +120,7 @@ class FlashpointDetectionService:
 
     def _run_detector(
         self,
-        detector: FlashpointDetector,
+        detector: RubricDetector,
         context_str: str,
         current_msg: str,
     ) -> Any:
@@ -183,6 +183,7 @@ class FlashpointDetectionService:
 
             return ConversationFlashpointMatch(
                 derailment_score=derailment_score,
+                risk_level=result.risk_level,
                 reasoning=result.reasoning,
                 context_messages=len(recent_context),
             )

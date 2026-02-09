@@ -11394,6 +11394,10 @@
             "title": "Derailment Score",
             "description": "Derailment risk score (0-100)"
           },
+          "risk_level": {
+            "$ref": "#/components/schemas/RiskLevel",
+            "description": "Categorical risk assessment level"
+          },
           "reasoning": {
             "type": "string",
             "title": "Reasoning",
@@ -11410,6 +11414,7 @@
         "type": "object",
         "required": [
           "derailment_score",
+          "risk_level",
           "reasoning",
           "context_messages"
         ],
@@ -17406,6 +17411,18 @@
         ],
         "title": "RequestUpdateRequest",
         "description": "JSON:API request body for updating a request."
+      },
+      "RiskLevel": {
+        "type": "string",
+        "enum": [
+          "Low Risk",
+          "Guarded",
+          "Heated",
+          "Hostile",
+          "Dangerous"
+        ],
+        "title": "RiskLevel",
+        "description": "Categorical risk level for conversation flashpoint detection."
       },
       "ScanErrorInfoSchema": {
         "properties": {
