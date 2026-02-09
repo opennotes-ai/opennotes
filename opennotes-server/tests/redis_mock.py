@@ -40,6 +40,7 @@ class StatefulRedisMock:
         self.zcard = AsyncMock(side_effect=self._zcard)
         self.zrem = AsyncMock(side_effect=self._zrem)
         self.zremrangebyscore = AsyncMock(side_effect=self._zremrangebyscore)
+        self.zremrangebyrank = AsyncMock(side_effect=self._zremrangebyrank)
         self.zrange = AsyncMock(side_effect=self._zrange)
         self.zscore = AsyncMock(side_effect=self._zscore)
         # Redis list operations
@@ -51,6 +52,8 @@ class StatefulRedisMock:
         self.hset = AsyncMock(side_effect=self._hset)
         self.hget = AsyncMock(side_effect=self._hget)
         self.hgetall = AsyncMock(side_effect=self._hgetall)
+        self.hmget = AsyncMock(side_effect=self._hmget)
+        self.hdel = AsyncMock(side_effect=self._hdel)
         self.hincrby = AsyncMock(side_effect=self._hincrby)
         # Redis counter operations
         self.incrby = AsyncMock(side_effect=self._incrby)
@@ -365,6 +368,33 @@ class StatefulRedisMock:
 
         return removed
 
+    async def _zremrangebyrank(self, key: str, start: int, stop: int) -> int:
+        if key not in self.store:
+            return 0
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a sorted set")
+
+        sorted_items = sorted(self.store[key].items(), key=lambda x: x[1])
+        length = len(sorted_items)
+
+        if start < 0:
+            start = max(0, length + start)
+        if stop < 0:
+            stop = length + stop
+        stop = min(stop, length - 1)
+
+        members_to_remove = [member for member, _ in sorted_items[start : stop + 1]]
+        for member in members_to_remove:
+            del self.store[key][member]
+
+        if not self.store[key]:
+            del self.store[key]
+            if key in self.ttl_store:
+                del self.ttl_store[key]
+
+        return len(members_to_remove)
+
     async def _zrange(self, key: str, start: int, stop: int, withscores: bool = False) -> list:
         """Get members from a sorted set by index range"""
         if key not in self.store:
@@ -518,6 +548,30 @@ class StatefulRedisMock:
 
         return self.store[key].copy()
 
+    async def _hmget(self, key: str, *fields: str) -> list[str | None]:
+        if key not in self.store:
+            return [None] * len(fields)
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        return [self.store[key].get(field) for field in fields]
+
+    async def _hdel(self, key: str, *fields: str) -> int:
+        if key not in self.store:
+            return 0
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        removed = 0
+        for field in fields:
+            if field in self.store[key]:
+                del self.store[key][field]
+                removed += 1
+
+        return removed
+
     async def _hincrby(self, key: str, field: str, amount: int = 1) -> int:
         """Increment a hash field by the given amount"""
         if key not in self.store:
@@ -617,6 +671,11 @@ class RedisPipelineMock:
         self.commands.append(("zremrangebyscore", key, min_score, max_score))
         return self
 
+    def zremrangebyrank(self, key: str, start: int, stop: int):
+        """Queue zremrangebyrank command"""
+        self.commands.append(("zremrangebyrank", key, start, stop))
+        return self
+
     def expire(self, key: str, seconds: int):
         """Queue expire command"""
         self.commands.append(("expire", key, seconds))
@@ -663,6 +722,9 @@ class RedisPipelineMock:
             elif cmd_name == "zremrangebyscore":
                 _, key, min_score, max_score = command
                 result = await self.redis_mock._zremrangebyscore(key, min_score, max_score)
+            elif cmd_name == "zremrangebyrank":
+                _, key, start, stop = command
+                result = await self.redis_mock._zremrangebyrank(key, start, stop)
             elif cmd_name == "expire":
                 _, key, seconds = command
                 result = await self.redis_mock._expire(key, seconds)

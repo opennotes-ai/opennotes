@@ -110,62 +110,9 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
 
   let messagesProcessed = 0;
   let channelsProcessed = 0;
-  let batchNumber = 0;
   let batchesPublished = 0;
   let failedBatches = 0;
-  let currentBatch: BulkScanMessage[] = [];
-  let pendingBatch: BulkScanMessage[] | null = null;
-
-  const publishPendingBatch = async (isFinalBatch: boolean): Promise<void> => {
-    if (pendingBatch === null || pendingBatch.length === 0) {
-      return;
-    }
-
-    batchNumber++;
-
-    const batch: BulkScanBatch = {
-      scan_id: scanId,
-      community_server_id: communityServerUuid,
-      initiated_by: initiatorId,
-      batch_number: batchNumber,
-      is_final_batch: isFinalBatch,
-      messages: pendingBatch,
-      cutoff_timestamp: new Date(cutoffTimestamp).toISOString(),
-    };
-
-    try {
-      await natsPublisher.publishBulkScanBatch(NATS_SUBJECTS.BULK_SCAN_BATCH, batch);
-      batchesPublished++;
-      logger.debug('Published batch', {
-        scanId,
-        batchNumber,
-        isFinalBatch,
-        messageCount: pendingBatch.length,
-      });
-    } catch (error) {
-      failedBatches++;
-      logger.warn('Failed to publish batch to NATS, continuing scan', {
-        error: error instanceof Error ? error.message : String(error),
-        scanId,
-        batchNumber,
-      });
-    }
-
-    pendingBatch = null;
-  };
-
-  const queueBatch = async (): Promise<void> => {
-    if (currentBatch.length === 0) {
-      return;
-    }
-
-    if (pendingBatch !== null) {
-      await publishPendingBatch(false);
-    }
-
-    pendingBatch = currentBatch;
-    currentBatch = [];
-  };
+  const allMessages: BulkScanMessage[] = [];
 
   for (const [, channel] of textChannels) {
     try {
@@ -241,12 +188,8 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
               : undefined,
           };
 
-          currentBatch.push(scanMessage);
+          allMessages.push(scanMessage);
           messagesProcessed++;
-
-          if (currentBatch.length >= BULK_SCAN_BATCH_SIZE) {
-            await queueBatch();
-          }
 
           lastMessageId = messageId;
         }
@@ -289,12 +232,46 @@ export async function executeBulkScan(options: BulkScanOptions): Promise<BulkSca
     });
   }
 
-  if (currentBatch.length > 0) {
-    await queueBatch();
-  }
+  allMessages.sort((a, b) => {
+    if (a.channel_id !== b.channel_id) {
+      return a.channel_id.localeCompare(b.channel_id);
+    }
+    return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+  });
 
-  if (pendingBatch !== null) {
-    await publishPendingBatch(true);
+  let batchNumber = 0;
+  for (let i = 0; i < allMessages.length; i += BULK_SCAN_BATCH_SIZE) {
+    const batchMessages = allMessages.slice(i, i + BULK_SCAN_BATCH_SIZE);
+    const isFinalBatch = i + BULK_SCAN_BATCH_SIZE >= allMessages.length;
+    batchNumber++;
+
+    const batch: BulkScanBatch = {
+      scan_id: scanId,
+      community_server_id: communityServerUuid,
+      initiated_by: initiatorId,
+      batch_number: batchNumber,
+      is_final_batch: isFinalBatch,
+      messages: batchMessages,
+      cutoff_timestamp: new Date(cutoffTimestamp).toISOString(),
+    };
+
+    try {
+      await natsPublisher.publishBulkScanBatch(NATS_SUBJECTS.BULK_SCAN_BATCH, batch);
+      batchesPublished++;
+      logger.debug('Published batch', {
+        scanId,
+        batchNumber,
+        isFinalBatch,
+        messageCount: batchMessages.length,
+      });
+    } catch (error) {
+      failedBatches++;
+      logger.warn('Failed to publish batch to NATS, continuing scan', {
+        error: error instanceof Error ? error.message : String(error),
+        scanId,
+        batchNumber,
+      });
+    }
   }
 
   const totalBatches = batchNumber;

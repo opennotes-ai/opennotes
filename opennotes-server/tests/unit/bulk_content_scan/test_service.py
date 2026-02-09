@@ -2515,3 +2515,415 @@ class TestUnifiedFlaggedMessageConstruction:
         assert len(result.matches) == 1
         assert result.matches[0].scan_type == "conversation_flashpoint"
         assert result.matches[0].derailment_score == 88
+
+
+class TestCrossBatchContextCache:
+    @pytest.fixture
+    def stateful_redis(self):
+        from tests.redis_mock import StatefulRedisMock
+
+        return StatefulRedisMock()
+
+    def _make_message(self, msg_id: str, channel_id: str, minute: int):
+        from src.bulk_content_scan.schemas import BulkScanMessage
+
+        return BulkScanMessage(
+            message_id=msg_id,
+            channel_id=channel_id,
+            community_server_id="guild_123",
+            content=f"Message {msg_id} content for testing",
+            author_id="user_1",
+            timestamp=datetime(2024, 1, 1, minute // 60, minute % 60, 0, tzinfo=UTC),
+        )
+
+    @pytest.mark.asyncio
+    async def test_populate_writes_messages_to_sorted_set(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        messages = [
+            self._make_message("msg_1", "ch_1", 1),
+            self._make_message("msg_2", "ch_1", 2),
+            self._make_message("msg_3", "ch_2", 3),
+        ]
+
+        await service._populate_cross_batch_cache(messages, "server_abc")
+
+        key_ch1 = service._get_flashpoint_context_key("server_abc", "ch_1")
+        key_ch2 = service._get_flashpoint_context_key("server_abc", "ch_2")
+
+        assert await stateful_redis.zcard(key_ch1) == 2
+        assert await stateful_redis.zcard(key_ch2) == 1
+
+    @pytest.mark.asyncio
+    async def test_populate_sets_ttl(self, mock_session, mock_embedding_service, stateful_redis):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        messages = [self._make_message("msg_1", "ch_1", 1)]
+
+        await service._populate_cross_batch_cache(messages, "server_abc")
+
+        key = service._get_flashpoint_context_key("server_abc", "ch_1")
+        remaining_ttl = await stateful_redis.ttl(key)
+        assert remaining_ttl > 0
+
+    @pytest.mark.asyncio
+    async def test_populate_trims_to_max_messages(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from unittest.mock import patch as mock_patch
+
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        messages = [self._make_message(f"msg_{i}", "ch_1", i) for i in range(25)]
+
+        with mock_patch("src.bulk_content_scan.service.settings") as mock_settings:
+            mock_settings.ENVIRONMENT = "test"
+            mock_settings.FLASHPOINT_CONTEXT_CACHE_TTL = 1800
+            mock_settings.FLASHPOINT_CONTEXT_CACHE_MAX_MESSAGES = 10
+
+            await service._populate_cross_batch_cache(messages, "server_abc")
+
+            key = service._get_flashpoint_context_key("server_abc", "ch_1")
+
+        assert await stateful_redis.zcard(key) == 10
+
+        cached = await stateful_redis.zrange(key, 0, -1, withscores=True)
+        scores = [s for _, s in cached]
+        assert scores == sorted(scores)
+
+    @pytest.mark.asyncio
+    async def test_enrich_merges_cached_messages_into_context(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        batch1_msgs = [
+            self._make_message("msg_1", "ch_1", 1),
+            self._make_message("msg_2", "ch_1", 2),
+        ]
+        await service._populate_cross_batch_cache(batch1_msgs, "server_abc")
+
+        batch2_msgs = [
+            self._make_message("msg_3", "ch_1", 3),
+            self._make_message("msg_4", "ch_1", 4),
+        ]
+        channel_context_map = BulkContentScanService.build_channel_context_map(batch2_msgs)
+
+        enriched = await service._enrich_context_from_cache(channel_context_map, "server_abc")
+
+        assert len(enriched["ch_1"]) == 4
+        msg_ids = [m.message_id for m in enriched["ch_1"]]
+        assert msg_ids == ["msg_1", "msg_2", "msg_3", "msg_4"]
+
+    @pytest.mark.asyncio
+    async def test_enrich_does_not_duplicate_messages_in_both_batch_and_cache(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        overlap_msg = self._make_message("msg_2", "ch_1", 2)
+        batch1_msgs = [
+            self._make_message("msg_1", "ch_1", 1),
+            overlap_msg,
+        ]
+        await service._populate_cross_batch_cache(batch1_msgs, "server_abc")
+
+        batch2_msgs = [
+            self._make_message("msg_2", "ch_1", 2),
+            self._make_message("msg_3", "ch_1", 3),
+        ]
+        channel_context_map = BulkContentScanService.build_channel_context_map(batch2_msgs)
+
+        enriched = await service._enrich_context_from_cache(channel_context_map, "server_abc")
+
+        assert len(enriched["ch_1"]) == 3
+        msg_ids = [m.message_id for m in enriched["ch_1"]]
+        assert msg_ids == ["msg_1", "msg_2", "msg_3"]
+
+    @pytest.mark.asyncio
+    async def test_enrich_maintains_time_order(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        batch1_msgs = [
+            self._make_message("msg_1", "ch_1", 1),
+            self._make_message("msg_3", "ch_1", 3),
+        ]
+        await service._populate_cross_batch_cache(batch1_msgs, "server_abc")
+
+        batch2_msgs = [
+            self._make_message("msg_2", "ch_1", 2),
+            self._make_message("msg_4", "ch_1", 4),
+        ]
+        channel_context_map = BulkContentScanService.build_channel_context_map(batch2_msgs)
+
+        enriched = await service._enrich_context_from_cache(channel_context_map, "server_abc")
+
+        msg_ids = [m.message_id for m in enriched["ch_1"]]
+        assert msg_ids == ["msg_1", "msg_2", "msg_3", "msg_4"]
+
+    @pytest.mark.asyncio
+    async def test_cross_batch_context_full_flow(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        batch1 = [
+            self._make_message("msg_1", "ch_1", 1),
+            self._make_message("msg_2", "ch_1", 2),
+        ]
+        await service._populate_cross_batch_cache(batch1, "server_abc")
+
+        batch2 = [
+            self._make_message("msg_3", "ch_1", 3),
+            self._make_message("msg_4", "ch_1", 4),
+        ]
+        context_map = BulkContentScanService.build_channel_context_map(batch2)
+        enriched = await service._enrich_context_from_cache(context_map, "server_abc")
+        await service._populate_cross_batch_cache(batch2, "server_abc")
+
+        assert len(enriched["ch_1"]) == 4
+
+        batch3 = [
+            self._make_message("msg_5", "ch_1", 5),
+        ]
+        context_map3 = BulkContentScanService.build_channel_context_map(batch3)
+        enriched3 = await service._enrich_context_from_cache(context_map3, "server_abc")
+        await service._populate_cross_batch_cache(batch3, "server_abc")
+
+        assert len(enriched3["ch_1"]) == 5
+        msg_ids = [m.message_id for m in enriched3["ch_1"]]
+        assert set(msg_ids) == {"msg_1", "msg_2", "msg_3", "msg_4", "msg_5"}
+        timestamps = [m.timestamp for m in enriched3["ch_1"]]
+        assert timestamps == sorted(timestamps)
+
+    @pytest.mark.asyncio
+    async def test_populate_graceful_on_redis_error(self, mock_session, mock_embedding_service):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        broken_redis = AsyncMock()
+        broken_redis.zadd = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=broken_redis,
+        )
+
+        messages = [self._make_message("msg_1", "ch_1", 1)]
+        await service._populate_cross_batch_cache(messages, "server_abc")
+
+    @pytest.mark.asyncio
+    async def test_enrich_graceful_on_redis_error(self, mock_session, mock_embedding_service):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        broken_redis = AsyncMock()
+        broken_redis.zrange = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=broken_redis,
+        )
+
+        batch_msgs = [self._make_message("msg_1", "ch_1", 1)]
+        context_map = BulkContentScanService.build_channel_context_map(batch_msgs)
+
+        result = await service._enrich_context_from_cache(context_map, "server_abc")
+
+        assert len(result["ch_1"]) == 1
+        assert result["ch_1"][0].message_id == "msg_1"
+
+    @pytest.mark.asyncio
+    async def test_enrich_returns_original_on_empty_cache(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        batch_msgs = [
+            self._make_message("msg_1", "ch_1", 1),
+            self._make_message("msg_2", "ch_1", 2),
+        ]
+        context_map = BulkContentScanService.build_channel_context_map(batch_msgs)
+
+        enriched = await service._enrich_context_from_cache(context_map, "server_abc")
+
+        assert len(enriched["ch_1"]) == 2
+        msg_ids = [m.message_id for m in enriched["ch_1"]]
+        assert msg_ids == ["msg_1", "msg_2"]
+
+    @pytest.mark.asyncio
+    async def test_populate_handles_multiple_channels(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        messages = [
+            self._make_message("msg_1", "ch_1", 1),
+            self._make_message("msg_2", "ch_2", 2),
+            self._make_message("msg_3", "ch_1", 3),
+            self._make_message("msg_4", "ch_3", 4),
+        ]
+
+        await service._populate_cross_batch_cache(messages, "server_abc")
+
+        key_ch1 = service._get_flashpoint_context_key("server_abc", "ch_1")
+        key_ch2 = service._get_flashpoint_context_key("server_abc", "ch_2")
+        key_ch3 = service._get_flashpoint_context_key("server_abc", "ch_3")
+
+        assert await stateful_redis.zcard(key_ch1) == 2
+        assert await stateful_redis.zcard(key_ch2) == 1
+        assert await stateful_redis.zcard(key_ch3) == 1
+
+    @pytest.mark.asyncio
+    async def test_process_messages_calls_cache_methods_for_flashpoint(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        service.get_existing_request_message_ids = AsyncMock(return_value=set())
+        service._populate_cross_batch_cache = AsyncMock()
+        service._enrich_context_from_cache = AsyncMock(side_effect=lambda ctx_map, _cs_id: ctx_map)
+        service._generate_candidate = AsyncMock(return_value=None)
+        service._filter_candidates_with_relevance = AsyncMock(return_value=[])
+
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message content that is long enough",
+                author_id="user_1",
+                timestamp=datetime(2024, 1, 1, 0, 1, 0, tzinfo=UTC),
+            ),
+        ]
+
+        await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id="guild_123",
+            scan_types=[ScanType.CONVERSATION_FLASHPOINT],
+        )
+
+        service._populate_cross_batch_cache.assert_awaited_once()
+        service._enrich_context_from_cache.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_process_messages_skips_cache_methods_without_flashpoint(
+        self, mock_session, mock_embedding_service, stateful_redis
+    ):
+        from src.bulk_content_scan.scan_types import ScanType
+        from src.bulk_content_scan.schemas import BulkScanMessage
+        from src.bulk_content_scan.service import BulkContentScanService
+        from src.fact_checking.embedding_schemas import (
+            SimilaritySearchResponse,
+        )
+
+        mock_embedding_service.similarity_search = AsyncMock(
+            return_value=SimilaritySearchResponse(
+                matches=[],
+                query_text="Test message",
+                dataset_tags=["snopes"],
+                similarity_threshold=0.6,
+                score_threshold=0.1,
+                total_matches=0,
+            )
+        )
+
+        service = BulkContentScanService(
+            session=mock_session,
+            embedding_service=mock_embedding_service,
+            redis_client=stateful_redis,
+        )
+
+        service.get_existing_request_message_ids = AsyncMock(return_value=set())
+        service._populate_cross_batch_cache = AsyncMock()
+        service._enrich_context_from_cache = AsyncMock()
+
+        scan_id = uuid4()
+        messages = [
+            BulkScanMessage(
+                message_id="msg_1",
+                channel_id="ch_1",
+                community_server_id="guild_123",
+                content="Test message content that is long enough",
+                author_id="user_1",
+                timestamp=datetime(2024, 1, 1, 0, 1, 0, tzinfo=UTC),
+            ),
+        ]
+
+        await service.process_messages(
+            scan_id=scan_id,
+            messages=messages,
+            community_server_platform_id="guild_123",
+            scan_types=[ScanType.SIMILARITY],
+        )
+
+        service._populate_cross_batch_cache.assert_not_awaited()
+        service._enrich_context_from_cache.assert_not_awaited()
