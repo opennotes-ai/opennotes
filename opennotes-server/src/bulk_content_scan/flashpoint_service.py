@@ -157,7 +157,7 @@ class FlashpointDetectionService:
                 Critical errors (propagated): ValueError, TypeError, KeyError,
                 AttributeError, RuntimeError, and all other Exception subclasses.
         """
-        from src.bulk_content_scan.flashpoint_utils import parse_derailment_score
+        from src.bulk_content_scan.flashpoint_utils import parse_derailment_score, parse_risk_level
         from src.bulk_content_scan.schemas import ConversationFlashpointMatch
 
         if max_context is None:
@@ -181,9 +181,10 @@ class FlashpointDetectionService:
             if derailment_score < score_threshold:
                 return None
 
+            risk_level = parse_risk_level(result.risk_level, derailment_score)
             return ConversationFlashpointMatch(
                 derailment_score=derailment_score,
-                risk_level=result.risk_level,
+                risk_level=risk_level,
                 reasoning=result.reasoning,
                 context_messages=len(recent_context),
             )

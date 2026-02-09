@@ -13,7 +13,7 @@ from src.bulk_content_scan.flashpoint_service import (
     FlashpointDetectionService,
     get_flashpoint_service,
 )
-from src.bulk_content_scan.flashpoint_utils import RubricDetector
+from src.bulk_content_scan.flashpoint_utils import RubricDetector, parse_risk_level
 from src.bulk_content_scan.schemas import BulkScanMessage, ConversationFlashpointMatch
 
 
@@ -1125,3 +1125,102 @@ class TestCriticalErrorPropagation:
             result = await service.detect_flashpoint(message, [])
 
         assert result is None
+
+
+class TestParseRiskLevel:
+    """Tests for parse_risk_level normalization."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("Low Risk", "Low Risk"),
+            ("Guarded", "Guarded"),
+            ("Heated", "Heated"),
+            ("Hostile", "Hostile"),
+            ("Dangerous", "Dangerous"),
+        ],
+    )
+    def test_valid_values_pass_through(self, value: str, expected: str):
+        assert parse_risk_level(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("hostile", "Hostile"),
+            ("HOSTILE", "Hostile"),
+            ("low risk", "Low Risk"),
+            ("LOW RISK", "Low Risk"),
+            ("  heated  ", "Heated"),
+            ("DANGEROUS", "Dangerous"),
+            ("guarded", "Guarded"),
+        ],
+    )
+    def test_case_insensitive_matching(self, value: str, expected: str):
+        assert parse_risk_level(value) == expected
+
+    @pytest.mark.parametrize(
+        ("score", "expected"),
+        [
+            (100, "Dangerous"),
+            (85, "Hostile"),
+            (99, "Hostile"),
+            (60, "Heated"),
+            (84, "Heated"),
+            (30, "Guarded"),
+            (59, "Guarded"),
+            (0, "Low Risk"),
+            (29, "Low Risk"),
+        ],
+    )
+    def test_unknown_value_derives_from_score(self, score: int, expected: str):
+        assert parse_risk_level("gibberish_from_llm", score) == expected
+
+    def test_unknown_value_no_score_defaults_to_heated(self):
+        assert parse_risk_level("completely_unknown") == "Heated"
+
+    def test_empty_string_no_score_defaults_to_heated(self):
+        assert parse_risk_level("") == "Heated"
+
+
+class TestRiskLevelNormalizationInService:
+    """Tests that parse_risk_level is applied in detect_flashpoint."""
+
+    @pytest.mark.asyncio
+    async def test_malformed_risk_level_normalized(self):
+        """LLM returning lowercase risk_level gets normalized."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 75
+        mock_prediction.risk_level = "hostile"
+        mock_prediction.reasoning = "Aggressive tone"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message(content="Fight me")
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.risk_level == "Hostile"
+
+    @pytest.mark.asyncio
+    async def test_garbage_risk_level_falls_back_to_score(self):
+        """Unrecognized risk_level falls back to derailment_score derivation."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 95
+        mock_prediction.risk_level = "VERY_BAD_STUFF"
+        mock_prediction.reasoning = "LLM hallucinated a risk level"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message(content="Threatening message")
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.risk_level == "Hostile"

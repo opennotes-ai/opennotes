@@ -264,6 +264,34 @@ RISK_LEVEL_MAPPING: dict[str, int] = {
 
 RISK_LEVEL_DEFAULT = 50
 
+_RISK_LEVEL_LOOKUP: dict[str, str] = {v.lower(): v for v in RISK_LEVEL_MAPPING}
+
+_SCORE_THRESHOLDS: list[tuple[int, str]] = [
+    (100, "Dangerous"),
+    (85, "Hostile"),
+    (60, "Heated"),
+    (30, "Guarded"),
+]
+
+
+def parse_risk_level(value: str, derailment_score: int | None = None) -> str:
+    """Normalize LLM risk_level output to a valid RiskLevel value.
+
+    Case-insensitive lookup against known values. Falls back to deriving
+    from derailment_score if provided, otherwise defaults to "Heated".
+    """
+    normalized = value.lower().strip()
+    if normalized in _RISK_LEVEL_LOOKUP:
+        return _RISK_LEVEL_LOOKUP[normalized]
+
+    if derailment_score is not None:
+        for threshold, level in _SCORE_THRESHOLDS:
+            if derailment_score >= threshold:
+                return level
+        return "Low Risk"
+
+    return "Heated"
+
 
 class RubricDetector:
     """Rubric-based flashpoint detector using categorical classification.
