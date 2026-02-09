@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -31,6 +32,8 @@ audit_publish_timeouts_total = Counter(
     "audit_publish_timeouts_total",
     "Total number of audit event persist timeouts",
 )
+
+_audit_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="audit-persist")
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
@@ -92,19 +95,24 @@ class AuditMiddleware(BaseHTTPMiddleware):
             if request_body:
                 details["request_body"] = self._truncate_large_arrays(request_body)
 
-            async with asyncio.timeout(5.0):
-                await asyncio.to_thread(
+            loop = asyncio.get_running_loop()
+            await asyncio.wait_for(
+                loop.run_in_executor(
+                    _audit_executor,
                     call_persist_audit_log,
-                    user_id=str(user_id) if user_id else None,
-                    action=f"{request.method} {request.url.path}",
-                    resource=request.url.path.split("/")[-1]
+                    str(user_id) if user_id else None,
+                    f"{request.method} {request.url.path}",
+                    request.url.path.split("/")[-1]
                     if "/" in request.url.path
                     else request.url.path,
-                    details=json.dumps(details),
-                    ip_address=request.client.host if request.client else None,
-                    user_agent=request.headers.get("user-agent"),
-                    created_at_iso=start_time.isoformat(),
-                )
+                    None,
+                    json.dumps(details),
+                    request.client.host if request.client else None,
+                    request.headers.get("user-agent"),
+                    start_time.isoformat(),
+                ),
+                timeout=5.0,
+            )
             audit_events_published_total.labels(status="success").inc()
         except TimeoutError:
             self._handle_audit_error(
