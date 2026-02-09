@@ -39,12 +39,12 @@ class TestFlashpointDetectionService:
     """Tests for FlashpointDetectionService.detect_flashpoint method."""
 
     @pytest.mark.asyncio
-    async def test_detect_flashpoint_returns_match_when_derailing(self):
-        """Returns ConversationFlashpointMatch when detector predicts derailing."""
+    async def test_detect_flashpoint_returns_match_when_high_score(self):
+        """Returns ConversationFlashpointMatch when derailment_score >= threshold."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = True
+        mock_prediction.derailment_score = 75
         mock_prediction.reasoning = "Escalating hostility detected"
 
         mock_detector = MagicMock()
@@ -67,18 +67,18 @@ class TestFlashpointDetectionService:
 
         assert result is not None
         assert isinstance(result, ConversationFlashpointMatch)
-        assert result.will_derail is True
+        assert result.derailment_score == 75
         assert result.reasoning == "Escalating hostility detected"
         assert result.context_messages == 2
         assert result.scan_type == "conversation_flashpoint"
 
     @pytest.mark.asyncio
-    async def test_detect_flashpoint_returns_none_when_not_derailing(self):
-        """Returns None when detector predicts conversation will not derail."""
+    async def test_detect_flashpoint_returns_none_when_low_score(self):
+        """Returns None when derailment_score is below threshold."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = False
+        mock_prediction.derailment_score = 10
         mock_prediction.reasoning = "Normal conversation"
 
         mock_detector = MagicMock()
@@ -101,12 +101,12 @@ class TestFlashpointDetectionService:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_handles_string_bool_response_true(self):
-        """String 'True' from LLM is correctly converted to boolean True."""
+    async def test_handles_string_score_response(self):
+        """String '80' from LLM is correctly parsed to integer 80."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = "True"
+        mock_prediction.derailment_score = "80"
         mock_prediction.reasoning = "String response detected"
 
         mock_detector = MagicMock()
@@ -120,15 +120,15 @@ class TestFlashpointDetectionService:
             result = await service.detect_flashpoint(message, [])
 
         assert result is not None
-        assert result.will_derail is True
+        assert result.derailment_score == 80
 
     @pytest.mark.asyncio
-    async def test_handles_string_bool_response_false(self):
-        """String 'False' from LLM is correctly converted to boolean False."""
+    async def test_handles_string_score_below_threshold(self):
+        """String '20' from LLM is correctly parsed and returns None."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = "False"
+        mock_prediction.derailment_score = "20"
         mock_prediction.reasoning = "Normal conversation"
 
         mock_detector = MagicMock()
@@ -144,13 +144,13 @@ class TestFlashpointDetectionService:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_handles_string_bool_response_yes(self):
-        """String 'yes' from LLM is correctly converted to boolean True."""
+    async def test_custom_score_threshold(self):
+        """Custom score_threshold overrides the default."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = "yes"
-        mock_prediction.reasoning = "Affirmative string response"
+        mock_prediction.derailment_score = 30
+        mock_prediction.reasoning = "Moderate tension"
 
         mock_detector = MagicMock()
         mock_detector.return_value = mock_prediction
@@ -160,19 +160,21 @@ class TestFlashpointDetectionService:
         ):
             message = make_bulk_scan_message()
 
-            result = await service.detect_flashpoint(message, [])
+            result_default = await service.detect_flashpoint(message, [])
+            assert result_default is None
 
-        assert result is not None
-        assert result.will_derail is True
+            result_low = await service.detect_flashpoint(message, [], score_threshold=25)
+            assert result_low is not None
+            assert result_low.derailment_score == 30
 
     @pytest.mark.asyncio
-    async def test_handles_string_bool_response_one(self):
-        """String '1' from LLM is correctly converted to boolean True."""
+    async def test_score_at_exact_threshold(self):
+        """Score exactly at threshold is included."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = "1"
-        mock_prediction.reasoning = "Numeric string response"
+        mock_prediction.derailment_score = 50
+        mock_prediction.reasoning = "At threshold"
 
         mock_detector = MagicMock()
         mock_detector.return_value = mock_prediction
@@ -185,7 +187,7 @@ class TestFlashpointDetectionService:
             result = await service.detect_flashpoint(message, [])
 
         assert result is not None
-        assert result.will_derail is True
+        assert result.derailment_score == 50
 
     @pytest.mark.asyncio
     async def test_context_limited_to_max_context(self):
@@ -193,7 +195,7 @@ class TestFlashpointDetectionService:
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = True
+        mock_prediction.derailment_score = 75
         mock_prediction.reasoning = "Limited context"
 
         mock_detector = MagicMock()
@@ -296,7 +298,7 @@ class TestFlashpointDetectionService:
             nonlocal captured_context
             captured_context = kwargs.get("context", "")
             mock_result = MagicMock()
-            mock_result.will_derail = False
+            mock_result.derailment_score = 10
             mock_result.reasoning = "N/A"
             return mock_result
 
@@ -330,7 +332,7 @@ class TestFlashpointDetectionService:
             nonlocal captured_context
             captured_context = kwargs.get("context", "")
             mock_result = MagicMock()
-            mock_result.will_derail = False
+            mock_result.derailment_score = 10
             mock_result.reasoning = "N/A"
             return mock_result
 
@@ -363,7 +365,7 @@ class TestFlashpointDetectionService:
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = True
+        mock_prediction.derailment_score = 85
         mock_prediction.reasoning = "Isolated hostile message"
 
         mock_detector = MagicMock()
@@ -392,6 +394,10 @@ class TestFlashpointDetectionServiceInit:
         """Custom model can be specified."""
         service = FlashpointDetectionService(model="anthropic/claude-3-haiku")
         assert service.model == "anthropic/claude-3-haiku"
+
+    def test_default_score_threshold(self):
+        """Default score threshold is 50."""
+        assert FlashpointDetectionService.DEFAULT_SCORE_THRESHOLD == 50
 
 
 class TestGetDetectorLazyInit:
@@ -607,7 +613,7 @@ class TestGetFlashpointServiceSingleton:
 
 
 class TestFlashpointRealisticExamples:
-    """Tests using realistic Discord conversation format (TASK-1067.67)."""
+    """Tests using realistic Discord conversation format."""
 
     @pytest.mark.asyncio
     async def test_escalating_argument_detected(self):
@@ -615,7 +621,7 @@ class TestFlashpointRealisticExamples:
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = True
+        mock_prediction.derailment_score = 82
         mock_prediction.reasoning = (
             "Conversation shifting from topic disagreement to "
             "personal attacks. User moved from 'I disagree' to "
@@ -660,8 +666,7 @@ class TestFlashpointRealisticExamples:
 
         assert result is not None
         assert isinstance(result, ConversationFlashpointMatch)
-        assert result.will_derail is True
-        assert result.confidence == FlashpointDetectionService.CONFIDENCE_DERAIL
+        assert result.derailment_score == 82
         assert result.context_messages == 3
         assert "personal attacks" in result.reasoning
 
@@ -671,7 +676,7 @@ class TestFlashpointRealisticExamples:
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = False
+        mock_prediction.derailment_score = 8
         mock_prediction.reasoning = "Constructive disagreement with mutual respect."
 
         mock_detector = MagicMock()
@@ -716,7 +721,7 @@ class TestFlashpointRealisticExamples:
         def capture_detector(*args, **kwargs):
             captured_args.update(kwargs)
             mock_result = MagicMock()
-            mock_result.will_derail = True
+            mock_result.derailment_score = 70
             mock_result.reasoning = "Truncated context analysis"
             return mock_result
 
@@ -783,39 +788,17 @@ class TestFlashpointRealisticExamples:
         mock_logger.warning.assert_called_once()
 
 
-class TestConfidenceValue:
-    """Tests for confidence field behavior (TASK-1067.69)."""
+class TestDerailmentScoreThreshold:
+    """Tests for derailment score threshold behavior."""
 
     @pytest.mark.asyncio
-    async def test_confidence_is_static_derail_value(self):
-        """Confidence is always CONFIDENCE_DERAIL when will_derail=True."""
+    async def test_score_zero_returns_none(self):
+        """Score of 0 returns None (below default threshold)."""
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = True
-        mock_prediction.reasoning = "Detected escalation"
-
-        mock_detector = MagicMock()
-        mock_detector.return_value = mock_prediction
-
-        with patch.object(service, "_get_detector", return_value=mock_detector):
-            message = make_bulk_scan_message()
-            result = await service.detect_flashpoint(message, [])
-
-        assert result is not None
-        assert result.confidence == 0.9
-        assert result.confidence == FlashpointDetectionService.CONFIDENCE_DERAIL
-
-    @pytest.mark.asyncio
-    async def test_no_confidence_no_derail_constant(self):
-        """CONFIDENCE_NO_DERAIL does not exist."""
-        assert not hasattr(FlashpointDetectionService, "CONFIDENCE_NO_DERAIL")
-
-        service = FlashpointDetectionService(model="openai/gpt-5-mini")
-
-        mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = False
-        mock_prediction.reasoning = "Normal"
+        mock_prediction.derailment_score = 0
+        mock_prediction.reasoning = "No risk"
 
         mock_detector = MagicMock()
         mock_detector.return_value = mock_prediction
@@ -826,9 +809,47 @@ class TestConfidenceValue:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_score_100_returns_match(self):
+        """Score of 100 always returns a match."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 100
+        mock_prediction.reasoning = "Certain derailment"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message()
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.derailment_score == 100
+
+    @pytest.mark.asyncio
+    async def test_score_clamped_above_100(self):
+        """Score > 100 is clamped to 100."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 150
+        mock_prediction.reasoning = "Over max"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message()
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.derailment_score == 100
+
 
 class TestValueErrorPropagation:
-    """Tests that ValueError is NOT a transient error (TASK-1067.70)."""
+    """Tests that ValueError is NOT a transient error."""
 
     def test_value_error_not_in_transient_errors(self):
         """ValueError is not in the _TRANSIENT_ERRORS tuple."""
@@ -862,7 +883,7 @@ class TestValueErrorPropagation:
 
 
 class TestConcurrencyGuard:
-    """Tests for thread-safe _get_detector initialization (TASK-1067.75)."""
+    """Tests for thread-safe _get_detector initialization."""
 
     @patch("dspy.LM")
     def test_single_initialization_under_concurrent_access(
@@ -901,7 +922,7 @@ class TestConcurrencyGuard:
 
 
 class TestApiKeyValidation:
-    """Tests for API key validation in _get_detector (TASK-1067.100)."""
+    """Tests for API key validation in _get_detector."""
 
     def test_raises_when_openai_key_missing(self, tmp_path: Path):
         """RuntimeError when OPENAI_API_KEY not set for openai/ model."""
@@ -961,7 +982,7 @@ class TestApiKeyValidation:
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_prediction = MagicMock(spec=dspy.Prediction)
-        mock_prediction.will_derail = False
+        mock_prediction.derailment_score = 10
         mock_prediction.reasoning = "Normal"
 
         mock_detector = MagicMock()
@@ -975,7 +996,7 @@ class TestApiKeyValidation:
 
 
 class TestCriticalErrorPropagation:
-    """Tests for critical error type propagation (TASK-1067.92).
+    """Tests for critical error type propagation.
 
     Transient errors (TimeoutError, ConnectionError, OSError) return None.
     All other exceptions propagate as critical errors.
@@ -1023,7 +1044,7 @@ class TestCriticalErrorPropagation:
         service = FlashpointDetectionService(model="openai/gpt-5-mini")
 
         mock_detector = MagicMock()
-        mock_detector.side_effect = AttributeError("'NoneType' has no attribute 'will_derail'")
+        mock_detector.side_effect = AttributeError("'NoneType' has no attribute 'derailment_score'")
 
         with (
             patch.object(service, "_get_detector", return_value=mock_detector),

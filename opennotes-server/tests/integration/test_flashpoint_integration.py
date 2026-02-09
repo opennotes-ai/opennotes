@@ -46,52 +46,63 @@ class TestConversationFlashpointMatchSchema:
     def test_valid_schema_creation(self):
         """ConversationFlashpointMatch should accept valid data."""
         match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.85,
+            derailment_score=75,
             reasoning="Escalating tension detected in the exchange",
             context_messages=5,
         )
 
         assert match.scan_type == "conversation_flashpoint"
-        assert match.will_derail is True
-        assert match.confidence == 0.85
+        assert match.derailment_score == 75
         assert match.reasoning == "Escalating tension detected in the exchange"
         assert match.context_messages == 5
 
     def test_scan_type_literal_enforced(self):
         """scan_type should be locked to 'conversation_flashpoint'."""
         match = ConversationFlashpointMatch(
-            will_derail=False,
-            confidence=0.5,
+            derailment_score=30,
             reasoning="Normal conversation",
             context_messages=3,
         )
 
         assert match.scan_type == "conversation_flashpoint"
 
-    def test_confidence_range_validation_min(self):
-        """Confidence must be at least 0.0."""
+    def test_derailment_score_range_validation_min(self):
+        """derailment_score must be at least 0."""
         with pytest.raises(ValidationError) as exc_info:
             ConversationFlashpointMatch(
-                will_derail=True,
-                confidence=-0.1,
+                derailment_score=-1,
                 reasoning="Test",
                 context_messages=0,
             )
 
-        assert "confidence" in str(exc_info.value)
+        assert "derailment_score" in str(exc_info.value)
 
-    def test_confidence_range_validation_max(self):
-        """Confidence must be at most 1.0."""
+    def test_derailment_score_range_validation_max(self):
+        """derailment_score must be at most 100."""
         with pytest.raises(ValidationError) as exc_info:
             ConversationFlashpointMatch(
-                will_derail=True,
-                confidence=1.5,
+                derailment_score=101,
                 reasoning="Test",
                 context_messages=0,
             )
 
-        assert "confidence" in str(exc_info.value)
+        assert "derailment_score" in str(exc_info.value)
+
+    def test_derailment_score_boundary_values(self):
+        """Boundary values 0 and 100 should be accepted."""
+        match_min = ConversationFlashpointMatch(
+            derailment_score=0,
+            reasoning="No risk",
+            context_messages=0,
+        )
+        assert match_min.derailment_score == 0
+
+        match_max = ConversationFlashpointMatch(
+            derailment_score=100,
+            reasoning="Certain derailment",
+            context_messages=0,
+        )
+        assert match_max.derailment_score == 100
 
     def test_all_fields_required(self):
         """All fields are required (no optional fields)."""
@@ -99,19 +110,15 @@ class TestConversationFlashpointMatchSchema:
             ConversationFlashpointMatch()
 
         with pytest.raises(ValidationError):
-            ConversationFlashpointMatch(will_derail=True)
+            ConversationFlashpointMatch(derailment_score=50)
 
         with pytest.raises(ValidationError):
-            ConversationFlashpointMatch(will_derail=True, confidence=0.8)
-
-        with pytest.raises(ValidationError):
-            ConversationFlashpointMatch(will_derail=True, confidence=0.8, reasoning="Test")
+            ConversationFlashpointMatch(derailment_score=50, reasoning="Test")
 
     def test_serialization_to_dict(self):
         """Match should serialize to dictionary with scan_type."""
         match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.9,
+            derailment_score=85,
             reasoning="Hostile language detected",
             context_messages=3,
         )
@@ -119,16 +126,14 @@ class TestConversationFlashpointMatchSchema:
         data = match.model_dump()
 
         assert data["scan_type"] == "conversation_flashpoint"
-        assert data["will_derail"] is True
-        assert data["confidence"] == 0.9
+        assert data["derailment_score"] == 85
         assert data["reasoning"] == "Hostile language detected"
         assert data["context_messages"] == 3
 
     def test_json_serialization(self):
         """Match should serialize to JSON correctly."""
         match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.75,
+            derailment_score=75,
             reasoning="Test reasoning",
             context_messages=2,
         )
@@ -136,7 +141,7 @@ class TestConversationFlashpointMatchSchema:
         json_str = match.model_dump_json()
 
         assert '"scan_type":"conversation_flashpoint"' in json_str
-        assert '"will_derail":true' in json_str
+        assert '"derailment_score":75' in json_str
 
 
 class TestMatchResultUnion:
@@ -150,15 +155,14 @@ class TestMatchResultUnion:
 
         data = {
             "scan_type": "conversation_flashpoint",
-            "will_derail": True,
-            "confidence": 0.8,
+            "derailment_score": 80,
             "reasoning": "Test",
             "context_messages": 3,
         }
 
         parsed = adapter.validate_python(data)
         assert isinstance(parsed, ConversationFlashpointMatch)
-        assert parsed.will_derail is True
+        assert parsed.derailment_score == 80
 
     def test_discriminator_selects_correct_type(self):
         """Discriminator should select correct type based on scan_type."""
@@ -189,8 +193,7 @@ class TestMatchResultUnion:
 
         flashpoint_data = {
             "scan_type": "conversation_flashpoint",
-            "will_derail": True,
-            "confidence": 0.85,
+            "derailment_score": 85,
             "reasoning": "Escalating",
             "context_messages": 5,
         }
@@ -206,8 +209,7 @@ class TestFlaggedMessageWithFlashpoint:
     def test_flagged_message_can_contain_flashpoint(self):
         """FlaggedMessage should accept ConversationFlashpointMatch in matches list."""
         flashpoint_match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.8,
+            derailment_score=80,
             reasoning="Hostile tone detected",
             context_messages=4,
         )
@@ -237,8 +239,7 @@ class TestFlaggedMessageWithFlashpoint:
         )
 
         flashpoint_match = ConversationFlashpointMatch(
-            will_derail=True,
-            confidence=0.75,
+            derailment_score=75,
             reasoning="Aggressive response pattern",
             context_messages=3,
         )

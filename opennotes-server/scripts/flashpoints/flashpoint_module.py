@@ -1,25 +1,50 @@
 """DSPy signature and module for conversation flashpoint detection.
 
 This module re-exports the core DSPy components from the shared utility
-and defines training-specific metrics.
+and defines training-specific metrics including:
+- Simple accuracy metric for evaluation
+- Comparative metric with ScoreWithFeedback for GEPA optimization
+- FlashpointTrainerProgram for paired/contrastive training
+
+Feedback philosophy: the comparative metric provides factual outcome data
+(scores, difference, model reasoning) plus meta-coaching guidance that
+helps the reflection LM understand how to revise the student's prompt.
+It does NOT prescribe specific conversational signals to look for — the
+reflection LM is capable of identifying important patterns on its own.
+Hardcoding a checklist of escalation signals constrains GEPA's ability
+to discover what actually matters for this domain.
+
+Note on LM context: GEPA calls the metric under the student LM context,
+not the reflection LM. Any dspy.Predict calls inside the metric would
+use the weak student model. This is why feedback generation is purely
+programmatic — the reflection LM does all the analytical heavy lifting
+when it reads the feedback during instruction proposal.
 """
 
+import json
 import os
+from pathlib import Path
 from typing import Any
 
 import dspy
+from dspy.teleprompt.gepa.gepa_utils import ScoreWithFeedback
 
 from src.bulk_content_scan.flashpoint_utils import (
     FlashpointDetector,
     FlashpointSignature,
-    parse_bool,
+    RubricDetector,
+    TwoStageFlashpointDetector,
+    parse_derailment_score,
 )
 
 __all__ = [
     "FlashpointDetector",
     "FlashpointSignature",
+    "FlashpointTrainerProgram",
+    "RubricDetector",
+    "comparative_flashpoint_metric",
     "flashpoint_metric",
-    "flashpoint_metric_with_feedback",
+    "set_reasoning_log_path",
 ]
 
 
@@ -30,57 +55,213 @@ def flashpoint_metric(
 ) -> float:
     """Simple metric for evaluating flashpoint predictions.
 
-    Returns 1.0 for correct predictions, 0.0 for incorrect.
-    Handles both boolean and string representations.
+    Returns 1.0 when derailing conversations score higher than
+    non-derailing ones (for paired examples) or when the score
+    crosses the 50-point threshold correctly (for single examples).
     """
-    expected = parse_bool(example.will_derail)
-    predicted = parse_bool(pred.will_derail)
-    return 1.0 if predicted == expected else 0.0
+    if hasattr(example, "derailing_context"):
+        derailing_score = parse_derailment_score(pred.derailing_score)
+        non_derailing_score = parse_derailment_score(pred.non_derailing_score)
+        return 1.0 if derailing_score > non_derailing_score else 0.0
+
+    expected_derailing = getattr(example, "will_derail", False)
+    predicted_score = parse_derailment_score(pred.derailment_score)
+    if expected_derailing:
+        return 1.0 if predicted_score >= 50 else 0.0
+    return 1.0 if predicted_score < 50 else 0.0
 
 
-def flashpoint_metric_with_feedback(
-    example: dspy.Example,
+REASONING_TRUNCATION_LIMIT = 2000
+
+_reasoning_log_path: dict[str, Path | None] = {"path": None}
+
+
+def set_reasoning_log_path(path: Path | None) -> None:
+    """Set the JSONL file path for logging full reasoning traces."""
+    _reasoning_log_path["path"] = path
+
+
+def _extract_reasoning(pred_trace: Any) -> tuple[str, str]:
+    """Extract full reasoning from the pred_trace for both derailing and non-derailing runs.
+
+    pred_trace is list[tuple[Predict, dict[str, Any], Prediction]].
+    The FlashpointTrainerProgram runs the detector twice, so there may be
+    two trace entries. Returns (derailing_reasoning, non_derailing_reasoning).
+    """
+    if not pred_trace:
+        return ("N/A", "N/A")
+    reasoning_parts = []
+    for _, _, output in pred_trace:
+        r = getattr(output, "reasoning", None)
+        if r:
+            reasoning_parts.append(str(r))
+        else:
+            reasoning_parts.append("N/A")
+    if len(reasoning_parts) >= 2:
+        return (reasoning_parts[0], reasoning_parts[1])
+    if len(reasoning_parts) == 1:
+        return (reasoning_parts[0], "N/A")
+    return ("N/A", "N/A")
+
+
+def _truncate_reasoning(reasoning: str) -> str:
+    if reasoning == "N/A" or len(reasoning) <= REASONING_TRUNCATION_LIMIT:
+        return reasoning
+    half = REASONING_TRUNCATION_LIMIT // 2
+    return reasoning[:half] + " [...] " + reasoning[-half:]
+
+
+def _log_reasoning(
+    derailing_score: int,
+    non_derailing_score: int,
+    derailing_reasoning: str,
+    non_derailing_reasoning: str,
+) -> None:
+    """Append a JSONL entry with full and truncated reasoning for diagnostics."""
+    log_path = _reasoning_log_path["path"]
+    if log_path is None:
+        return
+    entry = {
+        "derailing_score": derailing_score,
+        "non_derailing_score": non_derailing_score,
+        "score_diff": derailing_score - non_derailing_score,
+        "derailing_reasoning_full": derailing_reasoning,
+        "derailing_reasoning_truncated": _truncate_reasoning(derailing_reasoning),
+        "derailing_reasoning_len": len(derailing_reasoning),
+        "non_derailing_reasoning_full": non_derailing_reasoning,
+        "non_derailing_reasoning_truncated": _truncate_reasoning(non_derailing_reasoning),
+        "non_derailing_reasoning_len": len(non_derailing_reasoning),
+        "was_truncated": (
+            len(derailing_reasoning) > REASONING_TRUNCATION_LIMIT
+            or len(non_derailing_reasoning) > REASONING_TRUNCATION_LIMIT
+        ),
+    }
+    with log_path.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def _build_feedback(
+    derailing_score: int,
+    non_derailing_score: int,
+    score_diff: int,
+    derailing_reasoning: str,
+    non_derailing_reasoning: str,
+) -> str:
+    """Build factual feedback with meta-coaching for the reflection LM.
+
+    Provides the factual outcome (scores, reasoning) plus guidance on
+    how to revise the student's prompt — without prescribing specific
+    conversational signals to look for.
+    """
+    if score_diff > 0:
+        label = "CORRECT"
+    elif score_diff == 0:
+        label = "TIED (WRONG)"
+    else:
+        label = "WRONG"
+
+    feedback = (
+        f"{label}: Derailing conversation scored {derailing_score}/100, "
+        f"non-derailing scored {non_derailing_score}/100 "
+        f"(difference: {score_diff:+d}).\n"
+    )
+
+    feedback += f"Derailing reasoning: {_truncate_reasoning(derailing_reasoning)}\n"
+    feedback += f"Non-derailing reasoning: {_truncate_reasoning(non_derailing_reasoning)}\n"
+
+    if score_diff <= 0:
+        feedback += (
+            "The model failed to distinguish these conversations. "
+            "Revise the prompt to help the model identify what differentiates "
+            "derailing from constructive dialogue in this pair.\n"
+        )
+    elif score_diff < 20:
+        feedback += (
+            f"Margin is narrow ({score_diff} points). "
+            "Revise the prompt to help the model produce more confident separation "
+            "between derailing and non-derailing conversations.\n"
+        )
+
+    return feedback
+
+
+def comparative_flashpoint_metric(
+    gold: dspy.Example,
     pred: dspy.Prediction,
     trace: Any = None,
     pred_name: str | None = None,
     pred_trace: Any = None,
-) -> dspy.Prediction:
-    """GEPA-compatible metric that returns score and feedback.
+) -> ScoreWithFeedback:
+    """GEPA-compatible comparative metric returning ScoreWithFeedback.
 
-    GEPA requires metrics that return both a score and feedback
-    to guide its reflective optimization process.
+    Compares the derailment scores assigned to a derailing vs non-derailing
+    conversation pair. The monitor should assign a higher score to the
+    derailing conversation.
 
-    Args:
-        example: The gold example with expected will_derail value
-        pred: The model's prediction
-        trace: Optional execution trace
-        pred_name: Optional name of target predictor being optimized
-        pred_trace: Optional trace of target predictor
-
-    Returns:
-        dspy.Prediction with score (float) and feedback (str)
+    Feedback combines factual outcome data with meta-coaching that guides
+    the reflection LM on how to revise the student's prompt. Does not
+    prescribe specific conversational signals — the reflection LM discovers
+    what matters by analyzing the model's reasoning against the outcomes.
     """
-    expected = parse_bool(example.will_derail)
-    predicted = parse_bool(pred.will_derail)
+    derailing_score = parse_derailment_score(pred.derailing_score)
+    non_derailing_score = parse_derailment_score(pred.non_derailing_score)
+    score_diff = derailing_score - non_derailing_score
+    feedback_score = 1.0 if score_diff > 0 else 0.0
 
-    correct = predicted == expected
-    score = 1.0 if correct else 0.0
+    derailing_reasoning, non_derailing_reasoning = _extract_reasoning(pred_trace)
 
-    if correct:
-        feedback = (
-            f"Correct prediction. Expected will_derail={expected}, "
-            f"predicted will_derail={predicted}."
-        )
-    else:
-        reasoning_preview = str(pred.reasoning)[:300] if hasattr(pred, "reasoning") else "N/A"
-        feedback = (
-            f"Incorrect prediction. Expected will_derail={expected}, "
-            f"predicted will_derail={predicted}. "
-            f"The reasoning was: {reasoning_preview}... "
-            f"Consider what signals in the context and message led to this error."
+    if _reasoning_log_path["path"] is not None and derailing_reasoning != "N/A":
+        _log_reasoning(
+            derailing_score,
+            non_derailing_score,
+            derailing_reasoning,
+            non_derailing_reasoning,
         )
 
-    return dspy.Prediction(score=score, feedback=feedback)
+    feedback = _build_feedback(
+        derailing_score,
+        non_derailing_score,
+        score_diff,
+        derailing_reasoning,
+        non_derailing_reasoning,
+    )
+
+    return ScoreWithFeedback(score=feedback_score, feedback=feedback)
+
+
+class FlashpointTrainerProgram(dspy.Module):
+    """Wrapper that runs the flashpoint detector on both paired examples.
+
+    Mirrors the MonitorTrainerProgram pattern from the GEPA trusted
+    monitor tutorial. Takes a paired example (derailing + non-derailing
+    conversation) and returns both scores for comparative training.
+    """
+
+    def __init__(
+        self, detector: FlashpointDetector | TwoStageFlashpointDetector | RubricDetector
+    ) -> None:
+        super().__init__()
+        self.detector = detector._inner
+
+    def forward(
+        self,
+        derailing_context: str,
+        derailing_message: str,
+        non_derailing_context: str,
+        non_derailing_message: str,
+    ) -> dspy.Prediction:
+        derailing_pred = self.detector(
+            context=derailing_context,
+            message=derailing_message,
+        )
+        non_derailing_pred = self.detector(
+            context=non_derailing_context,
+            message=non_derailing_message,
+        )
+        return dspy.Prediction(
+            derailing_score=parse_derailment_score(derailing_pred.derailment_score),
+            non_derailing_score=parse_derailment_score(non_derailing_pred.derailment_score),
+        )
 
 
 DEFAULT_MODEL = "openai/gpt-5-mini"
@@ -124,5 +305,5 @@ if __name__ == "__main__":
         context="user1: I think we should consider option A\nuser2: That's a terrible idea",
         message="user1: Are you even reading what I wrote? You clearly don't understand",
     )
-    print(f"Will derail: {result.will_derail}")
+    print(f"Derailment score: {result.derailment_score}")
     print(f"Reasoning: {result.reasoning}")
