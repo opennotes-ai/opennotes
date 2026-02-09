@@ -852,6 +852,13 @@ def template_database(test_services):
         print(f"⚠️  Template migration failed with return code {result.returncode}")
         raise RuntimeError(f"Template migration failed: {result.stderr}")
 
+    sync_template_url = template_db_url.replace("+asyncpg", "")
+    print("🔧 Running DBOS system table migrations on template database")
+    from dbos import run_dbos_database_migrations
+
+    run_dbos_database_migrations(system_database_url=sync_template_url)
+    print("✅ DBOS system tables created in template database")
+
     # Restore original DATABASE_URL
     os.environ["DATABASE_URL"] = original_db_url
 
@@ -1014,9 +1021,10 @@ async def setup_database(request):
         print(f"   [DEBUG] db_session: id(settings)={id(settings)}, NATS_URL={settings.NATS_URL}")
 
     # Reset DBOS client to reconnect with updated DATABASE_URL
-    from src.dbos_workflows.config import reset_dbos_client
+    import src.dbos_workflows.config as dbos_config_module
 
-    reset_dbos_client()
+    dbos_config_module.settings = settings
+    dbos_config_module.reset_dbos_client()
     print("   DBOS client reset for reconnection with updated DATABASE_URL")
 
     # Reset redis_client to reconnect with updated REDIS_URL
