@@ -17,19 +17,19 @@ logger = logging.getLogger(__name__)
 
 audit_events_published_total = Counter(
     "audit_events_published_total",
-    "Total number of audit events published to NATS",
+    "Total number of audit events persisted via DBOS",
     ["status"],
 )
 
 audit_publish_failures_total = Counter(
     "audit_publish_failures_total",
-    "Total number of failed audit event publishes",
+    "Total number of failed audit event persist operations",
     ["error_type"],
 )
 
 audit_publish_timeouts_total = Counter(
     "audit_publish_timeouts_total",
-    "Total number of audit event publish timeouts",
+    "Total number of audit event persist timeouts",
 )
 
 
