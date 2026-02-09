@@ -827,6 +827,20 @@ class Settings(BaseSettings):
         "Bulk scans are computationally expensive, so this limit prevents abuse.",
     )
 
+    FLASHPOINT_CONTEXT_CACHE_TTL: int = Field(
+        default=1800,
+        description="TTL in seconds for cross-batch flashpoint context cache (30 minutes default). "
+        "Controls how long previous batch messages are available as context for flashpoint detection.",
+        ge=60,
+    )
+    FLASHPOINT_CONTEXT_CACHE_MAX_MESSAGES: int = Field(
+        default=20,
+        description="Maximum number of messages per channel stored in the cross-batch flashpoint context cache. "
+        "Older messages are evicted when this limit is exceeded.",
+        ge=1,
+        le=100,
+    )
+
     DBOS_APP_NAME: str = Field(
         default="opennotes-server",
         description="Application name for DBOS (lowercase, alphanumeric, dashes, underscores only)",

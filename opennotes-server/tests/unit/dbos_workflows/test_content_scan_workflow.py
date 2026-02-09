@@ -1968,6 +1968,10 @@ class TestPreprocessBatchStepInnerLogic:
 
         mock_service_instance = MagicMock()
         mock_service_instance.get_existing_request_message_ids = AsyncMock(return_value=set())
+        mock_service_instance._populate_cross_batch_cache = AsyncMock()
+        mock_service_instance._enrich_context_from_cache = AsyncMock(
+            side_effect=lambda ctx_map, _cs_id: ctx_map
+        )
 
         mock_session = AsyncMock()
 

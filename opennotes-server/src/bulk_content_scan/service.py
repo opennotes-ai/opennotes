@@ -41,6 +41,7 @@ logger = get_logger(__name__)
 
 REDIS_KEY_PREFIX = "bulk_scan"
 REDIS_TTL_SECONDS = 86400  # 24 hours
+FLASHPOINT_CONTEXT_KEY_PREFIX = "flashpoint_ctx"
 
 
 def calculate_indeterminate_threshold(base_threshold: float) -> float:
@@ -274,6 +275,11 @@ class BulkContentScanService:
 
         needs_context = ScanType.CONVERSATION_FLASHPOINT in active_scan_types
         channel_context_map = self.build_channel_context_map(messages) if needs_context else {}
+        if needs_context and channel_context_map:
+            await self._populate_cross_batch_cache(messages, community_server_platform_id)
+            channel_context_map = await self._enrich_context_from_cache(
+                channel_context_map, community_server_platform_id
+            )
         message_id_index = (
             self._build_message_id_index(channel_context_map) if needs_context else None
         )
@@ -471,6 +477,76 @@ class BulkContentScanService:
             msgs.sort(key=lambda m: m.timestamp)
 
         return channel_messages
+
+    @staticmethod
+    def _get_flashpoint_context_key(community_server_id: str, channel_id: str) -> str:
+        return f"{settings.ENVIRONMENT}:{FLASHPOINT_CONTEXT_KEY_PREFIX}:{community_server_id}:{channel_id}"
+
+    async def _populate_cross_batch_cache(
+        self,
+        messages: Sequence[BulkScanMessage],
+        community_server_id: str,
+    ) -> None:
+        try:
+            channels: dict[str, list[BulkScanMessage]] = {}
+            for msg in messages:
+                channels.setdefault(msg.channel_id, []).append(msg)
+
+            for channel_id, channel_msgs in channels.items():
+                key = self._get_flashpoint_context_key(community_server_id, channel_id)
+                mapping: dict[str, float] = {}
+                for msg in channel_msgs:
+                    mapping[msg.model_dump_json()] = msg.timestamp.timestamp()
+
+                await self.redis_client.zadd(key, mapping)  # type: ignore[arg-type]
+                await self.redis_client.expire(key, settings.FLASHPOINT_CONTEXT_CACHE_TTL)  # type: ignore[misc]
+
+                card = await self.redis_client.zcard(key)  # type: ignore[misc]
+                if card > settings.FLASHPOINT_CONTEXT_CACHE_MAX_MESSAGES:
+                    await self.redis_client.zremrangebyrank(  # type: ignore[misc]
+                        key, 0, card - settings.FLASHPOINT_CONTEXT_CACHE_MAX_MESSAGES - 1
+                    )
+        except Exception:
+            logger.warning(
+                "Failed to populate cross-batch flashpoint context cache",
+                exc_info=True,
+            )
+
+    async def _enrich_context_from_cache(
+        self,
+        channel_context_map: dict[str, list[BulkScanMessage]],
+        community_server_id: str,
+    ) -> dict[str, list[BulkScanMessage]]:
+        try:
+            for channel_id, batch_msgs in channel_context_map.items():
+                if not batch_msgs:
+                    continue
+
+                key = self._get_flashpoint_context_key(community_server_id, channel_id)
+
+                cached_raw = await self.redis_client.zrange(key, 0, -1)  # type: ignore[misc]
+                if not cached_raw:
+                    continue
+
+                batch_msg_ids = {m.message_id for m in batch_msgs}
+                cached_msgs: list[BulkScanMessage] = []
+                for raw in cached_raw:
+                    raw_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                    msg = BulkScanMessage.model_validate_json(raw_str)
+                    if msg.message_id not in batch_msg_ids:
+                        cached_msgs.append(msg)
+
+                if cached_msgs:
+                    merged = cached_msgs + batch_msgs
+                    merged.sort(key=lambda m: m.timestamp)
+                    channel_context_map[channel_id] = merged
+        except Exception:
+            logger.warning(
+                "Failed to enrich context from cross-batch cache",
+                exc_info=True,
+            )
+
+        return channel_context_map
 
     def _get_context_for_message(
         self,

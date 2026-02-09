@@ -736,13 +736,15 @@ def preprocess_batch_step(
                     },
                 )
 
-        needs_context = ScanType.CONVERSATION_FLASHPOINT in scan_types
-        channel_context_map: dict[str, list[dict[str, Any]]] = {}
-        if needs_context and typed_messages:
-            raw_map = BulkContentScanService.build_channel_context_map(typed_messages)
-            channel_context_map = {
-                ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
-            }
+            needs_context = ScanType.CONVERSATION_FLASHPOINT in scan_types
+            channel_context_map: dict[str, list[dict[str, Any]]] = {}
+            if needs_context and typed_messages:
+                raw_map = BulkContentScanService.build_channel_context_map(typed_messages)
+                await service._populate_cross_batch_cache(typed_messages, community_server_id)
+                raw_map = await service._enrich_context_from_cache(raw_map, community_server_id)
+                channel_context_map = {
+                    ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
+                }
 
         filtered_key = get_batch_redis_key(scan_id, batch_number, "filtered")
         context_key = get_batch_redis_key(scan_id, batch_number, "context")
