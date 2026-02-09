@@ -52,6 +52,8 @@ class StatefulRedisMock:
         self.hset = AsyncMock(side_effect=self._hset)
         self.hget = AsyncMock(side_effect=self._hget)
         self.hgetall = AsyncMock(side_effect=self._hgetall)
+        self.hmget = AsyncMock(side_effect=self._hmget)
+        self.hdel = AsyncMock(side_effect=self._hdel)
         self.hincrby = AsyncMock(side_effect=self._hincrby)
         # Redis counter operations
         self.incrby = AsyncMock(side_effect=self._incrby)
@@ -545,6 +547,30 @@ class StatefulRedisMock:
             raise TypeError(f"Key {key} is not a hash")
 
         return self.store[key].copy()
+
+    async def _hmget(self, key: str, *fields: str) -> list[str | None]:
+        if key not in self.store:
+            return [None] * len(fields)
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        return [self.store[key].get(field) for field in fields]
+
+    async def _hdel(self, key: str, *fields: str) -> int:
+        if key not in self.store:
+            return 0
+
+        if not isinstance(self.store[key], dict):
+            raise TypeError(f"Key {key} is not a hash")
+
+        removed = 0
+        for field in fields:
+            if field in self.store[key]:
+                del self.store[key][field]
+                removed += 1
+
+        return removed
 
     async def _hincrby(self, key: str, field: str, amount: int = 1) -> int:
         """Increment a hash field by the given amount"""

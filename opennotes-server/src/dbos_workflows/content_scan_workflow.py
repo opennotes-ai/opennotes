@@ -694,19 +694,42 @@ def preprocess_batch_step(
     from src.config import get_settings
     from src.database import get_session_maker
     from src.fact_checking.embedding_service import EmbeddingService
+    from src.llm_config.models import CommunityServer
     from src.tasks.content_monitoring_tasks import _get_llm_service
 
     settings = get_settings()
     scan_uuid = UUID(scan_id)
+    community_uuid = UUID(community_server_id)
     scan_types = [ScanType(st) for st in json.loads(scan_types_json)]
 
     async def _preprocess() -> dict[str, Any]:
+        from sqlalchemy import select
+
         redis_conn = await get_shared_redis_client(settings.REDIS_URL)
         raw_messages = await load_messages_from_redis(redis_conn, messages_redis_key)
         typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
         original_count = len(typed_messages)
 
         async with get_session_maker()() as session:
+            result = await session.execute(
+                select(CommunityServer.platform_community_server_id).where(
+                    CommunityServer.id == community_uuid
+                )
+            )
+            platform_id = result.scalar_one_or_none()
+
+            if not platform_id:
+                logger.error(
+                    "Platform ID not found for preprocess step",
+                    extra={"community_server_id": community_server_id},
+                )
+                return {
+                    "filtered_messages_key": "",
+                    "context_maps_key": "",
+                    "message_count": 0,
+                    "skipped_count": 0,
+                }
+
             llm_service = _get_llm_service()
             embedding_service = EmbeddingService(llm_service)
             service = BulkContentScanService(
@@ -740,8 +763,8 @@ def preprocess_batch_step(
             channel_context_map: dict[str, list[dict[str, Any]]] = {}
             if needs_context and typed_messages:
                 raw_map = BulkContentScanService.build_channel_context_map(typed_messages)
-                await service._populate_cross_batch_cache(typed_messages, community_server_id)
-                raw_map = await service._enrich_context_from_cache(raw_map, community_server_id)
+                raw_map = await service._enrich_context_from_cache(raw_map, platform_id)
+                await service._populate_cross_batch_cache(typed_messages, platform_id)
                 channel_context_map = {
                     ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
                 }

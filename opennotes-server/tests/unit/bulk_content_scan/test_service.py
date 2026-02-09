@@ -2724,8 +2724,8 @@ class TestCrossBatchContextCache:
             self._make_message("msg_4", "ch_1", 4),
         ]
         context_map = BulkContentScanService.build_channel_context_map(batch2)
-        await service._populate_cross_batch_cache(batch2, "server_abc")
         enriched = await service._enrich_context_from_cache(context_map, "server_abc")
+        await service._populate_cross_batch_cache(batch2, "server_abc")
 
         assert len(enriched["ch_1"]) == 4
 
@@ -2733,8 +2733,8 @@ class TestCrossBatchContextCache:
             self._make_message("msg_5", "ch_1", 5),
         ]
         context_map3 = BulkContentScanService.build_channel_context_map(batch3)
-        await service._populate_cross_batch_cache(batch3, "server_abc")
         enriched3 = await service._enrich_context_from_cache(context_map3, "server_abc")
+        await service._populate_cross_batch_cache(batch3, "server_abc")
 
         msg_ids = [m.message_id for m in enriched3["ch_1"]]
         assert "msg_5" in msg_ids

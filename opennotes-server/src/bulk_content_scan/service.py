@@ -276,10 +276,10 @@ class BulkContentScanService:
         needs_context = ScanType.CONVERSATION_FLASHPOINT in active_scan_types
         channel_context_map = self.build_channel_context_map(messages) if needs_context else {}
         if needs_context and channel_context_map:
-            await self._populate_cross_batch_cache(messages, community_server_platform_id)
             channel_context_map = await self._enrich_context_from_cache(
                 channel_context_map, community_server_platform_id
             )
+            await self._populate_cross_batch_cache(messages, community_server_platform_id)
         message_id_index = (
             self._build_message_id_index(channel_context_map) if needs_context else None
         )
@@ -494,18 +494,32 @@ class BulkContentScanService:
 
             for channel_id, channel_msgs in channels.items():
                 key = self._get_flashpoint_context_key(community_server_id, channel_id)
-                mapping: dict[str, float] = {}
+                data_key = f"{key}:data"
+                score_mapping: dict[str, float] = {}
+                data_mapping: dict[str, str] = {}
                 for msg in channel_msgs:
-                    mapping[msg.model_dump_json()] = msg.timestamp.timestamp()
+                    score_mapping[msg.message_id] = msg.timestamp.timestamp()
+                    data_mapping[msg.message_id] = msg.model_dump_json()
 
-                await self.redis_client.zadd(key, mapping)  # type: ignore[arg-type]
+                await self.redis_client.zadd(key, score_mapping)  # type: ignore[arg-type]
+                await self.redis_client.hset(data_key, mapping=data_mapping)  # type: ignore[arg-type]
                 await self.redis_client.expire(key, settings.FLASHPOINT_CONTEXT_CACHE_TTL)  # type: ignore[misc]
+                await self.redis_client.expire(data_key, settings.FLASHPOINT_CONTEXT_CACHE_TTL)  # type: ignore[misc]
 
                 card = await self.redis_client.zcard(key)  # type: ignore[misc]
                 if card > settings.FLASHPOINT_CONTEXT_CACHE_MAX_MESSAGES:
+                    trim_count = card - settings.FLASHPOINT_CONTEXT_CACHE_MAX_MESSAGES
+                    trimmed_members = await self.redis_client.zrange(key, 0, trim_count - 1)  # type: ignore[misc]
                     await self.redis_client.zremrangebyrank(  # type: ignore[misc]
-                        key, 0, card - settings.FLASHPOINT_CONTEXT_CACHE_MAX_MESSAGES - 1
+                        key, 0, trim_count - 1
                     )
+                    if trimmed_members:
+                        trimmed_ids = [
+                            m.decode("utf-8") if isinstance(m, bytes) else m
+                            for m in trimmed_members
+                        ]
+                        for mid in trimmed_ids:
+                            await self.redis_client.hdel(data_key, mid)  # type: ignore[misc]
         except Exception:
             logger.warning(
                 "Failed to populate cross-batch flashpoint context cache",
@@ -523,18 +537,29 @@ class BulkContentScanService:
                     continue
 
                 key = self._get_flashpoint_context_key(community_server_id, channel_id)
+                data_key = f"{key}:data"
 
-                cached_raw = await self.redis_client.zrange(key, 0, -1)  # type: ignore[misc]
-                if not cached_raw:
+                cached_ids_raw = await self.redis_client.zrange(key, 0, -1)  # type: ignore[misc]
+                if not cached_ids_raw:
                     continue
 
                 batch_msg_ids = {m.message_id for m in batch_msgs}
+                needed_ids = []
+                for raw_id in cached_ids_raw:
+                    mid = raw_id.decode("utf-8") if isinstance(raw_id, bytes) else raw_id
+                    if mid not in batch_msg_ids:
+                        needed_ids.append(mid)
+
+                if not needed_ids:
+                    continue
+
+                cached_jsons = await self.redis_client.hmget(data_key, *needed_ids)  # type: ignore[misc]
                 cached_msgs: list[BulkScanMessage] = []
-                for raw in cached_raw:
-                    raw_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-                    msg = BulkScanMessage.model_validate_json(raw_str)
-                    if msg.message_id not in batch_msg_ids:
-                        cached_msgs.append(msg)
+                for raw_json in cached_jsons:
+                    if raw_json is None:
+                        continue
+                    raw_str = raw_json.decode("utf-8") if isinstance(raw_json, bytes) else raw_json
+                    cached_msgs.append(BulkScanMessage.model_validate_json(raw_str))
 
                 if cached_msgs:
                     merged = cached_msgs + batch_msgs
