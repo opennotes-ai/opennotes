@@ -3,7 +3,6 @@
 Tests cover:
 - Deprecated TaskIQ stubs return {"status": "deprecated"}
 - start_ai_note_workflow calls DBOSClient.start_workflow correctly
-- start_vision_description_workflow calls DBOSClient.start_workflow correctly
 - call_persist_audit_log calls DBOSClient.start_workflow correctly
 - Audit middleware calls call_persist_audit_log instead of NATS
 """
@@ -131,36 +130,6 @@ class TestStartAINoteWorkflow:
             assert positional[0] == ai_note_generation_workflow
             metadata_json = positional[8]
             assert json.loads(metadata_json) == moderation_metadata
-
-
-class TestStartVisionDescriptionWorkflow:
-    def test_calls_dbos_client_start_workflow(self):
-        mock_client = MagicMock()
-        archive_id = str(uuid4())
-
-        with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            return_value=mock_client,
-        ):
-            from src.dbos_workflows.content_monitoring_workflows import (
-                start_vision_description_workflow,
-                vision_description_workflow,
-            )
-
-            start_vision_description_workflow(
-                message_archive_id=archive_id,
-                image_url="https://example.com/image.jpg",
-                community_server_id="platform123",
-                db_url="postgresql://test/db",
-            )
-
-            mock_client.start_workflow.assert_called_once_with(
-                vision_description_workflow,
-                archive_id,
-                "https://example.com/image.jpg",
-                "platform123",
-                "postgresql://test/db",
-            )
 
 
 class TestCallPersistAuditLog:

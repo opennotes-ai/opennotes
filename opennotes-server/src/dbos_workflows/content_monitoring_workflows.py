@@ -501,32 +501,6 @@ def start_ai_note_workflow(
     )
 
 
-def start_vision_description_workflow(
-    message_archive_id: str,
-    image_url: str,
-    community_server_id: str,
-    db_url: str,
-) -> None:
-    from src.dbos_workflows.config import get_dbos_client
-
-    client = get_dbos_client()
-    client.start_workflow(
-        vision_description_workflow,
-        message_archive_id,
-        image_url,
-        community_server_id,
-        db_url,
-    )
-
-    logger.info(
-        "Enqueued vision description workflow",
-        extra={
-            "message_archive_id": message_archive_id,
-            "community_server_id": community_server_id,
-        },
-    )
-
-
 def call_persist_audit_log(
     user_id: str | None,
     action: str,

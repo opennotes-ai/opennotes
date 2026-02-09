@@ -40,7 +40,6 @@ Workflows:
     vision_description_workflow: Generate image description via LLM vision API
     call_persist_audit_log: Persist audit log entry to database
     start_ai_note_workflow: Enqueue AI note generation workflow
-    start_vision_description_workflow: Enqueue vision description workflow
 """
 
 from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter
@@ -64,7 +63,6 @@ from src.dbos_workflows.content_monitoring_workflows import (
     ai_note_generation_workflow,
     call_persist_audit_log,
     start_ai_note_workflow,
-    start_vision_description_workflow,
     vision_description_workflow,
 )
 from src.dbos_workflows.content_scan_workflow import (
@@ -124,7 +122,6 @@ __all__ = [
     "send_all_transmitted_signal",
     "similarity_scan_step",
     "start_ai_note_workflow",
-    "start_vision_description_workflow",
     "store_messages_in_redis",
     "vision_description_workflow",
 ]
