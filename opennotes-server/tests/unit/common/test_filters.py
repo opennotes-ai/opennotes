@@ -5,12 +5,15 @@ This module tests the core filter operators in src/common/filters.py:
 - Comparison operators (gt, gte, lt, lte)
 - List operators (in, not_in)
 - Null checking (isnull)
+- Text matching (like, ilike)
+- Array operations (contains, overlap)
 """
 
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
@@ -30,6 +33,7 @@ class TestModel(Base):
     status: Mapped[str] = mapped_column(String(50))
     count: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
 
 
 def compile_condition(condition) -> str:
@@ -352,3 +356,52 @@ class TestFilterBuilderCustomFilters:
         filters = builder.build(filter_a=True, filter_b="active")
 
         assert len(filters) == 2
+
+
+class TestFilterBuilderTextAndArrayOperators:
+    """Tests for text matching and array operators."""
+
+    def test_like_operator(self):
+        """Test LIKE pattern matching filter."""
+        builder = FilterBuilder(FilterField(TestModel.name, operators=[FilterOperator.LIKE]))
+
+        filters = builder.build(name__like="%john%")
+
+        assert len(filters) == 1
+        sql = compile_condition(filters[0])
+        assert "test_models.name LIKE" in sql
+        assert "john" in sql
+
+    def test_ilike_operator(self):
+        """Test case-insensitive ILIKE pattern matching filter."""
+        builder = FilterBuilder(FilterField(TestModel.name, operators=[FilterOperator.ILIKE]))
+
+        filters = builder.build(name__ilike="%john%")
+
+        assert len(filters) == 1
+        sql = compile_condition(filters[0])
+        assert "test_models.name ILIKE" in sql
+        assert "john" in sql
+
+    def test_contains_operator(self):
+        """Test CONTAINS substring matching filter."""
+        builder = FilterBuilder(FilterField(TestModel.name, operators=[FilterOperator.CONTAINS]))
+
+        filters = builder.build(name__contains="john")
+
+        assert len(filters) == 1
+        sql = compile_condition(filters[0])
+        assert "test_models.name LIKE '%" in sql
+        assert "john" in sql
+
+    def test_overlap_operator(self):
+        """Test PostgreSQL array OVERLAP (&&) operator."""
+        builder = FilterBuilder(FilterField(TestModel.tags, operators=[FilterOperator.OVERLAP]))
+
+        filters = builder.build(tags__overlap=["python", "rust"])
+
+        assert len(filters) == 1
+        sql = compile_condition(filters[0])
+        assert "test_models.tags &&" in sql
+        assert "python" in sql
+        assert "rust" in sql
