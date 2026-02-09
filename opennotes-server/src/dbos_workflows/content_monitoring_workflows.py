@@ -55,7 +55,6 @@ def generate_ai_note_step(
     request_id: str,
     content: str,
     scan_type: str,
-    db_url: str,
     fact_check_item_id: str | None = None,
     similarity_score: float | None = None,
     moderation_metadata: dict[str, Any] | None = None,
@@ -111,7 +110,7 @@ def generate_ai_note_step(
                 span.set_attribute("task.rate_limited", True)
                 return {"status": "rate_limited", "retry_after": retry_after}
 
-            engine = _create_db_engine(db_url)
+            engine = _create_db_engine(settings.DATABASE_URL)
             async_session = async_sessionmaker(engine, expire_on_commit=False)
 
             try:
@@ -242,7 +241,6 @@ def ai_note_generation_workflow(
     request_id: str,
     content: str,
     scan_type: str,
-    db_url: str,
     fact_check_item_id: str | None = None,
     similarity_score: float | None = None,
     moderation_metadata_json: str | None = None,
@@ -254,7 +252,6 @@ def ai_note_generation_workflow(
         request_id=request_id,
         content=content,
         scan_type=scan_type,
-        db_url=db_url,
         fact_check_item_id=fact_check_item_id,
         similarity_score=similarity_score,
         moderation_metadata=moderation_metadata,
@@ -266,11 +263,11 @@ def generate_vision_description_step(
     message_archive_id: str,
     image_url: str,
     community_server_id: str,
-    db_url: str,
 ) -> dict[str, Any]:
     async def _generate() -> dict[str, Any]:
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
+        from src.config import get_settings
         from src.notes.message_archive_models import MessageArchive
         from src.services.vision_service import VisionService
         from src.tasks.content_monitoring_tasks import _create_db_engine, _get_llm_service
@@ -282,7 +279,8 @@ def generate_vision_description_step(
             span.set_attribute("task.community_server_id", community_server_id)
             span.set_attribute("task.component", "content_monitoring")
 
-            engine = _create_db_engine(db_url)
+            settings = get_settings()
+            engine = _create_db_engine(settings.DATABASE_URL)
             async_session = async_sessionmaker(engine, expire_on_commit=False)
 
             try:
@@ -354,13 +352,11 @@ def vision_description_workflow(
     message_archive_id: str,
     image_url: str,
     community_server_id: str,
-    db_url: str,
 ) -> dict[str, Any]:
     return generate_vision_description_step(
         message_archive_id=message_archive_id,
         image_url=image_url,
         community_server_id=community_server_id,
-        db_url=db_url,
     )
 
 
@@ -373,12 +369,12 @@ def persist_audit_log_step(
     details: str | None,
     ip_address: str | None,
     user_agent: str | None,
-    db_url: str,
     created_at_iso: str | None = None,
 ) -> dict[str, Any]:
     async def _persist() -> dict[str, Any]:
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
+        from src.config import get_settings
         from src.tasks.content_monitoring_tasks import _create_db_engine
         from src.users.models import AuditLog
 
@@ -389,7 +385,8 @@ def persist_audit_log_step(
             if user_id:
                 span.set_attribute("task.user_id", user_id)
 
-            engine = _create_db_engine(db_url)
+            settings = get_settings()
+            engine = _create_db_engine(settings.DATABASE_URL)
             async_session = async_sessionmaker(engine, expire_on_commit=False)
 
             try:
@@ -448,7 +445,6 @@ def _audit_log_wrapper_workflow(
     details: str | None,
     ip_address: str | None,
     user_agent: str | None,
-    db_url: str,
     created_at_iso: str | None,
 ) -> dict[str, Any]:
     return persist_audit_log_step(
@@ -459,7 +455,6 @@ def _audit_log_wrapper_workflow(
         details=details,
         ip_address=ip_address,
         user_agent=user_agent,
-        db_url=db_url,
         created_at_iso=created_at_iso,
     )
 
@@ -469,7 +464,6 @@ def start_ai_note_workflow(
     request_id: str,
     content: str,
     scan_type: str,
-    db_url: str,
     fact_check_item_id: str | None = None,
     similarity_score: float | None = None,
     moderation_metadata: dict[str, Any] | None = None,
@@ -485,7 +479,6 @@ def start_ai_note_workflow(
         request_id,
         content,
         scan_type,
-        db_url,
         fact_check_item_id,
         similarity_score,
         moderation_metadata_json,
@@ -505,7 +498,6 @@ def call_persist_audit_log(
     user_id: str | None,
     action: str,
     resource: str,
-    db_url: str,
     resource_id: str | None = None,
     details: str | None = None,
     ip_address: str | None = None,
@@ -524,6 +516,5 @@ def call_persist_audit_log(
         details,
         ip_address,
         user_agent,
-        db_url,
         created_at_iso,
     )

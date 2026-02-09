@@ -2065,7 +2065,6 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                             request_id=request.request_id,
                             content=flagged_msg.content,
                             scan_type="similarity",
-                            db_url=settings.DATABASE_URL,
                             fact_check_item_id=str(first_match.fact_check_item_id)
                             if first_match.fact_check_item_id
                             else None,
@@ -2083,7 +2082,6 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                             request_id=request.request_id,
                             content=flagged_msg.content,
                             scan_type="openai_moderation",
-                            db_url=settings.DATABASE_URL,
                             moderation_metadata=moderation_metadata,
                         )
                     elif isinstance(first_match, ConversationFlashpointMatch):
@@ -2093,7 +2091,6 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                             request_id=request.request_id,
                             content=flagged_msg.content,
                             scan_type="conversation_flashpoint",
-                            db_url=settings.DATABASE_URL,
                         )
                     logger.info(
                         "Enqueued AI note generation workflow",

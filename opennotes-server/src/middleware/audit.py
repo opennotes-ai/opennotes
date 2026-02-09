@@ -11,7 +11,6 @@ from prometheus_client import Counter
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth.auth import verify_token
-from src.config import settings
 from src.dbos_workflows.content_monitoring_workflows import call_persist_audit_log
 
 logger = logging.getLogger(__name__)
@@ -104,7 +103,6 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     details=json.dumps(details),
                     ip_address=request.client.host if request.client else None,
                     user_agent=request.headers.get("user-agent"),
-                    db_url=settings.DATABASE_URL,
                     created_at_iso=start_time.isoformat(),
                 )
             audit_events_published_total.labels(status="success").inc()

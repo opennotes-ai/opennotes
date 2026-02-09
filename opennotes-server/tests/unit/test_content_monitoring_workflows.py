@@ -82,7 +82,6 @@ class TestStartAINoteWorkflow:
                 request_id="req456",
                 content="test claim",
                 scan_type="similarity",
-                db_url="postgresql://test/db",
                 fact_check_item_id="fc-item-1",
                 similarity_score=0.85,
             )
@@ -93,7 +92,6 @@ class TestStartAINoteWorkflow:
                 "req456",
                 "test claim",
                 "similarity",
-                "postgresql://test/db",
                 "fc-item-1",
                 0.85,
                 None,
@@ -121,14 +119,13 @@ class TestStartAINoteWorkflow:
                 request_id="req789",
                 content="test content",
                 scan_type="openai_moderation",
-                db_url="postgresql://test/db",
                 moderation_metadata=moderation_metadata,
             )
 
             call_args = mock_client.start_workflow.call_args
             positional = call_args[0]
             assert positional[0] == ai_note_generation_workflow
-            metadata_json = positional[8]
+            metadata_json = positional[7]
             assert json.loads(metadata_json) == moderation_metadata
 
 
@@ -153,7 +150,6 @@ class TestCallPersistAuditLog:
                 details='{"status_code": 201}',
                 ip_address="127.0.0.1",
                 user_agent="TestAgent/1.0",
-                db_url="postgresql://test/db",
                 created_at_iso="2024-01-15T10:30:00+00:00",
             )
 
@@ -166,7 +162,6 @@ class TestCallPersistAuditLog:
                 '{"status_code": 201}',
                 "127.0.0.1",
                 "TestAgent/1.0",
-                "postgresql://test/db",
                 "2024-01-15T10:30:00+00:00",
             )
 
@@ -186,7 +181,6 @@ class TestCallPersistAuditLog:
                 user_id=None,
                 action="system.startup",
                 resource="server",
-                db_url="postgresql://test/db",
             )
 
             mock_client.start_workflow.assert_called_once_with(
@@ -198,7 +192,6 @@ class TestCallPersistAuditLog:
                 None,
                 None,
                 None,
-                "postgresql://test/db",
                 None,
             )
 
@@ -223,12 +216,7 @@ class TestAuditMiddlewareUsesDBOS:
 
         start_time = datetime.now(UTC)
 
-        with (
-            patch("src.middleware.audit.call_persist_audit_log") as mock_call,
-            patch("src.middleware.audit.settings") as mock_settings,
-        ):
-            mock_settings.DATABASE_URL = "postgresql://test/db"
-
+        with patch("src.middleware.audit.call_persist_audit_log") as mock_call:
             await middleware._publish_audit_log(
                 request=mock_request,
                 response=mock_response,
@@ -241,7 +229,6 @@ class TestAuditMiddlewareUsesDBOS:
             call_kwargs = mock_call.call_args.kwargs
             assert call_kwargs["action"] == "POST /api/v1/notes"
             assert call_kwargs["resource"] == "notes"
-            assert call_kwargs["db_url"] == "postgresql://test/db"
             assert call_kwargs["ip_address"] == "127.0.0.1"
 
 
