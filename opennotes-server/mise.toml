@@ -33,11 +33,6 @@ description = "Run development server"
 run = "uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000"
 env = { DEBUG = "true", ENVIRONMENT = "development" }
 
-[tasks."worker:audit"]
-description = "Run audit worker for processing audit log events"
-run = "uv run python scripts/run_audit_worker.py"
-env = { DEBUG = "false", ENVIRONMENT = "development" }
-
 [tasks.shell]
 description = "Open Python shell with project context"
 run = "uv run python -i -c 'from src.main import *; from src.config import settings'"
