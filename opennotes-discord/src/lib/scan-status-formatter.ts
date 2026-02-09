@@ -224,15 +224,23 @@ function formatFlaggedMessagesListFull(
         confidence = formatMatchScore(firstMatch.score);
       } else if (firstMatch.scan_type === 'openai_moderation') {
         confidence = formatMatchScore(firstMatch.max_score);
+      } else if (firstMatch.scan_type === 'conversation_flashpoint') {
+        confidence = `${firstMatch.derailment_score}%`;
       }
     }
 
     const explanation = explanations?.get(msg.id);
     const explanationLine = explanation ? `\n   Explanation: ${explanation}` : '';
 
+    let flashpointLine = '';
+    if (firstMatch?.scan_type === 'conversation_flashpoint') {
+      flashpointLine = `\n   Risk Level: **${firstMatch.risk_level}**` +
+        `\n   Explanation: ${firstMatch.reasoning}`;
+    }
+
     return `**${index + 1}.** Preview: "${preview}"\n` +
       `   [(link to message)](${messageLink})\n` +
-      `   Confidence: **${confidence}**${explanationLine}`;
+      `   Confidence: **${confidence}**${flashpointLine || explanationLine}`;
   }).join('\n\n');
 }
 
@@ -254,14 +262,22 @@ function formatFlaggedMessagesList(
         confidence = formatMatchScore(firstMatch.score);
       } else if (firstMatch.scan_type === 'openai_moderation') {
         confidence = formatMatchScore(firstMatch.max_score);
+      } else if (firstMatch.scan_type === 'conversation_flashpoint') {
+        confidence = `${firstMatch.derailment_score}%`;
       }
     }
 
     const explanation = explanations?.get(msg.id);
     const explanationLine = explanation ? `\n   Explanation: ${explanation}` : '';
 
+    let flashpointLine = '';
+    if (firstMatch?.scan_type === 'conversation_flashpoint') {
+      flashpointLine = `\n   Risk Level: **${firstMatch.risk_level}**` +
+        `\n   Explanation: ${firstMatch.reasoning}`;
+    }
+
     return `**${index + 1}.** Preview: "${preview}"\n` +
       `   [(link to message)](${messageLink})\n` +
-      `   Confidence: **${confidence}**${explanationLine}`;
+      `   Confidence: **${confidence}**${flashpointLine || explanationLine}`;
   }).join('\n\n');
 }
