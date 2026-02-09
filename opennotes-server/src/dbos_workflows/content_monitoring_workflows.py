@@ -8,7 +8,7 @@ Workflows:
     vision_description_workflow: Generate image description via LLM vision API
 
 Steps:
-    persist_audit_log_step: Persist audit log entry to database (no workflow wrapper)
+    persist_audit_log_step: Persist audit log entry to database (wrapped by _audit_log_wrapper_workflow)
 """
 
 from __future__ import annotations
