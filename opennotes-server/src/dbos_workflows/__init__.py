@@ -59,6 +59,7 @@ from src.dbos_workflows.config import (
 )
 from src.dbos_workflows.content_monitoring_workflows import (
     AI_NOTE_GENERATION_WORKFLOW_NAME,
+    AUDIT_LOG_WORKFLOW_NAME,
     VISION_DESCRIPTION_WORKFLOW_NAME,
     ai_note_generation_workflow,
     call_persist_audit_log,
@@ -91,6 +92,7 @@ from src.dbos_workflows.rechunk_workflow import (
 
 __all__ = [
     "AI_NOTE_GENERATION_WORKFLOW_NAME",
+    "AUDIT_LOG_WORKFLOW_NAME",
     "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
     "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
     "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
