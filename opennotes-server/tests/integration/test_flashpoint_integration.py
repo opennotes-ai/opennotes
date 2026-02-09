@@ -61,7 +61,7 @@ class TestConversationFlashpointMatchSchema:
         """scan_type should be locked to 'conversation_flashpoint'."""
         match = ConversationFlashpointMatch(
             derailment_score=30,
-            risk_level="Guarded",
+            risk_level="Heated",
             reasoning="Normal conversation",
             context_messages=3,
         )
@@ -119,7 +119,12 @@ class TestConversationFlashpointMatchSchema:
             ConversationFlashpointMatch(derailment_score=50)
 
         with pytest.raises(ValidationError):
-            ConversationFlashpointMatch(derailment_score=50, reasoning="Test")
+            ConversationFlashpointMatch(derailment_score=50, risk_level="Low Risk")
+
+        with pytest.raises(ValidationError):
+            ConversationFlashpointMatch(
+                derailment_score=50, risk_level="Low Risk", reasoning="Test"
+            )
 
     def test_serialization_to_dict(self):
         """Match should serialize to dictionary with scan_type."""
@@ -134,6 +139,7 @@ class TestConversationFlashpointMatchSchema:
 
         assert data["scan_type"] == "conversation_flashpoint"
         assert data["derailment_score"] == 85
+        assert data["risk_level"] == "Hostile"
         assert data["reasoning"] == "Hostile language detected"
         assert data["context_messages"] == 3
 
@@ -150,6 +156,7 @@ class TestConversationFlashpointMatchSchema:
 
         assert '"scan_type":"conversation_flashpoint"' in json_str
         assert '"derailment_score":75' in json_str
+        assert '"risk_level":"Hostile"' in json_str
 
 
 class TestMatchResultUnion:
