@@ -170,6 +170,16 @@ def generate_ai_note_step(
 
                     response = await _call_llm()
 
+                    existing = await session.execute(
+                        select(Note.id).where(Note.request_id == request_id)
+                    )
+                    if existing.scalar_one_or_none():
+                        logger.info(
+                            "Note already exists for request",
+                            extra={"request_id": request_id},
+                        )
+                        return {"status": "already_exists", "request_id": request_id}
+
                     note = Note(
                         request_id=request_id,
                         author_id=PLACEHOLDER_USER_ID,
