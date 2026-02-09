@@ -124,7 +124,7 @@ export const data = new SlashCommandBuilder()
               .setRequired(true)
               .addChoices(
                 ...Object.keys(CONFIG_SCHEMA).map(key => ({
-                  name: CONFIG_SCHEMA[key as ConfigKey].description,
+                  name: CONFIG_SCHEMA[key as ConfigKey].shortName,
                   value: key,
                 }))
               )
@@ -147,7 +147,7 @@ export const data = new SlashCommandBuilder()
               .setRequired(false)
               .addChoices(
                 ...Object.keys(CONFIG_SCHEMA).map(key => ({
-                  name: CONFIG_SCHEMA[key as ConfigKey].description,
+                  name: CONFIG_SCHEMA[key as ConfigKey].shortName,
                   value: key,
                 }))
               )
@@ -982,7 +982,7 @@ async function handleOpennotesView(
             await configService.set(guildId, key as ConfigKey, newValue, buttonInteraction.user.id);
 
             const updatedConfig = await configService.getAll(guildId);
-            const statusMsg = `Toggled **${CONFIG_SCHEMA[key as ConfigKey].description}** to **\`${newValue}\`**`;
+            const statusMsg = `Toggled **${CONFIG_SCHEMA[key as ConfigKey].shortName}** to **\`${newValue}\`**`;
             const updatedContainer = buildConfigContainer(updatedConfig, currentPage, statusMsg);
             await buttonInteraction.editReply({
               components: [updatedContainer.toJSON()],
