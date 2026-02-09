@@ -4,7 +4,12 @@ from src.monitoring.gcp_resource_detector import (
     detect_gcp_cloud_run_resource,
     is_cloud_run_environment,
 )
-from src.monitoring.health import HealthChecker, HealthStatus, MonitoringHealthCheckResponse
+from src.monitoring.health import (
+    HealthChecker,
+    HealthCheckResponse,
+    HealthStatus,
+    ServiceStatus,
+)
 from src.monitoring.instance import InstanceMetadata, initialize_instance_metadata
 from src.monitoring.logging import get_logger, setup_logging
 from src.monitoring.metrics import get_metrics
@@ -17,11 +22,12 @@ from src.monitoring.otel import (
 
 __all__ = [
     "DistributedHealthCoordinator",
+    "HealthCheckResponse",
     "HealthChecker",
     "HealthStatus",
     "InstanceMetadata",
     "MetricsMiddleware",
-    "MonitoringHealthCheckResponse",
+    "ServiceStatus",
     "detect_gcp_cloud_run_resource",
     "get_logger",
     "get_metrics",
