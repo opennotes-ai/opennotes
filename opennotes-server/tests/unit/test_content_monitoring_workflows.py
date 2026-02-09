@@ -226,10 +226,10 @@ class TestAuditMiddlewareUsesDBOS:
             )
 
             mock_call.assert_called_once()
-            call_kwargs = mock_call.call_args.kwargs
-            assert call_kwargs["action"] == "POST /api/v1/notes"
-            assert call_kwargs["resource"] == "notes"
-            assert call_kwargs["ip_address"] == "127.0.0.1"
+            call_args = mock_call.call_args.args
+            assert call_args[1] == "POST /api/v1/notes"
+            assert call_args[2] == "notes"
+            assert call_args[5] == "127.0.0.1"
 
 
 class TestHelperFunctionsStillAccessible:
