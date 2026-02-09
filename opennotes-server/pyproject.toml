@@ -45,8 +45,6 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "torch>=2.1.2",
     "wandb>=0.23.0",
-    "fastapi-jsonapi>=3.0.0",
-    "fastapi-filter>=2.0.1",
     "xxhash>=3.6.0",
     "litellm>=1.80.11,<2.0.0",
     "chonkie[neural]>=1.3.0,<2.0.0",
@@ -158,6 +156,7 @@ ignore = [
 "src/dbos_workflows/**/*.py" = ["PLC0415", "PLW0603"]  # Lazy imports required to avoid circular deps; global state for singleton adapter
 "src/bulk_content_scan/flashpoint_service.py" = ["PLC0415", "PLW0603"]  # Lazy dspy import to avoid heavy ML deps at startup; global for singleton
 "src/bulk_content_scan/flashpoint_utils.py" = ["PLC0415"]  # Lazy dspy import to avoid heavy ML deps at startup
+"src/common/filters.py" = ["PLR0911", "PLR0912", "PLC0415"]  # FilterBuilder._build_condition uses match with many operator cases; lazy import for OVERLAP to avoid circular
 
 [tool.ruff.format]
 quote-style = "double"

@@ -15,12 +15,12 @@ Filter operators supported (via fastapi-filter style syntax):
 - filter[status__neq]: Status not equal to value
 - filter[created_at__gte]: Created at >= datetime
 - filter[created_at__lte]: Created at <= datetime
-- filter[rated_by_participant_id__not_in]: Exclude notes rated by these users
-- filter[rated_by_participant_id]: Include only notes rated by this user
+- filter[rater_id__not_in]: Exclude notes rated by these users
+- filter[rater_id]: Include only notes rated by this user
 """
 
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -40,6 +40,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.ownership_dependencies import verify_note_ownership
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import StrictInputSchema
+from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -198,60 +199,29 @@ def create_error_response(
     )
 
 
-def _build_attribute_filters(
-    filter_status: NoteStatus | None,
-    filter_status_neq: NoteStatus | None,
-    filter_classification: NoteClassification | None,
-    filter_author_id: str | None,
-    filter_request_id: str | None,
-    filter_created_at_gte: datetime | None,
-    filter_created_at_lte: datetime | None,
-    filter_rated_by_not_in: list[UUID] | None,
-    filter_rated_by: UUID | None = None,
-) -> list[Any]:
-    """Build a list of filter conditions for note attributes.
-
-    Supports the following filter operators:
-    - Equality: filter[field]=value
-    - Not equal: filter[field__neq]=value
-    - Greater than or equal: filter[field__gte]=value
-    - Less than or equal: filter[field__lte]=value
-    - Not in (exclusion): filter[rater_id__not_in]=uuid1,uuid2
-    - In (inclusion): filter[rater_id]=uuid (notes rated by user)
-    """
-    filters = []
-
-    if filter_status is not None:
-        filters.append(Note.status == filter_status)
-
-    if filter_status_neq is not None:
-        filters.append(Note.status != filter_status_neq)
-
-    if filter_classification is not None:
-        filters.append(Note.classification == filter_classification)
-
-    if filter_author_id is not None:
-        filters.append(Note.author_id == UUID(filter_author_id))
-
-    if filter_request_id is not None:
-        filters.append(Note.request_id == filter_request_id)
-
-    if filter_created_at_gte is not None:
-        filters.append(Note.created_at >= filter_created_at_gte)
-
-    if filter_created_at_lte is not None:
-        filters.append(Note.created_at <= filter_created_at_lte)
-
-    if filter_rated_by_not_in:
-        rating_subquery = select(Rating.note_id).where(Rating.rater_id.in_(filter_rated_by_not_in))
-        filters.append(not_(exists(rating_subquery.where(Rating.note_id == Note.id))))
-
-    if filter_rated_by:
-        filters.append(
-            Note.id.in_(select(Rating.note_id).where(Rating.rater_id == filter_rated_by))
-        )
-
-    return filters
+note_filter_builder = (
+    FilterBuilder(
+        FilterField(Note.status, operators=[FilterOperator.EQ, FilterOperator.NEQ]),
+        FilterField(Note.classification, operators=[FilterOperator.EQ]),
+        FilterField(Note.author_id, alias="author_id", operators=[FilterOperator.EQ]),
+        FilterField(Note.request_id, operators=[FilterOperator.EQ]),
+        FilterField(Note.created_at, operators=[FilterOperator.GTE, FilterOperator.LTE]),
+    )
+    .add_custom_filter(
+        "rated_by_not_in",
+        lambda values: not_(
+            exists(
+                select(Rating.note_id)
+                .where(Rating.rater_id.in_(values))
+                .where(Rating.note_id == Note.id)
+            )
+        ),
+    )
+    .add_custom_filter(
+        "rated_by",
+        lambda value: Note.id.in_(select(Rating.note_id).where(Rating.rater_id == value)),
+    )
+)
 
 
 @router.get("/notes", response_class=JSONResponse, response_model=NoteListResponse)
@@ -308,16 +278,16 @@ async def list_notes_jsonapi(
                 UUID(x.strip()) for x in filter_rated_by_not_in.split(",") if x.strip()
             ]
 
-        filters = _build_attribute_filters(
-            filter_status=filter_status,
-            filter_status_neq=filter_status_neq,
-            filter_classification=filter_classification,
-            filter_author_id=filter_author_id,
-            filter_request_id=filter_request_id,
-            filter_created_at_gte=filter_created_at_gte,
-            filter_created_at_lte=filter_created_at_lte,
-            filter_rated_by_not_in=rated_by_list,
-            filter_rated_by=filter_rated_by,
+        filters = note_filter_builder.build(
+            status=filter_status,
+            status__neq=filter_status_neq,
+            classification=filter_classification,
+            author_id=filter_author_id,
+            request_id=filter_request_id,
+            created_at__gte=filter_created_at_gte,
+            created_at__lte=filter_created_at_lte,
+            rated_by_not_in=rated_by_list,
+            rated_by=filter_rated_by,
         )
 
         if filter_community_server_id:
