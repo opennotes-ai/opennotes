@@ -315,7 +315,6 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                             == community_server.platform_community_server_id
                         )
                         assert kwargs["similarity_score"] >= 0.85
-                        assert "db_url" in kwargs
 
     @pytest.mark.asyncio
     async def test_similarity_match_workflow_contains_correct_data(
@@ -332,7 +331,6 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
         - request_id: str
         - content: str
         - scan_type: str
-        - db_url: str
         - fact_check_item_id: str | None
         - similarity_score: float | None
         """
@@ -379,7 +377,6 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                 assert "community_server_id" in call_kwargs, (
                     "Workflow call missing community_server_id"
                 )
-                assert "db_url" in call_kwargs, "Workflow call missing db_url"
                 assert "fact_check_item_id" in call_kwargs, (
                     "Workflow call missing fact_check_item_id"
                 )
@@ -446,7 +443,6 @@ class TestModerationMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                 assert call_kwargs.get("fact_check_item_id") is None
                 assert "moderation_metadata" in call_kwargs
                 assert call_kwargs["moderation_metadata"]["flagged_categories"] == ["harassment"]
-                assert "db_url" in call_kwargs
 
 
 class TestGenerateAINotesDisabled(TestBulkScanAINoteGenerationFixtures):
