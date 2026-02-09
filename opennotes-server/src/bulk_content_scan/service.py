@@ -273,7 +273,7 @@ class BulkContentScanService:
         all_scores: list[dict] = []
 
         needs_context = ScanType.CONVERSATION_FLASHPOINT in active_scan_types
-        channel_context_map = self._build_channel_context_map(messages) if needs_context else {}
+        channel_context_map = self.build_channel_context_map(messages) if needs_context else {}
         message_id_index = (
             self._build_message_id_index(channel_context_map) if needs_context else None
         )
@@ -441,8 +441,9 @@ class BulkContentScanService:
             "matched_claim": None,
         }
 
-    def _build_channel_context_map(
-        self, messages: Sequence[BulkScanMessage]
+    @staticmethod
+    def build_channel_context_map(
+        messages: Sequence[BulkScanMessage],
     ) -> dict[str, list[BulkScanMessage]]:
         """Build a map of channel_id -> sorted messages for context lookup.
 

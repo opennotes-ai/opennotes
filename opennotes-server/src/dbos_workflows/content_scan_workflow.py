@@ -16,6 +16,30 @@ Architecture:
         | ----> send all_transmitted --> |                              |
         |                                | (check termination)          |
         |                                | finalize_scan_step           |
+
+Per-strategy steps (task-1089):
+    The batch processing is split into 4 DBOS steps with Redis-backed message
+    passing between them:
+    1. preprocess_batch_step - filters existing requests, builds context maps
+    2. similarity_scan_step - runs similarity search, produces candidates
+    3. flashpoint_scan_step - runs flashpoint detection, produces candidates
+    4. relevance_filter_step - unified LLM filtering on all candidates
+
+    Steps 2 and 3 are independent and could run in parallel once DBOS adds
+    async workflow support. Currently they run sequentially because DBOS
+    workflows in Python are synchronous (see DBOS_PARALLEL_NOTES below).
+
+DBOS_PARALLEL_NOTES:
+    DBOS Python workflows are synchronous functions decorated with @DBOS.workflow().
+    Steps are synchronous functions decorated with @DBOS.step(). Each step is
+    checkpointed for replay safety. Because workflows are sync, asyncio.gather
+    cannot be used directly to parallelize step calls. Parallel step execution
+    would require either:
+    - DBOS async workflow support (not yet available in dbos-transact-py)
+    - Child workflow pattern with separate queue workers
+    - concurrent.futures with careful DBOS context propagation (untested)
+    The current sequential execution is correct and the step decomposition
+    enables future parallelism without structural changes.
 """
 
 from __future__ import annotations
@@ -33,9 +57,12 @@ from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
 
 if TYPE_CHECKING:
-    pass
+    from redis.asyncio import Redis
 
 logger = get_logger(__name__)
+
+REDIS_BATCH_TTL_SECONDS = 86400
+REDIS_REPLAY_TTL_SECONDS = 7 * 24 * 3600
 
 content_scan_queue = Queue(
     name="content_scan",
@@ -47,6 +74,35 @@ BATCH_RECV_TIMEOUT_SECONDS = 600
 POST_ALL_TRANSMITTED_TIMEOUT_SECONDS = 60
 SCAN_RECV_TIMEOUT_SECONDS = 30
 ORCHESTRATOR_MAX_WALL_CLOCK_SECONDS = 1800
+
+
+def get_batch_redis_key(scan_id: str, batch_number: int, suffix: str) -> str:
+    from src.config import get_settings
+
+    env = get_settings().ENVIRONMENT
+    return f"{env}:bulk_scan:{suffix}:{scan_id}:{batch_number}"
+
+
+async def store_messages_in_redis(
+    redis_client: Redis,
+    key: str,
+    messages: list[dict[str, Any]],
+    ttl: int = REDIS_BATCH_TTL_SECONDS,
+) -> str:
+    await redis_client.setex(key, ttl, json.dumps(messages).encode())
+    return key
+
+
+async def load_messages_from_redis(
+    redis_client: Redis,
+    key: str,
+) -> list[dict[str, Any]]:
+    data = await redis_client.get(key)
+    if data is None:
+        raise ValueError(f"Redis key {key} not found or expired")
+    await redis_client.expire(key, REDIS_REPLAY_TTL_SECONDS)
+    raw = data.decode() if isinstance(data, bytes) else data
+    return json.loads(raw)
 
 
 @DBOS.step()
@@ -297,27 +353,34 @@ def process_content_scan_batch(
     scan_id: str,
     community_server_id: str,
     batch_number: int,
-    messages_json: str,
+    messages_redis_key: str,
     scan_types_json: str,
 ) -> dict[str, Any]:
     """DBOS queued workflow for processing a single content scan batch.
 
-    This workflow processes messages through the BulkContentScanService and
-    sends a batch_complete signal back to the orchestrator when done.
+    Splits processing into 4 per-strategy DBOS steps with Redis-backed
+    message passing:
+    1. preprocess_batch_step - filters existing requests, builds context
+    2. similarity_scan_step - runs similarity search
+    3. flashpoint_scan_step - runs flashpoint detection
+    4. relevance_filter_step - unified LLM relevance filtering
+
+    Steps 2 and 3 are independent and run sequentially. See DBOS_PARALLEL_NOTES
+    in module docstring for why they cannot yet run in parallel.
 
     Args:
         orchestrator_workflow_id: Workflow ID of the orchestrator to signal
         scan_id: UUID string of the scan
         community_server_id: UUID string of the community server
         batch_number: Batch number being processed
-        messages_json: JSON-encoded list of message dicts
+        messages_redis_key: Redis key where messages are stored
         scan_types_json: JSON-encoded list of scan type strings
 
     Returns:
         dict with batch processing results
     """
     logger.info(
-        "Starting content scan batch processing",
+        "Starting content scan batch processing (per-strategy steps)",
         extra={
             "scan_id": scan_id,
             "batch_number": batch_number,
@@ -325,13 +388,102 @@ def process_content_scan_batch(
         },
     )
 
-    result = process_batch_messages_step(
-        scan_id=scan_id,
-        community_server_id=community_server_id,
-        batch_number=batch_number,
-        messages_json=messages_json,
-        scan_types_json=scan_types_json,
-    )
+    scan_types = json.loads(scan_types_json)
+
+    errors = 0
+    flagged_count = 0
+    message_count = 0
+    skipped_count = 0
+    step_errors: list[str] = []
+    preprocess_result: dict[str, Any] | None = None
+
+    try:
+        preprocess_result = preprocess_batch_step(
+            scan_id=scan_id,
+            community_server_id=community_server_id,
+            batch_number=batch_number,
+            messages_redis_key=messages_redis_key,
+            scan_types_json=scan_types_json,
+        )
+    except Exception as e:
+        logger.error("preprocess_batch_step failed", exc_info=True)
+        step_errors.append(f"preprocess: {e}")
+
+    if preprocess_result is not None:
+        message_count = preprocess_result.get("message_count", 0)
+        skipped_count = preprocess_result.get("skipped_count", 0)
+
+        if message_count > 0:
+            filtered_messages_key = preprocess_result["filtered_messages_key"]
+            context_maps_key = preprocess_result.get("context_maps_key", "")
+
+            similarity_result: dict[str, Any] = {
+                "similarity_candidates_key": "",
+                "candidate_count": 0,
+            }
+            flashpoint_result: dict[str, Any] = {
+                "flashpoint_candidates_key": "",
+                "candidate_count": 0,
+            }
+
+            if "similarity" in scan_types:
+                try:
+                    similarity_result = similarity_scan_step(
+                        scan_id=scan_id,
+                        community_server_id=community_server_id,
+                        batch_number=batch_number,
+                        filtered_messages_key=filtered_messages_key,
+                        context_maps_key=context_maps_key,
+                    )
+                except Exception as e:
+                    logger.error("similarity_scan_step failed", exc_info=True)
+                    step_errors.append(f"similarity: {e}")
+
+            if "conversation_flashpoint" in scan_types:
+                try:
+                    flashpoint_result = flashpoint_scan_step(
+                        scan_id=scan_id,
+                        community_server_id=community_server_id,
+                        batch_number=batch_number,
+                        filtered_messages_key=filtered_messages_key,
+                        context_maps_key=context_maps_key,
+                    )
+                except Exception as e:
+                    logger.error("flashpoint_scan_step failed", exc_info=True)
+                    step_errors.append(f"flashpoint: {e}")
+
+            try:
+                filter_result = relevance_filter_step(
+                    scan_id=scan_id,
+                    community_server_id=community_server_id,
+                    batch_number=batch_number,
+                    similarity_candidates_key=similarity_result.get(
+                        "similarity_candidates_key", ""
+                    ),
+                    flashpoint_candidates_key=flashpoint_result.get(
+                        "flashpoint_candidates_key", ""
+                    ),
+                )
+                flagged_count = filter_result.get("flagged_count", 0)
+                errors = filter_result.get("errors", 0) + len(step_errors)
+            except Exception as e:
+                logger.error("relevance_filter_step failed", exc_info=True)
+                step_errors.append(f"relevance: {e}")
+                errors = len(step_errors)
+        else:
+            errors = len(step_errors)
+    else:
+        errors = len(step_errors)
+
+    result: dict[str, Any] = {
+        "processed": message_count,
+        "skipped": skipped_count,
+        "errors": errors,
+        "flagged_count": flagged_count,
+        "batch_number": batch_number,
+    }
+    if step_errors:
+        result["step_errors"] = step_errors
 
     DBOS.send(
         orchestrator_workflow_id,
@@ -346,6 +498,7 @@ def process_content_scan_batch(
             "batch_number": batch_number,
             "processed": result.get("processed", 0),
             "flagged_count": result.get("flagged_count", 0),
+            "step_errors": step_errors if step_errors else None,
         },
     )
 
@@ -507,6 +660,405 @@ def process_batch_messages_step(
             }
 
     return run_sync(_process())
+
+
+@DBOS.step()
+def preprocess_batch_step(
+    scan_id: str,
+    community_server_id: str,
+    batch_number: int,
+    messages_redis_key: str,
+    scan_types_json: str,
+) -> dict[str, Any]:
+    """Preprocess a batch: filter existing requests, build context maps.
+
+    Reads messages from Redis, filters out messages that already have note
+    requests, builds channel context maps for flashpoint detection, and
+    stores filtered messages back in Redis.
+
+    Args:
+        scan_id: UUID string of the scan
+        community_server_id: UUID string of the community server
+        batch_number: Batch number being processed
+        messages_redis_key: Redis key containing the raw messages
+        scan_types_json: JSON-encoded list of scan type strings
+
+    Returns:
+        dict with: filtered_messages_key, context_maps_key, message_count,
+                   skipped_count
+    """
+    from src.bulk_content_scan.scan_types import ScanType
+    from src.bulk_content_scan.schemas import BulkScanMessage
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+    from src.database import get_session_maker
+    from src.fact_checking.embedding_service import EmbeddingService
+    from src.tasks.content_monitoring_tasks import _get_llm_service
+
+    settings = get_settings()
+    scan_uuid = UUID(scan_id)
+    scan_types = [ScanType(st) for st in json.loads(scan_types_json)]
+
+    async def _preprocess() -> dict[str, Any]:
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+        raw_messages = await load_messages_from_redis(redis_conn, messages_redis_key)
+        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+        original_count = len(typed_messages)
+
+        async with get_session_maker()() as session:
+            llm_service = _get_llm_service()
+            embedding_service = EmbeddingService(llm_service)
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=embedding_service,
+                redis_client=redis_conn,
+                llm_service=llm_service,
+            )
+
+            platform_message_ids = [msg.message_id for msg in typed_messages]
+            existing_ids = await service.get_existing_request_message_ids(platform_message_ids)
+            skipped_count = 0
+
+            if existing_ids:
+                typed_messages = [
+                    msg for msg in typed_messages if msg.message_id not in existing_ids
+                ]
+                skipped_count = original_count - len(typed_messages)
+                await service.increment_skipped_count(scan_uuid, skipped_count)
+                logger.info(
+                    "Preprocess: skipped messages with existing note requests",
+                    extra={
+                        "scan_id": scan_id,
+                        "batch_number": batch_number,
+                        "skipped_count": skipped_count,
+                        "remaining_count": len(typed_messages),
+                    },
+                )
+
+        needs_context = ScanType.CONVERSATION_FLASHPOINT in scan_types
+        channel_context_map: dict[str, list[dict[str, Any]]] = {}
+        if needs_context and typed_messages:
+            raw_map = BulkContentScanService.build_channel_context_map(typed_messages)
+            channel_context_map = {
+                ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
+            }
+
+        filtered_key = get_batch_redis_key(scan_id, batch_number, "filtered")
+        context_key = get_batch_redis_key(scan_id, batch_number, "context")
+
+        filtered_dicts = [m.model_dump(mode="json") for m in typed_messages]
+        await store_messages_in_redis(redis_conn, filtered_key, filtered_dicts)
+        await store_messages_in_redis(redis_conn, context_key, [channel_context_map])
+
+        return {
+            "filtered_messages_key": filtered_key,
+            "context_maps_key": context_key,
+            "message_count": len(typed_messages),
+            "skipped_count": skipped_count,
+        }
+
+    return run_sync(_preprocess())
+
+
+@DBOS.step()
+def similarity_scan_step(
+    scan_id: str,
+    community_server_id: str,
+    batch_number: int,
+    filtered_messages_key: str,
+    context_maps_key: str,
+) -> dict[str, Any]:
+    """Run similarity scan on filtered messages and produce candidates.
+
+    Reads filtered messages from Redis, runs similarity search on each,
+    and stores candidates back in Redis.
+
+    Args:
+        scan_id: UUID string of the scan
+        community_server_id: UUID string of the community server
+        batch_number: Batch number being processed
+        filtered_messages_key: Redis key with filtered messages
+        context_maps_key: Redis key with context maps (unused by similarity)
+
+    Returns:
+        dict with: similarity_candidates_key, candidate_count
+    """
+    from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
+    from src.bulk_content_scan.schemas import BulkScanMessage
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+    from src.database import get_session_maker
+    from src.fact_checking.embedding_service import EmbeddingService
+    from src.llm_config.models import CommunityServer
+    from src.tasks.content_monitoring_tasks import _get_llm_service
+
+    settings = get_settings()
+    scan_uuid = UUID(scan_id)
+    community_uuid = UUID(community_server_id)
+
+    async def _similarity_scan() -> dict[str, Any]:
+        from sqlalchemy import select
+
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+        raw_messages = await load_messages_from_redis(redis_conn, filtered_messages_key)
+        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(CommunityServer.platform_community_server_id).where(
+                    CommunityServer.id == community_uuid
+                )
+            )
+            platform_id = result.scalar_one_or_none()
+
+            if not platform_id:
+                logger.error(
+                    "Platform ID not found for similarity scan",
+                    extra={"community_server_id": community_server_id},
+                )
+                return {"similarity_candidates_key": "", "candidate_count": 0}
+
+            llm_service = _get_llm_service()
+            embedding_service = EmbeddingService(llm_service)
+            flashpoint_service = get_flashpoint_service()
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=embedding_service,
+                redis_client=redis_conn,
+                llm_service=llm_service,
+                flashpoint_service=flashpoint_service,
+            )
+
+            candidates = []
+            for msg in typed_messages:
+                if not msg.content or len(msg.content.strip()) < 10:
+                    continue
+                candidate = await service._similarity_scan_candidate(scan_uuid, msg, platform_id)
+                if candidate:
+                    candidates.append(candidate)
+
+        candidates_key = get_batch_redis_key(scan_id, batch_number, "similarity_candidates")
+        candidates_data = [c.model_dump(mode="json") for c in candidates]
+        await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
+
+        logger.info(
+            "Similarity scan step completed",
+            extra={
+                "scan_id": scan_id,
+                "batch_number": batch_number,
+                "candidate_count": len(candidates),
+            },
+        )
+
+        return {
+            "similarity_candidates_key": candidates_key,
+            "candidate_count": len(candidates),
+        }
+
+    return run_sync(_similarity_scan())
+
+
+@DBOS.step()
+def flashpoint_scan_step(
+    scan_id: str,
+    community_server_id: str,
+    batch_number: int,
+    filtered_messages_key: str,
+    context_maps_key: str,
+) -> dict[str, Any]:
+    """Run flashpoint detection on filtered messages and produce candidates.
+
+    Reads filtered messages and context maps from Redis, runs flashpoint
+    detection on each message, and stores candidates back in Redis.
+
+    Args:
+        scan_id: UUID string of the scan
+        community_server_id: UUID string of the community server
+        batch_number: Batch number being processed
+        filtered_messages_key: Redis key with filtered messages
+        context_maps_key: Redis key with context maps
+
+    Returns:
+        dict with: flashpoint_candidates_key, candidate_count
+    """
+    from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
+    from src.bulk_content_scan.schemas import BulkScanMessage
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+    from src.database import get_session_maker
+    from src.fact_checking.embedding_service import EmbeddingService
+    from src.tasks.content_monitoring_tasks import _get_llm_service
+
+    settings = get_settings()
+    scan_uuid = UUID(scan_id)
+
+    async def _flashpoint_scan() -> dict[str, Any]:
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+        raw_messages = await load_messages_from_redis(redis_conn, filtered_messages_key)
+        typed_messages = [BulkScanMessage.model_validate(msg) for msg in raw_messages]
+
+        context_data = await load_messages_from_redis(redis_conn, context_maps_key)
+        channel_context_raw: dict[str, list[dict[str, Any]]] = (
+            context_data[0] if context_data else {}
+        )
+        channel_context_map: dict[str, list[BulkScanMessage]] = {}
+        for ch_id, msg_dicts in channel_context_raw.items():
+            channel_context_map[ch_id] = [BulkScanMessage.model_validate(m) for m in msg_dicts]
+
+        async with get_session_maker()() as session:
+            llm_service = _get_llm_service()
+            embedding_service = EmbeddingService(llm_service)
+            flashpoint_service = get_flashpoint_service()
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=embedding_service,
+                redis_client=redis_conn,
+                llm_service=llm_service,
+                flashpoint_service=flashpoint_service,
+            )
+
+            message_id_index = service._build_message_id_index(channel_context_map)
+
+            candidates = []
+            for msg in typed_messages:
+                if not msg.content or len(msg.content.strip()) < 10:
+                    continue
+                context_messages = service._get_context_for_message(
+                    msg, channel_context_map, message_id_index
+                )
+                candidate = await service._flashpoint_scan_candidate(
+                    scan_uuid, msg, context_messages
+                )
+                if candidate:
+                    candidates.append(candidate)
+
+        candidates_key = get_batch_redis_key(scan_id, batch_number, "flashpoint_candidates")
+        candidates_data = [c.model_dump(mode="json") for c in candidates]
+        await store_messages_in_redis(redis_conn, candidates_key, candidates_data)
+
+        logger.info(
+            "Flashpoint scan step completed",
+            extra={
+                "scan_id": scan_id,
+                "batch_number": batch_number,
+                "candidate_count": len(candidates),
+            },
+        )
+
+        return {
+            "flashpoint_candidates_key": candidates_key,
+            "candidate_count": len(candidates),
+        }
+
+    return run_sync(_flashpoint_scan())
+
+
+@DBOS.step()
+def relevance_filter_step(
+    scan_id: str,
+    community_server_id: str,
+    batch_number: int,
+    similarity_candidates_key: str,
+    flashpoint_candidates_key: str,
+) -> dict[str, Any]:
+    """Run unified relevance filtering on all candidates.
+
+    Reads similarity and flashpoint candidates from Redis, runs the LLM
+    relevance check, and appends flagged results to scan results.
+
+    Args:
+        scan_id: UUID string of the scan
+        community_server_id: UUID string of the community server
+        batch_number: Batch number being processed
+        similarity_candidates_key: Redis key with similarity candidates
+        flashpoint_candidates_key: Redis key with flashpoint candidates
+
+    Returns:
+        dict with: flagged_count, errors
+    """
+    from src.bulk_content_scan.flashpoint_service import get_flashpoint_service
+    from src.bulk_content_scan.schemas import ScanCandidate
+    from src.bulk_content_scan.service import BulkContentScanService
+    from src.cache.redis_client import get_shared_redis_client
+    from src.config import get_settings
+    from src.database import get_session_maker
+    from src.fact_checking.embedding_service import EmbeddingService
+    from src.tasks.content_monitoring_tasks import _get_llm_service
+
+    settings = get_settings()
+    scan_uuid = UUID(scan_id)
+
+    async def _relevance_filter() -> dict[str, Any]:
+        redis_conn = await get_shared_redis_client(settings.REDIS_URL)
+
+        all_candidates: list[ScanCandidate] = []
+        errors = 0
+
+        if similarity_candidates_key:
+            try:
+                sim_data = await load_messages_from_redis(redis_conn, similarity_candidates_key)
+                all_candidates.extend(ScanCandidate.model_validate(c) for c in sim_data)
+            except ValueError:
+                logger.warning(
+                    "Similarity candidates Redis key expired or missing",
+                    extra={"scan_id": scan_id, "key": similarity_candidates_key},
+                )
+                errors += 1
+
+        if flashpoint_candidates_key:
+            try:
+                fp_data = await load_messages_from_redis(redis_conn, flashpoint_candidates_key)
+                all_candidates.extend(ScanCandidate.model_validate(c) for c in fp_data)
+            except ValueError:
+                logger.warning(
+                    "Flashpoint candidates Redis key expired or missing",
+                    extra={"scan_id": scan_id, "key": flashpoint_candidates_key},
+                )
+                errors += 1
+
+        if not all_candidates:
+            return {"flagged_count": 0, "errors": errors}
+
+        async with get_session_maker()() as session:
+            llm_service = _get_llm_service()
+            embedding_service = EmbeddingService(llm_service)
+            flashpoint_service = get_flashpoint_service()
+            service = BulkContentScanService(
+                session=session,
+                embedding_service=embedding_service,
+                redis_client=redis_conn,
+                llm_service=llm_service,
+                flashpoint_service=flashpoint_service,
+            )
+
+            try:
+                flagged = await service._filter_candidates_with_relevance(all_candidates, scan_uuid)
+
+                for msg in flagged:
+                    await service.append_flagged_result(scan_uuid, msg)
+
+                return {"flagged_count": len(flagged), "errors": 0}
+            except Exception as e:
+                logger.warning(
+                    "Error in relevance filter step",
+                    extra={
+                        "scan_id": scan_id,
+                        "batch_number": batch_number,
+                        "error": str(e),
+                    },
+                )
+                await service.record_error(
+                    scan_id=scan_uuid,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    batch_number=batch_number,
+                )
+                return {"flagged_count": 0, "errors": len(all_candidates)}
+
+    return run_sync(_relevance_filter())
 
 
 @DBOS.step()
@@ -730,18 +1282,23 @@ async def enqueue_content_scan_batch(
     scan_id: UUID,
     community_server_id: UUID,
     batch_number: int,
-    messages: list[dict[str, Any]],
     scan_types: list[str],
+    messages_redis_key: str,
 ) -> str | None:
     """Enqueue a content scan batch for processing via DBOS queue.
+
+    Messages must already be stored in Redis under messages_redis_key.
+    The workflow reads messages from Redis instead of receiving them via
+    the DBOS checkpoint (keeping large payloads out of the DBOS system
+    tables).
 
     Args:
         orchestrator_workflow_id: Workflow ID of the orchestrator to signal on completion
         scan_id: UUID of the scan
         community_server_id: UUID of the community server
         batch_number: Batch number
-        messages: List of message dicts
         scan_types: List of scan type strings
+        messages_redis_key: Redis key where messages are stored
 
     Returns:
         The DBOS workflow_id if successfully enqueued, None on failure
@@ -751,7 +1308,6 @@ async def enqueue_content_scan_batch(
 
     try:
         client = get_dbos_client()
-        messages_json = json.dumps(messages)
         scan_types_json = json.dumps(scan_types)
 
         options: EnqueueOptions = {
@@ -766,7 +1322,7 @@ async def enqueue_content_scan_batch(
             str(scan_id),
             str(community_server_id),
             batch_number,
-            messages_json,
+            messages_redis_key,
             scan_types_json,
         )
 
@@ -776,7 +1332,7 @@ async def enqueue_content_scan_batch(
                 "scan_id": str(scan_id),
                 "batch_number": batch_number,
                 "workflow_id": handle.workflow_id,
-                "message_count": len(messages),
+                "messages_redis_key": messages_redis_key,
             },
         )
 

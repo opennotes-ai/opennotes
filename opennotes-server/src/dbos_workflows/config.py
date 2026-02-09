@@ -15,6 +15,7 @@ from urllib.parse import urlparse, urlunparse
 from dbos import DBOS, DBOSClient, DBOSConfig
 
 from src.config import settings
+from src.dbos_workflows.serializer import SafeJsonSerializer
 
 _dbos_instance: DBOS | None = None
 _dbos_client: DBOSClient | None = None
@@ -88,6 +89,7 @@ def get_dbos_config() -> DBOSConfig:
     config: DBOSConfig = {
         "name": settings.DBOS_APP_NAME,
         "system_database_url": sync_url,
+        "serializer": SafeJsonSerializer(),
     }
 
     config["otlp_attributes"] = {
@@ -190,7 +192,10 @@ def get_dbos_client() -> DBOSClient:
             client = _dbos_client
             if client is None:
                 sync_url = _get_sync_database_url()
-                client = DBOSClient(system_database_url=sync_url)
+                client = DBOSClient(
+                    system_database_url=sync_url,
+                    serializer=SafeJsonSerializer(),
+                )
                 _dbos_client = client
     return client
 
