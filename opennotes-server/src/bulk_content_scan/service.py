@@ -2085,12 +2085,23 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                             moderation_metadata=moderation_metadata,
                         )
                     elif isinstance(first_match, ConversationFlashpointMatch):
+                        flashpoint_metadata = {
+                            "derailment_score": first_match.derailment_score,
+                            "risk_level": "high"
+                            if first_match.derailment_score >= 70
+                            else "medium"
+                            if first_match.derailment_score >= 40
+                            else "low",
+                            "reasoning": first_match.reasoning,
+                            "context_messages": first_match.context_messages,
+                        }
                         await asyncio.to_thread(
                             start_ai_note_workflow,
                             community_server_id=platform_id,
                             request_id=request.request_id,
                             content=flagged_msg.content,
                             scan_type="conversation_flashpoint",
+                            moderation_metadata=flashpoint_metadata,
                         )
                     logger.info(
                         "Enqueued AI note generation workflow",

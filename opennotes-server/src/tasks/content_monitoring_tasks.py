@@ -150,6 +150,49 @@ Community Note:""")
     return "\n".join(prompt_parts)
 
 
+def _build_flashpoint_prompt(
+    original_message: str,
+    flashpoint_metadata: dict[str, Any],
+) -> str:
+    """Build prompt for conversation flashpoint note generation.
+
+    Args:
+        original_message: Original message content
+        flashpoint_metadata: Flashpoint detection results containing:
+            - derailment_score: int (0-100)
+            - risk_level: str ("low", "medium", "high")
+            - reasoning: str (escalation signals)
+            - context_messages: int (number of context messages analyzed)
+
+    Returns:
+        Formatted prompt for LLM
+    """
+    derailment_score = flashpoint_metadata.get("derailment_score", 0)
+    risk_level = flashpoint_metadata.get("risk_level", "unknown")
+    reasoning = flashpoint_metadata.get("reasoning", "")
+    context_messages = flashpoint_metadata.get("context_messages", 0)
+
+    prompt_parts = [f"Original Message:\n{original_message}"]
+    prompt_parts.append(f"""
+Conversation Flashpoint Analysis:
+Derailment Risk Score: {derailment_score}/100 ({risk_level} risk)
+Context Messages Analyzed: {context_messages}
+Escalation Signals: {reasoning}
+
+Please write a concise, informative community note that:
+1. Acknowledges the conversation dynamics at play
+2. Provides context about why this exchange may be escalating
+3. Offers de-escalation perspective without taking sides
+4. Maintains a neutral, constructive tone
+5. Is clear and easy to understand
+6. Is no more than 280 characters if possible
+
+Focus on helping readers understand the conversation context and providing a balanced perspective.
+
+Community Note:""")
+    return "\n".join(prompt_parts)
+
+
 @register_task(
     task_name="content:vision_description", component="content_monitoring", task_type="vision"
 )

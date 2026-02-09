@@ -59,7 +59,7 @@ def generate_ai_note_step(
     similarity_score: float | None = None,
     moderation_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    async def _generate() -> dict[str, Any]:
+    async def _generate() -> dict[str, Any]:  # noqa: PLR0912
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -70,6 +70,7 @@ def generate_ai_note_step(
         from src.notes.models import Note
         from src.tasks.content_monitoring_tasks import (
             _build_fact_check_prompt,
+            _build_flashpoint_prompt,
             _build_general_explanation_prompt,
             _create_db_engine,
             _get_llm_service,
@@ -148,6 +149,8 @@ def generate_ai_note_step(
                         prompt = _build_fact_check_prompt(
                             content, fact_check_item, similarity_score or 0.0
                         )
+                    elif scan_type == "conversation_flashpoint" and moderation_metadata:
+                        prompt = _build_flashpoint_prompt(content, moderation_metadata)
                     else:
                         prompt = _build_general_explanation_prompt(content, moderation_metadata)
 
