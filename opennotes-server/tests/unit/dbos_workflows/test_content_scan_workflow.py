@@ -2368,6 +2368,7 @@ class TestRelevanceFilterStepInnerLogic:
         fp_candidate["match_data"] = {
             "scan_type": "conversation_flashpoint",
             "derailment_score": 80,
+            "risk_level": "Hostile",
             "reasoning": "heated",
             "context_messages": 3,
         }

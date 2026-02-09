@@ -765,6 +765,7 @@ class TestCompleteScanRowLocking:
     ):
         """AC #3: Tests verify correct behavior - lock acquired, update made, commit called."""
         from src.bulk_content_scan.models import BulkContentScanLog
+        from src.bulk_content_scan.schemas import BulkScanStatus
         from src.bulk_content_scan.service import BulkContentScanService
 
         mock_scan_log = MagicMock(spec=BulkContentScanLog)
@@ -789,10 +790,10 @@ class TestCompleteScanRowLocking:
             scan_id=mock_scan_log.id,
             messages_scanned=100,
             messages_flagged=5,
-            status="completed",
+            status=BulkScanStatus.COMPLETED,
         )
 
-        assert mock_scan_log.status == "completed"
+        assert mock_scan_log.status == BulkScanStatus.COMPLETED
         assert mock_scan_log.messages_scanned == 100
         assert mock_scan_log.messages_flagged == 5
         assert mock_scan_log.completed_at is not None
@@ -2127,6 +2128,7 @@ class TestFlashpointRelevanceBypass:
             BulkScanMessage,
             ConversationFlashpointMatch,
             FlaggedMessage,
+            RiskLevel,
             ScanCandidate,
         )
         from src.bulk_content_scan.service import BulkContentScanService
@@ -2148,7 +2150,7 @@ class TestFlashpointRelevanceBypass:
 
         fp_match = ConversationFlashpointMatch(
             derailment_score=85,
-            risk_level="Hostile",
+            risk_level=RiskLevel.HOSTILE,
             reasoning="Detected hostile language patterns",
             context_messages=3,
         )
@@ -2181,6 +2183,7 @@ class TestFlashpointRelevanceBypass:
         from src.bulk_content_scan.schemas import (
             BulkScanMessage,
             ConversationFlashpointMatch,
+            RiskLevel,
             ScanCandidate,
         )
         from src.bulk_content_scan.service import BulkContentScanService
@@ -2204,7 +2207,7 @@ class TestFlashpointRelevanceBypass:
 
         fp_match = ConversationFlashpointMatch(
             derailment_score=90,
-            risk_level="Dangerous",
+            risk_level=RiskLevel.DANGEROUS,
             reasoning="Escalating hostility",
             context_messages=5,
         )
@@ -2280,6 +2283,7 @@ class TestDeduplicateFlaggedMessages:
         from src.bulk_content_scan.schemas import (
             ConversationFlashpointMatch,
             FlaggedMessage,
+            RiskLevel,
             SimilarityMatch,
         )
         from src.bulk_content_scan.service import create_note_requests_from_flagged_messages
@@ -2292,7 +2296,7 @@ class TestDeduplicateFlaggedMessages:
         )
         fp_match = ConversationFlashpointMatch(
             derailment_score=90,
-            risk_level="Dangerous",
+            risk_level=RiskLevel.DANGEROUS,
             reasoning="Escalation detected",
             context_messages=3,
         )
@@ -2474,6 +2478,7 @@ class TestUnifiedFlaggedMessageConstruction:
             BulkScanMessage,
             ConversationFlashpointMatch,
             FlaggedMessage,
+            RiskLevel,
             ScanCandidate,
         )
         from src.bulk_content_scan.service import BulkContentScanService
@@ -2495,7 +2500,7 @@ class TestUnifiedFlaggedMessageConstruction:
 
         fp_match = ConversationFlashpointMatch(
             derailment_score=88,
-            risk_level="Dangerous",
+            risk_level=RiskLevel.DANGEROUS,
             reasoning="Hostile escalation pattern",
             context_messages=4,
         )

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import dspy
 
+    from .schemas import RiskLevel
+
 logger = logging.getLogger(__name__)
 
 DERAILMENT_SCORE_MIN = 0
@@ -274,23 +276,25 @@ _SCORE_THRESHOLDS: list[tuple[int, str]] = [
 ]
 
 
-def parse_risk_level(value: str, derailment_score: int | None = None) -> str:
+def parse_risk_level(value: str, derailment_score: int | None = None) -> RiskLevel:
     """Normalize LLM risk_level output to a valid RiskLevel value.
 
     Case-insensitive lookup against known values. Falls back to deriving
     from derailment_score if provided, otherwise defaults to "Heated".
     """
+    from .schemas import RiskLevel
+
     normalized = value.lower().strip()
     if normalized in _RISK_LEVEL_LOOKUP:
-        return _RISK_LEVEL_LOOKUP[normalized]
+        return RiskLevel(_RISK_LEVEL_LOOKUP[normalized])
 
     if derailment_score is not None:
         for threshold, level in _SCORE_THRESHOLDS:
             if derailment_score >= threshold:
-                return level
-        return "Low Risk"
+                return RiskLevel(level)
+        return RiskLevel.LOW_RISK
 
-    return "Heated"
+    return RiskLevel.HEATED
 
 
 class RubricDetector:
