@@ -23,10 +23,10 @@ class HealthStatus(str, Enum):
 class ServiceStatus(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     status: str = Field(..., description="Service status: 'healthy', 'degraded', or 'unhealthy'")
-    latency_ms: float | None = Field(None, description="Response latency in milliseconds")
-    message: str | None = Field(None, description="Additional status message")
-    error: str | None = Field(None, description="Error message if unhealthy")
-    details: dict[str, Any] | None = Field(None, description="Additional details")
+    latency_ms: float | None = Field(default=None, description="Response latency in milliseconds")
+    message: str | None = Field(default=None, description="Additional status message")
+    error: str | None = Field(default=None, description="Error message if unhealthy")
+    details: dict[str, Any] | None = Field(default=None, description="Additional details")
 
 
 ComponentHealth = ServiceStatus
@@ -37,11 +37,11 @@ class HealthCheckResponse(BaseModel):
     status: str = Field(..., description="Overall system status")
     timestamp: float = Field(default_factory=time.time, description="Unix epoch timestamp")
     version: str = Field(..., description="API version")
-    environment: str | None = Field(None, description="Environment name")
+    environment: str | None = Field(default=None, description="Environment name")
     components: dict[str, ServiceStatus] = Field(
         default_factory=dict, description="Component statuses"
     )
-    uptime_seconds: float | None = Field(None, description="Server uptime in seconds")
+    uptime_seconds: float | None = Field(default=None, description="Server uptime in seconds")
 
 
 class HealthChecker:
