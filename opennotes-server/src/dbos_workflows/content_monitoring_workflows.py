@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from dbos import DBOS, Queue
+from dbos import DBOS
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -38,12 +38,6 @@ _tracer = trace.get_tracer(__name__)
 AI_NOTE_GENERATION_WORKFLOW_NAME = "ai_note_generation_workflow"
 VISION_DESCRIPTION_WORKFLOW_NAME = "vision_description_workflow"
 AUDIT_LOG_WORKFLOW_NAME = "_audit_log_wrapper_workflow"
-
-content_monitoring_queue = Queue(
-    name="content_monitoring",
-    worker_concurrency=2,
-    concurrency=4,
-)
 
 
 def _retry_llm_call(func):
