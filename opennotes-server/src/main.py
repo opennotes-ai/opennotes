@@ -204,8 +204,7 @@ async def _init_ai_services() -> tuple[
     logger.info("Vision service initialized")
 
     ai_note_writer = AINoteWriter(llm_service=llm_service, vision_service=vision_service)
-    await ai_note_writer.start()
-    logger.info("AI Note Writer service started")
+    logger.info("AI Note Writer service initialized")
 
     return ai_note_writer, vision_service, llm_service
 
@@ -447,15 +446,9 @@ def _register_health_checks(is_dbos_worker: bool) -> None:
     logger.info("Health checks registered")
 
 
-async def _shutdown_services(
-    app: FastAPI, is_dbos_worker: bool, ai_note_writer: AINoteWriter | None
-) -> None:
+async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
     await distributed_health.stop_heartbeat()
     logger.info("Distributed health heartbeat stopped")
-
-    if ai_note_writer:
-        await ai_note_writer.stop()
-        logger.info("AI Note Writer service stopped")
 
     if hasattr(app.state, "taskiq_broker") and app.state.taskiq_broker:
         try:
@@ -542,7 +535,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    await _shutdown_services(app, is_dbos_worker, ai_note_writer)
+    await _shutdown_services(app, is_dbos_worker)
 
 
 app = FastAPI(

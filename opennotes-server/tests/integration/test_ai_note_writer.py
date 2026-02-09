@@ -300,31 +300,6 @@ async def test_build_prompt_includes_all_context(ai_note_writer, fact_check_item
 
 
 @pytest.mark.asyncio
-async def test_ai_note_writer_start_and_stop():
-    """Test that AINoteWriter can be started and stopped."""
-    mock_llm_service = MagicMock(spec=LLMService)
-    ai_note_writer = AINoteWriter(llm_service=mock_llm_service)
-
-    # Mock event subscriber
-    with patch("src.services.ai_note_writer.event_subscriber") as mock_subscriber:
-        mock_subscriber.subscribe = AsyncMock()
-
-        # Start service
-        await ai_note_writer.start()
-        assert ai_note_writer._running is True
-
-        # Wait for subscription task to complete (background task with retry logic)
-        if ai_note_writer._subscription_task:
-            await ai_note_writer._subscription_task
-
-        assert mock_subscriber.subscribe.called
-
-        # Stop service
-        await ai_note_writer.stop()
-        assert ai_note_writer._running is False
-
-
-@pytest.mark.asyncio
 async def test_ai_note_writer_metrics_tracking(
     ai_note_writer, community_server, fact_check_item, mock_llm_service, db_session
 ):

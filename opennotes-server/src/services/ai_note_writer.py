@@ -52,20 +52,6 @@ class AINoteWriter:
     ) -> None:
         self.llm_service = llm_service
         self.vision_service = vision_service
-        self._running = False
-
-    async def start(self) -> None:
-        if self._running:
-            logger.warning("AINoteWriter already running")
-            return
-        self._running = True
-        logger.info("AINoteWriter service started")
-
-    async def stop(self) -> None:
-        if not self._running:
-            return
-        self._running = False
-        logger.info("AINoteWriter service stopped")
 
     async def generate_note_for_request(self, db: AsyncSession, request_id: str) -> Note:
         """
