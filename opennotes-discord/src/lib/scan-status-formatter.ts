@@ -206,34 +206,51 @@ export function formatScanStatusPaginated(options: FormatScanStatusOptions): For
   };
 }
 
+function formatFlaggedMessageEntry(
+  msg: FlaggedMessageResource,
+  index: number,
+  guildId: string,
+  explanations?: Map<string, string>
+): string {
+  const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
+  const preview = truncateContent(msg.attributes.content);
+
+  const matches = msg.attributes.matches ?? [];
+  const firstMatch = matches[0];
+  let confidence = 'N/A';
+
+  if (firstMatch) {
+    if (firstMatch.scan_type === 'similarity') {
+      confidence = formatMatchScore(firstMatch.score);
+    } else if (firstMatch.scan_type === 'openai_moderation') {
+      confidence = formatMatchScore(firstMatch.max_score);
+    } else if (firstMatch.scan_type === 'conversation_flashpoint') {
+      confidence = `${firstMatch.derailment_score}%`;
+    }
+  }
+
+  const explanation = explanations?.get(msg.id);
+  const explanationLine = explanation ? `\n   Explanation: ${explanation}` : '';
+
+  let flashpointLine = '';
+  if (firstMatch?.scan_type === 'conversation_flashpoint') {
+    flashpointLine = `\n   Risk Level: **${firstMatch.risk_level}**` +
+      `\n   Reasoning: ${firstMatch.reasoning}`;
+  }
+
+  return `**${index + 1}.** Preview: "${preview}"\n` +
+    `   [(link to message)](${messageLink})\n` +
+    `   Confidence: **${confidence}**${flashpointLine || explanationLine}`;
+}
+
 function formatFlaggedMessagesListFull(
   flaggedMessages: FlaggedMessageResource[],
   guildId: string,
   explanations?: Map<string, string>
 ): string {
-  return flaggedMessages.map((msg, index) => {
-    const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
-    const preview = truncateContent(msg.attributes.content);
-
-    const matches = msg.attributes.matches ?? [];
-    const firstMatch = matches[0];
-    let confidence = 'N/A';
-
-    if (firstMatch) {
-      if (firstMatch.scan_type === 'similarity') {
-        confidence = formatMatchScore(firstMatch.score);
-      } else if (firstMatch.scan_type === 'openai_moderation') {
-        confidence = formatMatchScore(firstMatch.max_score);
-      }
-    }
-
-    const explanation = explanations?.get(msg.id);
-    const explanationLine = explanation ? `\n   Explanation: ${explanation}` : '';
-
-    return `**${index + 1}.** Preview: "${preview}"\n` +
-      `   [(link to message)](${messageLink})\n` +
-      `   Confidence: **${confidence}**${explanationLine}`;
-  }).join('\n\n');
+  return flaggedMessages
+    .map((msg, index) => formatFlaggedMessageEntry(msg, index, guildId, explanations))
+    .join('\n\n');
 }
 
 function formatFlaggedMessagesList(
@@ -241,27 +258,8 @@ function formatFlaggedMessagesList(
   guildId: string,
   explanations?: Map<string, string>
 ): string {
-  return flaggedMessages.slice(0, 10).map((msg, index) => {
-    const messageLink = formatMessageLink(guildId, msg.attributes.channel_id, msg.id);
-    const preview = truncateContent(msg.attributes.content);
-
-    const matches = msg.attributes.matches ?? [];
-    const firstMatch = matches[0];
-    let confidence = 'N/A';
-
-    if (firstMatch) {
-      if (firstMatch.scan_type === 'similarity') {
-        confidence = formatMatchScore(firstMatch.score);
-      } else if (firstMatch.scan_type === 'openai_moderation') {
-        confidence = formatMatchScore(firstMatch.max_score);
-      }
-    }
-
-    const explanation = explanations?.get(msg.id);
-    const explanationLine = explanation ? `\n   Explanation: ${explanation}` : '';
-
-    return `**${index + 1}.** Preview: "${preview}"\n` +
-      `   [(link to message)](${messageLink})\n` +
-      `   Confidence: **${confidence}**${explanationLine}`;
-  }).join('\n\n');
+  return flaggedMessages
+    .slice(0, 10)
+    .map((msg, index) => formatFlaggedMessageEntry(msg, index, guildId, explanations))
+    .join('\n\n');
 }

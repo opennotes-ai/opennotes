@@ -4441,6 +4441,8 @@ export interface components {
              * @description Derailment risk score (0-100)
              */
             derailment_score: number;
+            /** @description Categorical risk assessment level */
+            risk_level: components["schemas"]["RiskLevel"];
             /**
              * Reasoning
              * @description Explanation of detected escalation signals
@@ -7446,6 +7448,12 @@ export interface components {
         RequestUpdateRequest: {
             data: components["schemas"]["RequestUpdateData"];
         };
+        /**
+         * RiskLevel
+         * @description Categorical risk level for conversation flashpoint detection.
+         * @enum {string}
+         */
+        RiskLevel: "Low Risk" | "Guarded" | "Heated" | "Hostile" | "Dangerous";
         /**
          * ScanErrorInfoSchema
          * @description Error information for a failed message scan.

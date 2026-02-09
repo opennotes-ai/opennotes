@@ -47,6 +47,7 @@ class TestConversationFlashpointMatchSchema:
         """ConversationFlashpointMatch should accept valid data."""
         match = ConversationFlashpointMatch(
             derailment_score=75,
+            risk_level="Hostile",
             reasoning="Escalating tension detected in the exchange",
             context_messages=5,
         )
@@ -60,6 +61,7 @@ class TestConversationFlashpointMatchSchema:
         """scan_type should be locked to 'conversation_flashpoint'."""
         match = ConversationFlashpointMatch(
             derailment_score=30,
+            risk_level="Heated",
             reasoning="Normal conversation",
             context_messages=3,
         )
@@ -71,6 +73,7 @@ class TestConversationFlashpointMatchSchema:
         with pytest.raises(ValidationError) as exc_info:
             ConversationFlashpointMatch(
                 derailment_score=-1,
+                risk_level="Low Risk",
                 reasoning="Test",
                 context_messages=0,
             )
@@ -82,6 +85,7 @@ class TestConversationFlashpointMatchSchema:
         with pytest.raises(ValidationError) as exc_info:
             ConversationFlashpointMatch(
                 derailment_score=101,
+                risk_level="Dangerous",
                 reasoning="Test",
                 context_messages=0,
             )
@@ -92,6 +96,7 @@ class TestConversationFlashpointMatchSchema:
         """Boundary values 0 and 100 should be accepted."""
         match_min = ConversationFlashpointMatch(
             derailment_score=0,
+            risk_level="Low Risk",
             reasoning="No risk",
             context_messages=0,
         )
@@ -99,6 +104,7 @@ class TestConversationFlashpointMatchSchema:
 
         match_max = ConversationFlashpointMatch(
             derailment_score=100,
+            risk_level="Dangerous",
             reasoning="Certain derailment",
             context_messages=0,
         )
@@ -113,12 +119,18 @@ class TestConversationFlashpointMatchSchema:
             ConversationFlashpointMatch(derailment_score=50)
 
         with pytest.raises(ValidationError):
-            ConversationFlashpointMatch(derailment_score=50, reasoning="Test")
+            ConversationFlashpointMatch(derailment_score=50, risk_level="Low Risk")
+
+        with pytest.raises(ValidationError):
+            ConversationFlashpointMatch(
+                derailment_score=50, risk_level="Low Risk", reasoning="Test"
+            )
 
     def test_serialization_to_dict(self):
         """Match should serialize to dictionary with scan_type."""
         match = ConversationFlashpointMatch(
             derailment_score=85,
+            risk_level="Hostile",
             reasoning="Hostile language detected",
             context_messages=3,
         )
@@ -127,6 +139,7 @@ class TestConversationFlashpointMatchSchema:
 
         assert data["scan_type"] == "conversation_flashpoint"
         assert data["derailment_score"] == 85
+        assert data["risk_level"] == "Hostile"
         assert data["reasoning"] == "Hostile language detected"
         assert data["context_messages"] == 3
 
@@ -134,6 +147,7 @@ class TestConversationFlashpointMatchSchema:
         """Match should serialize to JSON correctly."""
         match = ConversationFlashpointMatch(
             derailment_score=75,
+            risk_level="Hostile",
             reasoning="Test reasoning",
             context_messages=2,
         )
@@ -142,6 +156,7 @@ class TestConversationFlashpointMatchSchema:
 
         assert '"scan_type":"conversation_flashpoint"' in json_str
         assert '"derailment_score":75' in json_str
+        assert '"risk_level":"Hostile"' in json_str
 
 
 class TestMatchResultUnion:
@@ -156,6 +171,7 @@ class TestMatchResultUnion:
         data = {
             "scan_type": "conversation_flashpoint",
             "derailment_score": 80,
+            "risk_level": "Hostile",
             "reasoning": "Test",
             "context_messages": 3,
         }
@@ -194,6 +210,7 @@ class TestMatchResultUnion:
         flashpoint_data = {
             "scan_type": "conversation_flashpoint",
             "derailment_score": 85,
+            "risk_level": "Hostile",
             "reasoning": "Escalating",
             "context_messages": 5,
         }
@@ -210,6 +227,7 @@ class TestFlaggedMessageWithFlashpoint:
         """FlaggedMessage should accept ConversationFlashpointMatch in matches list."""
         flashpoint_match = ConversationFlashpointMatch(
             derailment_score=80,
+            risk_level="Hostile",
             reasoning="Hostile tone detected",
             context_messages=4,
         )
@@ -240,6 +258,7 @@ class TestFlaggedMessageWithFlashpoint:
 
         flashpoint_match = ConversationFlashpointMatch(
             derailment_score=75,
+            risk_level="Hostile",
             reasoning="Aggressive response pattern",
             context_messages=3,
         )

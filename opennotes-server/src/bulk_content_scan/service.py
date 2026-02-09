@@ -2090,6 +2090,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                             scan_type="conversation_flashpoint",
                             metadata={
                                 "derailment_score": first_match.derailment_score,
+                                "risk_level": first_match.risk_level,
                                 "reasoning": first_match.reasoning,
                                 "context_messages": first_match.context_messages,
                             },
