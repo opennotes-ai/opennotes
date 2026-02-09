@@ -34,6 +34,7 @@ export interface ConfigDefinition {
   key: ConfigKey;
   type: 'boolean' | 'number' | 'string';
   default: ConfigValue;
+  shortName: string;
   description: string;
   min?: number;
   max?: number;
@@ -46,30 +47,35 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     key: ConfigKey.REQUEST_NOTE_EPHEMERAL,
     type: 'boolean',
     default: true,
+    shortName: 'Request Note Privacy',
     description: 'Make /note request responses private (visible only to requester)',
   },
   [ConfigKey.WRITE_NOTE_EPHEMERAL]: {
     key: ConfigKey.WRITE_NOTE_EPHEMERAL,
     type: 'boolean',
     default: false,
+    shortName: 'Write Note Privacy',
     description: 'Make /note write responses private (visible only to author)',
   },
   [ConfigKey.RATE_NOTE_EPHEMERAL]: {
     key: ConfigKey.RATE_NOTE_EPHEMERAL,
     type: 'boolean',
     default: false,
+    shortName: 'Rate Note Privacy',
     description: 'Make /note rate responses private (visible only to rater)',
   },
   [ConfigKey.LIST_REQUESTS_EPHEMERAL]: {
     key: ConfigKey.LIST_REQUESTS_EPHEMERAL,
     type: 'boolean',
     default: true,
+    shortName: 'List Requests Privacy',
     description: 'Make /list requests responses private (visible only to requester)',
   },
   [ConfigKey.STATUS_EPHEMERAL]: {
     key: ConfigKey.STATUS_EPHEMERAL,
     type: 'boolean',
     default: true,
+    shortName: 'Status Privacy',
     description: 'Make /status-bot responses private (visible only to requester)',
   },
 
@@ -78,18 +84,21 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     key: ConfigKey.NOTES_ENABLED,
     type: 'boolean',
     default: true,
+    shortName: 'Notes Enabled',
     description: 'Enable community note creation in this server',
   },
   [ConfigKey.RATINGS_ENABLED]: {
     key: ConfigKey.RATINGS_ENABLED,
     type: 'boolean',
     default: true,
+    shortName: 'Ratings Enabled',
     description: 'Enable note rating functionality in this server',
   },
   [ConfigKey.REQUESTS_ENABLED]: {
     key: ConfigKey.REQUESTS_ENABLED,
     type: 'boolean',
     default: true,
+    shortName: 'Requests Enabled',
     description: 'Enable note request functionality in this server',
   },
 
@@ -100,6 +109,7 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     default: 5,
     min: 1,
     max: 100,
+    shortName: 'Note Rate Limit',
     description: 'Maximum notes per user per hour',
   },
   [ConfigKey.RATING_RATE_LIMIT]: {
@@ -108,6 +118,7 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     default: 20,
     min: 1,
     max: 200,
+    shortName: 'Rating Rate Limit',
     description: 'Maximum ratings per user per hour',
   },
   [ConfigKey.REQUEST_RATE_LIMIT]: {
@@ -116,6 +127,7 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     default: 10,
     min: 1,
     max: 100,
+    shortName: 'Request Rate Limit',
     description: 'Maximum requests per user per hour',
   },
 
@@ -124,12 +136,14 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     key: ConfigKey.NOTIFY_NOTE_HELPFUL,
     type: 'boolean',
     default: true,
+    shortName: 'Helpful Note DM',
     description: 'Send DM when your note becomes helpful',
   },
   [ConfigKey.NOTIFY_REQUEST_FULFILLED]: {
     key: ConfigKey.NOTIFY_REQUEST_FULFILLED,
     type: 'boolean',
     default: true,
+    shortName: 'Request Fulfilled DM',
     description: 'Send DM when your request gets a note',
   },
 
@@ -138,12 +152,14 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     key: ConfigKey.BOT_CHANNEL_NAME,
     type: 'string',
     default: 'open-notes',
+    shortName: 'Bot Channel Name',
     description: 'Name of the dedicated OpenNotes bot channel',
   },
   [ConfigKey.OPENNOTES_ROLE_NAME]: {
     key: ConfigKey.OPENNOTES_ROLE_NAME,
     type: 'string',
     default: 'OpenNotes',
+    shortName: 'OpenNotes Role',
     description: 'Name of the role that can send messages in the bot channel',
   },
 
@@ -152,6 +168,7 @@ export const CONFIG_SCHEMA: Record<ConfigKey, ConfigDefinition> = {
     key: ConfigKey.VIBECHECK_DEBUG_MODE,
     type: 'boolean',
     default: false,
+    shortName: 'Vibecheck Debug',
     description: 'Enable debug mode to echo vibecheck progress and scores to bot channel',
   },
 };
