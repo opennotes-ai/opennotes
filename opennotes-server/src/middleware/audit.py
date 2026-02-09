@@ -11,7 +11,8 @@ from prometheus_client import Counter
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth.auth import verify_token
-from src.events.publisher import event_publisher
+from src.config import settings
+from src.dbos_workflows.content_monitoring_workflows import call_persist_audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +94,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 details["request_body"] = self._truncate_large_arrays(request_body)
 
             async with asyncio.timeout(5.0):
-                await event_publisher.publish_audit_log(
-                    user_id=user_id,
+                await asyncio.to_thread(
+                    call_persist_audit_log,
+                    user_id=str(user_id) if user_id else None,
                     action=f"{request.method} {request.url.path}",
                     resource=request.url.path.split("/")[-1]
                     if "/" in request.url.path
@@ -102,7 +104,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     details=json.dumps(details),
                     ip_address=request.client.host if request.client else None,
                     user_agent=request.headers.get("user-agent"),
-                    created_at=start_time,
+                    db_url=settings.DATABASE_URL,
+                    created_at_iso=start_time.isoformat(),
                 )
             audit_events_published_total.labels(status="success").inc()
         except TimeoutError:

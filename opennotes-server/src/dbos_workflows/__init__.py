@@ -36,6 +36,11 @@ Workflows:
     dispatch_content_scan_workflow: Start orchestration workflow
     enqueue_content_scan_batch: Enqueue batch for processing
     send_all_transmitted_signal: Signal orchestrator that all batches transmitted
+    ai_note_generation_workflow: Generate AI note for fact-check match or moderation flag
+    vision_description_workflow: Generate image description via LLM vision API
+    call_persist_audit_log: Persist audit log entry to database
+    start_ai_note_workflow: Enqueue AI note generation workflow
+    start_vision_description_workflow: Enqueue vision description workflow
 """
 
 from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter
@@ -51,6 +56,15 @@ from src.dbos_workflows.config import (
     get_dbos_client,
     reset_dbos,
     reset_dbos_client,
+)
+from src.dbos_workflows.content_monitoring_workflows import (
+    AI_NOTE_GENERATION_WORKFLOW_NAME,
+    VISION_DESCRIPTION_WORKFLOW_NAME,
+    ai_note_generation_workflow,
+    call_persist_audit_log,
+    start_ai_note_workflow,
+    start_vision_description_workflow,
+    vision_description_workflow,
 )
 from src.dbos_workflows.content_scan_workflow import (
     CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
@@ -76,14 +90,18 @@ from src.dbos_workflows.rechunk_workflow import (
 )
 
 __all__ = [
+    "AI_NOTE_GENERATION_WORKFLOW_NAME",
     "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
     "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
     "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
     "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
+    "VISION_DESCRIPTION_WORKFLOW_NAME",
     "BatchJobDBOSAdapter",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",
+    "ai_note_generation_workflow",
+    "call_persist_audit_log",
     "content_scan_orchestration_workflow",
     "destroy_dbos",
     "destroy_dbos_client",
@@ -103,5 +121,8 @@ __all__ = [
     "reset_dbos_client",
     "send_all_transmitted_signal",
     "similarity_scan_step",
+    "start_ai_note_workflow",
+    "start_vision_description_workflow",
     "store_messages_in_redis",
+    "vision_description_workflow",
 ]

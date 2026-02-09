@@ -142,9 +142,7 @@ def test_valid_token_does_not_log_warning(monkeypatch, caplog):
     with patch("src.middleware.audit.verify_token", new_callable=AsyncMock) as mock_verify:
         mock_verify.return_value = mock_token_data
 
-        with patch("src.middleware.audit.event_publisher") as mock_publisher:
-            mock_publisher.publish_audit_log = AsyncMock(return_value="event-123")
-
+        with patch("src.middleware.audit.call_persist_audit_log"):
             with caplog.at_level(logging.WARNING, logger="src.middleware.audit"):
                 client = TestClient(app)
                 response = client.post(

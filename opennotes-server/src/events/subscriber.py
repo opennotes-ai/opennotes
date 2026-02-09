@@ -13,16 +13,13 @@ from opentelemetry.semconv.trace import SpanAttributes
 from src.config import settings
 from src.events.nats_client import Subscription, nats_client
 from src.events.schemas import (
-    AuditLogCreatedEvent,
     BulkScanAllBatchesTransmittedEvent,
     BulkScanMessageBatchEvent,
     EventType,
     NoteCreatedEvent,
     NoteRatedEvent,
     NoteScoreUpdatedEvent,
-    RequestAutoCreatedEvent,
     UserRegisteredEvent,
-    VisionDescriptionRequestedEvent,
     WebhookReceivedEvent,
 )
 
@@ -83,11 +80,8 @@ class EventSubscriber:
             EventType.NOTE_CREATED: [],
             EventType.NOTE_RATED: [],
             EventType.NOTE_SCORE_UPDATED: [],
-            EventType.REQUEST_AUTO_CREATED: [],
             EventType.USER_REGISTERED: [],
-            EventType.VISION_DESCRIPTION_REQUESTED: [],
             EventType.WEBHOOK_RECEIVED: [],
-            EventType.AUDIT_LOG_CREATED: [],
             EventType.BULK_SCAN_MESSAGE_BATCH: [],
             EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED: [],
         }
@@ -110,11 +104,8 @@ class EventSubscriber:
             EventType.NOTE_CREATED: NoteCreatedEvent,
             EventType.NOTE_RATED: NoteRatedEvent,
             EventType.NOTE_SCORE_UPDATED: NoteScoreUpdatedEvent,
-            EventType.REQUEST_AUTO_CREATED: RequestAutoCreatedEvent,
             EventType.USER_REGISTERED: UserRegisteredEvent,
-            EventType.VISION_DESCRIPTION_REQUESTED: VisionDescriptionRequestedEvent,
             EventType.WEBHOOK_RECEIVED: WebhookReceivedEvent,
-            EventType.AUDIT_LOG_CREATED: AuditLogCreatedEvent,
             EventType.BULK_SCAN_MESSAGE_BATCH: BulkScanMessageBatchEvent,
             EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED: BulkScanAllBatchesTransmittedEvent,
         }

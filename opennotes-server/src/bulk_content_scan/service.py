@@ -1933,7 +1933,9 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
     Returns:
         List of created request IDs (string request_id values)
     """
-    from src.events.publisher import event_publisher  # noqa: PLC0415
+    from src.dbos_workflows.content_monitoring_workflows import (  # noqa: PLC0415
+        start_ai_note_workflow,
+    )
     from src.llm_config.models import CommunityServer  # noqa: PLC0415
     from src.notes.request_service import RequestService  # noqa: PLC0415
 
@@ -2055,48 +2057,46 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
 
             if generate_ai_notes and first_match and platform_id:
                 try:
+                    moderation_metadata = None
                     if isinstance(first_match, SimilarityMatch) and first_match.fact_check_item_id:
-                        await event_publisher.publish_request_auto_created(
-                            request_id=request.request_id,
-                            platform_message_id=flagged_msg.message_id,
+                        await asyncio.to_thread(
+                            start_ai_note_workflow,
                             community_server_id=platform_id,
+                            request_id=request.request_id,
                             content=flagged_msg.content,
                             scan_type="similarity",
+                            db_url=settings.DATABASE_URL,
                             fact_check_item_id=str(first_match.fact_check_item_id)
                             if first_match.fact_check_item_id
                             else None,
                             similarity_score=first_match.score,
-                            dataset_name=first_match.matched_source or "bulk_scan",
                         )
                     elif isinstance(first_match, OpenAIModerationMatch):
-                        await event_publisher.publish_request_auto_created(
-                            request_id=request.request_id,
-                            platform_message_id=flagged_msg.message_id,
+                        moderation_metadata = {
+                            "categories": first_match.categories,
+                            "scores": first_match.scores,
+                            "flagged_categories": first_match.flagged_categories,
+                        }
+                        await asyncio.to_thread(
+                            start_ai_note_workflow,
                             community_server_id=platform_id,
+                            request_id=request.request_id,
                             content=flagged_msg.content,
                             scan_type="openai_moderation",
-                            moderation_metadata={
-                                "categories": first_match.categories,
-                                "scores": first_match.scores,
-                                "flagged_categories": first_match.flagged_categories,
-                            },
+                            db_url=settings.DATABASE_URL,
+                            moderation_metadata=moderation_metadata,
                         )
                     elif isinstance(first_match, ConversationFlashpointMatch):
-                        await event_publisher.publish_request_auto_created(
-                            request_id=request.request_id,
-                            platform_message_id=flagged_msg.message_id,
+                        await asyncio.to_thread(
+                            start_ai_note_workflow,
                             community_server_id=platform_id,
+                            request_id=request.request_id,
                             content=flagged_msg.content,
                             scan_type="conversation_flashpoint",
-                            metadata={
-                                "derailment_score": first_match.derailment_score,
-                                "risk_level": first_match.risk_level,
-                                "reasoning": first_match.reasoning,
-                                "context_messages": first_match.context_messages,
-                            },
+                            db_url=settings.DATABASE_URL,
                         )
                     logger.info(
-                        "Published REQUEST_AUTO_CREATED event for AI note generation",
+                        "Enqueued AI note generation workflow",
                         extra={
                             "request_id": request.request_id,
                             "scan_type": first_match.scan_type,
@@ -2104,7 +2104,7 @@ async def create_note_requests_from_flagged_messages(  # noqa: PLR0912
                     )
                 except Exception as pub_error:
                     logger.error(
-                        "Failed to publish REQUEST_AUTO_CREATED event",
+                        "Failed to enqueue AI note generation workflow",
                         extra={
                             "request_id": request.request_id,
                             "error": str(pub_error),
