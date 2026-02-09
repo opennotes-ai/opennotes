@@ -417,12 +417,12 @@ class TestGetDetectorLazyInit:
 
     These tests exercise the real _get_detector method rather than
     mocking it away. Only dspy.LM (to prevent API calls) and
-    FlashpointDetector.load (to prevent file I/O) are mocked.
+    RubricDetector.load (to prevent file I/O) are mocked.
     """
 
     @patch("dspy.LM")
     def test_creates_detector_when_none_cached(self, mock_lm_cls: MagicMock, tmp_path: Path):
-        """_get_detector creates a FlashpointDetector when _detector is None."""
+        """_get_detector creates a RubricDetector when _detector is None."""
         service = FlashpointDetectionService(
             model="openai/gpt-5-mini",
             optimized_model_path=tmp_path / "nonexistent.json",
@@ -1224,3 +1224,107 @@ class TestRiskLevelNormalizationInService:
 
         assert result is not None
         assert result.risk_level == "Hostile"
+
+    @pytest.mark.asyncio
+    async def test_invalid_risk_level_with_dangerous_score(self):
+        """Invalid risk_level + score of 100 derives 'Dangerous'."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 100
+        mock_prediction.risk_level = "EXTREME_DANGER"
+        mock_prediction.reasoning = "Completely off the rails"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message(content="Threatening content")
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.risk_level == "Dangerous"
+        assert result.derailment_score == 100
+
+    @pytest.mark.asyncio
+    async def test_invalid_risk_level_with_heated_score(self):
+        """Invalid risk_level + score of 60 derives 'Heated'."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 60
+        mock_prediction.risk_level = "MEDIUM"
+        mock_prediction.reasoning = "Moderate tension"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message(content="Tense exchange")
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.risk_level == "Heated"
+        assert result.derailment_score == 60
+
+    @pytest.mark.asyncio
+    async def test_uppercase_low_risk_normalized(self):
+        """'LOW RISK' from LLM gets normalized to 'Low Risk'."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 55
+        mock_prediction.risk_level = "LOW RISK"
+        mock_prediction.reasoning = "Calm conversation"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message(content="Some message")
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.risk_level == "Low Risk"
+
+    @pytest.mark.asyncio
+    async def test_empty_risk_level_falls_back_to_score(self):
+        """Empty string risk_level falls back to derailment_score derivation."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 85
+        mock_prediction.risk_level = ""
+        mock_prediction.reasoning = "LLM returned empty risk level"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message(content="Aggressive message")
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert result.risk_level == "Hostile"
+        assert result.derailment_score == 85
+
+    @pytest.mark.asyncio
+    async def test_no_validation_error_on_invalid_risk_level(self):
+        """Invalid risk_level does not raise ValidationError in ConversationFlashpointMatch."""
+        service = FlashpointDetectionService(model="openai/gpt-5-mini")
+
+        mock_prediction = MagicMock(spec=dspy.Prediction)
+        mock_prediction.derailment_score = 70
+        mock_prediction.risk_level = "zzzz_not_a_level_999"
+        mock_prediction.reasoning = "Completely bogus risk level"
+
+        mock_detector = MagicMock()
+        mock_detector.return_value = mock_prediction
+
+        with patch.object(service, "_get_detector", return_value=mock_detector):
+            message = make_bulk_scan_message(content="Test message")
+            result = await service.detect_flashpoint(message, [])
+
+        assert result is not None
+        assert isinstance(result, ConversationFlashpointMatch)
+        assert result.risk_level == "Heated"
