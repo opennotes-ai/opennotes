@@ -739,7 +739,7 @@ def preprocess_batch_step(
         needs_context = ScanType.CONVERSATION_FLASHPOINT in scan_types
         channel_context_map: dict[str, list[dict[str, Any]]] = {}
         if needs_context and typed_messages:
-            raw_map = BulkContentScanService._build_channel_context_map(typed_messages)
+            raw_map = BulkContentScanService.build_channel_context_map(typed_messages)
             channel_context_map = {
                 ch: [m.model_dump(mode="json") for m in msgs] for ch, msgs in raw_map.items()
             }

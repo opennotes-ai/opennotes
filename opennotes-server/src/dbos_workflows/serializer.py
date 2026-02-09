@@ -46,14 +46,14 @@ class SafeJsonSerializer(Serializer):
         json_data = self._to_json_safe(data)
         return self.JSON_PREFIX + json.dumps(json_data, default=self._json_default)
 
-    def deserialize(self, data: str) -> Any:
-        if data.startswith(self.JSON_PREFIX):
-            json_str = data[len(self.JSON_PREFIX) :]
+    def deserialize(self, serialized_data: str) -> Any:
+        if serialized_data.startswith(self.JSON_PREFIX):
+            json_str = serialized_data[len(self.JSON_PREFIX) :]
             raw = json.loads(json_str)
             return self._from_json_safe(raw)
         DBOS_PICKLE_FALLBACK_TOTAL.inc()
         logger.warning("Non-JSON data encountered in DBOS deserialization, returning as raw string")
-        return data
+        return serialized_data
 
     def _to_json_safe(self, obj: Any) -> Any:
         if isinstance(obj, BaseException):

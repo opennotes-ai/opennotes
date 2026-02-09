@@ -2335,7 +2335,7 @@ class TestDeduplicateFlaggedMessages:
 
 
 class TestBatchContextLimitation:
-    """Test _build_channel_context_map batch-scoped behavior (TASK-1067.89)."""
+    """Test build_channel_context_map batch-scoped behavior (TASK-1067.89)."""
 
     def test_context_map_only_contains_batch_messages(
         self, mock_session, mock_embedding_service, mock_redis
@@ -2362,7 +2362,7 @@ class TestBatchContextLimitation:
             for i in range(3)
         ]
 
-        context_map = service._build_channel_context_map(batch_messages)
+        context_map = service.build_channel_context_map(batch_messages)
 
         assert "ch_1" in context_map
         assert len(context_map["ch_1"]) == 3
@@ -2394,7 +2394,7 @@ class TestBatchContextLimitation:
             for i in range(3)
         ]
 
-        context_map = service._build_channel_context_map(batch_messages)
+        context_map = service.build_channel_context_map(batch_messages)
         first_msg = batch_messages[0]
         context = service._get_context_for_message(first_msg, context_map)
 

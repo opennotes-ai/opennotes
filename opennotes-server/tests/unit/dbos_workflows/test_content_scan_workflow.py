@@ -1980,10 +1980,10 @@ class TestPreprocessBatchStepInnerLogic:
 
         from src.bulk_content_scan.service import BulkContentScanService as RealService
 
-        real_build_context_map = RealService._build_channel_context_map
+        real_build_context_map = RealService.build_channel_context_map
 
         mock_service_cls = MagicMock(return_value=mock_service_instance)
-        mock_service_cls._build_channel_context_map = real_build_context_map
+        mock_service_cls.build_channel_context_map = real_build_context_map
 
         with (
             patch(
@@ -2367,8 +2367,7 @@ class TestRelevanceFilterStepInnerLogic:
         fp_candidate["scan_type"] = "conversation_flashpoint"
         fp_candidate["match_data"] = {
             "scan_type": "conversation_flashpoint",
-            "will_derail": True,
-            "confidence": 0.8,
+            "derailment_score": 80,
             "reasoning": "heated",
             "context_messages": 3,
         }
