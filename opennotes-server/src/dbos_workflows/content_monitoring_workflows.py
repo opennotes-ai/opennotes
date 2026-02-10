@@ -486,7 +486,7 @@ def start_ai_note_workflow(
     moderation_metadata_json = json.dumps(moderation_metadata) if moderation_metadata else None
 
     client = get_dbos_client()
-    client.start_workflow(
+    client.start_workflow(  # pyright: ignore[reportAttributeAccessIssue]
         ai_note_generation_workflow,
         community_server_id,
         request_id,
@@ -520,7 +520,7 @@ def call_persist_audit_log(
     from src.dbos_workflows.config import get_dbos_client
 
     client = get_dbos_client()
-    client.start_workflow(
+    client.start_workflow(  # pyright: ignore[reportAttributeAccessIssue]
         _audit_log_wrapper_workflow,
         user_id,
         action,
