@@ -1,7 +1,5 @@
 """Service for automatically generating community notes using AI for fact-check matches."""
 
-import asyncio
-import contextlib
 import time
 from enum import Enum
 from uuid import UUID
@@ -10,8 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.events.schemas import EventType, RequestAutoCreatedEvent
-from src.events.subscriber import event_subscriber
 from src.fact_checking.models import FactCheckItem
 from src.llm_config.models import CommunityServer
 from src.llm_config.providers.base import LLMMessage
@@ -27,7 +23,6 @@ from src.notes import loaders as note_loaders
 from src.notes.message_archive_models import ContentType
 from src.notes.models import Note, Request
 from src.services.vision_service import VisionService
-from src.tasks.content_monitoring_tasks import generate_ai_note_task
 from src.users import PLACEHOLDER_USER_ID
 from src.webhooks.rate_limit import rate_limiter
 
@@ -47,148 +42,16 @@ class AINoteWriter:
     """
     Service for automatically generating community notes using AI.
 
-    Listens to REQUEST_AUTO_CREATED events and generates notes when:
-    - A request is auto-created with a fact-check match
-    - AI note writing is enabled for the community server
-    - Rate limits are not exceeded
+    On-demand note generation is available via generate_note_for_request().
+    Background AI note generation is handled by DBOS workflows
+    (see src/dbos_workflows/content_monitoring_workflows.py).
     """
 
     def __init__(
         self, llm_service: LLMService, vision_service: VisionService | None = None
     ) -> None:
-        """
-        Initialize AI note writer service.
-
-        Args:
-            llm_service: LLM service for generating note content
-            vision_service: Optional vision service for generating image descriptions
-        """
         self.llm_service = llm_service
         self.vision_service = vision_service
-        self._subscription_task: asyncio.Task[None] | None = None
-        self._running = False
-
-    async def start(self) -> None:
-        """Start listening for auto-created request events."""
-        if self._running:
-            logger.warning("AINoteWriter already running")
-            return
-
-        self._running = True
-        logger.info("Starting AINoteWriter service")
-
-        # Register handler and subscribe to REQUEST_AUTO_CREATED events
-        event_subscriber.register_handler(
-            event_type=EventType.REQUEST_AUTO_CREATED,
-            handler=self._handle_request_auto_created,
-        )
-
-        # Subscribe in background with retry logic to handle startup timing issues
-        # Ephemeral consumers occasionally timeout during concurrent startup operations
-        # Retry with exponential backoff ensures eventual subscription success
-        async def subscribe_in_background() -> None:
-            max_retries = 5
-            base_delay = 2
-
-            for attempt in range(1, max_retries + 1):
-                delay = base_delay * (2 ** (attempt - 1))  # Exponential backoff: 2, 4, 8, 16, 32
-                await asyncio.sleep(delay)
-
-                try:
-                    await event_subscriber.subscribe(EventType.REQUEST_AUTO_CREATED)
-                    logger.info(
-                        f"AINoteWriter subscribed to REQUEST_AUTO_CREATED events successfully (attempt {attempt})"
-                    )
-                    return  # Success!
-                except Exception as e:
-                    if attempt < max_retries:
-                        logger.warning(
-                            f"Failed to subscribe to REQUEST_AUTO_CREATED events (attempt {attempt}/{max_retries}): {e}. "
-                            f"Retrying in {base_delay * (2**attempt)}s..."
-                        )
-                    else:
-                        logger.error(
-                            f"Failed to subscribe to REQUEST_AUTO_CREATED events after {max_retries} attempts: {e}. "
-                            "AI note writing will not work until subscription succeeds."
-                        )
-
-        self._subscription_task = asyncio.create_task(subscribe_in_background())
-        logger.info("AINoteWriter service started (subscription in progress)")
-
-    async def stop(self) -> None:
-        """Stop listening for events and clean up resources."""
-        if not self._running:
-            return
-
-        self._running = False
-        logger.info("Stopping AINoteWriter service")
-
-        if self._subscription_task and not self._subscription_task.done():
-            self._subscription_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._subscription_task
-
-        logger.info("AINoteWriter service stopped")
-
-    async def _handle_request_auto_created(self, event: RequestAutoCreatedEvent) -> None:
-        """
-        Handle REQUEST_AUTO_CREATED event by dispatching to TaskIQ.
-
-        Uses the hybrid NATS→TaskIQ pattern:
-        - NATS provides cross-service event routing
-        - TaskIQ provides retries, result storage, and tracing
-
-        Args:
-            event: Request auto-created event
-        """
-        logger.info(
-            f"Dispatching AI note generation to TaskIQ: {event.request_id}",
-            extra={
-                "request_id": event.request_id,
-                "scan_type": event.scan_type,
-                "fact_check_item_id": event.fact_check_item_id,
-                "community_server_id": event.community_server_id,
-                "similarity_score": event.similarity_score,
-            },
-        )
-
-        try:
-            await generate_ai_note_task.kiq(
-                community_server_id=event.community_server_id,
-                request_id=event.request_id,
-                content=event.content,
-                scan_type=event.scan_type,
-                fact_check_item_id=event.fact_check_item_id,
-                similarity_score=event.similarity_score,
-                db_url=settings.DATABASE_URL,
-                moderation_metadata=event.moderation_metadata,
-            )
-
-            logger.debug(
-                f"AI note generation dispatched to TaskIQ: {event.request_id}",
-                extra={
-                    "request_id": event.request_id,
-                    "scan_type": event.scan_type,
-                    "fact_check_item_id": event.fact_check_item_id,
-                },
-            )
-
-        except Exception as e:
-            instance_id = InstanceMetadata.get_instance_id()
-            error_type = type(e).__name__
-            ai_notes_failed_total.labels(
-                community_server_id=event.community_server_id,
-                error_type=error_type,
-                instance_id=instance_id,
-            ).inc()
-            logger.exception(
-                f"Failed to dispatch AI note generation to TaskIQ: {event.request_id}: {e}",
-                extra={
-                    "request_id": event.request_id,
-                    "error_type": error_type,
-                },
-            )
-            raise
 
     async def generate_note_for_request(self, db: AsyncSession, request_id: str) -> Note:
         """

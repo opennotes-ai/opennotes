@@ -16,6 +16,8 @@ the full application modules to avoid torch/litellm import chain issues.
 Full end-to-end testing is done via staging environment.
 """
 
+import src.tasks.content_monitoring_tasks  # noqa: F401  # ensure @register_task decorators run
+
 
 class TestTaskRegistration:
     """Test that remaining content monitoring tasks are properly registered."""

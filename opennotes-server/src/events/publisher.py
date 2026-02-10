@@ -3,8 +3,6 @@ import secrets
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC as UTC_TZ
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import UUID
 
@@ -27,16 +25,13 @@ from tenacity import (
 from src.config import settings
 from src.events.nats_client import nats_client
 from src.events.schemas import (
-    AuditLogCreatedEvent,
     BaseEvent,
     EventType,
     NoteCreatedEvent,
     NoteRatedEvent,
     NoteRequestCreatedEvent,
     NoteScoreUpdatedEvent,
-    RequestAutoCreatedEvent,
     UserRegisteredEvent,
-    VisionDescriptionRequestedEvent,
     WebhookReceivedEvent,
 )
 from src.monitoring.instance import InstanceMetadata
@@ -334,78 +329,6 @@ class EventPublisher:
             similarity_score=similarity_score,
             dataset_name=dataset_name,
             dataset_item_id=dataset_item_id,
-            metadata=metadata or {},
-        )
-        return await self.publish_event(event)
-
-    async def publish_request_auto_created(
-        self,
-        request_id: str,
-        platform_message_id: str | None,
-        community_server_id: str,
-        content: str,
-        scan_type: str,
-        fact_check_item_id: str | None = None,
-        similarity_score: float | None = None,
-        dataset_name: str | None = None,
-        moderation_metadata: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> str:
-        event = RequestAutoCreatedEvent(
-            event_id=secrets.token_urlsafe(16),
-            request_id=request_id,
-            platform_message_id=platform_message_id,
-            scan_type=cast(Literal["similarity", "openai_moderation"], scan_type),
-            fact_check_item_id=fact_check_item_id,
-            community_server_id=community_server_id,
-            content=content,
-            similarity_score=similarity_score,
-            dataset_name=dataset_name,
-            moderation_metadata=moderation_metadata,
-            metadata=metadata or {},
-        )
-        return await self.publish_event(event)
-
-    async def publish_vision_description_requested(
-        self,
-        message_archive_id: str,
-        image_url: str,
-        community_server_id: str,
-        request_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> str:
-        event = VisionDescriptionRequestedEvent(
-            event_id=secrets.token_urlsafe(16),
-            message_archive_id=message_archive_id,
-            image_url=image_url,
-            community_server_id=community_server_id,
-            request_id=request_id,
-            metadata=metadata or {},
-        )
-        return await self.publish_event(event)
-
-    async def publish_audit_log(
-        self,
-        user_id: "UUID | None",
-        action: str,
-        resource: str,
-        resource_id: str | None = None,
-        details: str | None = None,
-        ip_address: str | None = None,
-        user_agent: str | None = None,
-        created_at: Any = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> str:
-        event = AuditLogCreatedEvent(
-            event_id=secrets.token_urlsafe(16),
-            user_id=user_id,
-            action=action,
-            resource=resource,
-            resource_id=resource_id,
-            details=details,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            created_at=created_at if isinstance(created_at, datetime) else datetime.now(UTC_TZ),
             metadata=metadata or {},
         )
         return await self.publish_event(event)

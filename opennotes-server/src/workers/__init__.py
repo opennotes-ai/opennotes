@@ -1,3 +1,1 @@
-from src.workers.audit_worker import AuditWorker
-
-__all__ = ["AuditWorker"]
+__all__: list[str] = []

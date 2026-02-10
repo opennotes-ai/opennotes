@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -11,26 +12,28 @@ from prometheus_client import Counter
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth.auth import verify_token
-from src.events.publisher import event_publisher
+from src.dbos_workflows.content_monitoring_workflows import call_persist_audit_log
 
 logger = logging.getLogger(__name__)
 
 audit_events_published_total = Counter(
     "audit_events_published_total",
-    "Total number of audit events published to NATS",
+    "Total number of audit events persisted via DBOS",
     ["status"],
 )
 
 audit_publish_failures_total = Counter(
     "audit_publish_failures_total",
-    "Total number of failed audit event publishes",
+    "Total number of failed audit event persist operations",
     ["error_type"],
 )
 
 audit_publish_timeouts_total = Counter(
     "audit_publish_timeouts_total",
-    "Total number of audit event publish timeouts",
+    "Total number of audit event persist timeouts",
 )
+
+_audit_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="audit-persist")
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
@@ -92,18 +95,24 @@ class AuditMiddleware(BaseHTTPMiddleware):
             if request_body:
                 details["request_body"] = self._truncate_large_arrays(request_body)
 
-            async with asyncio.timeout(5.0):
-                await event_publisher.publish_audit_log(
-                    user_id=user_id,
-                    action=f"{request.method} {request.url.path}",
-                    resource=request.url.path.split("/")[-1]
+            loop = asyncio.get_running_loop()
+            await asyncio.wait_for(
+                loop.run_in_executor(
+                    _audit_executor,
+                    call_persist_audit_log,
+                    str(user_id) if user_id else None,
+                    f"{request.method} {request.url.path}",
+                    request.url.path.split("/")[-1]
                     if "/" in request.url.path
                     else request.url.path,
-                    details=json.dumps(details),
-                    ip_address=request.client.host if request.client else None,
-                    user_agent=request.headers.get("user-agent"),
-                    created_at=start_time,
-                )
+                    None,
+                    json.dumps(details),
+                    request.client.host if request.client else None,
+                    request.headers.get("user-agent"),
+                    start_time.isoformat(),
+                ),
+                timeout=5.0,
+            )
             audit_events_published_total.labels(status="success").inc()
         except TimeoutError:
             self._handle_audit_error(

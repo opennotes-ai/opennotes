@@ -15,10 +15,16 @@ from src.events.nats_client import Subscription, nats_client
 from src.events.schemas import (
     AuditLogCreatedEvent,
     BulkScanAllBatchesTransmittedEvent,
+    BulkScanFailedEvent,
+    BulkScanInitiatedEvent,
     BulkScanMessageBatchEvent,
+    BulkScanProcessingFinishedEvent,
+    BulkScanProgressEvent,
+    BulkScanResultsEvent,
     EventType,
     NoteCreatedEvent,
     NoteRatedEvent,
+    NoteRequestCreatedEvent,
     NoteScoreUpdatedEvent,
     RequestAutoCreatedEvent,
     UserRegisteredEvent,
@@ -83,11 +89,8 @@ class EventSubscriber:
             EventType.NOTE_CREATED: [],
             EventType.NOTE_RATED: [],
             EventType.NOTE_SCORE_UPDATED: [],
-            EventType.REQUEST_AUTO_CREATED: [],
             EventType.USER_REGISTERED: [],
-            EventType.VISION_DESCRIPTION_REQUESTED: [],
             EventType.WEBHOOK_RECEIVED: [],
-            EventType.AUDIT_LOG_CREATED: [],
             EventType.BULK_SCAN_MESSAGE_BATCH: [],
             EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED: [],
         }
@@ -106,19 +109,28 @@ class EventSubscriber:
         return f"{settings.NATS_STREAM_NAME}.{event_name}"
 
     def _get_event_class(self, event_type: EventType) -> type:
-        mapping = {
+        mapping: dict[EventType, type] = {
             EventType.NOTE_CREATED: NoteCreatedEvent,
             EventType.NOTE_RATED: NoteRatedEvent,
             EventType.NOTE_SCORE_UPDATED: NoteScoreUpdatedEvent,
+            EventType.NOTE_REQUEST_CREATED: NoteRequestCreatedEvent,
             EventType.REQUEST_AUTO_CREATED: RequestAutoCreatedEvent,
-            EventType.USER_REGISTERED: UserRegisteredEvent,
             EventType.VISION_DESCRIPTION_REQUESTED: VisionDescriptionRequestedEvent,
+            EventType.USER_REGISTERED: UserRegisteredEvent,
             EventType.WEBHOOK_RECEIVED: WebhookReceivedEvent,
             EventType.AUDIT_LOG_CREATED: AuditLogCreatedEvent,
+            EventType.BULK_SCAN_INITIATED: BulkScanInitiatedEvent,
             EventType.BULK_SCAN_MESSAGE_BATCH: BulkScanMessageBatchEvent,
             EventType.BULK_SCAN_ALL_BATCHES_TRANSMITTED: BulkScanAllBatchesTransmittedEvent,
+            EventType.BULK_SCAN_PROCESSING_FINISHED: BulkScanProcessingFinishedEvent,
+            EventType.BULK_SCAN_RESULTS: BulkScanResultsEvent,
+            EventType.BULK_SCAN_PROGRESS: BulkScanProgressEvent,
+            EventType.BULK_SCAN_FAILED: BulkScanFailedEvent,
         }
-        return mapping[event_type]
+        event_class = mapping.get(event_type)
+        if event_class is None:
+            raise ValueError(f"No event class mapped for event type: {event_type.value}")
+        return event_class
 
     async def _message_handler(
         self,

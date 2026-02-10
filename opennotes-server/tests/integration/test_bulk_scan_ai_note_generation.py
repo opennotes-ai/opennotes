@@ -2,25 +2,12 @@
 Integration tests for AI note generation from bulk scan note-requests endpoint.
 
 These tests verify that:
-1. When generate_ai_notes=True, REQUEST_AUTO_CREATED events are published for flagged messages
-2. Similarity matches (with fact_check_item_id) trigger events correctly
-3. OpenAI moderation matches trigger events (schema needs modification for this)
-4. When generate_ai_notes=False, NO events are published
+1. When generate_ai_notes=True, DBOS AI note workflows are started for flagged messages
+2. Similarity matches (with fact_check_item_id) trigger workflows correctly
+3. OpenAI moderation matches trigger workflows
+4. When generate_ai_notes=False, NO workflows are started
 
-Task: task-941
-
-TDD RED PHASE: These tests are expected to FAIL until the implementation is fixed.
-
-Identified Bugs (discovered via TDD):
-1. Bug #1 (service.py line 1063): community_server_id is passed as platform_id (e.g., "discord_guild_id")
-   instead of the actual UUID of the CommunityServer. The code queries for platform_id and
-   passes that to the event, but the event schema expects the UUID.
-   FIX: Change line 1063 from `community_server_id=platform_id` to `community_server_id=str(community_server_id)`
-
-2. Bug #2 (service.py line 1059-1071): Events are published even when fact_check_item_id is None.
-   For similarity scans, if a match doesn't have a fact_check_item_id (legacy scans), we should
-   NOT publish an event since the AI note generation handler requires a fact_check_item.
-   FIX: Add condition `and first_match.fact_check_item_id` to the `if` statement on line 1059
+Task: task-941, task-1094.07
 """
 
 from datetime import UTC, datetime
@@ -256,27 +243,23 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
     Tests for AI note generation from similarity-matched flagged messages.
 
     These tests verify that when generate_ai_notes=True and flagged messages
-    have similarity matches (with fact_check_item_id), REQUEST_AUTO_CREATED
-    events are published for each message.
+    have similarity matches (with fact_check_item_id), DBOS AI note workflows
+    are started for each message.
     """
 
     @pytest.mark.asyncio
-    async def test_similarity_match_publishes_request_auto_created_event(
+    async def test_similarity_match_starts_ai_note_workflow(
         self,
         db,
         admin_headers_for_ai_tests,
         completed_scan_with_similarity_matches,
     ):
         """
-        TDD RED: Similarity match with generate_ai_notes=True should publish REQUEST_AUTO_CREATED events.
+        Similarity match with generate_ai_notes=True should start DBOS AI note workflows.
 
         Expected behavior:
         - For each message_id in the request, if it has a similarity match with fact_check_item_id,
-          a REQUEST_AUTO_CREATED event should be published
-        - The event should contain: request_id, platform_message_id, fact_check_item_id,
-          community_server_id, content, similarity_score, dataset_name
-
-        Current bug: create_note_requests_from_flagged_messages() never publishes events.
+          a DBOS AI note workflow should be started via start_ai_note_workflow
         """
         scan_data = completed_scan_with_similarity_matches
         scan = scan_data["scan"]
@@ -290,10 +273,8 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
             mock_get_flagged.return_value = flagged_messages
 
             with patch(
-                "src.events.publisher.event_publisher.publish_request_auto_created"
-            ) as mock_publish:
-                mock_publish.return_value = "test_event_id"
-
+                "src.dbos_workflows.content_monitoring_workflows.start_ai_note_workflow"
+            ) as mock_workflow:
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.post(
@@ -318,12 +299,11 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                     f"Response: {response.text}"
                 )
 
-                assert mock_publish.call_count == 2, (
-                    f"Expected 2 calls to publish_request_auto_created but got {mock_publish.call_count}. "
-                    "Bug: REQUEST_AUTO_CREATED events are not being published when generate_ai_notes=True."
+                assert mock_workflow.call_count == 2, (
+                    f"Expected 2 calls to start_ai_note_workflow but got {mock_workflow.call_count}."
                 )
 
-                for call_args in mock_publish.call_args_list:
+                for call_args in mock_workflow.call_args_list:
                     kwargs = call_args.kwargs if call_args.kwargs else {}
 
                     if kwargs:
@@ -337,23 +317,22 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                         assert kwargs["similarity_score"] >= 0.85
 
     @pytest.mark.asyncio
-    async def test_similarity_match_event_contains_correct_data(
+    async def test_similarity_match_workflow_contains_correct_data(
         self,
         db,
         admin_headers_for_ai_tests,
         completed_scan_with_similarity_matches,
     ):
         """
-        TDD RED: Verify REQUEST_AUTO_CREATED event contains all required fields.
+        Verify start_ai_note_workflow is called with all required fields.
 
-        The event schema requires:
-        - request_id: str (the created request's ID)
-        - platform_message_id: str | None (Discord message ID)
-        - fact_check_item_id: str (UUID of matched fact-check item)
-        - community_server_id: str (community server identifier)
-        - content: str (message content)
-        - similarity_score: float (match score)
-        - dataset_name: str (always "bulk_scan" for this flow)
+        The workflow function signature requires:
+        - community_server_id: str
+        - request_id: str
+        - content: str
+        - scan_type: str
+        - fact_check_item_id: str | None
+        - similarity_score: float | None
         """
         scan_data = completed_scan_with_similarity_matches
         scan = scan_data["scan"]
@@ -365,10 +344,8 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
             mock_get_flagged.return_value = flagged_messages
 
             with patch(
-                "src.events.publisher.event_publisher.publish_request_auto_created"
-            ) as mock_publish:
-                mock_publish.return_value = "test_event_id"
-
+                "src.dbos_workflows.content_monitoring_workflows.start_ai_note_workflow"
+            ) as mock_workflow:
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.post(
@@ -390,34 +367,34 @@ class TestSimilarityMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
 
                 assert response.status_code == 201
 
-                mock_publish.assert_called_once()
-                call_kwargs = mock_publish.call_args.kwargs
+                mock_workflow.assert_called_once()
+                call_kwargs = mock_workflow.call_args.kwargs
 
-                assert "request_id" in call_kwargs, "Event missing request_id"
-                assert "platform_message_id" in call_kwargs, "Event missing platform_message_id"
-                assert call_kwargs["platform_message_id"] == "sim_msg_0"
-                assert "scan_type" in call_kwargs, "Event missing scan_type"
+                assert "request_id" in call_kwargs, "Workflow call missing request_id"
+                assert "content" in call_kwargs, "Workflow call missing content"
+                assert "scan_type" in call_kwargs, "Workflow call missing scan_type"
                 assert call_kwargs["scan_type"] == "similarity"
-                assert "fact_check_item_id" in call_kwargs, "Event missing fact_check_item_id"
-                assert "community_server_id" in call_kwargs, "Event missing community_server_id"
-                assert "content" in call_kwargs, "Event missing content"
-                assert "similarity_score" in call_kwargs, "Event missing similarity_score"
+                assert "community_server_id" in call_kwargs, (
+                    "Workflow call missing community_server_id"
+                )
+                assert "fact_check_item_id" in call_kwargs, (
+                    "Workflow call missing fact_check_item_id"
+                )
+                assert "similarity_score" in call_kwargs, "Workflow call missing similarity_score"
 
 
 class TestModerationMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
     """
     Tests for AI note generation from OpenAI moderation-matched flagged messages.
 
-    Note: The current RequestAutoCreatedEvent schema requires fact_check_item_id,
-    but moderation matches don't have a fact-check item. The schema will need to be
-    extended to support moderation scans:
-    - scan_type: Literal["similarity", "openai_moderation"]
-    - fact_check_item_id: str | None (optional, only for similarity)
-    - moderation_metadata: dict | None (for moderation scans)
+    Moderation matches trigger DBOS AI note workflows with:
+    - scan_type set to "openai_moderation"
+    - fact_check_item_id = None (no fact-check item for moderation matches)
+    - moderation_metadata contains category/score information
     """
 
     @pytest.mark.asyncio
-    async def test_moderation_match_publishes_event_without_fact_check_item(
+    async def test_moderation_match_starts_workflow_without_fact_check_item(
         self,
         db,
         admin_headers_for_ai_tests,
@@ -425,12 +402,7 @@ class TestModerationMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
         community_server_for_ai_tests,
     ):
         """
-        Moderation match should publish event even without fact_check_item_id.
-
-        The schema now supports moderation scans with:
-        - scan_type set to "openai_moderation"
-        - fact_check_item_id = None
-        - moderation_metadata contains category/score information
+        Moderation match should start DBOS workflow without fact_check_item_id.
         """
         scan_data = completed_scan_with_moderation_matches
         scan = scan_data["scan"]
@@ -442,10 +414,8 @@ class TestModerationMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
             mock_get_flagged.return_value = flagged_messages
 
             with patch(
-                "src.events.publisher.event_publisher.publish_request_auto_created"
-            ) as mock_publish:
-                mock_publish.return_value = "test_event_id"
-
+                "src.dbos_workflows.content_monitoring_workflows.start_ai_note_workflow"
+            ) as mock_workflow:
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.post(
@@ -466,9 +436,9 @@ class TestModerationMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
                     )
 
                 assert response.status_code == 201
-                mock_publish.assert_called_once()
+                mock_workflow.assert_called_once()
 
-                call_kwargs = mock_publish.call_args.kwargs
+                call_kwargs = mock_workflow.call_args.kwargs
                 assert call_kwargs["scan_type"] == "openai_moderation"
                 assert call_kwargs.get("fact_check_item_id") is None
                 assert "moderation_metadata" in call_kwargs
@@ -477,26 +447,20 @@ class TestModerationMatchAINoteGeneration(TestBulkScanAINoteGenerationFixtures):
 
 class TestGenerateAINotesDisabled(TestBulkScanAINoteGenerationFixtures):
     """
-    Tests verifying that NO events are published when generate_ai_notes=False.
+    Tests verifying that NO DBOS workflows are started when generate_ai_notes=False.
 
-    This is the expected behavior - the flag should control whether AI note
-    generation is triggered via events.
+    The generate_ai_notes flag controls whether AI note generation workflows are triggered.
     """
 
     @pytest.mark.asyncio
-    async def test_no_events_published_when_generate_ai_notes_is_false(
+    async def test_no_workflows_started_when_generate_ai_notes_is_false(
         self,
         db,
         admin_headers_for_ai_tests,
         completed_scan_with_similarity_matches,
     ):
         """
-        Verify no REQUEST_AUTO_CREATED events when generate_ai_notes=False.
-
-        This test should pass even with the current buggy implementation
-        because no events are published regardless of the flag value.
-        However, it's included to ensure we don't accidentally publish events
-        when the flag is False after fixing the bug.
+        Verify no DBOS AI note workflows are started when generate_ai_notes=False.
         """
         scan_data = completed_scan_with_similarity_matches
         scan = scan_data["scan"]
@@ -508,8 +472,8 @@ class TestGenerateAINotesDisabled(TestBulkScanAINoteGenerationFixtures):
             mock_get_flagged.return_value = flagged_messages
 
             with patch(
-                "src.events.publisher.event_publisher.publish_request_auto_created"
-            ) as mock_publish:
+                "src.dbos_workflows.content_monitoring_workflows.start_ai_note_workflow"
+            ) as mock_workflow:
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.post(
@@ -534,9 +498,9 @@ class TestGenerateAINotesDisabled(TestBulkScanAINoteGenerationFixtures):
                     f"Response: {response.text}"
                 )
 
-                assert mock_publish.call_count == 0, (
-                    f"Expected 0 calls when generate_ai_notes=False but got {mock_publish.call_count}. "
-                    "Events should only be published when generate_ai_notes=True."
+                assert mock_workflow.call_count == 0, (
+                    f"Expected 0 calls when generate_ai_notes=False but got {mock_workflow.call_count}. "
+                    "Workflows should only be started when generate_ai_notes=True."
                 )
 
     @pytest.mark.asyncio
@@ -549,7 +513,7 @@ class TestGenerateAINotesDisabled(TestBulkScanAINoteGenerationFixtures):
         """
         Note requests should be created in database regardless of generate_ai_notes flag.
 
-        The generate_ai_notes flag only controls event publishing, not request creation.
+        The generate_ai_notes flag only controls DBOS workflow dispatch, not request creation.
         """
 
         scan_data = completed_scan_with_similarity_matches
@@ -612,7 +576,7 @@ class TestPartialMatches(TestBulkScanAINoteGenerationFixtures):
         return item
 
     @pytest.mark.asyncio
-    async def test_only_similarity_matches_with_fact_check_item_trigger_events(
+    async def test_only_similarity_matches_with_fact_check_item_trigger_workflows(
         self,
         db,
         admin_headers_for_ai_tests,
@@ -621,11 +585,11 @@ class TestPartialMatches(TestBulkScanAINoteGenerationFixtures):
         fact_check_item_for_partial_tests,
     ):
         """
-        Only similarity matches WITH fact_check_item_id should trigger events.
+        Only similarity matches WITH fact_check_item_id should start DBOS workflows.
 
-        Matches with fact_check_item_id trigger REQUEST_AUTO_CREATED events.
-        Matches without fact_check_item_id (legacy scans) do NOT trigger events
-        because the AI note generation handler requires a fact_check_item.
+        Matches with fact_check_item_id start AI note workflows.
+        Matches without fact_check_item_id (legacy scans) do NOT start workflows
+        because the AI note generation workflow requires a fact_check_item.
         """
         from src.bulk_content_scan.models import BulkContentScanLog
 
@@ -685,10 +649,8 @@ class TestPartialMatches(TestBulkScanAINoteGenerationFixtures):
             mock_get_flagged.return_value = flagged_messages
 
             with patch(
-                "src.events.publisher.event_publisher.publish_request_auto_created"
-            ) as mock_publish:
-                mock_publish.return_value = "test_event_id"
-
+                "src.dbos_workflows.content_monitoring_workflows.start_ai_note_workflow"
+            ) as mock_workflow:
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.post(
@@ -713,13 +675,12 @@ class TestPartialMatches(TestBulkScanAINoteGenerationFixtures):
 
                 assert response.status_code == 201
 
-                assert mock_publish.call_count == 1, (
-                    f"Expected 1 call (only message with fact_check_item_id triggers event) "
-                    f"but got {mock_publish.call_count}"
+                assert mock_workflow.call_count == 1, (
+                    f"Expected 1 call (only message with fact_check_item_id triggers workflow) "
+                    f"but got {mock_workflow.call_count}"
                 )
 
-                call_kwargs = mock_publish.call_args.kwargs
-                assert call_kwargs["platform_message_id"] == "msg_with_fact_check"
+                call_kwargs = mock_workflow.call_args.kwargs
                 assert call_kwargs["fact_check_item_id"] == str(
                     fact_check_item_for_partial_tests.id
                 )

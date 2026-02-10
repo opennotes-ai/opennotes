@@ -118,7 +118,6 @@ from src.webhooks.cache import interaction_cache
 from src.webhooks.discord_client import close_discord_client
 from src.webhooks.rate_limit import rate_limiter
 from src.webhooks.router import router as webhook_router
-from src.workers.vision_worker import VisionDescriptionHandler
 
 setup_logging(
     log_level=settings.LOG_LEVEL,
@@ -205,33 +204,9 @@ async def _init_ai_services() -> tuple[
     logger.info("Vision service initialized")
 
     ai_note_writer = AINoteWriter(llm_service=llm_service, vision_service=vision_service)
-    await ai_note_writer.start()
-    logger.info("AI Note Writer service started")
-
-    await _register_vision_handler()
+    logger.info("AI Note Writer service initialized")
 
     return ai_note_writer, vision_service, llm_service
-
-
-async def _register_vision_handler() -> None:
-    """Register vision description event handler for async processing."""
-    if not await nats_client.is_connected():
-        logger.warning(
-            "NATS not connected - vision description event handler NOT registered. "
-            "Vision requests will use synchronous processing only."
-        )
-        return
-
-    vision_handler = VisionDescriptionHandler()
-    vision_handler.register()
-    try:
-        await event_subscriber.subscribe(EventType.VISION_DESCRIPTION_REQUESTED)
-        logger.info("Vision description event handler registered and subscribed")
-    except TimeoutError:
-        logger.warning(
-            "NATS JetStream subscribe timed out - vision description event handler "
-            "NOT subscribed. Vision requests will use synchronous processing only."
-        )
 
 
 async def _register_bulk_scan_handlers(llm_service: LLMService | None = None) -> None:
@@ -335,6 +310,19 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
             )
         except Exception as e:
             logger.error(f"Failed to import content_scan_workflow: {e}", exc_info=True)
+
+        try:
+            from src.dbos_workflows import content_monitoring_workflows
+
+            registered_workflows.extend(
+                [
+                    content_monitoring_workflows.AI_NOTE_GENERATION_WORKFLOW_NAME,
+                    content_monitoring_workflows.VISION_DESCRIPTION_WORKFLOW_NAME,
+                    content_monitoring_workflows.AUDIT_LOG_WORKFLOW_NAME,
+                ]
+            )
+        except Exception as e:
+            logger.error(f"Failed to import content_monitoring_workflows: {e}", exc_info=True)
 
         logger.info(
             "DBOS workflow modules loaded",
@@ -458,15 +446,9 @@ def _register_health_checks(is_dbos_worker: bool) -> None:
     logger.info("Health checks registered")
 
 
-async def _shutdown_services(
-    app: FastAPI, is_dbos_worker: bool, ai_note_writer: AINoteWriter | None
-) -> None:
+async def _shutdown_services(app: FastAPI, is_dbos_worker: bool) -> None:
     await distributed_health.stop_heartbeat()
     logger.info("Distributed health heartbeat stopped")
-
-    if ai_note_writer:
-        await ai_note_writer.stop()
-        logger.info("AI Note Writer service stopped")
 
     if hasattr(app.state, "taskiq_broker") and app.state.taskiq_broker:
         try:
@@ -553,7 +535,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    await _shutdown_services(app, is_dbos_worker, ai_note_writer)
+    await _shutdown_services(app, is_dbos_worker)
 
 
 app = FastAPI(
