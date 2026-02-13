@@ -324,6 +324,18 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
         except Exception as e:
             logger.error(f"Failed to import content_monitoring_workflows: {e}", exc_info=True)
 
+        try:
+            from src.dbos_workflows import scheduler_workflows
+
+            registered_workflows.extend(
+                [
+                    scheduler_workflows.CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME,
+                    scheduler_workflows.MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME,
+                ]
+            )
+        except Exception as e:
+            logger.error(f"Failed to import scheduler_workflows: {e}", exc_info=True)
+
         logger.info(
             "DBOS workflow modules loaded",
             extra={"registered_workflows": registered_workflows},

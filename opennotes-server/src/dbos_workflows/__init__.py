@@ -28,20 +28,31 @@ Resilience:
     CircuitOpenError: Raised when circuit breaker is open
     CircuitState: Enum with CLOSED, OPEN, HALF_OPEN states
 
+Scheduled Workflows:
+    cleanup_stale_batch_jobs_workflow: Weekly cleanup of stale batch jobs (Sunday midnight UTC)
+    monitor_stuck_batch_jobs_workflow: Monitor for stuck batch jobs (every 6 hours)
+
 Workflows:
     rechunk_fact_check_workflow: Batch rechunking of fact-check items
-    dispatch_dbos_rechunk_workflow: Create BatchJob and enqueue workflow
+    rechunk_previously_seen_workflow: Batch rechunking of previously-seen messages
+    dispatch_dbos_rechunk_workflow: Create BatchJob and enqueue fact-check workflow
+    dispatch_dbos_previously_seen_rechunk_workflow: Create BatchJob and enqueue previously-seen workflow
     enqueue_single_fact_check_chunk: Enqueue single item for chunking
     content_scan_orchestration_workflow: Orchestrate content scan pipeline
     dispatch_content_scan_workflow: Start orchestration workflow
     enqueue_content_scan_batch: Enqueue batch for processing
     send_all_transmitted_signal: Signal orchestrator that all batches transmitted
+    bulk_approval_workflow: Bulk approve fact-check candidates from predictions
     ai_note_generation_workflow: Generate AI note for fact-check match or moderation flag
     vision_description_workflow: Generate image description via LLM vision API
     call_persist_audit_log: Persist audit log entry to database
     start_ai_note_workflow: Enqueue AI note generation workflow
 """
 
+from src.dbos_workflows.approval_workflow import (
+    BULK_APPROVAL_WORKFLOW_NAME,
+    bulk_approval_workflow,
+)
 from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter
 from src.dbos_workflows.circuit_breaker import (
     CircuitBreaker,
@@ -83,29 +94,45 @@ from src.dbos_workflows.content_scan_workflow import (
 from src.dbos_workflows.rechunk_workflow import (
     CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
     RECHUNK_FACT_CHECK_WORKFLOW_NAME,
+    RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME,
+    dispatch_dbos_previously_seen_rechunk_workflow,
     dispatch_dbos_rechunk_workflow,
     enqueue_single_fact_check_chunk,
     rechunk_fact_check_workflow,
+    rechunk_previously_seen_workflow,
+)
+from src.dbos_workflows.scheduler_workflows import (
+    CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME,
+    MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME,
+    cleanup_stale_batch_jobs_workflow,
+    monitor_stuck_batch_jobs_workflow,
 )
 
 __all__ = [
     "AI_NOTE_GENERATION_WORKFLOW_NAME",
     "AUDIT_LOG_WORKFLOW_NAME",
+    "BULK_APPROVAL_WORKFLOW_NAME",
     "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
+    "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME",
     "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
+    "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME",
     "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
     "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
+    "RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME",
     "VISION_DESCRIPTION_WORKFLOW_NAME",
     "BatchJobDBOSAdapter",
     "CircuitBreaker",
     "CircuitOpenError",
     "CircuitState",
     "ai_note_generation_workflow",
+    "bulk_approval_workflow",
     "call_persist_audit_log",
+    "cleanup_stale_batch_jobs_workflow",
     "content_scan_orchestration_workflow",
     "destroy_dbos",
     "destroy_dbos_client",
     "dispatch_content_scan_workflow",
+    "dispatch_dbos_previously_seen_rechunk_workflow",
     "dispatch_dbos_rechunk_workflow",
     "enqueue_content_scan_batch",
     "enqueue_single_fact_check_chunk",
@@ -113,9 +140,11 @@ __all__ = [
     "get_dbos",
     "get_dbos_client",
     "load_messages_from_redis",
+    "monitor_stuck_batch_jobs_workflow",
     "preprocess_batch_step",
     "process_content_scan_batch",
     "rechunk_fact_check_workflow",
+    "rechunk_previously_seen_workflow",
     "relevance_filter_step",
     "reset_dbos",
     "reset_dbos_client",

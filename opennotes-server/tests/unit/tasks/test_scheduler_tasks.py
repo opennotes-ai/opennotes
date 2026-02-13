@@ -1,11 +1,13 @@
-"""
-Unit tests for scheduler tasks.
+"""Unit tests for deprecated scheduler tasks (stubs).
 
-Tests scheduled task registration and execution.
-Task: task-1043 - Add monitoring/alerting and cleanup scheduler
+Tests that the TaskIQ scheduler task registrations still exist
+for backward compatibility, even though the real logic has moved
+to DBOS scheduled workflows (src/dbos_workflows/scheduler_workflows.py).
+
+Task: task-1097 - Migrate scheduler tasks to DBOS scheduled workflows
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -14,10 +16,10 @@ from src.tasks.broker import get_registered_tasks
 
 @pytest.mark.unit
 class TestSchedulerTaskRegistration:
-    """Tests for scheduler task registration."""
+    """Tests for scheduler task registration (backward compat)."""
 
     def test_cleanup_stale_batch_jobs_task_is_registered(self):
-        """Verify cleanup_stale_batch_jobs_task is registered with broker."""
+        """Verify cleanup_stale_batch_jobs_task is still registered with broker."""
         import src.tasks.scheduler_tasks  # noqa: F401
 
         registered_tasks = get_registered_tasks()
@@ -48,139 +50,73 @@ class TestSchedulerTaskRegistration:
         assert labels.get("component") == "scheduler"
         assert labels.get("task_type") == "maintenance"
 
+    def test_monitor_stuck_batch_jobs_task_is_registered(self):
+        """Verify monitor_stuck_batch_jobs_task is still registered with broker."""
+        import src.tasks.scheduler_tasks  # noqa: F401
+
+        registered_tasks = get_registered_tasks()
+
+        assert "scheduler:monitor_stuck_batch_jobs" in registered_tasks
+
+    def test_monitor_stuck_batch_jobs_task_has_schedule_label(self):
+        """Verify monitor_stuck_batch_jobs_task has schedule label for cron."""
+        import src.tasks.scheduler_tasks  # noqa: F401
+
+        registered_tasks = get_registered_tasks()
+        _func, labels = registered_tasks["scheduler:monitor_stuck_batch_jobs"]
+
+        assert "schedule" in labels
+        schedule = labels["schedule"]
+        assert isinstance(schedule, list)
+        assert len(schedule) == 1
+        assert schedule[0]["cron"] == "0 */6 * * *"
+        assert schedule[0]["schedule_id"] == "stuck_jobs_monitor"
+
 
 @pytest.mark.unit
-class TestCleanupStaleBatchJobsTaskExecution:
-    """Tests for cleanup_stale_batch_jobs_task execution."""
+class TestDeprecatedStubDelegation:
+    """Tests that deprecated stubs delegate to DBOS sync helpers."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.scheduler_tasks.create_async_engine")
-    @patch("src.tasks.scheduler_tasks.async_sessionmaker")
-    @patch("src.tasks.scheduler_tasks.RechunkBatchJobService")
-    async def test_cleanup_stale_batch_jobs_task_calls_cleanup(
-        self,
-        mock_service_class,
-        mock_sessionmaker,
-        mock_create_engine,
-    ):
-        """cleanup_stale_batch_jobs_task calls cleanup_stale_jobs method."""
+    async def test_cleanup_stub_delegates_to_dbos_helper(self):
+        """cleanup_stale_batch_jobs_task delegates to _cleanup_stale_jobs_sync."""
         from src.tasks.scheduler_tasks import cleanup_stale_batch_jobs_task
 
-        mock_job = MagicMock()
-        mock_job.id = "test-job-id"
+        expected = {
+            "status": "completed",
+            "cleaned_count": 0,
+            "job_ids": [],
+            "threshold_hours": 2,
+            "executed_at": "2026-01-01T00:00:00+00:00",
+        }
 
-        mock_service = MagicMock()
-        mock_service.cleanup_stale_jobs = AsyncMock(return_value=[mock_job])
-        mock_service_class.return_value = mock_service
+        with patch(
+            "src.dbos_workflows.scheduler_workflows._cleanup_stale_jobs_sync",
+            return_value=expected,
+        ) as mock_cleanup:
+            result = await cleanup_stale_batch_jobs_task()
 
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-
-        mock_sessionmaker.return_value.return_value = mock_session
-
-        mock_engine = MagicMock()
-        mock_engine.dispose = AsyncMock()
-        mock_create_engine.return_value = mock_engine
-
-        result = await cleanup_stale_batch_jobs_task()
-
-        mock_service.cleanup_stale_jobs.assert_called_once()
-        assert result["status"] == "completed"
-        assert result["cleaned_count"] == 1
-        assert "test-job-id" in result["job_ids"]
+        assert result == expected
+        mock_cleanup.assert_called_once_with(stale_threshold_hours=2)
 
     @pytest.mark.asyncio
-    @patch("src.tasks.scheduler_tasks.create_async_engine")
-    @patch("src.tasks.scheduler_tasks.async_sessionmaker")
-    @patch("src.tasks.scheduler_tasks.RechunkBatchJobService")
-    async def test_cleanup_stale_batch_jobs_task_with_custom_threshold(
-        self,
-        mock_service_class,
-        mock_sessionmaker,
-        mock_create_engine,
-    ):
-        """cleanup_stale_batch_jobs_task respects custom threshold parameter."""
-        from src.tasks.scheduler_tasks import cleanup_stale_batch_jobs_task
+    async def test_monitor_stub_delegates_to_dbos_helper(self):
+        """monitor_stuck_batch_jobs_task delegates to _monitor_stuck_jobs_sync."""
+        from src.tasks.scheduler_tasks import monitor_stuck_batch_jobs_task
 
-        mock_service = MagicMock()
-        mock_service.cleanup_stale_jobs = AsyncMock(return_value=[])
-        mock_service_class.return_value = mock_service
+        expected = {
+            "status": "completed",
+            "stuck_count": 0,
+            "threshold_minutes": 30,
+            "executed_at": "2026-01-01T00:00:00+00:00",
+            "stuck_jobs": [],
+        }
 
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        with patch(
+            "src.dbos_workflows.scheduler_workflows._monitor_stuck_jobs_sync",
+            return_value=expected,
+        ) as mock_monitor:
+            result = await monitor_stuck_batch_jobs_task()
 
-        mock_sessionmaker.return_value.return_value = mock_session
-
-        mock_engine = MagicMock()
-        mock_engine.dispose = AsyncMock()
-        mock_create_engine.return_value = mock_engine
-
-        result = await cleanup_stale_batch_jobs_task(stale_threshold_hours=4.0)
-
-        mock_service.cleanup_stale_jobs.assert_called_once_with(stale_threshold_hours=4.0)
-        assert result["threshold_hours"] == 4.0
-
-    @pytest.mark.asyncio
-    @patch("src.tasks.scheduler_tasks.create_async_engine")
-    @patch("src.tasks.scheduler_tasks.async_sessionmaker")
-    @patch("src.tasks.scheduler_tasks.RechunkBatchJobService")
-    async def test_cleanup_stale_batch_jobs_task_disposes_engine(
-        self,
-        mock_service_class,
-        mock_sessionmaker,
-        mock_create_engine,
-    ):
-        """cleanup_stale_batch_jobs_task properly disposes database engine."""
-        from src.tasks.scheduler_tasks import cleanup_stale_batch_jobs_task
-
-        mock_service = MagicMock()
-        mock_service.cleanup_stale_jobs = AsyncMock(return_value=[])
-        mock_service_class.return_value = mock_service
-
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-
-        mock_sessionmaker.return_value.return_value = mock_session
-
-        mock_engine = MagicMock()
-        mock_engine.dispose = AsyncMock()
-        mock_create_engine.return_value = mock_engine
-
-        await cleanup_stale_batch_jobs_task()
-
-        mock_engine.dispose.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch("src.tasks.scheduler_tasks.create_async_engine")
-    @patch("src.tasks.scheduler_tasks.async_sessionmaker")
-    @patch("src.tasks.scheduler_tasks.RechunkBatchJobService")
-    async def test_cleanup_stale_batch_jobs_task_disposes_engine_on_error(
-        self,
-        mock_service_class,
-        mock_sessionmaker,
-        mock_create_engine,
-    ):
-        """cleanup_stale_batch_jobs_task disposes engine even on error."""
-        from src.tasks.scheduler_tasks import cleanup_stale_batch_jobs_task
-
-        mock_service = MagicMock()
-        mock_service.cleanup_stale_jobs = AsyncMock(side_effect=Exception("Test error"))
-        mock_service_class.return_value = mock_service
-
-        mock_session = MagicMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-
-        mock_sessionmaker.return_value.return_value = mock_session
-
-        mock_engine = MagicMock()
-        mock_engine.dispose = AsyncMock()
-        mock_create_engine.return_value = mock_engine
-
-        with pytest.raises(Exception, match="Test error"):
-            await cleanup_stale_batch_jobs_task()
-
-        mock_engine.dispose.assert_called_once()
+        assert result == expected
+        mock_monitor.assert_called_once_with(threshold_minutes=30)
