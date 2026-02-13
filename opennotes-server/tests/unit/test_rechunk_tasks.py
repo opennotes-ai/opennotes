@@ -505,7 +505,7 @@ class TestTaskIQLabels:
 
         _, labels = _all_registered_tasks["rechunk:previously_seen"]
         assert labels.get("component") == "rechunk"
-        assert labels.get("task_type") == "batch"
+        assert labels.get("task_type") == "deprecated"
 
 
 class TestDeadlockRetryForFactCheckItem:

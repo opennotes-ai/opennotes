@@ -191,22 +191,21 @@ class TestRechunkServiceWithCommunityServerId:
     """Tests for previously_seen rechunk with community_server_id."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
-    async def test_start_previously_seen_rechunk_job_stores_community_server_id_as_string(
+    @patch("src.dbos_workflows.rechunk_workflow.dispatch_dbos_previously_seen_rechunk_workflow")
+    async def test_start_previously_seen_rechunk_job_dispatches_dbos_workflow(
         self,
-        mock_task,
+        mock_dispatch,
         rechunk_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """Previously seen rechunk stores community_server_id as string UUID."""
+        """Previously seen rechunk dispatches DBOS workflow with correct community_server_id."""
         job_id = uuid4()
         community_server_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
-        mock_batch_job_service.create_job.return_value = mock_job
-        mock_batch_job_service.start_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
+        mock_dispatch.return_value = job_id
+        mock_batch_job_service.get_job.return_value = mock_job
 
         result = await rechunk_service.start_previously_seen_rechunk_job(
             community_server_id=community_server_id,
@@ -214,12 +213,10 @@ class TestRechunkServiceWithCommunityServerId:
         )
 
         assert result == mock_job
-        create_call = mock_batch_job_service.create_job.call_args
-        job_create = create_call[0][0]
-
-        assert job_create.job_type == RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE
-        assert job_create.metadata_["community_server_id"] == str(community_server_id)
-        assert job_create.metadata_["chunk_type"] == RechunkType.PREVIOUSLY_SEEN.value
+        mock_dispatch.assert_called_once()
+        call_kwargs = mock_dispatch.call_args.kwargs
+        assert call_kwargs["community_server_id"] == community_server_id
+        assert call_kwargs["batch_size"] == 100
 
     @pytest.mark.asyncio
     async def test_cancel_previously_seen_job_works_correctly(
@@ -360,10 +357,10 @@ class TestRechunkServiceActiveJobCheck:
         mock_batch_job_service.create_job.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
+    @patch("src.dbos_workflows.rechunk_workflow.dispatch_dbos_previously_seen_rechunk_workflow")
     async def test_active_job_blocks_new_previously_seen_job(
         self,
-        mock_task,
+        mock_dispatch,
         mock_batch_job_service,
     ):
         """Creating a previously seen job fails when one is already active."""
@@ -391,7 +388,7 @@ class TestRechunkServiceActiveJobCheck:
             )
 
         assert exc_info.value.active_job_id == existing_job_id
-        mock_batch_job_service.create_job.assert_not_called()
+        mock_dispatch.assert_not_called()
 
 
 @pytest.mark.unit
