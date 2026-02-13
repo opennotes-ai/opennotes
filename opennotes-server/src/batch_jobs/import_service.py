@@ -2,15 +2,16 @@
 Service for managing fact-check import batch jobs.
 
 Provides high-level operations for starting and managing import jobs
-that run asynchronously via TaskIQ background tasks.
+that run asynchronously via DBOS durable workflows.
 
 Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
 not by this service. The middleware enforces one active job per type.
 
 Orphaned Job Cleanup Strategy
 -----------------------------
-If TaskIQ dispatch (.kiq()) fails AND the subsequent fail_job() call also fails
-(double-failure scenario), the job remains in PENDING status indefinitely.
+If DBOS dispatch (client.enqueue()) fails AND the subsequent fail_job() call
+also fails (double-failure scenario), the job remains in PENDING status
+indefinitely.
 
 This is handled by a cleanup mechanism rather than immediate deletion because:
 1. Multiple start_*_job methods share this pattern
@@ -20,7 +21,7 @@ This is handled by a cleanup mechanism rather than immediate deletion because:
 Cleanup approach:
 - A scheduled task should periodically scan for PENDING jobs where:
   - updated_at < (now - STALE_PENDING_JOB_THRESHOLD_MINUTES)
-  - No corresponding TaskIQ task is running
+  - No corresponding DBOS workflow is running
 - Such jobs should be marked FAILED with error_summary indicating "orphaned"
 - Double-failure cases are logged with ORPHANED_JOB_MARKER for monitoring alerts
 
@@ -42,7 +43,6 @@ from src.batch_jobs.constants import (
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
-from src.config import get_settings
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -58,7 +58,7 @@ class ImportBatchJobService:
     """
     Service for managing fact-check import batch jobs.
 
-    Coordinates batch job creation with TaskIQ task dispatch for
+    Coordinates batch job creation with DBOS workflow dispatch for
     non-blocking import operations.
     """
 
@@ -85,8 +85,8 @@ class ImportBatchJobService:
         """
         Start a new fact-check import job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to perform the actual import. Returns immediately
+        Creates a BatchJob in PENDING status and dispatches a DBOS durable
+        workflow to perform the actual import. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -98,15 +98,14 @@ class ImportBatchJobService:
         Returns:
             The created BatchJob (in PENDING status)
         """
-        from src.tasks.import_tasks import process_fact_check_import  # noqa: PLC0415
-
-        settings = get_settings()
+        from src.dbos_workflows.import_workflow import dispatch_import_workflow  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "source": "fact_check_bureau",
             "batch_size": batch_size,
             "dry_run": dry_run,
             "enqueue_scrapes": enqueue_scrapes,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -121,7 +120,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created import batch job, dispatching background task",
+            "Created import batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "batch_size": batch_size,
@@ -131,20 +130,23 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_fact_check_import.kiq(
-                job_id=str(job.id),
+            workflow_id = await dispatch_import_workflow(
+                batch_job_id=job.id,
                 batch_size=batch_size,
                 dry_run=dry_run,
                 enqueue_scrapes=enqueue_scrapes,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
             )
+            if workflow_id is None:
+                raise RuntimeError("DBOS workflow dispatch returned None")
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
             await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
+
+        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
+        await self._session.commit()
 
         return job
 
@@ -170,8 +172,8 @@ class ImportBatchJobService:
         """
         Start a new candidate scrape job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to scrape pending candidates. Returns immediately
+        Creates a BatchJob in PENDING status and dispatches a DBOS durable
+        workflow to scrape pending candidates. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -193,14 +195,13 @@ class ImportBatchJobService:
                 f"got {base_delay}"
             )
 
-        from src.tasks.import_tasks import process_scrape_batch  # noqa: PLC0415
-
-        settings = get_settings()
+        from src.dbos_workflows.import_workflow import dispatch_scrape_workflow  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
             "base_delay": base_delay,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -215,7 +216,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created scrape batch job, dispatching background task",
+            "Created scrape batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "batch_size": batch_size,
@@ -224,21 +225,24 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_scrape_batch.kiq(
-                job_id=str(job.id),
+            workflow_id = await dispatch_scrape_workflow(
+                batch_job_id=job.id,
                 batch_size=batch_size,
                 dry_run=dry_run,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
                 concurrency=DEFAULT_SCRAPE_CONCURRENCY,
                 base_delay=base_delay,
             )
+            if workflow_id is None:
+                raise RuntimeError("DBOS workflow dispatch returned None")
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
             await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
+
+        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
+        await self._session.commit()
 
         return job
 
@@ -251,8 +255,8 @@ class ImportBatchJobService:
         """
         Start a new candidate promotion job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to promote scraped candidates. Returns immediately
+        Creates a BatchJob in PENDING status and dispatches a DBOS durable
+        workflow to promote scraped candidates. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -263,13 +267,12 @@ class ImportBatchJobService:
         Returns:
             The created BatchJob (in PENDING status)
         """
-        from src.tasks.import_tasks import process_promotion_batch  # noqa: PLC0415
-
-        settings = get_settings()
+        from src.dbos_workflows.import_workflow import dispatch_promote_workflow  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -284,7 +287,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created promotion batch job, dispatching background task",
+            "Created promotion batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "batch_size": batch_size,
@@ -293,19 +296,22 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_promotion_batch.kiq(
-                job_id=str(job.id),
+            workflow_id = await dispatch_promote_workflow(
+                batch_job_id=job.id,
                 batch_size=batch_size,
                 dry_run=dry_run,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
             )
+            if workflow_id is None:
+                raise RuntimeError("DBOS workflow dispatch returned None")
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
             await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
+
+        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
+        await self._session.commit()
 
         return job
 
@@ -325,8 +331,8 @@ class ImportBatchJobService:
         """
         Start a new bulk approval job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to approve candidates from predictions. Returns immediately
+        Creates a BatchJob in PENDING status and enqueues a DBOS durable
+        workflow to approve candidates from predictions. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -344,9 +350,14 @@ class ImportBatchJobService:
         Returns:
             The created BatchJob (in PENDING status)
         """
-        from src.tasks.approval_tasks import process_bulk_approval  # noqa: PLC0415
+        import asyncio  # noqa: PLC0415
 
-        settings = get_settings()
+        from dbos import EnqueueOptions  # noqa: PLC0415
+
+        from src.dbos_workflows.approval_workflow import (  # noqa: PLC0415
+            BULK_APPROVAL_WORKFLOW_NAME,
+        )
+        from src.dbos_workflows.config import get_dbos_client  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "threshold": threshold,
@@ -358,6 +369,7 @@ class ImportBatchJobService:
             "has_content": has_content,
             "published_date_from": published_date_from.isoformat() if published_date_from else None,
             "published_date_to": published_date_to.isoformat() if published_date_to else None,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -372,7 +384,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created bulk approval batch job, dispatching background task",
+            "Created bulk approval batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "threshold": threshold,
@@ -382,28 +394,43 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_bulk_approval.kiq(
-                job_id=str(job.id),
-                threshold=threshold,
-                auto_promote=auto_promote,
-                limit=limit,
-                status=status,
-                dataset_name=dataset_name,
-                dataset_tags=dataset_tags,
-                has_content=has_content,
-                published_date_from=published_date_from.isoformat()
-                if published_date_from
-                else None,
-                published_date_to=published_date_to.isoformat() if published_date_to else None,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
+            client = get_dbos_client()
+            options: EnqueueOptions = {
+                "queue_name": "approval",
+                "workflow_name": BULK_APPROVAL_WORKFLOW_NAME,
+            }
+            handle = await asyncio.to_thread(
+                client.enqueue,
+                options,
+                str(job.id),
+                threshold,
+                auto_promote,
+                limit,
+                status,
+                dataset_name,
+                dataset_tags,
+                has_content,
+                published_date_from.isoformat() if published_date_from else None,
+                published_date_to.isoformat() if published_date_to else None,
             )
+            workflow_id = handle.workflow_id
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
             await self._handle_dispatch_failure(job, e, "task_dispatch")
             raise
+
+        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
+        await self._session.commit()
+
+        logger.info(
+            "DBOS bulk approval workflow dispatched",
+            extra={
+                "job_id": str(job.id),
+                "workflow_id": workflow_id,
+            },
+        )
 
         return job
 

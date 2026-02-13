@@ -43,6 +43,12 @@ Workflows:
     enqueue_content_scan_batch: Enqueue batch for processing
     send_all_transmitted_signal: Signal orchestrator that all batches transmitted
     bulk_approval_workflow: Bulk approve fact-check candidates from predictions
+    fact_check_import_workflow: CSV streaming, validation, and upsert from HuggingFace
+    scrape_candidates_workflow: Batch URL scraping with concurrency control
+    promote_candidates_workflow: Batch candidate promotion to fact-check items
+    dispatch_import_workflow: Enqueue fact-check import workflow
+    dispatch_scrape_workflow: Enqueue scrape candidates workflow
+    dispatch_promote_workflow: Enqueue promote candidates workflow
     ai_note_generation_workflow: Generate AI note for fact-check match or moderation flag
     vision_description_workflow: Generate image description via LLM vision API
     call_persist_audit_log: Persist audit log entry to database
@@ -91,6 +97,17 @@ from src.dbos_workflows.content_scan_workflow import (
     similarity_scan_step,
     store_messages_in_redis,
 )
+from src.dbos_workflows.import_workflow import (
+    FACT_CHECK_IMPORT_WORKFLOW_NAME,
+    PROMOTE_CANDIDATES_WORKFLOW_NAME,
+    SCRAPE_CANDIDATES_WORKFLOW_NAME,
+    dispatch_import_workflow,
+    dispatch_promote_workflow,
+    dispatch_scrape_workflow,
+    fact_check_import_workflow,
+    promote_candidates_workflow,
+    scrape_candidates_workflow,
+)
 from src.dbos_workflows.rechunk_workflow import (
     CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
     RECHUNK_FACT_CHECK_WORKFLOW_NAME,
@@ -115,10 +132,13 @@ __all__ = [
     "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
     "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME",
     "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
+    "FACT_CHECK_IMPORT_WORKFLOW_NAME",
     "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME",
     "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
+    "PROMOTE_CANDIDATES_WORKFLOW_NAME",
     "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
     "RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME",
+    "SCRAPE_CANDIDATES_WORKFLOW_NAME",
     "VISION_DESCRIPTION_WORKFLOW_NAME",
     "BatchJobDBOSAdapter",
     "CircuitBreaker",
@@ -134,8 +154,12 @@ __all__ = [
     "dispatch_content_scan_workflow",
     "dispatch_dbos_previously_seen_rechunk_workflow",
     "dispatch_dbos_rechunk_workflow",
+    "dispatch_import_workflow",
+    "dispatch_promote_workflow",
+    "dispatch_scrape_workflow",
     "enqueue_content_scan_batch",
     "enqueue_single_fact_check_chunk",
+    "fact_check_import_workflow",
     "flashpoint_scan_step",
     "get_dbos",
     "get_dbos_client",
@@ -143,11 +167,13 @@ __all__ = [
     "monitor_stuck_batch_jobs_workflow",
     "preprocess_batch_step",
     "process_content_scan_batch",
+    "promote_candidates_workflow",
     "rechunk_fact_check_workflow",
     "rechunk_previously_seen_workflow",
     "relevance_filter_step",
     "reset_dbos",
     "reset_dbos_client",
+    "scrape_candidates_workflow",
     "send_all_transmitted_signal",
     "similarity_scan_step",
     "start_ai_note_workflow",
