@@ -1,14 +1,15 @@
 """
 Unit tests for ImportBatchJobService.
 
-Tests for start_scrape_job and start_promotion_job methods to verify
-correct BatchJob creation and TaskIQ task dispatch.
+Tests for start_scrape_job, start_promotion_job, and start_import_job methods
+to verify correct BatchJob creation and DBOS workflow dispatch.
 
 Note: Rate limiting for concurrent jobs is now handled by DistributedRateLimitMiddleware,
 not by the service layer. Lock management tests have been moved to middleware tests.
 
 Task: task-1006.03 - Add start_scrape_job and start_promotion_job
 Task: task-1006.08 - Add negative tests and improve ordering verification
+Task: task-1093 - Migrate import pipeline tasks to DBOS durable workflows
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -40,6 +41,7 @@ def mock_batch_job_service():
     service.start_job = AsyncMock()
     service.get_job = AsyncMock()
     service.fail_job = AsyncMock()
+    service.set_workflow_id = AsyncMock()
     return service
 
 
@@ -56,12 +58,10 @@ class TestStartScrapeJob:
     """Tests for start_scrape_job method."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_creates_job_with_correct_type(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
@@ -71,11 +71,7 @@ class TestStartScrapeJob:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-scrape-123"
 
         result = await import_service.start_scrape_job(
             batch_size=500,
@@ -92,28 +88,23 @@ class TestStartScrapeJob:
         assert job_create.metadata_["batch_size"] == 500
         assert job_create.metadata_["dry_run"] is False
         assert job_create.metadata_["base_delay"] == 1.0
+        assert job_create.metadata_["execution_backend"] == "dbos"
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
-    async def test_start_scrape_job_dispatches_taskiq_task(
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
+    async def test_start_scrape_job_dispatches_dbos_workflow(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """start_scrape_job dispatches process_scrape_batch TaskIQ task."""
+        """start_scrape_job dispatches DBOS scrape workflow."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-scrape-123"
 
         await import_service.start_scrape_job(
             batch_size=500,
@@ -121,63 +112,58 @@ class TestStartScrapeJob:
             base_delay=2.5,
         )
 
-        mock_task.kiq.assert_called_once_with(
-            job_id=str(job_id),
+        mock_dispatch.assert_called_once_with(
+            batch_job_id=job_id,
             batch_size=500,
             dry_run=True,
-            db_url="postgresql://test",
-            redis_url="redis://test",
             concurrency=10,
             base_delay=2.5,
         )
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_commits_session_before_dispatch(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """start_scrape_job commits session before dispatching task.
+        """start_scrape_job commits session before dispatching workflow.
 
         Verifies ordering via call sequence tracking: commit must happen
-        before kiq() to ensure the job row exists for the worker.
+        before dispatch to ensure the job row exists for the worker.
         """
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
         call_order = []
 
         async def track_commit():
             call_order.append("commit")
 
-        async def track_kiq(**kwargs):
-            call_order.append("kiq")
+        async def track_dispatch(**kwargs):
+            call_order.append("dispatch")
+            return "wf-123"
 
         mock_session.commit = AsyncMock(side_effect=track_commit)
-        mock_task.kiq = AsyncMock(side_effect=track_kiq)
+        mock_dispatch.side_effect = track_dispatch
 
         await import_service.start_scrape_job()
 
-        assert call_order == ["commit", "kiq"], f"Expected commit before kiq, got: {call_order}"
+        assert "commit" in call_order
+        assert "dispatch" in call_order
+        assert call_order.index("commit") < call_order.index("dispatch"), (
+            f"Expected commit before dispatch, got: {call_order}"
+        )
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_uses_default_batch_size(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
@@ -187,11 +173,7 @@ class TestStartScrapeJob:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-123"
 
         await import_service.start_scrape_job()
 
@@ -200,26 +182,20 @@ class TestStartScrapeJob:
         assert job_create.metadata_["batch_size"] == 1000
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_stores_custom_base_delay_in_metadata(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """start_scrape_job stores custom base_delay in job metadata and passes to task."""
+        """start_scrape_job stores custom base_delay in job metadata and passes to workflow."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-123"
 
         await import_service.start_scrape_job(
             batch_size=500,
@@ -231,23 +207,19 @@ class TestStartScrapeJob:
         job_create = create_call[0][0]
         assert job_create.metadata_["base_delay"] == 5.0
 
-        mock_task.kiq.assert_called_once_with(
-            job_id=str(job_id),
+        mock_dispatch.assert_called_once_with(
+            batch_job_id=job_id,
             batch_size=500,
             dry_run=False,
-            db_url="postgresql://test",
-            redis_url="redis://test",
             concurrency=10,
             base_delay=5.0,
         )
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_with_minimum_base_delay(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
@@ -257,11 +229,7 @@ class TestStartScrapeJob:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-123"
 
         await import_service.start_scrape_job(base_delay=0.1)
 
@@ -269,17 +237,15 @@ class TestStartScrapeJob:
         job_create = create_call[0][0]
         assert job_create.metadata_["base_delay"] == 0.1
 
-        mock_task.kiq.assert_called_once()
-        kiq_call = mock_task.kiq.call_args
-        assert kiq_call.kwargs["base_delay"] == 0.1
+        mock_dispatch.assert_called_once()
+        dispatch_kwargs = mock_dispatch.call_args.kwargs
+        assert dispatch_kwargs["base_delay"] == 0.1
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_with_maximum_base_delay(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
@@ -289,11 +255,7 @@ class TestStartScrapeJob:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-123"
 
         await import_service.start_scrape_job(base_delay=30.0)
 
@@ -301,9 +263,29 @@ class TestStartScrapeJob:
         job_create = create_call[0][0]
         assert job_create.metadata_["base_delay"] == 30.0
 
-        mock_task.kiq.assert_called_once()
-        kiq_call = mock_task.kiq.call_args
-        assert kiq_call.kwargs["base_delay"] == 30.0
+        mock_dispatch.assert_called_once()
+        dispatch_kwargs = mock_dispatch.call_args.kwargs
+        assert dispatch_kwargs["base_delay"] == 30.0
+
+    @pytest.mark.asyncio
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
+    async def test_start_scrape_job_sets_workflow_id(
+        self,
+        mock_dispatch,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_scrape_job sets workflow_id on the batch job after dispatch."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+        mock_dispatch.return_value = "wf-scrape-456"
+
+        await import_service.start_scrape_job()
+
+        mock_batch_job_service.set_workflow_id.assert_called_once_with(job_id, "wf-scrape-456")
 
 
 @pytest.mark.unit
@@ -311,12 +293,10 @@ class TestStartPromotionJob:
     """Tests for start_promotion_job method."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
     async def test_start_promotion_job_creates_job_with_correct_type(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
@@ -326,11 +306,7 @@ class TestStartPromotionJob:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-promote-123"
 
         result = await import_service.start_promotion_job(
             batch_size=500,
@@ -346,89 +322,79 @@ class TestStartPromotionJob:
         assert job_create.total_tasks == 0
         assert job_create.metadata_["batch_size"] == 500
         assert job_create.metadata_["dry_run"] is False
+        assert job_create.metadata_["execution_backend"] == "dbos"
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
-    async def test_start_promotion_job_dispatches_taskiq_task(
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
+    async def test_start_promotion_job_dispatches_dbos_workflow(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """start_promotion_job dispatches process_promotion_batch TaskIQ task."""
+        """start_promotion_job dispatches DBOS promote workflow."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-promote-123"
 
         await import_service.start_promotion_job(
             batch_size=500,
             dry_run=True,
         )
 
-        mock_task.kiq.assert_called_once_with(
-            job_id=str(job_id),
+        mock_dispatch.assert_called_once_with(
+            batch_job_id=job_id,
             batch_size=500,
             dry_run=True,
-            db_url="postgresql://test",
-            redis_url="redis://test",
         )
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
     async def test_start_promotion_job_commits_session_before_dispatch(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """start_promotion_job commits session before dispatching task.
+        """start_promotion_job commits session before dispatching workflow.
 
         Verifies ordering via call sequence tracking: commit must happen
-        before kiq() to ensure the job row exists for the worker.
+        before dispatch to ensure the job row exists for the worker.
         """
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
         call_order = []
 
         async def track_commit():
             call_order.append("commit")
 
-        async def track_kiq(**kwargs):
-            call_order.append("kiq")
+        async def track_dispatch(**kwargs):
+            call_order.append("dispatch")
+            return "wf-123"
 
         mock_session.commit = AsyncMock(side_effect=track_commit)
-        mock_task.kiq = AsyncMock(side_effect=track_kiq)
+        mock_dispatch.side_effect = track_dispatch
 
         await import_service.start_promotion_job()
 
-        assert call_order == ["commit", "kiq"], f"Expected commit before kiq, got: {call_order}"
+        assert "commit" in call_order
+        assert "dispatch" in call_order
+        assert call_order.index("commit") < call_order.index("dispatch"), (
+            f"Expected commit before dispatch, got: {call_order}"
+        )
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
     async def test_start_promotion_job_uses_default_batch_size(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
@@ -438,11 +404,7 @@ class TestStartPromotionJob:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_task.kiq = AsyncMock()
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-123"
 
         await import_service.start_promotion_job()
 
@@ -450,86 +412,92 @@ class TestStartPromotionJob:
         job_create = create_call[0][0]
         assert job_create.metadata_["batch_size"] == 1000
 
-
-@pytest.mark.unit
-class TestKiqDispatchFailure:
-    """Tests for kiq() dispatch failure scenarios.
-
-    These tests verify that when TaskIQ dispatch fails, the job is marked
-    as failed and the exception is re-raised.
-    """
-
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
-    async def test_start_scrape_job_fails_job_on_kiq_exception(
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
+    async def test_start_promotion_job_sets_workflow_id(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """start_scrape_job marks job as failed when kiq() fails."""
+        """start_promotion_job sets workflow_id on the batch job after dispatch."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
+        mock_dispatch.return_value = "wf-promote-789"
 
-        mock_task.kiq = AsyncMock(side_effect=RuntimeError("NATS connection failed"))
+        await import_service.start_promotion_job()
 
-        with pytest.raises(RuntimeError, match="NATS connection failed"):
+        mock_batch_job_service.set_workflow_id.assert_called_once_with(job_id, "wf-promote-789")
+
+
+@pytest.mark.unit
+class TestDispatchFailure:
+    """Tests for DBOS dispatch failure scenarios.
+
+    These tests verify that when DBOS workflow dispatch fails, the job is marked
+    as failed and the exception is re-raised.
+    """
+
+    @pytest.mark.asyncio
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
+    async def test_start_scrape_job_fails_job_on_dispatch_exception(
+        self,
+        mock_dispatch,
+        import_service,
+        mock_batch_job_service,
+        mock_session,
+    ):
+        """start_scrape_job marks job as failed when dispatch fails."""
+        job_id = uuid4()
+        mock_job = MagicMock(spec=BatchJob)
+        mock_job.id = job_id
+        mock_batch_job_service.create_job.return_value = mock_job
+
+        mock_dispatch.return_value = None
+
+        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
             await import_service.start_scrape_job()
 
         mock_batch_job_service.fail_job.assert_called_once()
         fail_call = mock_batch_job_service.fail_job.call_args
         assert fail_call[0][0] == job_id
-        assert "NATS connection failed" in fail_call[1]["error_summary"]["error"]
+        assert "DBOS workflow dispatch returned None" in fail_call[1]["error_summary"]["error"]
         assert fail_call[1]["error_summary"]["stage"] == "task_dispatch"
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
-    async def test_start_promotion_job_fails_job_on_kiq_exception(
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
+    async def test_start_promotion_job_fails_job_on_dispatch_exception(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
     ):
-        """start_promotion_job marks job as failed when kiq() fails."""
+        """start_promotion_job marks job as failed when dispatch fails."""
         job_id = uuid4()
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
-        mock_task.kiq = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
+        mock_dispatch.side_effect = ConnectionError("DBOS unavailable")
 
-        with pytest.raises(ConnectionError, match="Redis unavailable"):
+        with pytest.raises(ConnectionError, match="DBOS unavailable"):
             await import_service.start_promotion_job()
 
         mock_batch_job_service.fail_job.assert_called_once()
         fail_call = mock_batch_job_service.fail_job.call_args
         assert fail_call[0][0] == job_id
-        assert "Redis unavailable" in fail_call[1]["error_summary"]["error"]
+        assert "DBOS unavailable" in fail_call[1]["error_summary"]["error"]
         assert fail_call[1]["error_summary"]["stage"] == "connection_error"
 
     @pytest.mark.asyncio
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_commits_after_fail_job(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         import_service,
         mock_batch_job_service,
         mock_session,
@@ -539,17 +507,13 @@ class TestKiqDispatchFailure:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
-        mock_task.kiq = AsyncMock(side_effect=RuntimeError("NATS connection failed"))
+        mock_dispatch.return_value = None
 
         with pytest.raises(RuntimeError):
             await import_service.start_scrape_job()
 
-        assert mock_session.commit.call_count == 2  # Once for create, once for fail
+        assert mock_session.commit.call_count == 2
         mock_session.refresh.assert_called_once_with(mock_job)
 
 
@@ -563,12 +527,10 @@ class TestExceptionHandlingDuringJobFailure:
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.import_service.logger")
-    @patch("src.tasks.import_tasks.process_fact_check_import")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_import_workflow")
     async def test_start_import_job_preserves_original_exception_when_fail_job_raises(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         mock_logger,
         import_service,
         mock_batch_job_service,
@@ -579,16 +541,11 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
-        original_error = RuntimeError("NATS connection failed")
-        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_dispatch.return_value = None
         mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
 
-        with pytest.raises(RuntimeError, match="NATS connection failed"):
+        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
             await import_service.start_import_job()
 
         mock_logger.exception.assert_called_once()
@@ -598,12 +555,10 @@ class TestExceptionHandlingDuringJobFailure:
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.import_service.logger")
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_preserves_original_exception_when_fail_job_raises(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         mock_logger,
         import_service,
         mock_batch_job_service,
@@ -614,16 +569,11 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
-        original_error = RuntimeError("NATS connection failed")
-        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_dispatch.return_value = None
         mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
 
-        with pytest.raises(RuntimeError, match="NATS connection failed"):
+        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
             await import_service.start_scrape_job()
 
         mock_logger.exception.assert_called_once()
@@ -633,12 +583,10 @@ class TestExceptionHandlingDuringJobFailure:
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.import_service.logger")
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
     async def test_start_promotion_job_preserves_original_exception_when_fail_job_raises(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         mock_logger,
         import_service,
         mock_batch_job_service,
@@ -649,16 +597,11 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
-        original_error = ConnectionError("Redis unavailable")
-        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_dispatch.side_effect = ConnectionError("DBOS unavailable")
         mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
 
-        with pytest.raises(ConnectionError, match="Redis unavailable"):
+        with pytest.raises(ConnectionError, match="DBOS unavailable"):
             await import_service.start_promotion_job()
 
         mock_logger.exception.assert_called_once()
@@ -668,12 +611,10 @@ class TestExceptionHandlingDuringJobFailure:
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.import_service.logger")
-    @patch("src.tasks.import_tasks.process_scrape_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_scrape_workflow")
     async def test_start_scrape_job_preserves_original_exception_when_commit_raises(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         mock_logger,
         import_service,
         mock_batch_job_service,
@@ -684,13 +625,8 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
-        original_error = RuntimeError("NATS connection failed")
-        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_dispatch.return_value = None
 
         commit_call_count = 0
 
@@ -702,19 +638,17 @@ class TestExceptionHandlingDuringJobFailure:
 
         mock_session.commit = AsyncMock(side_effect=commit_side_effect)
 
-        with pytest.raises(RuntimeError, match="NATS connection failed"):
+        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
             await import_service.start_scrape_job()
 
         mock_logger.exception.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("src.batch_jobs.import_service.logger")
-    @patch("src.tasks.import_tasks.process_promotion_batch")
-    @patch("src.batch_jobs.import_service.get_settings")
+    @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
     async def test_exception_type_preserved_not_wrapped(
         self,
-        mock_get_settings,
-        mock_task,
+        mock_dispatch,
         mock_logger,
         import_service,
         mock_batch_job_service,
@@ -725,16 +659,12 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job = MagicMock(spec=BatchJob)
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
-        mock_get_settings.return_value = MagicMock(
-            DATABASE_URL="postgresql://test",
-            REDIS_URL="redis://test",
-        )
 
         class CustomTaskError(Exception):
             pass
 
         original_error = CustomTaskError("Task dispatch failed")
-        mock_task.kiq = AsyncMock(side_effect=original_error)
+        mock_dispatch.side_effect = original_error
         mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("Nested failure"))
 
         caught_exception = None
