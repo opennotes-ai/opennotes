@@ -45,12 +45,12 @@ DBOS_PARALLEL_NOTES:
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 import uuid as uuid_module
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import orjson
 from dbos import DBOS, EnqueueOptions, Queue
 
 from src.monitoring import get_logger
@@ -89,7 +89,7 @@ async def store_messages_in_redis(
     messages: list[dict[str, Any]],
     ttl: int = REDIS_BATCH_TTL_SECONDS,
 ) -> str:
-    await redis_client.setex(key, ttl, json.dumps(messages).encode())
+    await redis_client.setex(key, ttl, orjson.dumps(messages))
     return key
 
 
@@ -101,8 +101,7 @@ async def load_messages_from_redis(
     if data is None:
         raise ValueError(f"Redis key {key} not found or expired")
     await redis_client.expire(key, REDIS_REPLAY_TTL_SECONDS)
-    raw = data.decode() if isinstance(data, bytes) else data
-    return json.loads(raw)
+    return orjson.loads(data)
 
 
 @DBOS.step()
@@ -388,7 +387,7 @@ def process_content_scan_batch(
         },
     )
 
-    scan_types = json.loads(scan_types_json)
+    scan_types = orjson.loads(scan_types_json)
 
     errors = 0
     flagged_count = 0
@@ -543,8 +542,8 @@ def process_batch_messages_step(
     settings = get_settings()
     scan_uuid = UUID(scan_id)
     community_uuid = UUID(community_server_id)
-    messages = json.loads(messages_json)
-    scan_types = [ScanType(st) for st in json.loads(scan_types_json)]
+    messages = orjson.loads(messages_json)
+    scan_types = [ScanType(st) for st in orjson.loads(scan_types_json)]
 
     _diag = {"scan_id": scan_id, "batch_number": batch_number}
 
@@ -700,7 +699,7 @@ def preprocess_batch_step(
     settings = get_settings()
     scan_uuid = UUID(scan_id)
     community_uuid = UUID(community_server_id)
-    scan_types = [ScanType(st) for st in json.loads(scan_types_json)]
+    scan_types = [ScanType(st) for st in orjson.loads(scan_types_json)]
 
     async def _preprocess() -> dict[str, Any]:
         from sqlalchemy import select
@@ -1263,7 +1262,7 @@ async def dispatch_content_scan_workflow(
 
     try:
         client = get_dbos_client()
-        scan_types_json = json.dumps(scan_types)
+        scan_types_json = orjson.dumps(scan_types).decode()
 
         options: EnqueueOptions = {
             "queue_name": "content_scan",
@@ -1333,7 +1332,7 @@ async def enqueue_content_scan_batch(
 
     try:
         client = get_dbos_client()
-        scan_types_json = json.dumps(scan_types)
+        scan_types_json = orjson.dumps(scan_types).decode()
 
         options: EnqueueOptions = {
             "queue_name": "content_scan",

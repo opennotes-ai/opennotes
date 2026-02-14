@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from slowapi.errors import RateLimitExceeded
 
@@ -547,6 +547,7 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_PREFIX}/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
     separate_input_output_schemas=False,
+    default_response_class=ORJSONResponse,
 )
 
 if settings.ENABLE_TRACING and not settings.TESTING:

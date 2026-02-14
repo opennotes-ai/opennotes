@@ -24,6 +24,7 @@ import time
 from collections.abc import Callable
 from typing import Any, Generic, TypeVar, cast
 
+import orjson
 from pydantic import BaseModel, Field, ValidationError
 from redis.asyncio import Redis
 from redis.asyncio.connection import ConnectionPool
@@ -233,7 +234,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
                 self.metrics.misses += 1
                 return default
 
-            deserialized = json.loads(value.decode("utf-8"))
+            deserialized = orjson.loads(value)
 
             if schema is not None:
                 try:
@@ -259,7 +260,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
             self.metrics.hits += 1
             return cast(T, deserialized)
 
-        except json.JSONDecodeError as e:
+        except orjson.JSONDecodeError as e:
             logger.warning(
                 f"Failed to deserialize cached value for key '{key}': {e}",
                 extra={"key": key, "error_type": "json_decode"},
@@ -291,7 +292,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
                 )
                 effective_ttl = 0
 
-            serialized = json.dumps(value).encode("utf-8")
+            serialized = orjson.dumps(value)
 
             if effective_ttl > 0:
                 await self.client.setex(full_key, effective_ttl, serialized)
@@ -384,7 +385,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
                     result.append(None)
                 else:
                     try:
-                        deserialized = json.loads(value.decode("utf-8"))
+                        deserialized = orjson.loads(value)
 
                         if schema is not None:
                             try:
@@ -400,7 +401,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
                         else:
                             self.metrics.hits += 1
                             result.append(cast(T, deserialized))
-                    except json.JSONDecodeError:
+                    except orjson.JSONDecodeError:
                         self.metrics.misses += 1
                         result.append(None)
 
@@ -426,7 +427,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
             async with self.client.pipeline(transaction=False) as pipe:
                 for key, value in items.items():
                     full_key = self._build_key(key)
-                    serialized = json.dumps(value).encode("utf-8")
+                    serialized = orjson.dumps(value)
 
                     if effective_ttl > 0:
                         pipe.setex(full_key, effective_ttl, serialized)
@@ -438,7 +439,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
             self.metrics.sets += len(items)
             return True
 
-        except (RedisError, json.JSONDecodeError):
+        except (RedisError, orjson.JSONDecodeError):
             return False
 
     async def clear(self, pattern: str | None = None) -> int:
@@ -511,10 +512,9 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
                                 continue
 
                             try:
-                                parsed_message = json.loads(raw_data)
-                                validated_message = PubSubMessage.model_validate(parsed_message)
+                                validated_message = PubSubMessage.model_validate_json(raw_data)
                                 handler(validated_message)
-                            except (json.JSONDecodeError, ValidationError) as e:
+                            except ValidationError as e:
                                 logger.error(
                                     f"Failed to parse/validate message on channel {channel}: {e}"
                                 )
@@ -536,8 +536,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
     def _validate_message(self, raw_data: str, hmac_secret: str | None = None) -> bool:
         """Validate message structure, timestamp, and optional HMAC signature."""
         try:
-            message_data = json.loads(raw_data)
-            message = PubSubMessage.model_validate(message_data)
+            message = PubSubMessage.model_validate_json(raw_data)
 
             current_time = int(time.time())
             message_age = abs(current_time - message.timestamp)
@@ -563,7 +562,7 @@ class RedisCacheAdapter(CacheInterface[T], Generic[T]):
 
             return True
 
-        except (json.JSONDecodeError, ValidationError) as e:
+        except (orjson.JSONDecodeError, ValidationError) as e:
             logger.error(f"Message validation failed: {e}")
             return False
 

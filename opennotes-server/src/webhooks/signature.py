@@ -6,11 +6,11 @@ Prevents webhook forgery by requiring clients to verify signatures.
 
 import hashlib
 import hmac
-import json
 import logging
 import time
 from typing import Any
 
+import orjson
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ def generate_webhook_signature(
     if timestamp is None:
         timestamp = int(time.time())
 
-    payload_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    payload_str = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS).decode()
     message = f"{timestamp}:{payload_str}"
 
     signature = hmac.new(

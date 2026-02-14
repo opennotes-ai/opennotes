@@ -1,8 +1,8 @@
 import asyncio
-import json
 import logging
 from typing import Any
 
+import orjson
 import redis.asyncio as redis
 
 from src.cache.redis_client import create_redis_connection
@@ -104,7 +104,7 @@ class InteractionCache:
 
         if cached:
             logger.info(f"Cache hit for interaction {interaction_id}")
-            result: dict[str, Any] = json.loads(cached)
+            result: dict[str, Any] = orjson.loads(cached)
             return result
 
         return None
@@ -121,7 +121,7 @@ class InteractionCache:
         await self.redis_client.setex(
             key,
             settings.INTERACTION_CACHE_TTL,
-            json.dumps(response),
+            orjson.dumps(response).decode(),
         )
 
     async def invalidate_cache(self, interaction_id: str) -> None:

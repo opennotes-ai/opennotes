@@ -13,13 +13,13 @@ Steps:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import orjson
 from dbos import DBOS
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -258,7 +258,9 @@ def ai_note_generation_workflow(
     similarity_score: float | None = None,
     moderation_metadata_json: str | None = None,
 ) -> dict[str, Any]:
-    moderation_metadata = json.loads(moderation_metadata_json) if moderation_metadata_json else None
+    moderation_metadata = (
+        orjson.loads(moderation_metadata_json) if moderation_metadata_json else None
+    )
 
     return generate_ai_note_step(
         community_server_id=community_server_id,
@@ -483,7 +485,9 @@ def start_ai_note_workflow(
 ) -> None:
     from src.dbos_workflows.config import get_dbos_client
 
-    moderation_metadata_json = json.dumps(moderation_metadata) if moderation_metadata else None
+    moderation_metadata_json = (
+        orjson.dumps(moderation_metadata).decode() if moderation_metadata else None
+    )
 
     client = get_dbos_client()
     client.start_workflow(  # pyright: ignore[reportAttributeAccessIssue]
