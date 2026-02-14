@@ -498,15 +498,24 @@ class TestBulkApproveJSONAPI:
             assert response.status_code == 201
             data = response.json()
             mock_client.enqueue.assert_called_once()
-            call_args = mock_client.enqueue.call_args[0]
-            options = call_args[0]
+            enqueue_args = mock_client.enqueue.call_args[0]
+            options = enqueue_args[0]
             assert options["queue_name"] == "approval"
-            positional = call_args[1:]
-            assert positional[0] == data["id"]
-            assert positional[1] == 0.9
-            assert positional[2] is True
-            assert positional[3] == 100
-            assert positional[5] == "test_dataset"
+            (
+                batch_job_id,
+                threshold,
+                auto_promote,
+                limit,
+                status,
+                dataset_name,
+                *_rest,
+            ) = enqueue_args[1:]
+            assert batch_job_id == data["id"]
+            assert threshold == 0.9
+            assert auto_promote is True
+            assert limit == 100
+            assert status is None
+            assert dataset_name == "test_dataset"
 
     @pytest.mark.asyncio
     async def test_bulk_approve_returns_batch_job_response(self, api_key_headers, test_candidates):
@@ -694,6 +703,15 @@ class TestAutoPromoteFeature:
             assert data["job_type"] == "approve:candidates"
             assert data["metadata"]["auto_promote"] is True
             mock_client.enqueue.assert_called_once()
-            call_args = mock_client.enqueue.call_args[0]
-            positional = call_args[1:]
-            assert positional[2] is True
+            enqueue_args = mock_client.enqueue.call_args[0]
+            (
+                _batch_job_id,
+                _threshold,
+                auto_promote,
+                _limit,
+                _status,
+                dataset_name,
+                *_rest,
+            ) = enqueue_args[1:]
+            assert auto_promote is True
+            assert dataset_name == "promotable_dataset"

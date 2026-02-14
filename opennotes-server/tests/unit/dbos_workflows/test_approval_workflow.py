@@ -686,8 +686,25 @@ class TestDispatchBulkApprovalWorkflow:
         assert options["queue_name"] == "approval"
         assert options["workflow_name"] == "bulk_approval_workflow"
 
-        positional = enqueue_args.args[1:]
-        assert positional[0] == str(job_id)
-        assert positional[1] == 0.9
-        assert positional[2] is True
-        assert positional[3] == 200
+        (
+            batch_job_id,
+            threshold,
+            auto_promote,
+            limit,
+            status,
+            dataset_name,
+            dataset_tags,
+            has_content,
+            published_date_from,
+            published_date_to,
+        ) = enqueue_args.args[1:]
+        assert batch_job_id == str(job_id)
+        assert threshold == 0.9
+        assert auto_promote is True
+        assert limit == 200
+        assert status is None
+        assert dataset_name is None
+        assert dataset_tags is None
+        assert has_content is None
+        assert published_date_from is None
+        assert published_date_to is None
