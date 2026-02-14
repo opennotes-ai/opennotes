@@ -30,7 +30,7 @@ Resilience:
 
 Scheduled Workflows:
     cleanup_stale_batch_jobs_workflow: Weekly cleanup of stale batch jobs (Sunday midnight UTC)
-    monitor_stuck_batch_jobs_workflow: Monitor for stuck batch jobs (every 6 hours)
+    monitor_stuck_batch_jobs_workflow: Monitor for stuck batch jobs (every 15 minutes)
 
 Workflows:
     rechunk_fact_check_workflow: Batch rechunking of fact-check items

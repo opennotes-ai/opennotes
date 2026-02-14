@@ -24,19 +24,14 @@ class TestSchedulerTaskRegistration:
 
         assert "scheduler:cleanup_stale_batch_jobs" in registered_tasks
 
-    def test_cleanup_stale_batch_jobs_task_has_schedule_label(self):
-        """Verify cleanup_stale_batch_jobs_task has schedule label for cron."""
+    def test_cleanup_stale_batch_jobs_task_has_no_schedule_label(self):
+        """Verify deprecated stub has no cron schedule (TASK-1097.05)."""
         import src.tasks.scheduler_tasks  # noqa: F401
 
         registered_tasks = get_registered_tasks()
         _func, labels = registered_tasks["scheduler:cleanup_stale_batch_jobs"]
 
-        assert "schedule" in labels
-        schedule = labels["schedule"]
-        assert isinstance(schedule, list)
-        assert len(schedule) == 1
-        assert schedule[0]["cron"] == "0 0 * * 0"
-        assert schedule[0]["schedule_id"] == "weekly_stale_job_cleanup"
+        assert "schedule" not in labels
 
     def test_cleanup_stale_batch_jobs_task_has_deprecated_type(self):
         """Verify cleanup_stale_batch_jobs_task is marked as deprecated."""
@@ -56,19 +51,14 @@ class TestSchedulerTaskRegistration:
 
         assert "scheduler:monitor_stuck_batch_jobs" in registered_tasks
 
-    def test_monitor_stuck_batch_jobs_task_has_schedule_label(self):
-        """Verify monitor_stuck_batch_jobs_task has schedule label for cron."""
+    def test_monitor_stuck_batch_jobs_task_has_no_schedule_label(self):
+        """Verify deprecated stub has no cron schedule (TASK-1097.05)."""
         import src.tasks.scheduler_tasks  # noqa: F401
 
         registered_tasks = get_registered_tasks()
         _func, labels = registered_tasks["scheduler:monitor_stuck_batch_jobs"]
 
-        assert "schedule" in labels
-        schedule = labels["schedule"]
-        assert isinstance(schedule, list)
-        assert len(schedule) == 1
-        assert schedule[0]["cron"] == "*/15 * * * *"
-        assert schedule[0]["schedule_id"] == "stuck_jobs_monitor"
+        assert "schedule" not in labels
 
     def test_monitor_stuck_batch_jobs_task_has_deprecated_type(self):
         """Verify monitor_stuck_batch_jobs_task is marked as deprecated."""

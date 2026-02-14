@@ -24,12 +24,6 @@ logger = get_logger(__name__)
     task_name="scheduler:cleanup_stale_batch_jobs",
     component="scheduler",
     task_type="deprecated",
-    schedule=[
-        {
-            "cron": "0 0 * * 0",
-            "schedule_id": "weekly_stale_job_cleanup",
-        }
-    ],
 )
 async def cleanup_stale_batch_jobs_task(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
@@ -58,12 +52,6 @@ async def cleanup_stale_batch_jobs_task(*args: Any, **kwargs: Any) -> dict[str, 
     task_name="scheduler:monitor_stuck_batch_jobs",
     component="scheduler",
     task_type="deprecated",
-    schedule=[
-        {
-            "cron": "*/15 * * * *",
-            "schedule_id": "stuck_jobs_monitor",
-        }
-    ],
 )
 async def monitor_stuck_batch_jobs_task(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.

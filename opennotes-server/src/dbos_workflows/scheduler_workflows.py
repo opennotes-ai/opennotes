@@ -28,51 +28,70 @@ from src.utils.async_compat import run_sync
 logger = get_logger(__name__)
 
 
+@DBOS.step()
 def _cleanup_stale_jobs_sync(
     stale_threshold_hours: float = DEFAULT_STALE_JOB_THRESHOLD_HOURS,
 ) -> dict[str, Any]:
-    """Synchronous wrapper for stale job cleanup logic."""
+    """Synchronous step for stale job cleanup logic.
+
+    Wrapped with @DBOS.step() so that on workflow replay the result is
+    read from the DBOS log instead of re-executing the DB mutation.
+    """
+    from src.batch_jobs.progress_tracker import BatchJobProgressTracker
+    from src.cache.redis_client import RedisClient
     from src.database import get_session_maker
 
     async def _async_impl() -> dict[str, Any]:
-        async with get_session_maker()() as session:
-            service = RechunkBatchJobService(session)
-            failed_jobs = await service.cleanup_stale_jobs(
-                stale_threshold_hours=stale_threshold_hours
+        tracker_redis = RedisClient()
+        await tracker_redis.connect()
+        try:
+            tracker = BatchJobProgressTracker(tracker_redis)
+            async with get_session_maker()() as session:
+                service = RechunkBatchJobService(session)
+                failed_jobs = await service.cleanup_stale_jobs(
+                    stale_threshold_hours=stale_threshold_hours,
+                    progress_tracker=tracker,
+                )
+        finally:
+            await tracker_redis.disconnect()
+
+        result: dict[str, Any] = {
+            "status": "completed",
+            "cleaned_count": len(failed_jobs),
+            "job_ids": [str(job.id) for job in failed_jobs],
+            "threshold_hours": stale_threshold_hours,
+            "executed_at": datetime.now(UTC).isoformat(),
+        }
+
+        if failed_jobs:
+            logger.info(
+                "Scheduled cleanup marked stale jobs as failed",
+                extra={
+                    "cleaned_count": len(failed_jobs),
+                    "job_ids": result["job_ids"],
+                    "threshold_hours": stale_threshold_hours,
+                },
+            )
+        else:
+            logger.info(
+                "Scheduled cleanup found no stale jobs",
+                extra={"threshold_hours": stale_threshold_hours},
             )
 
-            result: dict[str, Any] = {
-                "status": "completed",
-                "cleaned_count": len(failed_jobs),
-                "job_ids": [str(job.id) for job in failed_jobs],
-                "threshold_hours": stale_threshold_hours,
-                "executed_at": datetime.now(UTC).isoformat(),
-            }
-
-            if failed_jobs:
-                logger.info(
-                    "Scheduled cleanup marked stale jobs as failed",
-                    extra={
-                        "cleaned_count": len(failed_jobs),
-                        "job_ids": result["job_ids"],
-                        "threshold_hours": stale_threshold_hours,
-                    },
-                )
-            else:
-                logger.info(
-                    "Scheduled cleanup found no stale jobs",
-                    extra={"threshold_hours": stale_threshold_hours},
-                )
-
-            return result
+        return result
 
     return run_sync(_async_impl())
 
 
+@DBOS.step()
 def _monitor_stuck_jobs_sync(
     threshold_minutes: int = DEFAULT_STUCK_JOB_THRESHOLD_MINUTES,
 ) -> dict[str, Any]:
-    """Synchronous wrapper for stuck job monitoring logic."""
+    """Synchronous step for stuck job monitoring logic.
+
+    Wrapped with @DBOS.step() so that on workflow replay the result is
+    read from the DBOS log instead of re-executing the query.
+    """
     from src.database import get_session_maker
 
     async def _async_impl() -> dict[str, Any]:
