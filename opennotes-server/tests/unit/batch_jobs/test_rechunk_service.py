@@ -323,10 +323,8 @@ class TestRechunkServiceActiveJobCheck:
     """Tests for active job check before creating new jobs (task-1010.04)."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_active_job_blocks_new_fact_check_job(
         self,
-        mock_task,
         mock_batch_job_service,
     ):
         """Creating a fact check job fails when one is already active."""
@@ -537,16 +535,13 @@ class TestRechunkServiceStaleJobCleanup:
         self,
         mock_batch_job_service,
     ):
-        """Cleanup processes stale jobs of all supported types (task-1010.11)."""
+        """Cleanup processes stale jobs of all supported types (task-1010.11, task-1097.02)."""
         from datetime import UTC, datetime, timedelta
 
+        from src.batch_jobs.rechunk_service import ALL_BATCH_JOB_TYPES
+
         stale_jobs = []
-        for job_type in [
-            RECHUNK_FACT_CHECK_JOB_TYPE,
-            RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
-            SCRAPE_JOB_TYPE,
-            PROMOTION_JOB_TYPE,
-        ]:
+        for job_type in ALL_BATCH_JOB_TYPES:
             job = MagicMock(spec=BatchJob)
             job.id = uuid4()
             job.job_type = job_type
@@ -574,8 +569,8 @@ class TestRechunkServiceStaleJobCleanup:
 
         result = await service.cleanup_stale_jobs(stale_threshold_hours=2)
 
-        assert len(result) == 4
-        assert mock_batch_job_service.fail_job.call_count == 4
+        assert len(result) == len(ALL_BATCH_JOB_TYPES)
+        assert mock_batch_job_service.fail_job.call_count == len(ALL_BATCH_JOB_TYPES)
 
 
 @pytest.mark.unit

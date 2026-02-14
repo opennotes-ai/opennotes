@@ -210,16 +210,22 @@ def rechunk_fact_check_workflow(
 
         except CircuitOpenError:
             logger.error(
-                "Circuit breaker open - pausing workflow",
+                "Circuit breaker open - aborting rechunk workflow",
                 extra={
                     "workflow_id": workflow_id,
                     "consecutive_failures": circuit_breaker.failures,
                 },
             )
-            update_batch_job_progress_sync(
+            finalize_batch_job_sync(
                 UUID(batch_job_id),
+                success=False,
                 completed_tasks=completed_count,
                 failed_tasks=failed_count,
+                error_summary={
+                    "error": "Circuit breaker open",
+                    "consecutive_failures": circuit_breaker.failures,
+                    "errors": errors,
+                },
             )
             raise
 
@@ -627,16 +633,22 @@ def rechunk_previously_seen_workflow(
 
         except CircuitOpenError:
             logger.error(
-                "Circuit breaker open - pausing previously-seen rechunk workflow",
+                "Circuit breaker open - aborting previously-seen rechunk workflow",
                 extra={
                     "workflow_id": workflow_id,
                     "consecutive_failures": circuit_breaker.failures,
                 },
             )
-            update_batch_job_progress_sync(
+            finalize_batch_job_sync(
                 UUID(batch_job_id),
+                success=False,
                 completed_tasks=completed_count,
                 failed_tasks=failed_count,
+                error_summary={
+                    "error": "Circuit breaker open",
+                    "consecutive_failures": circuit_breaker.failures,
+                    "errors": errors,
+                },
             )
             raise
 

@@ -226,12 +226,13 @@ class TestRechunkWorkflow:
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
             ) as mock_progress,
-            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync"),
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_process.side_effect = RuntimeError("Always fail")
             mock_progress.return_value = True
+            mock_finalize.return_value = True
 
             with pytest.raises(CircuitOpenError):
                 rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
@@ -239,6 +240,10 @@ class TestRechunkWorkflow:
                     community_server_id=None,
                     item_ids=item_ids,
                 )
+
+            mock_finalize.assert_called_once()
+            call_kwargs = mock_finalize.call_args.kwargs
+            assert call_kwargs["success"] is False
 
     def test_workflow_finalizes_batch_job_on_success(self) -> None:
         """Workflow calls finalize_batch_job_sync on successful completion."""
@@ -485,7 +490,7 @@ class TestCircuitBreakerIntegration:
     """Tests for circuit breaker behavior in the workflow."""
 
     def test_circuit_trips_after_consecutive_failures(self) -> None:
-        """Circuit breaker trips after 5 consecutive failures."""
+        """Circuit breaker trips after 5 consecutive failures and finalizes as FAILED."""
         from src.dbos_workflows.rechunk_workflow import rechunk_fact_check_workflow
 
         batch_job_id = str(uuid4())
@@ -503,12 +508,13 @@ class TestCircuitBreakerIntegration:
             patch(
                 "src.dbos_workflows.rechunk_workflow.update_batch_job_progress_sync"
             ) as mock_progress,
-            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync"),
+            patch("src.dbos_workflows.rechunk_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.rechunk_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
             mock_process.side_effect = fail_always
             mock_progress.return_value = True
+            mock_finalize.return_value = True
 
             with pytest.raises(CircuitOpenError):
                 rechunk_fact_check_workflow.__wrapped__(  # type: ignore[attr-defined]
@@ -518,6 +524,10 @@ class TestCircuitBreakerIntegration:
                 )
 
             assert call_count == 5
+            mock_finalize.assert_called_once()
+            call_kwargs = mock_finalize.call_args.kwargs
+            assert call_kwargs["success"] is False
+            assert call_kwargs["failed_tasks"] == 5
 
     def test_circuit_resets_after_success(self) -> None:
         """Circuit breaker resets failure count after success."""

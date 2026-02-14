@@ -9,7 +9,6 @@ Task: task-1010.10 - Fix TOCTOU race in _check_no_active_job
 
 import asyncio
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import delete, select
@@ -26,10 +25,8 @@ class TestRechunkServiceConcurrencyControl:
     """Tests for concurrent job creation being blocked by SELECT FOR UPDATE."""
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_concurrent_job_creation_with_existing_active_job_blocked(
         self,
-        mock_task: AsyncMock,
     ) -> None:
         """
         Test that concurrent requests to create jobs all fail when an active job exists.
@@ -40,7 +37,6 @@ class TestRechunkServiceConcurrencyControl:
         """
         from src.database import get_session_maker
 
-        mock_task.kiq = AsyncMock()
         concurrent_requests = 5
 
         async with get_session_maker()() as setup_session:
@@ -115,10 +111,8 @@ class TestRechunkServiceConcurrencyControl:
             await cleanup_session.commit()
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_fact_check_rechunk_task")
     async def test_concurrent_job_creation_with_pending_job_blocked(
         self,
-        mock_task: AsyncMock,
     ) -> None:
         """
         Test that concurrent requests are blocked when a PENDING job exists.
@@ -127,7 +121,6 @@ class TestRechunkServiceConcurrencyControl:
         """
         from src.database import get_session_maker
 
-        mock_task.kiq = AsyncMock()
         concurrent_requests = 3
 
         async with get_session_maker()() as setup_session:

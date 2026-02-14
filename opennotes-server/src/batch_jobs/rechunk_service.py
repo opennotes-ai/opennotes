@@ -30,6 +30,8 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.batch_jobs.constants import (
+    BULK_APPROVAL_JOB_TYPE,
+    IMPORT_JOB_TYPE,
     PROMOTION_JOB_TYPE,
     RECHUNK_FACT_CHECK_JOB_TYPE,
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
@@ -106,10 +108,12 @@ async def enqueue_single_fact_check_chunk(
 DEFAULT_STUCK_JOB_THRESHOLD_MINUTES = 30
 
 ALL_BATCH_JOB_TYPES = [
+    BULK_APPROVAL_JOB_TYPE,
+    IMPORT_JOB_TYPE,
+    PROMOTION_JOB_TYPE,
     RECHUNK_FACT_CHECK_JOB_TYPE,
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
     SCRAPE_JOB_TYPE,
-    PROMOTION_JOB_TYPE,
 ]
 
 
@@ -476,14 +480,7 @@ class RechunkBatchJobService:
         cutoff_time = datetime.now(UTC) - timedelta(hours=stale_threshold_hours)
 
         query = select(BatchJob).where(
-            BatchJob.job_type.in_(
-                [
-                    RECHUNK_FACT_CHECK_JOB_TYPE,
-                    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
-                    SCRAPE_JOB_TYPE,
-                    PROMOTION_JOB_TYPE,
-                ]
-            ),
+            BatchJob.job_type.in_(ALL_BATCH_JOB_TYPES),
             or_(
                 BatchJob.status == BatchJobStatus.PENDING.value,
                 BatchJob.status == BatchJobStatus.IN_PROGRESS.value,
