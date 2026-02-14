@@ -49,7 +49,7 @@ def setup_traceloop(
     Returns:
         True if Traceloop was successfully configured, False otherwise.
     """
-    global _traceloop_configured  # noqa: PLW0603
+    global _traceloop_configured
 
     if _traceloop_configured:
         logger.debug("Traceloop already configured, skipping setup")
@@ -62,7 +62,7 @@ def setup_traceloop(
         return False
 
     try:
-        from traceloop.sdk import Traceloop  # noqa: PLC0415
+        from traceloop.sdk import Traceloop
 
         os.environ["TRACELOOP_TRACE_CONTENT"] = str(trace_content).lower()
 
@@ -102,6 +102,21 @@ def setup_traceloop(
                 f"Traceloop LLM observability enabled: endpoint={otlp_endpoint}, "
                 f"trace_content={trace_content}"
             )
+
+        from src.monitoring.gcp_resource_detector import is_cloud_run_environment
+
+        if is_cloud_run_environment():
+            try:
+                from opentelemetry.exporter.cloud_logging import CloudLoggingExporter
+                from opentelemetry.exporter.cloud_monitoring import (
+                    CloudMonitoringMetricsExporter,
+                )
+
+                init_kwargs["metrics_exporter"] = CloudMonitoringMetricsExporter()
+                init_kwargs["logging_exporter"] = CloudLoggingExporter()
+                logger.info("Traceloop configured with GCP metrics and logging exporters")
+            except ImportError:
+                logger.warning("GCP exporter packages not installed, skipping GCP exporters")
 
         Traceloop.init(**init_kwargs)
 

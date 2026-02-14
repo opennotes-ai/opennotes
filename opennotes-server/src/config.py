@@ -596,6 +596,11 @@ class Settings(BaseSettings):
         description="Enable Pyroscope SDK logging for debugging.",
     )
 
+    USE_GCP_EXPORTERS: bool = Field(
+        default=True,
+        description="Use GCP-native exporters on Cloud Run (set False to force OTLP)",
+    )
+
     TRACELOOP_ENABLED: bool = Field(
         default=True,
         description="Enable Traceloop SDK for LLM observability. "

@@ -25,15 +25,15 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from opentelemetry import context
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
+    from opentelemetry.sdk.trace.export import SpanExporter
 
 logger = logging.getLogger(__name__)
 
 _otel_lock = threading.Lock()
 _otel_initialized = False
 _tracer_provider: "TracerProvider | None" = None
-_otlp_exporter: "OTLPSpanExporter | None" = None
+_span_exporter: "SpanExporter | None" = None
 
 BAGGAGE_KEYS_TO_PROPAGATE = [
     "discord.user_id",
@@ -99,6 +99,7 @@ def setup_otel(
     otlp_insecure: bool = False,
     sample_rate: float = 0.1,
     enable_console_export: bool = False,
+    use_gcp_exporters: bool = True,
 ) -> bool:
     """Initialize OpenTelemetry with OTLP export.
 
@@ -114,6 +115,8 @@ def setup_otel(
         otlp_insecure: Use insecure connection (no TLS) for OTLP exporter
         sample_rate: Trace sampling rate 0.0-1.0 (default: 0.1 = 10%)
         enable_console_export: Enable console span export for debugging
+        use_gcp_exporters: Use GCP-native exporters when on Cloud Run (default True).
+            Set to False to force OTLP export even in Cloud Run environments.
 
     Returns:
         True if initialization succeeded, False otherwise
@@ -172,15 +175,45 @@ def setup_otel(
 
             _tracer_provider.add_span_processor(_get_baggage_span_processor())
 
-            global _otlp_exporter
-            if otlp_endpoint:
+            from src.monitoring.gcp_resource_detector import is_cloud_run_environment
+
+            global _span_exporter
+            _used_gcp_exporter = False
+            if is_cloud_run_environment() and use_gcp_exporters:
+                try:
+                    from src.monitoring.cloud_trace_logging_exporter import (
+                        CloudTraceLoggingSpanExporter,
+                    )
+
+                    gcp_project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get(
+                        "GCP_PROJECT_ID"
+                    )
+                    _span_exporter = CloudTraceLoggingSpanExporter(
+                        project_id=gcp_project,
+                    )
+
+                    batch_processor = BatchSpanProcessor(
+                        _span_exporter,
+                        max_queue_size=settings.OTEL_BSP_MAX_QUEUE_SIZE,
+                        schedule_delay_millis=settings.OTEL_BSP_SCHEDULE_DELAY_MILLIS,
+                        max_export_batch_size=settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
+                        export_timeout_millis=settings.OTEL_BSP_EXPORT_TIMEOUT_MILLIS,
+                    )
+                    _tracer_provider.add_span_processor(batch_processor)
+                    _used_gcp_exporter = True
+
+                    logger.info("GCP Cloud Trace exporter configured with Cloud Logging overflow")
+                except ImportError:
+                    logger.warning("GCP exporter packages not available, falling back to OTLP")
+
+            if not _used_gcp_exporter and otlp_endpoint:
                 headers = _parse_headers(otlp_headers)
 
                 compression = None
                 if settings.OTEL_EXPORTER_COMPRESSION == "gzip":
                     compression = GrpcCompression.Gzip
 
-                _otlp_exporter = OTLPSpanExporter(
+                _span_exporter = OTLPSpanExporter(
                     endpoint=otlp_endpoint,
                     headers=headers,
                     insecure=otlp_insecure,
@@ -188,7 +221,7 @@ def setup_otel(
                 )
 
                 batch_processor = BatchSpanProcessor(
-                    _otlp_exporter,
+                    _span_exporter,
                     max_queue_size=settings.OTEL_BSP_MAX_QUEUE_SIZE,
                     schedule_delay_millis=settings.OTEL_BSP_SCHEDULE_DELAY_MILLIS,
                     max_export_batch_size=settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
@@ -203,8 +236,8 @@ def setup_otel(
                     f"queue_size={settings.OTEL_BSP_MAX_QUEUE_SIZE}, "
                     f"batch_size={settings.OTEL_BSP_MAX_EXPORT_BATCH_SIZE}"
                 )
-            else:
-                logger.info("OTLP endpoint not configured - OTLP export disabled")
+            elif not _used_gcp_exporter:
+                logger.info("No span exporter configured - export disabled")
 
             if enable_console_export:
                 _tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
@@ -260,7 +293,7 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
         flush_timeout_millis: Timeout for force_flush(). Defaults to
             OTEL_SHUTDOWN_FLUSH_TIMEOUT_MILLIS from settings.
     """
-    global _tracer_provider, _otel_initialized, _otlp_exporter
+    global _tracer_provider, _otel_initialized, _span_exporter
 
     with _otel_lock:
         if not _otel_initialized:
@@ -299,7 +332,7 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
             logger.info("OpenTelemetry tracer provider shut down")
 
         _tracer_provider = None
-        _otlp_exporter = None
+        _span_exporter = None
         _otel_initialized = False
         BaggageSpanProcessor.instance = None
         logger.debug("OpenTelemetry state reset, ready for reinitialization")
@@ -308,16 +341,24 @@ def shutdown_otel(flush_timeout_millis: int | None = None) -> None:
 def is_otel_configured() -> bool:
     """Check if OpenTelemetry environment is configured."""
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTLP_ENDPOINT")
-    return bool(endpoint)
+    if endpoint:
+        return True
+    from src.monitoring.gcp_resource_detector import is_cloud_run_environment
+
+    return is_cloud_run_environment()
 
 
-def get_otlp_exporter() -> "OTLPSpanExporter | None":
-    """Get the configured OTLP span exporter.
+def get_span_exporter() -> "SpanExporter | None":
+    """Get the configured span exporter.
 
-    Returns the gRPC OTLP exporter created during setup_otel(), or None
-    if OpenTelemetry was not initialized or no OTLP endpoint was configured.
+    Returns the span exporter created during setup_otel() (either
+    CloudTraceLoggingSpanExporter on GCP or OTLPSpanExporter elsewhere),
+    or None if OpenTelemetry was not initialized or no exporter was configured.
 
     This allows other components (like Traceloop) to reuse the same exporter
     instead of creating their own, ensuring consistent protocol usage.
     """
-    return _otlp_exporter
+    return _span_exporter
+
+
+get_otlp_exporter = get_span_exporter
