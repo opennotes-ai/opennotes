@@ -41,10 +41,28 @@ approval_queue = Queue(
     worker_concurrency=1,
     concurrency=2,
 )
+"""Queue configuration for approval workflows.
 
-BATCH_SIZE = 100
-MAX_STORED_ERRORS = 50
-PROGRESS_UPDATE_INTERVAL = 50
+``worker_concurrency=1`` means each DBOS worker thread processes one workflow at a
+time.  ``concurrency=2`` allows two workflows to be in-flight across all workers,
+enabling overlap when one workflow is blocked on I/O while another proceeds.  The
+net effect is near-serial execution with a small degree of pipelining; this keeps
+database lock contention low while still allowing throughput when the queue backs up.
+"""
+
+BATCH_SIZE: int = 100
+"""Number of candidates fetched per batch step (cursor-based pagination window)."""
+
+MAX_STORED_ERRORS: int = 50
+"""Maximum error strings retained in the BatchJob error_summary JSON column."""
+
+PROGRESS_UPDATE_INTERVAL: int = 50
+"""Write a BatchJob progress row every N scanned candidates.
+
+The modulo check ``total_scanned % PROGRESS_UPDATE_INTERVAL == 0`` may skip the
+final batch if its size is not a multiple of this interval.  The loop compensates
+by also writing progress when ``remaining <= 0`` (see the while-loop footer).
+"""
 
 STEP_RETRIES_ALLOWED: bool = True
 STEP_MAX_ATTEMPTS: int = 3
@@ -144,6 +162,7 @@ async def _process_single_batch(
             failed_count = len(batch_updates)
             if len(errors) < MAX_STORED_ERRORS:
                 errors.append(f"Bulk update failed for {len(batch_updates)} candidates: {e!s}")
+            return updated_count, promoted_count, failed_count, processed_count
 
     if auto_promote and candidates_to_promote:
         for candidate_id in candidates_to_promote:
@@ -500,6 +519,12 @@ def bulk_approval_workflow(
         stats["total_errors"] = len(errors)
 
     success = not circuit_breaker_tripped and not (updated_count == 0 and failed_count > 0)
+    # Success semantics: a job is considered successful if:
+    #  1. The circuit breaker did not trip, AND
+    #  2. It is NOT the case that zero updates succeeded while failures occurred.
+    # Mixed results (e.g. 50 updated + 10 failed) count as success because partial
+    # progress is useful and the job can be re-run to pick up remaining candidates.
+    # Pure failure (0 updated, N failed) is marked FAILED so operators investigate.
     error_summary = None
     if not success:
         error_summary = {"errors": errors[:MAX_STORED_ERRORS], "total_errors": len(errors)}

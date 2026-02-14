@@ -517,23 +517,15 @@ class TestProcessSingleBatchRollback:
         assert failed == 1
         assert updated == 0
         mock_db.rollback.assert_awaited_once()
-        mock_db.commit.assert_awaited_once()
+        mock_db.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_bulk_update_failure_then_promotion_succeeds(self) -> None:
+    async def test_bulk_update_failure_skips_promotion(self) -> None:
+        """After rollback, promotions must not run on rolled-back candidates."""
         from src.dbos_workflows.approval_workflow import _process_single_batch
 
-        execute_call_count = 0
-
-        async def execute_side_effect(*args, **kwargs):
-            nonlocal execute_call_count
-            execute_call_count += 1
-            if execute_call_count == 1:
-                raise RuntimeError("DB constraint violation")
-            return MagicMock()
-
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.execute = AsyncMock(side_effect=RuntimeError("DB constraint violation"))
         mock_db.rollback = AsyncMock()
         mock_db.commit = AsyncMock()
 
@@ -543,6 +535,8 @@ class TestProcessSingleBatchRollback:
 
         errors: list[str] = []
 
+        mock_promote = AsyncMock(return_value=True)
+
         with (
             patch(
                 "src.dbos_workflows.approval_workflow.extract_high_confidence_rating",
@@ -550,8 +544,7 @@ class TestProcessSingleBatchRollback:
             ),
             patch(
                 "src.fact_checking.import_pipeline.promotion.promote_candidate",
-                new_callable=AsyncMock,
-                return_value=True,
+                mock_promote,
             ),
         ):
             updated, promoted, failed, _processed = await _process_single_batch(
@@ -564,8 +557,10 @@ class TestProcessSingleBatchRollback:
 
         assert updated == 0
         assert failed == 1
-        assert promoted == 1
+        assert promoted == 0
         mock_db.rollback.assert_awaited_once()
+        mock_db.commit.assert_not_awaited()
+        mock_promote.assert_not_awaited()
 
 
 class TestProgressUpdateGuard:
