@@ -323,7 +323,7 @@ def process_approval_batch_step(
 
 def _finalize_and_warn(
     job_uuid: UUID,
-    workflow_id: str | None,
+    workflow_id: str,
     batch_job_id: str,
     **kwargs: Any,
 ) -> None:
@@ -385,6 +385,7 @@ def bulk_approval_workflow(
         dict with approval stats
     """
     workflow_id = DBOS.workflow_id
+    assert workflow_id is not None
     job_uuid = UUID(batch_job_id)
 
     logger.info(
