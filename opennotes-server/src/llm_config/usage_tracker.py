@@ -5,11 +5,11 @@ Provides rate limiting and budget tracking per community server,
 with automatic counter resets for daily and monthly limits.
 """
 
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -340,7 +340,7 @@ class LLMUsageTracker:
             cost_usd=float(cost_usd),
             success=success,
             error_message=error_message,
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
         self.db.add(usage_log)
         await self.db.commit()
@@ -509,7 +509,7 @@ class LLMUsageTracker:
                         cost_usd=float(cost_usd),
                         success=True,
                         error_message=None,
-                        timestamp=datetime.now(UTC),
+                        timestamp=pendulum.now("UTC"),
                     )
                     self.db.add(usage_log)
 
@@ -534,18 +534,18 @@ class LLMUsageTracker:
         Args:
             config: LLM configuration to check and update
         """
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         updates: dict[str, Any] = {}
 
         def _should_reset_daily() -> bool:
             if not config.last_daily_reset:
                 return True
-            return now - config.last_daily_reset > timedelta(days=1)
+            return now - pendulum.instance(config.last_daily_reset) > pendulum.duration(days=1)
 
         def _should_reset_monthly() -> bool:
             if not config.last_monthly_reset:
                 return True
-            return now - config.last_monthly_reset > timedelta(days=30)
+            return now - pendulum.instance(config.last_monthly_reset) > pendulum.duration(days=30)
 
         if _should_reset_daily():
             config.current_daily_requests = 0
@@ -603,18 +603,22 @@ class LLMUsageTracker:
         Args:
             config: LLM configuration to check and update
         """
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         needs_update = False
         updates: dict[str, Any] = {}
 
-        if not config.last_daily_reset or (now - config.last_daily_reset > timedelta(days=1)):
+        if not config.last_daily_reset or (
+            now - pendulum.instance(config.last_daily_reset) > pendulum.duration(days=1)
+        ):
             updates["current_daily_requests"] = 0
             updates["current_daily_tokens"] = 0
             updates["current_daily_spend"] = 0.0
             updates["last_daily_reset"] = now
             needs_update = True
 
-        if not config.last_monthly_reset or (now - config.last_monthly_reset > timedelta(days=30)):
+        if not config.last_monthly_reset or (
+            now - pendulum.instance(config.last_monthly_reset) > pendulum.duration(days=30)
+        ):
             updates["current_monthly_requests"] = 0
             updates["current_monthly_tokens"] = 0
             updates["current_monthly_spend"] = 0.0

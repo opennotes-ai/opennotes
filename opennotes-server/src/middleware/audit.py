@@ -2,11 +2,12 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 import orjson
+import pendulum
 from fastapi import Request, Response
 from prometheus_client import Counter
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -42,7 +43,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        start_time = datetime.now(UTC)
+        start_time = pendulum.now("UTC")
 
         user_id = None
         auth_header = request.headers.get("authorization")

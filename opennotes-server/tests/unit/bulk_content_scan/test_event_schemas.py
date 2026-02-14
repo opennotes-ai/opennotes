@@ -1,7 +1,8 @@
 """Tests for Bulk Content Scan NATS event types and schemas."""
 
-from datetime import UTC, datetime
 from uuid import uuid4
+
+import pendulum
 
 
 class TestBulkScanEventTypes:
@@ -115,7 +116,7 @@ class TestBulkScanMessageBatchEvent:
                 "community_server_id": "guild_123",
                 "content": "Test message",
                 "author_id": "user_1",
-                "timestamp": datetime.now(UTC),
+                "timestamp": pendulum.now("UTC"),
             }
         ]
 
@@ -237,7 +238,7 @@ class TestBulkScanResultsEvent:
                 "channel_id": "ch_1",
                 "content": "Suspicious content",
                 "author_id": "user_1",
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": pendulum.now("UTC").isoformat(),
                 "match_score": 0.85,
                 "matched_claim": "Test claim",
                 "matched_source": "https://example.com",

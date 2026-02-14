@@ -30,10 +30,10 @@ This ensures:
 - Consistent data integrity
 """
 
-from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
+import pendulum
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
@@ -146,7 +146,7 @@ async def login(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": str(user.id), "username": user.username, "role": user.role},
             expires_delta=access_token_expires,
@@ -222,7 +222,7 @@ async def refresh_access_token(
             detail="Refresh token not found or expired",
         )
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     new_access_token = create_access_token(
         data={
             "sub": str(token_data.user_id),
@@ -321,9 +321,9 @@ async def logout_all(
         # This ensures all tokens with iat < tokens_valid_after are rejected, including
         # tokens created in the same second as this logout-all call.
         # Security note: Users must wait ~1s before re-login due to JWT's second-level iat precision.
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         current_second = int(now.timestamp())
-        current_user.tokens_valid_after = datetime.fromtimestamp(current_second + 1, tz=UTC)
+        current_user.tokens_valid_after = pendulum.from_timestamp(current_second + 1)
         await db.flush()
 
         await create_audit_log(
@@ -411,9 +411,9 @@ async def revoke_all_tokens(
         # This ensures all tokens with iat < tokens_valid_after are rejected, including
         # tokens created in the same second as this revoke-all-tokens call.
         # Security note: Users must wait ~1s before re-login due to JWT's second-level iat precision.
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         current_second = int(now.timestamp())
-        current_user.tokens_valid_after = datetime.fromtimestamp(current_second + 1, tz=UTC)
+        current_user.tokens_valid_after = pendulum.from_timestamp(current_second + 1)
         await db.flush()
 
         await revoke_all_user_tokens(current_user.id)

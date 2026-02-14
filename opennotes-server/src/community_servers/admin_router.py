@@ -13,9 +13,9 @@ Permission Hierarchy (any grants admin access):
 """
 
 import logging
-from datetime import UTC, datetime
 from typing import Annotated
 
+import pendulum
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -170,7 +170,7 @@ async def add_community_admin(
             is_external=False,
             role=CommunityRole.ADMIN,
             permissions=None,
-            joined_at=datetime.now(UTC),
+            joined_at=pendulum.now("UTC"),
             invited_by=None,
             invitation_reason="Promoted to admin",
         )

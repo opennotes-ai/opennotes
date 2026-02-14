@@ -4,10 +4,10 @@ Tests for NoteStatusHistoryBuilder.
 TDD: Write failing tests first, then implement.
 """
 
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pandas as pd
+import pendulum
 import pytest
 
 
@@ -63,7 +63,7 @@ class TestNoteStatusHistoryBuilderWithNoteData:
             "author_id": "discord_author_123",
             "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
             "status": "NEEDS_MORE_RATINGS",
-            "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+            "created_at": pendulum.datetime(2024, 1, 15, 12, 0, 0, tz="UTC"),
         }
 
     def test_build_with_single_note(self, mock_note_data):
@@ -172,14 +172,14 @@ class TestNoteStatusHistoryBuilderMultipleNotes:
                 "author_id": "author_1",
                 "classification": "NOT_MISLEADING",
                 "status": "CURRENTLY_RATED_HELPFUL",
-                "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+                "created_at": pendulum.datetime(2024, 1, 15, 12, 0, 0, tz="UTC"),
             },
             {
                 "id": uuid4(),
                 "author_id": "author_2",
                 "classification": "MISINFORMED_OR_POTENTIALLY_MISLEADING",
                 "status": "NEEDS_MORE_RATINGS",
-                "created_at": datetime(2024, 1, 16, 12, 0, 0, tzinfo=UTC),
+                "created_at": pendulum.datetime(2024, 1, 16, 12, 0, 0, tz="UTC"),
             },
         ]
 

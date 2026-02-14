@@ -1,6 +1,7 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
+import pendulum
 from pydantic import BaseModel, Field
 
 
@@ -16,7 +17,7 @@ class CacheEntrySchema(BaseModel):
     key: str = Field(..., description="Cache key")
     value: Any = Field(..., description="Cached value")
     ttl: int | None = Field(None, description="Time to live in seconds")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: pendulum.now("UTC"))
     expires_at: datetime | None = Field(None, description="Expiration timestamp")
 
 
@@ -25,8 +26,8 @@ class SessionData(BaseModel):
     user_id: int = Field(..., description="User ID associated with this session")
     username: str = Field(..., description="Username")
     device_id: str | None = Field(None, description="Device identifier for multi-device support")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    last_accessed: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: pendulum.now("UTC"))
+    last_accessed: datetime = Field(default_factory=lambda: pendulum.now("UTC"))
     expires_at: datetime = Field(..., description="Session expiration timestamp")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
@@ -35,8 +36,8 @@ class SessionData(BaseModel):
     )
 
     def is_expired(self) -> bool:
-        return datetime.now(UTC) > self.expires_at
+        return pendulum.now("UTC") > self.expires_at
 
     def refresh(self, ttl: int) -> None:
-        self.last_accessed = datetime.now(UTC)
-        self.expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
+        self.last_accessed = pendulum.now("UTC")
+        self.expires_at = pendulum.now("UTC") + pendulum.duration(seconds=ttl)

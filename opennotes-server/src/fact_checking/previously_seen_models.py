@@ -1,7 +1,8 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import pendulum
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -87,7 +88,7 @@ class PreviouslySeenMessage(Base):
 
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+        DateTime(timezone=True), nullable=False, default=lambda: pendulum.now("UTC")
     )
 
     # Relationships
@@ -104,7 +105,7 @@ class PreviouslySeenMessage(Base):
         """Initialize PreviouslySeenMessage with automatic created_at timestamp."""
         # Set created_at default if not provided
         if "created_at" not in kwargs:
-            kwargs["created_at"] = datetime.now(UTC)
+            kwargs["created_at"] = pendulum.now("UTC")
         super().__init__(**kwargs)
 
     # Indexes and constraints

@@ -13,10 +13,10 @@ Remove deprecated stubs after 2026-04-01 when all legacy messages
 have been drained.
 """
 
-from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import CursorResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -105,7 +105,7 @@ async def _recover_stuck_scraping_candidates(
     Returns:
         Number of candidates recovered
     """
-    cutoff_time = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
+    cutoff_time = pendulum.now("UTC") - pendulum.duration(minutes=timeout_minutes)
 
     async with session() as db:
         subquery = (
@@ -160,7 +160,7 @@ async def _recover_stuck_promoting_candidates(
     Returns:
         Number of candidates recovered
     """
-    cutoff_time = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
+    cutoff_time = pendulum.now("UTC") - pendulum.duration(minutes=timeout_minutes)
 
     async with session() as db:
         subquery = (

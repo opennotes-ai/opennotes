@@ -5,8 +5,8 @@ TDD: Write failing tests first, then implement.
 """
 
 from dataclasses import fields
-from datetime import UTC
 
+import pendulum
 import pytest
 
 
@@ -483,7 +483,6 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_returns_tuple_of_four_dataframes(self):
         """_build_scoring_inputs returns a tuple of 4 DataFrames + int_to_uuid mapping."""
-        from datetime import datetime
         from typing import Any
         from uuid import uuid4
 
@@ -499,7 +498,7 @@ class TestMFCoreScorerAdapterPhase4:
                         "note_id": uuid4(),
                         "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -510,7 +509,7 @@ class TestMFCoreScorerAdapterPhase4:
                         "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -599,7 +598,6 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_ratings_dataframe_has_expected_columns(self):
         """Ratings DataFrame has expected Community Notes columns."""
-        from datetime import datetime
         from typing import Any
         from uuid import uuid4
 
@@ -615,7 +613,7 @@ class TestMFCoreScorerAdapterPhase4:
                         "note_id": note_id,
                         "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -638,7 +636,6 @@ class TestMFCoreScorerAdapterPhase4:
 
     def test_build_scoring_inputs_note_status_dataframe_has_expected_columns(self):
         """Note status history DataFrame has expected Community Notes columns."""
-        from datetime import datetime
         from typing import Any
         from uuid import uuid4
 
@@ -655,7 +652,7 @@ class TestMFCoreScorerAdapterPhase4:
                         "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -744,7 +741,6 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_calls_build_scoring_inputs(self):
         """_execute_batch_scoring calls _build_scoring_inputs to get DataFrames."""
-        from datetime import datetime
         from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
@@ -759,7 +755,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "note_id": uuid4(),
                         "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -770,7 +766,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -803,7 +799,6 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_calls_prescore(self):
         """_execute_batch_scoring calls scorer.prescore() with PrescoringArgs."""
-        from datetime import datetime
         from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
@@ -818,7 +813,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "note_id": uuid4(),
                         "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -829,7 +824,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -859,7 +854,6 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_calls_score_final_with_prescore_output(self):
         """_execute_batch_scoring calls score_final() with prescore output."""
-        from datetime import datetime
         from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
@@ -874,7 +868,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "note_id": uuid4(),
                         "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -885,7 +879,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -915,7 +909,6 @@ class TestMFCoreScorerAdapterPhase5:
 
     def test_execute_batch_scoring_returns_model_result(self):
         """_execute_batch_scoring returns ModelResult from score_final."""
-        from datetime import datetime
         from typing import Any
         from unittest.mock import MagicMock, patch
         from uuid import uuid4
@@ -932,7 +925,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "note_id": uuid4(),
                         "rater_id": "user-1",
                         "helpfulness_level": "HELPFUL",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 
@@ -943,7 +936,7 @@ class TestMFCoreScorerAdapterPhase5:
                         "author_id": "user-1",
                         "classification": "NOT_MISLEADING",
                         "status": "NEEDS_MORE_RATINGS",
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 ]
 

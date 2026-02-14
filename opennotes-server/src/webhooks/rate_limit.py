@@ -1,8 +1,8 @@
 import asyncio
 import logging
-from datetime import UTC, datetime
 from typing import Any
 
+import pendulum
 import redis.asyncio as redis
 
 from src.cache.redis_client import create_redis_connection
@@ -85,7 +85,7 @@ class RateLimiter:
         if user_id:
             key = f"rate_limit:community_server:{community_server_id}:user:{user_id}"
 
-        now = datetime.now(UTC).timestamp()
+        now = pendulum.now("UTC").timestamp()
         window_start = now - settings.WEBHOOK_RATE_LIMIT_WINDOW
 
         async with self.redis_client.pipeline(transaction=True) as pipe:
@@ -121,7 +121,7 @@ class RateLimiter:
         if user_id:
             key = f"rate_limit:community_server:{community_server_id}:user:{user_id}"
 
-        now = datetime.now(UTC).timestamp()
+        now = pendulum.now("UTC").timestamp()
         window_start = now - settings.WEBHOOK_RATE_LIMIT_WINDOW
 
         await self.redis_client.zremrangebyscore(key, 0, window_start)

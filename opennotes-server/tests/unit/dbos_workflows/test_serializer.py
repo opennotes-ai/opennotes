@@ -1,8 +1,8 @@
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
 
+import pendulum
 import pytest
 
 from src.dbos_workflows.serializer import DBOS_PICKLE_FALLBACK_TOTAL, SafeJsonSerializer
@@ -135,8 +135,8 @@ class TestStrictTypeSerialization:
             serializer.serialize(uuid.uuid4())
 
     def test_datetime_raises_type_error(self, serializer: SafeJsonSerializer) -> None:
-        with pytest.raises(TypeError, match="datetime is not JSON serializable"):
-            serializer.serialize(datetime.now(tz=UTC))
+        with pytest.raises(TypeError, match=r"[Dd]ate[Tt]ime is not JSON serializable"):
+            serializer.serialize(pendulum.now("UTC"))
 
     def test_bytes_raises_type_error(self, serializer: SafeJsonSerializer) -> None:
         with pytest.raises(TypeError, match="bytes is not JSON serializable"):

@@ -168,8 +168,9 @@ class TestServiceAccountCommunityMembership:
 
     async def test_service_account_bypasses_ban_check(self, setup_database):
         """Service accounts should bypass banned_at checks."""
-        from datetime import UTC, datetime
         from unittest.mock import MagicMock
+
+        import pendulum
 
         from src.database import get_engine
         from src.llm_config.models import CommunityServer
@@ -218,12 +219,12 @@ class TestServiceAccountCommunityMembership:
                 is_external=False,
                 role=CommunityRole.MEMBER,
                 permissions=None,
-                joined_at=datetime.now(UTC),
+                joined_at=pendulum.now("UTC"),
                 invited_by=None,
                 invitation_reason="Test",
             )
             membership = await create_community_member(db, member_create)
-            membership.banned_at = datetime.now(UTC)
+            membership.banned_at = pendulum.now("UTC")
             membership.banned_reason = "Test ban"
             await db.flush()
 
@@ -250,9 +251,9 @@ class TestServiceAccountCommunityMembership:
 
     async def test_human_user_ban_check_enforced(self, setup_database):
         """Human users should still be blocked by banned_at."""
-        from datetime import UTC, datetime
         from unittest.mock import MagicMock
 
+        import pendulum
         from fastapi import HTTPException
 
         from src.database import get_engine
@@ -302,12 +303,12 @@ class TestServiceAccountCommunityMembership:
                 is_external=False,
                 role=CommunityRole.MEMBER,
                 permissions=None,
-                joined_at=datetime.now(UTC),
+                joined_at=pendulum.now("UTC"),
                 invited_by=None,
                 invitation_reason="Test",
             )
             membership = await create_community_member(db, member_create)
-            membership.banned_at = datetime.now(UTC)
+            membership.banned_at = pendulum.now("UTC")
             membership.banned_reason = "Test ban"
             await db.flush()
 

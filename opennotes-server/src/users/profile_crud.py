@@ -26,10 +26,10 @@ See src/users/loaders.py for the composable loader functions.
 """
 
 import logging
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import pendulum
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -172,7 +172,7 @@ async def update_profile(
             if value is not None:
                 setattr(profile, field, value)
 
-    profile.updated_at = datetime.now(UTC)
+    profile.updated_at = pendulum.now("UTC")
 
     await db.flush()
     await db.refresh(profile)
@@ -423,7 +423,7 @@ async def update_community_member(
     if member_update.banned_reason is not None:
         member.banned_reason = member_update.banned_reason
 
-    member.updated_at = datetime.now(UTC)
+    member.updated_at = pendulum.now("UTC")
 
     await db.flush()
     await db.refresh(member)
@@ -600,7 +600,7 @@ async def get_or_create_profile_from_discord(
     if identity:
         # Update existing profile
         profile = identity.profile
-        profile.last_interaction_at = datetime.now(UTC)
+        profile.last_interaction_at = pendulum.now("UTC")
 
         # Optionally refresh metadata (avatar_url, display_name)
         if avatar_url and profile.avatar_url != avatar_url:
@@ -645,7 +645,7 @@ async def get_or_create_profile_from_discord(
         )
 
         # Set initial last_interaction_at
-        profile.last_interaction_at = datetime.now(UTC)
+        profile.last_interaction_at = pendulum.now("UTC")
         await db.flush()
 
         # Create community membership if guild_id provided
@@ -671,7 +671,7 @@ async def get_or_create_profile_from_discord(
         identity = await get_identity_by_provider(db, AuthProvider.DISCORD, discord_user_id)
         if identity:
             profile = identity.profile
-            profile.last_interaction_at = datetime.now(UTC)
+            profile.last_interaction_at = pendulum.now("UTC")
             await db.flush()
             await db.refresh(profile)
 
@@ -737,7 +737,7 @@ async def _ensure_community_membership(
             is_external=False,
             role=CommunityRole.MEMBER,
             permissions=None,
-            joined_at=datetime.now(UTC),
+            joined_at=pendulum.now("UTC"),
             invited_by=None,
             invitation_reason=None,
         )

@@ -12,10 +12,11 @@ Models:
     PreviouslySeenChunk: Join table linking chunks to PreviouslySeenMessage entries
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import pendulum
 import xxhash
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -118,7 +119,7 @@ class ChunkEmbedding(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(UTC),
+        default=lambda: pendulum.now("UTC"),
         server_default=text("NOW()"),
         comment="Timestamp when record was created",
     )
@@ -142,7 +143,7 @@ class ChunkEmbedding(Base):
         if "is_common" not in kwargs:
             kwargs["is_common"] = False
         if "created_at" not in kwargs:
-            kwargs["created_at"] = datetime.now(UTC)
+            kwargs["created_at"] = pendulum.now("UTC")
         if "chunk_text" in kwargs and "chunk_text_hash" not in kwargs:
             kwargs["chunk_text_hash"] = compute_chunk_text_hash(kwargs["chunk_text"])
         super().__init__(**kwargs)
@@ -224,7 +225,7 @@ class FactCheckChunk(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(UTC),
+        default=lambda: pendulum.now("UTC"),
         server_default=text("NOW()"),
     )
 
@@ -290,7 +291,7 @@ class PreviouslySeenChunk(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(UTC),
+        default=lambda: pendulum.now("UTC"),
         server_default=text("NOW()"),
     )
 

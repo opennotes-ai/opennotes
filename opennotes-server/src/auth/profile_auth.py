@@ -16,9 +16,9 @@ Token payload structure:
 
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import pendulum
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
@@ -35,7 +35,10 @@ class ProfileTokenData(BaseModel):
 
 
 def create_profile_access_token(
-    profile_id: UUID, display_name: str, provider: str, expires_delta: timedelta | None = None
+    profile_id: UUID,
+    display_name: str,
+    provider: str,
+    expires_delta: pendulum.Duration | None = None,
 ) -> str:
     to_encode: dict[str, str | int] = {
         "sub": str(profile_id),
@@ -44,14 +47,16 @@ def create_profile_access_token(
     }
 
     if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
+        expire = pendulum.now("UTC") + expires_delta
     else:
-        expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = pendulum.now("UTC") + pendulum.duration(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
 
     jti = secrets.token_urlsafe(32)
 
     to_encode["exp"] = int(expire.timestamp())
-    to_encode["iat"] = int(datetime.now(UTC).timestamp())
+    to_encode["iat"] = int(pendulum.now("UTC").timestamp())
     to_encode["jti"] = jti
 
     encoded_jwt: str = jwt.encode(
@@ -70,12 +75,12 @@ def create_profile_refresh_token(profile_id: UUID, display_name: str, provider: 
         "type": "refresh",
     }
 
-    expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = pendulum.now("UTC") + pendulum.duration(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
     jti = secrets.token_urlsafe(32)
 
     to_encode["exp"] = int(expire.timestamp())
-    to_encode["iat"] = int(datetime.now(UTC).timestamp())
+    to_encode["iat"] = int(pendulum.now("UTC").timestamp())
     to_encode["jti"] = jti
 
     encoded_jwt: str = jwt.encode(

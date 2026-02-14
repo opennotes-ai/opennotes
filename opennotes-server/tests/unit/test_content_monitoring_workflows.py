@@ -212,9 +212,9 @@ class TestAuditMiddlewareUsesDBOS:
         mock_response = MagicMock()
         mock_response.status_code = 201
 
-        from datetime import UTC, datetime
+        import pendulum
 
-        start_time = datetime.now(UTC)
+        start_time = pendulum.now("UTC")
 
         with patch("src.middleware.audit.call_persist_audit_log") as mock_call:
             await middleware._publish_audit_log(

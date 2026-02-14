@@ -4,11 +4,12 @@ Candidates represent potential fact-check items that are pending review or
 processing before being promoted to the main fact_check_items table.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
 
+import pendulum
 import xxhash
 from sqlalchemy import ARRAY, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -163,7 +164,7 @@ class FactCheckedItemCandidate(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
-        onupdate=lambda: datetime.now(UTC),
+        onupdate=lambda: pendulum.now("UTC"),
     )
 
     __table_args__ = (

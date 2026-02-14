@@ -6,10 +6,10 @@ router.py and jsonapi_router.py (task-849.05), plus the first-class
 similarity_score/dataset_name/dataset_item_id fields on RequestCreateAttributes.
 """
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import pendulum
 import pytest
 
 from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
@@ -34,7 +34,7 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
             channel_id="ch_001",
             content="This is a test claim about vaccines",
             author_id="user_001",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[
                 SimilarityMatch(
                     score=0.85,
@@ -49,7 +49,7 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
             channel_id="ch_002",
             content="Another test claim about climate",
             author_id="user_002",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[
                 SimilarityMatch(
                     score=0.75,
@@ -64,7 +64,7 @@ def sample_flagged_messages() -> list[FlaggedMessage]:
             channel_id="ch_001",
             content="Third test message",
             author_id="user_003",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[
                 SimilarityMatch(
                     score=0.90,
