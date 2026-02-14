@@ -1,8 +1,9 @@
 import asyncio
 import contextlib
-import json
 import time
 from typing import Any
+
+import orjson
 
 from src.cache.redis_client import redis_client
 from src.config import settings
@@ -68,7 +69,7 @@ class DistributedHealthCoordinator:
             await redis_client.client.setex(
                 instance_key,
                 self.HEARTBEAT_TTL,
-                json.dumps(instance_info),
+                orjson.dumps(instance_info),
             )
 
             await self._update_instances_set()
@@ -112,7 +113,7 @@ class DistributedHealthCoordinator:
 
                 if instance_data:
                     try:
-                        info = json.loads(instance_data)
+                        info = orjson.loads(instance_data)
                         last_heartbeat = info.get("timestamp", current_time)
                         time_since_heartbeat = current_time - last_heartbeat
 
@@ -133,7 +134,7 @@ class DistributedHealthCoordinator:
                             "error": info.get("error"),
                             "details": info.get("details"),
                         }
-                    except json.JSONDecodeError:
+                    except orjson.JSONDecodeError:
                         pass
                 else:
                     await redis_client.client.srem(self.INSTANCES_KEY, instance_id)  # pyright: ignore[reportGeneralTypeIssues]

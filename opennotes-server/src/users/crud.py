@@ -1,9 +1,9 @@
 import asyncio
-import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import orjson
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -408,12 +408,12 @@ async def _publish_api_key_used_event(api_key_id: UUID) -> None:
     discarded if there are no subscribers. This is intentional - the event is
     for optional telemetry/stats collection, not critical business logic.
     """
-    event_data = json.dumps(
+    event_data = orjson.dumps(
         {
             "api_key_id": str(api_key_id),
             "used_at": datetime.now(UTC).isoformat(),
         }
-    ).encode("utf-8")
+    )
     await nats_client.publish_fire_and_forget("events.api_key.used", event_data)
 
 

@@ -22,11 +22,12 @@ Usage:
 """
 
 import hashlib
-import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+import orjson
 
 from src.cache.redis_client import RedisClient
 from src.config import get_settings
@@ -168,7 +169,7 @@ async def log_search_results(
                 "query_duration_ms": query_duration_ms,
             }
 
-            await redis.set(key, json.dumps(entry_dict), ttl=SEARCH_LOG_TTL_SECONDS)
+            await redis.set(key, orjson.dumps(entry_dict).decode(), ttl=SEARCH_LOG_TTL_SECONDS)
 
             await _update_aggregate_stats(redis, entry)
 
@@ -192,7 +193,7 @@ async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntr
     try:
         stats_raw = await redis.get(SEARCH_STATS_KEY)
         if stats_raw:
-            stats = json.loads(stats_raw)
+            stats = orjson.loads(stats_raw)
         else:
             stats = {
                 "total_searches": 0,
@@ -214,7 +215,7 @@ async def _update_aggregate_stats(redis: RedisClient, entry: SearchAnalyticsEntr
             stats["alpha_usage"][alpha_key] = 0  # pyright: ignore[reportIndexIssue]
         stats["alpha_usage"][alpha_key] += 1  # pyright: ignore[reportIndexIssue]
 
-        await redis.set(SEARCH_STATS_KEY, json.dumps(stats))
+        await redis.set(SEARCH_STATS_KEY, orjson.dumps(stats).decode())
 
     except Exception as e:
         settings = get_settings()
@@ -240,7 +241,7 @@ async def get_search_stats(redis: RedisClient) -> dict[str, Any] | None:
     try:
         stats_raw = await redis.get(SEARCH_STATS_KEY)
         if stats_raw:
-            return json.loads(stats_raw)
+            return orjson.loads(stats_raw)
         return None
     except Exception as e:
         settings = get_settings()

@@ -6,11 +6,11 @@ operations in the users system, including authentication, profile changes,
 identity management, and API key operations.
 """
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import orjson
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,7 +43,7 @@ async def create_audit_log(
     Returns:
         Created AuditLog instance
     """
-    details_str = json.dumps(details) if details else None
+    details_str = orjson.dumps(details).decode() if details else None
 
     audit_log = AuditLog(
         user_id=user_id,

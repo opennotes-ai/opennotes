@@ -1,7 +1,6 @@
 """Service layer for Bulk Content Scan operations."""
 
 import asyncio
-import json
 import time
 import uuid as uuid_module
 from collections.abc import Sequence
@@ -9,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, overload
 from uuid import UUID
 
+import orjson
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -1771,7 +1771,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
             "error_message": error_message[:500],
         }
 
-        await self.redis_client.lpush(errors_key, json.dumps(error_info))  # type: ignore[misc]
+        await self.redis_client.lpush(errors_key, orjson.dumps(error_info).decode())  # type: ignore[misc]
         await self.redis_client.hincrby(counts_key, error_type, 1)  # type: ignore[misc]
 
         await self.redis_client.expire(errors_key, REDIS_TTL_SECONDS)  # type: ignore[misc]
@@ -1898,7 +1898,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         sample_errors = []
         for raw_error in raw_errors:
             error_str = raw_error.decode() if isinstance(raw_error, bytes) else raw_error
-            sample_errors.append(json.loads(error_str))
+            sample_errors.append(orjson.loads(error_str))
 
         return {
             "total_errors": total_errors,

@@ -2,6 +2,12 @@
 
 Replaces pickle with JSON to avoid CPython #125756 memo deserialization bugs
 on large payloads. Non-JSON data is returned as a raw string.
+
+NOTE: This module intentionally uses stdlib json instead of orjson.
+The _json_default callback enforces strict type checking (rejecting UUID,
+datetime, bytes) to catch workflow argument mistakes early. orjson natively
+serializes these types, which would silently change the serialization format
+and break existing DBOS checkpoint data.
 """
 
 import importlib

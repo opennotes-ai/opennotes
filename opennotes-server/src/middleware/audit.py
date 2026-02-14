@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -7,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import orjson
 from fastapi import Request, Response
 from prometheus_client import Counter
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -67,8 +67,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 body_bytes = await request.body()
                 if len(body_bytes) <= self.MAX_BODY_SIZE:
                     try:
-                        request_body = json.loads(body_bytes.decode("utf-8"))
-                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        request_body = orjson.loads(body_bytes)
+                    except (orjson.JSONDecodeError, UnicodeDecodeError):
                         request_body = {"_raw": body_bytes[:100].decode("utf-8", errors="ignore")}
                 else:
                     request_body = {"_truncated": f"Body size {len(body_bytes)} exceeds limit"}
@@ -106,7 +106,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     if "/" in request.url.path
                     else request.url.path,
                     None,
-                    json.dumps(details),
+                    orjson.dumps(details).decode(),
                     request.client.host if request.client else None,
                     request.headers.get("user-agent"),
                     start_time.isoformat(),
