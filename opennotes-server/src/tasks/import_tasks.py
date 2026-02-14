@@ -30,7 +30,6 @@ logger = get_logger(__name__)
 MAX_STORED_ERRORS = 50
 SCRAPING_TIMEOUT_MINUTES = 120
 PROMOTING_TIMEOUT_MINUTES = 120
-PROGRESS_UPDATE_INTERVAL = 100
 
 
 def _check_row_accounting(
@@ -201,7 +200,7 @@ async def _recover_stuck_promoting_candidates(
     component="import_pipeline",
     task_type="deprecated",
 )
-async def process_fact_check_import(*args: Any, **kwargs: Any) -> None:
+async def process_fact_check_import(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
 
     This task was migrated to DBOS in TASK-1093. This handler exists only to
@@ -221,6 +220,7 @@ async def process_fact_check_import(*args: Any, **kwargs: Any) -> None:
             "migration_note": "Task migrated to DBOS in TASK-1093",
         },
     )
+    return {"status": "discarded", "migration_note": "Task migrated to DBOS in TASK-1093"}
 
 
 @register_task(
@@ -228,7 +228,7 @@ async def process_fact_check_import(*args: Any, **kwargs: Any) -> None:
     component="import_pipeline",
     task_type="deprecated",
 )
-async def process_scrape_batch(*args: Any, **kwargs: Any) -> None:
+async def process_scrape_batch(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
 
     This task was migrated to DBOS in TASK-1093. This handler exists only to
@@ -248,6 +248,7 @@ async def process_scrape_batch(*args: Any, **kwargs: Any) -> None:
             "migration_note": "Task migrated to DBOS in TASK-1093",
         },
     )
+    return {"status": "discarded", "migration_note": "Task migrated to DBOS in TASK-1093"}
 
 
 @register_task(
@@ -255,7 +256,7 @@ async def process_scrape_batch(*args: Any, **kwargs: Any) -> None:
     component="import_pipeline",
     task_type="deprecated",
 )
-async def process_promotion_batch(*args: Any, **kwargs: Any) -> None:
+async def process_promotion_batch(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
 
     This task was migrated to DBOS in TASK-1093. This handler exists only to
@@ -275,3 +276,4 @@ async def process_promotion_batch(*args: Any, **kwargs: Any) -> None:
             "migration_note": "Task migrated to DBOS in TASK-1093",
         },
     )
+    return {"status": "discarded", "migration_note": "Task migrated to DBOS in TASK-1093"}

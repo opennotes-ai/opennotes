@@ -8,8 +8,8 @@ Tests target the internal logic of:
 - import_csv_step: CSV streaming, HTTP errors, batch processing
 - process_scrape_batch_step: parallel scraping mixed success/failure
 - process_promotion_batch_step: FOR UPDATE race conditions, crash recovery
-- Sync helpers: finalize_batch_job_sync, update_batch_job_progress_sync,
-  start_batch_job_sync, _update_job_total_tasks_sync
+- Sync helpers: finalize_batch_job_sync, start_batch_job_sync,
+  _update_job_total_tasks_sync, and async variants
 """
 
 from __future__ import annotations
@@ -524,11 +524,13 @@ class TestImportCsvStepCsvProcessing:
                 return_value=(1, 0),
             ),
             patch(
-                "src.dbos_workflows.import_workflow._update_job_total_tasks_sync",
+                "src.dbos_workflows.import_workflow._update_job_total_tasks_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
@@ -582,11 +584,13 @@ class TestImportCsvStepCsvProcessing:
                 mock_upsert,
             ),
             patch(
-                "src.dbos_workflows.import_workflow._update_job_total_tasks_sync",
+                "src.dbos_workflows.import_workflow._update_job_total_tasks_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
@@ -634,11 +638,13 @@ class TestImportCsvStepCsvProcessing:
                 return_value=([], validation_errors),
             ),
             patch(
-                "src.dbos_workflows.import_workflow._update_job_total_tasks_sync",
+                "src.dbos_workflows.import_workflow._update_job_total_tasks_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
@@ -681,11 +687,13 @@ class TestImportCsvStepCsvProcessing:
                 return_value=[],
             ),
             patch(
-                "src.dbos_workflows.import_workflow._update_job_total_tasks_sync",
+                "src.dbos_workflows.import_workflow._update_job_total_tasks_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
@@ -708,7 +716,7 @@ class TestImportCsvStepCsvProcessing:
         assert result["valid_rows"] == 0
         assert result["inserted"] == 0
 
-    def test_enqueue_scrapes_dispatches_after_import(self) -> None:
+    def test_enqueue_scrapes_sets_dispatch_marker(self) -> None:
         from src.dbos_workflows.import_workflow import import_csv_step
 
         batch_job_id = str(uuid4())
@@ -717,7 +725,6 @@ class TestImportCsvStepCsvProcessing:
             yield "id,url\n1,http://a.com"
 
         mock_session_maker = self._make_session_maker_mock()
-        mock_enqueue = AsyncMock(return_value={"enqueued": 50})
 
         with (
             patch(
@@ -738,11 +745,13 @@ class TestImportCsvStepCsvProcessing:
                 return_value=(1, 0),
             ),
             patch(
-                "src.dbos_workflows.import_workflow._update_job_total_tasks_sync",
+                "src.dbos_workflows.import_workflow._update_job_total_tasks_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
@@ -753,10 +762,6 @@ class TestImportCsvStepCsvProcessing:
                 "src.database.get_session_maker",
                 return_value=mock_session_maker,
             ),
-            patch(
-                "src.fact_checking.import_pipeline.scrape_tasks.enqueue_scrape_batch",
-                mock_enqueue,
-            ),
         ):
             result = import_csv_step.__wrapped__(
                 batch_job_id=batch_job_id,
@@ -765,8 +770,7 @@ class TestImportCsvStepCsvProcessing:
                 enqueue_scrapes=True,
             )
 
-        assert result["scrapes_enqueued"] == 50
-        mock_enqueue.assert_awaited_once()
+        assert result["scrape_dispatch"] == "requires_separate_batch_job"
 
     def test_db_constraint_violation_during_upsert_raises(self) -> None:
         from sqlalchemy.exc import IntegrityError
@@ -799,11 +803,13 @@ class TestImportCsvStepCsvProcessing:
                 side_effect=IntegrityError("constraint violation", params=None, orig=Exception()),
             ),
             patch(
-                "src.dbos_workflows.import_workflow._update_job_total_tasks_sync",
+                "src.dbos_workflows.import_workflow._update_job_total_tasks_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch(
@@ -882,7 +888,8 @@ class TestProcessScrapeBatchStepParallelScraping:
                 side_effect=mock_scrape,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch("asyncio.sleep", new_callable=AsyncMock),
@@ -918,7 +925,8 @@ class TestProcessScrapeBatchStepParallelScraping:
                 return_value="Good content",
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch("asyncio.sleep", new_callable=AsyncMock),
@@ -954,7 +962,8 @@ class TestProcessScrapeBatchStepParallelScraping:
                 return_value=None,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch("asyncio.sleep", new_callable=AsyncMock),
@@ -1015,7 +1024,8 @@ class TestProcessScrapeBatchStepParallelScraping:
                 side_effect=_crash_scrape,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch("asyncio.sleep", new_callable=AsyncMock),
@@ -1073,7 +1083,8 @@ class TestProcessScrapeBatchStepParallelScraping:
                 return_value="content",
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
             patch("asyncio.sleep", new_callable=AsyncMock),
@@ -1142,7 +1153,8 @@ class TestProcessPromotionBatchStep:
                 mock_promote,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
         ):
@@ -1178,7 +1190,8 @@ class TestProcessPromotionBatchStep:
                 side_effect=mock_promote,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
         ):
@@ -1246,7 +1259,7 @@ class TestProcessPromotionBatchStep:
             execute_side_effect=self._make_batch_execute_fn([[(cid1,)], []])
         )
 
-        mock_progress = MagicMock(return_value=True)
+        mock_progress = AsyncMock(return_value=True)
 
         with (
             patch("src.database.get_session_maker", return_value=mock_session_maker),
@@ -1256,7 +1269,7 @@ class TestProcessPromotionBatchStep:
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
                 mock_progress,
             ),
         ):
@@ -1266,7 +1279,7 @@ class TestProcessPromotionBatchStep:
                 total_candidates=1,
             )
 
-        mock_progress.assert_called_once()
+        mock_progress.assert_awaited_once()
 
     def test_multiple_batches_processed_in_loop(self) -> None:
         from src.dbos_workflows.import_workflow import process_promotion_batch_step
@@ -1293,7 +1306,8 @@ class TestProcessPromotionBatchStep:
                 return_value=True,
             ),
             patch(
-                "src.dbos_workflows.import_workflow.update_batch_job_progress_sync",
+                "src.dbos_workflows.import_workflow._update_batch_job_progress_async",
+                new_callable=AsyncMock,
                 return_value=True,
             ),
         ):

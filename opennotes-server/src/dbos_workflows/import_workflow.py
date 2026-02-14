@@ -38,7 +38,6 @@ from src.batch_jobs.constants import (
 from src.dbos_workflows.batch_job_helpers import (
     finalize_batch_job_sync,
     start_batch_job_sync,
-    update_batch_job_progress_sync,
 )
 from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
@@ -50,10 +49,6 @@ import_pipeline_queue = Queue(
     worker_concurrency=1,
     concurrency=3,
 )
-
-SCRAPING_TIMEOUT_MINUTES = 120
-PROMOTING_TIMEOUT_MINUTES = 120
-PROGRESS_UPDATE_INTERVAL = 100
 
 
 def _update_job_total_tasks_sync(batch_job_id: UUID, total_tasks: int) -> bool:
@@ -79,6 +74,79 @@ def _update_job_total_tasks_sync(batch_job_id: UUID, total_tasks: int) -> bool:
                 "total_tasks": total_tasks,
                 "error": str(e),
             },
+        )
+        return False
+
+
+async def _update_job_total_tasks_async(batch_job_id: UUID, total_tasks: int) -> bool:
+    from src.batch_jobs.service import BatchJobService
+    from src.database import get_session_maker
+
+    try:
+        async with get_session_maker()() as db:
+            service = BatchJobService(db)
+            job = await service.get_job(batch_job_id)
+            if job:
+                job.total_tasks = total_tasks
+                await db.commit()
+            return True
+    except Exception as e:
+        logger.error(
+            "Failed to update job total_tasks",
+            extra={
+                "batch_job_id": str(batch_job_id),
+                "total_tasks": total_tasks,
+                "error": str(e),
+            },
+        )
+        return False
+
+
+async def _start_batch_job_async(batch_job_id: UUID) -> bool:
+    from src.batch_jobs.service import BatchJobService
+    from src.database import get_session_maker
+
+    try:
+        async with get_session_maker()() as db:
+            service = BatchJobService(db)
+            job = await service.get_job(batch_job_id)
+            if job is None:
+                raise ValueError(f"Batch job not found: {batch_job_id}")
+            await service.start_job(batch_job_id)
+            await db.commit()
+            return True
+    except Exception as e:
+        logger.error(
+            "Failed to start batch job",
+            extra={"batch_job_id": str(batch_job_id), "error": str(e)},
+        )
+        return False
+
+
+async def _update_batch_job_progress_async(
+    batch_job_id: UUID,
+    completed_tasks: int,
+    failed_tasks: int,
+    current_item: str | None = None,
+) -> bool:
+    from src.batch_jobs.service import BatchJobService
+    from src.database import get_session_maker
+
+    try:
+        async with get_session_maker()() as db:
+            service = BatchJobService(db)
+            await service.update_progress(
+                batch_job_id,
+                completed_tasks=completed_tasks,
+                failed_tasks=failed_tasks,
+                current_item=current_item,
+            )
+            await db.commit()
+            return True
+    except Exception as e:
+        logger.error(
+            "Failed to update batch job progress",
+            extra={"batch_job_id": str(batch_job_id), "error": str(e)},
         )
         return False
 
@@ -124,7 +192,7 @@ def import_csv_step(
             rows = list(parse_csv_rows(content))
             stats.total_rows = len(rows)
 
-            _update_job_total_tasks_sync(job_uuid, stats.total_rows)
+            await _update_job_total_tasks_async(job_uuid, stats.total_rows)
 
             logger.info(
                 "Loaded CSV content",
@@ -154,7 +222,7 @@ def import_csv_step(
 
                     processed = min((batch_num + 1) * batch_size, stats.total_rows)
 
-                    update_batch_job_progress_sync(
+                    await _update_batch_job_progress_async(
                         job_uuid,
                         completed_tasks=stats.valid_rows,
                         failed_tasks=stats.invalid_rows,
@@ -200,12 +268,12 @@ def import_csv_step(
             final_stats["errors"] = _aggregate_errors(all_errors)
 
         if enqueue_scrapes and not dry_run:
-            from src.fact_checking.import_pipeline.scrape_tasks import (
-                enqueue_scrape_batch,
+            final_stats["scrape_dispatch"] = "requires_separate_batch_job"
+            logger.info(
+                "Import complete; scrape workflow should be dispatched separately "
+                "via ImportBatchJobService.start_scrape()",
+                extra={"job_id": batch_job_id},
             )
-
-            scrape_result = await enqueue_scrape_batch(batch_size=batch_size)
-            final_stats["scrapes_enqueued"] = scrape_result.get("enqueued", 0)
 
         return final_stats
 
@@ -244,6 +312,9 @@ def fact_check_import_workflow(
         )
         return {"status": "failed", "error": "Failed to start batch job"}
 
+    completed_so_far = 0
+    failed_so_far = 0
+
     try:
         final_stats = import_csv_step(
             batch_job_id=batch_job_id,
@@ -252,11 +323,14 @@ def fact_check_import_workflow(
             enqueue_scrapes=enqueue_scrapes,
         )
 
+        completed_so_far = final_stats.get("valid_rows", 0)
+        failed_so_far = final_stats.get("invalid_rows", 0)
+
         finalize_batch_job_sync(
             job_uuid,
-            success=True,
-            completed_tasks=final_stats.get("valid_rows", 0),
-            failed_tasks=final_stats.get("invalid_rows", 0),
+            success=failed_so_far == 0,
+            completed_tasks=completed_so_far,
+            failed_tasks=failed_so_far,
             stats=final_stats,
         )
 
@@ -281,8 +355,8 @@ def fact_check_import_workflow(
         finalize_batch_job_sync(
             job_uuid,
             success=False,
-            completed_tasks=0,
-            failed_tasks=0,
+            completed_tasks=completed_so_far,
+            failed_tasks=failed_so_far,
             error_summary=error_summary,
         )
 
@@ -319,7 +393,7 @@ def recover_and_count_scrape_step(batch_job_id: str) -> dict[str, Any]:
 
         recovered = await _recover_stuck_scraping_candidates(session_maker)
 
-        start_batch_job_sync(job_uuid)
+        await _start_batch_job_async(job_uuid)
 
         async with session_maker() as db:
             count_query = (
@@ -338,7 +412,7 @@ def recover_and_count_scrape_step(batch_job_id: str) -> dict[str, Any]:
             count_result = await db.execute(count_query)
             total_candidates = count_result.scalar_one()
 
-        _update_job_total_tasks_sync(job_uuid, total_candidates)
+        await _update_job_total_tasks_async(job_uuid, total_candidates)
 
         return {
             "recovered": recovered,
@@ -361,18 +435,23 @@ def process_scrape_batch_step(
     job_uuid = UUID(batch_job_id)
 
     async def _process() -> dict[str, Any]:
+        import time
+
         from sqlalchemy import select
         from sqlalchemy import update as sa_update
 
         from src.database import get_session_maker
         from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
         from src.fact_checking.import_pipeline.scrape_tasks import (
+            extract_domain,
             scrape_url_content,
         )
 
         session_maker = get_session_maker()
         scraped = scraped_so_far
         failed = failed_so_far
+
+        domain_last_request: dict[str, float] = {}
 
         while True:
             async with session_maker() as db:
@@ -416,8 +495,14 @@ def process_scrape_batch_step(
                 _semaphore: asyncio.Semaphore = semaphore,
             ) -> tuple[bool, str | None]:
                 async with _semaphore:
-                    if base_delay > 0:
-                        await asyncio.sleep(base_delay)
+                    domain = extract_domain(source_url)
+                    now = time.monotonic()
+                    last = domain_last_request.get(domain, 0.0)
+                    elapsed = now - last
+                    if elapsed < base_delay:
+                        await asyncio.sleep(base_delay - elapsed)
+                    domain_last_request[domain] = time.monotonic()
+
                     content = await asyncio.to_thread(scrape_url_content, source_url)
 
                     async with session_maker() as db:
@@ -458,7 +543,7 @@ def process_scrape_batch_step(
                     failed += 1
 
             processed = scraped + failed
-            update_batch_job_progress_sync(
+            await _update_batch_job_progress_async(
                 job_uuid,
                 completed_tasks=scraped,
                 failed_tasks=failed,
@@ -494,6 +579,9 @@ def scrape_candidates_workflow(
             "concurrency": concurrency,
         },
     )
+
+    scraped_so_far = 0
+    failed_so_far = 0
 
     try:
         init_result = recover_and_count_scrape_step(batch_job_id)
@@ -532,22 +620,22 @@ def scrape_candidates_workflow(
             failed_so_far=0,
         )
 
-        scraped = scrape_result["scraped"]
-        failed = scrape_result["failed"]
+        scraped_so_far = scrape_result["scraped"]
+        failed_so_far = scrape_result["failed"]
 
         final_stats = {
             "total_candidates": total_candidates,
-            "scraped": scraped,
-            "failed": failed,
+            "scraped": scraped_so_far,
+            "failed": failed_so_far,
             "recovered_stuck": recovered,
             "dry_run": False,
         }
 
         finalize_batch_job_sync(
             job_uuid,
-            success=True,
-            completed_tasks=scraped,
-            failed_tasks=failed,
+            success=failed_so_far == 0,
+            completed_tasks=scraped_so_far,
+            failed_tasks=failed_so_far,
             stats=final_stats,
         )
 
@@ -572,8 +660,8 @@ def scrape_candidates_workflow(
         finalize_batch_job_sync(
             job_uuid,
             success=False,
-            completed_tasks=0,
-            failed_tasks=0,
+            completed_tasks=scraped_so_far,
+            failed_tasks=failed_so_far,
             error_summary=error_summary,
         )
 
@@ -610,7 +698,7 @@ def recover_and_count_promote_step(batch_job_id: str) -> dict[str, Any]:
 
         recovered = await _recover_stuck_promoting_candidates(session_maker)
 
-        start_batch_job_sync(job_uuid)
+        await _start_batch_job_async(job_uuid)
 
         async with session_maker() as db:
             count_query = (
@@ -631,7 +719,7 @@ def recover_and_count_promote_step(batch_job_id: str) -> dict[str, Any]:
             count_result = await db.execute(count_query)
             total_candidates = count_result.scalar_one()
 
-        _update_job_total_tasks_sync(job_uuid, total_candidates)
+        await _update_job_total_tasks_async(job_uuid, total_candidates)
 
         return {
             "recovered": recovered,
@@ -695,7 +783,7 @@ def process_promotion_batch_step(
                         failed += 1
 
             processed = promoted + failed
-            update_batch_job_progress_sync(
+            await _update_batch_job_progress_async(
                 job_uuid,
                 completed_tasks=promoted,
                 failed_tasks=failed,
@@ -728,6 +816,9 @@ def promote_candidates_workflow(
             "dry_run": dry_run,
         },
     )
+
+    promoted_so_far = 0
+    failed_so_far = 0
 
     try:
         init_result = recover_and_count_promote_step(batch_job_id)
@@ -762,22 +853,22 @@ def promote_candidates_workflow(
             total_candidates=total_candidates,
         )
 
-        promoted = promote_result["promoted"]
-        failed = promote_result["failed"]
+        promoted_so_far = promote_result["promoted"]
+        failed_so_far = promote_result["failed"]
 
         final_stats = {
             "total_candidates": total_candidates,
-            "promoted": promoted,
-            "failed": failed,
+            "promoted": promoted_so_far,
+            "failed": failed_so_far,
             "recovered_stuck": recovered,
             "dry_run": False,
         }
 
         finalize_batch_job_sync(
             job_uuid,
-            success=True,
-            completed_tasks=promoted,
-            failed_tasks=failed,
+            success=failed_so_far == 0,
+            completed_tasks=promoted_so_far,
+            failed_tasks=failed_so_far,
             stats=final_stats,
         )
 
@@ -802,8 +893,8 @@ def promote_candidates_workflow(
         finalize_batch_job_sync(
             job_uuid,
             success=False,
-            completed_tasks=0,
-            failed_tasks=0,
+            completed_tasks=promoted_so_far,
+            failed_tasks=failed_so_far,
             error_summary=error_summary,
         )
 

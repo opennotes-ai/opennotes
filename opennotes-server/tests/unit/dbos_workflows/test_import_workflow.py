@@ -107,7 +107,47 @@ class TestStartImportStep:
 
 
 class TestFactCheckImportWorkflow:
-    def test_successful_import(self) -> None:
+    def test_successful_import_no_failures(self) -> None:
+        from src.dbos_workflows.import_workflow import fact_check_import_workflow
+
+        batch_job_id = str(uuid4())
+        final_stats = {
+            "total_rows": 100,
+            "valid_rows": 100,
+            "invalid_rows": 0,
+            "inserted": 95,
+            "updated": 5,
+            "dry_run": False,
+        }
+
+        with (
+            patch("src.dbos_workflows.import_workflow.start_import_step") as mock_start,
+            patch("src.dbos_workflows.import_workflow.import_csv_step") as mock_import,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_start.return_value = True
+            mock_import.return_value = final_stats
+            mock_finalize.return_value = True
+
+            result = fact_check_import_workflow.__wrapped__(  # type: ignore[attr-defined]
+                batch_job_id=batch_job_id,
+                batch_size=1000,
+                dry_run=False,
+                enqueue_scrapes=False,
+            )
+
+        assert result["status"] == "completed"
+        assert result["valid_rows"] == 100
+        assert result["invalid_rows"] == 0
+        mock_finalize.assert_called_once()
+        call_kwargs = mock_finalize.call_args.kwargs
+        assert call_kwargs["success"] is True
+        assert call_kwargs["completed_tasks"] == 100
+        assert call_kwargs["failed_tasks"] == 0
+
+    def test_import_with_failures_marks_not_success(self) -> None:
         from src.dbos_workflows.import_workflow import fact_check_import_workflow
 
         batch_job_id = str(uuid4())
@@ -143,7 +183,7 @@ class TestFactCheckImportWorkflow:
         assert result["invalid_rows"] == 5
         mock_finalize.assert_called_once()
         call_kwargs = mock_finalize.call_args.kwargs
-        assert call_kwargs["success"] is True
+        assert call_kwargs["success"] is False
         assert call_kwargs["completed_tasks"] == 95
         assert call_kwargs["failed_tasks"] == 5
 
@@ -204,7 +244,38 @@ class TestFactCheckImportWorkflow:
 
 
 class TestScrapeCandidatesWorkflow:
-    def test_successful_scrape(self) -> None:
+    def test_successful_scrape_no_failures(self) -> None:
+        from src.dbos_workflows.import_workflow import scrape_candidates_workflow
+
+        batch_job_id = str(uuid4())
+
+        with (
+            patch("src.dbos_workflows.import_workflow.recover_and_count_scrape_step") as mock_init,
+            patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_init.return_value = {"recovered": 0, "total_candidates": 50}
+            mock_process.return_value = {"scraped": 50, "failed": 0}
+            mock_finalize.return_value = True
+
+            result = scrape_candidates_workflow.__wrapped__(  # type: ignore[attr-defined]
+                batch_job_id=batch_job_id,
+                batch_size=100,
+                dry_run=False,
+                concurrency=5,
+                base_delay=1.0,
+            )
+
+        assert result["status"] == "completed"
+        assert result["scraped"] == 50
+        assert result["failed"] == 0
+        mock_finalize.assert_called_once()
+        call_kwargs = mock_finalize.call_args.kwargs
+        assert call_kwargs["success"] is True
+
+    def test_scrape_with_failures_marks_not_success(self) -> None:
         from src.dbos_workflows.import_workflow import scrape_candidates_workflow
 
         batch_job_id = str(uuid4())
@@ -235,7 +306,7 @@ class TestScrapeCandidatesWorkflow:
         assert result["total_candidates"] == 50
         mock_finalize.assert_called_once()
         call_kwargs = mock_finalize.call_args.kwargs
-        assert call_kwargs["success"] is True
+        assert call_kwargs["success"] is False
 
     def test_dry_run_skips_scraping(self) -> None:
         from src.dbos_workflows.import_workflow import scrape_candidates_workflow
@@ -293,7 +364,40 @@ class TestScrapeCandidatesWorkflow:
 
 
 class TestPromoteCandidatesWorkflow:
-    def test_successful_promotion(self) -> None:
+    def test_successful_promotion_no_failures(self) -> None:
+        from src.dbos_workflows.import_workflow import promote_candidates_workflow
+
+        batch_job_id = str(uuid4())
+
+        with (
+            patch("src.dbos_workflows.import_workflow.recover_and_count_promote_step") as mock_init,
+            patch(
+                "src.dbos_workflows.import_workflow.process_promotion_batch_step"
+            ) as mock_process,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "test-workflow-id"
+            mock_init.return_value = {"recovered": 0, "total_candidates": 30}
+            mock_process.return_value = {"promoted": 30, "failed": 0}
+            mock_finalize.return_value = True
+
+            result = promote_candidates_workflow.__wrapped__(  # type: ignore[attr-defined]
+                batch_job_id=batch_job_id,
+                batch_size=100,
+                dry_run=False,
+            )
+
+        assert result["status"] == "completed"
+        assert result["promoted"] == 30
+        assert result["failed"] == 0
+        mock_finalize.assert_called_once()
+        call_kwargs = mock_finalize.call_args.kwargs
+        assert call_kwargs["success"] is True
+        assert call_kwargs["completed_tasks"] == 30
+        assert call_kwargs["failed_tasks"] == 0
+
+    def test_promotion_with_failures_marks_not_success(self) -> None:
         from src.dbos_workflows.import_workflow import promote_candidates_workflow
 
         batch_job_id = str(uuid4())
@@ -323,7 +427,7 @@ class TestPromoteCandidatesWorkflow:
         assert result["recovered_stuck"] == 1
         mock_finalize.assert_called_once()
         call_kwargs = mock_finalize.call_args.kwargs
-        assert call_kwargs["success"] is True
+        assert call_kwargs["success"] is False
         assert call_kwargs["completed_tasks"] == 28
         assert call_kwargs["failed_tasks"] == 2
 
@@ -546,19 +650,22 @@ class TestDispatchPromoteWorkflow:
 
 class TestDeprecatedTaskIQStubs:
     @pytest.mark.asyncio
-    async def test_import_stub_runs_without_error(self) -> None:
+    async def test_import_stub_returns_discarded_dict(self) -> None:
         from src.tasks.import_tasks import process_fact_check_import
 
-        await process_fact_check_import("arg1", key="val")
+        result = await process_fact_check_import("arg1", key="val")
+        assert result["status"] == "discarded"
 
     @pytest.mark.asyncio
-    async def test_scrape_stub_runs_without_error(self) -> None:
+    async def test_scrape_stub_returns_discarded_dict(self) -> None:
         from src.tasks.import_tasks import process_scrape_batch
 
-        await process_scrape_batch("arg1", key="val")
+        result = await process_scrape_batch("arg1", key="val")
+        assert result["status"] == "discarded"
 
     @pytest.mark.asyncio
-    async def test_promote_stub_runs_without_error(self) -> None:
+    async def test_promote_stub_returns_discarded_dict(self) -> None:
         from src.tasks.import_tasks import process_promotion_batch
 
-        await process_promotion_batch("arg1", key="val")
+        result = await process_promotion_batch("arg1", key="val")
+        assert result["status"] == "discarded"
