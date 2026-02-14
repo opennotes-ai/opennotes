@@ -58,6 +58,7 @@ Workflows:
 from src.dbos_workflows.approval_workflow import (
     BULK_APPROVAL_WORKFLOW_NAME,
     bulk_approval_workflow,
+    dispatch_bulk_approval_workflow,
 )
 from src.dbos_workflows.batch_job_adapter import BatchJobDBOSAdapter
 from src.dbos_workflows.circuit_breaker import (
@@ -151,6 +152,7 @@ __all__ = [
     "content_scan_orchestration_workflow",
     "destroy_dbos",
     "destroy_dbos_client",
+    "dispatch_bulk_approval_workflow",
     "dispatch_content_scan_workflow",
     "dispatch_dbos_previously_seen_rechunk_workflow",
     "dispatch_dbos_rechunk_workflow",

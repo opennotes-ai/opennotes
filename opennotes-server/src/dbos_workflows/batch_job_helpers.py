@@ -122,4 +122,11 @@ def finalize_batch_job_sync(
             extra={"batch_job_id": str(batch_job_id), "error": str(e)},
             exc_info=True,
         )
+        logger.warning(
+            "finalize_batch_job_sync returning False — job may remain IN_PROGRESS",
+            extra={
+                "batch_job_id": str(batch_job_id),
+                "intended_success": success,
+            },
+        )
         return False
