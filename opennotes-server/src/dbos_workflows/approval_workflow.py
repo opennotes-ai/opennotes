@@ -6,6 +6,17 @@ completed batch on workflow restart.
 
 The dispatch function lives in src/batch_jobs/import_service.py, which
 creates the BatchJob record and enqueues this workflow via DBOSClient.
+
+``limit`` semantics
+-------------------
+The *limit* parameter means "approve up to N candidates".  Because
+cursor-based pagination advances past ALL scanned rows (not just those
+meeting the threshold), the actual number of approved candidates may be
+fewer than *limit* when the threshold match-rate is low.  In the presence
+of DBOS step retries the count is approximate: already-approved candidates
+are naturally filtered out by the ``rating IS NULL`` predicate, but the
+in-memory ``remaining`` counter is not refreshed from the database between
+retries.  For exact counts, query the BatchJob record after completion.
 """
 
 from __future__ import annotations
@@ -121,8 +132,8 @@ async def _process_single_batch(
     """Process a single batch of candidates for approval.
 
     Uses bulk UPDATE for efficiency and tracks actual rows affected.
-    Promotions run within the same transaction context but are best-effort;
-    a promotion failure does not roll back the rating update.
+    Each promotion runs inside a SAVEPOINT so that a single failure does
+    not roll back the rating update or other successful promotions.
 
     Returns:
         Tuple of (updated_count, promoted_count, failed_count, processed_count)
@@ -139,11 +150,12 @@ async def _process_single_batch(
     candidates_to_promote: list[UUID] = []
 
     for candidate in batch:
+        cid = candidate.id
         rating = extract_high_confidence_rating(candidate.predicted_ratings, threshold)
         if rating is not None:
-            batch_updates.append({"id": candidate.id, "rating": rating})
+            batch_updates.append({"id": cid, "rating": rating})
             if auto_promote:
-                candidates_to_promote.append(candidate.id)
+                candidates_to_promote.append(cid)
             processed_count += 1
 
     if batch_updates:
@@ -167,9 +179,10 @@ async def _process_single_batch(
     if auto_promote and candidates_to_promote:
         for candidate_id in candidates_to_promote:
             try:
-                promoted = await promote_candidate(db, candidate_id)
-                if promoted:
-                    promoted_count += 1
+                async with db.begin_nested():
+                    promoted = await promote_candidate(db, candidate_id)
+                    if promoted:
+                        promoted_count += 1
             except Exception as e:
                 failed_count += 1
                 if len(errors) < MAX_STORED_ERRORS:
@@ -308,6 +321,19 @@ def process_approval_batch_step(
     return run_sync(_process())
 
 
+def _finalize_and_warn(
+    job_uuid: UUID,
+    workflow_id: str,
+    batch_job_id: str,
+    **kwargs: Any,
+) -> None:
+    if not finalize_batch_job_sync(job_uuid, **kwargs):
+        logger.warning(
+            "finalize_batch_job_sync returned False",
+            extra={"workflow_id": workflow_id, "batch_job_id": batch_job_id},
+        )
+
+
 @DBOS.workflow()
 def bulk_approval_workflow(
     batch_job_id: str,
@@ -333,11 +359,21 @@ def bulk_approval_workflow(
     lifecycle (start/finalize), so they must finalize before exiting.
     Rechunk workflows delegate finalization to the caller on circuit trip.
 
+    Retry / limit interaction: ``limit`` is approximate across DBOS step
+    retries.  If ``process_approval_batch_step`` commits but fails before
+    returning, DBOS replays the step.  The cursor-based pagination and the
+    ``rating IS NULL`` filter naturally skip already-approved candidates,
+    so duplicates are not produced.  However the in-memory ``remaining``
+    counter is not refreshed from the DB, so the final approved count may
+    slightly exceed ``limit``.  For exact post-hoc counts query the
+    BatchJob record.
+
     Args:
         batch_job_id: UUID of the BatchJob record (as string)
         threshold: Minimum prediction probability to approve (0.0-1.0)
         auto_promote: Whether to promote approved candidates
-        limit: Maximum number of candidates to approve
+        limit: Maximum candidates to scan (approve up to N; see module
+            docstring for semantics)
         status: Filter by candidate status
         dataset_name: Filter by dataset name
         dataset_tags: Filter by dataset tags
@@ -382,8 +418,10 @@ def bulk_approval_workflow(
             "Failed to start batch job - aborting workflow",
             extra={"workflow_id": workflow_id, "batch_job_id": batch_job_id},
         )
-        finalize_batch_job_sync(
+        _finalize_and_warn(
             job_uuid,
+            workflow_id,
+            batch_job_id,
             success=False,
             completed_tasks=0,
             failed_tasks=0,
@@ -392,8 +430,10 @@ def bulk_approval_workflow(
         return {"updated_count": 0, "promoted_count": 0, "error": "job_start_failed"}
 
     if total_matching == 0:
-        finalize_batch_job_sync(
+        _finalize_and_warn(
             job_uuid,
+            workflow_id,
+            batch_job_id,
             success=True,
             completed_tasks=0,
             failed_tasks=0,
@@ -415,7 +455,7 @@ def bulk_approval_workflow(
     errors: list[str] = []
     last_processed_id: str | None = None
     remaining = limit
-    max_iterations = (limit // BATCH_SIZE) + 10
+    max_iterations = (limit // BATCH_SIZE) * 10 + 20
     iteration_count = 0
 
     while remaining > 0 and iteration_count < max_iterations:
@@ -463,7 +503,7 @@ def bulk_approval_workflow(
             failed_count += batch_result["failed"]
             total_scanned += batch_result["scanned"]
             last_processed_id = batch_result["last_id"]
-            remaining -= batch_result["processed"]
+            remaining -= batch_result["scanned"]
             errors = batch_result["errors"]
 
             circuit_breaker.record_success()
@@ -531,8 +571,10 @@ def bulk_approval_workflow(
         if circuit_breaker_tripped:
             error_summary["circuit_breaker_tripped"] = True
 
-    finalize_batch_job_sync(
+    _finalize_and_warn(
         job_uuid,
+        workflow_id,
+        batch_job_id,
         success=success,
         completed_tasks=updated_count,
         failed_tasks=failed_count,
