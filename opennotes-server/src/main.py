@@ -27,6 +27,7 @@ if _otel_settings.ENABLE_TRACING and not _otel_settings.TESTING:
         otlp_insecure=_otel_settings.OTLP_INSECURE,
         sample_rate=_otel_settings.TRACING_SAMPLE_RATE,
         enable_console_export=_otel_settings.ENABLE_CONSOLE_TRACING,
+        use_gcp_exporters=_otel_settings.USE_GCP_EXPORTERS,
     )
 
 LoggingInstrumentor().instrument(set_logging_format=False)
@@ -133,7 +134,7 @@ initialize_instance_metadata(
 logger.info(f"Instance metadata initialized: {settings.INSTANCE_ID}")
 
 if settings.TRACELOOP_ENABLED and not settings.TESTING:
-    from src.monitoring.otel import get_otlp_exporter
+    from src.monitoring.otel import get_span_exporter
     from src.monitoring.traceloop import setup_traceloop
 
     setup_traceloop(
@@ -145,7 +146,7 @@ if settings.TRACELOOP_ENABLED and not settings.TESTING:
         otlp_endpoint=settings.OTLP_ENDPOINT,
         otlp_headers=settings.OTLP_HEADERS,
         trace_content=settings.TRACELOOP_TRACE_CONTENT,
-        exporter=get_otlp_exporter(),
+        exporter=get_span_exporter(),
     )
 
 health_checker = HealthChecker(

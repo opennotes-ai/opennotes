@@ -42,8 +42,6 @@ class TestTraceloopGcpExporters:
         assert "metrics_exporter" in init_kwargs
         assert init_kwargs["metrics_exporter"] is not None
 
-        traceloop_mod._traceloop_configured = False
-
     @patch(GCP_DETECTOR_PATH, return_value=True)
     @patch(TRACELOOP_PATH)
     def test_passes_gcp_logging_exporter_on_cloud_run(
@@ -81,8 +79,6 @@ class TestTraceloopGcpExporters:
         assert "logging_exporter" in init_kwargs
         assert init_kwargs["logging_exporter"] is not None
 
-        traceloop_mod._traceloop_configured = False
-
     @patch(GCP_DETECTOR_PATH, return_value=False)
     @patch(TRACELOOP_PATH)
     def test_no_gcp_exporters_when_not_on_cloud_run(self, mock_traceloop_cls, mock_is_gcp) -> None:
@@ -104,8 +100,6 @@ class TestTraceloopGcpExporters:
         init_kwargs = mock_traceloop_cls.init.call_args[1]
         assert "metrics_exporter" not in init_kwargs
         assert "logging_exporter" not in init_kwargs
-
-        traceloop_mod._traceloop_configured = False
 
 
 class TestTraceloopGcpImportError:
@@ -141,5 +135,3 @@ class TestTraceloopGcpImportError:
         init_kwargs = mock_traceloop_cls.init.call_args[1]
         assert "metrics_exporter" not in init_kwargs
         assert "logging_exporter" not in init_kwargs
-
-        traceloop_mod._traceloop_configured = False

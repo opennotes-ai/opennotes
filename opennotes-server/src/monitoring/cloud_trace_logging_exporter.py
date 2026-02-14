@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import google.cloud.logging as google_cloud_logging
 from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
@@ -49,13 +49,18 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
 
         return super().export(spans)
 
+    def shutdown(self) -> None:
+        super().shutdown()
+        if self._logging_client:
+            self._logging_client.close()
+
     def _process_span(self, span: ReadableSpan) -> None:
-        attrs = cast(dict[str, Any], span._attributes)  # pyright: ignore[reportPrivateUsage]
-        if attrs is None:
+        original_attrs = span._attributes  # pyright: ignore[reportPrivateUsage]
+        if original_attrs is None:
             return
 
         large_attrs: dict[str, str] = {}
-        for key, value in attrs.items():
+        for key, value in original_attrs.items():
             if isinstance(value, str) and len(value) > self.max_attribute_length:
                 large_attrs[key] = value
 
@@ -81,13 +86,18 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
             )
         except Exception:
             logger.warning("Failed to log span attributes to Cloud Logging", exc_info=True)
+            return
 
+        modified_attrs = dict(original_attrs)
         cloud_logging_url = CLOUD_LOGGING_URL_TEMPLATE.format(
             span_id=span_id,
             project_id=self.project_id,
         )
 
-        for key, original_value in large_attrs.items():
-            attrs[key] = original_value[: self.max_attribute_length] + "...[see Cloud Logging]"
+        for key in large_attrs:
+            modified_attrs[key] = (
+                modified_attrs[key][: self.max_attribute_length] + "...[see Cloud Logging]"
+            )
 
-        attrs["cloud_logging_url"] = cloud_logging_url
+        modified_attrs["cloud_logging_url"] = cloud_logging_url
+        span._attributes = modified_attrs  # pyright: ignore[reportPrivateUsage]
