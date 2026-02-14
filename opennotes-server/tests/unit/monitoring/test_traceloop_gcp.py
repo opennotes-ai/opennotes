@@ -15,7 +15,19 @@ class TestTraceloopGcpExporters:
         traceloop_mod._traceloop_configured = False
 
         mock_exporter = MagicMock()
-        with patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False):
+        mock_metrics_cls = MagicMock()
+        mock_logging_cls = MagicMock()
+        with (
+            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch(
+                "opentelemetry.exporter.cloud_monitoring.CloudMonitoringMetricsExporter",
+                mock_metrics_cls,
+            ),
+            patch(
+                "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
+                mock_logging_cls,
+            ),
+        ):
             result = traceloop_mod.setup_traceloop(
                 app_name="test",
                 service_name="test-service",
@@ -42,7 +54,19 @@ class TestTraceloopGcpExporters:
         traceloop_mod._traceloop_configured = False
 
         mock_exporter = MagicMock()
-        with patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False):
+        mock_metrics_cls = MagicMock()
+        mock_logging_cls = MagicMock()
+        with (
+            patch.dict("os.environ", {"K_SERVICE": "test"}, clear=False),
+            patch(
+                "opentelemetry.exporter.cloud_monitoring.CloudMonitoringMetricsExporter",
+                mock_metrics_cls,
+            ),
+            patch(
+                "opentelemetry.exporter.cloud_logging.CloudLoggingExporter",
+                mock_logging_cls,
+            ),
+        ):
             result = traceloop_mod.setup_traceloop(
                 app_name="test",
                 service_name="test-service",

@@ -145,7 +145,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
-"tests/**/*.py" = ["PLR2004", "S101", "ARG002", "PLR0912", "PLC0415"]
+"tests/**/*.py" = ["PLR2004", "S101", "ARG002", "PLR0912", "PLC0415", "PT019"]
 "alembic/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in migrations
 "scripts/**/*.py" = ["PLC0415", "ERA001"]  # Lazy imports and commented code OK in scripts
 "src/tasks/**/*.py" = ["PLC0415"]  # Lazy imports required for TaskIQ tasks to avoid import-time settings validation

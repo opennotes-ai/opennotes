@@ -37,9 +37,13 @@ def _make_span(
 
 
 class TestExportDelegatesToParent:
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_export_calls_parent_export(self, mock_gcl, mock_parent_export) -> None:
+    def test_export_calls_parent_export(self, mock_gcl, mock_parent_export, _mock_init) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
         mock_gcl.Client.return_value = mock_logging_client
@@ -57,9 +61,13 @@ class TestExportDelegatesToParent:
         assert result == SpanExportResult.SUCCESS
         mock_parent_export.assert_called_once()
 
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_export_returns_parent_result(self, mock_gcl, mock_parent_export) -> None:
+    def test_export_returns_parent_result(self, mock_gcl, mock_parent_export, _mock_init) -> None:
         mock_parent_export.return_value = SpanExportResult.FAILURE
         mock_logging_client = MagicMock()
 
@@ -77,9 +85,15 @@ class TestExportDelegatesToParent:
 
 
 class TestCloudLoggingIntegration:
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_logs_large_attributes_to_cloud_logging(self, mock_gcl, mock_parent_export) -> None:
+    def test_logs_large_attributes_to_cloud_logging(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
         mock_logger = MagicMock()
@@ -101,9 +115,15 @@ class TestCloudLoggingIntegration:
         logged_data = mock_logger.log_struct.call_args[0][0]
         assert logged_data["big_attr"] == large_value
 
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_does_not_log_when_no_large_attributes(self, mock_gcl, mock_parent_export) -> None:
+    def test_does_not_log_when_no_large_attributes(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
         mock_logger = MagicMock()
@@ -122,10 +142,14 @@ class TestCloudLoggingIntegration:
 
         mock_logger.log_struct.assert_not_called()
 
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
     def test_log_struct_labels_include_span_and_trace_ids(
-        self, mock_gcl, mock_parent_export
+        self, mock_gcl, mock_parent_export, _mock_init
     ) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
@@ -151,9 +175,15 @@ class TestCloudLoggingIntegration:
 
 
 class TestCloudLoggingUrl:
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_adds_cloud_logging_url_attribute_to_span(self, mock_gcl, mock_parent_export) -> None:
+    def test_adds_cloud_logging_url_attribute_to_span(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
         mock_logger = MagicMock()
@@ -174,9 +204,13 @@ class TestCloudLoggingUrl:
         span = exported_spans[0]
         assert "cloud_logging_url" in span._attributes
 
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_cloud_logging_url_format(self, mock_gcl, mock_parent_export) -> None:
+    def test_cloud_logging_url_format(self, mock_gcl, mock_parent_export, _mock_init) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
         mock_logger = MagicMock()
@@ -201,10 +235,14 @@ class TestCloudLoggingUrl:
 
 
 class TestTruncation:
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
     def test_large_attribute_values_truncated_before_cloud_trace(
-        self, mock_gcl, mock_parent_export
+        self, mock_gcl, mock_parent_export, _mock_init
     ) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
@@ -263,9 +301,15 @@ class TestProjectIdDetection:
 
 
 class TestMultipleSpans:
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_only_logs_spans_with_large_attributes(self, mock_gcl, mock_parent_export) -> None:
+    def test_only_logs_spans_with_large_attributes(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
         mock_logger = MagicMock()
@@ -290,9 +334,15 @@ class TestMultipleSpans:
 
 
 class TestLoggingFailureDoesNotBlockExport:
+    @patch(
+        "src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.__init__",
+        return_value=None,
+    )
     @patch("src.monitoring.cloud_trace_logging_exporter.CloudTraceSpanExporter.export")
     @patch("src.monitoring.cloud_trace_logging_exporter.google_cloud_logging")
-    def test_export_succeeds_even_if_logging_fails(self, mock_gcl, mock_parent_export) -> None:
+    def test_export_succeeds_even_if_logging_fails(
+        self, mock_gcl, mock_parent_export, _mock_init
+    ) -> None:
         mock_parent_export.return_value = SpanExportResult.SUCCESS
         mock_logging_client = MagicMock()
         mock_logger = MagicMock()

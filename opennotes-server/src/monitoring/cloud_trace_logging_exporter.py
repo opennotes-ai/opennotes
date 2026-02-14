@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import google.cloud.logging as google_cloud_logging
 from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
@@ -50,11 +50,11 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
         return super().export(spans)
 
     def _process_span(self, span: ReadableSpan) -> None:
-        attrs = span._attributes  # pyright: ignore[reportAttributeAccessIssue]
+        attrs = cast(dict[str, Any], span._attributes)  # pyright: ignore[reportPrivateUsage]
         if attrs is None:
             return
 
-        large_attrs: dict[str, Any] = {}
+        large_attrs: dict[str, str] = {}
         for key, value in attrs.items():
             if isinstance(value, str) and len(value) > self.max_attribute_length:
                 large_attrs[key] = value
@@ -63,6 +63,8 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
             return
 
         span_ctx = span.get_span_context()
+        if span_ctx is None:
+            return
         span_id = format(span_ctx.span_id, "016x")
         trace_id = format(span_ctx.trace_id, "032x")
 
@@ -85,8 +87,7 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
             project_id=self.project_id,
         )
 
-        for key in large_attrs:
-            truncated = attrs[key][: self.max_attribute_length] + "...[see Cloud Logging]"
-            attrs[key] = truncated
+        for key, original_value in large_attrs.items():
+            attrs[key] = original_value[: self.max_attribute_length] + "...[see Cloud Logging]"
 
         attrs["cloud_logging_url"] = cloud_logging_url
