@@ -139,7 +139,7 @@ def _monitor_stuck_jobs_sync(
 def cleanup_stale_batch_jobs_workflow(
     scheduled_time: datetime,
     actual_time: datetime,
-) -> dict[str, Any]:
+) -> None:
     """Scheduled workflow to clean up stale batch jobs.
 
     Runs weekly (Sunday midnight UTC) to mark jobs stuck in PENDING or
@@ -167,7 +167,6 @@ def cleanup_stale_batch_jobs_workflow(
                 "scheduled_time": scheduled_time.isoformat(),
             },
         )
-        return result
     except Exception as e:
         logger.error(
             "Scheduled stale job cleanup failed",
@@ -184,7 +183,7 @@ def cleanup_stale_batch_jobs_workflow(
 def monitor_stuck_batch_jobs_workflow(
     scheduled_time: datetime,
     actual_time: datetime,
-) -> dict[str, Any]:
+) -> None:
     """Scheduled workflow to monitor for stuck batch jobs.
 
     Runs every 15 minutes to check for jobs that appear stuck (in non-terminal
@@ -217,7 +216,6 @@ def monitor_stuck_batch_jobs_workflow(
                 "scheduled_time": scheduled_time.isoformat(),
             },
         )
-        return result
     except Exception as e:
         logger.error(
             "Scheduled stuck jobs monitor failed",
