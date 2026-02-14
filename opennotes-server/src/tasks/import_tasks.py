@@ -36,7 +36,7 @@ PROGRESS_UPDATE_INTERVAL = 100
 def _check_row_accounting(
     job_id: str,
     stats: ImportStats,
-    span: Any,
+    span: Any = None,
 ) -> bool:
     """Check row accounting integrity and log errors if mismatched.
 
@@ -61,8 +61,9 @@ def _check_row_accounting(
             "missing_percentage": missing_pct,
         },
     )
-    span.set_attribute("import.row_mismatch", True)
-    span.set_attribute("import.missing_rows", missing)
+    if span is not None:
+        span.set_attribute("import.row_mismatch", True)
+        span.set_attribute("import.missing_rows", missing)
     return False
 
 

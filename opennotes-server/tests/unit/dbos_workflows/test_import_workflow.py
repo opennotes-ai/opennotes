@@ -62,7 +62,7 @@ class TestWorkflowNameConstants:
 
 class TestAggregateErrors:
     def test_returns_all_errors_within_limit(self) -> None:
-        from src.dbos_workflows.import_workflow import _aggregate_errors
+        from src.tasks.import_tasks import _aggregate_errors
 
         errors = ["error1", "error2", "error3"]
         result = _aggregate_errors(errors)
@@ -72,7 +72,7 @@ class TestAggregateErrors:
         assert result["truncated"] is False
 
     def test_truncates_errors_over_limit(self) -> None:
-        from src.dbos_workflows.import_workflow import _aggregate_errors
+        from src.tasks.import_tasks import _aggregate_errors
 
         errors = [f"error_{i}" for i in range(100)]
         result = _aggregate_errors(errors, max_errors=10)
@@ -82,7 +82,7 @@ class TestAggregateErrors:
         assert result["truncated"] is True
 
     def test_empty_errors(self) -> None:
-        from src.dbos_workflows.import_workflow import _aggregate_errors
+        from src.tasks.import_tasks import _aggregate_errors
 
         result = _aggregate_errors([])
 
@@ -420,23 +420,24 @@ class TestDispatchImportWorkflow:
         mock_to_thread.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_failure(self) -> None:
+    async def test_raises_on_failure(self) -> None:
         from src.dbos_workflows.import_workflow import dispatch_import_workflow
 
         batch_job_id = uuid4()
 
-        with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            side_effect=ConnectionError("DBOS unavailable"),
+        with (
+            patch(
+                "src.dbos_workflows.config.get_dbos_client",
+                side_effect=ConnectionError("DBOS unavailable"),
+            ),
+            pytest.raises(ConnectionError, match="DBOS unavailable"),
         ):
-            result = await dispatch_import_workflow(
+            await dispatch_import_workflow(
                 batch_job_id=batch_job_id,
                 batch_size=1000,
                 dry_run=False,
                 enqueue_scrapes=False,
             )
-
-        assert result is None
 
 
 class TestDispatchScrapeWorkflow:
@@ -473,22 +474,23 @@ class TestDispatchScrapeWorkflow:
         assert result == "wf-456"
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_failure(self) -> None:
+    async def test_raises_on_failure(self) -> None:
         from src.dbos_workflows.import_workflow import dispatch_scrape_workflow
 
         batch_job_id = uuid4()
 
-        with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            side_effect=RuntimeError("Connection refused"),
+        with (
+            patch(
+                "src.dbos_workflows.config.get_dbos_client",
+                side_effect=RuntimeError("Connection refused"),
+            ),
+            pytest.raises(RuntimeError, match="Connection refused"),
         ):
-            result = await dispatch_scrape_workflow(
+            await dispatch_scrape_workflow(
                 batch_job_id=batch_job_id,
                 batch_size=500,
                 dry_run=False,
             )
-
-        assert result is None
 
 
 class TestDispatchPromoteWorkflow:
@@ -523,22 +525,23 @@ class TestDispatchPromoteWorkflow:
         assert result == "wf-789"
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_failure(self) -> None:
+    async def test_raises_on_failure(self) -> None:
         from src.dbos_workflows.import_workflow import dispatch_promote_workflow
 
         batch_job_id = uuid4()
 
-        with patch(
-            "src.dbos_workflows.config.get_dbos_client",
-            side_effect=TimeoutError("DBOS timeout"),
+        with (
+            patch(
+                "src.dbos_workflows.config.get_dbos_client",
+                side_effect=TimeoutError("DBOS timeout"),
+            ),
+            pytest.raises(TimeoutError, match="DBOS timeout"),
         ):
-            result = await dispatch_promote_workflow(
+            await dispatch_promote_workflow(
                 batch_job_id=batch_job_id,
                 batch_size=500,
                 dry_run=False,
             )
-
-        assert result is None
 
 
 class TestDeprecatedTaskIQStubs:

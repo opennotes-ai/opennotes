@@ -456,16 +456,16 @@ class TestDispatchFailure:
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
 
-        mock_dispatch.return_value = None
+        mock_dispatch.side_effect = RuntimeError("DBOS connection failed")
 
-        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
+        with pytest.raises(RuntimeError, match="DBOS connection failed"):
             await import_service.start_scrape_job()
 
         mock_batch_job_service.fail_job.assert_called_once()
         fail_call = mock_batch_job_service.fail_job.call_args
         assert fail_call[0][0] == job_id
-        assert "DBOS workflow dispatch returned None" in fail_call[1]["error_summary"]["error"]
-        assert fail_call[1]["error_summary"]["stage"] == "task_dispatch"
+        assert "DBOS connection failed" in fail_call[1]["error_summary"]["error"]
+        assert fail_call[1]["error_summary"]["stage"] == "workflow_dispatch"
 
     @pytest.mark.asyncio
     @patch("src.dbos_workflows.import_workflow.dispatch_promote_workflow")
@@ -508,7 +508,7 @@ class TestDispatchFailure:
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
 
-        mock_dispatch.return_value = None
+        mock_dispatch.side_effect = RuntimeError("DBOS connection failed")
 
         with pytest.raises(RuntimeError):
             await import_service.start_scrape_job()
@@ -542,10 +542,10 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
 
-        mock_dispatch.return_value = None
+        mock_dispatch.side_effect = RuntimeError("DBOS connection refused")
         mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
 
-        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
+        with pytest.raises(RuntimeError, match="DBOS connection refused"):
             await import_service.start_import_job()
 
         mock_logger.exception.assert_called_once()
@@ -570,10 +570,10 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
 
-        mock_dispatch.return_value = None
+        mock_dispatch.side_effect = RuntimeError("DBOS connection refused")
         mock_batch_job_service.fail_job = AsyncMock(side_effect=ValueError("DB connection lost"))
 
-        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
+        with pytest.raises(RuntimeError, match="DBOS connection refused"):
             await import_service.start_scrape_job()
 
         mock_logger.exception.assert_called_once()
@@ -626,7 +626,7 @@ class TestExceptionHandlingDuringJobFailure:
         mock_job.id = job_id
         mock_batch_job_service.create_job.return_value = mock_job
 
-        mock_dispatch.return_value = None
+        mock_dispatch.side_effect = RuntimeError("DBOS connection refused")
 
         commit_call_count = 0
 
@@ -638,7 +638,7 @@ class TestExceptionHandlingDuringJobFailure:
 
         mock_session.commit = AsyncMock(side_effect=commit_side_effect)
 
-        with pytest.raises(RuntimeError, match="DBOS workflow dispatch returned None"):
+        with pytest.raises(RuntimeError, match="DBOS connection refused"):
             await import_service.start_scrape_job()
 
         mock_logger.exception.assert_called_once()

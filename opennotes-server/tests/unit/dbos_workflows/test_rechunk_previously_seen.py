@@ -98,11 +98,11 @@ class TestChunkAndEmbedPreviouslySeenSync:
         with (
             patch("src.dbos_workflows.rechunk_workflow.run_sync") as mock_run_sync,
             patch(
-                "src.tasks.rechunk_tasks.get_chunk_embedding_service",
+                "src.dbos_workflows.rechunk_workflow.get_chunk_embedding_service",
                 return_value=mock_service,
             ),
             patch(
-                "src.fact_checking.chunking_service.use_chunking_service_sync",
+                "src.dbos_workflows.rechunk_workflow.use_chunking_service_sync",
                 side_effect=mock_use_chunking_sync,
             ),
         ):
@@ -116,6 +116,7 @@ class TestChunkAndEmbedPreviouslySeenSync:
             assert result["chunks_created"] == 3
             assert mock_run_sync.call_count == 2
             mock_chunking_service.chunk_text.assert_called_once_with("some text content")
+            mock_service.chunk_and_embed_previously_seen.assert_not_called()
 
     def test_returns_zero_chunks_for_empty_content(self) -> None:
         from src.dbos_workflows.rechunk_workflow import (
@@ -130,7 +131,7 @@ class TestChunkAndEmbedPreviouslySeenSync:
         with (
             patch("src.dbos_workflows.rechunk_workflow.run_sync") as mock_run_sync,
             patch(
-                "src.tasks.rechunk_tasks.get_chunk_embedding_service",
+                "src.dbos_workflows.rechunk_workflow.get_chunk_embedding_service",
                 return_value=mock_service,
             ),
         ):
@@ -386,8 +387,13 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
             mock_service.start_job.assert_called_once()
             mock_service.set_workflow_id.assert_called_once()
 
+            stmt_arg = mock_db.execute.call_args[0][0]
+            compiled = str(stmt_arg.compile(compile_kwargs={"literal_binds": True}))
+            assert "community_server_id" in compiled
+            assert community_server_id.hex in compiled
+
     @pytest.mark.asyncio
-    async def test_raises_value_error_when_no_items(self) -> None:
+    async def test_returns_completed_job_when_no_items(self) -> None:
         from src.dbos_workflows.rechunk_workflow import (
             dispatch_dbos_previously_seen_rechunk_workflow,
         )
@@ -398,11 +404,30 @@ class TestDispatchPreviouslySeenRechunkWorkflow:
         mock_result = MagicMock()
         mock_result.fetchall.return_value = []
         mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+        mock_db.refresh = AsyncMock()
 
-        with pytest.raises(ValueError, match="No previously-seen messages to process"):
-            await dispatch_dbos_previously_seen_rechunk_workflow(
+        mock_job = MagicMock()
+        mock_job.id = uuid4()
+
+        with patch("src.dbos_workflows.rechunk_workflow.BatchJobService") as mock_batch_job_cls:
+            mock_service = mock_batch_job_cls.return_value
+            mock_service.create_job = AsyncMock(return_value=mock_job)
+            mock_service.start_job = AsyncMock()
+            mock_service.complete_job = AsyncMock()
+
+            result = await dispatch_dbos_previously_seen_rechunk_workflow(
                 db=mock_db,
                 community_server_id=community_server_id,
+            )
+
+            assert result == mock_job.id
+            mock_service.create_job.assert_called_once()
+            create_arg = mock_service.create_job.call_args[0][0]
+            assert create_arg.total_tasks == 0
+            mock_service.start_job.assert_called_once_with(mock_job.id)
+            mock_service.complete_job.assert_called_once_with(
+                mock_job.id, completed_tasks=0, failed_tasks=0
             )
 
     @pytest.mark.asyncio

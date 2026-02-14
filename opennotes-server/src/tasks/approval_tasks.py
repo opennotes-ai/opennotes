@@ -35,6 +35,7 @@ async def process_bulk_approval(*args: Any, **kwargs: Any) -> dict[str, Any]:
             "task_name": BULK_APPROVAL_JOB_TYPE,
             "args_count": len(args),
             "kwargs_keys": list(kwargs.keys()) if kwargs else [],
+            "job_id": kwargs.get("job_id") if kwargs else None,
             "migration_note": "Task migrated to DBOS in TASK-1096",
         },
     )

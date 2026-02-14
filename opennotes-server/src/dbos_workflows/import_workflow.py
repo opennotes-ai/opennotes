@@ -27,19 +27,16 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
-from dbos import DBOS, Queue
+from dbos import DBOS, EnqueueOptions, Queue
 
 from src.batch_jobs.constants import (
     DEFAULT_SCRAPE_CONCURRENCY,
 )
 from src.monitoring import get_logger
 from src.utils.async_compat import run_sync
-
-if TYPE_CHECKING:
-    pass
 
 logger = get_logger(__name__)
 
@@ -49,12 +46,9 @@ import_pipeline_queue = Queue(
     concurrency=3,
 )
 
-MAX_STORED_ERRORS = 50
 SCRAPING_TIMEOUT_MINUTES = 120
 PROMOTING_TIMEOUT_MINUTES = 120
 PROGRESS_UPDATE_INTERVAL = 100
-CIRCUIT_BREAKER_THRESHOLD = 10
-CIRCUIT_BREAKER_RESET_TIMEOUT = 60
 
 
 def _update_batch_job_progress_sync(
@@ -105,7 +99,7 @@ def _finalize_batch_job_sync(
             service = BatchJobService(db)
             job = await service.get_job(batch_job_id)
             if job and stats:
-                job.metadata_ = {**job.metadata_, "stats": stats}  # pyright: ignore[reportAttributeAccessIssue]
+                job.metadata_ = {**(job.metadata_ or {}), "stats": stats}  # pyright: ignore[reportAttributeAccessIssue]
             if success:
                 await service.complete_job(
                     batch_job_id,
@@ -183,17 +177,6 @@ def _update_job_total_tasks_sync(batch_job_id: UUID, total_tasks: int) -> bool:
             },
         )
         return False
-
-
-def _aggregate_errors(
-    errors: list[str],
-    max_errors: int = MAX_STORED_ERRORS,
-) -> dict[str, Any]:
-    return {
-        "validation_errors": errors[:max_errors],
-        "total_validation_errors": len(errors),
-        "truncated": len(errors) > max_errors,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -296,11 +279,7 @@ def import_csv_step(
                     },
                 )
 
-        class _FakeSpan:
-            def set_attribute(self, key: str, value: Any) -> None:
-                pass
-
-        _check_row_accounting(batch_job_id, stats, _FakeSpan())
+        _check_row_accounting(batch_job_id, stats)
 
         final_stats: dict[str, Any] = {
             "total_rows": stats.total_rows,
@@ -312,6 +291,8 @@ def import_csv_step(
         }
 
         if all_errors:
+            from src.tasks.import_tasks import _aggregate_errors
+
             final_stats["errors"] = _aggregate_errors(all_errors)
 
         if enqueue_scrapes and not dry_run:
@@ -531,6 +512,8 @@ def process_scrape_batch_step(
                 _semaphore: asyncio.Semaphore = semaphore,
             ) -> tuple[bool, str | None]:
                 async with _semaphore:
+                    if base_delay > 0:
+                        await asyncio.sleep(base_delay)
                     content = await asyncio.to_thread(scrape_url_content, source_url)
 
                     async with session_maker() as db:
@@ -942,44 +925,32 @@ async def dispatch_import_workflow(
     batch_size: int,
     dry_run: bool,
     enqueue_scrapes: bool,
-) -> str | None:
+) -> str:
     from src.dbos_workflows.config import get_dbos_client
 
-    try:
-        client = get_dbos_client()
-        options = {
-            "queue_name": "import_pipeline",
-            "workflow_name": FACT_CHECK_IMPORT_WORKFLOW_NAME,
-        }
-        handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
-            str(batch_job_id),
-            batch_size,
-            dry_run,
-            enqueue_scrapes,
-        )
+    client = get_dbos_client()
+    options: EnqueueOptions = {
+        "queue_name": "import_pipeline",
+        "workflow_name": FACT_CHECK_IMPORT_WORKFLOW_NAME,
+    }
+    handle = await asyncio.to_thread(
+        client.enqueue,
+        options,
+        str(batch_job_id),
+        batch_size,
+        dry_run,
+        enqueue_scrapes,
+    )
 
-        logger.info(
-            "Import workflow dispatched via DBOS",
-            extra={
-                "batch_job_id": str(batch_job_id),
-                "workflow_id": handle.workflow_id,
-            },
-        )
+    logger.info(
+        "Import workflow dispatched via DBOS",
+        extra={
+            "batch_job_id": str(batch_job_id),
+            "workflow_id": handle.workflow_id,
+        },
+    )
 
-        return handle.workflow_id
-
-    except Exception as e:
-        logger.error(
-            "Failed to dispatch import workflow via DBOS",
-            extra={
-                "batch_job_id": str(batch_job_id),
-                "error": str(e),
-            },
-            exc_info=True,
-        )
-        return None
+    return handle.workflow_id
 
 
 async def dispatch_scrape_workflow(
@@ -988,88 +959,64 @@ async def dispatch_scrape_workflow(
     dry_run: bool,
     concurrency: int = DEFAULT_SCRAPE_CONCURRENCY,
     base_delay: float = 1.0,
-) -> str | None:
+) -> str:
     from src.dbos_workflows.config import get_dbos_client
 
-    try:
-        client = get_dbos_client()
-        options = {
-            "queue_name": "import_pipeline",
-            "workflow_name": SCRAPE_CANDIDATES_WORKFLOW_NAME,
-        }
-        handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
-            str(batch_job_id),
-            batch_size,
-            dry_run,
-            concurrency,
-            base_delay,
-        )
+    client = get_dbos_client()
+    options: EnqueueOptions = {
+        "queue_name": "import_pipeline",
+        "workflow_name": SCRAPE_CANDIDATES_WORKFLOW_NAME,
+    }
+    handle = await asyncio.to_thread(
+        client.enqueue,
+        options,
+        str(batch_job_id),
+        batch_size,
+        dry_run,
+        concurrency,
+        base_delay,
+    )
 
-        logger.info(
-            "Scrape workflow dispatched via DBOS",
-            extra={
-                "batch_job_id": str(batch_job_id),
-                "workflow_id": handle.workflow_id,
-            },
-        )
+    logger.info(
+        "Scrape workflow dispatched via DBOS",
+        extra={
+            "batch_job_id": str(batch_job_id),
+            "workflow_id": handle.workflow_id,
+        },
+    )
 
-        return handle.workflow_id
-
-    except Exception as e:
-        logger.error(
-            "Failed to dispatch scrape workflow via DBOS",
-            extra={
-                "batch_job_id": str(batch_job_id),
-                "error": str(e),
-            },
-            exc_info=True,
-        )
-        return None
+    return handle.workflow_id
 
 
 async def dispatch_promote_workflow(
     batch_job_id: UUID,
     batch_size: int,
     dry_run: bool,
-) -> str | None:
+) -> str:
     from src.dbos_workflows.config import get_dbos_client
 
-    try:
-        client = get_dbos_client()
-        options = {
-            "queue_name": "import_pipeline",
-            "workflow_name": PROMOTE_CANDIDATES_WORKFLOW_NAME,
-        }
-        handle = await asyncio.to_thread(
-            client.enqueue,
-            options,
-            str(batch_job_id),
-            batch_size,
-            dry_run,
-        )
+    client = get_dbos_client()
+    options: EnqueueOptions = {
+        "queue_name": "import_pipeline",
+        "workflow_name": PROMOTE_CANDIDATES_WORKFLOW_NAME,
+    }
+    handle = await asyncio.to_thread(
+        client.enqueue,
+        options,
+        str(batch_job_id),
+        batch_size,
+        dry_run,
+    )
 
-        logger.info(
-            "Promote workflow dispatched via DBOS",
-            extra={
-                "batch_job_id": str(batch_job_id),
-                "workflow_id": handle.workflow_id,
-            },
-        )
+    logger.info(
+        "Promote workflow dispatched via DBOS",
+        extra={
+            "batch_job_id": str(batch_job_id),
+            "workflow_id": handle.workflow_id,
+        },
+    )
 
-        return handle.workflow_id
-
-    except Exception as e:
-        logger.error(
-            "Failed to dispatch promote workflow via DBOS",
-            extra={
-                "batch_job_id": str(batch_job_id),
-                "error": str(e),
-            },
-            exc_info=True,
-        )
-        return None
+    return handle.workflow_id
 
 
 FACT_CHECK_IMPORT_WORKFLOW_NAME: str = fact_check_import_workflow.__qualname__

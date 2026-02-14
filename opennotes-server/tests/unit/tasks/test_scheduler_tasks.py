@@ -1,13 +1,11 @@
-"""Unit tests for deprecated scheduler tasks (stubs).
+"""Unit tests for deprecated scheduler tasks (no-op stubs).
 
-Tests that the TaskIQ scheduler task registrations still exist
-for backward compatibility, even though the real logic has moved
-to DBOS scheduled workflows (src/dbos_workflows/scheduler_workflows.py).
+Tests that the TaskIQ scheduler task registrations exist as no-op stubs
+for backward compatibility, and that they do NOT delegate to DBOS helpers.
+The real logic lives in src/dbos_workflows/scheduler_workflows.py.
 
-Task: task-1097 - Migrate scheduler tasks to DBOS scheduled workflows
+Task: TASK-1097.01 - Address review findings in scheduler DBOS workflows
 """
-
-from unittest.mock import patch
 
 import pytest
 
@@ -40,15 +38,15 @@ class TestSchedulerTaskRegistration:
         assert schedule[0]["cron"] == "0 0 * * 0"
         assert schedule[0]["schedule_id"] == "weekly_stale_job_cleanup"
 
-    def test_cleanup_stale_batch_jobs_task_has_correct_labels(self):
-        """Verify cleanup_stale_batch_jobs_task has correct component and task_type labels."""
+    def test_cleanup_stale_batch_jobs_task_has_deprecated_type(self):
+        """Verify cleanup_stale_batch_jobs_task is marked as deprecated."""
         import src.tasks.scheduler_tasks  # noqa: F401
 
         registered_tasks = get_registered_tasks()
         _func, labels = registered_tasks["scheduler:cleanup_stale_batch_jobs"]
 
         assert labels.get("component") == "scheduler"
-        assert labels.get("task_type") == "maintenance"
+        assert labels.get("task_type") == "deprecated"
 
     def test_monitor_stuck_batch_jobs_task_is_registered(self):
         """Verify monitor_stuck_batch_jobs_task is still registered with broker."""
@@ -69,54 +67,56 @@ class TestSchedulerTaskRegistration:
         schedule = labels["schedule"]
         assert isinstance(schedule, list)
         assert len(schedule) == 1
-        assert schedule[0]["cron"] == "0 */6 * * *"
+        assert schedule[0]["cron"] == "*/15 * * * *"
         assert schedule[0]["schedule_id"] == "stuck_jobs_monitor"
+
+    def test_monitor_stuck_batch_jobs_task_has_deprecated_type(self):
+        """Verify monitor_stuck_batch_jobs_task is marked as deprecated."""
+        import src.tasks.scheduler_tasks  # noqa: F401
+
+        registered_tasks = get_registered_tasks()
+        _func, labels = registered_tasks["scheduler:monitor_stuck_batch_jobs"]
+
+        assert labels.get("component") == "scheduler"
+        assert labels.get("task_type") == "deprecated"
 
 
 @pytest.mark.unit
-class TestDeprecatedStubDelegation:
-    """Tests that deprecated stubs delegate to DBOS sync helpers."""
+class TestDeprecatedStubsAreNoOps:
+    """Tests that deprecated stubs are no-ops and do NOT delegate to DBOS helpers."""
 
     @pytest.mark.asyncio
-    async def test_cleanup_stub_delegates_to_dbos_helper(self):
-        """cleanup_stale_batch_jobs_task delegates to _cleanup_stale_jobs_sync."""
+    async def test_cleanup_stub_returns_deprecated_status(self):
+        """cleanup_stale_batch_jobs_task returns deprecated status without doing work."""
         from src.tasks.scheduler_tasks import cleanup_stale_batch_jobs_task
 
-        expected = {
-            "status": "completed",
-            "cleaned_count": 0,
-            "job_ids": [],
-            "threshold_hours": 2,
-            "executed_at": "2026-01-01T00:00:00+00:00",
-        }
+        result = await cleanup_stale_batch_jobs_task()
 
-        with patch(
-            "src.dbos_workflows.scheduler_workflows._cleanup_stale_jobs_sync",
-            return_value=expected,
-        ) as mock_cleanup:
-            result = await cleanup_stale_batch_jobs_task()
-
-        assert result == expected
-        mock_cleanup.assert_called_once_with(stale_threshold_hours=2)
+        assert result == {"status": "deprecated", "migrated_to": "dbos"}
 
     @pytest.mark.asyncio
-    async def test_monitor_stub_delegates_to_dbos_helper(self):
-        """monitor_stuck_batch_jobs_task delegates to _monitor_stuck_jobs_sync."""
+    async def test_monitor_stub_returns_deprecated_status(self):
+        """monitor_stuck_batch_jobs_task returns deprecated status without doing work."""
         from src.tasks.scheduler_tasks import monitor_stuck_batch_jobs_task
 
-        expected = {
-            "status": "completed",
-            "stuck_count": 0,
-            "threshold_minutes": 30,
-            "executed_at": "2026-01-01T00:00:00+00:00",
-            "stuck_jobs": [],
-        }
+        result = await monitor_stuck_batch_jobs_task()
 
-        with patch(
-            "src.dbos_workflows.scheduler_workflows._monitor_stuck_jobs_sync",
-            return_value=expected,
-        ) as mock_monitor:
-            result = await monitor_stuck_batch_jobs_task()
+        assert result == {"status": "deprecated", "migrated_to": "dbos"}
 
-        assert result == expected
-        mock_monitor.assert_called_once_with(threshold_minutes=30)
+    @pytest.mark.asyncio
+    async def test_cleanup_stub_accepts_arbitrary_args(self):
+        """cleanup_stale_batch_jobs_task accepts any args for legacy compatibility."""
+        from src.tasks.scheduler_tasks import cleanup_stale_batch_jobs_task
+
+        result = await cleanup_stale_batch_jobs_task("arg1", key="value")
+
+        assert result["status"] == "deprecated"
+
+    @pytest.mark.asyncio
+    async def test_monitor_stub_accepts_arbitrary_args(self):
+        """monitor_stuck_batch_jobs_task accepts any args for legacy compatibility."""
+        from src.tasks.scheduler_tasks import monitor_stuck_batch_jobs_task
+
+        result = await monitor_stuck_batch_jobs_task("arg1", key="value")
+
+        assert result["status"] == "deprecated"

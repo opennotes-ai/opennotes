@@ -6,7 +6,7 @@ when the DBOS worker is launched via DBOS.launch().
 
 Schedules:
     cleanup_stale_batch_jobs_workflow: Weekly, Sunday midnight UTC (0 0 * * 0)
-    monitor_stuck_batch_jobs_workflow: Every 6 hours (0 */6 * * *)
+    monitor_stuck_batch_jobs_workflow: Every 15 minutes (*/15 * * * *)
 """
 
 from __future__ import annotations
@@ -160,7 +160,7 @@ def cleanup_stale_batch_jobs_workflow(
         raise
 
 
-@DBOS.scheduled("0 */6 * * *")
+@DBOS.scheduled("*/15 * * * *")
 @DBOS.workflow()
 def monitor_stuck_batch_jobs_workflow(
     scheduled_time: datetime,
@@ -168,9 +168,14 @@ def monitor_stuck_batch_jobs_workflow(
 ) -> dict[str, Any]:
     """Scheduled workflow to monitor for stuck batch jobs.
 
-    Runs every 6 hours to check for jobs that appear stuck (in non-terminal
+    Runs every 15 minutes to check for jobs that appear stuck (in non-terminal
     status without recent updates). Logs warnings for any stuck jobs found.
     This is an informational check for alerting - it does NOT modify jobs.
+
+    Frequency rationale: The stuck-job threshold is 30 minutes. Running every
+    15 minutes ensures detection within at most 45 minutes (threshold + poll).
+    At the previous 6-hour interval, a stuck job could go undetected for up to
+    6.5 hours. The check is read-only (single SELECT) with negligible cost.
 
     Args:
         scheduled_time: When the workflow was scheduled to run

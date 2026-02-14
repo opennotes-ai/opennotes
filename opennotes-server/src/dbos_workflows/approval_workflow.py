@@ -136,6 +136,7 @@ async def _process_single_batch(
             await db.execute(stmt, batch_updates)
             updated_count = len(batch_updates)
         except Exception as e:
+            await db.rollback()
             failed_count = len(batch_updates)
             if len(errors) < MAX_STORED_ERRORS:
                 errors.append(f"Bulk update failed for {len(batch_updates)} candidates: {e!s}")
@@ -401,6 +402,13 @@ def bulk_approval_workflow(
     Processes candidates in batches with cursor-based pagination.
     Each batch is a checkpointed DBOS step for durability.
 
+    CircuitOpenError handling: This workflow catches CircuitOpenError and
+    breaks out of the loop gracefully, marking the job as FAILED. This
+    differs from rechunk workflows which re-raise CircuitOpenError. The
+    difference is intentional: approval workflows manage their own BatchJob
+    lifecycle (start/finalize), so they must finalize before exiting.
+    Rechunk workflows delegate finalization to the caller on circuit trip.
+
     Args:
         batch_job_id: UUID of the BatchJob record (as string)
         threshold: Minimum prediction probability to approve (0.0-1.0)
@@ -445,7 +453,19 @@ def bulk_approval_workflow(
         limit=limit,
     )
 
-    start_batch_job_sync(job_uuid, total_matching)
+    if not start_batch_job_sync(job_uuid, total_matching):
+        logger.error(
+            "Failed to start batch job - aborting workflow",
+            extra={"workflow_id": workflow_id, "batch_job_id": batch_job_id},
+        )
+        finalize_batch_job_sync(
+            job_uuid,
+            success=False,
+            completed_tasks=0,
+            failed_tasks=0,
+            error_summary={"error": "Failed to transition job to IN_PROGRESS"},
+        )
+        return {"updated_count": 0, "promoted_count": 0, "error": "job_start_failed"}
 
     if total_matching == 0:
         finalize_batch_job_sync(
@@ -467,6 +487,7 @@ def bulk_approval_workflow(
     promoted_count = 0
     failed_count = 0
     total_scanned = 0
+    circuit_breaker_tripped = False
     errors: list[str] = []
     last_processed_id: str | None = None
     remaining = limit
@@ -479,6 +500,7 @@ def bulk_approval_workflow(
         try:
             circuit_breaker.check()
         except CircuitOpenError:
+            circuit_breaker_tripped = True
             logger.error(
                 "Circuit breaker open - aborting bulk approval workflow",
                 extra={
@@ -537,7 +559,7 @@ def bulk_approval_workflow(
                 },
             )
 
-        should_update = total_scanned % PROGRESS_UPDATE_INTERVAL == 0
+        should_update = total_scanned > 0 and total_scanned % PROGRESS_UPDATE_INTERVAL == 0
         if should_update or remaining <= 0:
             update_batch_job_progress_sync(
                 job_uuid,
@@ -565,17 +587,19 @@ def bulk_approval_workflow(
         "threshold": threshold,
         "total_scanned": total_scanned,
         "iterations": iteration_count,
+        "circuit_breaker_tripped": circuit_breaker_tripped,
     }
 
     if errors:
         stats["errors"] = errors[:MAX_STORED_ERRORS]
         stats["total_errors"] = len(errors)
 
-    success = True
+    success = not circuit_breaker_tripped and not (updated_count == 0 and failed_count > 0)
     error_summary = None
-    if updated_count == 0 and failed_count > 0:
-        success = False
+    if not success:
         error_summary = {"errors": errors[:MAX_STORED_ERRORS], "total_errors": len(errors)}
+        if circuit_breaker_tripped:
+            error_summary["circuit_breaker_tripped"] = True
 
     finalize_batch_job_sync(
         job_uuid,
@@ -602,3 +626,76 @@ def bulk_approval_workflow(
 
 
 BULK_APPROVAL_WORKFLOW_NAME: str = bulk_approval_workflow.__qualname__
+
+
+async def dispatch_bulk_approval_workflow(
+    batch_job_id: UUID,
+    threshold: float,
+    auto_promote: bool,
+    limit: int,
+    status: str | None = None,
+    dataset_name: str | None = None,
+    dataset_tags: list[str] | None = None,
+    has_content: bool | None = None,
+    published_date_from: str | None = None,
+    published_date_to: str | None = None,
+) -> str:
+    """Dispatch a DBOS bulk approval workflow via DBOSClient.enqueue().
+
+    Mirrors the dispatch pattern used by rechunk workflows
+    (dispatch_dbos_rechunk_workflow). Enqueues the workflow on the
+    approval queue for durable processing by a DBOS worker.
+
+    Args:
+        batch_job_id: UUID of the BatchJob record
+        threshold: Minimum prediction probability to approve
+        auto_promote: Whether to promote approved candidates
+        limit: Maximum candidates to process
+        status: Optional candidate status filter
+        dataset_name: Optional dataset name filter
+        dataset_tags: Optional dataset tags filter
+        has_content: Optional content presence filter
+        published_date_from: Optional ISO 8601 date filter
+        published_date_to: Optional ISO 8601 date filter
+
+    Returns:
+        The DBOS workflow_id
+
+    Raises:
+        Exception: If workflow dispatch fails
+    """
+    import asyncio
+
+    from dbos import EnqueueOptions
+
+    from src.dbos_workflows.config import get_dbos_client
+
+    client = get_dbos_client()
+    options: EnqueueOptions = {
+        "queue_name": "approval",
+        "workflow_name": BULK_APPROVAL_WORKFLOW_NAME,
+    }
+    handle = await asyncio.to_thread(
+        client.enqueue,
+        options,
+        str(batch_job_id),
+        threshold,
+        auto_promote,
+        limit,
+        status,
+        dataset_name,
+        dataset_tags,
+        has_content,
+        published_date_from,
+        published_date_to,
+    )
+
+    logger.info(
+        "DBOS bulk approval workflow dispatched",
+        extra={
+            "batch_job_id": str(batch_job_id),
+            "workflow_id": handle.workflow_id,
+        },
+    )
+
+    return handle.workflow_id

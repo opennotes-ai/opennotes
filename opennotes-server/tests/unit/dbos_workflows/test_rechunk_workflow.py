@@ -122,11 +122,11 @@ class TestChunkAndEmbedSyncWrapper:
         with (
             patch("src.dbos_workflows.rechunk_workflow.run_sync") as mock_run_sync,
             patch(
-                "src.tasks.rechunk_tasks.get_chunk_embedding_service",
+                "src.dbos_workflows.rechunk_workflow.get_chunk_embedding_service",
                 return_value=mock_service,
             ),
             patch(
-                "src.fact_checking.chunking_service.use_chunking_service_sync",
+                "src.dbos_workflows.rechunk_workflow.use_chunking_service_sync",
                 side_effect=mock_use_chunking_sync,
             ),
         ):

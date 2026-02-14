@@ -7,7 +7,7 @@ DEPRECATION NOTICE:
     are retained as deprecated no-op stubs to drain legacy JetStream messages.
     See src/dbos_workflows/rechunk_workflow.py for the DBOS implementations.
 
-    Remove all deprecated stubs after 2026-03-01.
+    Remove all deprecated stubs after 2026-04-01.
 
 These tasks handle background processing of:
 - FactCheckItem operations are handled by DBOS workflows (TASK-1056)
@@ -32,7 +32,6 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
-from taskiq import TaskiqMessage, TaskiqResult
 
 from src.batch_jobs.models import BatchJobStatus
 from src.batch_jobs.progress_tracker import BatchJobProgressTracker
@@ -276,89 +275,6 @@ async def _process_previously_seen_item_with_retry(
 
     if last_exception:
         raise last_exception
-
-
-async def _handle_previously_seen_rechunk_final_failure(
-    message: TaskiqMessage,
-    result: TaskiqResult[Any],
-    exception: BaseException,
-) -> None:
-    """
-    Called by RetryWithFinalCallbackMiddleware when all retries are exhausted.
-    Marks the job as failed.
-    """
-    job_id = message.kwargs.get("job_id")
-    community_server_id = message.kwargs.get("community_server_id")
-    redis_url = message.kwargs.get("redis_url")
-    db_url = message.kwargs.get("db_url")
-
-    if not job_id or not redis_url or not db_url or not community_server_id:
-        logger.error(
-            "Missing job_id, community_server_id, redis_url, or db_url in final failure handler"
-        )
-        return
-
-    try:
-        job_uuid = UUID(job_id)
-    except ValueError:
-        logger.error(
-            "Invalid job_id format in final failure handler",
-            extra={"job_id": job_id},
-        )
-        return
-
-    settings = get_settings()
-    engine = create_async_engine(
-        db_url,
-        pool_pre_ping=True,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_POOL_MAX_OVERFLOW,
-    )
-    async_session = async_sessionmaker(engine, expire_on_commit=False)
-
-    redis_client = RedisClient()
-    try:
-        await redis_client.connect(redis_url)
-        progress_tracker = BatchJobProgressTracker(redis_client)
-
-        progress = await progress_tracker.get_progress(job_uuid)
-        completed_count = progress.processed_count if progress else 0
-
-        async with async_session() as session:
-            batch_job_service = BatchJobService(session, progress_tracker)
-
-            try:
-                await batch_job_service.fail_job(
-                    job_uuid,
-                    error_summary={"error": str(exception)},
-                    completed_tasks=completed_count,
-                )
-                await session.commit()
-            except Exception as e:
-                await session.rollback()
-                logger.error(
-                    "Failed to mark job as failed",
-                    extra={
-                        "job_id": job_id,
-                        "community_server_id": community_server_id,
-                        "error": str(e),
-                    },
-                )
-
-        await progress_tracker.clear_item_tracking(job_uuid)
-
-        logger.error(
-            "Previously seen rechunk job failed after all retries exhausted",
-            extra={
-                "job_id": job_id,
-                "community_server_id": community_server_id,
-                "completed_count": completed_count,
-                "error": str(exception),
-            },
-        )
-    finally:
-        await redis_client.disconnect()
-        await engine.dispose()
 
 
 async def chunk_fact_check_item_task(
@@ -685,7 +601,7 @@ async def process_previously_seen_rechunk_task(*args, **kwargs) -> None:
     The task will automatically ACK the message after this function returns,
     preventing infinite redelivery of legacy messages.
 
-    Remove after 2026-03-01 when all legacy messages have been drained.
+    Remove after 2026-04-01 when all legacy messages have been drained.
     """
     logger.info(
         "Received deprecated rechunk:previously_seen message - discarding",
@@ -712,7 +628,7 @@ async def deprecated_fact_check_rechunk_task(*args, **kwargs) -> None:
     The task will automatically ACK the message after this function returns,
     preventing infinite redelivery of legacy messages.
 
-    Remove after 2026-03-01 when all legacy messages have been drained.
+    Remove after 2026-04-01 when all legacy messages have been drained.
     """
     logger.info(
         "Received deprecated rechunk:fact_check message - discarding",
@@ -739,7 +655,7 @@ async def deprecated_chunk_fact_check_item_task(*args, **kwargs) -> None:
     The task will automatically ACK the message after this function returns,
     preventing infinite redelivery of legacy messages.
 
-    Remove after 2026-03-01 when all legacy messages have been drained.
+    Remove after 2026-04-01 when all legacy messages have been drained.
     """
     logger.info(
         "Received deprecated chunk:fact_check_item message - discarding",

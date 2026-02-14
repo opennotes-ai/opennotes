@@ -1,24 +1,19 @@
-"""Deprecated TaskIQ scheduled tasks -- replaced by DBOS scheduled workflows.
+"""
+TaskIQ scheduled tasks -- deprecated, replaced by DBOS scheduled workflows.
 
-These tasks have been migrated to src/dbos_workflows/scheduler_workflows.py:
-    - cleanup_stale_batch_jobs_task -> cleanup_stale_batch_jobs_workflow
-    - monitor_stuck_batch_jobs_task -> monitor_stuck_batch_jobs_workflow
+DEPRECATED: Task bodies have been migrated to DBOS durable workflows
+in src/dbos_workflows/scheduler_workflows.py (TASK-1097).
 
-The DBOS scheduled workflows run automatically when the DBOS worker is
-launched. They use @DBOS.scheduled() with cron expressions and do not
-require a separate TaskIQ scheduler process.
+The @register_task decorated functions remain as no-op stubs to drain
+legacy JetStream messages. They do NOT delegate to DBOS helpers to
+avoid double-execution if both schedulers run during migration.
 
-These stubs remain for backwards compatibility with any existing scheduled
-invocations that may be in-flight. They delegate to the DBOS workflow
-sync helpers.
+Remove deprecated stubs after 2026-04-01 when all legacy messages
+have been drained.
 """
 
 from typing import Any
 
-from src.batch_jobs.rechunk_service import (
-    DEFAULT_STALE_JOB_THRESHOLD_HOURS,
-    DEFAULT_STUCK_JOB_THRESHOLD_MINUTES,
-)
 from src.monitoring import get_logger
 from src.tasks.broker import register_task
 
@@ -28,7 +23,7 @@ logger = get_logger(__name__)
 @register_task(
     task_name="scheduler:cleanup_stale_batch_jobs",
     component="scheduler",
-    task_type="maintenance",
+    task_type="deprecated",
     schedule=[
         {
             "cron": "0 0 * * 0",
@@ -36,36 +31,58 @@ logger = get_logger(__name__)
         }
     ],
 )
-async def cleanup_stale_batch_jobs_task(
-    stale_threshold_hours: float = DEFAULT_STALE_JOB_THRESHOLD_HOURS,
-) -> dict[str, Any]:
-    """Deprecated: Use cleanup_stale_batch_jobs_workflow in src/dbos_workflows/scheduler_workflows.py."""
-    logger.warning(
-        "Deprecated TaskIQ cleanup_stale_batch_jobs_task invoked; use DBOS scheduled workflow instead",
-    )
-    from src.dbos_workflows.scheduler_workflows import _cleanup_stale_jobs_sync
+async def cleanup_stale_batch_jobs_task(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
 
-    return _cleanup_stale_jobs_sync(stale_threshold_hours=stale_threshold_hours)
+    This task was migrated to DBOS in TASK-1097. This handler exists only to
+    acknowledge and discard stale messages in the JetStream queue.
+
+    The task will automatically ACK the message after this function returns,
+    preventing infinite redelivery of legacy messages.
+
+    Remove after 2026-04-01 when all legacy messages have been drained.
+    """
+    logger.info(
+        "Received deprecated scheduler:cleanup_stale_batch_jobs message - discarding",
+        extra={
+            "task_name": "scheduler:cleanup_stale_batch_jobs",
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()) if kwargs else [],
+            "migration_note": "Task migrated to DBOS in TASK-1097",
+        },
+    )
+    return {"status": "deprecated", "migrated_to": "dbos"}
 
 
 @register_task(
     task_name="scheduler:monitor_stuck_batch_jobs",
     component="scheduler",
-    task_type="monitoring",
+    task_type="deprecated",
     schedule=[
         {
-            "cron": "0 */6 * * *",
+            "cron": "*/15 * * * *",
             "schedule_id": "stuck_jobs_monitor",
         }
     ],
 )
-async def monitor_stuck_batch_jobs_task(
-    threshold_minutes: int = DEFAULT_STUCK_JOB_THRESHOLD_MINUTES,
-) -> dict[str, Any]:
-    """Deprecated: Use monitor_stuck_batch_jobs_workflow in src/dbos_workflows/scheduler_workflows.py."""
-    logger.warning(
-        "Deprecated TaskIQ monitor_stuck_batch_jobs_task invoked; use DBOS scheduled workflow instead",
-    )
-    from src.dbos_workflows.scheduler_workflows import _monitor_stuck_jobs_sync
+async def monitor_stuck_batch_jobs_task(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Deprecated no-op handler to drain legacy messages from pre-DBOS migration.
 
-    return _monitor_stuck_jobs_sync(threshold_minutes=threshold_minutes)
+    This task was migrated to DBOS in TASK-1097. This handler exists only to
+    acknowledge and discard stale messages in the JetStream queue.
+
+    The task will automatically ACK the message after this function returns,
+    preventing infinite redelivery of legacy messages.
+
+    Remove after 2026-04-01 when all legacy messages have been drained.
+    """
+    logger.info(
+        "Received deprecated scheduler:monitor_stuck_batch_jobs message - discarding",
+        extra={
+            "task_name": "scheduler:monitor_stuck_batch_jobs",
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()) if kwargs else [],
+            "migration_note": "Task migrated to DBOS in TASK-1097",
+        },
+    )
+    return {"status": "deprecated", "migrated_to": "dbos"}

@@ -6,13 +6,17 @@ Tests cover:
 - Workflow processes batches and finalizes correctly
 - Empty candidate set completes immediately
 - Circuit breaker trips on consecutive failures
+- Circuit breaker trips mark job as FAILED (not completed)
 - Error aggregation respects MAX_STORED_ERRORS
-- Import service dispatches via DBOS instead of TaskIQ
+- Import service dispatches via wrapper function
+- Bulk UPDATE failure triggers db.rollback()
+- start_batch_job_sync failure aborts workflow
+- Progress update guard skips total_scanned==0
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 from uuid import uuid4
 
 import pytest
@@ -39,8 +43,8 @@ class TestDeprecatedTaskIQStub:
         assert "approve:candidates" in _all_registered_tasks
 
         _, labels = _all_registered_tasks["approve:candidates"]
-        assert labels.get("component") == "fact_checking"
-        assert labels.get("task_type") == "deprecated"
+        assert labels["component"] == "fact_checking"
+        assert labels["task_type"] == "deprecated"
 
 
 class TestWorkflowNameConstants:
@@ -80,6 +84,7 @@ class TestBulkApprovalWorkflowEmptyCandidates:
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 0
+            mock_start.return_value = True
 
             result = bulk_approval_workflow.__wrapped__(
                 batch_job_id=batch_job_id,
@@ -137,7 +142,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
             patch(
                 "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
             ) as mock_count,
-            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync"),
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
             patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
@@ -145,6 +150,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 10
+            mock_start.return_value = True
             mock_batch.side_effect = lambda **kw: next(batch_iter)
 
             result = bulk_approval_workflow.__wrapped__(
@@ -191,7 +197,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
             patch(
                 "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
             ) as mock_count,
-            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync"),
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
             patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync"),
@@ -199,6 +205,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 50
+            mock_start.return_value = True
             mock_batch.return_value = never_ending_batch
 
             result = bulk_approval_workflow.__wrapped__(
@@ -229,14 +236,15 @@ class TestBulkApprovalWorkflowCircuitBreaker:
             patch(
                 "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
             ) as mock_count,
-            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync"),
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
             patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
-            patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync"),
+            patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 1000
+            mock_start.return_value = True
             mock_batch.side_effect = RuntimeError("DB connection lost")
 
             result = bulk_approval_workflow.__wrapped__(
@@ -254,7 +262,71 @@ class TestBulkApprovalWorkflowCircuitBreaker:
 
         assert mock_batch.call_count == 5
         assert result["updated_count"] == 0
-        assert result.get("total_errors", 0) == 5
+        assert result["total_errors"] == 5
+        assert result["circuit_breaker_tripped"] is True
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["success"] is False
+
+    def test_circuit_breaker_with_partial_success_marks_failed(self) -> None:
+        """When circuit breaker trips after some successes, job is still FAILED."""
+        from src.dbos_workflows.approval_workflow import bulk_approval_workflow
+
+        batch_job_id = str(uuid4())
+        call_count = 0
+
+        def alternate_success_failure(**kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return {
+                    "updated": 5,
+                    "promoted": 0,
+                    "failed": 0,
+                    "processed": 5,
+                    "last_id": str(uuid4()),
+                    "scanned": 10,
+                    "errors": list(kw.get("errors_so_far", [])),
+                    "empty": False,
+                }
+            raise RuntimeError("Service down")
+
+        with (
+            patch(
+                "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
+            ) as mock_count,
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
+            patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
+            patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
+            patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            mock_count.return_value = 1000
+            mock_start.return_value = True
+            mock_batch.side_effect = alternate_success_failure
+
+            result = bulk_approval_workflow.__wrapped__(
+                batch_job_id=batch_job_id,
+                threshold=0.9,
+                auto_promote=False,
+                limit=1000,
+                status=None,
+                dataset_name=None,
+                dataset_tags=None,
+                has_content=None,
+                published_date_from=None,
+                published_date_to=None,
+            )
+
+        assert result["updated_count"] == 10
+        assert result["circuit_breaker_tripped"] is True
+
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["success"] is False
+        assert finalize_kwargs["error_summary"]["circuit_breaker_tripped"] is True
 
 
 class TestBulkApprovalWorkflowErrorAggregation:
@@ -286,7 +358,7 @@ class TestBulkApprovalWorkflowErrorAggregation:
             patch(
                 "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
             ) as mock_count,
-            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync"),
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
             patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync"),
@@ -294,6 +366,7 @@ class TestBulkApprovalWorkflowErrorAggregation:
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 200
+            mock_start.return_value = True
             mock_batch.side_effect = make_failing_batch
 
             result = bulk_approval_workflow.__wrapped__(
@@ -309,8 +382,8 @@ class TestBulkApprovalWorkflowErrorAggregation:
                 published_date_to=None,
             )
 
-        if "errors" in result:
-            assert len(result["errors"]) <= MAX_STORED_ERRORS
+        assert "errors" in result
+        assert len(result["errors"]) <= MAX_STORED_ERRORS
 
 
 class TestBulkApprovalWorkflowWithFailedResult:
@@ -340,7 +413,7 @@ class TestBulkApprovalWorkflowWithFailedResult:
             patch(
                 "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
             ) as mock_count,
-            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync"),
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
             patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
             patch("src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"),
             patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
@@ -348,6 +421,7 @@ class TestBulkApprovalWorkflowWithFailedResult:
         ):
             mock_dbos.workflow_id = "wf-test"
             mock_count.return_value = 10
+            mock_start.return_value = True
             mock_batch.side_effect = lambda **kw: next(batch_iter)
 
             result = bulk_approval_workflow.__wrapped__(
@@ -369,9 +443,183 @@ class TestBulkApprovalWorkflowWithFailedResult:
         assert finalize_kwargs["failed_tasks"] == 10
 
 
+class TestStartBatchJobSyncCheck:
+    def test_workflow_aborts_when_start_batch_job_fails(self) -> None:
+        from src.dbos_workflows.approval_workflow import bulk_approval_workflow
+
+        batch_job_id = str(uuid4())
+
+        with (
+            patch(
+                "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
+            ) as mock_count,
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
+            patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
+            patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            mock_count.return_value = 50
+            mock_start.return_value = False
+
+            result = bulk_approval_workflow.__wrapped__(
+                batch_job_id=batch_job_id,
+                threshold=0.9,
+                auto_promote=False,
+                limit=100,
+                status=None,
+                dataset_name=None,
+                dataset_tags=None,
+                has_content=None,
+                published_date_from=None,
+                published_date_to=None,
+            )
+
+        assert result["error"] == "job_start_failed"
+        assert result["updated_count"] == 0
+        mock_batch.assert_not_called()
+        mock_finalize.assert_called_once()
+        finalize_kwargs = mock_finalize.call_args.kwargs
+        assert finalize_kwargs["success"] is False
+        assert (
+            finalize_kwargs["error_summary"]["error"] == "Failed to transition job to IN_PROGRESS"
+        )
+
+
+class TestProcessSingleBatchRollback:
+    @pytest.mark.asyncio
+    async def test_bulk_update_failure_triggers_rollback(self) -> None:
+        from src.dbos_workflows.approval_workflow import _process_single_batch
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=RuntimeError("DB constraint violation"))
+        mock_db.rollback = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_candidate = MagicMock()
+        mock_candidate.id = uuid4()
+        mock_candidate.predicted_ratings = {"true": 0.95, "false": 0.05}
+
+        errors: list[str] = []
+
+        with patch(
+            "src.dbos_workflows.approval_workflow.extract_high_confidence_rating",
+            return_value="true",
+        ):
+            updated, _promoted, failed, _processed = await _process_single_batch(
+                db=mock_db,
+                batch=[mock_candidate],
+                threshold=0.9,
+                auto_promote=False,
+                errors=errors,
+            )
+
+        assert failed == 1
+        assert updated == 0
+        mock_db.rollback.assert_awaited_once()
+        mock_db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_bulk_update_failure_then_promotion_succeeds(self) -> None:
+        from src.dbos_workflows.approval_workflow import _process_single_batch
+
+        execute_call_count = 0
+
+        async def execute_side_effect(*args, **kwargs):
+            nonlocal execute_call_count
+            execute_call_count += 1
+            if execute_call_count == 1:
+                raise RuntimeError("DB constraint violation")
+            return MagicMock()
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.rollback = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        mock_candidate = MagicMock()
+        mock_candidate.id = uuid4()
+        mock_candidate.predicted_ratings = {"true": 0.95, "false": 0.05}
+
+        errors: list[str] = []
+
+        with (
+            patch(
+                "src.dbos_workflows.approval_workflow.extract_high_confidence_rating",
+                return_value="true",
+            ),
+            patch(
+                "src.fact_checking.import_pipeline.promotion.promote_candidate",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            updated, promoted, failed, _processed = await _process_single_batch(
+                db=mock_db,
+                batch=[mock_candidate],
+                threshold=0.9,
+                auto_promote=True,
+                errors=errors,
+            )
+
+        assert updated == 0
+        assert failed == 1
+        assert promoted == 1
+        mock_db.rollback.assert_awaited_once()
+
+
+class TestProgressUpdateGuard:
+    def test_progress_not_updated_when_total_scanned_zero(self) -> None:
+        """When total_scanned==0, modulo check should not trigger progress update."""
+        from src.dbos_workflows.approval_workflow import bulk_approval_workflow
+
+        batch_job_id = str(uuid4())
+
+        with (
+            patch(
+                "src.dbos_workflows.approval_workflow.count_approval_candidates_step"
+            ) as mock_count,
+            patch("src.dbos_workflows.approval_workflow.start_batch_job_sync") as mock_start,
+            patch("src.dbos_workflows.approval_workflow.process_approval_batch_step") as mock_batch,
+            patch(
+                "src.dbos_workflows.approval_workflow.update_batch_job_progress_sync"
+            ) as mock_progress,
+            patch("src.dbos_workflows.approval_workflow.finalize_batch_job_sync"),
+            patch("src.dbos_workflows.approval_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            mock_count.return_value = 10
+            mock_start.return_value = True
+            mock_batch.side_effect = RuntimeError("fail")
+
+            bulk_approval_workflow.__wrapped__(
+                batch_job_id=batch_job_id,
+                threshold=0.9,
+                auto_promote=False,
+                limit=1000,
+                status=None,
+                dataset_name=None,
+                dataset_tags=None,
+                has_content=None,
+                published_date_from=None,
+                published_date_to=None,
+            )
+
+        for progress_call in mock_progress.call_args_list:
+            if progress_call == call(
+                mock_progress.call_args_list[0].args[0],
+                completed_tasks=0,
+                failed_tasks=mock_progress.call_args_list[0].kwargs.get("failed_tasks", 0),
+            ):
+                continue
+            kwargs = progress_call.kwargs
+            if "current_item" in kwargs:
+                assert "Scanned 0" not in kwargs["current_item"]
+
+
 class TestDispatchFromImportService:
     @pytest.mark.asyncio
-    async def test_start_bulk_approval_job_calls_dbos_enqueue(self) -> None:
+    async def test_start_bulk_approval_job_calls_dispatch_wrapper(self) -> None:
         from src.batch_jobs.import_service import ImportBatchJobService
 
         mock_session = AsyncMock()
@@ -388,10 +636,39 @@ class TestDispatchFromImportService:
         mock_batch_service.set_workflow_id.return_value = None
         service._batch_job_service = mock_batch_service
 
+        with patch(
+            "src.dbos_workflows.approval_workflow.dispatch_bulk_approval_workflow",
+            new_callable=AsyncMock,
+            return_value="dbos-wf-123",
+        ) as mock_dispatch:
+            result = await service.start_bulk_approval_job(
+                threshold=0.9,
+                auto_promote=True,
+                limit=200,
+            )
+
+        assert result is mock_job
+        mock_dispatch.assert_called_once()
+        dispatch_kwargs = mock_dispatch.call_args.kwargs
+        assert dispatch_kwargs["batch_job_id"] == mock_job.id
+        assert dispatch_kwargs["threshold"] == 0.9
+        assert dispatch_kwargs["auto_promote"] is True
+        assert dispatch_kwargs["limit"] == 200
+
+        mock_batch_service.set_workflow_id.assert_called_once_with(mock_job.id, "dbos-wf-123")
+
+
+class TestDispatchBulkApprovalWorkflow:
+    @pytest.mark.asyncio
+    async def test_dispatch_enqueues_via_dbos_client(self) -> None:
+        from src.dbos_workflows.approval_workflow import dispatch_bulk_approval_workflow
+
         mock_client = MagicMock()
         mock_handle = MagicMock()
-        mock_handle.workflow_id = "dbos-wf-123"
+        mock_handle.workflow_id = "dbos-wf-456"
         mock_client.enqueue.return_value = mock_handle
+
+        job_id = uuid4()
 
         with (
             patch(
@@ -400,13 +677,14 @@ class TestDispatchFromImportService:
             ),
             patch("asyncio.to_thread", side_effect=lambda fn, *args: fn(*args)),
         ):
-            result = await service.start_bulk_approval_job(
+            workflow_id = await dispatch_bulk_approval_workflow(
+                batch_job_id=job_id,
                 threshold=0.9,
                 auto_promote=True,
                 limit=200,
             )
 
-        assert result is mock_job
+        assert workflow_id == "dbos-wf-456"
         mock_client.enqueue.assert_called_once()
         enqueue_args = mock_client.enqueue.call_args
         options = enqueue_args.args[0]
@@ -414,9 +692,7 @@ class TestDispatchFromImportService:
         assert options["workflow_name"] == "bulk_approval_workflow"
 
         positional = enqueue_args.args[1:]
-        assert positional[0] == str(mock_job.id)
+        assert positional[0] == str(job_id)
         assert positional[1] == 0.9
         assert positional[2] is True
         assert positional[3] == 200
-
-        mock_batch_service.set_workflow_id.assert_called_once_with(mock_job.id, "dbos-wf-123")

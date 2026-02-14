@@ -136,13 +136,11 @@ class ImportBatchJobService:
                 dry_run=dry_run,
                 enqueue_scrapes=enqueue_scrapes,
             )
-            if workflow_id is None:
-                raise RuntimeError("DBOS workflow dispatch returned None")
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
         await self._batch_job_service.set_workflow_id(job.id, workflow_id)
@@ -232,13 +230,11 @@ class ImportBatchJobService:
                 concurrency=DEFAULT_SCRAPE_CONCURRENCY,
                 base_delay=base_delay,
             )
-            if workflow_id is None:
-                raise RuntimeError("DBOS workflow dispatch returned None")
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
         await self._batch_job_service.set_workflow_id(job.id, workflow_id)
@@ -301,13 +297,11 @@ class ImportBatchJobService:
                 batch_size=batch_size,
                 dry_run=dry_run,
             )
-            if workflow_id is None:
-                raise RuntimeError("DBOS workflow dispatch returned None")
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
         await self._batch_job_service.set_workflow_id(job.id, workflow_id)
@@ -350,14 +344,9 @@ class ImportBatchJobService:
         Returns:
             The created BatchJob (in PENDING status)
         """
-        import asyncio  # noqa: PLC0415
-
-        from dbos import EnqueueOptions  # noqa: PLC0415
-
         from src.dbos_workflows.approval_workflow import (  # noqa: PLC0415
-            BULK_APPROVAL_WORKFLOW_NAME,
+            dispatch_bulk_approval_workflow,
         )
-        from src.dbos_workflows.config import get_dbos_client  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "threshold": threshold,
@@ -394,43 +383,29 @@ class ImportBatchJobService:
         )
 
         try:
-            client = get_dbos_client()
-            options: EnqueueOptions = {
-                "queue_name": "approval",
-                "workflow_name": BULK_APPROVAL_WORKFLOW_NAME,
-            }
-            handle = await asyncio.to_thread(
-                client.enqueue,
-                options,
-                str(job.id),
-                threshold,
-                auto_promote,
-                limit,
-                status,
-                dataset_name,
-                dataset_tags,
-                has_content,
-                published_date_from.isoformat() if published_date_from else None,
-                published_date_to.isoformat() if published_date_to else None,
+            workflow_id = await dispatch_bulk_approval_workflow(
+                batch_job_id=job.id,
+                threshold=threshold,
+                auto_promote=auto_promote,
+                limit=limit,
+                status=status,
+                dataset_name=dataset_name,
+                dataset_tags=dataset_tags,
+                has_content=has_content,
+                published_date_from=published_date_from.isoformat()
+                if published_date_from
+                else None,
+                published_date_to=published_date_to.isoformat() if published_date_to else None,
             )
-            workflow_id = handle.workflow_id
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
         await self._batch_job_service.set_workflow_id(job.id, workflow_id)
         await self._session.commit()
-
-        logger.info(
-            "DBOS bulk approval workflow dispatched",
-            extra={
-                "job_id": str(job.id),
-                "workflow_id": workflow_id,
-            },
-        )
 
         return job
 
@@ -441,7 +416,7 @@ class ImportBatchJobService:
         stage: str,
     ) -> None:
         """
-        Handle task dispatch failure by marking the job as failed.
+        Handle workflow dispatch failure by marking the job as failed.
 
         If marking the job as failed also fails (double-failure), logs with
         ORPHANED_JOB_MARKER for monitoring alerts. Such jobs will be cleaned
@@ -450,7 +425,7 @@ class ImportBatchJobService:
         Args:
             job: The BatchJob that failed to dispatch
             error: The exception that occurred during dispatch
-            stage: Error stage identifier (e.g., "connection_error", "task_dispatch")
+            stage: Error stage identifier (e.g., "connection_error", "workflow_dispatch")
         """
         try:
             await self._batch_job_service.fail_job(
@@ -462,7 +437,7 @@ class ImportBatchJobService:
         except Exception:
             logger.exception(
                 f"{ORPHANED_JOB_MARKER}: Failed to mark job as failed after "
-                "task dispatch error. Job may remain in PENDING status and "
+                "workflow dispatch error. Job may remain in PENDING status and "
                 f"require cleanup after {STALE_PENDING_JOB_THRESHOLD_MINUTES} minutes.",
                 extra={
                     "job_id": str(job.id),

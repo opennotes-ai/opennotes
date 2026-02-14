@@ -25,9 +25,11 @@ from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.dbos_workflows.config import get_dbos_client
+from src.fact_checking.chunking_service import use_chunking_service_sync
 from src.fact_checking.models import FactCheckItem
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.monitoring import get_logger
+from src.tasks.rechunk_tasks import get_chunk_embedding_service
 from src.utils.async_compat import run_sync
 
 if TYPE_CHECKING:
@@ -314,8 +316,6 @@ def chunk_and_embed_fact_check_sync(
     not during the full DB+LLM pipeline.
     """
     from src.database import get_session_maker
-    from src.fact_checking.chunking_service import use_chunking_service_sync
-    from src.tasks.rechunk_tasks import get_chunk_embedding_service
 
     service = get_chunk_embedding_service()
 
@@ -555,8 +555,6 @@ def chunk_and_embed_previously_seen_sync(
         dict with chunks_created count. If no content, returns chunks_created=0.
     """
     from src.database import get_session_maker
-    from src.fact_checking.chunking_service import use_chunking_service_sync
-    from src.tasks.rechunk_tasks import get_chunk_embedding_service
 
     service = get_chunk_embedding_service()
 
@@ -757,8 +755,8 @@ async def dispatch_dbos_previously_seen_rechunk_workflow(
     This function:
     1. Fetches item IDs to process
     2. Creates a BatchJob record (PENDING)
-    3. Starts the BatchJob (IN_PROGRESS)
-    4. Enqueues the DBOS workflow
+    3. If no items found, completes the job immediately with zero tasks
+    4. Otherwise starts the BatchJob (IN_PROGRESS) and enqueues the DBOS workflow
     5. Updates BatchJob with workflow_id
 
     Args:
@@ -771,7 +769,6 @@ async def dispatch_dbos_previously_seen_rechunk_workflow(
         BatchJob UUID
 
     Raises:
-        ValueError: If no previously-seen messages to process
         Exception: If workflow dispatch fails (BatchJob marked as FAILED)
     """
     stmt = (
@@ -782,9 +779,6 @@ async def dispatch_dbos_previously_seen_rechunk_workflow(
 
     result = await db.execute(stmt)
     item_ids = [str(row[0]) for row in result.fetchall()]
-
-    if not item_ids:
-        raise ValueError("No previously-seen messages to process")
 
     batch_job_service = BatchJobService(db)
     job_metadata = {
@@ -802,6 +796,22 @@ async def dispatch_dbos_previously_seen_rechunk_workflow(
             metadata=job_metadata,
         )
     )
+
+    if not item_ids:
+        await batch_job_service.start_job(job.id)
+        await batch_job_service.complete_job(job.id, completed_tasks=0, failed_tasks=0)
+        await db.commit()
+        await db.refresh(job)
+
+        logger.info(
+            "No previously-seen messages to process, job completed immediately",
+            extra={
+                "batch_job_id": str(job.id),
+                "community_server_id": str(community_server_id),
+            },
+        )
+
+        return job.id
 
     await batch_job_service.start_job(job.id)
     await db.commit()

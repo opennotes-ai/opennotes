@@ -7,6 +7,8 @@ mock the sync helper functions and test workflow logic.
 
 from __future__ import annotations
 
+import inspect
+import re
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -331,3 +333,114 @@ class TestExportsFromInit:
         from src.dbos_workflows import MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME
 
         assert isinstance(MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME, str)
+
+
+CRON_FIELD_PATTERN = re.compile(
+    r"^("
+    r"\*"
+    r"|(\d+(-\d+)?)"
+    r"|(\*/\d+)"
+    r")(,(\*|(\d+(-\d+)?)|(\*/\d+)))*$"
+)
+
+CRON_FIELD_RANGES = [
+    (0, 59),
+    (0, 23),
+    (1, 31),
+    (1, 12),
+    (0, 7),
+]
+
+
+def _is_valid_cron(expr: str) -> bool:
+    """Validate a 5-field cron expression has correct syntax and value ranges."""
+    fields = expr.split()
+    if len(fields) != 5:
+        return False
+
+    for i, field in enumerate(fields):
+        if not CRON_FIELD_PATTERN.match(field):
+            return False
+
+        low, high = CRON_FIELD_RANGES[i]
+        for number_str in re.findall(r"\d+", field):
+            val = int(number_str)
+            if field.startswith("*/"):
+                if val < 1 or val > high:
+                    return False
+            elif val < low or val > high:
+                return False
+
+    return True
+
+
+class TestCronExpressionCorrectness:
+    """Tests that cron expressions used in scheduler workflows are valid."""
+
+    def test_cleanup_workflow_cron_is_valid(self) -> None:
+        """Cleanup workflow uses a valid 5-field cron expression."""
+        source = inspect.getsource(
+            __import__(
+                "src.dbos_workflows.scheduler_workflows", fromlist=["scheduler_workflows"]
+            ).cleanup_stale_batch_jobs_workflow
+        )
+        match = re.search(r'@DBOS\.scheduled\("([^"]+)"\)', source)
+        assert match is not None, "Could not find @DBOS.scheduled decorator"
+
+        cron_expr = match.group(1)
+        assert _is_valid_cron(cron_expr), f"Invalid cron expression: {cron_expr}"
+
+    def test_monitor_workflow_cron_is_valid(self) -> None:
+        """Monitor workflow uses a valid 5-field cron expression."""
+        source = inspect.getsource(
+            __import__(
+                "src.dbos_workflows.scheduler_workflows", fromlist=["scheduler_workflows"]
+            ).monitor_stuck_batch_jobs_workflow
+        )
+        match = re.search(r'@DBOS\.scheduled\("([^"]+)"\)', source)
+        assert match is not None, "Could not find @DBOS.scheduled decorator"
+
+        cron_expr = match.group(1)
+        assert _is_valid_cron(cron_expr), f"Invalid cron expression: {cron_expr}"
+
+    def test_cleanup_cron_is_weekly_sunday_midnight(self) -> None:
+        """Cleanup runs weekly on Sunday at midnight UTC."""
+        from src.dbos_workflows import scheduler_workflows
+
+        source = inspect.getsource(scheduler_workflows.cleanup_stale_batch_jobs_workflow)
+        match = re.search(r'@DBOS\.scheduled\("([^"]+)"\)', source)
+        assert match is not None
+
+        assert match.group(1) == "0 0 * * 0"
+
+    def test_monitor_cron_is_every_15_minutes(self) -> None:
+        """Monitor runs every 15 minutes."""
+        from src.dbos_workflows import scheduler_workflows
+
+        source = inspect.getsource(scheduler_workflows.monitor_stuck_batch_jobs_workflow)
+        match = re.search(r'@DBOS\.scheduled\("([^"]+)"\)', source)
+        assert match is not None
+
+        assert match.group(1) == "*/15 * * * *"
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            ("0 0 * * 0", True),
+            ("*/15 * * * *", True),
+            ("0 */6 * * *", True),
+            ("5 4 * * *", True),
+            ("0 0 1 1 *", True),
+            ("", False),
+            ("* * *", False),
+            ("60 * * * *", False),
+            ("* 25 * * *", False),
+            ("* * 32 * *", False),
+            ("* * * 13 *", False),
+            ("* * * * 8", False),
+            ("*/0 * * * *", False),
+        ],
+    )
+    def test_cron_validator_correctness(self, expr: str, expected: bool) -> None:
+        """Verify the cron validator itself produces correct results."""
+        assert _is_valid_cron(expr) == expected, f"Expected {expected} for '{expr}'"
