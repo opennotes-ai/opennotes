@@ -94,10 +94,8 @@ class CloudTraceLoggingSpanExporter(CloudTraceSpanExporter):
             project_id=self.project_id,
         )
 
-        for key in large_attrs:
-            modified_attrs[key] = (
-                modified_attrs[key][: self.max_attribute_length] + "...[see Cloud Logging]"
-            )
+        for key, value in large_attrs.items():
+            modified_attrs[key] = value[: self.max_attribute_length] + "...[see Cloud Logging]"
 
         modified_attrs["cloud_logging_url"] = cloud_logging_url
         span._attributes = modified_attrs  # pyright: ignore[reportPrivateUsage]
