@@ -26,7 +26,8 @@ def _parse_review_date(review_date: str | None) -> datetime | None:
     if not review_date:
         return None
     try:
-        return pendulum.parse(review_date)
+        parsed = pendulum.parse(review_date)
+        return parsed if isinstance(parsed, datetime) else None
     except (ValueError, ParserError):
         pass
     for fmt in PENDULUM_DATE_FORMATS:

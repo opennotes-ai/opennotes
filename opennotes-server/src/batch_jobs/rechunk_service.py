@@ -168,7 +168,7 @@ async def get_stuck_jobs_info(
                 job_id=job.id,
                 job_type=job.job_type,
                 status=job.status,
-                stuck_duration_seconds=(now - reference_time).total_seconds(),
+                stuck_duration_seconds=(now - pendulum.instance(reference_time)).total_seconds(),
                 updated_at=reference_time,
             )
         )

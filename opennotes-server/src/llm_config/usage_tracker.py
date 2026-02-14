@@ -540,12 +540,12 @@ class LLMUsageTracker:
         def _should_reset_daily() -> bool:
             if not config.last_daily_reset:
                 return True
-            return now - config.last_daily_reset > pendulum.duration(days=1)
+            return now - pendulum.instance(config.last_daily_reset) > pendulum.duration(days=1)
 
         def _should_reset_monthly() -> bool:
             if not config.last_monthly_reset:
                 return True
-            return now - config.last_monthly_reset > pendulum.duration(days=30)
+            return now - pendulum.instance(config.last_monthly_reset) > pendulum.duration(days=30)
 
         if _should_reset_daily():
             config.current_daily_requests = 0
@@ -608,7 +608,7 @@ class LLMUsageTracker:
         updates: dict[str, Any] = {}
 
         if not config.last_daily_reset or (
-            now - config.last_daily_reset > pendulum.duration(days=1)
+            now - pendulum.instance(config.last_daily_reset) > pendulum.duration(days=1)
         ):
             updates["current_daily_requests"] = 0
             updates["current_daily_tokens"] = 0
@@ -617,7 +617,7 @@ class LLMUsageTracker:
             needs_update = True
 
         if not config.last_monthly_reset or (
-            now - config.last_monthly_reset > pendulum.duration(days=30)
+            now - pendulum.instance(config.last_monthly_reset) > pendulum.duration(days=30)
         ):
             updates["current_monthly_requests"] = 0
             updates["current_monthly_tokens"] = 0

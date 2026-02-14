@@ -190,7 +190,7 @@ class KeyRotationManager:
         now = pendulum.now("UTC")
 
         for config_id, registration in self._key_registry.items():
-            age = now - registration["created_at"]
+            age = now - pendulum.instance(registration["created_at"])
             age_days = age.total_seconds() / 86400
 
             if age_days > self.max_key_age_days:
@@ -228,7 +228,7 @@ class KeyRotationManager:
         now = pendulum.now("UTC")
 
         for config_id, registration in self._key_registry.items():
-            age = now - registration["created_at"]
+            age = now - pendulum.instance(registration["created_at"])
             age_days = age.total_seconds() / 86400
 
             if age_days > self.rotation_interval_days:
@@ -260,7 +260,7 @@ class KeyRotationManager:
             raise KeyError(f"Config {config_id} not registered for key rotation tracking")
 
         registration = self._key_registry[config_id]
-        age = pendulum.now("UTC") - registration["created_at"]
+        age = pendulum.now("UTC") - pendulum.instance(registration["created_at"])
         age_days = age.total_seconds() / 86400
 
         return self.rotation_interval_days - age_days
@@ -276,7 +276,7 @@ class KeyRotationManager:
         now = pendulum.now("UTC")
 
         for config_id, registration in self._key_registry.items():
-            age = now - registration["created_at"]
+            age = now - pendulum.instance(registration["created_at"])
             age_days = age.total_seconds() / 86400
             metrics[config_id] = age_days
 
