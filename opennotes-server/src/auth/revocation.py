@@ -1,9 +1,9 @@
 """JWT revocation service using Redis blacklist."""
 
 import logging
-from datetime import UTC, datetime
 from uuid import UUID
 
+import pendulum
 from jose import JWTError, jwt
 
 from src.cache.redis_client import redis_client
@@ -50,8 +50,8 @@ async def revoke_token(token: str) -> bool:
             return False
 
         # Calculate TTL - time until token expires
-        exp_datetime = datetime.fromtimestamp(exp, tz=UTC)
-        now = datetime.now(UTC)
+        exp_datetime = pendulum.from_timestamp(exp)
+        now = pendulum.now("UTC")
         ttl_seconds = int((exp_datetime - now).total_seconds())
 
         # Only store if token hasn't expired yet

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+import pendulum
 from sqlalchemy import (
     ARRAY,
     Boolean,
@@ -92,7 +93,7 @@ class MonitoredChannel(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
-        onupdate=lambda: datetime.now(UTC),
+        onupdate=lambda: pendulum.now("UTC"),
     )
     updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 

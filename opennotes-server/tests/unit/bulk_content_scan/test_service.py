@@ -1,9 +1,9 @@
 """Tests for BulkContentScanService."""
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import pendulum
 import pytest
 
 SAMPLE_FACT_CHECK_ID = UUID("12345678-1234-1234-1234-123456789abc")
@@ -84,7 +84,7 @@ class TestInitiateScan:
         mock_scan_log = MagicMock()
         mock_scan_log.id = uuid4()
         mock_scan_log.status = "pending"
-        mock_scan_log.initiated_at = datetime.now(UTC)
+        mock_scan_log.initiated_at = pendulum.now("UTC")
         mock_scan_log.completed_at = None
         mock_scan_log.messages_scanned = 0
         mock_scan_log.messages_flagged = 0
@@ -209,7 +209,7 @@ class TestProcessMessages:
             community_server_id="guild_123",
             content="Test message content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service.process_messages(
@@ -270,7 +270,7 @@ class TestProcessMessages:
                 community_server_id="guild_123",
                 content="Test message 1",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
             BulkScanMessage(
                 message_id="msg_2",
@@ -278,7 +278,7 @@ class TestProcessMessages:
                 community_server_id="guild_123",
                 content="Test message 2",
                 author_id="user_2",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
         ]
 
@@ -313,7 +313,7 @@ class TestProcessMessages:
             community_server_id="guild_123",
             content="short",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service.process_messages(
@@ -371,7 +371,7 @@ class TestProcessMessages:
             community_server_id="guild_123",
             content="Test message content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service.process_messages(
@@ -406,7 +406,7 @@ class TestProcessMessages:
             community_server_id="guild_123",
             content="Test message content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service.process_messages(
@@ -449,7 +449,7 @@ class TestAppendFlaggedResult:
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match],
         )
 
@@ -489,7 +489,7 @@ class TestGetFlaggedResultsFromList:
                 channel_id="ch_1",
                 content="Test",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
                 matches=[similarity_match_1],
             )
             .model_dump_json()
@@ -499,7 +499,7 @@ class TestGetFlaggedResultsFromList:
                 channel_id="ch_2",
                 content="Test 2",
                 author_id="user_2",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
                 matches=[similarity_match_2],
             )
             .model_dump_json()
@@ -669,7 +669,7 @@ class TestStoreFlaggedResults:
                 channel_id="ch_1",
                 content="Test",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
                 matches=[similarity_match],
             )
         ]
@@ -1102,7 +1102,7 @@ class TestRedisKeyEnvironmentPrefix:
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match],
         )
 
@@ -1144,7 +1144,7 @@ class TestRedisKeyEnvironmentPrefix:
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match],
         )
 
@@ -1210,7 +1210,7 @@ class TestRedisKeyEnvironmentPrefix:
                 channel_id="ch_1",
                 content="Test",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
                 matches=[similarity_match],
             )
         ]
@@ -1262,7 +1262,7 @@ class TestRedisErrorPropagation:
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match],
         )
 
@@ -1319,7 +1319,7 @@ class TestRedisErrorPropagation:
                 channel_id="ch_1",
                 content="Test",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
                 matches=[similarity_match],
             )
         ]
@@ -1356,7 +1356,7 @@ class TestRedisErrorPropagation:
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match],
         )
 
@@ -1397,7 +1397,7 @@ class TestEmbeddingServiceErrorHandling:
             community_server_id="guild_123",
             content="Test message content that should trigger embedding search",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service.process_messages(
@@ -1467,7 +1467,7 @@ class TestEmbeddingServiceErrorHandling:
                 community_server_id="guild_123",
                 content="First message that will fail embedding",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
             BulkScanMessage(
                 message_id="msg_2",
@@ -1475,7 +1475,7 @@ class TestEmbeddingServiceErrorHandling:
                 community_server_id="guild_123",
                 content="Second message that should succeed",
                 author_id="user_2",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
         ]
 
@@ -1509,7 +1509,7 @@ class TestConcurrentCompleteScanBehavior:
         mock_scan_log = MagicMock(spec=BulkContentScanLog)
         mock_scan_log.id = uuid4()
         mock_scan_log.status = BulkScanStatus.COMPLETED
-        mock_scan_log.completed_at = datetime.now(UTC)
+        mock_scan_log.completed_at = pendulum.now("UTC")
         mock_scan_log.messages_scanned = 100
         mock_scan_log.messages_flagged = 5
 
@@ -1566,7 +1566,7 @@ class TestConcurrentCompleteScanBehavior:
                 mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
             else:
                 mock_scan_log.status = BulkScanStatus.COMPLETED
-                mock_scan_log.completed_at = datetime.now(UTC)
+                mock_scan_log.completed_at = pendulum.now("UTC")
                 mock_result.scalar_one_or_none = MagicMock(return_value=mock_scan_log)
             return mock_result
 
@@ -1660,7 +1660,7 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
             community_server_id="guild_123",
             content="Test message content that should match",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         with patch.object(
@@ -1726,7 +1726,7 @@ class TestIsFlaggedConsistencyWithFlaggedMessage:
             community_server_id="guild_123",
             content="Test message content that should match",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         flagged, scores = await service.process_messages_with_scores(
@@ -1960,7 +1960,7 @@ class TestProcessMessagesSkipsExistingRequests:
                 community_server_id="guild_123",
                 content="Test message content 1",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
             BulkScanMessage(
                 message_id="msg_2",
@@ -1968,7 +1968,7 @@ class TestProcessMessagesSkipsExistingRequests:
                 community_server_id="guild_123",
                 content="Test message content 2 - has existing request",
                 author_id="user_2",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
         ]
 
@@ -2035,7 +2035,7 @@ class TestProcessMessagesSkipsExistingRequests:
                 community_server_id="guild_123",
                 content="Test message content 1",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
             BulkScanMessage(
                 message_id="msg_2",
@@ -2043,7 +2043,7 @@ class TestProcessMessagesSkipsExistingRequests:
                 community_server_id="guild_123",
                 content="Test message content 2",
                 author_id="user_2",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
         ]
 
@@ -2082,7 +2082,7 @@ class TestProcessMessagesSkipsExistingRequests:
                 community_server_id="guild_123",
                 content="Test message content 1",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
             BulkScanMessage(
                 message_id="msg_2",
@@ -2090,7 +2090,7 @@ class TestProcessMessagesSkipsExistingRequests:
                 community_server_id="guild_123",
                 content="Test message content 2",
                 author_id="user_2",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
             BulkScanMessage(
                 message_id="msg_3",
@@ -2098,7 +2098,7 @@ class TestProcessMessagesSkipsExistingRequests:
                 community_server_id="guild_123",
                 content="Test message content 3",
                 author_id="user_3",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
             ),
         ]
 
@@ -2145,7 +2145,7 @@ class TestFlashpointRelevanceBypass:
             community_server_id="guild_123",
             content="You are completely wrong and don't know what you are talking about",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         fp_match = ConversationFlashpointMatch(
@@ -2202,7 +2202,7 @@ class TestFlashpointRelevanceBypass:
             community_server_id="guild_123",
             content="This is aggressive content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         fp_match = ConversationFlashpointMatch(
@@ -2251,7 +2251,7 @@ class TestDeduplicateFlaggedMessages:
             channel_id="ch_1",
             content="Test content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match],
         )
 
@@ -2306,7 +2306,7 @@ class TestDeduplicateFlaggedMessages:
             channel_id="ch_1",
             content="Dual match content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[sim_match],
         )
         flagged_fp = FlaggedMessage(
@@ -2314,7 +2314,7 @@ class TestDeduplicateFlaggedMessages:
             channel_id="ch_1",
             content="Dual match content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[fp_match],
         )
 
@@ -2364,7 +2364,7 @@ class TestBatchContextLimitation:
                 community_server_id="guild_123",
                 content=f"Message {i} content for testing",
                 author_id="user_1",
-                timestamp=datetime(2024, 1, 1, i, 0, 0, tzinfo=UTC),
+                timestamp=pendulum.datetime(2024, 1, 1, i, 0, 0, tz="UTC"),
             )
             for i in range(3)
         ]
@@ -2396,7 +2396,7 @@ class TestBatchContextLimitation:
                 community_server_id="guild_123",
                 content=f"Message {i} content for testing",
                 author_id="user_1",
-                timestamp=datetime(2024, 1, 1, i, 0, 0, tzinfo=UTC),
+                timestamp=pendulum.datetime(2024, 1, 1, i, 0, 0, tz="UTC"),
             )
             for i in range(3)
         ]
@@ -2450,7 +2450,7 @@ class TestContentScanTypesHoisted:
                 community_server_id="guild_123",
                 content=f"Test message content number {i} for scanning",
                 author_id="user_1",
-                timestamp=datetime(2024, 1, 1, i, 0, 0, tzinfo=UTC),
+                timestamp=pendulum.datetime(2024, 1, 1, i, 0, 0, tz="UTC"),
             )
             for i in range(3)
         ]
@@ -2495,7 +2495,7 @@ class TestUnifiedFlaggedMessageConstruction:
             community_server_id="guild_123",
             content="Unified construction test content",
             author_id="user_1",
-            timestamp=datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC),
+            timestamp=pendulum.datetime(2024, 6, 15, 12, 0, 0, tz="UTC"),
         )
 
         fp_match = ConversationFlashpointMatch(
@@ -2542,7 +2542,7 @@ class TestCrossBatchContextCache:
             community_server_id="guild_123",
             content=f"Message {msg_id} content for testing",
             author_id="user_1",
-            timestamp=datetime(2024, 1, 1, minute // 60, minute % 60, 0, tzinfo=UTC),
+            timestamp=pendulum.datetime(2024, 1, 1, minute // 60, minute % 60, 0, tz="UTC"),
         )
 
     @pytest.mark.asyncio
@@ -2869,7 +2869,7 @@ class TestCrossBatchContextCache:
                 community_server_id="guild_123",
                 content="Test message content that is long enough",
                 author_id="user_1",
-                timestamp=datetime(2024, 1, 1, 0, 1, 0, tzinfo=UTC),
+                timestamp=pendulum.datetime(2024, 1, 1, 0, 1, 0, tz="UTC"),
             ),
         ]
 
@@ -2923,7 +2923,7 @@ class TestCrossBatchContextCache:
                 community_server_id="guild_123",
                 content="Test message content that is long enough",
                 author_id="user_1",
-                timestamp=datetime(2024, 1, 1, 0, 1, 0, tzinfo=UTC),
+                timestamp=pendulum.datetime(2024, 1, 1, 0, 1, 0, tz="UTC"),
             ),
         ]
 

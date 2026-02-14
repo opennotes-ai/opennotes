@@ -1,7 +1,8 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import pendulum
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import ARRAY, CheckConstraint, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
@@ -108,7 +109,7 @@ class FactCheckItem(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
-        onupdate=lambda: datetime.now(UTC),
+        onupdate=lambda: pendulum.now("UTC"),
     )
 
     chunks: Mapped[list["FactCheckChunk"]] = relationship(

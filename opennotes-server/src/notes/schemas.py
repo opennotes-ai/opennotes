@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Any, Literal
 from uuid import UUID
 
+import pendulum
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from src.common.base_schemas import (
@@ -134,7 +135,7 @@ class NoteResponse(NoteInDB):
         if value is None:
             return None
         if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
+            value = value.replace(tzinfo=pendulum.UTC)
         return value.isoformat()
 
     @computed_field  # type: ignore[prop-decorator]
@@ -303,7 +304,7 @@ class RequestResponse(RequestInDB):
         """Serialize requested_at to ISO 8601 format with timezone for JavaScript compatibility."""
         # Ensure datetime is timezone-aware (assume UTC if naive)
         if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
+            value = value.replace(tzinfo=pendulum.UTC)
         return value.isoformat()
 
 

@@ -6,10 +6,10 @@ through the LLM relevance check as a unified final filter before being marked as
 TDD: These tests are written BEFORE implementation to define expected behavior.
 """
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pendulum
 import pytest
 
 from src.bulk_content_scan.scan_types import ScanType
@@ -77,7 +77,7 @@ class TestScanCandidateSchema:
             community_server_id="guild_123",
             content="Test content for candidate",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         match = SimilarityMatch(
@@ -151,7 +151,7 @@ class TestSimilarityScanReturnsCandidate:
             community_server_id="guild_123",
             content="Test message content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         candidate = await service._similarity_scan_candidate(
@@ -211,7 +211,7 @@ class TestSimilarityScanReturnsCandidate:
             community_server_id="guild_123",
             content="Test message content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         await service._similarity_scan_candidate(
@@ -257,7 +257,7 @@ class TestModerationScanReturnsCandidate:
             community_server_id="guild_123",
             content="Test message with hate speech content",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         candidate = await service._moderation_scan_candidate(
@@ -306,7 +306,7 @@ class TestUnifiedRelevanceFilter:
             community_server_id="guild_123",
             content="Biden was a Confederate soldier",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         msg2 = BulkScanMessage(
@@ -315,7 +315,7 @@ class TestUnifiedRelevanceFilter:
             community_server_id="guild_123",
             content="Hate speech content here",
             author_id="user_2",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         similarity_match = SimilarityMatch(
@@ -399,7 +399,7 @@ class TestUpdatedRelevancePrompt:
             community_server_id="guild_123",
             content="how about biden",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         similarity_match = SimilarityMatch(
@@ -461,7 +461,7 @@ class TestUpdatedRelevancePrompt:
             community_server_id="guild_123",
             content="Biden was a Confederate soldier",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         similarity_match = SimilarityMatch(
@@ -550,7 +550,7 @@ class TestDebugModeUnification:
             community_server_id="guild_123",
             content="how about biden",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         with patch("src.bulk_content_scan.service.settings") as mock_settings:
@@ -607,7 +607,7 @@ class TestCandidateFlaggedLogging:
             community_server_id="guild_123",
             content="Biden was a Confederate soldier",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         similarity_match = SimilarityMatch(

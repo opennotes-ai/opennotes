@@ -7,9 +7,9 @@ These tests verify that:
 3. No partial state if Redis operations fail
 """
 
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pendulum
 import pytest
 
 from src.cache.models import SessionData
@@ -125,7 +125,7 @@ async def test_delete_session_uses_pipeline(session_manager, mock_redis_client):
         session_id="test_session_123",
         user_id=123,
         username="testuser",
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        expires_at=pendulum.now("UTC") + pendulum.duration(hours=1),
     )
 
     with patch.object(session_manager, "get_session", return_value=session_data):
@@ -164,7 +164,7 @@ async def test_delete_session_atomic_failure(session_manager, mock_redis_client)
         session_id="test_session_456",
         user_id=456,
         username="testuser2",
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        expires_at=pendulum.now("UTC") + pendulum.duration(hours=1),
     )
 
     with patch.object(session_manager, "get_session", return_value=session_data):
@@ -195,7 +195,7 @@ async def test_delete_session_no_partial_state(session_manager, mock_redis_clien
         session_id="test_session_789",
         user_id=789,
         username="testuser3",
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        expires_at=pendulum.now("UTC") + pendulum.duration(hours=1),
     )
 
     with patch.object(session_manager, "get_session", return_value=session_data):
@@ -249,7 +249,7 @@ async def test_delete_session_no_client_returns_false(session_manager):
         session_id="test_session",
         user_id=123,
         username="testuser",
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        expires_at=pendulum.now("UTC") + pendulum.duration(hours=1),
     )
 
     with patch.object(session_manager, "get_session", return_value=session_data):
@@ -304,7 +304,7 @@ async def test_delete_session_both_operations_in_single_transaction(
         session_id="test_session",
         user_id=123,
         username="testuser",
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        expires_at=pendulum.now("UTC") + pendulum.duration(hours=1),
     )
 
     with patch.object(session_manager, "get_session", return_value=session_data):

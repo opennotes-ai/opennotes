@@ -1,9 +1,9 @@
 """Tests for Bulk Content Scan REST API router (router.py)."""
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pendulum
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -20,7 +20,7 @@ def mock_flagged_messages():
             channel_id="ch_1",
             content=f"Test message {i}",
             author_id=f"user_{i}",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             match_score=0.85 - (i * 0.01),
             matched_claim=f"Test claim {i}",
             matched_source=f"https://example.com/{i}",
@@ -40,8 +40,8 @@ def mock_service(mock_flagged_messages):
     mock_scan_log.id = uuid4()
     mock_scan_log.community_server_id = uuid4()
     mock_scan_log.status = "completed"
-    mock_scan_log.initiated_at = datetime.now(UTC)
-    mock_scan_log.completed_at = datetime.now(UTC)
+    mock_scan_log.initiated_at = pendulum.now("UTC")
+    mock_scan_log.completed_at = pendulum.now("UTC")
     mock_scan_log.messages_scanned = 100
     mock_scan_log.messages_flagged = 25
 

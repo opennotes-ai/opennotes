@@ -125,7 +125,7 @@ async def test_create_session_cleans_up_partial_state_on_pipeline_failure(
             session_key = f"session:{session_id}"
             user_sessions_key = f"session:user:{user_id}:sessions"
 
-            from datetime import UTC, datetime, timedelta
+            import pendulum
 
             from src.cache.models import SessionData
             from src.config import settings
@@ -135,7 +135,7 @@ async def test_create_session_cleans_up_partial_state_on_pipeline_failure(
                 user_id=user_id,
                 username=username,
                 device_id=None,
-                expires_at=datetime.now(UTC) + timedelta(seconds=settings.SESSION_TTL),
+                expires_at=pendulum.now("UTC") + pendulum.duration(seconds=settings.SESSION_TTL),
                 metadata={},
             )
             serialized = session_data.model_dump_json().encode("utf-8")
@@ -204,7 +204,7 @@ async def test_create_session_cleanup_is_best_effort(
             session_key = f"session:{session_id}"
             user_sessions_key = f"session:user:{user_id}:sessions"
 
-            from datetime import UTC, datetime, timedelta
+            import pendulum
 
             from src.cache.models import SessionData
             from src.config import settings
@@ -214,7 +214,7 @@ async def test_create_session_cleanup_is_best_effort(
                 user_id=user_id,
                 username=username,
                 device_id=None,
-                expires_at=datetime.now(UTC) + timedelta(seconds=settings.SESSION_TTL),
+                expires_at=pendulum.now("UTC") + pendulum.duration(seconds=settings.SESSION_TTL),
                 metadata={},
             )
             serialized = session_data.model_dump_json().encode("utf-8")

@@ -1,9 +1,9 @@
 """Tests for Bulk Content Scan JSON:API v2 router."""
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import pendulum
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -22,7 +22,7 @@ def mock_flagged_messages():
             channel_id="ch_1",
             content="Test message 1",
             author_id="user_1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[
                 SimilarityMatch(
                     score=0.85,
@@ -37,7 +37,7 @@ def mock_flagged_messages():
             channel_id="ch_1",
             content="Test message 2",
             author_id="user_2",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[
                 SimilarityMatch(
                     score=0.75,
@@ -61,7 +61,7 @@ def mock_service(mock_flagged_messages):
     mock_scan_log.id = uuid4()
     mock_scan_log.community_server_id = uuid4()
     mock_scan_log.status = "pending"
-    mock_scan_log.initiated_at = datetime.now(UTC)
+    mock_scan_log.initiated_at = pendulum.now("UTC")
     mock_scan_log.completed_at = None
     mock_scan_log.messages_scanned = 0
     mock_scan_log.messages_flagged = 0

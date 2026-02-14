@@ -1,7 +1,8 @@
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,12 +39,12 @@ class User(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        DateTime(timezone=True), default=lambda: pendulum.now("UTC")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
+        default=lambda: pendulum.now("UTC"),
+        onupdate=lambda: pendulum.now("UTC"),
     )
 
     def __repr__(self) -> str:
@@ -73,7 +74,7 @@ class RefreshToken(Base):
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        DateTime(timezone=True), default=lambda: pendulum.now("UTC")
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -108,7 +109,7 @@ class APIKey(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        DateTime(timezone=True), default=lambda: pendulum.now("UTC")
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -158,7 +159,7 @@ class AuditLog(Base):
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+        DateTime(timezone=True), default=lambda: pendulum.now("UTC"), index=True
     )
 
     def __repr__(self) -> str:

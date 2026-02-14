@@ -1,9 +1,9 @@
 """Tests for OpenAI moderation integration with BulkContentScanService."""
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
+import pendulum
 import pytest
 
 from src.bulk_content_scan.scan_types import ScanType
@@ -33,7 +33,7 @@ class TestFlaggedMessageModerationFields:
             channel_id="456",
             content="test content",
             author_id="789",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[moderation_match],
         )
         assert len(msg.matches) == 1
@@ -53,7 +53,7 @@ class TestFlaggedMessageModerationFields:
             channel_id="456",
             content="test content",
             author_id="789",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match],
         )
         assert len(msg.matches) == 1
@@ -80,7 +80,7 @@ class TestFlaggedMessageModerationFields:
             channel_id="456",
             content="test content",
             author_id="789",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
         assert msg.matches == []
 
@@ -158,7 +158,7 @@ class TestScannerDispatch:
             community_server_id="789",
             content="some violent content",
             author_id="user1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service_with_moderation._run_scanner(
@@ -182,7 +182,7 @@ class TestScannerDispatch:
             community_server_id="789",
             content="some violent content",
             author_id="user1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service_with_moderation._run_scanner(
@@ -209,7 +209,7 @@ class TestScannerDispatch:
             community_server_id="789",
             content="check this image",
             author_id="user1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             attachment_urls=["https://example.com/image.jpg"],
         )
 
@@ -242,7 +242,7 @@ class TestScannerDispatch:
             community_server_id="789",
             content="hello world",
             author_id="user1",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         result = await service_with_moderation._run_scanner(

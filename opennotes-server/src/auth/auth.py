@@ -1,8 +1,9 @@
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 
+import pendulum
 from jose import JWTError, jwt
 
 from src.auth.models import TokenData
@@ -33,19 +34,23 @@ async def is_token_revoked_check(token: str) -> bool:
         return True
 
 
-def create_access_token(data: dict[str, str | int], expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    data: dict[str, str | int], expires_delta: pendulum.Duration | None = None
+) -> str:
     to_encode = data.copy()
 
     if expires_delta:
-        expire = datetime.now(UTC) + expires_delta
+        expire = pendulum.now("UTC") + expires_delta
     else:
-        expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = pendulum.now("UTC") + pendulum.duration(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
 
     # Generate unique JWT ID for revocation tracking
     jti = secrets.token_urlsafe(32)
 
     to_encode["exp"] = int(expire.timestamp())
-    to_encode["iat"] = int(datetime.now(UTC).timestamp())
+    to_encode["iat"] = int(pendulum.now("UTC").timestamp())
     to_encode["jti"] = jti
 
     encoded_jwt: str = jwt.encode(
@@ -58,13 +63,13 @@ def create_access_token(data: dict[str, str | int], expires_delta: timedelta | N
 
 def create_refresh_token(data: dict[str, str | int]) -> str:
     to_encode = data.copy()
-    expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = pendulum.now("UTC") + pendulum.duration(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
     # Generate unique JWT ID for revocation tracking
     jti = secrets.token_urlsafe(32)
 
     to_encode["exp"] = int(expire.timestamp())
-    to_encode["iat"] = int(datetime.now(UTC).timestamp())
+    to_encode["iat"] = int(pendulum.now("UTC").timestamp())
     to_encode["jti"] = jti
     to_encode["type"] = "refresh"
 
@@ -104,8 +109,8 @@ async def verify_token(token: str, tokens_valid_after: datetime | None = None) -
 
         # Validate iat (issued at) claim
         if iat is not None:
-            iat_datetime = datetime.fromtimestamp(iat, tz=UTC)
-            now = datetime.now(UTC)
+            iat_datetime = pendulum.from_timestamp(iat)
+            now = pendulum.now("UTC")
 
             # Reject tokens with future iat
             if iat_datetime > now:
@@ -160,8 +165,8 @@ async def verify_refresh_token(  # noqa: PLR0911
 
         # Validate iat (issued at) claim
         if iat is not None:
-            iat_datetime = datetime.fromtimestamp(iat, tz=UTC)
-            now = datetime.now(UTC)
+            iat_datetime = pendulum.from_timestamp(iat)
+            now = pendulum.now("UTC")
 
             # Reject tokens with future iat
             if iat_datetime > now:

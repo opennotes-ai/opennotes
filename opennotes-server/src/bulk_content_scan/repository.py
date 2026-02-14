@@ -1,6 +1,6 @@
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,7 +49,7 @@ async def has_recent_scan(
     """
     settings = get_settings()
     days = window_days or settings.BULK_CONTENT_SCAN_REPROMPT_DAYS
-    cutoff = datetime.now(UTC) - timedelta(days=days)
+    cutoff = pendulum.now("UTC") - pendulum.duration(days=days)
 
     stmt = (
         select(BulkContentScanLog.id)

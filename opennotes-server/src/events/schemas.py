@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, TypedDict
 from uuid import UUID
 
+import pendulum
 from pydantic import Field, field_validator
 
 from src.bulk_content_scan.schemas import BulkScanMessage, FlaggedMessage
@@ -83,7 +84,7 @@ class BaseEvent(StrictEventSchema):
     event_type: EventType = Field(..., description="Type of event")
     version: str = Field(default="1.0", description="Event schema version")
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(UTC), description="Event timestamp"
+        default_factory=lambda: pendulum.now("UTC"), description="Event timestamp"
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
@@ -252,7 +253,7 @@ class AuditLogCreatedEvent(BaseEvent):
     ip_address: str | None = Field(None, max_length=45, description="IP address of the client")
     user_agent: str | None = Field(None, max_length=1000, description="User agent of the client")
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC), description="When the action occurred"
+        default_factory=lambda: pendulum.now("UTC"), description="When the action occurred"
     )
 
 

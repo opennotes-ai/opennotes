@@ -13,11 +13,12 @@ Schemas follow the pattern:
     - Response: API response format with nested relationships
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Any, Optional
 from uuid import UUID
 
+import pendulum
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.base_schemas import StrictInputSchema, TimestampSchema
@@ -294,7 +295,7 @@ class CommunityMemberCreate(CommunityMemberBase, StrictInputSchema):
         None, description="Profile ID of the user who invited this member"
     )
     joined_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC), description="When the user joined"
+        default_factory=lambda: pendulum.now("UTC"), description="When the user joined"
     )
 
 

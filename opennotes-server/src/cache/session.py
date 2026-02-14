@@ -1,7 +1,8 @@
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
+
+import pendulum
 
 from src.cache.models import SessionData
 from src.cache.redis_client import redis_client
@@ -43,7 +44,7 @@ class SessionManager:
             user_id=user_id,
             username=username,
             device_id=device_id,
-            expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+            expires_at=pendulum.now("UTC") + pendulum.duration(seconds=ttl_seconds),
             metadata=metadata or {},
         )
 

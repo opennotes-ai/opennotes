@@ -1,7 +1,8 @@
 """Unit tests for PreviouslySeenMessage SQLAlchemy model."""
 
-from datetime import UTC, datetime
 from uuid import UUID
+
+import pendulum
 
 from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 
@@ -76,7 +77,7 @@ class TestPreviouslySeenMessageModel:
     def test_model_created_at_defaults_to_utc(self):
         """Test PreviouslySeenMessage created_at defaults to UTC timestamp."""
         community_server_id = UUID("018f5e6e-1234-7890-abcd-ef1234567890")
-        before = datetime.now(UTC)
+        before = pendulum.now("UTC")
 
         message = PreviouslySeenMessage(
             community_server_id=community_server_id,
@@ -84,7 +85,7 @@ class TestPreviouslySeenMessageModel:
             published_note_id=123456789,
         )
 
-        after = datetime.now(UTC)
+        after = pendulum.now("UTC")
 
         assert message.created_at is not None
         assert before <= message.created_at <= after

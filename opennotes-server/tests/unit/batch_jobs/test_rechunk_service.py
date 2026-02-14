@@ -13,6 +13,7 @@ Task: task-986.10 - Restore deleted test coverage
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pendulum
 import pytest
 
 from src.batch_jobs.constants import (
@@ -399,13 +400,11 @@ class TestRechunkServiceStaleJobCleanup:
         mock_batch_job_service,
     ):
         """Cleanup marks stale jobs as failed."""
-        from datetime import UTC, datetime, timedelta
-
         stale_job_id = uuid4()
         stale_job = MagicMock(spec=BatchJob)
         stale_job.id = stale_job_id
         stale_job.status = "in_progress"
-        stale_job.created_at = datetime.now(UTC) - timedelta(hours=3)
+        stale_job.created_at = pendulum.now("UTC") - pendulum.duration(hours=3)
 
         session = MagicMock()
 
@@ -460,14 +459,12 @@ class TestRechunkServiceStaleJobCleanup:
         mock_batch_job_service,
     ):
         """Cleanup marks stale scrape jobs as failed (task-1010.11)."""
-        from datetime import UTC, datetime, timedelta
-
         stale_job_id = uuid4()
         stale_job = MagicMock(spec=BatchJob)
         stale_job.id = stale_job_id
         stale_job.job_type = SCRAPE_JOB_TYPE
         stale_job.status = "in_progress"
-        stale_job.created_at = datetime.now(UTC) - timedelta(hours=3)
+        stale_job.created_at = pendulum.now("UTC") - pendulum.duration(hours=3)
 
         session = MagicMock()
 
@@ -498,14 +495,12 @@ class TestRechunkServiceStaleJobCleanup:
         mock_batch_job_service,
     ):
         """Cleanup marks stale promotion jobs as failed (task-1010.11)."""
-        from datetime import UTC, datetime, timedelta
-
         stale_job_id = uuid4()
         stale_job = MagicMock(spec=BatchJob)
         stale_job.id = stale_job_id
         stale_job.job_type = PROMOTION_JOB_TYPE
         stale_job.status = "pending"
-        stale_job.created_at = datetime.now(UTC) - timedelta(hours=5)
+        stale_job.created_at = pendulum.now("UTC") - pendulum.duration(hours=5)
 
         session = MagicMock()
 
@@ -536,8 +531,6 @@ class TestRechunkServiceStaleJobCleanup:
         mock_batch_job_service,
     ):
         """Cleanup processes stale jobs of all supported types (task-1010.11, task-1097.02)."""
-        from datetime import UTC, datetime, timedelta
-
         from src.batch_jobs.rechunk_service import ALL_BATCH_JOB_TYPES
 
         stale_jobs = []
@@ -546,7 +539,7 @@ class TestRechunkServiceStaleJobCleanup:
             job.id = uuid4()
             job.job_type = job_type
             job.status = "in_progress"
-            job.created_at = datetime.now(UTC) - timedelta(hours=3)
+            job.created_at = pendulum.now("UTC") - pendulum.duration(hours=3)
             stale_jobs.append(job)
 
         session = MagicMock()
@@ -580,15 +573,13 @@ class TestGetStuckJobsInfo:
     @pytest.mark.asyncio
     async def test_get_stuck_jobs_info_returns_stuck_jobs(self):
         """get_stuck_jobs_info returns jobs stuck with zero progress."""
-        from datetime import UTC, datetime, timedelta
-
         stuck_job_id = uuid4()
         stuck_job = MagicMock(spec=BatchJob)
         stuck_job.id = stuck_job_id
         stuck_job.job_type = RECHUNK_FACT_CHECK_JOB_TYPE
         stuck_job.status = "in_progress"
-        stuck_job.updated_at = datetime.now(UTC) - timedelta(minutes=40)
-        stuck_job.created_at = datetime.now(UTC) - timedelta(hours=1)
+        stuck_job.updated_at = pendulum.now("UTC") - pendulum.duration(minutes=40)
+        stuck_job.created_at = pendulum.now("UTC") - pendulum.duration(hours=1)
 
         session = MagicMock()
 
@@ -634,8 +625,6 @@ class TestGetStuckJobsInfo:
     @pytest.mark.asyncio
     async def test_get_stuck_jobs_info_handles_multiple_job_types(self):
         """get_stuck_jobs_info handles all supported batch job types."""
-        from datetime import UTC, datetime, timedelta
-
         stuck_jobs = []
         for i, job_type in enumerate(
             [
@@ -649,8 +638,8 @@ class TestGetStuckJobsInfo:
             job.id = uuid4()
             job.job_type = job_type
             job.status = "in_progress"
-            job.updated_at = datetime.now(UTC) - timedelta(minutes=40 + i * 10)
-            job.created_at = datetime.now(UTC) - timedelta(hours=1 + i)
+            job.updated_at = pendulum.now("UTC") - pendulum.duration(minutes=40 + i * 10)
+            job.created_at = pendulum.now("UTC") - pendulum.duration(hours=1 + i)
             stuck_jobs.append(job)
 
         session = MagicMock()

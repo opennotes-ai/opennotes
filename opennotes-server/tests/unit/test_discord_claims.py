@@ -4,8 +4,7 @@ Unit tests for Discord claims JWT creation and validation.
 Security fix for task-682: Authentication bypass via X-Discord-Has-Manage-Server header
 """
 
-from datetime import timedelta
-
+import pendulum
 import pytest
 
 
@@ -88,7 +87,7 @@ class TestDiscordClaims:
             user_id="123456789",
             guild_id="987654321",
             has_manage_server=True,
-            expires_delta=timedelta(seconds=-60),
+            expires_delta=pendulum.duration(seconds=-60),
         )
 
         claims = validate_discord_claims(token)
@@ -96,14 +95,12 @@ class TestDiscordClaims:
 
     def test_invalid_user_id_type_returns_none(self) -> None:
         """Test that token with non-string user_id returns None."""
-        from datetime import UTC, datetime
-
         import jwt
 
         from src.auth.discord_claims import validate_discord_claims
         from src.config import settings
 
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         payload = {
             "type": "discord_claims",
             "user_id": 123456789,
@@ -124,14 +121,12 @@ class TestDiscordClaims:
 
     def test_invalid_guild_id_type_returns_none(self) -> None:
         """Test that token with non-string guild_id returns None."""
-        from datetime import UTC, datetime
-
         import jwt
 
         from src.auth.discord_claims import validate_discord_claims
         from src.config import settings
 
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         payload = {
             "type": "discord_claims",
             "user_id": "123456789",
@@ -152,14 +147,12 @@ class TestDiscordClaims:
 
     def test_invalid_has_manage_server_type_returns_none(self) -> None:
         """Test that token with non-boolean has_manage_server returns None."""
-        from datetime import UTC, datetime
-
         import jwt
 
         from src.auth.discord_claims import validate_discord_claims
         from src.config import settings
 
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         payload = {
             "type": "discord_claims",
             "user_id": "123456789",

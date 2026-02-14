@@ -1,11 +1,11 @@
 """Unit tests for FlashpointDetectionService."""
 
 import warnings
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import dspy
+import pendulum
 import pytest
 
 from src.bulk_content_scan.flashpoint_service import (
@@ -31,7 +31,7 @@ def make_bulk_scan_message(
         content=content,
         author_id=author_id,
         author_username=author_username,
-        timestamp=datetime.now(UTC),
+        timestamp=pendulum.now("UTC"),
     )
 
 
@@ -361,7 +361,7 @@ class TestFlashpointDetectionService:
                     content="Hello there",
                     author_id="user_456",
                     author_username=None,
-                    timestamp=datetime.now(UTC),
+                    timestamp=pendulum.now("UTC"),
                 ),
             ]
 

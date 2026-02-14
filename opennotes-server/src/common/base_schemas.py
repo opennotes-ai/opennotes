@@ -1,6 +1,7 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+import pendulum
 from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 
@@ -117,7 +118,7 @@ class TimestampSchema(SQLAlchemySchema):
         """Serialize created_at to ISO 8601 format with timezone for JavaScript compatibility."""
         # Ensure datetime is timezone-aware (assume UTC if naive)
         if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
+            value = value.replace(tzinfo=pendulum.UTC)
         return value.isoformat()
 
     @field_serializer("updated_at", when_used="json")
@@ -127,5 +128,5 @@ class TimestampSchema(SQLAlchemySchema):
             return None
         # Ensure datetime is timezone-aware (assume UTC if naive)
         if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
+            value = value.replace(tzinfo=pendulum.UTC)
         return value.isoformat()
