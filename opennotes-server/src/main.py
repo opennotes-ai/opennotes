@@ -274,6 +274,74 @@ async def _run_startup_validation() -> None:
         raise RuntimeError("Server startup aborted due to failed validation checks") from e
 
 
+def _register_dbos_workflows() -> list[str]:
+    """Import all DBOS workflow modules and return their registered workflow names.
+
+    Each module is imported in its own try/except so a single broken module
+    does not prevent the remaining workflows from registering.
+    """
+    import importlib
+
+    registered: list[str] = []
+
+    workflow_modules: list[tuple[str, list[str]]] = [
+        (
+            "src.dbos_workflows.rechunk_workflow",
+            [
+                "RECHUNK_FACT_CHECK_WORKFLOW_NAME",
+                "CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME",
+                "RECHUNK_PREVIOUSLY_SEEN_WORKFLOW_NAME",
+            ],
+        ),
+        (
+            "src.dbos_workflows.content_scan_workflow",
+            [
+                "CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME",
+                "PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME",
+            ],
+        ),
+        (
+            "src.dbos_workflows.content_monitoring_workflows",
+            [
+                "AI_NOTE_GENERATION_WORKFLOW_NAME",
+                "VISION_DESCRIPTION_WORKFLOW_NAME",
+                "AUDIT_LOG_WORKFLOW_NAME",
+            ],
+        ),
+        (
+            "src.dbos_workflows.scheduler_workflows",
+            [
+                "CLEANUP_STALE_BATCH_JOBS_WORKFLOW_NAME",
+                "MONITOR_STUCK_BATCH_JOBS_WORKFLOW_NAME",
+            ],
+        ),
+        (
+            "src.dbos_workflows.import_workflow",
+            [
+                "FACT_CHECK_IMPORT_WORKFLOW_NAME",
+                "SCRAPE_CANDIDATES_WORKFLOW_NAME",
+                "PROMOTE_CANDIDATES_WORKFLOW_NAME",
+            ],
+        ),
+        (
+            "src.dbos_workflows.approval_workflow",
+            [
+                "BULK_APPROVAL_WORKFLOW_NAME",
+            ],
+        ),
+    ]
+
+    for module_path, attr_names in workflow_modules:
+        try:
+            mod = importlib.import_module(module_path)
+            registered.extend(getattr(mod, attr) for attr in attr_names)
+        except Exception as e:
+            module_name = module_path.rsplit(".", 1)[-1]
+            logger.error(f"Failed to import {module_name}: {e}", exc_info=True)
+
+    return registered
+
+
 async def _init_dbos(is_dbos_worker: bool) -> None:
     if settings.TESTING:
         return
@@ -284,46 +352,7 @@ async def _init_dbos(is_dbos_worker: bool) -> None:
         logger.info("DBOS Conductor disabled (no API key)")
 
     if is_dbos_worker:
-        # Import workflow modules to register @DBOS.workflow() decorated functions.
-        # MUST happen before launch() so DBOS can find and execute queued workflows.
-        registered_workflows: list[str] = []
-
-        try:
-            from src.dbos_workflows import rechunk_workflow
-
-            registered_workflows.extend(
-                [
-                    rechunk_workflow.RECHUNK_FACT_CHECK_WORKFLOW_NAME,
-                    rechunk_workflow.CHUNK_SINGLE_FACT_CHECK_WORKFLOW_NAME,
-                ]
-            )
-        except Exception as e:
-            logger.error(f"Failed to import rechunk_workflow: {e}", exc_info=True)
-
-        try:
-            from src.dbos_workflows import content_scan_workflow
-
-            registered_workflows.extend(
-                [
-                    content_scan_workflow.CONTENT_SCAN_ORCHESTRATION_WORKFLOW_NAME,
-                    content_scan_workflow.PROCESS_CONTENT_SCAN_BATCH_WORKFLOW_NAME,
-                ]
-            )
-        except Exception as e:
-            logger.error(f"Failed to import content_scan_workflow: {e}", exc_info=True)
-
-        try:
-            from src.dbos_workflows import content_monitoring_workflows
-
-            registered_workflows.extend(
-                [
-                    content_monitoring_workflows.AI_NOTE_GENERATION_WORKFLOW_NAME,
-                    content_monitoring_workflows.VISION_DESCRIPTION_WORKFLOW_NAME,
-                    content_monitoring_workflows.AUDIT_LOG_WORKFLOW_NAME,
-                ]
-            )
-        except Exception as e:
-            logger.error(f"Failed to import content_monitoring_workflows: {e}", exc_info=True)
+        registered_workflows = _register_dbos_workflows()
 
         logger.info(
             "DBOS workflow modules loaded",

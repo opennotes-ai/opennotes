@@ -27,7 +27,7 @@ Note: Fixtures are defined at module-level for better pytest-asyncio reliability
 Class-based fixture inheritance can cause issues with async fixtures.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -392,17 +392,40 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
+    @patch(
+        "src.batch_jobs.rechunk_service.RechunkBatchJobService.start_previously_seen_rechunk_job"
+    )
     async def test_service_account_can_initiate_rechunk(
         self,
-        mock_task,
+        mock_start_job,
         service_account_headers,
         community_server_with_data,
+        db,
     ):
-        """Service account can initiate previously seen message rechunking."""
-        mock_task.kiq = AsyncMock()
+        """Service account can initiate previously seen message rechunking via DBOS."""
+        from src.batch_jobs.schemas import BatchJobCreate
+        from src.batch_jobs.service import BatchJobService
 
         server = community_server_with_data["server"]
+
+        batch_job_service = BatchJobService(db)
+        job = await batch_job_service.create_job(
+            BatchJobCreate(
+                job_type="rechunk:previously_seen",
+                total_tasks=3,
+                metadata={
+                    "community_server_id": str(server.id),
+                    "batch_size": 100,
+                    "chunk_type": "previously_seen",
+                    "execution_backend": "dbos",
+                },
+            )
+        )
+        await batch_job_service.start_job(job.id)
+        await db.commit()
+        await db.refresh(job)
+
+        mock_start_job.return_value = job
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -418,11 +441,7 @@ class TestPreviouslySeenRechunkEndpoint:
             assert data["total_tasks"] >= 0
             assert data["job_type"] == "rechunk:previously_seen"
 
-            mock_task.kiq.assert_called_once()
-            call_kwargs = mock_task.kiq.call_args.kwargs
-            assert call_kwargs["job_id"] == data["id"]
-            assert call_kwargs["community_server_id"] == str(server.id)
-            assert call_kwargs["batch_size"] == 100
+            mock_start_job.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_regular_user_gets_403_without_community_membership(
@@ -448,17 +467,40 @@ class TestPreviouslySeenRechunkEndpoint:
             assert response.status_code == 403
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
+    @patch(
+        "src.batch_jobs.rechunk_service.RechunkBatchJobService.start_previously_seen_rechunk_job"
+    )
     async def test_batch_size_parameter_accepted(
         self,
-        mock_task,
+        mock_start_job,
         service_account_headers,
         community_server_with_data,
+        db,
     ):
-        """Endpoint accepts custom batch_size parameter."""
-        mock_task.kiq = AsyncMock()
+        """Endpoint accepts custom batch_size parameter (DBOS workflow)."""
+        from src.batch_jobs.schemas import BatchJobCreate
+        from src.batch_jobs.service import BatchJobService
 
         server = community_server_with_data["server"]
+
+        batch_job_service = BatchJobService(db)
+        job = await batch_job_service.create_job(
+            BatchJobCreate(
+                job_type="rechunk:previously_seen",
+                total_tasks=3,
+                metadata={
+                    "community_server_id": str(server.id),
+                    "batch_size": 75,
+                    "chunk_type": "previously_seen",
+                    "execution_backend": "dbos",
+                },
+            )
+        )
+        await batch_job_service.start_job(job.id)
+        await db.commit()
+        await db.refresh(job)
+
+        mock_start_job.return_value = job
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -471,7 +513,8 @@ class TestPreviouslySeenRechunkEndpoint:
             data = response.json()
             assert data["status"] == "in_progress"
 
-            call_kwargs = mock_task.kiq.call_args.kwargs
+            mock_start_job.assert_called_once()
+            call_kwargs = mock_start_job.call_args.kwargs
             assert call_kwargs["batch_size"] == 75
 
     @pytest.mark.asyncio
@@ -566,24 +609,45 @@ class TestRechunkEndpointDatabaseIntegration:
             assert job.metadata_.get("community_server_id") == str(server.id)
 
     @pytest.mark.asyncio
-    @patch("src.tasks.rechunk_tasks.process_previously_seen_rechunk_task")
+    @patch(
+        "src.batch_jobs.rechunk_service.RechunkBatchJobService.start_previously_seen_rechunk_job"
+    )
     async def test_previously_seen_rechunk_creates_batch_job_record(
         self,
-        mock_task,
+        mock_start_job,
         service_account_headers,
         community_server_with_data,
         db,
     ):
-        """Verify BatchJob record is created in database with correct job_type."""
+        """Verify BatchJob record is created in database with correct job_type (DBOS)."""
         from uuid import UUID as UUID_
 
         from sqlalchemy import select
 
         from src.batch_jobs.models import BatchJob
-
-        mock_task.kiq = AsyncMock()
+        from src.batch_jobs.schemas import BatchJobCreate
+        from src.batch_jobs.service import BatchJobService
 
         server = community_server_with_data["server"]
+
+        batch_job_service = BatchJobService(db)
+        created_job = await batch_job_service.create_job(
+            BatchJobCreate(
+                job_type="rechunk:previously_seen",
+                total_tasks=3,
+                metadata={
+                    "community_server_id": str(server.id),
+                    "batch_size": 100,
+                    "chunk_type": "previously_seen",
+                    "execution_backend": "dbos",
+                },
+            )
+        )
+        await batch_job_service.start_job(created_job.id)
+        await db.commit()
+        await db.refresh(created_job)
+
+        mock_start_job.return_value = created_job
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

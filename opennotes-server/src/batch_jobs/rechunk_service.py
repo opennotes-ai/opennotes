@@ -26,10 +26,12 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.batch_jobs.constants import (
+    BULK_APPROVAL_JOB_TYPE,
+    IMPORT_JOB_TYPE,
     PROMOTION_JOB_TYPE,
     RECHUNK_FACT_CHECK_JOB_TYPE,
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
@@ -40,10 +42,9 @@ from src.batch_jobs.progress_tracker import (
     BatchJobProgressTracker,
     get_batch_job_progress_tracker,
 )
-from src.batch_jobs.schemas import BatchJobCreate, BatchJobStatus
+from src.batch_jobs.schemas import BatchJobStatus
 from src.batch_jobs.service import BatchJobService
 from src.config import settings
-from src.fact_checking.previously_seen_models import PreviouslySeenMessage
 from src.monitoring import get_logger
 from src.monitoring.metrics import batch_job_stale_cleanup_total
 
@@ -107,10 +108,12 @@ async def enqueue_single_fact_check_chunk(
 DEFAULT_STUCK_JOB_THRESHOLD_MINUTES = 30
 
 ALL_BATCH_JOB_TYPES = [
+    BULK_APPROVAL_JOB_TYPE,
+    IMPORT_JOB_TYPE,
+    PROMOTION_JOB_TYPE,
     RECHUNK_FACT_CHECK_JOB_TYPE,
     RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
     SCRAPE_JOB_TYPE,
-    PROMOTION_JOB_TYPE,
 ]
 
 
@@ -364,10 +367,10 @@ class RechunkBatchJobService:
         batch_size: int = 100,
     ) -> BatchJob:
         """
-        Start a previously seen message rechunk job.
+        Start a previously seen message rechunk job using DBOS workflow.
 
         Checks for active jobs first, then creates a BatchJob and dispatches
-        the TaskIQ task.
+        the DBOS workflow.
 
         Global Serialization:
             Jobs of this type are serialized globally across all community servers.
@@ -390,59 +393,27 @@ class RechunkBatchJobService:
         """
         await self._check_no_active_job(RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE)
 
-        result = await self._session.execute(
-            select(func.count(PreviouslySeenMessage.id)).where(
-                PreviouslySeenMessage.community_server_id == community_server_id
-            )
+        from src.dbos_workflows.rechunk_workflow import (  # noqa: PLC0415
+            dispatch_dbos_previously_seen_rechunk_workflow,
         )
-        total_items = result.scalar_one()
-
-        job = await self._batch_job_service.create_job(
-            BatchJobCreate(
-                job_type=RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
-                total_tasks=total_items,
-                metadata={
-                    "community_server_id": str(community_server_id),
-                    "batch_size": batch_size,
-                    "chunk_type": RechunkType.PREVIOUSLY_SEEN.value,
-                },
-            )
-        )
-
-        await self._batch_job_service.start_job(job.id)
-        await self._session.commit()
-        await self._session.refresh(job)
-
-        try:
-            from src.tasks.rechunk_tasks import (  # noqa: PLC0415
-                process_previously_seen_rechunk_task,
-            )
-
-            await process_previously_seen_rechunk_task.kiq(
-                job_id=str(job.id),
-                community_server_id=str(community_server_id),
-                batch_size=batch_size,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
-            )
-        except Exception as e:
-            await self._batch_job_service.fail_job(
-                job.id,
-                error_summary={"error": str(e), "stage": "task_dispatch"},
-            )
-            await self._session.commit()
-            await self._session.refresh(job)
-            raise
 
         logger.info(
-            "Started previously seen rechunk batch job",
+            "Using DBOS workflow for previously-seen rechunk job",
             extra={
-                "job_id": str(job.id),
                 "community_server_id": str(community_server_id),
                 "batch_size": batch_size,
-                "total_items": total_items,
             },
         )
+
+        job_id = await dispatch_dbos_previously_seen_rechunk_workflow(
+            db=self._session,
+            community_server_id=community_server_id,
+            batch_size=batch_size,
+        )
+
+        job = await self._batch_job_service.get_job(job_id)
+        if job is None:
+            raise RuntimeError(f"BatchJob {job_id} not found after dispatch")
 
         return job
 
@@ -509,14 +480,7 @@ class RechunkBatchJobService:
         cutoff_time = datetime.now(UTC) - timedelta(hours=stale_threshold_hours)
 
         query = select(BatchJob).where(
-            BatchJob.job_type.in_(
-                [
-                    RECHUNK_FACT_CHECK_JOB_TYPE,
-                    RECHUNK_PREVIOUSLY_SEEN_JOB_TYPE,
-                    SCRAPE_JOB_TYPE,
-                    PROMOTION_JOB_TYPE,
-                ]
-            ),
+            BatchJob.job_type.in_(ALL_BATCH_JOB_TYPES),
             or_(
                 BatchJob.status == BatchJobStatus.PENDING.value,
                 BatchJob.status == BatchJobStatus.IN_PROGRESS.value,

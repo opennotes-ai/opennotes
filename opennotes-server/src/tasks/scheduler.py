@@ -1,23 +1,12 @@
-"""
-TaskIQ scheduler configuration.
+"""Deprecated TaskIQ scheduler configuration.
 
-This module configures the TaskIQ scheduler for running scheduled tasks.
-The scheduler uses LabelScheduleSource to discover tasks with `schedule`
-labels and dispatch them according to their cron/interval configuration.
+Scheduled tasks have been migrated to DBOS scheduled workflows in
+src/dbos_workflows/scheduler_workflows.py. The DBOS worker handles
+scheduling automatically via @DBOS.scheduled() decorators.
 
-Usage:
-    # Run the scheduler as a separate process:
-    taskiq scheduler src.tasks.scheduler:scheduler --skip-first-run
-
-    # Or with specific modules:
-    taskiq scheduler src.tasks.scheduler:scheduler src.tasks.scheduler_tasks
-
-The scheduler queries registered tasks for schedule labels and dispatches
-them to the broker at the configured times. Workers then execute the tasks
-as normal background jobs.
-
-Note: The scheduler process must be running for scheduled tasks to execute.
-It's separate from the worker process and should be deployed as its own service.
+This module is retained only for backwards compatibility. The TaskIQ
+scheduler process (taskiq scheduler src.tasks.scheduler:scheduler) is
+no longer needed and should not be deployed.
 """
 
 from taskiq import TaskiqScheduler

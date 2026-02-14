@@ -9,7 +9,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -426,11 +426,20 @@ class TestSetRatingJSONAPI:
         assert response.status_code == 404
 
 
+def _mock_dbos_client():
+    """Create a mock DBOS client whose enqueue returns a handle with workflow_id."""
+    mock_handle = MagicMock()
+    mock_handle.workflow_id = "mock-workflow-id"
+    mock_client = MagicMock()
+    mock_client.enqueue.return_value = mock_handle
+    return mock_client
+
+
 class TestBulkApproveJSONAPI:
     """Tests for POST /api/v1/fact-checking/candidates/approve-predicted endpoint.
 
-    The endpoint now returns a BatchJob immediately and processes approval
-    asynchronously via TaskIQ background tasks.
+    The endpoint returns a BatchJob immediately and dispatches approval
+    asynchronously via a DBOS durable workflow.
     """
 
     @pytest.mark.asyncio
@@ -438,10 +447,11 @@ class TestBulkApproveJSONAPI:
         self, api_key_headers, test_candidates, db_session
     ):
         """Bulk approve endpoint creates a BatchJob and returns 201."""
+        mock_client = _mock_dbos_client()
         with patch(
-            "src.tasks.approval_tasks.process_bulk_approval.kiq",
-            new_callable=AsyncMock,
-        ) as mock_kiq:
+            "src.dbos_workflows.config.get_dbos_client",
+            return_value=mock_client,
+        ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -459,17 +469,18 @@ class TestBulkApproveJSONAPI:
             assert "id" in data
             assert data["job_type"] == "approve:candidates"
             assert data["status"] == "pending"
-            mock_kiq.assert_called_once()
+            mock_client.enqueue.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_bulk_approve_with_filters_passes_to_task(
+    async def test_bulk_approve_with_filters_passes_to_workflow(
         self, api_key_headers, test_candidates, db_session
     ):
-        """Bulk approve respects filter parameters and passes them to the task."""
+        """Bulk approve respects filter parameters and passes them to the DBOS workflow."""
+        mock_client = _mock_dbos_client()
         with patch(
-            "src.tasks.approval_tasks.process_bulk_approval.kiq",
-            new_callable=AsyncMock,
-        ) as mock_kiq:
+            "src.dbos_workflows.config.get_dbos_client",
+            return_value=mock_client,
+        ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -485,19 +496,34 @@ class TestBulkApproveJSONAPI:
                 )
 
             assert response.status_code == 201
-            mock_kiq.assert_called_once()
-            call_kwargs = mock_kiq.call_args[1]
-            assert call_kwargs["threshold"] == 0.9
-            assert call_kwargs["auto_promote"] is True
-            assert call_kwargs["dataset_name"] == "test_dataset"
-            assert call_kwargs["limit"] == 100
+            data = response.json()
+            mock_client.enqueue.assert_called_once()
+            enqueue_args = mock_client.enqueue.call_args[0]
+            options = enqueue_args[0]
+            assert options["queue_name"] == "approval"
+            (
+                batch_job_id,
+                threshold,
+                auto_promote,
+                limit,
+                status,
+                dataset_name,
+                *_rest,
+            ) = enqueue_args[1:]
+            assert batch_job_id == data["id"]
+            assert threshold == 0.9
+            assert auto_promote is True
+            assert limit == 100
+            assert status is None
+            assert dataset_name == "test_dataset"
 
     @pytest.mark.asyncio
     async def test_bulk_approve_returns_batch_job_response(self, api_key_headers, test_candidates):
         """Bulk approve returns a valid BatchJob response structure."""
+        mock_client = _mock_dbos_client()
         with patch(
-            "src.tasks.approval_tasks.process_bulk_approval.kiq",
-            new_callable=AsyncMock,
+            "src.dbos_workflows.config.get_dbos_client",
+            return_value=mock_client,
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -541,9 +567,10 @@ class TestBulkApproveJSONAPI:
     @pytest.mark.asyncio
     async def test_bulk_approve_stores_metadata_in_job(self, api_key_headers, test_candidates):
         """Bulk approve stores request parameters in job metadata."""
+        mock_client = _mock_dbos_client()
         with patch(
-            "src.tasks.approval_tasks.process_bulk_approval.kiq",
-            new_callable=AsyncMock,
+            "src.dbos_workflows.config.get_dbos_client",
+            return_value=mock_client,
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -649,14 +676,15 @@ class TestAutoPromoteFeature:
             mock_promote.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_bulk_approve_with_auto_promote_passes_flag_to_task(
+    async def test_bulk_approve_with_auto_promote_passes_flag_to_workflow(
         self, api_key_headers, promotable_candidates, db_session
     ):
-        """Bulk approve with auto_promote=True passes flag to background task."""
+        """Bulk approve with auto_promote=True passes flag to DBOS workflow."""
+        mock_client = _mock_dbos_client()
         with patch(
-            "src.tasks.approval_tasks.process_bulk_approval.kiq",
-            new_callable=AsyncMock,
-        ) as mock_kiq:
+            "src.dbos_workflows.config.get_dbos_client",
+            return_value=mock_client,
+        ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -674,6 +702,16 @@ class TestAutoPromoteFeature:
             data = response.json()
             assert data["job_type"] == "approve:candidates"
             assert data["metadata"]["auto_promote"] is True
-            mock_kiq.assert_called_once()
-            call_kwargs = mock_kiq.call_args[1]
-            assert call_kwargs["auto_promote"] is True
+            mock_client.enqueue.assert_called_once()
+            enqueue_args = mock_client.enqueue.call_args[0]
+            (
+                _batch_job_id,
+                _threshold,
+                auto_promote,
+                _limit,
+                _status,
+                dataset_name,
+                *_rest,
+            ) = enqueue_args[1:]
+            assert auto_promote is True
+            assert dataset_name == "promotable_dataset"

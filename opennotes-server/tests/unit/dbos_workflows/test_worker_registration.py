@@ -43,16 +43,22 @@ class TestWorkerWorkflowRegistration:
             assert "extra" in log_call.kwargs
             assert "registered_workflows" in log_call.kwargs["extra"]
             workflows = log_call.kwargs["extra"]["registered_workflows"]
-            assert len(workflows) == 7
             workflow_names = {w.rsplit(".", 1)[-1] for w in workflows}
             expected = {
                 "rechunk_fact_check_workflow",
                 "chunk_single_fact_check_workflow",
+                "rechunk_previously_seen_workflow",
                 "content_scan_orchestration_workflow",
                 "process_content_scan_batch",
                 "ai_note_generation_workflow",
                 "vision_description_workflow",
                 "_audit_log_wrapper_workflow",
+                "cleanup_stale_batch_jobs_workflow",
+                "monitor_stuck_batch_jobs_workflow",
+                "fact_check_import_workflow",
+                "scrape_candidates_workflow",
+                "promote_candidates_workflow",
+                "bulk_approval_workflow",
             }
             assert workflow_names == expected
 

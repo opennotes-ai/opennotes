@@ -2,15 +2,16 @@
 Service for managing fact-check import batch jobs.
 
 Provides high-level operations for starting and managing import jobs
-that run asynchronously via TaskIQ background tasks.
+that run asynchronously via DBOS durable workflows.
 
 Note: Concurrent job prevention is handled by DistributedRateLimitMiddleware,
 not by this service. The middleware enforces one active job per type.
 
 Orphaned Job Cleanup Strategy
 -----------------------------
-If TaskIQ dispatch (.kiq()) fails AND the subsequent fail_job() call also fails
-(double-failure scenario), the job remains in PENDING status indefinitely.
+If DBOS dispatch (client.enqueue()) fails AND the subsequent fail_job() call
+also fails (double-failure scenario), the job remains in PENDING status
+indefinitely.
 
 This is handled by a cleanup mechanism rather than immediate deletion because:
 1. Multiple start_*_job methods share this pattern
@@ -20,7 +21,7 @@ This is handled by a cleanup mechanism rather than immediate deletion because:
 Cleanup approach:
 - A scheduled task should periodically scan for PENDING jobs where:
   - updated_at < (now - STALE_PENDING_JOB_THRESHOLD_MINUTES)
-  - No corresponding TaskIQ task is running
+  - No corresponding DBOS workflow is running
 - Such jobs should be marked FAILED with error_summary indicating "orphaned"
 - Double-failure cases are logged with ORPHANED_JOB_MARKER for monitoring alerts
 
@@ -42,7 +43,6 @@ from src.batch_jobs.constants import (
 from src.batch_jobs.models import BatchJob
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
-from src.config import get_settings
 from src.monitoring import get_logger
 
 logger = get_logger(__name__)
@@ -58,7 +58,7 @@ class ImportBatchJobService:
     """
     Service for managing fact-check import batch jobs.
 
-    Coordinates batch job creation with TaskIQ task dispatch for
+    Coordinates batch job creation with DBOS workflow dispatch for
     non-blocking import operations.
     """
 
@@ -85,8 +85,8 @@ class ImportBatchJobService:
         """
         Start a new fact-check import job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to perform the actual import. Returns immediately
+        Creates a BatchJob in PENDING status and dispatches a DBOS durable
+        workflow to perform the actual import. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -98,15 +98,14 @@ class ImportBatchJobService:
         Returns:
             The created BatchJob (in PENDING status)
         """
-        from src.tasks.import_tasks import process_fact_check_import  # noqa: PLC0415
-
-        settings = get_settings()
+        from src.dbos_workflows.import_workflow import dispatch_import_workflow  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "source": "fact_check_bureau",
             "batch_size": batch_size,
             "dry_run": dry_run,
             "enqueue_scrapes": enqueue_scrapes,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -121,7 +120,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created import batch job, dispatching background task",
+            "Created import batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "batch_size": batch_size,
@@ -131,20 +130,20 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_fact_check_import.kiq(
-                job_id=str(job.id),
+            workflow_id = await dispatch_import_workflow(
+                batch_job_id=job.id,
                 batch_size=batch_size,
                 dry_run=dry_run,
                 enqueue_scrapes=enqueue_scrapes,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
             )
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
+
+        await self._persist_workflow_id(job, workflow_id)
 
         return job
 
@@ -170,8 +169,8 @@ class ImportBatchJobService:
         """
         Start a new candidate scrape job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to scrape pending candidates. Returns immediately
+        Creates a BatchJob in PENDING status and dispatches a DBOS durable
+        workflow to scrape pending candidates. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -193,14 +192,13 @@ class ImportBatchJobService:
                 f"got {base_delay}"
             )
 
-        from src.tasks.import_tasks import process_scrape_batch  # noqa: PLC0415
-
-        settings = get_settings()
+        from src.dbos_workflows.import_workflow import dispatch_scrape_workflow  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
             "base_delay": base_delay,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -215,7 +213,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created scrape batch job, dispatching background task",
+            "Created scrape batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "batch_size": batch_size,
@@ -224,12 +222,10 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_scrape_batch.kiq(
-                job_id=str(job.id),
+            workflow_id = await dispatch_scrape_workflow(
+                batch_job_id=job.id,
                 batch_size=batch_size,
                 dry_run=dry_run,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
                 concurrency=DEFAULT_SCRAPE_CONCURRENCY,
                 base_delay=base_delay,
             )
@@ -237,8 +233,10 @@ class ImportBatchJobService:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
+
+        await self._persist_workflow_id(job, workflow_id)
 
         return job
 
@@ -251,8 +249,8 @@ class ImportBatchJobService:
         """
         Start a new candidate promotion job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to promote scraped candidates. Returns immediately
+        Creates a BatchJob in PENDING status and dispatches a DBOS durable
+        workflow to promote scraped candidates. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -263,13 +261,12 @@ class ImportBatchJobService:
         Returns:
             The created BatchJob (in PENDING status)
         """
-        from src.tasks.import_tasks import process_promotion_batch  # noqa: PLC0415
-
-        settings = get_settings()
+        from src.dbos_workflows.import_workflow import dispatch_promote_workflow  # noqa: PLC0415
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "batch_size": batch_size,
             "dry_run": dry_run,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -284,7 +281,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created promotion batch job, dispatching background task",
+            "Created promotion batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "batch_size": batch_size,
@@ -293,19 +290,19 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_promotion_batch.kiq(
-                job_id=str(job.id),
+            workflow_id = await dispatch_promote_workflow(
+                batch_job_id=job.id,
                 batch_size=batch_size,
                 dry_run=dry_run,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
             )
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
+
+        await self._persist_workflow_id(job, workflow_id)
 
         return job
 
@@ -325,8 +322,8 @@ class ImportBatchJobService:
         """
         Start a new bulk approval job.
 
-        Creates a BatchJob in PENDING status and dispatches a TaskIQ
-        background task to approve candidates from predictions. Returns immediately
+        Creates a BatchJob in PENDING status and enqueues a DBOS durable
+        workflow to approve candidates from predictions. Returns immediately
         without blocking the HTTP connection.
 
         Args:
@@ -344,9 +341,9 @@ class ImportBatchJobService:
         Returns:
             The created BatchJob (in PENDING status)
         """
-        from src.tasks.approval_tasks import process_bulk_approval  # noqa: PLC0415
-
-        settings = get_settings()
+        from src.dbos_workflows.approval_workflow import (  # noqa: PLC0415
+            dispatch_bulk_approval_workflow,
+        )
 
         metadata: dict[str, str | int | bool | float | list[str] | None] = {
             "threshold": threshold,
@@ -358,6 +355,7 @@ class ImportBatchJobService:
             "has_content": has_content,
             "published_date_from": published_date_from.isoformat() if published_date_from else None,
             "published_date_to": published_date_to.isoformat() if published_date_to else None,
+            "execution_backend": "dbos",
         }
         if user_id is not None:
             metadata[USER_ID_KEY] = user_id
@@ -372,7 +370,7 @@ class ImportBatchJobService:
         await self._session.commit()
 
         logger.info(
-            "Created bulk approval batch job, dispatching background task",
+            "Created bulk approval batch job, dispatching DBOS workflow",
             extra={
                 "job_id": str(job.id),
                 "threshold": threshold,
@@ -382,8 +380,8 @@ class ImportBatchJobService:
         )
 
         try:
-            await process_bulk_approval.kiq(
-                job_id=str(job.id),
+            workflow_id = await dispatch_bulk_approval_workflow(
+                batch_job_id=job.id,
                 threshold=threshold,
                 auto_promote=auto_promote,
                 limit=limit,
@@ -395,17 +393,49 @@ class ImportBatchJobService:
                 if published_date_from
                 else None,
                 published_date_to=published_date_to.isoformat() if published_date_to else None,
-                db_url=settings.DATABASE_URL,
-                redis_url=settings.REDIS_URL,
             )
         except (ConnectionError, TimeoutError, OSError) as e:
             await self._handle_dispatch_failure(job, e, "connection_error")
             raise
         except Exception as e:
-            await self._handle_dispatch_failure(job, e, "task_dispatch")
+            await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
+        await self._persist_workflow_id(job, workflow_id)
+
         return job
+
+    async def _persist_workflow_id(self, job: BatchJob, workflow_id: str) -> None:
+        """Persist workflow_id with one retry on failure.
+
+        Between dispatch and this call there is a TOCTOU window: if the
+        server crashes after dispatch but before set_workflow_id, the
+        workflow runs without a workflow_id link. This is a monitoring gap
+        (not a correctness issue) -- the workflow still executes normally.
+        The retry reduces the window; a warning is logged so operators can
+        detect orphaned workflows via log monitoring.
+        """
+        for attempt in range(2):
+            try:
+                await self._batch_job_service.set_workflow_id(job.id, workflow_id)
+                await self._session.commit()
+                return
+            except Exception:
+                if attempt == 0:
+                    logger.warning(
+                        "set_workflow_id failed, retrying once",
+                        extra={"job_id": str(job.id), "workflow_id": workflow_id},
+                    )
+                else:
+                    logger.warning(
+                        "set_workflow_id failed after retry; workflow running without "
+                        "linked workflow_id. Workflow will still execute normally.",
+                        extra={
+                            "job_id": str(job.id),
+                            "job_type": job.job_type,
+                            "workflow_id": workflow_id,
+                        },
+                    )
 
     async def _handle_dispatch_failure(
         self,
@@ -414,7 +444,7 @@ class ImportBatchJobService:
         stage: str,
     ) -> None:
         """
-        Handle task dispatch failure by marking the job as failed.
+        Handle workflow dispatch failure by marking the job as failed.
 
         If marking the job as failed also fails (double-failure), logs with
         ORPHANED_JOB_MARKER for monitoring alerts. Such jobs will be cleaned
@@ -423,7 +453,7 @@ class ImportBatchJobService:
         Args:
             job: The BatchJob that failed to dispatch
             error: The exception that occurred during dispatch
-            stage: Error stage identifier (e.g., "connection_error", "task_dispatch")
+            stage: Error stage identifier (e.g., "connection_error", "workflow_dispatch")
         """
         try:
             await self._batch_job_service.fail_job(
@@ -435,7 +465,7 @@ class ImportBatchJobService:
         except Exception:
             logger.exception(
                 f"{ORPHANED_JOB_MARKER}: Failed to mark job as failed after "
-                "task dispatch error. Job may remain in PENDING status and "
+                "workflow dispatch error. Job may remain in PENDING status and "
                 f"require cleanup after {STALE_PENDING_JOB_THRESHOLD_MINUTES} minutes.",
                 extra={
                     "job_id": str(job.id),
