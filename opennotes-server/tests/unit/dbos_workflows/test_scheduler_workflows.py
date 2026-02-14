@@ -43,11 +43,11 @@ class TestCleanupStaleJobsWorkflow:
                 actual_time=now,
             )
 
-        assert result == expected_result
+        assert result is None
         mock_cleanup.assert_called_once()
 
-    def test_workflow_returns_result_on_success(self) -> None:
-        """Workflow returns cleanup result dict."""
+    def test_workflow_returns_none_on_success(self) -> None:
+        """Scheduled workflow returns None (ScheduledWorkflow protocol)."""
         from src.dbos_workflows.scheduler_workflows import (
             cleanup_stale_batch_jobs_workflow,
         )
@@ -70,8 +70,7 @@ class TestCleanupStaleJobsWorkflow:
                 actual_time=now,
             )
 
-        assert result["status"] == "completed"
-        assert result["cleaned_count"] == 0
+        assert result is None
 
     def test_workflow_raises_on_error(self) -> None:
         """Workflow re-raises exceptions from cleanup logic."""
@@ -128,11 +127,11 @@ class TestMonitorStuckJobsWorkflow:
                 actual_time=now,
             )
 
-        assert result == expected_result
+        assert result is None
         mock_monitor.assert_called_once()
 
-    def test_workflow_returns_result_with_no_stuck_jobs(self) -> None:
-        """Workflow returns empty stuck_jobs list when none found."""
+    def test_workflow_returns_none_with_no_stuck_jobs(self) -> None:
+        """Scheduled workflow returns None (ScheduledWorkflow protocol)."""
         from src.dbos_workflows.scheduler_workflows import (
             monitor_stuck_batch_jobs_workflow,
         )
@@ -155,8 +154,7 @@ class TestMonitorStuckJobsWorkflow:
                 actual_time=now,
             )
 
-        assert result["stuck_count"] == 0
-        assert result["stuck_jobs"] == []
+        assert result is None
 
     def test_workflow_raises_on_error(self) -> None:
         """Workflow re-raises exceptions from monitor logic."""

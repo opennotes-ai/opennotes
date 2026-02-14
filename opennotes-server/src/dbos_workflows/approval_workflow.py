@@ -323,7 +323,7 @@ def process_approval_batch_step(
 
 def _finalize_and_warn(
     job_uuid: UUID,
-    workflow_id: str,
+    workflow_id: str | None,
     batch_job_id: str,
     **kwargs: Any,
 ) -> None:

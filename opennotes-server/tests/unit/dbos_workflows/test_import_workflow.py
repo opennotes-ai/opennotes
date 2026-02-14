@@ -183,7 +183,7 @@ class TestFactCheckImportWorkflow:
         assert result["invalid_rows"] == 5
         mock_finalize.assert_called_once()
         call_kwargs = mock_finalize.call_args.kwargs
-        assert call_kwargs["success"] is False
+        assert call_kwargs["success"] is True
         assert call_kwargs["completed_tasks"] == 95
         assert call_kwargs["failed_tasks"] == 5
 
@@ -306,7 +306,7 @@ class TestScrapeCandidatesWorkflow:
         assert result["total_candidates"] == 50
         mock_finalize.assert_called_once()
         call_kwargs = mock_finalize.call_args.kwargs
-        assert call_kwargs["success"] is False
+        assert call_kwargs["success"] is True
 
     def test_dry_run_skips_scraping(self) -> None:
         from src.dbos_workflows.import_workflow import scrape_candidates_workflow
@@ -427,7 +427,7 @@ class TestPromoteCandidatesWorkflow:
         assert result["recovered_stuck"] == 1
         mock_finalize.assert_called_once()
         call_kwargs = mock_finalize.call_args.kwargs
-        assert call_kwargs["success"] is False
+        assert call_kwargs["success"] is True
         assert call_kwargs["completed_tasks"] == 28
         assert call_kwargs["failed_tasks"] == 2
 

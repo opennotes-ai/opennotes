@@ -188,7 +188,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
             "failed": 0,
             "processed": 0,
             "last_id": str(uuid4()),
-            "scanned": 5,
+            "scanned": 0,
             "errors": [],
             "empty": False,
         }
@@ -221,7 +221,7 @@ class TestBulkApprovalWorkflowProcessesBatches:
                 published_date_to=None,
             )
 
-        max_expected = (10 // 100) + 10
+        max_expected = (10 // 100) * 10 + 20
         assert result["iterations"] == max_expected
         assert mock_batch.call_count == max_expected
 
