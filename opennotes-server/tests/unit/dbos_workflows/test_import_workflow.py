@@ -97,7 +97,7 @@ class TestStartImportStep:
 
         batch_job_id = str(uuid4())
 
-        with patch("src.dbos_workflows.import_workflow._start_batch_job_sync") as mock_start:
+        with patch("src.dbos_workflows.import_workflow.start_batch_job_sync") as mock_start:
             mock_start.return_value = True
 
             result = start_import_step.__wrapped__(batch_job_id)  # type: ignore[attr-defined]
@@ -123,7 +123,7 @@ class TestFactCheckImportWorkflow:
         with (
             patch("src.dbos_workflows.import_workflow.start_import_step") as mock_start,
             patch("src.dbos_workflows.import_workflow.import_csv_step") as mock_import,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -154,7 +154,7 @@ class TestFactCheckImportWorkflow:
 
         with (
             patch("src.dbos_workflows.import_workflow.start_import_step") as mock_start,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -181,7 +181,7 @@ class TestFactCheckImportWorkflow:
         with (
             patch("src.dbos_workflows.import_workflow.start_import_step") as mock_start,
             patch("src.dbos_workflows.import_workflow.import_csv_step") as mock_import,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -212,7 +212,7 @@ class TestScrapeCandidatesWorkflow:
         with (
             patch("src.dbos_workflows.import_workflow.recover_and_count_scrape_step") as mock_init,
             patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -245,7 +245,7 @@ class TestScrapeCandidatesWorkflow:
         with (
             patch("src.dbos_workflows.import_workflow.recover_and_count_scrape_step") as mock_init,
             patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -271,7 +271,7 @@ class TestScrapeCandidatesWorkflow:
         with (
             patch("src.dbos_workflows.import_workflow.recover_and_count_scrape_step") as mock_init,
             patch("src.dbos_workflows.import_workflow.process_scrape_batch_step") as mock_process,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -303,7 +303,7 @@ class TestPromoteCandidatesWorkflow:
             patch(
                 "src.dbos_workflows.import_workflow.process_promotion_batch_step"
             ) as mock_process,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -337,7 +337,7 @@ class TestPromoteCandidatesWorkflow:
             patch(
                 "src.dbos_workflows.import_workflow.process_promotion_batch_step"
             ) as mock_process,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"
@@ -365,7 +365,7 @@ class TestPromoteCandidatesWorkflow:
             patch(
                 "src.dbos_workflows.import_workflow.process_promotion_batch_step"
             ) as mock_process,
-            patch("src.dbos_workflows.import_workflow._finalize_batch_job_sync") as mock_finalize,
+            patch("src.dbos_workflows.import_workflow.finalize_batch_job_sync") as mock_finalize,
             patch("src.dbos_workflows.import_workflow.DBOS") as mock_dbos,
         ):
             mock_dbos.workflow_id = "test-workflow-id"

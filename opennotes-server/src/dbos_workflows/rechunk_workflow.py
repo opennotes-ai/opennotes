@@ -23,6 +23,10 @@ from src.batch_jobs.constants import (
 )
 from src.batch_jobs.schemas import BatchJobCreate
 from src.batch_jobs.service import BatchJobService
+from src.dbos_workflows.batch_job_helpers import (
+    finalize_batch_job_sync,
+    update_batch_job_progress_sync,
+)
 from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.dbos_workflows.config import get_dbos_client
 from src.fact_checking.chunking_service import use_chunking_service_sync
@@ -347,76 +351,6 @@ def chunk_and_embed_fact_check_sync(
             return {"chunks_created": len(chunks)}
 
     return run_sync(_embed_and_persist())
-
-
-def update_batch_job_progress_sync(
-    batch_job_id: UUID,
-    completed_tasks: int,
-    failed_tasks: int,
-) -> bool:
-    """Synchronous helper to update BatchJob progress from DBOS workflow."""
-    from src.database import get_session_maker
-
-    async def _async_impl() -> bool:
-        async with get_session_maker()() as db:
-            service = BatchJobService(db)
-            await service.update_progress(
-                batch_job_id,
-                completed_tasks=completed_tasks,
-                failed_tasks=failed_tasks,
-            )
-            await db.commit()
-            return True
-
-    try:
-        return run_sync(_async_impl())
-    except Exception as e:
-        logger.error(
-            "Failed to update batch job progress",
-            extra={"batch_job_id": str(batch_job_id), "error": str(e)},
-            exc_info=True,
-        )
-        return False
-
-
-def finalize_batch_job_sync(
-    batch_job_id: UUID,
-    success: bool,
-    completed_tasks: int,
-    failed_tasks: int,
-    error_summary: dict[str, Any] | None = None,
-) -> bool:
-    """Synchronous helper to finalize BatchJob from DBOS workflow."""
-    from src.database import get_session_maker
-
-    async def _async_impl() -> bool:
-        async with get_session_maker()() as db:
-            service = BatchJobService(db)
-            if success:
-                await service.complete_job(
-                    batch_job_id,
-                    completed_tasks=completed_tasks,
-                    failed_tasks=failed_tasks,
-                )
-            else:
-                await service.update_progress(
-                    batch_job_id,
-                    completed_tasks=completed_tasks,
-                    failed_tasks=failed_tasks,
-                )
-                await service.fail_job(batch_job_id, error_summary)
-            await db.commit()
-            return True
-
-    try:
-        return run_sync(_async_impl())
-    except Exception as e:
-        logger.error(
-            "Failed to finalize batch job",
-            extra={"batch_job_id": str(batch_job_id), "error": str(e)},
-            exc_info=True,
-        )
-        return False
 
 
 @DBOS.workflow()
