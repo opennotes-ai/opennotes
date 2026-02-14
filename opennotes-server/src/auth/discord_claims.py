@@ -17,10 +17,10 @@ Usage:
             # User has manage server permission
 """
 
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
+import pendulum
 
 from src.config import settings
 from src.monitoring import get_logger
@@ -34,7 +34,7 @@ def create_discord_claims_token(
     user_id: str,
     guild_id: str,
     has_manage_server: bool = False,
-    expires_delta: timedelta | None = None,
+    expires_delta: pendulum.Duration | None = None,
 ) -> str:
     """
     Create a signed JWT containing Discord claims.
@@ -53,9 +53,9 @@ def create_discord_claims_token(
         Signed JWT token string
     """
     if expires_delta is None:
-        expires_delta = timedelta(seconds=DISCORD_CLAIMS_EXPIRY_SECONDS)
+        expires_delta = pendulum.duration(seconds=DISCORD_CLAIMS_EXPIRY_SECONDS)
 
-    now = datetime.now(UTC)
+    now = pendulum.now("UTC")
     expire = now + expires_delta
 
     payload = {

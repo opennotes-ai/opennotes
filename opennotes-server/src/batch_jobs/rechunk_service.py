@@ -22,10 +22,11 @@ Monitoring:
 import hashlib
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -143,7 +144,7 @@ async def get_stuck_jobs_info(
     Returns:
         List of StuckJobInfo for jobs that haven't updated within the threshold.
     """
-    cutoff_time = datetime.now(UTC) - timedelta(minutes=threshold_minutes)
+    cutoff_time = pendulum.now("UTC") - pendulum.duration(minutes=threshold_minutes)
 
     query = select(BatchJob).where(
         BatchJob.job_type.in_(ALL_BATCH_JOB_TYPES),
@@ -156,12 +157,12 @@ async def get_stuck_jobs_info(
     result = await session.execute(query)
     stuck_jobs = list(result.scalars().all())
 
-    now = datetime.now(UTC)
+    now = pendulum.now("UTC")
     result_list: list[StuckJobInfo] = []
     for job in stuck_jobs:
         reference_time = job.updated_at or job.created_at
         if reference_time.tzinfo is None:
-            reference_time = reference_time.replace(tzinfo=UTC)
+            reference_time = reference_time.replace(tzinfo=pendulum.UTC)
         result_list.append(
             StuckJobInfo(
                 job_id=job.id,
@@ -477,7 +478,7 @@ class RechunkBatchJobService:
         Returns:
             List of jobs that were marked as failed
         """
-        cutoff_time = datetime.now(UTC) - timedelta(hours=stale_threshold_hours)
+        cutoff_time = pendulum.now("UTC") - pendulum.duration(hours=stale_threshold_hours)
 
         query = select(BatchJob).where(
             BatchJob.job_type.in_(ALL_BATCH_JOB_TYPES),
@@ -498,7 +499,7 @@ class RechunkBatchJobService:
                 error_summary={
                     "error": "Job marked as stale",
                     "reason": f"Job was in {job.status} status for over {stale_threshold_hours} hours",
-                    "cleanup_time": datetime.now(UTC).isoformat(),
+                    "cleanup_time": pendulum.now("UTC").isoformat(),
                 },
             )
             if failed_job is not None:

@@ -5,10 +5,10 @@ from JWT tokens for rate limiting purposes.
 """
 
 import asyncio
-from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import pendulum
 from jose import jwt
 
 from src.config import settings
@@ -25,8 +25,8 @@ class TestGetUserIdentifier:
             "sub": user_id,
             "username": "testuser",
             "role": "user",
-            "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
-            "iat": int(datetime.now(UTC).timestamp()),
+            "exp": int((pendulum.now("UTC") + pendulum.duration(hours=1)).timestamp()),
+            "iat": int(pendulum.now("UTC").timestamp()),
         }
         return jwt.encode(
             payload,
@@ -81,8 +81,8 @@ class TestGetUserIdentifier:
             "sub": str(uuid4()),
             "username": "testuser",
             "role": "user",
-            "exp": int((datetime.now(UTC) - timedelta(hours=1)).timestamp()),
-            "iat": int((datetime.now(UTC) - timedelta(hours=2)).timestamp()),
+            "exp": int((pendulum.now("UTC") - pendulum.duration(hours=1)).timestamp()),
+            "iat": int((pendulum.now("UTC") - pendulum.duration(hours=2)).timestamp()),
         }
         expired_token = jwt.encode(
             payload,
@@ -110,7 +110,7 @@ class TestGetUserIdentifier:
         payload = {
             "username": "testuser",
             "role": "user",
-            "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
+            "exp": int((pendulum.now("UTC") + pendulum.duration(hours=1)).timestamp()),
         }
         token_without_sub = jwt.encode(
             payload,

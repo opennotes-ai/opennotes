@@ -19,10 +19,11 @@ Filter operators supported (via fastapi-filter style syntax):
 - filter[rater_id]: Include only notes rated by this user
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
+import pendulum
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
@@ -647,7 +648,7 @@ async def force_publish_note_jsonapi(
 
         note.force_published = True
         note.force_published_by = admin_profile_id
-        note.force_published_at = datetime.now(UTC).replace(tzinfo=None)
+        note.force_published_at = pendulum.now("UTC").replace(tzinfo=None)
         note.status = "CURRENTLY_RATED_HELPFUL"
 
         if note.request_id:

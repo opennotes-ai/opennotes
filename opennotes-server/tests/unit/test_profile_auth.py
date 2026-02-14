@@ -5,10 +5,10 @@ Tests JWT token generation, verification, and profile-based authentication flows
 These tests don't require database access.
 """
 
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+import pendulum
 import pytest
 from jose import jwt
 
@@ -40,7 +40,7 @@ class TestProfileTokenGeneration:
         profile_id = uuid4()
         display_name = "test_user"
         provider = AuthProvider.EMAIL.value
-        expires_delta = timedelta(minutes=30)
+        expires_delta = pendulum.duration(minutes=30)
 
         token = create_profile_access_token(profile_id, display_name, provider, expires_delta)
 
@@ -99,7 +99,7 @@ class TestProfileTokenVerification:
         profile_id = uuid4()
         display_name = "test_user"
         provider = AuthProvider.EMAIL.value
-        expires_delta = timedelta(seconds=-1)
+        expires_delta = pendulum.duration(seconds=-1)
 
         token = create_profile_access_token(profile_id, display_name, provider, expires_delta)
         token_data = await verify_profile_token(token)

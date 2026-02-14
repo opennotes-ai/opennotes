@@ -24,10 +24,10 @@ Usage:
 import hashlib
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import orjson
+import pendulum
 
 from src.cache.redis_client import RedisClient
 from src.config import get_settings
@@ -134,7 +134,7 @@ async def log_search_results(
         min_score=stats["min_score"],
         max_score=stats["max_score"],
         score_spread=stats["score_spread"],
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=pendulum.now("UTC").isoformat(),
     )
 
     logger.info(

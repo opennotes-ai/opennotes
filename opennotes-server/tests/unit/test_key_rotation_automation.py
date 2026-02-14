@@ -7,9 +7,9 @@ Tests the KeyRotationManager which provides:
 - Alerting when keys exceed configured age thresholds
 """
 
-from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import pendulum
 import pytest
 
 pytestmark = pytest.mark.unit
@@ -46,7 +46,7 @@ class TestKeyRotationAuditTrail:
         from src.llm_config.key_rotation import KeyRotationManager
 
         manager = KeyRotationManager()
-        before = datetime.now(UTC)
+        before = pendulum.now("UTC")
 
         manager.record_rotation_event(
             config_id="config-1",
@@ -55,9 +55,9 @@ class TestKeyRotationAuditTrail:
             reason="manual",
         )
 
-        after = datetime.now(UTC)
+        after = pendulum.now("UTC")
         events = manager.get_rotation_history("config-1")
-        event_time = datetime.fromisoformat(events[0]["timestamp"])
+        event_time = pendulum.parse(events[0]["timestamp"])
 
         assert before <= event_time <= after
 
@@ -118,7 +118,7 @@ class TestKeyAgeAlerting:
             max_key_age_days=30,
         )
         config_id = "config-1"
-        old_timestamp = datetime.now(UTC) - timedelta(days=31)
+        old_timestamp = pendulum.now("UTC") - pendulum.duration(days=31)
 
         manager.register_key(
             config_id=config_id,
@@ -139,7 +139,7 @@ class TestKeyAgeAlerting:
         manager = KeyRotationManager(
             max_key_age_days=30,
         )
-        fresh_timestamp = datetime.now(UTC) - timedelta(days=10)
+        fresh_timestamp = pendulum.now("UTC") - pendulum.duration(days=10)
 
         manager.register_key(
             config_id="config-1",
@@ -158,7 +158,7 @@ class TestKeyAgeAlerting:
             max_key_age_days=90,
         )
         config_id = "config-1"
-        old_timestamp = datetime.now(UTC) - timedelta(days=100)
+        old_timestamp = pendulum.now("UTC") - pendulum.duration(days=100)
 
         manager.register_key(
             config_id=config_id,
@@ -177,7 +177,7 @@ class TestKeyAgeAlerting:
         manager = KeyRotationManager(
             max_key_age_days=30,
         )
-        old_timestamp = datetime.now(UTC) - timedelta(days=45)
+        old_timestamp = pendulum.now("UTC") - pendulum.duration(days=45)
 
         manager.register_key(
             config_id="config-1",
@@ -204,8 +204,8 @@ class TestKeyRotationSchedule:
         manager = KeyRotationManager(
             rotation_interval_days=30,
         )
-        old_timestamp = datetime.now(UTC) - timedelta(days=35)
-        fresh_timestamp = datetime.now(UTC) - timedelta(days=10)
+        old_timestamp = pendulum.now("UTC") - pendulum.duration(days=35)
+        fresh_timestamp = pendulum.now("UTC") - pendulum.duration(days=10)
 
         manager.register_key(
             config_id="config-old",
@@ -229,8 +229,8 @@ class TestKeyRotationSchedule:
         manager = KeyRotationManager(
             rotation_interval_days=90,
         )
-        timestamp_89_days = datetime.now(UTC) - timedelta(days=89)
-        timestamp_91_days = datetime.now(UTC) - timedelta(days=91)
+        timestamp_89_days = pendulum.now("UTC") - pendulum.duration(days=89)
+        timestamp_91_days = pendulum.now("UTC") - pendulum.duration(days=91)
 
         manager.register_key(
             config_id="config-89",
@@ -255,7 +255,7 @@ class TestKeyRotationSchedule:
         manager = KeyRotationManager(
             rotation_interval_days=30,
         )
-        timestamp_20_days_ago = datetime.now(UTC) - timedelta(days=20)
+        timestamp_20_days_ago = pendulum.now("UTC") - pendulum.duration(days=20)
 
         manager.register_key(
             config_id="config-1",
@@ -275,7 +275,7 @@ class TestKeyRotationMetrics:
         from src.llm_config.key_rotation import KeyRotationManager
 
         manager = KeyRotationManager()
-        timestamp = datetime.now(UTC) - timedelta(days=15)
+        timestamp = pendulum.now("UTC") - pendulum.duration(days=15)
 
         manager.register_key(
             config_id="config-1",
@@ -340,7 +340,7 @@ class TestKeyRotationLogging:
 
         with patch("src.llm_config.key_rotation.logger") as mock_logger:
             manager = KeyRotationManager(max_key_age_days=30)
-            old_timestamp = datetime.now(UTC) - timedelta(days=45)
+            old_timestamp = pendulum.now("UTC") - pendulum.duration(days=45)
 
             manager.register_key(
                 config_id="config-1",
@@ -378,7 +378,7 @@ class TestKeyRotationIntegrationWithEncryptionService:
         manager.register_key(
             config_id="config-1",
             key_id=old_key_id,
-            created_at=datetime.now(UTC) - timedelta(days=100),
+            created_at=pendulum.now("UTC") - pendulum.duration(days=100),
         )
 
         new_encrypted_data, new_key_id, _new_preview = encryption_service.rotate_key(
@@ -394,7 +394,7 @@ class TestKeyRotationIntegrationWithEncryptionService:
         manager.update_key_registration(
             config_id="config-1",
             key_id=new_key_id,
-            created_at=datetime.now(UTC),
+            created_at=pendulum.now("UTC"),
         )
 
         decrypted = encryption_service.decrypt_api_key(new_encrypted_data, new_key_id)

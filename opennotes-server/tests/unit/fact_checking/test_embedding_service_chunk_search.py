@@ -9,10 +9,10 @@ This migration enables:
 - Better semantic matching through content chunking
 """
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pendulum
 import pytest
 
 from src.fact_checking.repository import HybridSearchResult
@@ -126,15 +126,15 @@ def _make_mock_fact_check_item():
         summary="Test summary",
         rating="False",
         source_url="https://example.com",
-        published_date=datetime.now(UTC),
+        published_date=pendulum.now("UTC"),
         author="Test Author",
         embedding=None,
         embedding_provider="openai",
         embedding_model="text-embedding-3-small",
         extra_metadata={},
         search_vector=None,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        created_at=pendulum.now("UTC"),
+        updated_at=pendulum.now("UTC"),
     )
 
 

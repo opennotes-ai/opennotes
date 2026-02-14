@@ -1,7 +1,8 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+import pendulum
 from sqlalchemy import DateTime, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -80,4 +81,4 @@ class MessageArchive(Base):
         return None
 
     def soft_delete(self) -> None:
-        self.deleted_at = datetime.now(UTC)
+        self.deleted_at = pendulum.now("UTC")

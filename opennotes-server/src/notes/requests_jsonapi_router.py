@@ -11,10 +11,11 @@ It provides:
 Reference: https://jsonapi.org/format/
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from uuid import UUID
 
+import pendulum
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
@@ -293,7 +294,7 @@ def _normalize_datetime(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
-        dt = dt.astimezone(UTC).replace(tzinfo=None)
+        dt = dt.astimezone(pendulum.UTC).replace(tzinfo=None)
     return dt
 
 

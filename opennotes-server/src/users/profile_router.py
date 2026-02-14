@@ -35,9 +35,9 @@ This ensures:
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
+import pendulum
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -374,7 +374,7 @@ async def login_discord(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_profile_access_token(
         profile.id,
         profile.display_name,
@@ -442,7 +442,7 @@ async def login_email(
 
     profile = identity.profile
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_profile_access_token(
         profile.id,
         profile.display_name,
@@ -499,7 +499,7 @@ async def verify_email(
 
         if (
             identity.email_verification_token_expires is None
-            or identity.email_verification_token_expires < datetime.now(UTC)
+            or identity.email_verification_token_expires < pendulum.now("UTC")
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -649,7 +649,7 @@ async def migrate_legacy_user_to_profile(
         await db.commit()
         await db.refresh(profile)
 
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token_expires = pendulum.duration(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_profile_access_token(
             profile.id,
             profile.display_name,

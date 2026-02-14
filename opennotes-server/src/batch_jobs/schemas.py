@@ -4,10 +4,11 @@ Pydantic schemas for batch job tracking.
 Follows the 4-tier pattern: Base, Create, Update, Response.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
+import pendulum
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 
@@ -122,7 +123,7 @@ class BatchJobResponse(BatchJobBase):
         if value is None:
             return None
         if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
+            value = value.replace(tzinfo=pendulum.UTC)
         return value.isoformat()
 
     @computed_field

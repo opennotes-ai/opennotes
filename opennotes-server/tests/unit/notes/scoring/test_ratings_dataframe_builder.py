@@ -4,10 +4,10 @@ Tests for RatingsDataFrameBuilder.
 TDD: Write failing tests first, then implement.
 """
 
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pandas as pd
+import pendulum
 import pytest
 
 
@@ -108,7 +108,7 @@ class TestRatingsDataFrameBuilderWithRatingData:
             "note_id": uuid4(),
             "rater_id": "discord_user_123",
             "helpfulness_level": "HELPFUL",
-            "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+            "created_at": pendulum.datetime(2024, 1, 15, 12, 0, 0, tz="UTC"),
         }
 
     def test_build_with_single_rating(self, mock_rating_data):
@@ -210,14 +210,14 @@ class TestRatingsDataFrameBuilderMultipleRatings:
                 "note_id": uuid4(),
                 "rater_id": "user_1",
                 "helpfulness_level": "HELPFUL",
-                "created_at": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+                "created_at": pendulum.datetime(2024, 1, 15, 12, 0, 0, tz="UTC"),
             },
             {
                 "id": uuid4(),
                 "note_id": uuid4(),
                 "rater_id": "user_2",
                 "helpfulness_level": "NOT_HELPFUL",
-                "created_at": datetime(2024, 1, 16, 12, 0, 0, tzinfo=UTC),
+                "created_at": pendulum.datetime(2024, 1, 16, 12, 0, 0, tz="UTC"),
             },
         ]
 

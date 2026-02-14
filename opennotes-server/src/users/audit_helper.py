@@ -6,11 +6,11 @@ operations in the users system, including authentication, profile changes,
 identity management, and API key operations.
 """
 
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import orjson
+import pendulum
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,7 +53,7 @@ async def create_audit_log(
         details=details_str,
         ip_address=ip_address,
         user_agent=user_agent,
-        created_at=datetime.now(UTC),
+        created_at=pendulum.now("UTC"),
     )
 
     db.add(audit_log)

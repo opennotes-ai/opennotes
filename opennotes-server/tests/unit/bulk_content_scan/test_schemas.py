@@ -1,8 +1,8 @@
 """Tests for Bulk Content Scan API Pydantic schemas."""
 
-from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import pendulum
 import pytest
 from pydantic import ValidationError
 
@@ -71,7 +71,7 @@ class TestBulkScanResponse:
         from src.bulk_content_scan.schemas import BulkScanResponse
 
         scan_id = uuid4()
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
 
         response = BulkScanResponse(
             scan_id=scan_id,
@@ -91,7 +91,7 @@ class TestBulkScanResponse:
         """Completed timestamp should be settable."""
         from src.bulk_content_scan.schemas import BulkScanResponse
 
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         response = BulkScanResponse(
             scan_id=uuid4(),
             status="completed",
@@ -113,7 +113,7 @@ class TestFlaggedMessage:
         """AC #4: Results include match scores, source info, and original content."""
         from src.bulk_content_scan.schemas import FlaggedMessage, SimilarityMatch
 
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         similarity_match = SimilarityMatch(
             score=0.85,
             matched_claim="Original fact-check claim text",
@@ -176,7 +176,7 @@ class TestBulkScanResultsResponse:
                 channel_id="ch_1",
                 content="Flagged content",
                 author_id="user_1",
-                timestamp=datetime.now(UTC),
+                timestamp=pendulum.now("UTC"),
                 matches=[similarity_match],
             )
         ]
@@ -309,7 +309,7 @@ class TestBulkScanMessage:
         """BulkScanMessage should validate with all required fields."""
         from src.bulk_content_scan.schemas import BulkScanMessage
 
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         message = BulkScanMessage(
             message_id="msg_12345",
             channel_id="ch_67890",
@@ -339,7 +339,7 @@ class TestBulkScanMessage:
             content="Message content",
             author_id="user_54321",
             author_username=None,
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         assert message.author_username is None
@@ -357,7 +357,7 @@ class TestBulkScanMessage:
             content="Test",
             author_id="user_1",
             author_username="user",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         assert hasattr(message, "community_server_id")
@@ -375,7 +375,7 @@ class TestBulkScanMessage:
             content="Check this image",
             author_id="user_1",
             author_username="testuser",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             attachment_urls=[
                 "https://cdn.example.com/image1.png",
                 "https://cdn.example.com/image2.jpg",
@@ -398,7 +398,7 @@ class TestBulkScanMessage:
             content="Check this link",
             author_id="user_1",
             author_username="testuser",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             embed_content="Embedded article title: Fake News Spreads",
         )
 
@@ -460,7 +460,7 @@ class TestMatchTypes:
             channel_id="ch_67890",
             content="Some content",
             author_id="user_54321",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
             matches=[similarity_match, moderation_match],
         )
 

@@ -15,10 +15,10 @@ to prevent spoofing attacks.
 """
 
 import logging
-from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
+import pendulum
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -222,7 +222,7 @@ async def _ensure_membership_with_permissions(
                 is_external=False,
                 role=CommunityRole.MEMBER,
                 permissions=None,
-                joined_at=datetime.now(UTC),
+                joined_at=pendulum.now("UTC"),
                 invited_by=None,
                 invitation_reason=invitation_reason,
             )

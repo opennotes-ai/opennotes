@@ -10,10 +10,10 @@ This provides a web UI for viewing individual task states, retries, and errors
 which complements the aggregate tracking provided by BatchJob.
 """
 
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -155,7 +155,7 @@ class BatchJobService:
             tracking_started = True
 
             job.status = BatchJobStatus.IN_PROGRESS.value
-            job.started_at = datetime.now(UTC)
+            job.started_at = pendulum.now("UTC")
 
             await self._session.commit()
         except Exception:
@@ -243,7 +243,7 @@ class BatchJobService:
         self._validate_transition(current_status, BatchJobStatus.COMPLETED)
 
         job.status = BatchJobStatus.COMPLETED.value
-        job.completed_at = datetime.now(UTC)
+        job.completed_at = pendulum.now("UTC")
 
         if completed_tasks is not None:
             job.completed_tasks = completed_tasks
@@ -303,7 +303,7 @@ class BatchJobService:
         self._validate_transition(current_status, BatchJobStatus.FAILED)
 
         job.status = BatchJobStatus.FAILED.value
-        job.completed_at = datetime.now(UTC)
+        job.completed_at = pendulum.now("UTC")
         job.error_summary = error_summary
 
         if completed_tasks is not None:
@@ -352,7 +352,7 @@ class BatchJobService:
         self._validate_transition(current_status, BatchJobStatus.CANCELLED)
 
         job.status = BatchJobStatus.CANCELLED.value
-        job.completed_at = datetime.now(UTC)
+        job.completed_at = pendulum.now("UTC")
 
         try:
             await self._progress_tracker.stop_tracking(job_id)

@@ -5,10 +5,10 @@ They will initially fail until the relevance check feature is implemented.
 """
 
 import json
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pendulum
 import pytest
 
 from src.bulk_content_scan.schemas import (
@@ -67,7 +67,7 @@ def sample_message() -> BulkScanMessage:
         community_server_id="111222333",
         content="The earth is flat and NASA is hiding the truth.",
         author_id="444555666",
-        timestamp=datetime.now(UTC),
+        timestamp=pendulum.now("UTC"),
     )
 
 
@@ -83,7 +83,7 @@ def sample_fact_check_match() -> FactCheckMatch:
         summary="Earth is not flat",
         rating="false",
         source_url="https://snopes.com/fact-check/flat-earth",
-        published_date=datetime.now(UTC),
+        published_date=pendulum.now("UTC"),
         author="Fact Checker",
         embedding_provider="openai",
         embedding_model="text-embedding-3-small",
@@ -1317,7 +1317,7 @@ class TestContentFilterDetection:
             summary="Earth is not flat",
             rating="false",
             source_url="https://snopes.com/fact-check/flat-earth",
-            published_date=datetime.now(UTC),
+            published_date=pendulum.now("UTC"),
             author="Fact Checker",
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
@@ -1447,7 +1447,7 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
             community_server_id="test_server",
             content="Test message content",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         similarity_match = SimilarityMatch(
@@ -1526,7 +1526,7 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
             community_server_id="test_server",
             content="Test message content",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         similarity_match = SimilarityMatch(
@@ -1604,7 +1604,7 @@ class TestFilterCandidatesWithRelevanceIndeterminate:
             community_server_id="test_server",
             content="Test message content",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         similarity_match = SimilarityMatch(
@@ -1713,7 +1713,7 @@ class TestFailOpenWithTighterThreshold:
             summary="Test summary",
             rating="false",
             source_url="https://example.com",
-            published_date=datetime.now(UTC),
+            published_date=pendulum.now("UTC"),
             author="Tester",
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
@@ -1726,7 +1726,7 @@ class TestFailOpenWithTighterThreshold:
             community_server_id="test_server",
             content="Low confidence test message",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         mock_embedding_service.similarity_search = AsyncMock(
@@ -1784,7 +1784,7 @@ class TestFailOpenWithTighterThreshold:
             summary="Test summary",
             rating="false",
             source_url="https://example.com",
-            published_date=datetime.now(UTC),
+            published_date=pendulum.now("UTC"),
             author="Tester",
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
@@ -1797,7 +1797,7 @@ class TestFailOpenWithTighterThreshold:
             community_server_id="test_server",
             content="Low confidence test message",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         mock_embedding_service.similarity_search = AsyncMock(
@@ -1863,7 +1863,7 @@ class TestFailOpenWithTighterThreshold:
             summary="Test summary",
             rating="false",
             source_url="https://example.com",
-            published_date=datetime.now(UTC),
+            published_date=pendulum.now("UTC"),
             author="Tester",
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
@@ -1876,7 +1876,7 @@ class TestFailOpenWithTighterThreshold:
             community_server_id="test_server",
             content="Low confidence test message",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         mock_embedding_service.similarity_search = AsyncMock(
@@ -1946,7 +1946,7 @@ class TestFailOpenWithTighterThreshold:
             summary="Test summary",
             rating="false",
             source_url="https://example.com",
-            published_date=datetime.now(UTC),
+            published_date=pendulum.now("UTC"),
             author="Tester",
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
@@ -1959,7 +1959,7 @@ class TestFailOpenWithTighterThreshold:
             community_server_id="test_server",
             content="High confidence test message",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         mock_embedding_service.similarity_search = AsyncMock(
@@ -2018,7 +2018,7 @@ class TestFailOpenWithTighterThreshold:
             summary="Test summary",
             rating="false",
             source_url="https://example.com",
-            published_date=datetime.now(UTC),
+            published_date=pendulum.now("UTC"),
             author="Tester",
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
@@ -2031,7 +2031,7 @@ class TestFailOpenWithTighterThreshold:
             community_server_id="test_server",
             content="Borderline confidence test message",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         mock_embedding_service.similarity_search = AsyncMock(
@@ -2089,7 +2089,7 @@ class TestFailOpenWithTighterThreshold:
             summary="Test summary",
             rating="false",
             source_url="https://example.com",
-            published_date=datetime.now(UTC),
+            published_date=pendulum.now("UTC"),
             author="Tester",
             embedding_provider="openai",
             embedding_model="text-embedding-3-small",
@@ -2102,7 +2102,7 @@ class TestFailOpenWithTighterThreshold:
             community_server_id="test_server",
             content="Exact threshold test message",
             author_id="test_author",
-            timestamp=datetime.now(UTC),
+            timestamp=pendulum.now("UTC"),
         )
 
         mock_embedding_service.similarity_search = AsyncMock(

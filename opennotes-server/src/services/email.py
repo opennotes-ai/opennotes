@@ -1,10 +1,11 @@
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import aiosmtplib
+import pendulum
 
 from src.config import settings
 
@@ -191,7 +192,9 @@ class EmailService:
 
     @staticmethod
     def generate_token_expiry() -> datetime:
-        return datetime.now(UTC) + timedelta(hours=settings.EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS)
+        return pendulum.now("UTC") + pendulum.duration(
+            hours=settings.EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS
+        )
 
 
 email_service = EmailService()

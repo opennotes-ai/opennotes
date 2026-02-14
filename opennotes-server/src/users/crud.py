@@ -1,9 +1,9 @@
 import asyncio
 import secrets
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import orjson
+import pendulum
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -162,9 +162,9 @@ async def update_user(
         # This ensures all tokens with iat < tokens_valid_after are rejected, including
         # tokens created in the same second as this password change.
         # Security note: Users must wait ~1s before re-login due to JWT's second-level iat precision.
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
         current_second = int(now.timestamp())
-        user.tokens_valid_after = datetime.fromtimestamp(current_second + 1, tz=UTC)
+        user.tokens_valid_after = pendulum.from_timestamp(current_second + 1)
 
         await create_audit_log(
             db=db,
@@ -177,7 +177,7 @@ async def update_user(
             user_agent=user_agent,
         )
 
-    user.updated_at = datetime.now(UTC)
+    user.updated_at = pendulum.now("UTC")
 
     await db.flush()
     await db.refresh(user)
@@ -261,7 +261,7 @@ async def authenticate_user(
 async def create_refresh_token(
     db: AsyncSession, user_id: UUID, token: str, expires_days: int
 ) -> RefreshToken:
-    expires_at = datetime.now(UTC) + timedelta(days=expires_days)
+    expires_at = pendulum.now("UTC") + pendulum.duration(days=expires_days)
     token_hash = get_password_hash(token)
 
     refresh_token = RefreshToken(
@@ -283,7 +283,7 @@ async def get_refresh_token(db: AsyncSession, token: str) -> RefreshToken | None
     result = await db.execute(
         select(RefreshToken).where(
             RefreshToken.is_revoked == False,
-            RefreshToken.expires_at > datetime.now(UTC),
+            RefreshToken.expires_at > pendulum.now("UTC"),
         )
     )
     refresh_tokens = result.scalars().all()
@@ -358,7 +358,7 @@ async def create_api_key(
 
     expires_at = None
     if api_key_create.expires_in_days:
-        expires_at = datetime.now(UTC) + timedelta(days=api_key_create.expires_in_days)
+        expires_at = pendulum.now("UTC") + pendulum.duration(days=api_key_create.expires_in_days)
 
     api_key = APIKey(
         user_id=user_id,
@@ -411,7 +411,7 @@ async def _publish_api_key_used_event(api_key_id: UUID) -> None:
     event_data = orjson.dumps(
         {
             "api_key_id": str(api_key_id),
-            "used_at": datetime.now(UTC).isoformat(),
+            "used_at": pendulum.now("UTC").isoformat(),
         }
     )
     await nats_client.publish_fire_and_forget("events.api_key.used", event_data)
@@ -452,7 +452,7 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
             if not is_valid:
                 return None
 
-            if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
+            if api_key.expires_at and api_key.expires_at < pendulum.now("UTC"):
                 return None
 
             user = await get_user_by_id(db, api_key.user_id)
@@ -475,7 +475,7 @@ async def verify_api_key(db: AsyncSession, raw_key: str) -> tuple[APIKey, User] 
     for api_key in api_keys:
         is_valid, _ = verify_password(raw_key, api_key.key_hash)
         if is_valid:
-            if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
+            if api_key.expires_at and api_key.expires_at < pendulum.now("UTC"):
                 continue
 
             user = await get_user_by_id(db, api_key.user_id)

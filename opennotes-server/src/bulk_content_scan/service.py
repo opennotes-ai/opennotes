@@ -4,11 +4,11 @@ import asyncio
 import time
 import uuid as uuid_module
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from typing import Any, Literal, overload
 from uuid import UUID
 
 import orjson
+import pendulum
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -164,7 +164,7 @@ class BulkContentScanService:
                 initiated_by_user_id=initiated_by_user_id,
                 scan_window_days=scan_window_days,
                 status=BulkScanStatus.COMPLETED,
-                completed_at=datetime.now(UTC),
+                completed_at=pendulum.now("UTC"),
                 messages_scanned=0,
                 messages_flagged=0,
             )
@@ -1673,7 +1673,7 @@ Respond with JSON: {"has_claims": true/false, "reasoning": "brief explanation"}"
         scan_log = result.scalar_one_or_none()
 
         if scan_log:
-            scan_log.completed_at = datetime.now(UTC)
+            scan_log.completed_at = pendulum.now("UTC")
             scan_log.messages_scanned = messages_scanned
             scan_log.messages_flagged = messages_flagged
             scan_log.status = status

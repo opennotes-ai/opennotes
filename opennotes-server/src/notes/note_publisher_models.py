@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -68,7 +69,7 @@ class NotePublisherPost(Base):
 
     # Audit trail
     posted_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+        DateTime(timezone=True), default=lambda: pendulum.now("UTC"), nullable=False
     )
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -118,8 +119,8 @@ class NotePublisherConfig(Base):
     # Audit trail
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
+        default=lambda: pendulum.now("UTC"),
+        onupdate=lambda: pendulum.now("UTC"),
         nullable=False,
     )
     updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

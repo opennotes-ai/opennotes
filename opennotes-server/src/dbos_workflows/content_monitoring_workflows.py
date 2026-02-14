@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import orjson
+import pendulum
 from dbos import DBOS
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -414,9 +414,9 @@ def persist_audit_log_step(
                         details=details,
                         ip_address=ip_address,
                         user_agent=user_agent,
-                        created_at=datetime.fromisoformat(created_at_iso)
+                        created_at=pendulum.parse(created_at_iso)
                         if created_at_iso
-                        else datetime.now(UTC),
+                        else pendulum.now("UTC"),
                     )
 
                     session.add(audit_log)

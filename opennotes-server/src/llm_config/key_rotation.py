@@ -6,8 +6,10 @@ and alerting when keys exceed configured age thresholds.
 """
 
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TypedDict
+
+import pendulum
 
 from src.monitoring import get_logger
 
@@ -109,7 +111,7 @@ class KeyRotationManager:
             reason: Reason for rotation (e.g., "scheduled", "manual", "security")
         """
         event: RotationEvent = {
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": pendulum.now("UTC").isoformat(),
             "old_key_id": old_key_id,
             "new_key_id": new_key_id,
             "reason": reason,
@@ -185,7 +187,7 @@ class KeyRotationManager:
             List of alerts for keys exceeding max_key_age_days
         """
         alerts: list[KeyAgeAlert] = []
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
 
         for config_id, registration in self._key_registry.items():
             age = now - registration["created_at"]
@@ -223,7 +225,7 @@ class KeyRotationManager:
             List of keys that have exceeded rotation_interval_days
         """
         keys_needing_rotation: list[KeyRotationNeeded] = []
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
 
         for config_id, registration in self._key_registry.items():
             age = now - registration["created_at"]
@@ -258,7 +260,7 @@ class KeyRotationManager:
             raise KeyError(f"Config {config_id} not registered for key rotation tracking")
 
         registration = self._key_registry[config_id]
-        age = datetime.now(UTC) - registration["created_at"]
+        age = pendulum.now("UTC") - registration["created_at"]
         age_days = age.total_seconds() / 86400
 
         return self.rotation_interval_days - age_days
@@ -271,7 +273,7 @@ class KeyRotationManager:
             Dictionary mapping config_id to age in days
         """
         metrics: dict[str, float] = {}
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
 
         for config_id, registration in self._key_registry.items():
             age = now - registration["created_at"]

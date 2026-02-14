@@ -6,9 +6,11 @@ and normalizing them for insertion into fact_checked_item_candidates.
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Self
 
+import pendulum
+from pendulum.parsing.exceptions import ParserError
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.fact_checking.candidate_models import compute_claim_hash
@@ -16,7 +18,7 @@ from src.fact_checking.import_pipeline.rating_normalizer import normalize_rating
 
 logger = logging.getLogger(__name__)
 
-DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%dT%H:%M:%S"]
+PENDULUM_DATE_FORMATS = ["YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DDTHH:mm:ss"]
 
 
 def _parse_review_date(review_date: str | None) -> datetime | None:
@@ -24,13 +26,13 @@ def _parse_review_date(review_date: str | None) -> datetime | None:
     if not review_date:
         return None
     try:
-        return datetime.fromisoformat(review_date.replace("Z", "+00:00"))
-    except ValueError:
+        return pendulum.parse(review_date)
+    except (ValueError, ParserError):
         pass
-    for fmt in DATE_FORMATS:
+    for fmt in PENDULUM_DATE_FORMATS:
         try:
-            return datetime.strptime(review_date, fmt).replace(tzinfo=UTC)
-        except ValueError:
+            return pendulum.from_format(review_date, fmt, tz="UTC")
+        except (ValueError, ParserError):
             continue
     logger.warning(f"Could not parse review_date: {review_date}")
     return None

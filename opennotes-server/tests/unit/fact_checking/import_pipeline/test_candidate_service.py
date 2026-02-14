@@ -3,10 +3,10 @@
 Tests the service layer functions for candidate listing, rating, and bulk approval.
 """
 
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pendulum
 import pytest
 
 from src.fact_checking.candidate_models import FactCheckedItemCandidate
@@ -161,13 +161,13 @@ class TestBuildFilters:
 
     def test_published_date_from_filter(self):
         """Adds >= filter for published_date_from."""
-        date_from = datetime.now(UTC) - timedelta(days=30)
+        date_from = pendulum.now("UTC") - pendulum.duration(days=30)
         result = _build_filters(published_date_from=date_from)
         assert len(result) == 1
 
     def test_published_date_to_filter(self):
         """Adds <= filter for published_date_to."""
-        date_to = datetime.now(UTC)
+        date_to = pendulum.now("UTC")
         result = _build_filters(published_date_to=date_to)
         assert len(result) == 1
 

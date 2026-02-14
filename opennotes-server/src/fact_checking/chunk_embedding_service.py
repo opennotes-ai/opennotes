@@ -9,10 +9,10 @@ This module provides the ChunkEmbeddingService which handles:
 - Tracking common chunks that appear across multiple documents
 """
 
-from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import delete, func, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
@@ -125,7 +125,7 @@ class ChunkEmbeddingService:
                 db, missing_texts, community_server_id
             )
 
-            now = datetime.now(UTC)
+            now = pendulum.now("UTC")
 
             for text, (embedding, provider, model) in zip(missing_texts, embeddings, strict=True):
                 chunk_hash = text_to_hash[text]
@@ -228,7 +228,7 @@ class ChunkEmbeddingService:
             db, chunk_text, community_server_id
         )
 
-        now = datetime.now(UTC)
+        now = pendulum.now("UTC")
 
         stmt = (
             pg_insert(ChunkEmbedding)
@@ -481,7 +481,7 @@ class ChunkEmbeddingService:
                         "chunk_id": chunk.id,
                         "fact_check_id": fact_check_id,
                         "chunk_index": idx,
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 )
 
@@ -583,7 +583,7 @@ class ChunkEmbeddingService:
                         "chunk_id": chunk.id,
                         "previously_seen_id": previously_seen_id,
                         "chunk_index": idx,
-                        "created_at": datetime.now(UTC),
+                        "created_at": pendulum.now("UTC"),
                     }
                 )
 
