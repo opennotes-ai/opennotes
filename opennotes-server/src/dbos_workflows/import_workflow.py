@@ -44,6 +44,50 @@ from src.utils.async_compat import run_sync
 
 logger = get_logger(__name__)
 
+FAILURE_THRESHOLD = 0.5
+
+
+def _finalize_job(
+    batch_job_id: UUID,
+    success: bool,
+    completed_tasks: int,
+    failed_tasks: int,
+    error_summary: dict[str, Any] | None = None,
+    stats: dict[str, Any] | None = None,
+) -> None:
+    ok = finalize_batch_job_sync(
+        batch_job_id,
+        success=success,
+        completed_tasks=completed_tasks,
+        failed_tasks=failed_tasks,
+        error_summary=error_summary,
+        stats=stats,
+    )
+    if not ok:
+        logger.warning(
+            "finalize_batch_job_sync returned False; job may remain IN_PROGRESS",
+            extra={"batch_job_id": str(batch_job_id), "intended_success": success},
+        )
+
+
+def _compute_batch_success(completed_count: int, failed_count: int) -> bool:
+    """Threshold-based success policy for batch jobs.
+
+    A job is considered successful when fewer than 50% of processed items failed.
+    This avoids marking an entire job of thousands of items as FAILED due to a
+    handful of transient errors. The exact completed_tasks and failed_tasks counts
+    are always persisted in the BatchJob record regardless of this flag, so
+    operators retain full visibility into partial failures.
+
+    Returns False when no items were processed (zero denominator) to prevent
+    division-by-zero and to correctly flag empty-result jobs.
+    """
+    total = completed_count + failed_count
+    if total == 0:
+        return False
+    return (failed_count / total) < FAILURE_THRESHOLD
+
+
 import_pipeline_queue = Queue(
     name="import_pipeline",
     worker_concurrency=1,
@@ -169,6 +213,16 @@ def import_csv_step(
     dry_run: bool,
     enqueue_scrapes: bool,
 ) -> dict[str, Any]:
+    """Download and parse the HuggingFace CSV, upserting candidates in batches.
+
+    Design: This is a single DBOS step containing the full CSV download+parse+upsert
+    cycle. Splitting into per-batch steps would not improve durability because the CSV
+    is streamed from a single HTTP response -- if the download fails mid-stream the
+    entire response must be re-fetched. Progress is tracked via
+    _update_batch_job_progress_async so operators have visibility into long-running
+    imports. On crash-replay DBOS re-executes this step from scratch, which is safe
+    because upsert_candidates is idempotent.
+    """
     from src.fact_checking.import_pipeline.importer import (
         HUGGINGFACE_DATASET_URL,
         ImportStats,
@@ -303,7 +357,7 @@ def fact_check_import_workflow(
 
     started = start_import_step(batch_job_id)
     if not started:
-        finalize_batch_job_sync(
+        _finalize_job(
             job_uuid,
             success=False,
             completed_tasks=0,
@@ -326,9 +380,9 @@ def fact_check_import_workflow(
         completed_so_far = final_stats.get("valid_rows", 0)
         failed_so_far = final_stats.get("invalid_rows", 0)
 
-        finalize_batch_job_sync(
+        _finalize_job(
             job_uuid,
-            success=failed_so_far == 0,
+            success=_compute_batch_success(completed_so_far, failed_so_far),
             completed_tasks=completed_so_far,
             failed_tasks=failed_so_far,
             stats=final_stats,
@@ -352,7 +406,7 @@ def fact_check_import_workflow(
             "stage": "import_csv",
         }
 
-        finalize_batch_job_sync(
+        _finalize_job(
             job_uuid,
             success=False,
             completed_tasks=completed_so_far,
@@ -393,7 +447,17 @@ def recover_and_count_scrape_step(batch_job_id: str) -> dict[str, Any]:
 
         recovered = await _recover_stuck_scraping_candidates(session_maker)
 
-        await _start_batch_job_async(job_uuid)
+        started = await _start_batch_job_async(job_uuid)
+        if not started:
+            logger.error(
+                "Failed to start scrape batch job, aborting",
+                extra={"batch_job_id": str(job_uuid)},
+            )
+            return {
+                "recovered": recovered,
+                "total_candidates": 0,
+                "start_failed": True,
+            }
 
         async with session_maker() as db:
             count_query = (
@@ -432,6 +496,16 @@ def process_scrape_batch_step(
     scraped_so_far: int,
     failed_so_far: int,
 ) -> dict[str, Any]:
+    """Scrape all pending candidates using concurrent asyncio.gather batches.
+
+    Design: This is a single DBOS step that loops over batches internally rather
+    than splitting into per-item steps. Splitting would lose the concurrency benefits
+    of asyncio.gather and per-domain rate limiting (domain_last_request tracking).
+    Each batch claims candidates atomically via UPDATE...RETURNING with
+    FOR UPDATE SKIP LOCKED, so crash-replay is safe -- already-claimed candidates
+    are skipped, and scrape_single updates each candidate's status individually.
+    Progress is reported via _update_batch_job_progress_async after each batch.
+    """
     job_uuid = UUID(batch_job_id)
 
     async def _process() -> dict[str, Any]:
@@ -503,7 +577,20 @@ def process_scrape_batch_step(
                         await asyncio.sleep(base_delay - elapsed)
                     domain_last_request[domain] = time.monotonic()
 
-                    content = await asyncio.to_thread(scrape_url_content, source_url)
+                    try:
+                        content = await asyncio.to_thread(scrape_url_content, source_url)
+                    except Exception as exc:
+                        async with session_maker() as db:
+                            await db.execute(
+                                sa_update(FactCheckedItemCandidate)
+                                .where(FactCheckedItemCandidate.id == candidate_id)
+                                .values(
+                                    status=CandidateStatus.SCRAPE_FAILED.value,
+                                    error_message=f"Scrape exception: {exc}",
+                                )
+                            )
+                            await db.commit()
+                        return (False, f"Scrape exception: {exc}")
 
                     async with session_maker() as db:
                         if content:
@@ -588,6 +675,16 @@ def scrape_candidates_workflow(
         total_candidates = init_result["total_candidates"]
         recovered = init_result["recovered"]
 
+        if init_result.get("start_failed"):
+            _finalize_job(
+                job_uuid,
+                success=False,
+                completed_tasks=0,
+                failed_tasks=0,
+                error_summary={"stage": "start", "error": "Failed to start batch job"},
+            )
+            return {"status": "failed", "error": "Failed to start batch job"}
+
         if dry_run:
             final_stats = {
                 "total_candidates": total_candidates,
@@ -596,7 +693,7 @@ def scrape_candidates_workflow(
                 "recovered_stuck": recovered,
                 "dry_run": True,
             }
-            finalize_batch_job_sync(
+            _finalize_job(
                 job_uuid,
                 success=True,
                 completed_tasks=0,
@@ -631,9 +728,9 @@ def scrape_candidates_workflow(
             "dry_run": False,
         }
 
-        finalize_batch_job_sync(
+        _finalize_job(
             job_uuid,
-            success=failed_so_far == 0,
+            success=_compute_batch_success(scraped_so_far, failed_so_far),
             completed_tasks=scraped_so_far,
             failed_tasks=failed_so_far,
             stats=final_stats,
@@ -657,7 +754,7 @@ def scrape_candidates_workflow(
             "stage": "scrape",
         }
 
-        finalize_batch_job_sync(
+        _finalize_job(
             job_uuid,
             success=False,
             completed_tasks=scraped_so_far,
@@ -698,7 +795,17 @@ def recover_and_count_promote_step(batch_job_id: str) -> dict[str, Any]:
 
         recovered = await _recover_stuck_promoting_candidates(session_maker)
 
-        await _start_batch_job_async(job_uuid)
+        started = await _start_batch_job_async(job_uuid)
+        if not started:
+            logger.error(
+                "Failed to start promote batch job, aborting",
+                extra={"batch_job_id": str(job_uuid)},
+            )
+            return {
+                "recovered": recovered,
+                "total_candidates": 0,
+                "start_failed": True,
+            }
 
         async with session_maker() as db:
             count_query = (
@@ -735,6 +842,15 @@ def process_promotion_batch_step(
     batch_size: int,
     total_candidates: int,
 ) -> dict[str, Any]:
+    """Promote all scraped candidates to fact-check items in batches.
+
+    Design: This is a single DBOS step that loops over batches internally.
+    Like process_scrape_batch_step, splitting into per-item steps would add
+    overhead without improving durability -- each candidate is claimed atomically
+    via UPDATE...RETURNING with FOR UPDATE SKIP LOCKED, and promote_candidate
+    updates each candidate's status individually. Crash-replay safely re-claims
+    only un-promoted candidates. Progress is reported after each batch.
+    """
     job_uuid = UUID(batch_job_id)
 
     async def _process() -> dict[str, Any]:
@@ -825,6 +941,16 @@ def promote_candidates_workflow(
         total_candidates = init_result["total_candidates"]
         recovered = init_result["recovered"]
 
+        if init_result.get("start_failed"):
+            _finalize_job(
+                job_uuid,
+                success=False,
+                completed_tasks=0,
+                failed_tasks=0,
+                error_summary={"stage": "start", "error": "Failed to start batch job"},
+            )
+            return {"status": "failed", "error": "Failed to start batch job"}
+
         if dry_run:
             final_stats = {
                 "total_candidates": total_candidates,
@@ -833,7 +959,7 @@ def promote_candidates_workflow(
                 "recovered_stuck": recovered,
                 "dry_run": True,
             }
-            finalize_batch_job_sync(
+            _finalize_job(
                 job_uuid,
                 success=True,
                 completed_tasks=0,
@@ -864,9 +990,9 @@ def promote_candidates_workflow(
             "dry_run": False,
         }
 
-        finalize_batch_job_sync(
+        _finalize_job(
             job_uuid,
-            success=failed_so_far == 0,
+            success=_compute_batch_success(promoted_so_far, failed_so_far),
             completed_tasks=promoted_so_far,
             failed_tasks=failed_so_far,
             stats=final_stats,
@@ -890,7 +1016,7 @@ def promote_candidates_workflow(
             "stage": "promote",
         }
 
-        finalize_batch_job_sync(
+        _finalize_job(
             job_uuid,
             success=False,
             completed_tasks=promoted_so_far,

@@ -143,8 +143,7 @@ class ImportBatchJobService:
             await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
-        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
-        await self._session.commit()
+        await self._persist_workflow_id(job, workflow_id)
 
         return job
 
@@ -237,8 +236,7 @@ class ImportBatchJobService:
             await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
-        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
-        await self._session.commit()
+        await self._persist_workflow_id(job, workflow_id)
 
         return job
 
@@ -304,8 +302,7 @@ class ImportBatchJobService:
             await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
-        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
-        await self._session.commit()
+        await self._persist_workflow_id(job, workflow_id)
 
         return job
 
@@ -404,10 +401,41 @@ class ImportBatchJobService:
             await self._handle_dispatch_failure(job, e, "workflow_dispatch")
             raise
 
-        await self._batch_job_service.set_workflow_id(job.id, workflow_id)
-        await self._session.commit()
+        await self._persist_workflow_id(job, workflow_id)
 
         return job
+
+    async def _persist_workflow_id(self, job: BatchJob, workflow_id: str) -> None:
+        """Persist workflow_id with one retry on failure.
+
+        Between dispatch and this call there is a TOCTOU window: if the
+        server crashes after dispatch but before set_workflow_id, the
+        workflow runs without a workflow_id link. This is a monitoring gap
+        (not a correctness issue) -- the workflow still executes normally.
+        The retry reduces the window; a warning is logged so operators can
+        detect orphaned workflows via log monitoring.
+        """
+        for attempt in range(2):
+            try:
+                await self._batch_job_service.set_workflow_id(job.id, workflow_id)
+                await self._session.commit()
+                return
+            except Exception:
+                if attempt == 0:
+                    logger.warning(
+                        "set_workflow_id failed, retrying once",
+                        extra={"job_id": str(job.id), "workflow_id": workflow_id},
+                    )
+                else:
+                    logger.warning(
+                        "set_workflow_id failed after retry; workflow running without "
+                        "linked workflow_id. Workflow will still execute normally.",
+                        extra={
+                            "job_id": str(job.id),
+                            "job_type": job.job_type,
+                            "workflow_id": workflow_id,
+                        },
+                    )
 
     async def _handle_dispatch_failure(
         self,

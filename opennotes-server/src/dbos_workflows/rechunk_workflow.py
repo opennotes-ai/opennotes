@@ -41,6 +41,50 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+FAILURE_THRESHOLD = 0.5
+
+
+def _finalize_job(
+    batch_job_id: UUID,
+    success: bool,
+    completed_tasks: int,
+    failed_tasks: int,
+    error_summary: dict[str, Any] | None = None,
+    stats: dict[str, Any] | None = None,
+) -> None:
+    ok = finalize_batch_job_sync(
+        batch_job_id,
+        success=success,
+        completed_tasks=completed_tasks,
+        failed_tasks=failed_tasks,
+        error_summary=error_summary,
+        stats=stats,
+    )
+    if not ok:
+        logger.warning(
+            "finalize_batch_job_sync returned False; job may remain IN_PROGRESS",
+            extra={"batch_job_id": str(batch_job_id), "intended_success": success},
+        )
+
+
+def _compute_batch_success(completed_count: int, failed_count: int) -> bool:
+    """Threshold-based success policy for batch jobs.
+
+    A job is considered successful when fewer than 50% of processed items failed.
+    This avoids marking an entire job of thousands of items as FAILED due to a
+    handful of transient errors. The exact completed_tasks and failed_tasks counts
+    are always persisted in the BatchJob record regardless of this flag, so
+    operators retain full visibility into partial failures.
+
+    Returns False when no items were processed (zero denominator) to prevent
+    division-by-zero and to correctly flag empty-result jobs.
+    """
+    total = completed_count + failed_count
+    if total == 0:
+        return False
+    return (failed_count / total) < FAILURE_THRESHOLD
+
+
 rechunk_queue = Queue(
     name="rechunk",
     worker_concurrency=2,
@@ -216,7 +260,7 @@ def rechunk_fact_check_workflow(
                     "consecutive_failures": circuit_breaker.failures,
                 },
             )
-            finalize_batch_job_sync(
+            _finalize_job(
                 UUID(batch_job_id),
                 success=False,
                 completed_tasks=completed_count,
@@ -241,9 +285,9 @@ def rechunk_fact_check_workflow(
                 failed_tasks=failed_count,
             )
 
-    success = failed_count == 0
+    success = _compute_batch_success(completed_count, failed_count)
     error_summary = {"errors": errors} if errors else None
-    finalize_batch_job_sync(
+    _finalize_job(
         UUID(batch_job_id),
         success=success,
         completed_tasks=completed_count,
@@ -639,7 +683,7 @@ def rechunk_previously_seen_workflow(
                     "consecutive_failures": circuit_breaker.failures,
                 },
             )
-            finalize_batch_job_sync(
+            _finalize_job(
                 UUID(batch_job_id),
                 success=False,
                 completed_tasks=completed_count,
@@ -664,9 +708,9 @@ def rechunk_previously_seen_workflow(
                 failed_tasks=failed_count,
             )
 
-    success = failed_count == 0
+    success = _compute_batch_success(completed_count, failed_count)
     error_summary = {"errors": errors} if errors else None
-    finalize_batch_job_sync(
+    _finalize_job(
         UUID(batch_job_id),
         success=success,
         completed_tasks=completed_count,
