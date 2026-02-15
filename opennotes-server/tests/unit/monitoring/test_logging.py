@@ -320,6 +320,27 @@ class TestErrorReportingFields:
         assert "ValueError" in log_data["stack_trace"]
         assert "test exception" in log_data["stack_trace"]
 
+    def test_error_reporting_fields_failure_does_not_crash_formatter(self) -> None:
+        formatter = create_formatter_with_gcp_project("open-notes-core")
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="src/api.py",
+            lineno=42,
+            msg="Error with broken enrichment",
+            args=(),
+            exc_info=None,
+        )
+        log_data: dict[str, Any] = {}
+        with patch.object(
+            formatter, "_add_error_reporting_fields", side_effect=RuntimeError("boom")
+        ):
+            formatter.add_fields(log_data, record, {})
+
+        assert log_data["severity"] == "ERROR"
+        assert log_data["logger"] == "test"
+        assert "@type" not in log_data
+
     def test_report_location_from_record(self) -> None:
         formatter = create_formatter_with_gcp_project("open-notes-core")
         record = logging.LogRecord(

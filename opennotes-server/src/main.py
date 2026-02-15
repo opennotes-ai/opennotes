@@ -713,14 +713,7 @@ async def global_exception_handler(request: Any, exc: Exception) -> JSONResponse
 
         logger.exception(
             f"Unhandled exception: {exc}",
-            extra={
-                "@type": "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent",
-                "httpRequest": http_context,
-                "serviceContext": {
-                    "service": settings.PROJECT_NAME,
-                    "version": settings.VERSION,
-                },
-            },
+            extra={"httpRequest": http_context},
         )
     except Exception:
         logging.getLogger(__name__).error(

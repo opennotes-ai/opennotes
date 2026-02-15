@@ -35,14 +35,7 @@ def _build_app(*, debug: bool = False) -> FastAPI:
             logger = get_logger(__name__)
             logger.exception(
                 f"Unhandled exception: {exc}",
-                extra={
-                    "@type": "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent",
-                    "httpRequest": http_context,
-                    "serviceContext": {
-                        "service": "test-service",
-                        "version": "0.0.0-test",
-                    },
-                },
+                extra={"httpRequest": http_context},
             )
         except Exception:
             logging.getLogger(__name__).error(
@@ -93,7 +86,7 @@ class TestGlobalExceptionHandler:
         assert isinstance(exc_arg, RuntimeError)
         assert str(exc_arg) == "kaboom"
 
-    def test_log_contains_reported_error_event_fields(self, caplog):
+    def test_log_contains_http_request_context(self, caplog):
         client = TestClient(_build_app(), raise_server_exceptions=False)
 
         with caplog.at_level("ERROR"):
@@ -103,20 +96,10 @@ class TestGlobalExceptionHandler:
         assert len(error_records) >= 1
 
         record = error_records[0]
-        assert hasattr(record, "@type") or hasattr(record, "httpRequest")
-        extra_type = getattr(record, "@type", None)
         http_request = getattr(record, "httpRequest", None)
-        service_context = getattr(record, "serviceContext", None)
-
-        assert (
-            extra_type
-            == "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent"
-        )
         assert http_request is not None
         assert http_request["method"] == "GET"
         assert "/explode" in http_request["url"]
-        assert service_context is not None
-        assert service_context["service"] == "test-service"
 
     def test_fallback_on_handler_failure(self, caplog):
         app = FastAPI()

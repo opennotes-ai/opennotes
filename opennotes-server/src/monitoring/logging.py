@@ -159,7 +159,10 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
         log_data["severity"] = record.levelname
         log_data["logger"] = record.name
 
-        self._add_error_reporting_fields(log_data, record)
+        try:
+            self._add_error_reporting_fields(log_data, record)
+        except Exception as e:
+            _module_logger.debug("Could not add error reporting fields: %s", e)
 
 
 class ConsoleFormatter(logging.Formatter):
