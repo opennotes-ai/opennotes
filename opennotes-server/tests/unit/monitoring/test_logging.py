@@ -16,10 +16,17 @@ def formatter() -> CustomJsonFormatter:
         return CustomJsonFormatter("%(message)s", timestamp=True)
 
 
-def create_formatter_with_gcp_project(project_id: str) -> CustomJsonFormatter:
+def create_formatter_with_gcp_project(
+    project_id: str,
+    service_name: str = "opennotes-server",
+    version: str = "0.0.1",
+) -> CustomJsonFormatter:
     """Factory function to create a formatter with a specific GCP project ID."""
     mock_settings = MagicMock()
     mock_settings.GCP_PROJECT_ID = project_id
+    mock_settings.OTEL_SERVICE_NAME = service_name
+    mock_settings.PROJECT_NAME = "Open Notes Server"
+    mock_settings.VERSION = version
     with patch("src.config.get_settings", return_value=mock_settings):
         return CustomJsonFormatter("%(message)s", timestamp=True)
 
@@ -211,3 +218,124 @@ class TestSettingsImportError:
         assert log_data.get("trace_id") == trace_id
         assert log_data.get("span_id") == span_id
         assert "logging.googleapis.com/trace" not in log_data
+
+
+class TestErrorReportingFields:
+    def test_error_level_gets_reported_error_event_type(self) -> None:
+        formatter = create_formatter_with_gcp_project("open-notes-core")
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="src/api.py",
+            lineno=42,
+            msg="Something broke",
+            args=(),
+            exc_info=None,
+        )
+        log_data: dict[str, Any] = {}
+        formatter.add_fields(log_data, record, {})
+
+        assert log_data["@type"] == (
+            "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent"
+        )
+        assert "serviceContext" in log_data
+
+    def test_info_level_does_not_get_error_reporting_fields(self) -> None:
+        formatter = create_formatter_with_gcp_project("open-notes-core")
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="src/api.py",
+            lineno=10,
+            msg="All good",
+            args=(),
+            exc_info=None,
+        )
+        log_data: dict[str, Any] = {}
+        formatter.add_fields(log_data, record, {})
+
+        assert "@type" not in log_data
+        assert "serviceContext" not in log_data
+        assert "context" not in log_data
+
+    def test_no_gcp_project_no_error_reporting_fields(self) -> None:
+        with patch("src.config.get_settings", side_effect=ImportError("no settings")):
+            formatter = CustomJsonFormatter("%(message)s", timestamp=True)
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="src/api.py",
+            lineno=42,
+            msg="Error without GCP",
+            args=(),
+            exc_info=None,
+        )
+        log_data: dict[str, Any] = {}
+        formatter.add_fields(log_data, record, {})
+
+        assert "@type" not in log_data
+        assert "serviceContext" not in log_data
+
+    def test_service_context_version_from_settings(self) -> None:
+        formatter = create_formatter_with_gcp_project(
+            "open-notes-core", service_name="opennotes-server", version="a1b2c3d"
+        )
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="src/api.py",
+            lineno=42,
+            msg="Error",
+            args=(),
+            exc_info=None,
+        )
+        log_data: dict[str, Any] = {}
+        formatter.add_fields(log_data, record, {})
+
+        assert log_data["serviceContext"]["service"] == "opennotes-server"
+        assert log_data["serviceContext"]["version"] == "a1b2c3d"
+
+    def test_exception_includes_stack_trace(self) -> None:
+        formatter = create_formatter_with_gcp_project("open-notes-core")
+        try:
+            raise ValueError("test exception")
+        except ValueError:
+            import sys
+
+            exc_info = sys.exc_info()
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="src/api.py",
+            lineno=42,
+            msg="Caught exception",
+            args=(),
+            exc_info=exc_info,
+        )
+        log_data: dict[str, Any] = {}
+        formatter.add_fields(log_data, record, {})
+
+        assert "stack_trace" in log_data
+        assert "ValueError" in log_data["stack_trace"]
+        assert "test exception" in log_data["stack_trace"]
+
+    def test_report_location_from_record(self) -> None:
+        formatter = create_formatter_with_gcp_project("open-notes-core")
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="src/events/nats_client.py",
+            lineno=206,
+            msg="Publish failed",
+            args=(),
+            exc_info=None,
+        )
+        record.funcName = "publish"
+        log_data: dict[str, Any] = {}
+        formatter.add_fields(log_data, record, {})
+
+        location = log_data["context"]["reportLocation"]
+        assert location["filePath"] == "src/events/nats_client.py"
+        assert location["lineNumber"] == 206
+        assert location["functionName"] == "publish"

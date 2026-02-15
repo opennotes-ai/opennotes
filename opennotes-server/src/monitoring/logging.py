@@ -1,9 +1,14 @@
 import logging
 import sys
+import traceback as traceback_mod
 from typing import Any
 
 from opentelemetry import trace
 from pythonjsonlogger import jsonlogger
+
+_REPORTED_ERROR_EVENT_TYPE = (
+    "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent"
+)
 
 LEVEL_TO_SEVERITY: dict[str, int] = {
     "DEBUG": 5,
@@ -21,10 +26,15 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._gcp_project_id: str | None = None
+        self._service_name: str = "opennotes-server"
+        self._service_version: str | None = None
         try:
             from src.config import get_settings
 
-            self._gcp_project_id = get_settings().GCP_PROJECT_ID
+            settings = get_settings()
+            self._gcp_project_id = settings.GCP_PROJECT_ID
+            self._service_name = settings.OTEL_SERVICE_NAME or settings.PROJECT_NAME
+            self._service_version = settings.VERSION
         except ImportError:
             _module_logger.debug("Could not import settings module for GCP_PROJECT_ID")
         except Exception as e:
@@ -100,6 +110,35 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
         except Exception as e:
             _module_logger.debug("Could not get instance metadata: %s", e)
 
+    def _add_error_reporting_fields(
+        self,
+        log_data: dict[str, Any],
+        record: logging.LogRecord,
+    ) -> None:
+        if not self._gcp_project_id:
+            return
+        if record.levelno < logging.ERROR:
+            return
+
+        log_data["@type"] = _REPORTED_ERROR_EVENT_TYPE
+        log_data["serviceContext"] = {
+            "service": self._service_name,
+            "version": self._service_version or "unknown",
+        }
+
+        if record.exc_info and record.exc_info[1] is not None:
+            log_data["stack_trace"] = "".join(traceback_mod.format_exception(*record.exc_info))
+        elif record.exc_text:
+            log_data["stack_trace"] = record.exc_text
+
+        log_data["context"] = {
+            "reportLocation": {
+                "filePath": record.pathname,
+                "lineNumber": record.lineno,
+                "functionName": record.funcName,
+            }
+        }
+
     def add_fields(
         self,
         log_data: dict[str, Any],
@@ -119,6 +158,8 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
 
         log_data["severity"] = record.levelname
         log_data["logger"] = record.name
+
+        self._add_error_reporting_fields(log_data, record)
 
 
 class ConsoleFormatter(logging.Formatter):
