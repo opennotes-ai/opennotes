@@ -73,9 +73,10 @@ role_strategy = st.sampled_from(["admin", "moderator", "member", "viewer", "gues
 banned_at_strategy = st.one_of(
     st.none(),
     st.datetimes(
-        min_value=datetime(2020, 1, 1, tzinfo=UTC),
-        max_value=datetime(2030, 1, 1, tzinfo=UTC),
-    ).map(lambda dt: dt.replace(tzinfo=UTC)),
+        min_value=datetime(2020, 1, 1),  # noqa: DTZ001
+        max_value=datetime(2030, 1, 1),  # noqa: DTZ001
+        timezones=st.just(UTC),
+    ),
 )
 
 
@@ -387,9 +388,10 @@ class TestBannedMemberDenialProperties:
         role=role_strategy,
         is_active=st.booleans(),
         ban_time=st.datetimes(
-            min_value=datetime(2020, 1, 1, tzinfo=UTC),
-            max_value=datetime(2030, 1, 1, tzinfo=UTC),
-        ).map(lambda dt: dt.replace(tzinfo=UTC)),
+            min_value=datetime(2020, 1, 1),  # noqa: DTZ001
+            max_value=datetime(2030, 1, 1),  # noqa: DTZ001
+            timezones=st.just(UTC),
+        ),
     )
     def test_banned_member_denied_member_access(self, role, is_active, ban_time):
         """A member with banned_at set is denied member access, even if is_active=True."""
@@ -411,9 +413,10 @@ class TestBannedMemberDenialProperties:
     @given(
         role=role_strategy,
         ban_time=st.datetimes(
-            min_value=datetime(2020, 1, 1, tzinfo=UTC),
-            max_value=datetime(2030, 1, 1, tzinfo=UTC),
-        ).map(lambda dt: dt.replace(tzinfo=UTC)),
+            min_value=datetime(2020, 1, 1),  # noqa: DTZ001
+            max_value=datetime(2030, 1, 1),  # noqa: DTZ001
+            timezones=st.just(UTC),
+        ),
     )
     def test_banned_admin_still_has_admin_access_via_role(self, role, ban_time):
         """Community admin access checks role, not ban status.
