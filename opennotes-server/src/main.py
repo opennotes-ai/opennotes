@@ -129,6 +129,10 @@ setup_logging(
 )
 logger = get_logger(__name__)
 
+from src.monitoring.gcp_resource_detector import resolve_effective_instance_id
+
+settings.INSTANCE_ID = resolve_effective_instance_id(settings.INSTANCE_ID)
+
 initialize_instance_metadata(
     instance_id=settings.INSTANCE_ID,
     environment=settings.ENVIRONMENT,
