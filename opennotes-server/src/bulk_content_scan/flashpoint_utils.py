@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -31,11 +32,13 @@ def parse_bool(value: Any) -> bool:
     return bool(value)
 
 
-def parse_derailment_score(value: Any) -> int:
+def parse_derailment_score(value: Any) -> int:  # noqa: PLR0911
     """Parse a derailment score from LLM output, clamping to [0, 100]."""
     if isinstance(value, int):
         return max(DERAILMENT_SCORE_MIN, min(DERAILMENT_SCORE_MAX, value))
     if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return DERAILMENT_SCORE_MAX if value == float("inf") else DERAILMENT_SCORE_MIN
         return max(DERAILMENT_SCORE_MIN, min(DERAILMENT_SCORE_MAX, round(value)))
     if isinstance(value, str):
         value = value.strip()
