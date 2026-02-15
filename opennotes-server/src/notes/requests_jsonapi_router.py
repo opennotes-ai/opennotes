@@ -38,6 +38,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.ownership_dependencies import verify_request_ownership
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import StrictInputSchema
+from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -298,30 +299,20 @@ def _normalize_datetime(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def _build_attribute_filters(
-    filter_status: RequestStatus | None,
-    filter_requested_by: str | None,
-    filter_requested_at_gte: datetime | None,
-    filter_requested_at_lte: datetime | None,
-) -> list[Any]:
-    """Build a list of filter conditions for request attributes."""
-    filters = []
-
-    if filter_status is not None:
-        filters.append(Request.status == filter_status)
-
-    if filter_requested_by is not None:
-        filters.append(Request.requested_by == filter_requested_by)
-
-    if filter_requested_at_gte is not None:
-        normalized_gte = _normalize_datetime(filter_requested_at_gte)
-        filters.append(Request.requested_at >= normalized_gte)
-
-    if filter_requested_at_lte is not None:
-        normalized_lte = _normalize_datetime(filter_requested_at_lte)
-        filters.append(Request.requested_at <= normalized_lte)
-
-    return filters
+request_filter_builder = FilterBuilder(
+    FilterField(Request.status, operators=[FilterOperator.EQ]),
+    FilterField(Request.requested_by, operators=[FilterOperator.EQ]),
+    FilterField(
+        Request.requested_at,
+        operators=[FilterOperator.GTE, FilterOperator.LTE],
+        transform=_normalize_datetime,
+    ),
+    FilterField(
+        Request.community_server_id,
+        alias="community_server_id",
+        operators=[FilterOperator.EQ, FilterOperator.IN],
+    ),
+)
 
 
 @router.get("/requests", response_class=JSONResponse, response_model=RequestListJSONAPIResponse)
@@ -357,23 +348,18 @@ async def list_requests_jsonapi(
     try:
         query = select(Request).options(*loaders.request_with_archive())
 
-        filters = _build_attribute_filters(
-            filter_status=filter_status,
-            filter_requested_by=filter_requested_by,
-            filter_requested_at_gte=filter_requested_at_gte,
-            filter_requested_at_lte=filter_requested_at_lte,
-        )
-
+        community_server_id_value = filter_community_server_id
+        community_server_id_in_value = None
         if filter_community_server_id:
             if not is_service_account(current_user):
                 await verify_community_membership_by_uuid(
                     filter_community_server_id, current_user, db, request
                 )
-            filters.append(Request.community_server_id == filter_community_server_id)
         elif not is_service_account(current_user):
             user_communities = await get_user_community_ids(current_user, db)
             if user_communities:
-                filters.append(Request.community_server_id.in_(user_communities))
+                community_server_id_value = None
+                community_server_id_in_value = user_communities
             else:
                 response = RequestListJSONAPIResponse(
                     data=[],
@@ -384,6 +370,15 @@ async def list_requests_jsonapi(
                     content=response.model_dump(by_alias=True, mode="json"),
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
+
+        filters = request_filter_builder.build(
+            status=filter_status,
+            requested_by=filter_requested_by,
+            requested_at__gte=filter_requested_at_gte,
+            requested_at__lte=filter_requested_at_lte,
+            community_server_id=community_server_id_value,
+            community_server_id__in=community_server_id_in_value,
+        )
 
         if filters:
             query = query.where(and_(*filters))
