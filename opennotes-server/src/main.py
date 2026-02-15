@@ -129,13 +129,13 @@ logger = get_logger(__name__)
 
 from src.monitoring.gcp_resource_detector import resolve_effective_instance_id
 
-effective_instance_id = resolve_effective_instance_id(settings.INSTANCE_ID)
+settings.INSTANCE_ID = resolve_effective_instance_id(settings.INSTANCE_ID)
 
 initialize_instance_metadata(
-    instance_id=effective_instance_id,
+    instance_id=settings.INSTANCE_ID,
     environment=settings.ENVIRONMENT,
 )
-logger.info(f"Instance metadata initialized: {effective_instance_id}")
+logger.info(f"Instance metadata initialized: {settings.INSTANCE_ID}")
 
 if settings.TRACELOOP_ENABLED and not settings.TESTING:
     from src.monitoring.otel import get_span_exporter
@@ -146,7 +146,7 @@ if settings.TRACELOOP_ENABLED and not settings.TESTING:
         service_name=settings.PROJECT_NAME,
         version=settings.VERSION,
         environment=settings.ENVIRONMENT,
-        instance_id=effective_instance_id,
+        instance_id=settings.INSTANCE_ID,
         otlp_endpoint=settings.OTLP_ENDPOINT,
         otlp_headers=settings.OTLP_HEADERS,
         trace_content=settings.TRACELOOP_TRACE_CONTENT,
