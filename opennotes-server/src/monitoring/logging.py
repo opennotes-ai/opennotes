@@ -135,6 +135,18 @@ class ConsoleFormatter(logging.Formatter):
 _logging_configured = False
 
 
+def parse_log_level_overrides(overrides: str) -> dict[str, str] | None:
+    if not overrides:
+        return None
+    result = {}
+    for raw_pair in overrides.split(","):
+        entry = raw_pair.strip()
+        if ":" in entry:
+            module, level = entry.split(":", 1)
+            result[module.strip()] = level.strip().upper()
+    return result or None
+
+
 def setup_logging(
     log_level: str = "INFO",
     json_format: bool = True,
