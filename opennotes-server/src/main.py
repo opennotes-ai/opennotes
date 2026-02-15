@@ -696,10 +696,37 @@ async def metrics() -> Response:
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Any, exc: Exception) -> JSONResponse:
-    from src.monitoring import record_span_error
+    import logging
 
-    record_span_error(exc)
-    logger.exception(f"Unhandled exception: {exc}")
+    try:
+        from src.monitoring import record_span_error
+
+        record_span_error(exc)
+
+        http_context = {
+            "method": request.method,
+            "url": str(request.url),
+            "userAgent": request.headers.get("user-agent", ""),
+            "remoteIp": request.client.host if request.client else None,
+            "referrer": request.headers.get("referer", ""),
+        }
+
+        logger.exception(
+            f"Unhandled exception: {exc}",
+            extra={
+                "@type": "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent",
+                "httpRequest": http_context,
+                "serviceContext": {
+                    "service": settings.PROJECT_NAME,
+                    "version": settings.VERSION,
+                },
+            },
+        )
+    except Exception:
+        logging.getLogger(__name__).error(
+            "Unhandled exception (error handler fallback): %s", exc, exc_info=True
+        )
+
     return JSONResponse(
         status_code=500,
         content={
