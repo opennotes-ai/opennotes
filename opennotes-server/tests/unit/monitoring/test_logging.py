@@ -213,6 +213,15 @@ class TestParseLogLevelOverrides:
     def test_only_malformed_returns_none(self) -> None:
         assert parse_log_level_overrides("invalid") is None
 
+    def test_skips_invalid_level_names_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING):
+            result = parse_log_level_overrides("src.events:DEBUG,src.tasks:VERBOSE")
+        assert result == {"src.events": "DEBUG"}
+        assert "Ignoring invalid log level override 'src.tasks:VERBOSE'" in caplog.text
+
+    def test_all_invalid_levels_returns_none(self) -> None:
+        assert parse_log_level_overrides("src.events:VERBOSE,src.tasks:TRACE") is None
+
 
 class TestSettingsImportError:
     def test_handles_settings_import_error(

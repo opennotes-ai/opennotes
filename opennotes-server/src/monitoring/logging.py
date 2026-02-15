@@ -135,6 +135,9 @@ class ConsoleFormatter(logging.Formatter):
 _logging_configured = False
 
 
+_VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+
+
 def parse_log_level_overrides(overrides: str) -> dict[str, str] | None:
     if not overrides:
         return None
@@ -143,7 +146,16 @@ def parse_log_level_overrides(overrides: str) -> dict[str, str] | None:
         entry = raw_pair.strip()
         if ":" in entry:
             module, level = entry.split(":", 1)
-            result[module.strip()] = level.strip().upper()
+            normalized = level.strip().upper()
+            if normalized in _VALID_LOG_LEVELS:
+                result[module.strip()] = normalized
+            else:
+                logging.warning(
+                    "Ignoring invalid log level override '%s:%s' — valid levels: %s",
+                    module.strip(),
+                    level.strip(),
+                    ", ".join(sorted(_VALID_LOG_LEVELS)),
+                )
     return result or None
 
 
