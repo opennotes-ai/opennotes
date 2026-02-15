@@ -79,6 +79,41 @@ def _get_instance_id(fallback: str | None = None) -> str | None:
     return fallback
 
 
+def resolve_effective_instance_id(config_default: str) -> str:
+    """Resolve a unique instance ID, preferring GCP metadata server in Cloud Run.
+
+    In Cloud Run, multiple instances share the same INSTANCE_ID env var
+    (service-level config). The metadata server returns a unique ID per
+    container, which is required for Cloud Monitoring metrics identity.
+
+    Priority in Cloud Run:
+        1. GCP metadata server (unique per container)
+        2. config_default (static fallback)
+
+    Outside Cloud Run:
+        Returns config_default unchanged.
+
+    Args:
+        config_default: The settings.INSTANCE_ID value to use as fallback.
+
+    Returns:
+        A unique instance ID string.
+    """
+    if not is_cloud_run_environment():
+        return config_default
+
+    metadata_id = _get_instance_id_from_metadata()
+    if metadata_id:
+        logger.info(f"Resolved unique instance ID from metadata server: {metadata_id}")
+        return metadata_id
+
+    logger.warning(
+        f"Could not resolve instance ID from metadata server, "
+        f"falling back to config default: {config_default}"
+    )
+    return config_default
+
+
 def is_cloud_run_environment() -> bool:
     """Check if running in Cloud Run environment.
 
