@@ -77,9 +77,13 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Open Notes Server"
     VERSION: str = Field(
         default="0.0.1",
-        validation_alias="SERVICE_VERSION",
-        description="Service version for tracing",
+        validation_alias=AliasChoices("SERVICE_VERSION", "OTEL_SERVICE_VERSION"),
+        description="Service version for tracing (git SHA in production)",
     )
+    VCS_REF: str | None = Field(default=None, description="Git commit SHA from build")
+    BUILD_DATE: str | None = Field(default=None, description="Build timestamp from CI")
+    K_REVISION: str | None = Field(default=None, description="Cloud Run revision name")
+
     API_V1_PREFIX: str = "/api/v1"
     API_V2_PREFIX: str = "/api/v2"
 
