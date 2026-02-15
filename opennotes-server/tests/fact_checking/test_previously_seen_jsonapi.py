@@ -472,7 +472,7 @@ class TestPreviouslySeenJSONAPICheck:
                 "type": "previously-seen-check",
                 "attributes": {
                     "message_text": "This is a completely unique test message that has never been seen before.",
-                    "guild_id": platform_id,
+                    "platform_community_server_id": platform_id,
                     "channel_id": "test_channel_123",
                 },
             }
@@ -514,7 +514,7 @@ class TestPreviouslySeenJSONAPICheck:
                 "type": "wrong-type",
                 "attributes": {
                     "message_text": "Test message",
-                    "guild_id": platform_id,
+                    "platform_community_server_id": platform_id,
                     "channel_id": "test_channel",
                 },
             }
@@ -537,7 +537,7 @@ class TestPreviouslySeenJSONAPICheck:
                 "type": "previously-seen-check",
                 "attributes": {
                     "message_text": "Test message",
-                    "guild_id": "nonexistent_guild_id",
+                    "platform_community_server_id": "nonexistent_guild_id",
                     "channel_id": "test_channel",
                 },
             }

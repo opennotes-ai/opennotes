@@ -122,7 +122,11 @@ class PreviouslySeenCheckAttributes(StrictInputSchema):
     message_text: str = Field(
         ..., min_length=1, max_length=50000, description="Message text to check"
     )
-    guild_id: str = Field(..., max_length=64, description="Discord guild ID")
+    platform_community_server_id: str = Field(
+        ...,
+        max_length=64,
+        description="Platform-specific community server ID (e.g., Discord guild ID)",
+    )
     channel_id: str = Field(..., max_length=64, description="Discord channel ID")
 
 
@@ -583,7 +587,7 @@ async def check_previously_seen_jsonapi(
 
         result = await db.execute(
             select(CommunityServer.id).where(
-                CommunityServer.platform_community_server_id == attrs.guild_id
+                CommunityServer.platform_community_server_id == attrs.platform_community_server_id
             )
         )
         community_server_uuid = result.scalar_one_or_none()
@@ -592,11 +596,13 @@ async def check_previously_seen_jsonapi(
             return create_error_response(
                 status.HTTP_404_NOT_FOUND,
                 "Not Found",
-                f"Community server not found: {attrs.guild_id}",
+                f"Community server not found: {attrs.platform_community_server_id}",
             )
 
         if not is_service_account(current_user):
-            await verify_community_membership(attrs.guild_id, current_user, db, request)
+            await verify_community_membership(
+                attrs.platform_community_server_id, current_user, db, request
+            )
 
         monitored_channel_result = await db.execute(
             select(MonitoredChannel).where(
@@ -613,7 +619,7 @@ async def check_previously_seen_jsonapi(
         logger.debug(
             "Checking previously seen messages",
             extra={
-                "guild_id": attrs.guild_id,
+                "platform_community_server_id": attrs.platform_community_server_id,
                 "channel_id": attrs.channel_id,
                 "autopublish_threshold": autopublish_threshold,
                 "autorequest_threshold": autorequest_threshold,
@@ -622,7 +628,7 @@ async def check_previously_seen_jsonapi(
         )
 
         embedding = await embedding_service.generate_embedding(
-            db=db, text=attrs.message_text, community_server_id=attrs.guild_id
+            db=db, text=attrs.message_text, community_server_id=attrs.platform_community_server_id
         )
 
         matches = await embedding_service.search_previously_seen(
@@ -646,7 +652,7 @@ async def check_previously_seen_jsonapi(
                 logger.info(
                     "Auto-publish recommended for previously seen message",
                     extra={
-                        "guild_id": attrs.guild_id,
+                        "platform_community_server_id": attrs.platform_community_server_id,
                         "channel_id": attrs.channel_id,
                         "similarity_score": top_score,
                         "autopublish_threshold": autopublish_threshold,
@@ -658,7 +664,7 @@ async def check_previously_seen_jsonapi(
                 logger.info(
                     "Auto-request recommended for similar previously seen message",
                     extra={
-                        "guild_id": attrs.guild_id,
+                        "platform_community_server_id": attrs.platform_community_server_id,
                         "channel_id": attrs.channel_id,
                         "similarity_score": top_score,
                         "autorequest_threshold": autorequest_threshold,

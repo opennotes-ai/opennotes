@@ -1850,7 +1850,7 @@ describe('ApiClient Wrapper', () => {
           type: 'previously-seen-check',
           attributes: {
             message_text: 'test message',
-            guild_id: 'guild-123',
+            platform_community_server_id: 'guild-123',
             channel_id: 'channel-456',
           },
         },

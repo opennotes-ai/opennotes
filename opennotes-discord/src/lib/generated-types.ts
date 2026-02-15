@@ -6573,10 +6573,10 @@ export interface components {
              */
             message_text: string;
             /**
-             * Guild Id
-             * @description Discord guild ID
+             * Platform Community Server Id
+             * @description Platform-specific community server ID (e.g., Discord guild ID)
              */
-            guild_id: string;
+            platform_community_server_id: string;
             /**
              * Channel Id
              * @description Discord channel ID

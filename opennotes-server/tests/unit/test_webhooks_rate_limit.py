@@ -66,7 +66,7 @@ class TestRateLimiter:
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_guild_only_allowed(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 50
 
         mock_pipeline = AsyncMock()
@@ -80,7 +80,9 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id
+            )
 
         assert allowed is True
         assert remaining == 50
@@ -91,7 +93,7 @@ class TestRateLimiter:
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_guild_only_exceeded(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 101
 
         mock_pipeline = AsyncMock()
@@ -105,14 +107,16 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id
+            )
 
         assert allowed is False
         assert remaining == 0
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_with_user_id_allowed(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         user_id = "user_456"
         current_count = 25
 
@@ -127,7 +131,9 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id, user_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id, user_id
+            )
 
         assert allowed is True
         assert remaining == 75
@@ -135,11 +141,11 @@ class TestRateLimiter:
         calls = mock_pipeline.zremrangebyscore.call_args_list
         assert len(calls) == 1
         key = calls[0][0][0]
-        assert f"community_server:{guild_id}:user:{user_id}" in key
+        assert f"community_server:{platform_community_server_id}:user:{user_id}" in key
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_with_user_id_exceeded(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         user_id = "user_456"
         current_count = 150
 
@@ -154,14 +160,16 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id, user_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id, user_id
+            )
 
         assert allowed is False
         assert remaining == 0
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_pipeline_operations(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 10
 
         mock_pipeline = AsyncMock()
@@ -175,7 +183,7 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            await connected_limiter.check_rate_limit(guild_id)
+            await connected_limiter.check_rate_limit(platform_community_server_id)
 
         connected_limiter.redis_client.pipeline.assert_called_once_with(transaction=True)
         mock_pipeline.zremrangebyscore.assert_called_once()
@@ -185,7 +193,7 @@ class TestRateLimiter:
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_edge_case_at_limit(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 99
 
         mock_pipeline = AsyncMock()
@@ -199,14 +207,16 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id
+            )
 
         assert allowed is True
         assert remaining == 1
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_zero_count(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 0
 
         mock_pipeline = AsyncMock()
@@ -220,7 +230,9 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id
+            )
 
         assert allowed is True
         assert remaining == 100
@@ -237,7 +249,7 @@ class TestRateLimiter:
 
     @pytest.mark.asyncio
     async def test_get_rate_limit_info_guild_only(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 30
 
         connected_limiter.redis_client.zremrangebyscore = AsyncMock()
@@ -247,18 +259,18 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            info = await connected_limiter.get_rate_limit_info(guild_id)
+            info = await connected_limiter.get_rate_limit_info(platform_community_server_id)
 
         assert info == {"limit": 100, "remaining": 70, "window": 60}
 
         connected_limiter.redis_client.zremrangebyscore.assert_called_once()
         key = connected_limiter.redis_client.zremrangebyscore.call_args[0][0]
-        assert f"community_server:{guild_id}" in key
+        assert f"community_server:{platform_community_server_id}" in key
         assert "user" not in key
 
     @pytest.mark.asyncio
     async def test_get_rate_limit_info_with_user_id(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         user_id = "user_456"
         current_count = 45
 
@@ -269,16 +281,18 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            info = await connected_limiter.get_rate_limit_info(guild_id, user_id)
+            info = await connected_limiter.get_rate_limit_info(
+                platform_community_server_id, user_id
+            )
 
         assert info == {"limit": 100, "remaining": 55, "window": 60}
 
         key = connected_limiter.redis_client.zremrangebyscore.call_args[0][0]
-        assert f"community_server:{guild_id}:user:{user_id}" in key
+        assert f"community_server:{platform_community_server_id}:user:{user_id}" in key
 
     @pytest.mark.asyncio
     async def test_get_rate_limit_info_at_limit(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 100
 
         connected_limiter.redis_client.zremrangebyscore = AsyncMock()
@@ -288,13 +302,13 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            info = await connected_limiter.get_rate_limit_info(guild_id)
+            info = await connected_limiter.get_rate_limit_info(platform_community_server_id)
 
         assert info["remaining"] == 0
 
     @pytest.mark.asyncio
     async def test_get_rate_limit_info_exceeded_limit(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 150
 
         connected_limiter.redis_client.zremrangebyscore = AsyncMock()
@@ -304,13 +318,13 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            info = await connected_limiter.get_rate_limit_info(guild_id)
+            info = await connected_limiter.get_rate_limit_info(platform_community_server_id)
 
         assert info["remaining"] == 0
 
     @pytest.mark.asyncio
     async def test_get_rate_limit_info_zero_count(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 0
 
         connected_limiter.redis_client.zremrangebyscore = AsyncMock()
@@ -320,13 +334,13 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            info = await connected_limiter.get_rate_limit_info(guild_id)
+            info = await connected_limiter.get_rate_limit_info(platform_community_server_id)
 
         assert info["remaining"] == 100
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_exact_enforcement_at_limit(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 100
 
         mock_pipeline = AsyncMock()
@@ -340,7 +354,9 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id
+            )
 
         assert allowed is True
         assert remaining == 0
@@ -348,7 +364,7 @@ class TestRateLimiter:
 
     @pytest.mark.asyncio
     async def test_check_rate_limit_exact_enforcement_over_limit(self, connected_limiter):
-        guild_id = "guild_123"
+        platform_community_server_id = "guild_123"
         current_count = 101
 
         mock_pipeline = AsyncMock()
@@ -362,7 +378,9 @@ class TestRateLimiter:
             mock_settings.WEBHOOK_RATE_LIMIT_PER_COMMUNITY_SERVER = 100
             mock_settings.WEBHOOK_RATE_LIMIT_WINDOW = 60
 
-            allowed, remaining = await connected_limiter.check_rate_limit(guild_id)
+            allowed, remaining = await connected_limiter.check_rate_limit(
+                platform_community_server_id
+            )
 
         assert allowed is False
         assert remaining == 0
