@@ -41,7 +41,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.ownership_dependencies import verify_note_ownership
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import StrictInputSchema
-from src.common.filters import FilterBuilder, FilterField, FilterOperator
+from src.common.filters import FilterBuilder, FilterField, FilterOperator, JoinSpec
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -200,6 +200,11 @@ def create_error_response(
     )
 
 
+_platform_message_id_joins = [
+    JoinSpec(target=Request, onclause=Note.request_id == Request.request_id),
+    JoinSpec(target=MessageArchive, onclause=Request.message_archive_id == MessageArchive.id),
+]
+
 note_filter_builder = (
     FilterBuilder(
         FilterField(Note.status, operators=[FilterOperator.EQ, FilterOperator.NEQ]),
@@ -207,6 +212,17 @@ note_filter_builder = (
         FilterField(Note.author_id, alias="author_id", operators=[FilterOperator.EQ]),
         FilterField(Note.request_id, operators=[FilterOperator.EQ]),
         FilterField(Note.created_at, operators=[FilterOperator.GTE, FilterOperator.LTE]),
+        FilterField(
+            Note.community_server_id,
+            alias="community_server_id",
+            operators=[FilterOperator.EQ, FilterOperator.IN],
+        ),
+        FilterField(
+            MessageArchive.platform_message_id,
+            alias="platform_message_id",
+            operators=[FilterOperator.EQ],
+            joins=_platform_message_id_joins,
+        ),
     )
     .add_custom_filter(
         "rated_by_not_in",
@@ -279,28 +295,18 @@ async def list_notes_jsonapi(
                 UUID(x.strip()) for x in filter_rated_by_not_in.split(",") if x.strip()
             ]
 
-        filters = note_filter_builder.build(
-            status=filter_status,
-            status__neq=filter_status_neq,
-            classification=filter_classification,
-            author_id=filter_author_id,
-            request_id=filter_request_id,
-            created_at__gte=filter_created_at_gte,
-            created_at__lte=filter_created_at_lte,
-            rated_by_not_in=rated_by_list,
-            rated_by=filter_rated_by,
-        )
-
+        community_server_id_value = filter_community_server_id
+        community_server_id_in_value = None
         if filter_community_server_id:
             if not is_service_account(current_user):
                 await verify_community_membership_by_uuid(
                     filter_community_server_id, current_user, db, request
                 )
-            filters.append(Note.community_server_id == filter_community_server_id)
         elif not is_service_account(current_user):
             user_communities = await get_user_community_ids(current_user, db)
             if user_communities:
-                filters.append(Note.community_server_id.in_(user_communities))
+                community_server_id_value = None
+                community_server_id_in_value = user_communities
             else:
                 response = NoteListResponse(
                     data=[],
@@ -312,20 +318,30 @@ async def list_notes_jsonapi(
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
 
-        if filter_platform_message_id:
-            query = query.join(Request, Note.request_id == Request.request_id).join(
-                MessageArchive, Request.message_archive_id == MessageArchive.id
-            )
-            filters.append(MessageArchive.platform_message_id == filter_platform_message_id)
+        filters = note_filter_builder.build(
+            status=filter_status,
+            status__neq=filter_status_neq,
+            classification=filter_classification,
+            author_id=filter_author_id,
+            request_id=filter_request_id,
+            created_at__gte=filter_created_at_gte,
+            created_at__lte=filter_created_at_lte,
+            rated_by_not_in=rated_by_list,
+            rated_by=filter_rated_by,
+            community_server_id=community_server_id_value,
+            community_server_id__in=community_server_id_in_value,
+            platform_message_id=filter_platform_message_id,
+        )
+
+        for join_spec in filters.joins:
+            query = query.join(join_spec.target, join_spec.onclause)
 
         if filters:
             query = query.where(and_(*filters))
 
         total_query = select(func.count(Note.id))
-        if filter_platform_message_id:
-            total_query = total_query.join(Request, Note.request_id == Request.request_id).join(
-                MessageArchive, Request.message_archive_id == MessageArchive.id
-            )
+        for join_spec in filters.joins:
+            total_query = total_query.join(join_spec.target, join_spec.onclause)
         if filters:
             total_query = total_query.where(and_(*filters))
         total_result = await db.execute(total_query)
