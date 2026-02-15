@@ -567,7 +567,7 @@ async def get_or_create_profile_from_discord(
     username: str,
     display_name: str | None = None,
     avatar_url: str | None = None,
-    guild_id: str | None = None,
+    platform_community_server_id: str | None = None,
 ) -> UserProfile:
     """
     Get or create a user profile from Discord user information.
@@ -584,7 +584,7 @@ async def get_or_create_profile_from_discord(
         username: Discord username
         display_name: Discord display name or global name (fallback to username)
         avatar_url: Discord avatar URL
-        guild_id: Discord guild ID (optional, for community membership)
+        platform_community_server_id: Platform-specific community server ID, e.g. Discord guild ID (optional, for community membership)
 
     Returns:
         UserProfile instance (existing or newly created)
@@ -613,9 +613,9 @@ async def get_or_create_profile_from_discord(
         await db.flush()
         await db.refresh(profile)
 
-        # Ensure community membership exists if guild_id provided
-        if guild_id:
-            await _ensure_community_membership(db, profile.id, guild_id)
+        # Ensure community membership exists if platform_community_server_id provided
+        if platform_community_server_id:
+            await _ensure_community_membership(db, profile.id, platform_community_server_id)
 
         return profile
 
@@ -648,9 +648,9 @@ async def get_or_create_profile_from_discord(
         profile.last_interaction_at = pendulum.now("UTC")
         await db.flush()
 
-        # Create community membership if guild_id provided
-        if guild_id:
-            await _ensure_community_membership(db, profile.id, guild_id)
+        # Create community membership if platform_community_server_id provided
+        if platform_community_server_id:
+            await _ensure_community_membership(db, profile.id, platform_community_server_id)
 
         await db.refresh(profile)
         return profile
@@ -675,9 +675,9 @@ async def get_or_create_profile_from_discord(
             await db.flush()
             await db.refresh(profile)
 
-            # Ensure community membership exists if guild_id provided
-            if guild_id:
-                await _ensure_community_membership(db, profile.id, guild_id)
+            # Ensure community membership exists if platform_community_server_id provided
+            if platform_community_server_id:
+                await _ensure_community_membership(db, profile.id, platform_community_server_id)
 
             return profile
 
@@ -690,7 +690,7 @@ async def get_or_create_profile_from_discord(
 
 
 async def _ensure_community_membership(
-    db: AsyncSession, profile_id: UUID, guild_id: str
+    db: AsyncSession, profile_id: UUID, platform_community_server_id: str
 ) -> CommunityMember | None:
     """
     Ensure community membership exists for the profile in the given guild.
@@ -702,16 +702,16 @@ async def _ensure_community_membership(
     Args:
         db: Database session
         profile_id: User profile ID
-        guild_id: Discord guild ID
+        platform_community_server_id: Platform-specific community server ID (e.g., Discord guild ID)
 
     Returns:
         CommunityMember instance, or None if community server doesn't exist
     """
-    # Look up community server by guild_id
+    # Look up community server by platform ID
     result = await db.execute(
         select(CommunityServer).where(
             CommunityServer.platform == "discord",
-            CommunityServer.platform_community_server_id == guild_id,
+            CommunityServer.platform_community_server_id == platform_community_server_id,
         )
     )
     community_server = result.scalar_one_or_none()
@@ -720,7 +720,10 @@ async def _ensure_community_membership(
         # Community server doesn't exist yet - skip membership creation
         logger.debug(
             "Skipping community membership creation: community server not found",
-            extra={"guild_id": guild_id, "profile_id": str(profile_id)},
+            extra={
+                "platform_community_server_id": platform_community_server_id,
+                "profile_id": str(profile_id),
+            },
         )
         return None
 
@@ -746,7 +749,7 @@ async def _ensure_community_membership(
         logger.info(
             "Created community membership",
             extra={
-                "guild_id": guild_id,
+                "platform_community_server_id": platform_community_server_id,
                 "community_id": str(community_server.id),
                 "profile_id": str(profile_id),
             },

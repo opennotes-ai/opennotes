@@ -1577,7 +1577,7 @@ export class ApiClient {
   ): Promise<PreviouslySeenCheckJSONAPIResponse> {
     const jsonApiRequest = this.buildJSONAPIRequestBody('previously-seen-check', {
       message_text: messageText,
-      guild_id: guildId,
+      platform_community_server_id: guildId,
       channel_id: channelId,
     });
 

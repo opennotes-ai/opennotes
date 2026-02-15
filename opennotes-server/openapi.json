@@ -15632,11 +15632,11 @@
             "title": "Message Text",
             "description": "Message text to check"
           },
-          "guild_id": {
+          "platform_community_server_id": {
             "type": "string",
             "maxLength": 64,
-            "title": "Guild Id",
-            "description": "Discord guild ID"
+            "title": "Platform Community Server Id",
+            "description": "Platform-specific community server ID (e.g., Discord guild ID)"
           },
           "channel_id": {
             "type": "string",
@@ -15649,7 +15649,7 @@
         "type": "object",
         "required": [
           "message_text",
-          "guild_id",
+          "platform_community_server_id",
           "channel_id"
         ],
         "title": "PreviouslySeenCheckAttributes",

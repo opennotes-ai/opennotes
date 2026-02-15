@@ -1010,7 +1010,7 @@ async def lookup_user_profile_jsonapi(
                 username=f"user_{platform_user_id}",  # Placeholder username
                 display_name=None,
                 avatar_url=None,
-                guild_id=None,
+                platform_community_server_id=None,
             )
             await db.commit()
             await db.refresh(profile)
