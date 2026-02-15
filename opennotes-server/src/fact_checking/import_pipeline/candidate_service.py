@@ -10,11 +10,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, cast, func, select, update
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.types import Text
 
+from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.fact_checking.candidate_models import FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.promotion import promote_candidate
 from src.fact_checking.import_pipeline.rating_normalizer import CANONICAL_RATINGS
@@ -22,6 +21,25 @@ from src.fact_checking.import_pipeline.rating_normalizer import CANONICAL_RATING
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 1000
+
+
+def _rating_filter_fn(val: str) -> Any:
+    if val == "null":
+        return FactCheckedItemCandidate.rating.is_(None)
+    if val == "not_null":
+        return FactCheckedItemCandidate.rating.is_not(None)
+    return FactCheckedItemCandidate.rating == val
+
+
+candidate_filter_builder = FilterBuilder(
+    FilterField(FactCheckedItemCandidate.status, operators=[FilterOperator.EQ]),
+    FilterField(FactCheckedItemCandidate.dataset_name, operators=[FilterOperator.EQ]),
+    FilterField(FactCheckedItemCandidate.dataset_tags, operators=[FilterOperator.OVERLAP]),
+    FilterField(
+        FactCheckedItemCandidate.published_date,
+        operators=[FilterOperator.GTE, FilterOperator.LTE],
+    ),
+).add_custom_filter("rating_filter", _rating_filter_fn)
 
 
 def extract_high_confidence_rating(
@@ -144,27 +162,21 @@ def _build_filters(
     published_date_from: datetime | None = None,
     published_date_to: datetime | None = None,
 ) -> list[Any]:
-    """Build SQLAlchemy filter conditions for candidate queries."""
-    filters: list[Any] = []
+    """Build SQLAlchemy filter conditions for candidate queries.
 
-    if status is not None:
-        filters.append(FactCheckedItemCandidate.status == status)
-
-    if dataset_name is not None:
-        filters.append(FactCheckedItemCandidate.dataset_name == dataset_name)
-
-    if dataset_tags:
-        filters.append(
-            FactCheckedItemCandidate.dataset_tags.op("&&")(cast(dataset_tags, ARRAY(Text)))
-        )
-
-    if rating_filter is not None:
-        if rating_filter == "null":
-            filters.append(FactCheckedItemCandidate.rating.is_(None))
-        elif rating_filter == "not_null":
-            filters.append(FactCheckedItemCandidate.rating.is_not(None))
-        else:
-            filters.append(FactCheckedItemCandidate.rating == rating_filter)
+    Delegates to candidate_filter_builder for standard and custom filters.
+    Handles has_content separately to preserve the 2-condition structure
+    for has_content=True (IS NOT NULL and != '').
+    """
+    result = candidate_filter_builder.build(
+        status=status,
+        dataset_name=dataset_name,
+        dataset_tags__overlap=dataset_tags if dataset_tags else None,
+        rating_filter=rating_filter,
+        published_date__gte=published_date_from,
+        published_date__lte=published_date_to,
+    )
+    filters: list[Any] = list(result)
 
     if has_content is not None:
         if has_content:
@@ -175,12 +187,6 @@ def _build_filters(
                 (FactCheckedItemCandidate.content.is_(None))
                 | (FactCheckedItemCandidate.content == "")
             )
-
-    if published_date_from is not None:
-        filters.append(FactCheckedItemCandidate.published_date >= published_date_from)
-
-    if published_date_to is not None:
-        filters.append(FactCheckedItemCandidate.published_date <= published_date_to)
 
     return filters
 
