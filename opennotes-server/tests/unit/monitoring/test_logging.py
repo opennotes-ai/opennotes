@@ -7,7 +7,7 @@ import pytest
 from opentelemetry.trace import SpanContext, TraceFlags
 from opentelemetry.trace.span import NonRecordingSpan
 
-from src.monitoring.logging import CustomJsonFormatter
+from src.monitoring.logging import CustomJsonFormatter, parse_log_level_overrides
 
 
 @pytest.fixture
@@ -186,6 +186,41 @@ class TestOtelAttributeExtraction:
             formatter.add_fields(log_data, log_record, {})
 
             assert log_data.get("logging.googleapis.com/trace_sampled") is False
+
+
+class TestParseLogLevelOverrides:
+    def test_empty_string_returns_none(self) -> None:
+        assert parse_log_level_overrides("") is None
+
+    def test_single_override(self) -> None:
+        assert parse_log_level_overrides("src.events:DEBUG") == {"src.events": "DEBUG"}
+
+    def test_multiple_overrides(self) -> None:
+        result = parse_log_level_overrides("src.events:DEBUG,src.tasks:WARNING")
+        assert result == {"src.events": "DEBUG", "src.tasks": "WARNING"}
+
+    def test_normalizes_level_to_uppercase(self) -> None:
+        assert parse_log_level_overrides("src.events:debug") == {"src.events": "DEBUG"}
+
+    def test_strips_whitespace(self) -> None:
+        result = parse_log_level_overrides(" src.events : DEBUG , src.tasks : INFO ")
+        assert result == {"src.events": "DEBUG", "src.tasks": "INFO"}
+
+    def test_skips_malformed_entries(self) -> None:
+        result = parse_log_level_overrides("src.events:DEBUG,invalid,src.tasks:INFO")
+        assert result == {"src.events": "DEBUG", "src.tasks": "INFO"}
+
+    def test_only_malformed_returns_none(self) -> None:
+        assert parse_log_level_overrides("invalid") is None
+
+    def test_skips_invalid_level_names_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING):
+            result = parse_log_level_overrides("src.events:DEBUG,src.tasks:VERBOSE")
+        assert result == {"src.events": "DEBUG"}
+        assert "Ignoring invalid log level override 'src.tasks:VERBOSE'" in caplog.text
+
+    def test_all_invalid_levels_returns_none(self) -> None:
+        assert parse_log_level_overrides("src.events:VERBOSE,src.tasks:TRACE") is None
 
 
 class TestSettingsImportError:

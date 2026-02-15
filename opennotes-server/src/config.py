@@ -105,6 +105,10 @@ class Settings(BaseSettings):
         return v
 
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    LOG_LEVEL_OVERRIDES: str = Field(
+        default="",
+        description="Comma-separated per-module log level overrides (e.g., 'src.events:DEBUG,src.tasks:DEBUG')",
+    )
 
     DISCORD_PUBLIC_KEY: str = Field(default="")
     DISCORD_BOT_TOKEN: str = Field(default="")

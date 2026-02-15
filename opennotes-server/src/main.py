@@ -94,6 +94,7 @@ from src.monitoring import (
     get_logger,
     get_metrics,
     initialize_instance_metadata,
+    parse_log_level_overrides,
     setup_logging,
 )
 from src.monitoring.health import ComponentHealth, HealthStatus
@@ -124,6 +125,7 @@ setup_logging(
     log_level=settings.LOG_LEVEL,
     json_format=settings.ENABLE_JSON_LOGGING,
     service_name=settings.PROJECT_NAME,
+    module_levels=parse_log_level_overrides(settings.LOG_LEVEL_OVERRIDES),
 )
 logger = get_logger(__name__)
 

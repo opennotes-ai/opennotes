@@ -263,7 +263,7 @@ def get_broker() -> PullBasedJetStreamBroker:
     global _broker_instance  # noqa: PLW0603
     if _broker_instance is None:
         from src.config import get_settings
-        from src.monitoring.logging import setup_logging
+        from src.monitoring.logging import parse_log_level_overrides, setup_logging
         from src.monitoring.otel import get_span_exporter, setup_otel
         from src.monitoring.traceloop import setup_traceloop
 
@@ -272,6 +272,7 @@ def get_broker() -> PullBasedJetStreamBroker:
             log_level=settings.LOG_LEVEL,
             json_format=True,
             service_name="opennotes-taskiq-worker",
+            module_levels=parse_log_level_overrides(settings.LOG_LEVEL_OVERRIDES),
         )
 
         if settings.ENABLE_TRACING:
