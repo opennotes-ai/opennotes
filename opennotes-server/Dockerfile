@@ -85,6 +85,13 @@ RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 # RUN_MODE controls startup: server (default), worker, or both
 ENV RUN_MODE=server
 
+ARG VCS_REF=""
+ARG BUILD_DATE=""
+ARG VERSION=""
+ENV VCS_REF=${VCS_REF}
+ENV BUILD_DATE=${BUILD_DATE}
+ENV BUILD_VERSION=${VERSION}
+
 EXPOSE 8000
 
 CMD ["./docker-entrypoint.sh"]
@@ -122,6 +129,13 @@ RUN chmod +x docker-entrypoint.sh scripts/run_migrations_with_lock.py
 
 # RUN_MODE controls startup: server (default), worker, or both
 ENV RUN_MODE=server
+
+ARG VCS_REF=""
+ARG BUILD_DATE=""
+ARG VERSION=""
+ENV VCS_REF=${VCS_REF}
+ENV BUILD_DATE=${BUILD_DATE}
+ENV BUILD_VERSION=${VERSION}
 
 EXPOSE 8000
 

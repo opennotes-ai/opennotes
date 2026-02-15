@@ -44,6 +44,13 @@ class HealthCheckResponse(BaseModel):
     uptime_seconds: float | None = Field(default=None, description="Server uptime in seconds")
 
 
+class VersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    git_sha: str | None = Field(default=None, description="Git commit SHA")
+    build_date: str | None = Field(default=None, description="Build timestamp")
+    revision: str | None = Field(default=None, description="Cloud Run revision name")
+
+
 class HealthChecker:
     def __init__(
         self,

@@ -2983,6 +2983,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Version Info */
+        get: operations["version_info_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -8268,6 +8285,24 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VersionResponse */
+        VersionResponse: {
+            /**
+             * Git Sha
+             * @description Git commit SHA
+             */
+            git_sha?: string | null;
+            /**
+             * Build Date
+             * @description Build timestamp
+             */
+            build_date?: string | null;
+            /**
+             * Revision
+             * @description Cloud Run revision name
+             */
+            revision?: string | null;
+        };
         /** WebhookConfigResponse */
         WebhookConfigResponse: {
             /**
@@ -12967,6 +13002,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    version_info_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionResponse"];
                 };
             };
         };

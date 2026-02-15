@@ -20,7 +20,7 @@ from src.database import get_db
 from src.dbos_workflows.config import get_dbos
 from src.events.nats_client import nats_client
 from src.monitoring import DistributedHealthCoordinator, HealthChecker
-from src.monitoring.health import HealthCheckResponse, ServiceStatus
+from src.monitoring.health import HealthCheckResponse, ServiceStatus, VersionResponse
 from src.monitoring.metrics import (
     batch_job_stuck_count,
     batch_job_stuck_duration_seconds,
@@ -40,6 +40,15 @@ def get_health_checker(request: Request) -> HealthChecker:
 def get_distributed_health(request: Request) -> DistributedHealthCoordinator:
     """Get distributed health coordinator from app state."""
     return request.app.state.distributed_health
+
+
+@router.get("/version", response_model=VersionResponse)
+async def version_info() -> VersionResponse:
+    return VersionResponse(
+        git_sha=settings.VCS_REF,
+        build_date=settings.BUILD_DATE,
+        revision=settings.K_REVISION,
+    )
 
 
 @router.get("/health", response_model=HealthCheckResponse)
