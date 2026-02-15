@@ -270,7 +270,9 @@ class TestSkipStartupChecksParsing:
 
     @given(
         items=st.lists(
-            st.text(alphabet="abcdefghijklmnopqrstuvwxyz_", min_size=1, max_size=20),
+            st.text(alphabet="abcdefghijklmnopqrstuvwxyz_", min_size=1, max_size=20).filter(
+                lambda s: s not in ("true", "false", "null")
+            ),
             min_size=1,
             max_size=5,
         ),
