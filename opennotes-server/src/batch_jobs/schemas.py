@@ -11,6 +11,8 @@ from uuid import UUID
 import pendulum
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+
 
 class BatchJobStatus(str, Enum):
     """Status states for a batch job."""
@@ -35,10 +37,8 @@ class BatchJobBase(BaseModel):
     )
 
 
-class BatchJobCreate(BatchJobBase):
+class BatchJobCreate(BatchJobBase, StrictInputSchema):
     """Schema for creating a new batch job."""
-
-    model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
     total_tasks: int = Field(
         default=0,
@@ -57,10 +57,8 @@ class BatchJobCreate(BatchJobBase):
     )
 
 
-class BatchJobUpdate(BaseModel):
+class BatchJobUpdate(StrictInputSchema):
     """Schema for updating batch job progress."""
-
-    model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
     status: BatchJobStatus | None = Field(
         default=None,
@@ -82,10 +80,8 @@ class BatchJobUpdate(BaseModel):
     )
 
 
-class BatchJobResponse(BatchJobBase):
+class BatchJobResponse(BatchJobBase, SQLAlchemySchema):
     """Response schema for batch job with full details."""
-
-    model_config = ConfigDict(use_enum_values=True, from_attributes=True)
 
     id: UUID = Field(..., description="Unique job identifier")
     status: BatchJobStatus = Field(..., description="Current job status")

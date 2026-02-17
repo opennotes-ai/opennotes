@@ -29,7 +29,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import SQLAlchemySchema
+from src.common.base_schemas import ResponseSchema
 
 T = TypeVar("T")
 
@@ -77,7 +77,7 @@ class JSONAPIResourceIdentifier(BaseModel):
     id: str
 
 
-class JSONAPIResource(SQLAlchemySchema):
+class JSONAPIResource(ResponseSchema):
     """JSON:API resource object with attributes.
 
     A resource object represents a single resource in the JSON:API response.
@@ -116,14 +116,14 @@ class JSONAPIErrorSource(BaseModel):
     header: str | None = None
 
 
-class JSONAPIErrorResponse(SQLAlchemySchema):
+class JSONAPIErrorResponse(ResponseSchema):
     """JSON:API error response containing one or more errors."""
 
     errors: list[JSONAPIError]
     jsonapi: dict[str, str] = {"version": "1.1"}
 
 
-class JSONAPIListResponse(SQLAlchemySchema, Generic[T]):
+class JSONAPIListResponse(ResponseSchema, Generic[T]):
     """JSON:API response for a collection of resources.
 
     Generic type T should be a JSONAPIResource or compatible type.
@@ -135,7 +135,7 @@ class JSONAPIListResponse(SQLAlchemySchema, Generic[T]):
     meta: JSONAPIMeta | None = None
 
 
-class JSONAPISingleResponse(SQLAlchemySchema, Generic[T]):
+class JSONAPISingleResponse(ResponseSchema, Generic[T]):
     """JSON:API response for a single resource.
 
     Generic type T should be a JSONAPIResource or compatible type.

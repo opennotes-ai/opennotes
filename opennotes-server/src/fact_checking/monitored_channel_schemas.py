@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+from src.common.base_schemas import ResponseSchema, SQLAlchemySchema, StrictInputSchema
 from src.config import settings
 
 
@@ -80,10 +80,10 @@ class MonitoredChannelResponse(MonitoredChannelBase, SQLAlchemySchema):
     updated_by: str | None = Field(None, description="Discord user ID of last admin to update")
 
 
-class MonitoredChannelListResponse(BaseModel):
+class MonitoredChannelListResponse(ResponseSchema):
     """Schema for paginated list of monitored channels."""
 
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     channels: list[MonitoredChannelResponse] = Field(..., description="List of monitored channels")
     total: int = Field(..., description="Total count of channels")

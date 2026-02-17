@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+from src.common.base_schemas import ResponseSchema, SQLAlchemySchema, StrictInputSchema
 
 
 class PreviouslySeenMessageBase(BaseModel):
@@ -65,10 +65,10 @@ class PreviouslySeenMessageMatch(SQLAlchemySchema):
     )
 
 
-class PreviouslySeenSearchResponse(BaseModel):
+class PreviouslySeenSearchResponse(ResponseSchema):
     """Response schema for previously seen message search."""
 
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     matches: list[PreviouslySeenMessageMatch] = Field(
         ..., description="Matching previously seen messages"

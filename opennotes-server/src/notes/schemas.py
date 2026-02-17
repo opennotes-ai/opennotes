@@ -7,6 +7,7 @@ import pendulum
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from src.common.base_schemas import (
+    ResponseSchema,
     SQLAlchemySchema,
     StrictInputSchema,
     TimestampSchema,
@@ -99,6 +100,8 @@ class NoteUpdate(StrictInputSchema):
 
 
 class NoteInDB(NoteBase, TimestampSchema):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     community_server_id: UUID
     helpfulness_score: int
@@ -106,13 +109,6 @@ class NoteInDB(NoteBase, TimestampSchema):
     force_published: bool = False
     force_published_by: UUID | None = None
     force_published_at: datetime | None = None
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
 
 
 class RequestInfo(SQLAlchemySchema):
@@ -206,15 +202,10 @@ class RatingUpdate(StrictInputSchema):
 
 
 class RatingInDB(RatingBase, TimestampSchema):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     rater_id: UUID
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
 
 
 class RatingResponse(RatingInDB):
@@ -267,12 +258,7 @@ class RequestUpdate(StrictInputSchema):
 
 
 class RequestInDB(RequestBase, TimestampSchema):
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
+    model_config = ConfigDict(extra="forbid")
 
     id: UUID
     community_server_id: UUID = Field(..., description="Community server ID")
@@ -301,8 +287,8 @@ class RequestResponse(RequestInDB):
         return value.isoformat()
 
 
-class RequestListResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+class RequestListResponse(ResponseSchema):
+    model_config = ConfigDict(extra="forbid")
 
     requests: list[RequestResponse]
     total: int
