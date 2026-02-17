@@ -382,3 +382,47 @@ class TestFaasInstancePriority:
             attrs = dict(result.attributes)
             assert attrs[ResourceAttributes.FAAS_INSTANCE] == "metadata-instance-def456"
             assert attrs[ResourceAttributes.FAAS_VERSION] == "test-service-00001-xyz"
+
+
+class TestAppHubAttributes:
+    def test_apphub_attributes_added_when_env_vars_set(self) -> None:
+        env = {
+            "K_SERVICE": "opennotes-server",
+            "GCP_APPHUB_APPLICATION": "open-notes-amethyst",
+            "GCP_APPHUB_SERVICE": "opennotes-server",
+            "GCP_APPHUB_CRITICALITY": "HIGH",
+            "GCP_APPHUB_ENVIRONMENT_TYPE": "PRODUCTION",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert attrs["gcp.apphub.application"] == "open-notes-amethyst"
+            assert attrs["gcp.apphub.service"] == "opennotes-server"
+            assert attrs["gcp.apphub.criticality"] == "HIGH"
+            assert attrs["gcp.apphub.environment"] == "PRODUCTION"
+
+    def test_apphub_attributes_omitted_when_not_set(self) -> None:
+        env = {
+            "K_SERVICE": "opennotes-server",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert "gcp.apphub.application" not in attrs
+            assert "gcp.apphub.service" not in attrs
+            assert "gcp.apphub.criticality" not in attrs
+            assert "gcp.apphub.environment" not in attrs
+
+    def test_apphub_service_defaults_to_k_service(self) -> None:
+        env = {
+            "K_SERVICE": "opennotes-server",
+            "GCP_APPHUB_APPLICATION": "open-notes-amethyst",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            result = detect_gcp_cloud_run_resource()
+            assert result is not None
+            attrs = dict(result.attributes)
+            assert attrs["gcp.apphub.application"] == "open-notes-amethyst"
+            assert attrs["gcp.apphub.service"] == "opennotes-server"
