@@ -6355,6 +6355,101 @@
         }
       }
     },
+    "/api/v1/community-servers/{platform_community_server_id}/name": {
+      "patch": {
+        "tags": [
+          "community-servers"
+        ],
+        "summary": "Update Community Server Name",
+        "description": "Update the human-readable name for a community server.\n\nThis endpoint is called by the bot to sync the server/guild name from the\nplatform into the database. Only service accounts (bots) can call this.\n\nArgs:\n    platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)\n    request_body: Contains the new name\n    platform: Platform type (default: \"discord\")\n\nReturns:\n    Updated community server name info\n\nRaises:\n    401: If not authenticated\n    403: If not a service account\n    404: If community server not found",
+        "operationId": "update_community_server_name_api_v1_community_servers__platform_community_server_id__name_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform_community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Platform Community Server Id"
+            }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Platform type",
+              "default": "discord",
+              "title": "Platform"
+            },
+            "description": "Platform type"
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityServerNameUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunityServerNameUpdateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Not authorized \u2014 requires service account"
+          },
+          "404": {
+            "description": "Community server not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/community-servers/{platform_community_server_id}/welcome-message": {
       "patch": {
         "tags": [
@@ -11565,6 +11660,51 @@
         "title": "CommunityServerLookupResponse",
         "description": "Response model for community server lookup."
       },
+      "CommunityServerNameUpdateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Human-readable name for the community server"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CommunityServerNameUpdateRequest",
+        "description": "Request model for updating community server name."
+      },
+      "CommunityServerNameUpdateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id",
+            "description": "Internal community server UUID"
+          },
+          "platform_community_server_id": {
+            "type": "string",
+            "title": "Platform Community Server Id",
+            "description": "Platform-specific ID (e.g., Discord guild ID)"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Updated community server name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "platform_community_server_id",
+          "name"
+        ],
+        "title": "CommunityServerNameUpdateResponse",
+        "description": "Response model for community server name update."
+      },
       "CommunityServerResource": {
         "properties": {
           "type": {
@@ -13705,6 +13845,17 @@
             "type": "string",
             "title": "Channel Id"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
@@ -13802,6 +13953,19 @@
             "maxLength": 64,
             "title": "Channel Id",
             "description": "Discord channel ID"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Human-readable channel name"
           },
           "enabled": {
             "type": "boolean",
@@ -14014,6 +14178,19 @@
       },
       "MonitoredChannelUpdateAttributes": {
         "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Human-readable channel name"
+          },
           "enabled": {
             "anyOf": [
               {

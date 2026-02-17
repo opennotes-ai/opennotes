@@ -1217,6 +1217,7 @@ async function handleContentMonitorEnable(
       const result = await apiClient.createMonitoredChannel({
         community_server_id: guildId,
         channel_id: channel.id,
+        name: 'name' in channel ? (channel.name ?? null) : null,
         enabled: true,
         similarity_threshold: config.similaritySearchDefaultThreshold,
         dataset_tags: ['snopes'],

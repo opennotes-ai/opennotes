@@ -145,7 +145,7 @@ describe('config-content-monitor command', () => {
         options: {
           getSubcommandGroup: jest.fn<() => string>().mockReturnValue('content-monitor'),
           getSubcommand: jest.fn<() => string>().mockReturnValue('enable'),
-          getChannel: jest.fn<(name: string, required: boolean) => any>().mockReturnValue({ id: 'channel789' }),
+          getChannel: jest.fn<(name: string, required: boolean) => any>().mockReturnValue({ id: 'channel789', name: 'test-channel' }),
         },
         deferReply: jest.fn<(opts: any) => Promise<void>>().mockResolvedValue(undefined),
         editReply: jest.fn<(opts: any) => Promise<void>>(),
@@ -165,6 +165,7 @@ describe('config-content-monitor command', () => {
       expect(mockApiClient.createMonitoredChannel).toHaveBeenCalledWith({
         community_server_id: 'guild456',
         channel_id: 'channel789',
+        name: 'test-channel',
         enabled: true,
         similarity_threshold: 0.8,
         dataset_tags: ['snopes'],

@@ -12,6 +12,7 @@ class MonitoredChannelBase(BaseModel):
 
     community_server_id: str = Field(..., description="Discord server/guild ID", max_length=64)
     channel_id: str = Field(..., description="Discord channel ID", max_length=64)
+    name: str | None = Field(None, description="Human-readable channel name", max_length=255)
     enabled: bool = Field(True, description="Whether monitoring is active")
     similarity_threshold: float = Field(
         default_factory=lambda: settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
@@ -46,6 +47,7 @@ class MonitoredChannelCreate(MonitoredChannelBase, StrictInputSchema):
 class MonitoredChannelUpdate(StrictInputSchema):
     """Schema for updating a monitored channel configuration."""
 
+    name: str | None = Field(None, description="Human-readable channel name", max_length=255)
     enabled: bool | None = Field(None, description="Whether monitoring is active")
     similarity_threshold: float | None = Field(
         None,

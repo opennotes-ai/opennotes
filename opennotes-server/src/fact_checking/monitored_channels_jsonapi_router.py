@@ -61,6 +61,7 @@ class MonitoredChannelCreateAttributes(StrictInputSchema):
         ..., max_length=64, description="Discord server/guild ID (platform ID)"
     )
     channel_id: str = Field(..., max_length=64, description="Discord channel ID")
+    name: str | None = Field(None, max_length=255, description="Human-readable channel name")
     enabled: bool = Field(True, description="Whether monitoring is active")
     similarity_threshold: float = Field(
         default_factory=lambda: settings.SIMILARITY_SEARCH_DEFAULT_THRESHOLD,
@@ -103,6 +104,7 @@ class MonitoredChannelCreateRequest(BaseModel):
 class MonitoredChannelUpdateAttributes(StrictInputSchema):
     """Attributes for updating a monitored channel via JSON:API."""
 
+    name: str | None = Field(None, max_length=255, description="Human-readable channel name")
     enabled: bool | None = Field(None, description="Whether monitoring is active")
     similarity_threshold: float | None = Field(
         None, ge=0.0, le=1.0, description="Minimum similarity score (0.0-1.0) for matches"
@@ -142,6 +144,7 @@ class MonitoredChannelAttributes(SQLAlchemySchema):
 
     community_server_id: str
     channel_id: str
+    name: str | None = None
     enabled: bool
     similarity_threshold: float
     dataset_tags: list[str]
@@ -191,6 +194,7 @@ def channel_to_resource(channel: MonitoredChannel) -> MonitoredChannelResource:
         attributes=MonitoredChannelAttributes(
             community_server_id=platform_id,
             channel_id=channel.channel_id,
+            name=channel.name,
             enabled=channel.enabled,
             similarity_threshold=channel.similarity_threshold,
             dataset_tags=channel.dataset_tags,
@@ -461,6 +465,7 @@ async def create_monitored_channel_jsonapi(
         new_channel = MonitoredChannel(
             community_server_id=community_server_uuid,
             channel_id=attrs.channel_id,
+            name=attrs.name,
             enabled=attrs.enabled,
             similarity_threshold=attrs.similarity_threshold,
             dataset_tags=attrs.dataset_tags,

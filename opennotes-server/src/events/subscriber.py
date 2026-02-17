@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from nats.aio.msg import Msg
-from opentelemetry import context, propagate, trace
+from opentelemetry import baggage, context, propagate, trace
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import (
     MESSAGING_OPERATION_TYPE,
 )
@@ -82,6 +82,29 @@ def _extract_user_context(msg: Msg, span: trace.Span) -> None:
         span.set_attribute("discord.user_id", discord_user_id)
 
 
+def _extract_event_payload_context(event: Any, span: trace.Span) -> context.Context:
+    """Extract community/channel context from event payload and set span attributes + baggage.
+
+    Many event types carry community_server_id and channel_id in their payload.
+    This function extracts those fields and propagates them via both span attributes
+    (for trace visibility) and OTel baggage (for downstream logging enrichment).
+    """
+    ctx = context.get_current()
+
+    community_server_id = getattr(event, "community_server_id", None)
+    if community_server_id is not None:
+        str_val = str(community_server_id)
+        span.set_attribute("community_server_id", str_val)
+        ctx = baggage.set_baggage("community_server_id", str_val, ctx)
+
+    channel_id = getattr(event, "channel_id", None)
+    if channel_id is not None:
+        span.set_attribute("discord.channel_id", channel_id)
+        ctx = baggage.set_baggage("discord.channel_id", channel_id, ctx)
+
+    return ctx
+
+
 class EventSubscriber:
     def __init__(self) -> None:
         self.nats = nats_client
@@ -152,55 +175,61 @@ class EventSubscriber:
                 event_class = self._get_event_class(event_type)
                 event = event_class.model_validate_json(msg.data)  # type: ignore[attr-defined]
 
-                span.set_attribute(SpanAttributes.MESSAGING_MESSAGE_ID, event.event_id)
+                event_ctx = _extract_event_payload_context(event, span)
+                event_token = context.attach(event_ctx)
 
-                metadata = msg.metadata
-                delivery_count = metadata.num_delivered if metadata else 1
-                span.set_attribute("messaging.delivery_attempt", delivery_count)
+                try:
+                    span.set_attribute(SpanAttributes.MESSAGING_MESSAGE_ID, event.event_id)
 
-                logger.info(
-                    f"Received event {event.event_id} of type {event_type.value} "
-                    f"(delivery attempt {delivery_count})"
-                )
+                    metadata = msg.metadata
+                    delivery_count = metadata.num_delivered if metadata else 1
+                    span.set_attribute("messaging.delivery_attempt", delivery_count)
 
-                handlers = self.handlers.get(event_type, [])
-
-                handler_tasks = [
-                    asyncio.wait_for(
-                        handler(event),
-                        timeout=settings.NATS_HANDLER_TIMEOUT,
+                    logger.info(
+                        f"Received event {event.event_id} of type {event_type.value} "
+                        f"(delivery attempt {delivery_count})"
                     )
-                    for handler in handlers
-                ]
 
-                results = await asyncio.gather(*handler_tasks, return_exceptions=True)
+                    handlers = self.handlers.get(event_type, [])
 
-                failed = False
-                for i, result in enumerate(results):
-                    if isinstance(result, asyncio.TimeoutError):
-                        logger.error(
-                            f"Handler {i} timeout for event {event.event_id} after "
-                            f"{settings.NATS_HANDLER_TIMEOUT}s"
+                    handler_tasks = [
+                        asyncio.wait_for(
+                            handler(event),
+                            timeout=settings.NATS_HANDLER_TIMEOUT,
                         )
-                        failed = True
-                    elif isinstance(result, Exception):
-                        logger.error(
-                            f"Handler {i} failed for event {event.event_id}: {result}",
-                            exc_info=result,
-                        )
-                        failed = True
+                        for handler in handlers
+                    ]
 
-                if failed:
-                    await msg.nak()
-                    span.set_status(trace.StatusCode.ERROR, "Handler failed")
-                    logger.warning(
-                        f"Negative acknowledged event {event.event_id} due to handler failure "
-                        f"(attempt {delivery_count})"
-                    )
-                else:
-                    await msg.ack()
-                    span.set_status(trace.StatusCode.OK)
-                    logger.debug(f"Acknowledged event {event.event_id}")
+                    results = await asyncio.gather(*handler_tasks, return_exceptions=True)
+
+                    failed = False
+                    for i, result in enumerate(results):
+                        if isinstance(result, asyncio.TimeoutError):
+                            logger.error(
+                                f"Handler {i} timeout for event {event.event_id} after "
+                                f"{settings.NATS_HANDLER_TIMEOUT}s"
+                            )
+                            failed = True
+                        elif isinstance(result, Exception):
+                            logger.error(
+                                f"Handler {i} failed for event {event.event_id}: {result}",
+                                exc_info=result,
+                            )
+                            failed = True
+
+                    if failed:
+                        await msg.nak()
+                        span.set_status(trace.StatusCode.ERROR, "Handler failed")
+                        logger.warning(
+                            f"Negative acknowledged event {event.event_id} due to handler failure "
+                            f"(attempt {delivery_count})"
+                        )
+                    else:
+                        await msg.ack()
+                        span.set_status(trace.StatusCode.OK)
+                        logger.debug(f"Acknowledged event {event.event_id}")
+                finally:
+                    context.detach(event_token)
 
             except TimeoutError as e:
                 logger.error("Handler timeout for event processing")

@@ -27,6 +27,7 @@ class DiscordContextMiddleware(BaseHTTPMiddleware):
         discord_username = request.headers.get("x-discord-username")
         discord_display_name = request.headers.get("x-discord-display-name")
         guild_id = request.headers.get("x-guild-id")
+        channel_id = request.headers.get("x-channel-id")
         request_id = request.headers.get("x-request-id")
 
         ctx = context.get_current()
@@ -45,6 +46,10 @@ class DiscordContextMiddleware(BaseHTTPMiddleware):
         if guild_id:
             span.set_attribute("discord.guild_id", guild_id)
             ctx = baggage.set_baggage("discord.guild_id", guild_id, ctx)
+
+        if channel_id:
+            span.set_attribute("discord.channel_id", channel_id)
+            ctx = baggage.set_baggage("discord.channel_id", channel_id, ctx)
 
         if request_id:
             span.set_attribute("http.request_id", request_id)

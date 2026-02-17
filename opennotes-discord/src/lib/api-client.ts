@@ -133,6 +133,7 @@ export interface ScoringRequest {
 export interface MonitoredChannelCreate {
   community_server_id: string;
   channel_id: string;
+  name?: string | null;
   enabled?: boolean;
   similarity_threshold?: number;
   dataset_tags?: string[];
@@ -140,6 +141,7 @@ export interface MonitoredChannelCreate {
 }
 
 export interface MonitoredChannelUpdate {
+  name?: string | null;
   enabled?: boolean;
   similarity_threshold?: number;
   dataset_tags?: string[];
@@ -386,6 +388,7 @@ export type ScoringStatusJSONAPIResponse = JSONAPISingleResponse<ScoringStatusAt
 export interface MonitoredChannelJSONAPIAttributes {
   community_server_id: string;
   channel_id: string;
+  name?: string | null;
   enabled: boolean;
   similarity_threshold: number;
   dataset_tags: string[];
@@ -935,6 +938,10 @@ export class ApiClient {
       headers['X-Guild-Id'] = context.guildId;
     }
 
+    if (context.channelId) {
+      headers['X-Channel-Id'] = context.channelId;
+    }
+
     if (context.hasManageServer !== undefined) {
       headers['X-Discord-Has-Manage-Server'] = context.hasManageServer.toString();
     }
@@ -1195,6 +1202,19 @@ export class ApiClient {
     return this.fetchWithRetry<CommunityServerJSONAPIResponse>(endpoint);
   }
 
+  async updateCommunityServerName(
+    platformId: string,
+    name: string
+  ): Promise<void> {
+    await this.fetchWithRetry<void>(
+      `/api/v2/community-servers/${encodeURIComponent(platformId)}/name`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      }
+    );
+  }
+
   async getUserProfileByPlatformId(
     platformUserId: string,
     platform: string = 'discord'
@@ -1397,6 +1417,7 @@ export class ApiClient {
       const jsonApiRequest = this.buildJSONAPIRequestBody('monitored-channels', {
         community_server_id: request.community_server_id,
         channel_id: request.channel_id,
+        name: request.name ?? null,
         enabled: request.enabled ?? true,
         similarity_threshold: request.similarity_threshold,
         dataset_tags: request.dataset_tags,
@@ -1475,6 +1496,7 @@ export class ApiClient {
         type: 'monitored-channels',
         id: existing.data.id,
         attributes: {
+          name: update.name,
           enabled: update.enabled,
           similarity_threshold: update.similarity_threshold,
           dataset_tags: update.dataset_tags,

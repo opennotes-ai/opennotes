@@ -88,6 +88,7 @@ describe('GuildSetupService', () => {
       expect(mockCreateMonitoredChannel).toHaveBeenCalledWith({
         community_server_id: TEST_GUILD_ID,
         channel_id: 'channel1',
+        name: 'general',
         enabled: true,
         similarity_threshold: 0.6,
         dataset_tags: ['snopes'],
@@ -393,6 +394,7 @@ describe('GuildSetupService', () => {
       expect(mockCreateMonitoredChannel).toHaveBeenCalledWith({
         community_server_id: TEST_GUILD_ID,
         channel_id: 'channel1',
+        name: 'general',
         enabled: true,
         similarity_threshold: 0.6,
         dataset_tags: ['snopes'],
