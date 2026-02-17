@@ -20,13 +20,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.auth.profile_dependencies import get_current_active_profile
+from src.common.base_schemas import SQLAlchemySchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -65,10 +66,8 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["profiles-jsonapi"])
 
 
-class ProfileAttributes(BaseModel):
+class ProfileAttributes(SQLAlchemySchema):
     """Profile attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     display_name: str
     avatar_url: str | None = None
@@ -90,20 +89,16 @@ class ProfileResource(BaseModel):
     attributes: ProfileAttributes
 
 
-class ProfileSingleResponse(BaseModel):
+class ProfileSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single profile resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: ProfileResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
 
-class CommunityMembershipAttributes(BaseModel):
+class CommunityMembershipAttributes(SQLAlchemySchema):
     """Community membership attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     community_id: str
     role: str
@@ -121,10 +116,8 @@ class CommunityMembershipResource(BaseModel):
     attributes: CommunityMembershipAttributes
 
 
-class CommunityMembershipListResponse(BaseModel):
+class CommunityMembershipListResponse(SQLAlchemySchema):
     """JSON:API response for a list of community membership resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[CommunityMembershipResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -154,10 +147,8 @@ class ProfileUpdateAttributes(BaseModel):
     bio: str | None = None
 
 
-class IdentityAttributes(BaseModel):
+class IdentityAttributes(SQLAlchemySchema):
     """Identity attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     provider: str
     provider_user_id: str
@@ -174,20 +165,16 @@ class IdentityResource(BaseModel):
     attributes: IdentityAttributes
 
 
-class IdentitySingleResponse(BaseModel):
+class IdentitySingleResponse(SQLAlchemySchema):
     """JSON:API response for a single identity resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: IdentityResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
 
-class IdentityListResponse(BaseModel):
+class IdentityListResponse(SQLAlchemySchema):
     """JSON:API response for a list of identity resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[IdentityResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -216,10 +203,8 @@ class IdentityCreateRequest(BaseModel):
     data: IdentityCreateData
 
 
-class AdminStatusAttributes(BaseModel):
+class AdminStatusAttributes(SQLAlchemySchema):
     """Admin status attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     is_opennotes_admin: bool
 
@@ -232,10 +217,8 @@ class AdminStatusResource(BaseModel):
     attributes: AdminStatusAttributes
 
 
-class AdminStatusSingleResponse(BaseModel):
+class AdminStatusSingleResponse(SQLAlchemySchema):
     """JSON:API response for admin status resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: AdminStatusResource
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -262,10 +245,8 @@ class AdminStatusUpdateRequest(BaseModel):
     data: AdminStatusUpdateData
 
 
-class UserProfileLookupAttributes(BaseModel):
+class UserProfileLookupAttributes(SQLAlchemySchema):
     """Attributes for user profile lookup response."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     platform: str
     platform_user_id: str
@@ -280,10 +261,8 @@ class UserProfileLookupResource(BaseModel):
     attributes: UserProfileLookupAttributes
 
 
-class UserProfileLookupResponse(BaseModel):
+class UserProfileLookupResponse(SQLAlchemySchema):
     """JSON:API response for user profile lookup."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: UserProfileLookupResource
     jsonapi: dict[str, str] = {"version": "1.1"}

@@ -21,14 +21,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_membership
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -145,10 +145,8 @@ class PreviouslySeenCheckRequest(BaseModel):
     data: PreviouslySeenCheckData
 
 
-class PreviouslySeenMessageAttributes(BaseModel):
+class PreviouslySeenMessageAttributes(SQLAlchemySchema):
     """Previously seen message attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     community_server_id: str
     original_message_id: str
@@ -167,10 +165,8 @@ class PreviouslySeenMessageResource(BaseModel):
     attributes: PreviouslySeenMessageAttributes
 
 
-class PreviouslySeenMessageListResponse(BaseModel):
+class PreviouslySeenMessageListResponse(SQLAlchemySchema):
     """JSON:API response for a list of previously seen message resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[PreviouslySeenMessageResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -178,10 +174,8 @@ class PreviouslySeenMessageListResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class PreviouslySeenMessageSingleResponse(BaseModel):
+class PreviouslySeenMessageSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single previously seen message resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: PreviouslySeenMessageResource
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -221,10 +215,8 @@ class PreviouslySeenCheckResultResource(BaseModel):
     attributes: PreviouslySeenCheckResultAttributes
 
 
-class PreviouslySeenCheckResultResponse(BaseModel):
+class PreviouslySeenCheckResultResponse(SQLAlchemySchema):
     """JSON:API response for previously seen check results."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: PreviouslySeenCheckResultResource
     jsonapi: dict[str, str] = {"version": "1.1"}

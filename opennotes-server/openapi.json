@@ -13136,7 +13136,8 @@
         "required": [
           "valid"
         ],
-        "title": "LLMConfigTestResponse"
+        "title": "LLMConfigTestResponse",
+        "description": "Schema for LLM configuration test result."
       },
       "LLMConfigUpdate": {
         "properties": {
@@ -13326,7 +13327,8 @@
           "last_daily_reset",
           "last_monthly_reset"
         ],
-        "title": "LLMUsageStatsResponse"
+        "title": "LLMUsageStatsResponse",
+        "description": "Schema for usage statistics response."
       },
       "LatestScanAttributes": {
         "properties": {

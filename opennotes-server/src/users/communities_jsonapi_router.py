@@ -17,12 +17,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import get_community_server_by_platform_id
 from src.auth.dependencies import get_current_user_or_api_key
+from src.common.base_schemas import SQLAlchemySchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -40,10 +41,8 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["community-servers-jsonapi"])
 
 
-class CommunityServerAttributes(BaseModel):
+class CommunityServerAttributes(SQLAlchemySchema):
     """Community server attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     platform: str
     platform_community_server_id: str
@@ -64,10 +63,8 @@ class CommunityServerResource(BaseModel):
     attributes: CommunityServerAttributes
 
 
-class CommunityServerSingleResponse(BaseModel):
+class CommunityServerSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single community server resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: CommunityServerResource
     jsonapi: dict[str, str] = {"version": "1.1"}

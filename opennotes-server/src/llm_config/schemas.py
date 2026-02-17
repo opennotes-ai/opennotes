@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
@@ -101,16 +101,14 @@ class LLMConfigTestRequest(StrictInputSchema):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
-class LLMConfigTestResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class LLMConfigTestResponse(SQLAlchemySchema):
     """Schema for LLM configuration test result."""
 
     valid: bool
     error_message: str | None = None
 
 
-class LLMUsageStatsResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class LLMUsageStatsResponse(SQLAlchemySchema):
     """Schema for usage statistics response."""
 
     provider: str

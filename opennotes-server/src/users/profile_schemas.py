@@ -21,7 +21,7 @@ from uuid import UUID
 import pendulum
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import StrictInputSchema, TimestampSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, TimestampSchema
 
 
 class AuthProvider(str, PyEnum):
@@ -161,10 +161,8 @@ class UserProfileResponse(UserProfileInDB):
     )
 
 
-class PublicProfileResponse(BaseModel):
+class PublicProfileResponse(SQLAlchemySchema):
     """Public profile response schema (excludes sensitive information like banned_reason)."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Unique profile identifier")
     display_name: str = Field(..., description="User's display name")
@@ -466,10 +464,8 @@ class AdminSource(str, PyEnum):
     DISCORD_MANAGE_SERVER = "discord_manage_server"  # Discord Manage Server permission
 
 
-class CommunityAdminResponse(BaseModel):
+class CommunityAdminResponse(SQLAlchemySchema):
     """Response schema for community admin information."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     profile_id: UUID = Field(..., description="User profile identifier")
     display_name: str = Field(..., description="User's display name")

@@ -25,7 +25,7 @@ from openai import (
     AuthenticationError,
     RateLimitError,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,7 @@ from src.auth.community_dependencies import (
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.ownership_dependencies import verify_request_ownership
 from src.auth.permissions import is_service_account
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -171,10 +171,8 @@ class RequestUpdateRequest(BaseModel):
     data: RequestUpdateData
 
 
-class RequestAttributes(BaseModel):
+class RequestAttributes(SQLAlchemySchema):
     """Request attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     request_id: str
     requested_by: str
@@ -200,10 +198,8 @@ class RequestResource(BaseModel):
     attributes: RequestAttributes
 
 
-class RequestListJSONAPIResponse(BaseModel):
+class RequestListJSONAPIResponse(SQLAlchemySchema):
     """JSON:API response for a list of request resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[RequestResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -211,10 +207,8 @@ class RequestListJSONAPIResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class RequestSingleResponse(BaseModel):
+class RequestSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single request resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: RequestResource
     jsonapi: dict[str, str] = {"version": "1.1"}

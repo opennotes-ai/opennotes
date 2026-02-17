@@ -1,9 +1,10 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from src.auth.dependencies import get_current_user_or_api_key
+from src.common.base_schemas import SQLAlchemySchema
 from src.config import settings
 from src.monitoring import get_logger
 from src.users.models import User
@@ -13,9 +14,7 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["config"])
 
 
-class RatingThresholdsResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class RatingThresholdsResponse(SQLAlchemySchema):
     min_ratings_needed: int = Field(
         ...,
         description="Minimum number of ratings before a note can receive CRH/CRNH status",

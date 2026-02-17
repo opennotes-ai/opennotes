@@ -7,17 +7,15 @@ candidate review and rating management.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import JSONAPILinks, JSONAPIMeta
 from src.fact_checking.candidate_models import CandidateStatus
 
 
-class CandidateAttributes(BaseModel):
+class CandidateAttributes(SQLAlchemySchema):
     """JSON:API attributes for a fact-check candidate."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     source_url: str = Field(..., description="URL to the original article")
     title: str = Field(..., description="Article title from source")
@@ -38,20 +36,16 @@ class CandidateAttributes(BaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
 
 
-class CandidateResource(BaseModel):
+class CandidateResource(SQLAlchemySchema):
     """JSON:API resource object for a fact-check candidate."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     type: Literal["fact-check-candidates"] = "fact-check-candidates"
     id: str
     attributes: CandidateAttributes
 
 
-class CandidateListResponse(BaseModel):
+class CandidateListResponse(SQLAlchemySchema):
     """JSON:API response for a list of candidates with pagination."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[CandidateResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -59,10 +53,8 @@ class CandidateListResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class CandidateSingleResponse(BaseModel):
+class CandidateSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single candidate."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: CandidateResource
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -153,10 +145,8 @@ class BulkApproveResponseMeta(BaseModel):
     )
 
 
-class BulkApproveResponse(BaseModel):
+class BulkApproveResponse(SQLAlchemySchema):
     """JSON:API response for bulk approval action."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     jsonapi: dict[str, str] = {"version": "1.1"}
     meta: BulkApproveResponseMeta

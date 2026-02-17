@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
 
 class InteractionResponseType(IntEnum):
@@ -85,8 +85,7 @@ class InteractionCallbackData(BaseModel):
     attachments: list[Attachment] | None = None
 
 
-class InteractionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class InteractionResponse(SQLAlchemySchema):
     type: int = Field(..., description="Interaction response type")
     data: InteractionCallbackData | None = None
 

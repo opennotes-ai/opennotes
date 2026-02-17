@@ -7,6 +7,7 @@ import pendulum
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from src.common.base_schemas import (
+    SQLAlchemySchema,
     StrictInputSchema,
     TimestampSchema,
 )
@@ -114,15 +115,13 @@ class NoteInDB(NoteBase, TimestampSchema):
     )
 
 
-class RequestInfo(BaseModel):
+class RequestInfo(SQLAlchemySchema):
     """Simplified request info for embedding in note responses"""
 
     request_id: str
     content: str | None = None  # Content from message_archive
     requested_by: str
     requested_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class NoteResponse(NoteInDB):
@@ -146,10 +145,8 @@ class NoteResponse(NoteInDB):
 
 
 # JSON:API Response schemas for notes
-class NoteJSONAPIAttributes(BaseModel):
+class NoteJSONAPIAttributes(SQLAlchemySchema):
     """Note attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     author_id: str
     channel_id: str | None = None
@@ -177,10 +174,8 @@ class NoteResource(BaseModel):
     attributes: NoteJSONAPIAttributes
 
 
-class NoteListResponse(BaseModel):
+class NoteListResponse(SQLAlchemySchema):
     """JSON:API response for a list of note resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[NoteResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -188,10 +183,8 @@ class NoteListResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class NoteSingleResponse(BaseModel):
+class NoteSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single note resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: NoteResource
     jsonapi: dict[str, str] = {"version": "1.1"}

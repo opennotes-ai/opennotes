@@ -19,13 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from openai import RateLimitError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_membership
 from src.auth.dependencies import get_current_user_or_api_key
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -153,10 +153,8 @@ class SimilaritySearchJSONAPIRequest(BaseModel):
     data: SimilaritySearchCreateData
 
 
-class FactCheckMatchResource(BaseModel):
+class FactCheckMatchResource(SQLAlchemySchema):
     """JSON:API-compatible fact-check match in search results."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(..., description="Fact-check item UUID")
     dataset_name: str = Field(..., description="Source dataset (e.g., 'snopes')")
@@ -179,10 +177,8 @@ class FactCheckMatchResource(BaseModel):
     )
 
 
-class SimilaritySearchResultAttributes(BaseModel):
+class SimilaritySearchResultAttributes(SQLAlchemySchema):
     """Attributes for similarity search result."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     matches: list[FactCheckMatchResource] = Field(..., description="Matching fact-check items")
     query_text: str = Field(..., description="Original query text")
@@ -200,10 +196,8 @@ class SimilaritySearchResultResource(BaseModel):
     attributes: SimilaritySearchResultAttributes
 
 
-class SimilaritySearchResultResponse(BaseModel):
+class SimilaritySearchResultResponse(SQLAlchemySchema):
     """JSON:API response for similarity search results."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: SimilaritySearchResultResource
     jsonapi: dict[str, str] = {"version": "1.1"}

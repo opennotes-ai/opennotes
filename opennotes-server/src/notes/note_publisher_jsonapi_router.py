@@ -23,7 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +34,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -134,10 +134,8 @@ class NotePublisherConfigUpdateRequest(BaseModel):
     data: NotePublisherConfigUpdateData
 
 
-class NotePublisherConfigAttributes(BaseModel):
+class NotePublisherConfigAttributes(SQLAlchemySchema):
     """Note publisher config attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     community_server_id: str
     channel_id: str | None = None
@@ -155,10 +153,8 @@ class NotePublisherConfigResource(BaseModel):
     attributes: NotePublisherConfigAttributes
 
 
-class NotePublisherConfigListResponse(BaseModel):
+class NotePublisherConfigListResponse(SQLAlchemySchema):
     """JSON:API response for a list of config resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[NotePublisherConfigResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -166,10 +162,8 @@ class NotePublisherConfigListResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class NotePublisherConfigSingleResponse(BaseModel):
+class NotePublisherConfigSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single config resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: NotePublisherConfigResource
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -209,10 +203,8 @@ class NotePublisherPostCreateRequest(BaseModel):
     data: NotePublisherPostCreateData
 
 
-class NotePublisherPostAttributes(BaseModel):
+class NotePublisherPostAttributes(SQLAlchemySchema):
     """Note publisher post attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     note_id: str
     original_message_id: str
@@ -234,10 +226,8 @@ class NotePublisherPostResource(BaseModel):
     attributes: NotePublisherPostAttributes
 
 
-class NotePublisherPostListResponse(BaseModel):
+class NotePublisherPostListResponse(SQLAlchemySchema):
     """JSON:API response for a list of post resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[NotePublisherPostResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -245,10 +235,8 @@ class NotePublisherPostListResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class NotePublisherPostSingleResponse(BaseModel):
+class NotePublisherPostSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single post resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: NotePublisherPostResource
     jsonapi: dict[str, str] = {"version": "1.1"}

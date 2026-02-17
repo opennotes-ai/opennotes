@@ -23,13 +23,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from openai import RateLimitError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_membership
 from src.auth.dependencies import get_current_user_or_api_key
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -142,10 +142,8 @@ class HybridSearchRequest(BaseModel):
     data: HybridSearchCreateData
 
 
-class HybridSearchMatchResource(BaseModel):
+class HybridSearchMatchResource(SQLAlchemySchema):
     """JSON:API-compatible fact-check match in hybrid search results."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(..., description="Fact-check item UUID")
     dataset_name: str = Field(..., description="Source dataset (e.g., 'snopes')")
@@ -164,10 +162,8 @@ class HybridSearchMatchResource(BaseModel):
     )
 
 
-class HybridSearchResultAttributes(BaseModel):
+class HybridSearchResultAttributes(SQLAlchemySchema):
     """Attributes for hybrid search result."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     matches: list[HybridSearchMatchResource] = Field(
         ..., description="Matching fact-check items ranked by CC score"
@@ -184,10 +180,8 @@ class HybridSearchResultResource(BaseModel):
     attributes: HybridSearchResultAttributes
 
 
-class HybridSearchResultResponse(BaseModel):
+class HybridSearchResultResponse(SQLAlchemySchema):
     """JSON:API response for hybrid search results."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: HybridSearchResultResource
     jsonapi: dict[str, str] = {"version": "1.1"}

@@ -18,7 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +28,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -118,10 +118,8 @@ class BatchScoreRequest(BaseModel):
     data: BatchScoreRequestData
 
 
-class NoteScoreAttributes(BaseModel):
+class NoteScoreAttributes(SQLAlchemySchema):
     """Attributes for note score resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     score: float = Field(..., description="Normalized score value (0.0-1.0)")
     confidence: str = Field(
@@ -144,10 +142,8 @@ class NoteScoreResource(BaseModel):
     attributes: NoteScoreAttributes
 
 
-class NoteScoreListResponse(BaseModel):
+class NoteScoreListResponse(SQLAlchemySchema):
     """JSON:API response for a list of note score resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[NoteScoreResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -155,20 +151,16 @@ class NoteScoreListResponse(BaseModel):
     meta: dict[str, Any] | None = None
 
 
-class NoteScoreSingleResponse(BaseModel):
+class NoteScoreSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single note score resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: NoteScoreResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
 
-class ScoringStatusAttributes(BaseModel):
+class ScoringStatusAttributes(SQLAlchemySchema):
     """Attributes for scoring status resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     current_note_count: int = Field(..., description="Current total number of notes in the system")
     active_tier: TierInfo = Field(..., description="Currently active scoring tier")
@@ -196,10 +188,8 @@ class ScoringStatusResource(BaseModel):
     attributes: ScoringStatusAttributes
 
 
-class ScoringStatusJSONAPIResponse(BaseModel):
+class ScoringStatusJSONAPIResponse(SQLAlchemySchema):
     """JSON:API response for scoring status."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: ScoringStatusResource
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -232,10 +222,8 @@ class ScoringRunRequest(BaseModel):
     data: ScoringRunRequestData
 
 
-class ScoringResultAttributes(BaseModel):
+class ScoringResultAttributes(SQLAlchemySchema):
     """Attributes for scoring result resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     scored_notes: list[dict[str, Any]] = Field(
         ..., description="Scored notes output from the algorithm"
@@ -254,10 +242,8 @@ class ScoringResultResource(BaseModel):
     attributes: ScoringResultAttributes
 
 
-class ScoringResultResponse(BaseModel):
+class ScoringResultResponse(SQLAlchemySchema):
     """JSON:API response for scoring result."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: ScoringResultResource
     jsonapi: dict[str, str] = {"version": "1.1"}

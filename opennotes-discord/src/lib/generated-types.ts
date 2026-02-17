@@ -5341,7 +5341,10 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /** LLMConfigTestResponse */
+        /**
+         * LLMConfigTestResponse
+         * @description Schema for LLM configuration test result.
+         */
         LLMConfigTestResponse: {
             /** Valid */
             valid: boolean;
@@ -5374,7 +5377,10 @@ export interface components {
             /** Monthly Spend Limit */
             monthly_spend_limit?: number | null;
         };
-        /** LLMUsageStatsResponse */
+        /**
+         * LLMUsageStatsResponse
+         * @description Schema for usage statistics response.
+         */
         LLMUsageStatsResponse: {
             /** Provider */
             provider: string;

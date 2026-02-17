@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from src.common.base_schemas import SQLAlchemySchema
 
@@ -155,8 +155,7 @@ class ScoringRequest(BaseModel):
     )
 
 
-class ScoringResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class ScoringResponse(SQLAlchemySchema):
     scored_notes: list[dict[str, Any]]
     helpful_scores: list[dict[str, Any]]
     auxiliary_info: list[dict[str, Any]]
