@@ -126,6 +126,28 @@ def is_cloud_run_environment() -> bool:
     return bool(os.getenv("K_SERVICE"))
 
 
+def _collect_apphub_attributes(service_name: str) -> dict[str, str]:
+    attrs: dict[str, str] = {}
+
+    apphub_application = os.getenv("GCP_APPHUB_APPLICATION")
+    if apphub_application:
+        attrs["gcp.apphub.application"] = apphub_application
+
+    apphub_service = os.getenv("GCP_APPHUB_SERVICE") or service_name
+    if apphub_service and apphub_application:
+        attrs["gcp.apphub.service"] = apphub_service
+
+    apphub_criticality = os.getenv("GCP_APPHUB_CRITICALITY")
+    if apphub_criticality:
+        attrs["gcp.apphub.criticality"] = apphub_criticality
+
+    apphub_environment = os.getenv("GCP_APPHUB_ENVIRONMENT_TYPE")
+    if apphub_environment:
+        attrs["gcp.apphub.environment"] = apphub_environment
+
+    return attrs
+
+
 def detect_gcp_cloud_run_resource() -> Resource | None:
     """Detect GCP Cloud Run environment and return Resource with attributes.
 
@@ -141,6 +163,10 @@ def detect_gcp_cloud_run_resource() -> Resource | None:
         - faas.name: Service name
         - faas.version: Revision name
         - faas.instance: Instance ID (from env/metadata) or revision as fallback
+        - gcp.apphub.application: App Hub application name (from GCP_APPHUB_APPLICATION env var)
+        - gcp.apphub.service: App Hub service ID (from GCP_APPHUB_SERVICE or K_SERVICE)
+        - gcp.apphub.criticality: Service criticality (from GCP_APPHUB_CRITICALITY env var)
+        - gcp.apphub.environment: Service environment type (from GCP_APPHUB_ENVIRONMENT_TYPE env var)
 
     Returns:
         Resource with GCP attributes, or None if not in Cloud Run.
@@ -184,6 +210,8 @@ def detect_gcp_cloud_run_resource() -> Resource | None:
                 f"/locations/{region}/services/{service_name}"
             )
             attributes[ResourceAttributes.CLOUD_RESOURCE_ID] = resource_id
+
+        attributes.update(_collect_apphub_attributes(service_name))
 
         logger.info(
             f"GCP Cloud Run resource detected: service={service_name}, "
