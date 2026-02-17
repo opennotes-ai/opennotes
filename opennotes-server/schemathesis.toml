@@ -1,0 +1,20 @@
+continue-on-failure = true
+
+[generation]
+max-examples = 50
+mode = "all"
+allow-x00 = false
+deterministic = false
+
+[phases]
+examples.enabled = true
+coverage.enabled = true
+fuzzing.enabled = true
+stateful.enabled = false
+
+[checks]
+response_schema_conformance.enabled = true
+
+[reports.junit]
+enabled = true
+path = "./test-results/schemathesis-junit.xml"
