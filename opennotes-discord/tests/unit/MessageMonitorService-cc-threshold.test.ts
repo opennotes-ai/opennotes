@@ -198,8 +198,8 @@ describe('MessageMonitorService - CC Score Threshold', () => {
   });
 
   describe('processMessage threshold filtering', () => {
-    it('should skip note request creation when top score is below 0.4', async () => {
-      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.35));
+    it('should skip note request creation when top score is below 0.6', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.55));
 
       await (service as any).processMessage(testMessageContent);
 
@@ -209,8 +209,8 @@ describe('MessageMonitorService - CC Score Threshold', () => {
         expect.objectContaining({
           messageId: testMessageContent.messageId,
           channelId: testMessageContent.channelId,
-          topScore: 0.35,
-          minCcScore: 0.4,
+          topScore: 0.55,
+          minCcScore: 0.6,
         })
       );
     });
@@ -223,15 +223,15 @@ describe('MessageMonitorService - CC Score Threshold', () => {
       expect(mockApiClient.requestNote).not.toHaveBeenCalled();
     });
 
-    it('should create note request when top score is exactly 0.4', async () => {
-      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.4));
+    it('should create note request when top score is exactly 0.6', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.6));
 
       await (service as any).processMessage(testMessageContent);
 
       expect(mockApiClient.requestNote).toHaveBeenCalledTimes(1);
     });
 
-    it('should create note request when top score is above 0.4', async () => {
+    it('should create note request when top score is above 0.6', async () => {
       mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.85));
 
       await (service as any).processMessage(testMessageContent);
@@ -259,6 +259,112 @@ describe('MessageMonitorService - CC Score Threshold', () => {
       await (service as any).processMessage(testMessageContent);
 
       expect(mockApiClient.requestNote).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleMessage minimum content length filtering', () => {
+    function createMockMessage(content: string) {
+      return {
+        id: 'msg-short-test',
+        channelId: 'channel-456',
+        guildId: testGuildId,
+        author: {
+          id: 'user-123',
+          bot: false,
+        },
+        system: false,
+        webhookId: null,
+        content,
+        createdTimestamp: Date.now(),
+        embeds: [],
+      } as any;
+    }
+
+    beforeEach(() => {
+      (service as any).monitoredChannelService = {
+        getChannelConfig: jest.fn<() => Promise<any>>().mockResolvedValue({
+          type: 'monitored-channels',
+          id: 'config-123',
+          attributes: {
+            community_server_id: testGuildId,
+            channel_id: 'channel-456',
+            enabled: true,
+            dataset_tags: ['snopes'],
+            similarity_threshold: 0.7,
+          },
+        }),
+      };
+    });
+
+    it('should skip messages shorter than 10 characters', async () => {
+      const mockMessage = createMockMessage('too short');
+
+      await service.handleMessage(mockMessage);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Skipping short message below minimum length',
+        expect.objectContaining({
+          messageId: 'msg-short-test',
+          channelId: 'channel-456',
+          contentLength: 9,
+          minLength: 10,
+        })
+      );
+    });
+
+    it('should skip messages with exactly 9 characters', async () => {
+      const mockMessage = createMockMessage('123456789');
+
+      await service.handleMessage(mockMessage);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Skipping short message below minimum length',
+        expect.objectContaining({
+          contentLength: 9,
+          minLength: 10,
+        })
+      );
+    });
+
+    it('should process messages with exactly 10 characters', async () => {
+      const mockMessage = createMockMessage('1234567890');
+
+      await service.handleMessage(mockMessage);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Message queued for monitoring',
+        expect.objectContaining({
+          messageId: 'msg-short-test',
+          contentLength: 10,
+        })
+      );
+    });
+
+    it('should skip empty messages', async () => {
+      const mockMessage = createMockMessage('');
+
+      await service.handleMessage(mockMessage);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Skipping message with no extractable content',
+        expect.objectContaining({
+          messageId: 'msg-short-test',
+        })
+      );
+    });
+
+    it('should skip whitespace-only messages that trim to under 10 chars', async () => {
+      const mockMessage = createMockMessage('   hi   ');
+
+      await service.handleMessage(mockMessage);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Skipping short message below minimum length',
+        expect.objectContaining({
+          contentLength: 2,
+          minLength: 10,
+        })
+      );
     });
   });
 
