@@ -76,7 +76,7 @@ class BulkScanResultsPublisher:
 
     async def publish(
         self,
-        scan_id: UUID | None = None,
+        scan_id: UUID,
         messages_scanned: int = 0,
         messages_flagged: int = 0,
         messages_skipped: int = 0,
@@ -95,8 +95,6 @@ class BulkScanResultsPublisher:
             error_summary: Summary of errors encountered during scan
             **_kwargs: Additional arguments (ignored, for protocol compatibility)
         """
-        if scan_id is None:
-            raise ValueError("scan_id is required")
 
         event = BulkScanResultsEvent(
             event_id=f"evt_{uuid_module.uuid4().hex[:12]}",

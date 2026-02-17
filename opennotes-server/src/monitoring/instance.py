@@ -1,6 +1,6 @@
 import os
 import socket
-from typing import Any, Optional
+from typing import Any
 
 
 def _resolve_hostname() -> str | None:
@@ -26,14 +26,14 @@ def _resolve_hostname() -> str | None:
 
 
 class InstanceMetadata:
-    _instance: Optional["InstanceMetadata"] = None
+    _instance: "InstanceMetadata | None" = None
 
     @classmethod
     def set_instance(cls, metadata: "InstanceMetadata") -> None:
         cls._instance = metadata
 
     @classmethod
-    def get_instance(cls) -> Optional["InstanceMetadata"]:
+    def get_instance(cls) -> "InstanceMetadata | None":
         return cls._instance
 
     @classmethod

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.community_config.models import CommunityConfig
 from src.database import get_db
 from src.monitoring import get_logger
@@ -52,7 +53,7 @@ VALID_CONFIG_KEYS = {
 }
 
 
-class SetConfigRequest(BaseModel):
+class SetConfigRequest(StrictInputSchema):
     key: str = Field(
         ...,
         description="Configuration key to set (snake_case: lowercase letters, numbers, underscores, must start with letter)",
@@ -131,9 +132,7 @@ class SetConfigRequest(BaseModel):
         return v
 
 
-class CommunityConfigResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class CommunityConfigResponse(SQLAlchemySchema):
     community_server_id: UUID
     config: dict[str, str] = Field(
         default_factory=dict, description="Community server configuration key-value pairs"

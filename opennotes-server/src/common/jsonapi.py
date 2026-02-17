@@ -29,6 +29,8 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.common.base_schemas import ResponseSchema
+
 T = TypeVar("T")
 
 JSONAPI_CONTENT_TYPE = "application/vnd.api+json"
@@ -75,15 +77,13 @@ class JSONAPIResourceIdentifier(BaseModel):
     id: str
 
 
-class JSONAPIResource(BaseModel):
+class JSONAPIResource(ResponseSchema):
     """JSON:API resource object with attributes.
 
     A resource object represents a single resource in the JSON:API response.
     It contains the resource type, unique identifier, and attributes.
     Optionally includes relationships and links.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     type: str
     id: str
@@ -116,22 +116,18 @@ class JSONAPIErrorSource(BaseModel):
     header: str | None = None
 
 
-class JSONAPIErrorResponse(BaseModel):
+class JSONAPIErrorResponse(ResponseSchema):
     """JSON:API error response containing one or more errors."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     errors: list[JSONAPIError]
     jsonapi: dict[str, str] = {"version": "1.1"}
 
 
-class JSONAPIListResponse(BaseModel, Generic[T]):
+class JSONAPIListResponse(ResponseSchema, Generic[T]):
     """JSON:API response for a collection of resources.
 
     Generic type T should be a JSONAPIResource or compatible type.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[T]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -139,13 +135,11 @@ class JSONAPIListResponse(BaseModel, Generic[T]):
     meta: JSONAPIMeta | None = None
 
 
-class JSONAPISingleResponse(BaseModel, Generic[T]):
+class JSONAPISingleResponse(ResponseSchema, Generic[T]):
     """JSON:API response for a single resource.
 
     Generic type T should be a JSONAPIResource or compatible type.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: T
     jsonapi: dict[str, str] = {"version": "1.1"}

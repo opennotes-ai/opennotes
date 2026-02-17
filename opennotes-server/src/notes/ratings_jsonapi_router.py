@@ -26,7 +26,7 @@ from src.auth.community_dependencies import verify_community_membership_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.ownership_dependencies import verify_rating_ownership
 from src.auth.permissions import is_service_account
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -63,6 +63,8 @@ class RatingCreateAttributes(StrictInputSchema):
 class RatingCreateData(BaseModel):
     """JSON:API data object for rating creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["ratings"] = Field(..., description="Resource type must be 'ratings'")
     attributes: RatingCreateAttributes
 
@@ -70,13 +72,13 @@ class RatingCreateData(BaseModel):
 class RatingCreateRequest(BaseModel):
     """JSON:API request body for creating a rating."""
 
+    model_config = ConfigDict(extra="forbid")
+
     data: RatingCreateData
 
 
-class RatingAttributes(BaseModel):
+class RatingAttributes(SQLAlchemySchema):
     """Rating attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     note_id: str
     rater_id: str
@@ -93,20 +95,16 @@ class RatingResource(BaseModel):
     attributes: RatingAttributes
 
 
-class RatingSingleResponse(BaseModel):
+class RatingSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single rating resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: RatingResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
 
-class RatingListResponse(BaseModel):
+class RatingListResponse(SQLAlchemySchema):
     """JSON:API response for a list of rating resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[RatingResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -122,6 +120,8 @@ class RatingUpdateAttributes(StrictInputSchema):
 class RatingUpdateData(BaseModel):
     """JSON:API data object for rating update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["ratings"] = Field(..., description="Resource type must be 'ratings'")
     id: str = Field(..., description="Rating ID")
     attributes: RatingUpdateAttributes
@@ -129,6 +129,8 @@ class RatingUpdateData(BaseModel):
 
 class RatingUpdateRequest(BaseModel):
     """JSON:API request body for updating a rating."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: RatingUpdateData
 
@@ -151,10 +153,8 @@ class RatingStatsResource(BaseModel):
     attributes: RatingStatsAttributes
 
 
-class RatingStatsSingleResponse(BaseModel):
+class RatingStatsSingleResponse(SQLAlchemySchema):
     """JSON:API response for rating statistics."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: RatingStatsResource
     jsonapi: dict[str, str] = {"version": "1.1"}

@@ -11,6 +11,8 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
+from src.common.base_schemas import SQLAlchemySchema
+
 
 class LLMMessage(BaseModel):
     """
@@ -25,8 +27,7 @@ class LLMMessage(BaseModel):
     content: str
 
 
-class LLMResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class LLMResponse(SQLAlchemySchema):
     """
     Response from an LLM completion request.
 

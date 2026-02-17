@@ -4,9 +4,10 @@ from enum import Enum
 from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 from sqlalchemy import text
 
+from src.common.base_schemas import SQLAlchemySchema
 from src.config import settings
 
 
@@ -20,8 +21,7 @@ class HealthStatus(str, Enum):
     UNHEALTHY = "unhealthy"
 
 
-class ServiceStatus(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class ServiceStatus(SQLAlchemySchema):
     status: str = Field(..., description="Service status: 'healthy', 'degraded', or 'unhealthy'")
     latency_ms: float | None = Field(default=None, description="Response latency in milliseconds")
     message: str | None = Field(default=None, description="Additional status message")
@@ -32,8 +32,7 @@ class ServiceStatus(BaseModel):
 ComponentHealth = ServiceStatus
 
 
-class HealthCheckResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class HealthCheckResponse(SQLAlchemySchema):
     status: str = Field(..., description="Overall system status")
     timestamp: float = Field(default_factory=time.time, description="Unix epoch timestamp")
     version: str = Field(..., description="API version")
@@ -44,8 +43,7 @@ class HealthCheckResponse(BaseModel):
     uptime_seconds: float | None = Field(default=None, description="Server uptime in seconds")
 
 
-class VersionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class VersionResponse(SQLAlchemySchema):
     git_sha: str | None = Field(default=None, description="Git commit SHA")
     build_date: str | None = Field(default=None, description="Build timestamp")
     revision: str | None = Field(default=None, description="Cloud Run revision name")

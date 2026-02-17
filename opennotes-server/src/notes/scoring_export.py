@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from src.common.base_schemas import SQLAlchemySchema
 
 
-def derive_tweet_id_from_platform_message_id(platform_message_id: str | None) -> str:
+def derive_tweet_id_from_platform_message_id(platform_message_id: str) -> str:
     """
     Derive a tweet_id string from platform_message_id for scoring system.
 
@@ -28,10 +28,10 @@ def derive_tweet_id_from_platform_message_id(platform_message_id: str | None) ->
         String tweet_id for platform compatibility
 
     Raises:
-        ValueError: If platform_message_id is None
+        ValueError: If platform_message_id is empty
     """
     if not platform_message_id:
-        raise ValueError("platform_message_id cannot be None or empty")
+        raise ValueError("platform_message_id cannot be empty")
 
     hash_value = int(hashlib.sha256(platform_message_id.encode()).hexdigest()[:16], 16)
 

@@ -3,9 +3,9 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from src.common.base_schemas import SQLAlchemySchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
 
 class ScorerTier(str, Enum):
@@ -146,7 +146,7 @@ class EnrollmentData(BaseModel):
     timestampOfLastStateChange: int
 
 
-class ScoringRequest(BaseModel):
+class ScoringRequest(StrictInputSchema):
     notes: list[NoteData] = Field(..., description="List of community notes to score")
     ratings: list[RatingData] = Field(..., description="List of ratings for the notes")
     enrollment: list[EnrollmentData] = Field(..., description="List of user enrollment data")
@@ -155,8 +155,7 @@ class ScoringRequest(BaseModel):
     )
 
 
-class ScoringResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class ScoringResponse(SQLAlchemySchema):
     scored_notes: list[dict[str, Any]]
     helpful_scores: list[dict[str, Any]]
     auxiliary_info: list[dict[str, Any]]

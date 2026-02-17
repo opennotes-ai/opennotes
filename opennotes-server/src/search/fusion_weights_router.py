@@ -18,11 +18,12 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.cache.redis_client import redis_client
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.search.fusion_config import (
     FALLBACK_ALPHA,
     FusionConfig,
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/api/v1/admin/fusion-weights", tags=["admin", "search
 logger = logging.getLogger(__name__)
 
 
-class FusionWeightUpdate(BaseModel):
+class FusionWeightUpdate(StrictInputSchema):
     """Request model for updating fusion weight."""
 
     alpha: float = Field(
@@ -50,20 +51,16 @@ class FusionWeightUpdate(BaseModel):
     )
 
 
-class FusionWeightResponse(BaseModel):
+class FusionWeightResponse(SQLAlchemySchema):
     """Response model for fusion weight."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     alpha: float = Field(..., description="Current fusion weight alpha ∈ [0, 1]")
     dataset: str | None = Field(None, description="Dataset name or None for global default")
     source: str = Field(..., description="Source of the value: 'redis' or 'fallback'")
 
 
-class AllFusionWeightsResponse(BaseModel):
+class AllFusionWeightsResponse(SQLAlchemySchema):
     """Response model for all fusion weights."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     default: float = Field(..., description="Global default fusion weight")
     datasets: dict[str, float] = Field(

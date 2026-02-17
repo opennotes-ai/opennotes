@@ -2,9 +2,9 @@ from enum import IntEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, StrictSQLAlchemySchema
 
 
 class InteractionResponseType(IntEnum):
@@ -85,13 +85,12 @@ class InteractionCallbackData(BaseModel):
     attachments: list[Attachment] | None = None
 
 
-class InteractionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class InteractionResponse(SQLAlchemySchema):
     type: int = Field(..., description="Interaction response type")
     data: InteractionCallbackData | None = None
 
 
-class WebhookConfig(BaseModel):
+class WebhookConfig(StrictSQLAlchemySchema):
     id: UUID | None = None
     url: str
     secret: str
@@ -99,21 +98,8 @@ class WebhookConfig(BaseModel):
     channel_id: str | None = None
     active: bool = True
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
 
-
-class WebhookConfigResponse(BaseModel):
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-    )
-
+class WebhookConfigResponse(SQLAlchemySchema):
     id: UUID
     url: str
     community_server_id: UUID

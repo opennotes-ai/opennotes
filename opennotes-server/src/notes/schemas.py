@@ -7,6 +7,8 @@ import pendulum
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from src.common.base_schemas import (
+    ResponseSchema,
+    SQLAlchemySchema,
     StrictInputSchema,
     TimestampSchema,
 )
@@ -98,6 +100,8 @@ class NoteUpdate(StrictInputSchema):
 
 
 class NoteInDB(NoteBase, TimestampSchema):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     community_server_id: UUID
     helpfulness_score: int
@@ -106,23 +110,14 @@ class NoteInDB(NoteBase, TimestampSchema):
     force_published_by: UUID | None = None
     force_published_at: datetime | None = None
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
 
-
-class RequestInfo(BaseModel):
+class RequestInfo(SQLAlchemySchema):
     """Simplified request info for embedding in note responses"""
 
     request_id: str
     content: str | None = None  # Content from message_archive
     requested_by: str
     requested_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class NoteResponse(NoteInDB):
@@ -146,10 +141,8 @@ class NoteResponse(NoteInDB):
 
 
 # JSON:API Response schemas for notes
-class NoteJSONAPIAttributes(BaseModel):
+class NoteJSONAPIAttributes(SQLAlchemySchema):
     """Note attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     author_id: str
     channel_id: str | None = None
@@ -177,10 +170,8 @@ class NoteResource(BaseModel):
     attributes: NoteJSONAPIAttributes
 
 
-class NoteListResponse(BaseModel):
+class NoteListResponse(SQLAlchemySchema):
     """JSON:API response for a list of note resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[NoteResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -188,10 +179,8 @@ class NoteListResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class NoteSingleResponse(BaseModel):
+class NoteSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single note resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: NoteResource
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -213,15 +202,10 @@ class RatingUpdate(StrictInputSchema):
 
 
 class RatingInDB(RatingBase, TimestampSchema):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID
     rater_id: UUID
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
 
 
 class RatingResponse(RatingInDB):
@@ -274,12 +258,7 @@ class RequestUpdate(StrictInputSchema):
 
 
 class RequestInDB(RequestBase, TimestampSchema):
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
+    model_config = ConfigDict(extra="forbid")
 
     id: UUID
     community_server_id: UUID = Field(..., description="Community server ID")
@@ -308,8 +287,8 @@ class RequestResponse(RequestInDB):
         return value.isoformat()
 
 
-class RequestListResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+class RequestListResponse(ResponseSchema):
+    model_config = ConfigDict(extra="forbid")
 
     requests: list[RequestResponse]
     total: int

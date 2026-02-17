@@ -27,7 +27,7 @@ import pendulum
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, desc, exists, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -88,12 +88,16 @@ class NoteCreateAttributes(StrictInputSchema):
 class NoteCreateData(BaseModel):
     """JSON:API data object for note creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["notes"] = Field(..., description="Resource type must be 'notes'")
     attributes: NoteCreateAttributes
 
 
 class NoteCreateRequest(BaseModel):
     """JSON:API request body for creating a note."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: NoteCreateData
 
@@ -108,6 +112,8 @@ class NoteUpdateAttributes(StrictInputSchema):
 class NoteUpdateData(BaseModel):
     """JSON:API data object for note update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["notes"] = Field(..., description="Resource type must be 'notes'")
     id: str = Field(..., description="Note ID being updated")
     attributes: NoteUpdateAttributes
@@ -115,6 +121,8 @@ class NoteUpdateData(BaseModel):
 
 class NoteUpdateRequest(BaseModel):
     """JSON:API request body for updating a note."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: NoteUpdateData
 

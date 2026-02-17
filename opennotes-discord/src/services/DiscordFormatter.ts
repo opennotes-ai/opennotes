@@ -556,7 +556,7 @@ export class DiscordFormatter {
       const timestamp = Math.floor(new Date(request.requested_at).getTime() / 1000);
       const requestedBy = `<@${request.requested_by}>`;
       const noteInfo = request.note_id ? `Note: ${request.note_id}` : 'No note yet';
-      const effectiveMessageId = extractPlatformMessageId(request.platform_message_id, request.request_id);
+      const effectiveMessageId = extractPlatformMessageId(request.platform_message_id ?? null, request.request_id);
       const messageIdDisplay = effectiveMessageId || 'No message ID';
 
       const contentPreview = this.formatMessagePreview(request.content);

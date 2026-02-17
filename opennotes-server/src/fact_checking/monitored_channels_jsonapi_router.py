@@ -30,7 +30,7 @@ from src.auth.community_dependencies import (
     verify_community_admin_by_uuid,
 )
 from src.auth.dependencies import get_current_user_or_api_key
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -84,6 +84,8 @@ class MonitoredChannelCreateAttributes(StrictInputSchema):
 class MonitoredChannelCreateData(BaseModel):
     """JSON:API data object for monitored channel creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["monitored-channels"] = Field(
         ..., description="Resource type must be 'monitored-channels'"
     )
@@ -92,6 +94,8 @@ class MonitoredChannelCreateData(BaseModel):
 
 class MonitoredChannelCreateRequest(BaseModel):
     """JSON:API request body for creating a monitored channel."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: MonitoredChannelCreateData
 
@@ -116,6 +120,8 @@ class MonitoredChannelUpdateAttributes(StrictInputSchema):
 class MonitoredChannelUpdateData(BaseModel):
     """JSON:API data object for monitored channel update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["monitored-channels"] = Field(
         ..., description="Resource type must be 'monitored-channels'"
     )
@@ -126,13 +132,13 @@ class MonitoredChannelUpdateData(BaseModel):
 class MonitoredChannelUpdateRequest(BaseModel):
     """JSON:API request body for updating a monitored channel."""
 
+    model_config = ConfigDict(extra="forbid")
+
     data: MonitoredChannelUpdateData
 
 
-class MonitoredChannelAttributes(BaseModel):
+class MonitoredChannelAttributes(SQLAlchemySchema):
     """Monitored channel attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     community_server_id: str
     channel_id: str
@@ -154,10 +160,8 @@ class MonitoredChannelResource(BaseModel):
     attributes: MonitoredChannelAttributes
 
 
-class MonitoredChannelListJSONAPIResponse(BaseModel):
+class MonitoredChannelListJSONAPIResponse(SQLAlchemySchema):
     """JSON:API response for a list of monitored channel resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[MonitoredChannelResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -165,10 +169,8 @@ class MonitoredChannelListJSONAPIResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class MonitoredChannelSingleResponse(BaseModel):
+class MonitoredChannelSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single monitored channel resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: MonitoredChannelResource
     jsonapi: dict[str, str] = {"version": "1.1"}

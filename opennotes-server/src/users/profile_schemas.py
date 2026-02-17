@@ -15,13 +15,18 @@ Schemas follow the pattern:
 
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import pendulum
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import StrictInputSchema, TimestampSchema
+from src.common.base_schemas import (
+    ResponseSchema,
+    SQLAlchemySchema,
+    StrictInputSchema,
+    TimestampSchema,
+)
 
 
 class AuthProvider(str, PyEnum):
@@ -132,12 +137,7 @@ UserProfileUpdate = UserProfileAdminUpdate
 class UserProfileInDB(UserProfileBase, TimestampSchema):
     """Complete user profile database representation."""
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
+    model_config = ConfigDict(extra="forbid")
 
     id: UUID = Field(..., description="Unique profile identifier")
     reputation: int = Field(0, description="Global reputation score")
@@ -145,13 +145,6 @@ class UserProfileInDB(UserProfileBase, TimestampSchema):
 
 class UserProfileResponse(UserProfileInDB):
     """API response schema for user profile with nested relationships."""
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
 
     identities: list["UserIdentityResponse"] = Field(
         default_factory=list, description="Linked authentication identities"
@@ -161,10 +154,8 @@ class UserProfileResponse(UserProfileInDB):
     )
 
 
-class PublicProfileResponse(BaseModel):
+class PublicProfileResponse(SQLAlchemySchema):
     """Public profile response schema (excludes sensitive information like banned_reason)."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Unique profile identifier")
     display_name: str = Field(..., description="User's display name")
@@ -218,12 +209,7 @@ class UserIdentityUpdate(StrictInputSchema):
 class UserIdentityInDB(UserIdentityBase, TimestampSchema):
     """Complete user identity database representation."""
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
+    model_config = ConfigDict(extra="forbid")
 
     id: UUID = Field(..., description="Unique identity identifier")
     profile_id: UUID = Field(..., description="Associated user profile ID")
@@ -239,10 +225,7 @@ class UserIdentityInDB(UserIdentityBase, TimestampSchema):
 class UserIdentityResponse(TimestampSchema):
     """API response schema for user identity (excludes sensitive fields)."""
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        extra="ignore",  # Ignore extra fields like credentials, email_verification_token
-    )
+    model_config = ConfigDict(extra="ignore")
 
     id: UUID = Field(..., description="Unique identity identifier")
     profile_id: UUID = Field(..., description="Associated user profile ID")
@@ -313,12 +296,7 @@ class CommunityMemberUpdate(StrictInputSchema):
 class CommunityMemberInDB(CommunityMemberBase, TimestampSchema):
     """Complete community member database representation."""
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
+    model_config = ConfigDict(extra="forbid")
 
     id: UUID = Field(..., description="Unique membership identifier")
     profile_id: UUID = Field(..., description="User profile identifier")
@@ -335,15 +313,8 @@ class CommunityMemberInDB(CommunityMemberBase, TimestampSchema):
 class CommunityMemberResponse(CommunityMemberInDB):
     """API response schema for community membership with nested profile."""
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        validate_assignment=True,
-        use_enum_values=True,
-        extra="forbid",
-    )
-
-    profile: Optional["UserProfileResponse"] = Field(None, description="Associated user profile")
-    inviter: Optional["UserProfileResponse"] = Field(
+    profile: "UserProfileResponse | None" = Field(None, description="Associated user profile")
+    inviter: "UserProfileResponse | None" = Field(
         None, description="Profile of the user who invited this member"
     )
 
@@ -383,10 +354,10 @@ class CommunityMemberStats(BaseModel):
 # ============================================================================
 
 
-class DiscordOAuthInitResponse(BaseModel):
+class DiscordOAuthInitResponse(ResponseSchema):
     """Response schema for Discord OAuth2 flow initialization."""
 
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     authorization_url: str = Field(
         ..., description="Discord OAuth2 authorization URL to redirect user to"
@@ -466,10 +437,8 @@ class AdminSource(str, PyEnum):
     DISCORD_MANAGE_SERVER = "discord_manage_server"  # Discord Manage Server permission
 
 
-class CommunityAdminResponse(BaseModel):
+class CommunityAdminResponse(SQLAlchemySchema):
     """Response schema for community admin information."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     profile_id: UUID = Field(..., description="User profile identifier")
     display_name: str = Field(..., description="User's display name")
@@ -485,10 +454,10 @@ class CommunityAdminResponse(BaseModel):
     joined_at: datetime = Field(..., description="When the user joined the community")
 
 
-class RemoveCommunityAdminResponse(BaseModel):
+class RemoveCommunityAdminResponse(ResponseSchema):
     """Response schema for admin removal."""
 
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     success: bool = Field(..., description="Whether the operation succeeded")
     message: str = Field(..., description="Human-readable result message")
@@ -509,10 +478,10 @@ class PaginationParams(BaseModel):
     offset: int = Field(0, ge=0, description="Number of items to skip")
 
 
-class PaginatedIdentitiesResponse(BaseModel):
+class PaginatedIdentitiesResponse(ResponseSchema):
     """Paginated response for user identities."""
 
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     items: list[UserIdentityResponse] = Field(..., description="List of identities")
     total: int = Field(..., description="Total number of identities")
@@ -520,10 +489,10 @@ class PaginatedIdentitiesResponse(BaseModel):
     offset: int = Field(..., description="Number of items skipped")
 
 
-class PaginatedCommunitiesResponse(BaseModel):
+class PaginatedCommunitiesResponse(ResponseSchema):
     """Paginated response for community memberships."""
 
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     items: list[CommunityMemberResponse] = Field(..., description="List of community memberships")
     total: int = Field(..., description="Total number of memberships")

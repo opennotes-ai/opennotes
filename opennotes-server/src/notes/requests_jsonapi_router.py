@@ -37,7 +37,7 @@ from src.auth.community_dependencies import (
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.ownership_dependencies import verify_request_ownership
 from src.auth.permissions import is_service_account
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -140,12 +140,16 @@ class RequestCreateAttributes(StrictInputSchema):
 class RequestCreateData(BaseModel):
     """JSON:API data object for request creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["requests"] = Field(..., description="Resource type must be 'requests'")
     attributes: RequestCreateAttributes
 
 
 class RequestCreateRequest(BaseModel):
     """JSON:API request body for creating a request."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: RequestCreateData
 
@@ -160,6 +164,8 @@ class RequestUpdateAttributes(StrictInputSchema):
 class RequestUpdateData(BaseModel):
     """JSON:API data object for request update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["requests"] = Field(..., description="Resource type must be 'requests'")
     id: str = Field(..., description="Request ID being updated")
     attributes: RequestUpdateAttributes
@@ -168,13 +174,13 @@ class RequestUpdateData(BaseModel):
 class RequestUpdateRequest(BaseModel):
     """JSON:API request body for updating a request."""
 
+    model_config = ConfigDict(extra="forbid")
+
     data: RequestUpdateData
 
 
-class RequestAttributes(BaseModel):
+class RequestAttributes(SQLAlchemySchema):
     """Request attributes for JSON:API resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     request_id: str
     requested_by: str
@@ -200,10 +206,8 @@ class RequestResource(BaseModel):
     attributes: RequestAttributes
 
 
-class RequestListJSONAPIResponse(BaseModel):
+class RequestListJSONAPIResponse(SQLAlchemySchema):
     """JSON:API response for a list of request resources."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: list[RequestResource]
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -211,10 +215,8 @@ class RequestListJSONAPIResponse(BaseModel):
     meta: JSONAPIMeta | None = None
 
 
-class RequestSingleResponse(BaseModel):
+class RequestSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single request resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: RequestResource
     jsonapi: dict[str, str] = {"version": "1.1"}

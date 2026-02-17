@@ -19,7 +19,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy import and_, desc, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.common.base_schemas import SQLAlchemySchema
 from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
@@ -66,10 +67,8 @@ author_stats_filter_builder = FilterBuilder().add_auth_gated_filter(
 )
 
 
-class NoteStatsAttributes(BaseModel):
+class NoteStatsAttributes(SQLAlchemySchema):
     """Attributes for note statistics resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     total_notes: int
     helpful_notes: int
@@ -86,20 +85,16 @@ class NoteStatsResource(BaseModel):
     attributes: NoteStatsAttributes
 
 
-class NoteStatsSingleResponse(BaseModel):
+class NoteStatsSingleResponse(SQLAlchemySchema):
     """JSON:API response for note statistics."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: NoteStatsResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
 
-class ParticipantStatsAttributes(BaseModel):
+class ParticipantStatsAttributes(SQLAlchemySchema):
     """Attributes for participant statistics resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     notes_created: int
     ratings_given: int
@@ -115,10 +110,8 @@ class ParticipantStatsResource(BaseModel):
     attributes: ParticipantStatsAttributes
 
 
-class ParticipantStatsSingleResponse(BaseModel):
+class ParticipantStatsSingleResponse(SQLAlchemySchema):
     """JSON:API response for participant statistics."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: ParticipantStatsResource
     jsonapi: dict[str, str] = {"version": "1.1"}

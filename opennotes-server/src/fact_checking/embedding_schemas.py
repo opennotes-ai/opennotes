@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.config import settings
@@ -75,9 +75,7 @@ class FactCheckMatch(SQLAlchemySchema):
     )
 
 
-class SimilaritySearchResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class SimilaritySearchResponse(SQLAlchemySchema):
     """Response schema for similarity search."""
 
     matches: list[FactCheckMatch] = Field(..., description="Matching fact-check items")

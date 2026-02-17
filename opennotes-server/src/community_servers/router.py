@@ -4,11 +4,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import get_community_server_by_platform_id
 from src.auth.dependencies import get_current_user_or_api_key
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.database import get_db
 from src.monitoring import get_logger
 from src.users.models import User
@@ -18,10 +19,8 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["community-servers"])
 
 
-class CommunityServerLookupResponse(BaseModel):
+class CommunityServerLookupResponse(SQLAlchemySchema):
     """Response model for community server lookup."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Internal community server UUID")
     platform: str = Field(..., description="Platform type (e.g., 'discord')")
@@ -35,7 +34,7 @@ class CommunityServerLookupResponse(BaseModel):
     )
 
 
-class FlashpointDetectionUpdateRequest(BaseModel):
+class FlashpointDetectionUpdateRequest(StrictInputSchema):
     """Request model for updating flashpoint detection setting."""
 
     enabled: bool = Field(
@@ -43,10 +42,8 @@ class FlashpointDetectionUpdateRequest(BaseModel):
     )
 
 
-class FlashpointDetectionUpdateResponse(BaseModel):
+class FlashpointDetectionUpdateResponse(SQLAlchemySchema):
     """Response model for flashpoint detection update."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Internal community server UUID")
     platform_community_server_id: str = Field(
@@ -57,7 +54,7 @@ class FlashpointDetectionUpdateResponse(BaseModel):
     )
 
 
-class WelcomeMessageUpdateRequest(BaseModel):
+class WelcomeMessageUpdateRequest(StrictInputSchema):
     """Request model for updating welcome message ID."""
 
     welcome_message_id: str | None = Field(
@@ -67,10 +64,8 @@ class WelcomeMessageUpdateRequest(BaseModel):
     )
 
 
-class WelcomeMessageUpdateResponse(BaseModel):
+class WelcomeMessageUpdateResponse(SQLAlchemySchema):
     """Response model for welcome message update."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: UUID = Field(..., description="Internal community server UUID")
     platform_community_server_id: str = Field(

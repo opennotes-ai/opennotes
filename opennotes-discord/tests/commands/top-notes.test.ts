@@ -108,7 +108,7 @@ jest.unstable_mockModule('../../src/lib/errors.js', () => ({
 
 jest.unstable_mockModule('../../src/lib/discord-utils.js', () => ({
   suppressExpectedDiscordErrors: jest.fn(() => jest.fn()),
-  extractPlatformMessageId: jest.fn((platformMessageId: string | null | undefined, _requestId: string) => platformMessageId ?? null),
+  extractPlatformMessageId: jest.fn((platformMessageId: string | null, _requestId: string) => platformMessageId ?? null),
   createForcePublishConfirmationButtons: jest.fn((noteId: string, shortId: string) => ({
     content: `Confirm Force Publish Note #${noteId}`,
     components: [],

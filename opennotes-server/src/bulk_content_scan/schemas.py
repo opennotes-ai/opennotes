@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import ConfigDict, Discriminator, Field, field_validator
+from pydantic import Discriminator, Field, field_validator
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
@@ -76,8 +76,6 @@ class BulkScanCreateRequest(StrictInputSchema):
 
 class BulkScanResponse(SQLAlchemySchema):
     """Response schema for scan status and metadata."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     scan_id: UUID = Field(..., description="Unique scan identifier")
     status: str = Field(..., description="Current scan status")
@@ -164,8 +162,6 @@ class ScanCandidate(StrictInputSchema):
 class FlaggedMessage(SQLAlchemySchema):
     """Schema for a single flagged message in scan results."""
 
-    model_config = ConfigDict(from_attributes=True)
-
     message_id: str = Field(..., description="Discord message ID")
     channel_id: str = Field(..., description="Discord channel ID")
     content: str = Field(..., description="Original message content")
@@ -179,8 +175,6 @@ class FlaggedMessage(SQLAlchemySchema):
 
 class BulkScanResultsResponse(SQLAlchemySchema):
     """Response schema for scan results including flagged messages with pagination."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     scan_id: UUID = Field(..., description="Scan identifier")
     status: str = Field(..., description="Current scan status")
@@ -231,8 +225,6 @@ class CreateNoteRequestsRequest(StrictInputSchema):
 class NoteRequestsResponse(SQLAlchemySchema):
     """Response schema for note request creation results."""
 
-    model_config = ConfigDict(from_attributes=True)
-
     created_count: int = Field(..., description="Number of note requests created")
     request_ids: list[str] = Field(
         default_factory=list,
@@ -246,8 +238,6 @@ class LatestScanResponse(SQLAlchemySchema):
     Includes full scan details: status, counts, timestamps, and flagged messages
     if the scan is completed.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     scan_id: UUID = Field(..., description="Unique scan identifier")
     status: str = Field(

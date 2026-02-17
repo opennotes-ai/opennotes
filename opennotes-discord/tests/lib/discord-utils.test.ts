@@ -32,11 +32,6 @@ describe('extractPlatformMessageId', () => {
     expect(result).toBe('987654321');
   });
 
-  it('should extract message ID from request_id when platform_message_id is undefined', () => {
-    const result = extractPlatformMessageId(undefined, 'discord-987654321-1700000000000');
-    expect(result).toBe('987654321');
-  });
-
   it('should extract message ID from request_id when platform_message_id is empty string', () => {
     const result = extractPlatformMessageId('', 'discord-987654321-1700000000000');
     expect(result).toBe('987654321');

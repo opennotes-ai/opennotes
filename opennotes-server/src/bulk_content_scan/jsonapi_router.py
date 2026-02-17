@@ -39,7 +39,7 @@ from src.bulk_content_scan.service import (
     create_note_requests_from_flagged_messages,
 )
 from src.cache.redis_client import redis_client
-from src.common.base_schemas import StrictInputSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -87,6 +87,8 @@ class BulkScanCreateAttributes(StrictInputSchema):
 class BulkScanCreateData(BaseModel):
     """JSON:API data object for bulk scan creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["bulk-scans"] = Field(..., description="Resource type must be 'bulk-scans'")
     attributes: BulkScanCreateAttributes
 
@@ -94,13 +96,13 @@ class BulkScanCreateData(BaseModel):
 class BulkScanCreateJSONAPIRequest(BaseModel):
     """JSON:API request body for creating a bulk scan."""
 
+    model_config = ConfigDict(extra="forbid")
+
     data: BulkScanCreateData
 
 
-class BulkScanAttributes(BaseModel):
+class BulkScanAttributes(SQLAlchemySchema):
     """Attributes for a bulk scan resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     status: str = Field(..., description="Scan status: pending, in_progress, completed, failed")
     initiated_at: datetime = Field(..., description="When the scan was initiated")
@@ -117,20 +119,16 @@ class BulkScanResource(BaseModel):
     attributes: BulkScanAttributes
 
 
-class BulkScanSingleResponse(BaseModel):
+class BulkScanSingleResponse(SQLAlchemySchema):
     """JSON:API response for a single bulk scan resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: BulkScanResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
 
-class FlaggedMessageAttributes(BaseModel):
+class FlaggedMessageAttributes(SQLAlchemySchema):
     """Attributes for a flagged message resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     channel_id: str = Field(..., description="Channel ID where message was found")
     content: str = Field(..., description="Message content")
@@ -173,10 +171,8 @@ class ScanErrorSummarySchema(BaseModel):
     )
 
 
-class BulkScanResultsAttributes(BaseModel):
+class BulkScanResultsAttributes(SQLAlchemySchema):
     """Attributes for bulk scan results."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     status: str = Field(..., description="Scan status")
     messages_scanned: int = Field(default=0, description="Total messages scanned")
@@ -196,10 +192,8 @@ class BulkScanResultsResource(BaseModel):
     relationships: dict[str, Any] | None = None
 
 
-class BulkScanResultsJSONAPIResponse(BaseModel):
+class BulkScanResultsJSONAPIResponse(SQLAlchemySchema):
     """JSON:API response for bulk scan results with included flagged messages."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: BulkScanResultsResource
     included: list[FlaggedMessageResource] = Field(default_factory=list)
@@ -221,20 +215,16 @@ class RecentScanResource(BaseModel):
     attributes: RecentScanAttributes
 
 
-class RecentScanResponse(BaseModel):
+class RecentScanResponse(SQLAlchemySchema):
     """JSON:API response for recent scan check."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: RecentScanResource
     jsonapi: dict[str, str] = {"version": "1.1"}
     links: JSONAPILinks | None = None
 
 
-class LatestScanAttributes(BaseModel):
+class LatestScanAttributes(SQLAlchemySchema):
     """Attributes for the latest scan resource."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     status: str = Field(..., description="Scan status: pending, in_progress, completed, failed")
     initiated_at: datetime = Field(..., description="When the scan was initiated")
@@ -256,10 +246,8 @@ class LatestScanResource(BaseModel):
     relationships: dict[str, Any] | None = None
 
 
-class LatestScanJSONAPIResponse(BaseModel):
+class LatestScanJSONAPIResponse(SQLAlchemySchema):
     """JSON:API response for the latest scan with included flagged messages."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: LatestScanResource
     included: list[FlaggedMessageResource] = Field(default_factory=list)
@@ -284,12 +272,16 @@ class NoteRequestsCreateAttributes(StrictInputSchema):
 class NoteRequestsCreateData(BaseModel):
     """JSON:API data object for note requests creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["note-requests"] = Field(..., description="Resource type must be 'note-requests'")
     attributes: NoteRequestsCreateAttributes
 
 
 class NoteRequestsCreateRequest(BaseModel):
     """JSON:API request body for creating note requests."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: NoteRequestsCreateData
 
@@ -309,10 +301,8 @@ class NoteRequestsResultResource(BaseModel):
     attributes: NoteRequestsResultAttributes
 
 
-class NoteRequestsResultResponse(BaseModel):
+class NoteRequestsResultResponse(SQLAlchemySchema):
     """JSON:API response for note requests creation."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: NoteRequestsResultResource
     jsonapi: dict[str, str] = {"version": "1.1"}
@@ -330,6 +320,8 @@ class ExplanationCreateAttributes(StrictInputSchema):
 class ExplanationCreateData(BaseModel):
     """JSON:API data object for explanation generation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["scan-explanations"] = Field(
         ..., description="Resource type must be 'scan-explanations'"
     )
@@ -338,6 +330,8 @@ class ExplanationCreateData(BaseModel):
 
 class ExplanationCreateRequest(BaseModel):
     """JSON:API request body for generating a scan explanation."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: ExplanationCreateData
 
@@ -358,10 +352,8 @@ class ExplanationResultResource(BaseModel):
     attributes: ExplanationResultAttributes
 
 
-class ExplanationResultResponse(BaseModel):
+class ExplanationResultResponse(SQLAlchemySchema):
     """JSON:API response for explanation generation."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     data: ExplanationResultResource
     jsonapi: dict[str, str] = {"version": "1.1"}

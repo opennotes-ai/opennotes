@@ -14,12 +14,12 @@ from uuid import UUID
 
 import pendulum
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, ConfigDict
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
+from src.common.base_schemas import SQLAlchemySchema
 from src.database import get_db
 from src.notes.models import Note
 from src.notes.models import Request as NoteRequest
@@ -30,19 +30,15 @@ router = APIRouter(prefix="/community-servers", tags=["community-clear"])
 logger = logging.getLogger(__name__)
 
 
-class ClearResponse(BaseModel):
+class ClearResponse(SQLAlchemySchema):
     """Response for clear operations."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     deleted_count: int
     message: str
 
 
-class ClearPreviewResponse(BaseModel):
+class ClearPreviewResponse(SQLAlchemySchema):
     """Response for clear preview (dry run) operations."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     would_delete_count: int
     message: str

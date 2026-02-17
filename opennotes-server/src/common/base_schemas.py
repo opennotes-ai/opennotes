@@ -27,6 +27,7 @@ class StrictInputSchema(BaseModel):
         extra="forbid",
         str_strip_whitespace=True,  # Strip standard whitespace first
         validate_assignment=True,
+        use_enum_values=True,
     )
 
     @model_validator(mode="before")
@@ -59,6 +60,18 @@ class StrictInputSchema(BaseModel):
         if isinstance(value, list):
             return [cls._strip_value(item) for item in value]
         return value
+
+
+class ResponseSchema(BaseModel):
+    """
+    Base schema for non-ORM response wrappers.
+
+    Used for response schemas that are assembled manually from dicts,
+    not constructed directly from SQLAlchemy ORM objects. Lighter than
+    SQLAlchemySchema — only includes from_attributes=True.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SQLAlchemySchema(BaseModel):
