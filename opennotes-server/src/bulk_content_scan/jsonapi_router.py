@@ -18,7 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,12 +87,16 @@ class BulkScanCreateAttributes(StrictInputSchema):
 class BulkScanCreateData(BaseModel):
     """JSON:API data object for bulk scan creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["bulk-scans"] = Field(..., description="Resource type must be 'bulk-scans'")
     attributes: BulkScanCreateAttributes
 
 
 class BulkScanCreateJSONAPIRequest(BaseModel):
     """JSON:API request body for creating a bulk scan."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: BulkScanCreateData
 
@@ -268,12 +272,16 @@ class NoteRequestsCreateAttributes(StrictInputSchema):
 class NoteRequestsCreateData(BaseModel):
     """JSON:API data object for note requests creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["note-requests"] = Field(..., description="Resource type must be 'note-requests'")
     attributes: NoteRequestsCreateAttributes
 
 
 class NoteRequestsCreateRequest(BaseModel):
     """JSON:API request body for creating note requests."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: NoteRequestsCreateData
 
@@ -312,6 +320,8 @@ class ExplanationCreateAttributes(StrictInputSchema):
 class ExplanationCreateData(BaseModel):
     """JSON:API data object for explanation generation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["scan-explanations"] = Field(
         ..., description="Resource type must be 'scan-explanations'"
     )
@@ -320,6 +330,8 @@ class ExplanationCreateData(BaseModel):
 
 class ExplanationCreateRequest(BaseModel):
     """JSON:API request body for generating a scan explanation."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: ExplanationCreateData
 

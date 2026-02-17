@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from openai import RateLimitError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -130,6 +130,8 @@ class HybridSearchCreateAttributes(StrictInputSchema):
 class HybridSearchCreateData(BaseModel):
     """JSON:API data object for hybrid search."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["hybrid-searches"] = Field(
         ..., description="Resource type must be 'hybrid-searches'"
     )
@@ -138,6 +140,8 @@ class HybridSearchCreateData(BaseModel):
 
 class HybridSearchRequest(BaseModel):
     """JSON:API request body for performing a hybrid search."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: HybridSearchCreateData
 

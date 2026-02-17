@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from openai import RateLimitError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -141,6 +141,8 @@ class SimilaritySearchCreateAttributes(StrictInputSchema):
 class SimilaritySearchCreateData(BaseModel):
     """JSON:API data object for similarity search."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["similarity-searches"] = Field(
         ..., description="Resource type must be 'similarity-searches'"
     )
@@ -149,6 +151,8 @@ class SimilaritySearchCreateData(BaseModel):
 
 class SimilaritySearchJSONAPIRequest(BaseModel):
     """JSON:API request body for performing a similarity search."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: SimilaritySearchCreateData
 

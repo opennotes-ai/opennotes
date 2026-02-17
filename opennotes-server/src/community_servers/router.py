@@ -4,12 +4,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import get_community_server_by_platform_id
 from src.auth.dependencies import get_current_user_or_api_key
-from src.common.base_schemas import SQLAlchemySchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.database import get_db
 from src.monitoring import get_logger
 from src.users.models import User
@@ -34,7 +34,7 @@ class CommunityServerLookupResponse(SQLAlchemySchema):
     )
 
 
-class FlashpointDetectionUpdateRequest(BaseModel):
+class FlashpointDetectionUpdateRequest(StrictInputSchema):
     """Request model for updating flashpoint detection setting."""
 
     enabled: bool = Field(
@@ -54,7 +54,7 @@ class FlashpointDetectionUpdateResponse(SQLAlchemySchema):
     )
 
 
-class WelcomeMessageUpdateRequest(BaseModel):
+class WelcomeMessageUpdateRequest(StrictInputSchema):
     """Request model for updating welcome message ID."""
 
     welcome_message_id: str | None = Field(

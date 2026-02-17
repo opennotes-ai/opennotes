@@ -18,12 +18,12 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.cache.redis_client import redis_client
-from src.common.base_schemas import SQLAlchemySchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.search.fusion_config import (
     FALLBACK_ALPHA,
     FusionConfig,
@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/v1/admin/fusion-weights", tags=["admin", "search
 logger = logging.getLogger(__name__)
 
 
-class FusionWeightUpdate(BaseModel):
+class FusionWeightUpdate(StrictInputSchema):
     """Request model for updating fusion weight."""
 
     alpha: float = Field(

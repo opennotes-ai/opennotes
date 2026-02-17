@@ -23,7 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,6 +96,8 @@ class NotePublisherConfigCreateAttributes(StrictInputSchema):
 class NotePublisherConfigCreateData(BaseModel):
     """JSON:API data object for config creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["note-publisher-configs"] = Field(
         ..., description="Resource type must be 'note-publisher-configs'"
     )
@@ -104,6 +106,8 @@ class NotePublisherConfigCreateData(BaseModel):
 
 class NotePublisherConfigCreateRequest(BaseModel):
     """JSON:API request body for creating a config."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: NotePublisherConfigCreateData
 
@@ -121,6 +125,8 @@ class NotePublisherConfigUpdateAttributes(StrictInputSchema):
 class NotePublisherConfigUpdateData(BaseModel):
     """JSON:API data object for config update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["note-publisher-configs"] = Field(
         ..., description="Resource type must be 'note-publisher-configs'"
     )
@@ -130,6 +136,8 @@ class NotePublisherConfigUpdateData(BaseModel):
 
 class NotePublisherConfigUpdateRequest(BaseModel):
     """JSON:API request body for updating a config."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: NotePublisherConfigUpdateData
 
@@ -191,6 +199,8 @@ class NotePublisherPostCreateAttributes(StrictInputSchema):
 class NotePublisherPostCreateData(BaseModel):
     """JSON:API data object for post creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["note-publisher-posts"] = Field(
         ..., description="Resource type must be 'note-publisher-posts'"
     )
@@ -199,6 +209,8 @@ class NotePublisherPostCreateData(BaseModel):
 
 class NotePublisherPostCreateRequest(BaseModel):
     """JSON:API request body for creating a post record."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: NotePublisherPostCreateData
 

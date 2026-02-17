@@ -7,7 +7,7 @@ candidate review and rating management.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 from src.common.jsonapi import JSONAPILinks, JSONAPIMeta
@@ -75,6 +75,8 @@ class SetRatingAttributes(StrictInputSchema):
 class SetRatingData(BaseModel):
     """JSON:API data object for setting rating."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["fact-check-candidates"] = Field(
         ..., description="Resource type must be 'fact-check-candidates'"
     )
@@ -83,6 +85,8 @@ class SetRatingData(BaseModel):
 
 class SetRatingRequest(BaseModel):
     """JSON:API request body for setting rating on a candidate."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: SetRatingData
 

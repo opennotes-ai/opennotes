@@ -38,6 +38,8 @@ class BatchJobBase(BaseModel):
 class BatchJobCreate(BatchJobBase):
     """Schema for creating a new batch job."""
 
+    model_config = ConfigDict(use_enum_values=True, extra="forbid")
+
     total_tasks: int = Field(
         default=0,
         ge=0,
@@ -58,7 +60,7 @@ class BatchJobCreate(BatchJobBase):
 class BatchJobUpdate(BaseModel):
     """Schema for updating batch job progress."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
     status: BatchJobStatus | None = Field(
         default=None,

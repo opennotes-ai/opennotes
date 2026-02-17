@@ -18,7 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,6 +106,8 @@ class BatchScoreRequestAttributes(StrictInputSchema):
 class BatchScoreRequestData(BaseModel):
     """JSON:API data object for batch score request."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["batch-score-requests"] = Field(
         ..., description="Resource type must be 'batch-score-requests'"
     )
@@ -114,6 +116,8 @@ class BatchScoreRequestData(BaseModel):
 
 class BatchScoreRequest(BaseModel):
     """JSON:API request body for batch scores."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: BatchScoreRequestData
 
@@ -210,6 +214,8 @@ class ScoringRunRequestAttributes(StrictInputSchema):
 class ScoringRunRequestData(BaseModel):
     """JSON:API data object for scoring run request."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["scoring-requests"] = Field(
         ..., description="Resource type must be 'scoring-requests'"
     )
@@ -218,6 +224,8 @@ class ScoringRunRequestData(BaseModel):
 
 class ScoringRunRequest(BaseModel):
     """JSON:API request body for scoring run."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: ScoringRunRequestData
 

@@ -21,7 +21,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,6 +104,8 @@ class PreviouslySeenMessageCreateAttributes(StrictInputSchema):
 class PreviouslySeenMessageCreateData(BaseModel):
     """JSON:API data object for previously seen message creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["previously-seen-messages"] = Field(
         ..., description="Resource type must be 'previously-seen-messages'"
     )
@@ -112,6 +114,8 @@ class PreviouslySeenMessageCreateData(BaseModel):
 
 class PreviouslySeenMessageCreateRequest(BaseModel):
     """JSON:API request body for creating a previously seen message."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: PreviouslySeenMessageCreateData
 
@@ -133,6 +137,8 @@ class PreviouslySeenCheckAttributes(StrictInputSchema):
 class PreviouslySeenCheckData(BaseModel):
     """JSON:API data object for previously seen message check."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["previously-seen-check"] = Field(
         ..., description="Resource type must be 'previously-seen-check'"
     )
@@ -141,6 +147,8 @@ class PreviouslySeenCheckData(BaseModel):
 
 class PreviouslySeenCheckRequest(BaseModel):
     """JSON:API request body for checking previously seen messages."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: PreviouslySeenCheckData
 

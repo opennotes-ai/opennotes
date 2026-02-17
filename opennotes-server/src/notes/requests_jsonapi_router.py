@@ -25,7 +25,7 @@ from openai import (
     AuthenticationError,
     RateLimitError,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -140,12 +140,16 @@ class RequestCreateAttributes(StrictInputSchema):
 class RequestCreateData(BaseModel):
     """JSON:API data object for request creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["requests"] = Field(..., description="Resource type must be 'requests'")
     attributes: RequestCreateAttributes
 
 
 class RequestCreateRequest(BaseModel):
     """JSON:API request body for creating a request."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: RequestCreateData
 
@@ -160,6 +164,8 @@ class RequestUpdateAttributes(StrictInputSchema):
 class RequestUpdateData(BaseModel):
     """JSON:API data object for request update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["requests"] = Field(..., description="Resource type must be 'requests'")
     id: str = Field(..., description="Request ID being updated")
     attributes: RequestUpdateAttributes
@@ -167,6 +173,8 @@ class RequestUpdateData(BaseModel):
 
 class RequestUpdateRequest(BaseModel):
     """JSON:API request body for updating a request."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: RequestUpdateData
 

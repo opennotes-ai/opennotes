@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from src.common.base_schemas import SQLAlchemySchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
 
 
 class ScorerTier(str, Enum):
@@ -146,7 +146,7 @@ class EnrollmentData(BaseModel):
     timestampOfLastStateChange: int
 
 
-class ScoringRequest(BaseModel):
+class ScoringRequest(StrictInputSchema):
     notes: list[NoteData] = Field(..., description="List of community notes to score")
     ratings: list[RatingData] = Field(..., description="List of ratings for the notes")
     enrollment: list[EnrollmentData] = Field(..., description="List of user enrollment data")

@@ -17,7 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,12 +63,16 @@ class RatingCreateAttributes(StrictInputSchema):
 class RatingCreateData(BaseModel):
     """JSON:API data object for rating creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["ratings"] = Field(..., description="Resource type must be 'ratings'")
     attributes: RatingCreateAttributes
 
 
 class RatingCreateRequest(BaseModel):
     """JSON:API request body for creating a rating."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: RatingCreateData
 
@@ -116,6 +120,8 @@ class RatingUpdateAttributes(StrictInputSchema):
 class RatingUpdateData(BaseModel):
     """JSON:API data object for rating update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["ratings"] = Field(..., description="Resource type must be 'ratings'")
     id: str = Field(..., description="Rating ID")
     attributes: RatingUpdateAttributes
@@ -123,6 +129,8 @@ class RatingUpdateData(BaseModel):
 
 class RatingUpdateRequest(BaseModel):
     """JSON:API request body for updating a rating."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: RatingUpdateData
 

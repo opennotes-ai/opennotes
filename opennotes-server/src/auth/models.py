@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator
 
+from src.common.base_schemas import StrictInputSchema
+
 
 class Token(BaseModel):
     access_token: str
@@ -20,7 +22,7 @@ class TokenData(BaseModel):
     iat: int | None = None
 
 
-class RefreshTokenRequest(BaseModel):
+class RefreshTokenRequest(StrictInputSchema):
     """Request body for refresh token endpoint."""
 
     refresh_token: str = Field(
@@ -28,7 +30,7 @@ class RefreshTokenRequest(BaseModel):
     )
 
 
-class UserCreate(BaseModel):
+class UserCreate(StrictInputSchema):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=72)
@@ -63,7 +65,7 @@ class UserCreate(BaseModel):
         return v
 
 
-class UserUpdate(BaseModel):
+class UserUpdate(StrictInputSchema):
     email: EmailStr | None = None
     full_name: str | None = None
     password: str | None = Field(None, min_length=8, max_length=72)
@@ -114,12 +116,12 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class UserLogin(BaseModel):
+class UserLogin(StrictInputSchema):
     username: str
     password: str
 
 
-class APIKeyCreate(BaseModel):
+class APIKeyCreate(StrictInputSchema):
     name: str = Field(..., min_length=1, max_length=100)
     expires_in_days: int | None = Field(None, gt=0, le=365)
 

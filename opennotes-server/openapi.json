@@ -9267,6 +9267,7 @@
             "title": "Expires In Days"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "name"
@@ -9463,6 +9464,7 @@
             "title": "Is Opennotes Admin"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "is_opennotes_admin"
@@ -9486,6 +9488,7 @@
             "$ref": "#/components/schemas/AdminStatusUpdateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
@@ -9500,6 +9503,7 @@
             "$ref": "#/components/schemas/AdminStatusUpdateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -9692,6 +9696,7 @@
             "description": "DBOS workflow ID for linking batch job to workflow execution"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "job_type"
@@ -9955,6 +9960,7 @@
             "default": false
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "BatchProcessingRequest",
         "description": "Request parameters for batch processing operations without rate limiting (e.g., promote)."
@@ -9965,6 +9971,7 @@
             "$ref": "#/components/schemas/BatchScoreRequestData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -10006,6 +10013,7 @@
             "$ref": "#/components/schemas/BatchScoreRequestAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -10330,6 +10338,7 @@
             "$ref": "#/components/schemas/BulkScanCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -10344,6 +10353,7 @@
             "$ref": "#/components/schemas/BulkScanCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -11618,6 +11628,7 @@
             "$ref": "#/components/schemas/ExplanationCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -11632,6 +11643,7 @@
             "$ref": "#/components/schemas/ExplanationCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -11950,6 +11962,7 @@
             "description": "Whether to enable flashpoint detection for this community"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "enabled"
@@ -12040,6 +12053,7 @@
             "description": "Optional dataset name for dataset-specific override. None for global default."
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "alpha"
@@ -12171,6 +12185,7 @@
             "$ref": "#/components/schemas/HybridSearchCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -12295,6 +12310,7 @@
             "$ref": "#/components/schemas/HybridSearchCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -12459,6 +12475,7 @@
             "title": "Credentials"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "provider",
@@ -12479,6 +12496,7 @@
             "$ref": "#/components/schemas/IdentityCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "attributes"
@@ -12492,6 +12510,7 @@
             "$ref": "#/components/schemas/IdentityCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -12626,6 +12645,7 @@
             "default": false
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "ImportFactCheckBureauRequest",
         "description": "Request parameters for fact-check bureau import."
@@ -13654,6 +13674,7 @@
             "$ref": "#/components/schemas/MonitoredChannelCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -13668,6 +13689,7 @@
             "$ref": "#/components/schemas/MonitoredChannelCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -13884,6 +13906,7 @@
             "$ref": "#/components/schemas/MonitoredChannelUpdateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -13899,6 +13922,7 @@
             "$ref": "#/components/schemas/MonitoredChannelUpdateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -14012,6 +14036,7 @@
             "$ref": "#/components/schemas/NoteCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -14026,6 +14051,7 @@
             "$ref": "#/components/schemas/NoteCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -14397,6 +14423,7 @@
             "$ref": "#/components/schemas/NotePublisherConfigCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -14411,6 +14438,7 @@
             "$ref": "#/components/schemas/NotePublisherConfigCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -14585,6 +14613,7 @@
             "$ref": "#/components/schemas/NotePublisherConfigUpdateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -14600,6 +14629,7 @@
             "$ref": "#/components/schemas/NotePublisherConfigUpdateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -14778,6 +14808,7 @@
             "$ref": "#/components/schemas/NotePublisherPostCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -14792,6 +14823,7 @@
             "$ref": "#/components/schemas/NotePublisherPostCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -14940,6 +14972,7 @@
             "$ref": "#/components/schemas/NoteRequestsCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -14954,6 +14987,7 @@
             "$ref": "#/components/schemas/NoteRequestsCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -15418,6 +15452,7 @@
             "$ref": "#/components/schemas/NoteUpdateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -15433,6 +15468,7 @@
             "$ref": "#/components/schemas/NoteUpdateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -15669,6 +15705,7 @@
             "$ref": "#/components/schemas/PreviouslySeenCheckAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -15683,6 +15720,7 @@
             "$ref": "#/components/schemas/PreviouslySeenCheckData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -16056,6 +16094,7 @@
             "$ref": "#/components/schemas/PreviouslySeenMessageCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -16070,6 +16109,7 @@
             "$ref": "#/components/schemas/PreviouslySeenMessageCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -16358,6 +16398,7 @@
             "title": "Bio"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "ProfileUpdateAttributes",
         "description": "Attributes for profile update request."
@@ -16378,6 +16419,7 @@
             "$ref": "#/components/schemas/ProfileUpdateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
@@ -16392,6 +16434,7 @@
             "$ref": "#/components/schemas/ProfileUpdateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -16488,6 +16531,7 @@
             "$ref": "#/components/schemas/RatingCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -16502,6 +16546,7 @@
             "$ref": "#/components/schemas/RatingCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -16777,6 +16822,7 @@
             "$ref": "#/components/schemas/RatingUpdateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -16792,6 +16838,7 @@
             "$ref": "#/components/schemas/RatingUpdateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -16878,6 +16925,7 @@
             "description": "The refresh token to use for getting a new access token"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "refresh_token"
@@ -17230,6 +17278,7 @@
             "$ref": "#/components/schemas/RequestCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -17244,6 +17293,7 @@
             "$ref": "#/components/schemas/RequestCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -17413,6 +17463,7 @@
             "$ref": "#/components/schemas/RequestUpdateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -17428,6 +17479,7 @@
             "$ref": "#/components/schemas/RequestUpdateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -17633,6 +17685,7 @@
             "$ref": "#/components/schemas/ScoringRunRequestData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -17705,6 +17758,7 @@
             "$ref": "#/components/schemas/ScoringRunRequestAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -17859,6 +17913,7 @@
             "default": 1.0
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "ScrapeProcessingRequest",
         "description": "Request parameters for scraping operations with rate limiting support."
@@ -17943,6 +17998,7 @@
             "description": "Configuration value (stringified)"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "key",
@@ -17997,6 +18053,7 @@
             "$ref": "#/components/schemas/SetRatingAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -18011,6 +18068,7 @@
             "$ref": "#/components/schemas/SetRatingData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -18135,6 +18193,7 @@
             "$ref": "#/components/schemas/SimilaritySearchCreateAttributes"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "type",
@@ -18149,6 +18208,7 @@
             "$ref": "#/components/schemas/SimilaritySearchCreateData"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "data"
@@ -18390,6 +18450,7 @@
             "title": "Full Name"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "username",
@@ -18839,6 +18900,7 @@
             "title": "Password"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "UserUpdate"
       },
@@ -19110,6 +19172,7 @@
             "description": "Discord message ID of the welcome message, or null to clear"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "welcome_message_id"

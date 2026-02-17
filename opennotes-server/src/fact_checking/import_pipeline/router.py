@@ -20,6 +20,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.batch_jobs import ActiveJobExistsError
 from src.batch_jobs.import_service import ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
+from src.common.base_schemas import StrictInputSchema
 from src.database import get_db
 from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
 from src.monitoring import get_logger
@@ -33,7 +34,7 @@ router = APIRouter(
 )
 
 
-class ImportFactCheckBureauRequest(BaseModel):
+class ImportFactCheckBureauRequest(StrictInputSchema):
     """Request parameters for fact-check bureau import."""
 
     batch_size: int = Field(
@@ -52,7 +53,7 @@ class ImportFactCheckBureauRequest(BaseModel):
     )
 
 
-class BatchProcessingRequest(BaseModel):
+class BatchProcessingRequest(StrictInputSchema):
     """Request parameters for batch processing operations without rate limiting (e.g., promote)."""
 
     batch_size: int = Field(

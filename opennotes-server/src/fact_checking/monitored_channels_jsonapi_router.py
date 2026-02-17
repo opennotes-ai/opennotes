@@ -21,7 +21,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,6 +84,8 @@ class MonitoredChannelCreateAttributes(StrictInputSchema):
 class MonitoredChannelCreateData(BaseModel):
     """JSON:API data object for monitored channel creation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["monitored-channels"] = Field(
         ..., description="Resource type must be 'monitored-channels'"
     )
@@ -92,6 +94,8 @@ class MonitoredChannelCreateData(BaseModel):
 
 class MonitoredChannelCreateRequest(BaseModel):
     """JSON:API request body for creating a monitored channel."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: MonitoredChannelCreateData
 
@@ -116,6 +120,8 @@ class MonitoredChannelUpdateAttributes(StrictInputSchema):
 class MonitoredChannelUpdateData(BaseModel):
     """JSON:API data object for monitored channel update."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["monitored-channels"] = Field(
         ..., description="Resource type must be 'monitored-channels'"
     )
@@ -125,6 +131,8 @@ class MonitoredChannelUpdateData(BaseModel):
 
 class MonitoredChannelUpdateRequest(BaseModel):
     """JSON:API request body for updating a monitored channel."""
+
+    model_config = ConfigDict(extra="forbid")
 
     data: MonitoredChannelUpdateData
 
