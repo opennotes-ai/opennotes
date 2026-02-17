@@ -458,6 +458,34 @@ export class MessageMonitorService {
             topMatch: matches[0].title,
           });
 
+          const topMatch = matches[0];
+          const relevanceResult = await apiClient.checkClaimRelevance({
+            originalMessage: messageContent.content,
+            matchedContent: topMatch.content,
+            matchedSource: topMatch.source_url || topMatch.dataset_name,
+            similarityScore: topMatch.similarity_score,
+          });
+
+          if (relevanceResult && !relevanceResult.shouldFlag) {
+            logger.info('Claim relevance check determined match is not relevant, skipping note request', {
+              messageId: messageContent.messageId,
+              channelId: messageContent.channelId,
+              guildId: messageContent.guildId,
+              outcome: relevanceResult.outcome,
+              reasoning: relevanceResult.reasoning,
+              similarityScore: topMatch.similarity_score,
+            });
+            return;
+          }
+
+          if (!relevanceResult) {
+            logger.info('Claim relevance check failed, proceeding with note request (fail-open)', {
+              messageId: messageContent.messageId,
+              channelId: messageContent.channelId,
+              guildId: messageContent.guildId,
+            });
+          }
+
           await this.createNoteRequestForMatch(messageContent, similarityResponse);
         } else {
           logger.debug('Similarity match below CC score threshold, skipping note request', {

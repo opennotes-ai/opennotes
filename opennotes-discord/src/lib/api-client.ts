@@ -36,6 +36,14 @@ export type RemoveCommunityAdminResponse = components['schemas']['RemoveCommunit
 export type LLMConfigResponse = components['schemas']['LLMConfigResponse'];
 export type LLMConfigCreate = components['schemas']['LLMConfigCreate'];
 export type FlashpointDetectionUpdateResponse = components['schemas']['FlashpointDetectionUpdateResponse'];
+export type ClaimRelevanceCheckResponse = components['schemas']['ClaimRelevanceCheckResponse'];
+export type ClaimRelevanceCheckResultAttributes = components['schemas']['ClaimRelevanceCheckResultAttributes'];
+
+export interface ClaimRelevanceResult {
+  outcome: string;
+  reasoning: string;
+  shouldFlag: boolean;
+}
 
 export interface ClearPreviewResult {
   wouldDeleteCount: number;
@@ -1885,5 +1893,43 @@ export class ApiClient {
       platform_community_server_id: serverResponse.data.attributes.platform_community_server_id,
       flashpoint_detection_enabled: serverResponse.data.attributes.flashpoint_detection_enabled,
     };
+  }
+
+  async checkClaimRelevance(params: {
+    originalMessage: string;
+    matchedContent: string;
+    matchedSource: string;
+    similarityScore: number;
+  }): Promise<ClaimRelevanceResult | null> {
+    try {
+      const jsonApiRequest = this.buildJSONAPIRequestBody('claim-relevance-checks', {
+        original_message: params.originalMessage,
+        matched_content: params.matchedContent,
+        matched_source: params.matchedSource,
+        similarity_score: params.similarityScore,
+      });
+
+      const response = await this.fetchWithRetry<ClaimRelevanceCheckResponse>(
+        '/api/v2/claim-relevance-checks',
+        {
+          method: 'POST',
+          body: JSON.stringify(jsonApiRequest),
+        }
+      );
+
+      return {
+        outcome: response.data.attributes.outcome,
+        reasoning: response.data.attributes.reasoning,
+        shouldFlag: response.data.attributes.should_flag,
+      };
+    } catch (error) {
+      logger.error('Claim relevance check failed, failing open', {
+        error: error instanceof Error ? error.message : String(error),
+        originalMessage: params.originalMessage.substring(0, 100),
+        matchedSource: params.matchedSource,
+        similarityScore: params.similarityScore,
+      });
+      return null;
+    }
   }
 }

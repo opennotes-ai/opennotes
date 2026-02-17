@@ -32,6 +32,7 @@ import type {
   LatestScanResponse,
   NoteRequestsResultResponse,
   ExplanationResultResponse,
+  ClaimRelevanceResult,
   NoteStatus,
   ScoreConfidence,
   UserProfileLookupResponse,
@@ -88,6 +89,7 @@ export interface MockApiClient {
   checkRecentScan: jest.Mock<() => Promise<RecentScanResponse>>;
   getLatestScan: jest.Mock<() => Promise<LatestScanResponse>>;
   generateScanExplanation: jest.Mock<() => Promise<ExplanationResultResponse>>;
+  checkClaimRelevance: jest.Mock<() => Promise<ClaimRelevanceResult | null>>;
 }
 
 export interface ApiClientTransientParams {
@@ -616,6 +618,11 @@ export const apiClientFactory = Factory.define<MockApiClient, ApiClientTransient
           },
         },
         jsonapi: { version: '1.1' },
+      }),
+      checkClaimRelevance: jest.fn<() => Promise<ClaimRelevanceResult | null>>().mockResolvedValue({
+        outcome: 'relevant',
+        reasoning: 'mock',
+        shouldFlag: true,
       }),
     };
   }
