@@ -213,15 +213,17 @@ note_filter_builder = (
         FilterField(Note.request_id, operators=[FilterOperator.EQ]),
         FilterField(Note.created_at, operators=[FilterOperator.GTE, FilterOperator.LTE]),
         FilterField(
-            Note.community_server_id,
-            alias="community_server_id",
-            operators=[FilterOperator.EQ, FilterOperator.IN],
-        ),
-        FilterField(
             MessageArchive.platform_message_id,
             alias="platform_message_id",
             operators=[FilterOperator.EQ],
             joins=_platform_message_id_joins,
+        ),
+    )
+    .add_auth_gated_filter(
+        FilterField(
+            Note.community_server_id,
+            alias="community_server_id",
+            operators=[FilterOperator.EQ, FilterOperator.IN],
         ),
     )
     .add_custom_filter(
@@ -297,12 +299,7 @@ async def list_notes_jsonapi(
 
         community_server_id_value = filter_community_server_id
         community_server_id_in_value = None
-        if filter_community_server_id:
-            if not is_service_account(current_user):
-                await verify_community_membership_by_uuid(
-                    filter_community_server_id, current_user, db, request
-                )
-        elif not is_service_account(current_user):
+        if not filter_community_server_id and not is_service_account(current_user):
             user_communities = await get_user_community_ids(current_user, db)
             if user_communities:
                 community_server_id_value = None
@@ -318,7 +315,14 @@ async def list_notes_jsonapi(
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
 
-        filters = note_filter_builder.build(
+        filters = await note_filter_builder.build_async(
+            auth_checks={
+                "community_server_id": lambda csid: verify_community_membership_by_uuid(
+                    csid, current_user, db, request
+                ),
+            }
+            if not is_service_account(current_user)
+            else None,
             status=filter_status,
             status__neq=filter_status_neq,
             classification=filter_classification,
