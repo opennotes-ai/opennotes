@@ -211,7 +211,7 @@ class FilterBuilder:
 
     async def build_async(
         self,
-        auth_checks: dict[str, Callable[[Any], Awaitable[None]]] | None = None,
+        auth_checks: dict[str, Callable[[Any], Awaitable[Any]]] | None = None,
         **kwargs: Any,
     ) -> "FilterResult":
         """Build filter conditions with async authorization checks.
