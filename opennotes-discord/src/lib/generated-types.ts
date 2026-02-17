@@ -4574,7 +4574,7 @@ export interface components {
         };
         /**
          * CommunityServerNameUpdateRequest
-         * @description Request model for updating community server name.
+         * @description Request model for updating community server name and stats.
          */
         CommunityServerNameUpdateRequest: {
             /**
@@ -4582,6 +4582,13 @@ export interface components {
              * @description Human-readable name for the community server
              */
             name: string;
+            /**
+             * Server Stats
+             * @description Aggregate server statistics (e.g., member_count)
+             */
+            server_stats?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * CommunityServerNameUpdateResponse
@@ -4604,6 +4611,13 @@ export interface components {
              * @description Updated community server name
              */
             name: string;
+            /**
+             * Server Stats
+             * @description Aggregate server statistics
+             */
+            server_stats?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * CommunityServerResource

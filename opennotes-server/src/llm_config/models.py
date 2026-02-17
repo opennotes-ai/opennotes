@@ -81,6 +81,7 @@ class CommunityServer(Base):
     flashpoint_detection_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False
     )
+    server_stats: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     welcome_message_id: Mapped[str | None] = mapped_column(
         String(30),
         nullable=True,

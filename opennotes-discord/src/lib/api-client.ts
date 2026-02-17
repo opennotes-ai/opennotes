@@ -1204,13 +1204,18 @@ export class ApiClient {
 
   async updateCommunityServerName(
     platformId: string,
-    name: string
+    name: string,
+    serverStats?: Record<string, unknown>
   ): Promise<void> {
+    const body: Record<string, unknown> = { name };
+    if (serverStats) {
+      body.server_stats = serverStats;
+    }
     await this.fetchWithRetry<void>(
       `/api/v2/community-servers/${encodeURIComponent(platformId)}/name`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(body),
       }
     );
   }

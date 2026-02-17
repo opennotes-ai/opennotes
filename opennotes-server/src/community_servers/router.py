@@ -1,6 +1,6 @@
 """Community servers API endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -55,13 +55,17 @@ class FlashpointDetectionUpdateResponse(SQLAlchemySchema):
 
 
 class CommunityServerNameUpdateRequest(StrictInputSchema):
-    """Request model for updating community server name."""
+    """Request model for updating community server name and stats."""
 
     name: str = Field(
         ...,
         description="Human-readable name for the community server",
         min_length=1,
         max_length=255,
+    )
+    server_stats: dict[str, Any] | None = Field(
+        None,
+        description="Aggregate server statistics (e.g., member_count)",
     )
 
 
@@ -73,6 +77,7 @@ class CommunityServerNameUpdateResponse(SQLAlchemySchema):
         ..., description="Platform-specific ID (e.g., Discord guild ID)"
     )
     name: str = Field(..., description="Updated community server name")
+    server_stats: dict[str, Any] | None = Field(None, description="Aggregate server statistics")
 
 
 class WelcomeMessageUpdateRequest(StrictInputSchema):
@@ -226,6 +231,8 @@ async def update_community_server_name(
         )
 
     community_server.name = request_body.name
+    if request_body.server_stats is not None:
+        community_server.server_stats = request_body.server_stats
     await db.commit()
     await db.refresh(community_server)
 
@@ -242,6 +249,7 @@ async def update_community_server_name(
         id=community_server.id,
         platform_community_server_id=community_server.platform_community_server_id,
         name=community_server.name,
+        server_stats=community_server.server_stats,
     )
 
 

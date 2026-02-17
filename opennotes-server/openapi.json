@@ -11668,6 +11668,19 @@
             "minLength": 1,
             "title": "Name",
             "description": "Human-readable name for the community server"
+          },
+          "server_stats": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Stats",
+            "description": "Aggregate server statistics (e.g., member_count)"
           }
         },
         "type": "object",
@@ -11675,7 +11688,7 @@
           "name"
         ],
         "title": "CommunityServerNameUpdateRequest",
-        "description": "Request model for updating community server name."
+        "description": "Request model for updating community server name and stats."
       },
       "CommunityServerNameUpdateResponse": {
         "properties": {
@@ -11694,6 +11707,19 @@
             "type": "string",
             "title": "Name",
             "description": "Updated community server name"
+          },
+          "server_stats": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Stats",
+            "description": "Aggregate server statistics"
           }
         },
         "type": "object",

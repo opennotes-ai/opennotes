@@ -458,12 +458,14 @@ export class Bot {
         const communityServer = await apiClient.getCommunityServerByPlatformId(guild.id);
         const storedName = communityServer.data.attributes.name;
 
+        const serverStats = { member_count: guild.memberCount };
+        await apiClient.updateCommunityServerName(guild.id, guild.name, serverStats);
         if (storedName !== guild.name) {
-          await apiClient.updateCommunityServerName(guild.id, guild.name);
           logger.info('Synced community server name', {
             guildId: guild.id,
             oldName: storedName,
             newName: guild.name,
+            memberCount: guild.memberCount,
           });
         }
 
