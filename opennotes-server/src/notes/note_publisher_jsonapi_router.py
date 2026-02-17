@@ -57,14 +57,6 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-_publisher_auth_builder = FilterBuilder().add_auth_gated_filter(
-    FilterField(
-        NotePublisherConfig.community_server_id,
-        alias="community_server_id",
-        operators=[FilterOperator.EQ],
-    ),
-)
-
 _publisher_config_filter_builder = FilterBuilder(
     FilterField(
         NotePublisherConfig.community_server_id,
@@ -386,16 +378,8 @@ async def list_note_publisher_configs_jsonapi(
                 "filter[community_server_id] is required to list note publisher configs",
             )
 
-        await _publisher_auth_builder.build_async(
-            auth_checks={
-                "community_server_id": lambda csid: verify_community_membership(
-                    csid, current_user, db, request
-                ),
-            }
-            if not is_service_account(current_user)
-            else None,
-            community_server_id=filter_community_server_id,
-        )
+        if not is_service_account(current_user):
+            await verify_community_membership(filter_community_server_id, current_user, db, request)
 
         cs_result = await db.execute(
             select(CommunityServer.id).where(
@@ -770,16 +754,8 @@ async def list_note_publisher_posts_jsonapi(
                 "filter[community_server_id] is required to list note publisher posts",
             )
 
-        await _publisher_auth_builder.build_async(
-            auth_checks={
-                "community_server_id": lambda csid: verify_community_membership(
-                    csid, current_user, db, request
-                ),
-            }
-            if not is_service_account(current_user)
-            else None,
-            community_server_id=filter_community_server_id,
-        )
+        if not is_service_account(current_user):
+            await verify_community_membership(filter_community_server_id, current_user, db, request)
 
         cs_result = await db.execute(
             select(CommunityServer.id).where(
