@@ -83,7 +83,11 @@ def _create_error_response(
     )
 
 
-SHOULD_FLAG_OUTCOMES = {RelevanceOutcome.RELEVANT, RelevanceOutcome.INDETERMINATE}
+SHOULD_FLAG_OUTCOMES = {
+    RelevanceOutcome.RELEVANT,
+    RelevanceOutcome.INDETERMINATE,
+    RelevanceOutcome.CONTENT_FILTERED,
+}
 
 
 @router.post(

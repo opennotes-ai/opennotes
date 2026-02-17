@@ -133,7 +133,7 @@ class TestCreateClaimRelevanceCheck:
         assert body["data"]["attributes"]["should_flag"] is True
 
     @pytest.mark.asyncio
-    async def test_content_filtered_outcome_returns_should_flag_false(
+    async def test_content_filtered_outcome_returns_should_flag_true(
         self, client, mock_relevance_service
     ) -> None:
         mock_relevance_service.check_relevance = AsyncMock(
@@ -148,7 +148,7 @@ class TestCreateClaimRelevanceCheck:
         assert response.status_code == 200
         body = response.json()
         assert body["data"]["attributes"]["outcome"] == "content_filtered"
-        assert body["data"]["attributes"]["should_flag"] is False
+        assert body["data"]["attributes"]["should_flag"] is True
 
     @pytest.mark.asyncio
     async def test_invalid_request_missing_attributes(self, client) -> None:
