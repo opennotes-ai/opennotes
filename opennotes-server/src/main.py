@@ -37,6 +37,7 @@ from src.bulk_content_scan.jsonapi_router import router as bulk_content_scan_jso
 from src.bulk_content_scan.nats_handler import BulkScanEventHandler
 from src.cache.cache import cache_manager
 from src.cache.redis_client import redis_client
+from src.claim_relevance_check.router import router as claim_relevance_check_router
 from src.community_config.router import router as community_config_router
 from src.community_servers.admin_router import router as community_admin_router
 from src.community_servers.clear_router import router as community_clear_router
@@ -658,6 +659,11 @@ app.include_router(
 )
 app.include_router(
     embeddings_jsonapi_router, prefix=settings.API_V2_PREFIX, tags=["embeddings-jsonapi"]
+)
+app.include_router(
+    claim_relevance_check_router,
+    prefix=settings.API_V2_PREFIX,
+    tags=["claim-relevance-checks-jsonapi"],
 )
 app.include_router(
     hybrid_searches_jsonapi_router,

@@ -1851,6 +1851,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/claim-relevance-checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Claim Relevance Check
+         * @description Check if a fact-check match is relevant to a user's message.
+         *
+         *     Uses LLM to determine whether the matched content addresses a specific
+         *     verifiable claim in the original message. Returns an outcome and reasoning.
+         *
+         *     Fail-open semantics: if the LLM is unavailable, returns indeterminate
+         *     with should_flag=true so legitimate matches are never silently dropped.
+         *
+         *     JSON:API 1.1 action endpoint.
+         */
+        post: operations["create_claim_relevance_check_api_v2_claim_relevance_checks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v2/hybrid-searches": {
         parameters: {
             query?: never;
@@ -4102,6 +4130,103 @@ export interface components {
          * @enum {string}
          */
         CandidateStatus: "pending" | "scraping" | "scraped" | "scrape_failed" | "promoting" | "promoted";
+        /**
+         * ClaimRelevanceCheckAttributes
+         * @description Attributes for performing a claim relevance check via JSON:API.
+         */
+        ClaimRelevanceCheckAttributes: {
+            /**
+             * Original Message
+             * @description The user's original message to check for claims
+             */
+            original_message: string;
+            /**
+             * Matched Content
+             * @description The matched fact-check content
+             */
+            matched_content: string;
+            /**
+             * Matched Source
+             * @description URL to the fact-check source
+             */
+            matched_source: string;
+            /**
+             * Similarity Score
+             * @description Cosine similarity score of the match
+             */
+            similarity_score: number;
+        };
+        /**
+         * ClaimRelevanceCheckCreateData
+         * @description JSON:API data object for claim relevance check.
+         */
+        ClaimRelevanceCheckCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'claim-relevance-checks'
+             * @constant
+             */
+            type: "claim-relevance-checks";
+            attributes: components["schemas"]["ClaimRelevanceCheckAttributes"];
+        };
+        /**
+         * ClaimRelevanceCheckRequest
+         * @description JSON:API request body for performing a claim relevance check.
+         */
+        ClaimRelevanceCheckRequest: {
+            data: components["schemas"]["ClaimRelevanceCheckCreateData"];
+        };
+        /**
+         * ClaimRelevanceCheckResponse
+         * @description JSON:API response for claim relevance check results.
+         */
+        ClaimRelevanceCheckResponse: {
+            data: components["schemas"]["ClaimRelevanceCheckResultResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * ClaimRelevanceCheckResultAttributes
+         * @description Attributes for claim relevance check result.
+         */
+        ClaimRelevanceCheckResultAttributes: {
+            /**
+             * Outcome
+             * @description Relevance check outcome: relevant, not_relevant, indeterminate, or content_filtered
+             */
+            outcome: string;
+            /**
+             * Reasoning
+             * @description Explanation of the relevance decision
+             */
+            reasoning: string;
+            /**
+             * Should Flag
+             * @description Whether the message should be flagged (true for relevant or indeterminate outcomes)
+             */
+            should_flag: boolean;
+        };
+        /**
+         * ClaimRelevanceCheckResultResource
+         * @description JSON:API resource object for claim relevance check results.
+         */
+        ClaimRelevanceCheckResultResource: {
+            /**
+             * Type
+             * @default claim-relevance-checks
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["ClaimRelevanceCheckResultAttributes"];
+        };
         /**
          * ClearPreviewResponse
          * @description Response for clear preview (dry run) operations.
@@ -11113,6 +11238,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SimilaritySearchResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_claim_relevance_check_api_v2_claim_relevance_checks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimRelevanceCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimRelevanceCheckResponse"];
                 };
             };
             /** @description Validation Error */
