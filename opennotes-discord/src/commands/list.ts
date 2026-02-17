@@ -657,7 +657,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
     const requestResponse = await apiClient.getRequest(requestId);
 
     const messageId = extractPlatformMessageId(
-      requestResponse.data.attributes.platform_message_id ?? undefined,
+      requestResponse.data.attributes.platform_message_id ?? null,
       requestResponse.data.attributes.request_id
     );
     if (!messageId) {

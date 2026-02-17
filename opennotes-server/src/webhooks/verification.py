@@ -70,7 +70,7 @@ def _is_timestamp_valid(timestamp: str) -> bool:
     return True
 
 
-def _verify_public_key_config(public_key: str | None) -> None:
+def _verify_public_key_config(public_key: str) -> None:
     if not public_key:
         raise DiscordVerificationError("Discord public key not configured")
 

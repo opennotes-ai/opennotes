@@ -62,19 +62,16 @@ async def create_audit_log(
     return audit_log
 
 
-def extract_request_context(request: Request | None) -> tuple[str | None, str | None]:
+def extract_request_context(request: Request) -> tuple[str | None, str | None]:
     """
     Extract IP address and user agent from a FastAPI request.
 
     Args:
-        request: FastAPI Request object (optional)
+        request: FastAPI Request object
 
     Returns:
         Tuple of (ip_address, user_agent)
     """
-    if request is None:
-        return None, None
-
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 

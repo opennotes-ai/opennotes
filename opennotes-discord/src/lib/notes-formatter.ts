@@ -16,9 +16,9 @@ import {
 
 export class NotesFormatter {
   private static buildDiscordMessageUrl(
-    guildId: string | null | undefined,
-    channelId: string | null | undefined,
-    messageId: string | null | undefined
+    guildId: string | null,
+    channelId: string | null,
+    messageId: string | null
   ): string | null {
     if (!guildId || !channelId || !messageId) {
       return null;
@@ -75,7 +75,7 @@ export class NotesFormatter {
     const platformMessageId = note.request
       ? extractPlatformMessageId(null, note.request.request_id)
       : null;
-    const messageUrl = this.buildDiscordMessageUrl(guildId, note.channel_id, platformMessageId);
+    const messageUrl = this.buildDiscordMessageUrl(guildId ?? null, note.channel_id ?? null, platformMessageId);
 
     if (note.request?.content) {
       let messageValue = `"${v2SanitizeMarkdown(v2Truncate(note.request.content, 200))}"`;

@@ -105,7 +105,7 @@ export function suppressExpectedDiscordErrors(operation: string): (error: unknow
  * @returns The extracted message ID, or null if none could be determined
  */
 export function extractPlatformMessageId(
-  platformMessageId: string | null | undefined,
+  platformMessageId: string | null,
   requestId: string
 ): string | null {
   if (platformMessageId) {
