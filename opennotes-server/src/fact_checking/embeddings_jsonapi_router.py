@@ -226,13 +226,39 @@ def create_error_response(
     )
 
 
+def _build_empty_matches_response(
+    attrs: SimilaritySearchCreateAttributes,
+    request_url: str,
+) -> JSONResponse:
+    result = SimilaritySearchResultResource(
+        type="similarity-search-results",
+        id=str(uuid.uuid4()),
+        attributes=SimilaritySearchResultAttributes(
+            matches=[],
+            query_text=attrs.text,
+            dataset_tags=attrs.dataset_tags,
+            similarity_threshold=attrs.similarity_threshold,
+            score_threshold=attrs.score_threshold,
+            total_matches=0,
+        ),
+    )
+    json_response = SimilaritySearchResultResponse(
+        data=result,
+        links=JSONAPILinks(self_=request_url),
+    )
+    return JSONResponse(
+        content=json_response.model_dump(by_alias=True, mode="json"),
+        media_type=JSONAPI_CONTENT_TYPE,
+    )
+
+
 @router.post(
     "/similarity-searches",
     response_class=JSONResponse,
     response_model=SimilaritySearchResultResponse,
 )
 @limiter.limit("100/minute")
-async def similarity_search_jsonapi(
+async def similarity_search_jsonapi(  # noqa: PLR0911
     request: HTTPRequest,
     body: SimilaritySearchJSONAPIRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -259,6 +285,9 @@ async def similarity_search_jsonapi(
     """
     try:
         attrs = body.data.attributes
+
+        if len(attrs.text.strip()) < 10:
+            return _build_empty_matches_response(attrs, str(request.url))
 
         membership = await verify_community_membership(
             attrs.community_server_id, current_user, db, request

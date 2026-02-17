@@ -442,6 +442,99 @@ class TestSimilaritySearchJSONAPI:
                 f"Expected 401 without auth, got {response.status_code}"
             )
 
+    @pytest.mark.asyncio
+    async def test_similarity_search_short_text_returns_empty_matches(
+        self,
+        embeddings_jsonapi_auth_client,
+        embeddings_jsonapi_community_server,
+    ):
+        """Test POST /api/v2/similarity-searches returns empty matches for short text.
+
+        Messages shorter than 10 characters (after stripping) are too short
+        to produce meaningful similarity results. The server should return
+        a valid 200 JSON:API response with zero matches, not an error.
+        This is defense-in-depth: the bot filters short messages, but the
+        server also enforces the minimum length.
+        """
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
+
+        short_texts = ["LOL", "hi", "ok", "yes", "a", "   yes   "]
+        for short_text in short_texts:
+            request_body = {
+                "data": {
+                    "type": "similarity-searches",
+                    "attributes": {
+                        "text": short_text,
+                        "community_server_id": platform_id,
+                        "dataset_tags": ["snopes"],
+                        "similarity_threshold": 0.5,
+                        "limit": 5,
+                    },
+                }
+            }
+
+            response = await embeddings_jsonapi_auth_client.post(
+                "/api/v2/similarity-searches", json=request_body
+            )
+
+            assert response.status_code == 200, (
+                f"Expected 200 for short text '{short_text}', got {response.status_code}: {response.text}"
+            )
+
+            content_type = response.headers.get("content-type", "")
+            assert "application/vnd.api+json" in content_type, (
+                f"Expected JSON:API content type for short text '{short_text}', got: {content_type}"
+            )
+
+            data = response.json()
+            assert "data" in data, f"Response for '{short_text}' must contain 'data' key"
+            assert data["data"]["type"] == "similarity-search-results"
+            assert "attributes" in data["data"]
+
+            attrs = data["data"]["attributes"]
+            assert attrs["matches"] == [], (
+                f"Expected empty matches for short text '{short_text}', got {len(attrs['matches'])} matches"
+            )
+            assert attrs["total_matches"] == 0, (
+                f"Expected 0 total_matches for short text '{short_text}', got {attrs['total_matches']}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_similarity_search_text_at_boundary_not_filtered(
+        self,
+        embeddings_jsonapi_auth_client,
+        embeddings_jsonapi_community_server,
+    ):
+        """Text with exactly 10 chars after stripping should NOT be filtered.
+
+        The 10-char minimum is a defense-in-depth filter. Text at or above the
+        boundary should proceed to normal search (may fail for other reasons
+        like missing LLM config, but should NOT return the empty-matches shortcut).
+        """
+        platform_id = embeddings_jsonapi_community_server["platform_community_server_id"]
+
+        request_body = {
+            "data": {
+                "type": "similarity-searches",
+                "attributes": {
+                    "text": "0123456789",
+                    "community_server_id": platform_id,
+                    "dataset_tags": ["snopes"],
+                    "similarity_threshold": 0.5,
+                    "limit": 5,
+                },
+            }
+        }
+
+        response = await embeddings_jsonapi_auth_client.post(
+            "/api/v2/similarity-searches", json=request_body
+        )
+
+        assert (
+            response.status_code != 200
+            or response.json()["data"]["attributes"]["query_text"] == "0123456789"
+        ), "10-char text should not be short-circuit filtered"
+
 
 class TestSimilaritySearchJSONAPIWithMockedService:
     """Tests with mocked embedding service for full response verification."""
