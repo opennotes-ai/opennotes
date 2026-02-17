@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -29,6 +29,7 @@ from src.auth.community_dependencies import (
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import StrictInputSchema
+from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -81,6 +82,14 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 scorer_factory = ScorerFactory()
+
+top_notes_filter_builder = FilterBuilder().add_auth_gated_filter(
+    FilterField(
+        Note.community_server_id,
+        alias="community_server_id",
+        operators=[FilterOperator.EQ, FilterOperator.IN],
+    ),
+)
 
 
 class BatchScoreRequestAttributes(StrictInputSchema):
@@ -635,48 +644,53 @@ async def get_top_notes_jsonapi(  # noqa: PLR0912
     - community_server_id: Filter by community server UUID
     """
     try:
-        user_communities: list[UUID] = []
-        if not is_service_account(current_user):
-            if community_server_id:
-                try:
-                    await verify_community_membership_by_uuid(
-                        community_server_id, current_user, db, request
-                    )
-                except HTTPException as e:
-                    return create_error_response(
-                        e.status_code,
-                        "Forbidden",
-                        e.detail,
-                    )
-                user_communities = [community_server_id]
-            else:
-                user_communities = await get_user_community_ids(current_user, db)
-                if not user_communities:
-                    response = NoteScoreListResponse(
-                        data=[],
-                        links=JSONAPILinks(self_=str(request.url)),
-                        meta={
-                            "total_count": 0,
-                            "current_tier": 0,
-                            "filters_applied": {},
-                        },
-                    )
-                    return JSONResponse(
-                        content=response.model_dump(by_alias=True, mode="json"),
-                        media_type=JSONAPI_CONTENT_TYPE,
-                    )
+        community_server_id_value = community_server_id
+        community_server_id_in_value = None
+        if not is_service_account(current_user) and not community_server_id:
+            user_communities = await get_user_community_ids(current_user, db)
+            if not user_communities:
+                response = NoteScoreListResponse(
+                    data=[],
+                    links=JSONAPILinks(self_=str(request.url)),
+                    meta={
+                        "total_count": 0,
+                        "current_tier": 0,
+                        "filters_applied": {},
+                    },
+                )
+                return JSONResponse(
+                    content=response.model_dump(by_alias=True, mode="json"),
+                    media_type=JSONAPI_CONTENT_TYPE,
+                )
+            community_server_id_value = None
+            community_server_id_in_value = user_communities
+
+        try:
+            filters = await top_notes_filter_builder.build_async(
+                auth_checks={
+                    "community_server_id": lambda csid: verify_community_membership_by_uuid(
+                        csid, current_user, db, request
+                    ),
+                }
+                if not is_service_account(current_user)
+                else None,
+                community_server_id=community_server_id_value,
+                community_server_id__in=community_server_id_in_value,
+            )
+        except HTTPException as e:
+            return create_error_response(
+                e.status_code,
+                "Forbidden",
+                e.detail,
+            )
 
         base_query = select(Note).options(*full())
-        if not is_service_account(current_user):
-            base_query = base_query.where(Note.community_server_id.in_(user_communities))
-        elif community_server_id:
-            base_query = base_query.where(Note.community_server_id == community_server_id)
+        if filters:
+            base_query = base_query.where(and_(*filters))
 
         count_query = select(func.count(Note.id))
-        if not is_service_account(current_user):
-            count_query = count_query.where(Note.community_server_id.in_(user_communities))
-        elif community_server_id:
-            count_query = count_query.where(Note.community_server_id == community_server_id)
+        if filters:
+            count_query = count_query.where(and_(*filters))
         count_result = await db.execute(count_query)
         note_count = count_result.scalar() or 0
 

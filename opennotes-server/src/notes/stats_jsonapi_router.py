@@ -29,6 +29,7 @@ from src.auth.community_dependencies import (
 )
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -45,6 +46,24 @@ from src.users.models import User
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+notes_stats_filter_builder = FilterBuilder(
+    FilterField(Note.created_at, operators=[FilterOperator.GTE, FilterOperator.LTE]),
+).add_auth_gated_filter(
+    FilterField(
+        Note.community_server_id,
+        alias="community_server_id",
+        operators=[FilterOperator.EQ, FilterOperator.IN],
+    ),
+)
+
+author_stats_filter_builder = FilterBuilder().add_auth_gated_filter(
+    FilterField(
+        Note.community_server_id,
+        alias="community_server_id",
+        operators=[FilterOperator.EQ, FilterOperator.IN],
+    ),
+)
 
 
 class NoteStatsAttributes(BaseModel):
@@ -147,23 +166,15 @@ async def get_notes_stats_jsonapi(
     Service accounts can see all stats.
     """
     try:
-        base_filters: list[Any] = []
-
-        if filter_date_from:
-            base_filters.append(Note.created_at >= filter_date_from)
-        if filter_date_to:
-            base_filters.append(Note.created_at <= filter_date_to)
-
+        community_server_id_value = filter_community_server_id
+        community_server_id_in_value = None
         if filter_community_server_id:
-            if not is_service_account(current_user):
-                await verify_community_membership_by_uuid(
-                    filter_community_server_id, current_user, db, request
-                )
-            base_filters.append(Note.community_server_id == filter_community_server_id)
+            pass
         elif not is_service_account(current_user):
             user_communities = await get_user_community_ids(current_user, db)
             if user_communities:
-                base_filters.append(Note.community_server_id.in_(user_communities))
+                community_server_id_value = None
+                community_server_id_in_value = user_communities
             else:
                 response = NoteStatsSingleResponse(
                     data=NoteStatsResource(
@@ -182,7 +193,21 @@ async def get_notes_stats_jsonapi(
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
 
-        base_where = and_(*base_filters) if base_filters else true()
+        filters = await notes_stats_filter_builder.build_async(
+            auth_checks={
+                "community_server_id": lambda csid: verify_community_membership_by_uuid(
+                    csid, current_user, db, request
+                ),
+            }
+            if not is_service_account(current_user)
+            else None,
+            community_server_id=community_server_id_value,
+            community_server_id__in=community_server_id_in_value,
+            created_at__gte=filter_date_from,
+            created_at__lte=filter_date_to,
+        )
+
+        base_where = and_(*filters) if filters else true()
 
         total_result = await db.execute(select(func.count(Note.id)).where(base_where))
         total_notes = total_result.scalar() or 0
@@ -265,19 +290,15 @@ async def get_author_stats_jsonapi(
     Service accounts can see all stats.
     """
     try:
-        note_filters: list[Any] = [Note.author_id == author_id]
-        community_filter = None
-
+        community_server_id_value = filter_community_server_id
+        community_server_id_in_value = None
         if filter_community_server_id:
-            if not is_service_account(current_user):
-                await verify_community_membership_by_uuid(
-                    filter_community_server_id, current_user, db, request
-                )
-            community_filter = Note.community_server_id == filter_community_server_id
+            pass
         elif not is_service_account(current_user):
             user_communities = await get_user_community_ids(current_user, db)
             if user_communities:
-                community_filter = Note.community_server_id.in_(user_communities)
+                community_server_id_value = None
+                community_server_id_in_value = user_communities
             else:
                 response = ParticipantStatsSingleResponse(
                     data=ParticipantStatsResource(
@@ -296,9 +317,20 @@ async def get_author_stats_jsonapi(
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
 
-        if community_filter is not None:
-            note_filters.append(community_filter)
+        community_filters = await author_stats_filter_builder.build_async(
+            auth_checks={
+                "community_server_id": lambda csid: verify_community_membership_by_uuid(
+                    csid, current_user, db, request
+                ),
+            }
+            if not is_service_account(current_user)
+            else None,
+            community_server_id=community_server_id_value,
+            community_server_id__in=community_server_id_in_value,
+        )
 
+        note_filters: list[Any] = [Note.author_id == author_id]
+        note_filters.extend(community_filters)
         notes_where = and_(*note_filters)
 
         notes_result = await db.execute(select(func.count(Note.id)).where(notes_where))
@@ -310,8 +342,8 @@ async def get_author_stats_jsonapi(
             .join(Note, Rating.note_id == Note.id)
             .where(Rating.rater_id == author_id)
         )
-        if community_filter is not None:
-            ratings_query = ratings_query.where(community_filter)
+        if community_filters:
+            ratings_query = ratings_query.where(and_(*community_filters))
         ratings_result = await db.execute(ratings_query)
         ratings_given = ratings_result.scalar() or 0
 

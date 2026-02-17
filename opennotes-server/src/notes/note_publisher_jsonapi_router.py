@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,7 @@ from src.auth.community_dependencies import (
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import StrictInputSchema
+from src.common.filters import FilterBuilder, FilterField, FilterOperator
 from src.common.jsonapi import (
     JSONAPI_CONTENT_TYPE,
     JSONAPILinks,
@@ -55,6 +56,25 @@ from src.users.models import User
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+_publisher_config_filter_builder = FilterBuilder(
+    FilterField(
+        NotePublisherConfig.community_server_id,
+        alias="community_server_uuid",
+        operators=[FilterOperator.EQ],
+    ),
+    FilterField(NotePublisherConfig.enabled, alias="enabled", operators=[FilterOperator.EQ]),
+)
+
+_publisher_post_filter_builder = FilterBuilder(
+    FilterField(
+        NotePublisherPost.community_server_id,
+        alias="community_server_uuid",
+        operators=[FilterOperator.EQ],
+    ),
+    FilterField(NotePublisherPost.channel_id, alias="channel_id", operators=[FilterOperator.EQ]),
+    FilterField(NotePublisherPost.success, alias="success", operators=[FilterOperator.EQ]),
+)
 
 
 class NotePublisherConfigCreateAttributes(StrictInputSchema):
@@ -361,7 +381,6 @@ async def list_note_publisher_configs_jsonapi(
         if not is_service_account(current_user):
             await verify_community_membership(filter_community_server_id, current_user, db, request)
 
-        # Look up community server UUID from platform ID
         cs_result = await db.execute(
             select(CommunityServer.id).where(
                 CommunityServer.platform_community_server_id == filter_community_server_id
@@ -376,12 +395,14 @@ async def list_note_publisher_configs_jsonapi(
                 f"Community server not found: {filter_community_server_id}",
             )
 
-        query = select(NotePublisherConfig).where(
-            NotePublisherConfig.community_server_id == community_server_uuid
+        filters = _publisher_config_filter_builder.build(
+            community_server_uuid=community_server_uuid,
+            enabled=filter_enabled,
         )
 
-        if filter_enabled is not None:
-            query = query.where(NotePublisherConfig.enabled == filter_enabled)
+        query = select(NotePublisherConfig)
+        if filters:
+            query = query.where(and_(*filters))
 
         total_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(total_query)
@@ -736,7 +757,6 @@ async def list_note_publisher_posts_jsonapi(
         if not is_service_account(current_user):
             await verify_community_membership(filter_community_server_id, current_user, db, request)
 
-        # Look up community server UUID from platform ID
         cs_result = await db.execute(
             select(CommunityServer.id).where(
                 CommunityServer.platform_community_server_id == filter_community_server_id
@@ -751,15 +771,15 @@ async def list_note_publisher_posts_jsonapi(
                 f"Community server not found: {filter_community_server_id}",
             )
 
-        query = select(NotePublisherPost).where(
-            NotePublisherPost.community_server_id == community_server_uuid
+        filters = _publisher_post_filter_builder.build(
+            community_server_uuid=community_server_uuid,
+            channel_id=filter_channel_id,
+            success=filter_success,
         )
 
-        if filter_channel_id is not None:
-            query = query.where(NotePublisherPost.channel_id == filter_channel_id)
-
-        if filter_success is not None:
-            query = query.where(NotePublisherPost.success == filter_success)
+        query = select(NotePublisherPost)
+        if filters:
+            query = query.where(and_(*filters))
 
         query = query.order_by(NotePublisherPost.posted_at.desc())
 
