@@ -12,7 +12,7 @@ Models:
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
@@ -246,7 +246,7 @@ class CommunityMember(Base, TimestampMixin):
         back_populates="community_memberships",
         lazy="selectin",
     )
-    inviter: Mapped[Optional["UserProfile"]] = relationship(
+    inviter: Mapped["UserProfile | None"] = relationship(
         "UserProfile", foreign_keys=[invited_by], lazy="selectin"
     )
 

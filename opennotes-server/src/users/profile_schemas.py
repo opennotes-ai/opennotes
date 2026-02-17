@@ -15,7 +15,7 @@ Schemas follow the pattern:
 
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import pendulum
@@ -342,8 +342,8 @@ class CommunityMemberResponse(CommunityMemberInDB):
         extra="forbid",
     )
 
-    profile: Optional["UserProfileResponse"] = Field(None, description="Associated user profile")
-    inviter: Optional["UserProfileResponse"] = Field(
+    profile: "UserProfileResponse | None" = Field(None, description="Associated user profile")
+    inviter: "UserProfileResponse | None" = Field(
         None, description="Profile of the user who invited this member"
     )
 
