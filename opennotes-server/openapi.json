@@ -11683,6 +11683,7 @@
             "description": "Aggregate server statistics (e.g., member_count)"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "name"

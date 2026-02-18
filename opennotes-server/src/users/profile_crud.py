@@ -53,6 +53,10 @@ from src.users.profile_schemas import (
 logger = logging.getLogger(__name__)
 
 
+def _enum_val(v: Any) -> str:
+    return v.value if hasattr(v, "value") else v
+
+
 async def get_profile_by_id(db: AsyncSession, profile_id: UUID) -> UserProfile | None:
     result = await db.execute(
         select(UserProfile).where(UserProfile.id == profile_id).options(*loaders.profile_full())
@@ -186,7 +190,7 @@ async def get_identity_by_provider(
     result = await db.execute(
         select(UserIdentity)
         .where(
-            UserIdentity.provider == provider.value,
+            UserIdentity.provider == _enum_val(provider),
             UserIdentity.provider_user_id == provider_user_id,
         )
         .options(*loaders.identity_with_profile())
@@ -220,7 +224,7 @@ async def create_identity(
 ) -> UserIdentity:
     identity = UserIdentity(
         profile_id=identity_create.profile_id,
-        provider=identity_create.provider.value,
+        provider=_enum_val(identity_create.provider),
         provider_user_id=identity_create.provider_user_id,
         credentials=identity_create.credentials,
     )
@@ -237,7 +241,7 @@ async def create_identity(
         resource_id=str(identity.id),
         details={
             "profile_id": str(identity_create.profile_id),
-            "provider": identity_create.provider.value,
+            "provider": _enum_val(identity_create.provider),
             "provider_user_id": identity_create.provider_user_id,
         },
         ip_address=ip_address,
@@ -279,7 +283,7 @@ async def authenticate_with_provider(
             "Identity exists but profile is missing",
             extra={
                 "identity_id": str(identity.id),
-                "provider": provider.value,
+                "provider": _enum_val(provider),
                 "provider_user_id": provider_user_id,
             },
         )
@@ -290,7 +294,7 @@ async def authenticate_with_provider(
             "Authentication blocked: profile is inactive",
             extra={
                 "profile_id": str(profile.id),
-                "provider": provider.value,
+                "provider": _enum_val(provider),
                 "provider_user_id": provider_user_id,
             },
         )
@@ -301,7 +305,7 @@ async def authenticate_with_provider(
             "Authentication blocked: profile is banned",
             extra={
                 "profile_id": str(profile.id),
-                "provider": provider.value,
+                "provider": _enum_val(provider),
                 "provider_user_id": provider_user_id,
                 "banned_at": profile.banned_at.isoformat() if profile.banned_at else None,
             },
@@ -354,7 +358,7 @@ async def create_community_member(
         community_id=member_create.community_id,
         profile_id=member_create.profile_id,
         is_external=member_create.is_external,
-        role=member_create.role.value,
+        role=_enum_val(member_create.role),
         permissions=member_create.permissions,
         joined_at=member_create.joined_at,
         invited_by=member_create.invited_by,
@@ -406,7 +410,7 @@ async def update_community_member(
         )
 
     if member_update.role is not None:
-        member.role = member_update.role.value
+        member.role = _enum_val(member_update.role)
 
     if member_update.permissions is not None:
         member.permissions = member_update.permissions
