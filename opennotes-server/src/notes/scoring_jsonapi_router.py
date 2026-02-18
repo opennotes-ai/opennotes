@@ -319,7 +319,7 @@ async def get_scoring_status_jsonapi(
     - Warnings
     """
     try:
-        result = await db.execute(select(func.count(Note.id)))
+        result = await db.execute(select(func.count(Note.id)).where(Note.deleted_at.is_(None)))
         note_count = result.scalar() or 0
 
         active_tier_enum = get_tier_for_note_count(note_count)
@@ -440,7 +440,9 @@ async def get_note_score_jsonapi(
     - Timestamp of calculation
     """
     try:
-        result = await db.execute(select(Note).options(*full()).where(Note.id == note_id))
+        result = await db.execute(
+            select(Note).options(*full()).where(Note.id == note_id, Note.deleted_at.is_(None))
+        )
         note = result.scalar_one_or_none()
 
         if not note:
@@ -462,7 +464,9 @@ async def get_note_score_jsonapi(
                     e.detail,
                 )
 
-        count_result = await db.execute(select(func.count(Note.id)))
+        count_result = await db.execute(
+            select(func.count(Note.id)).where(Note.deleted_at.is_(None))
+        )
         note_count = count_result.scalar() or 0
 
         community_id = str(note.community_server_id) if note.community_server_id else ""
@@ -547,10 +551,14 @@ async def get_batch_scores_jsonapi(
         if not is_service_account(current_user):
             user_communities = await get_user_community_ids(current_user, db)
 
-        result = await db.execute(select(Note).options(*full()).where(Note.id.in_(note_ids)))
+        result = await db.execute(
+            select(Note).options(*full()).where(Note.id.in_(note_ids), Note.deleted_at.is_(None))
+        )
         notes = result.scalars().all()
 
-        count_result = await db.execute(select(func.count(Note.id)))
+        count_result = await db.execute(
+            select(func.count(Note.id)).where(Note.deleted_at.is_(None))
+        )
         total_note_count = count_result.scalar() or 0
 
         score_resources: list[NoteScoreResource] = []
@@ -678,11 +686,11 @@ async def get_top_notes_jsonapi(  # noqa: PLR0912
                 e.detail,
             )
 
-        base_query = select(Note).options(*full())
+        base_query = select(Note).options(*full()).where(Note.deleted_at.is_(None))
         if filters:
             base_query = base_query.where(and_(*filters))
 
-        count_query = select(func.count(Note.id))
+        count_query = select(func.count(Note.id)).where(Note.deleted_at.is_(None))
         if filters:
             count_query = count_query.where(and_(*filters))
         count_result = await db.execute(count_query)

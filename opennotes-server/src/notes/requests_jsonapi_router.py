@@ -348,7 +348,11 @@ async def list_requests_jsonapi(
     Returns JSON:API formatted response with data, jsonapi, links, and meta.
     """
     try:
-        query = select(Request).options(*loaders.request_with_archive())
+        query = (
+            select(Request)
+            .options(*loaders.request_with_archive())
+            .where(Request.deleted_at.is_(None))
+        )
 
         community_server_id_value = filter_community_server_id
         community_server_id_in_value = None
@@ -385,7 +389,7 @@ async def list_requests_jsonapi(
         if filters:
             query = query.where(and_(*filters))
 
-        total_query = select(func.count(Request.id))
+        total_query = select(func.count(Request.id)).where(Request.deleted_at.is_(None))
         if filters:
             total_query = total_query.where(and_(*filters))
         total_result = await db.execute(total_query)
@@ -439,7 +443,7 @@ async def get_request_jsonapi(
         result = await db.execute(
             select(Request)
             .options(*loaders.request_with_archive())
-            .where(Request.request_id == request_id)
+            .where(Request.request_id == request_id, Request.deleted_at.is_(None))
         )
         note_request = result.scalar_one_or_none()
 
@@ -528,7 +532,9 @@ async def create_request_jsonapi(
         attrs = body.data.attributes
 
         duplicate_result = await db.execute(
-            select(Request).where(Request.request_id == attrs.request_id)
+            select(Request).where(
+                Request.request_id == attrs.request_id, Request.deleted_at.is_(None)
+            )
         )
         if duplicate_result.scalar_one_or_none():
             return create_error_response(
@@ -575,7 +581,7 @@ async def create_request_jsonapi(
         result = await db.execute(
             select(Request)
             .options(*loaders.request_with_archive())
-            .where(Request.id == note_request.id)
+            .where(Request.id == note_request.id, Request.deleted_at.is_(None))
         )
         note_request = result.scalar_one()
 
@@ -645,7 +651,7 @@ async def update_request_jsonapi(
         result = await db.execute(
             select(Request)
             .options(*loaders.request_with_archive())
-            .where(Request.id == note_request.id)
+            .where(Request.id == note_request.id, Request.deleted_at.is_(None))
         )
         note_request = result.scalar_one()
 
@@ -712,7 +718,11 @@ async def generate_ai_note_jsonapi(  # noqa: PLR0911
 
         note = await ai_note_writer.generate_note_for_request(db, request_id)
 
-        result = await db.execute(select(Note).options(*loaders.full()).where(Note.id == note.id))
+        result = await db.execute(
+            select(Note)
+            .options(*loaders.full())
+            .where(Note.id == note.id, Note.deleted_at.is_(None))
+        )
         note_with_relations = result.scalar_one()
 
         logger.info(

@@ -75,7 +75,7 @@ class AINoteWriter:
             result = await db.execute(
                 select(Request)
                 .options(*note_loaders.request_with_archive())
-                .where(Request.request_id == request_id)
+                .where(Request.request_id == request_id, Request.deleted_at.is_(None))
             )
             request = result.scalar_one_or_none()
 

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, desc, func, select, true
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import (
@@ -200,7 +200,8 @@ async def get_notes_stats_jsonapi(
             created_at__lte=filter_date_to,
         )
 
-        base_where = and_(*filters) if filters else true()
+        filters.append(Note.deleted_at.is_(None))
+        base_where = and_(*filters)
 
         total_result = await db.execute(select(func.count(Note.id)).where(base_where))
         total_notes = total_result.scalar() or 0
@@ -322,7 +323,7 @@ async def get_author_stats_jsonapi(
             community_server_id__in=community_server_id_in_value,
         )
 
-        note_filters: list[Any] = [Note.author_id == author_id]
+        note_filters: list[Any] = [Note.author_id == author_id, Note.deleted_at.is_(None)]
         note_filters.extend(community_filters)
         notes_where = and_(*note_filters)
 
@@ -333,7 +334,7 @@ async def get_author_stats_jsonapi(
             select(func.count(Rating.id))
             .select_from(Rating)
             .join(Note, Rating.note_id == Note.id)
-            .where(Rating.rater_id == author_id)
+            .where(Rating.rater_id == author_id, Note.deleted_at.is_(None))
         )
         if community_filters:
             ratings_query = ratings_query.where(and_(*community_filters))

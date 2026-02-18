@@ -80,7 +80,11 @@ async def verify_note_ownership(
     Raises:
         HTTPException: 404 if note not found, 403 if user is not authorized
     """
-    result = await db.execute(select(Note).options(*note_loaders.full()).where(Note.id == note_id))
+    result = await db.execute(
+        select(Note)
+        .options(*note_loaders.full())
+        .where(Note.id == note_id, Note.deleted_at.is_(None))
+    )
     note = result.scalar_one_or_none()
 
     if not note:
@@ -216,7 +220,7 @@ async def verify_request_ownership(
     result = await db.execute(
         select(NoteRequest)
         .options(*note_loaders.request_with_archive())
-        .where(NoteRequest.request_id == request_id)
+        .where(NoteRequest.request_id == request_id, NoteRequest.deleted_at.is_(None))
     )
     note_request = result.scalar_one_or_none()
 
