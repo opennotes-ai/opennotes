@@ -53,6 +53,7 @@ export interface RateNoteInput {
   displayName?: string;
   avatarUrl?: string;
   guildId?: string;
+  channelId?: string;
 }
 
 export interface RateNoteResult {

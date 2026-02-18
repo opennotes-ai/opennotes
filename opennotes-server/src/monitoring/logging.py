@@ -3,7 +3,7 @@ import sys
 import traceback as traceback_mod
 from typing import Any
 
-from opentelemetry import trace
+from opentelemetry import baggage, context, trace
 from pythonjsonlogger import jsonlogger
 
 _REPORTED_ERROR_EVENT_TYPE = (
@@ -95,6 +95,22 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
         except Exception as e:
             _module_logger.debug("Could not get request_id: %s", e)
 
+    def _add_discord_context(self, log_data: dict[str, Any]) -> None:
+        """Add Discord/community context from OTel baggage to log data."""
+        ctx = context.get_current()
+
+        guild_id = baggage.get_baggage("discord.guild_id", ctx)
+        if guild_id:
+            log_data["discord.guild_id"] = guild_id
+
+        channel_id = baggage.get_baggage("discord.channel_id", ctx)
+        if channel_id:
+            log_data["discord.channel_id"] = channel_id
+
+        community_server_id = baggage.get_baggage("community_server_id", ctx)
+        if community_server_id:
+            log_data["community_server_id"] = community_server_id
+
     def _add_instance_metadata(self, log_data: dict[str, Any]) -> None:
         """Add instance metadata to log data if available."""
         try:
@@ -154,6 +170,7 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):  # type: ignore[name-define
         log_data["severity_number"] = LEVEL_TO_SEVERITY.get(record.levelname, 9)
 
         self._add_request_id(log_data)
+        self._add_discord_context(log_data)
         self._add_instance_metadata(log_data)
 
         log_data["severity"] = record.levelname

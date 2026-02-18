@@ -1,6 +1,6 @@
 """Community servers API endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -52,6 +52,32 @@ class FlashpointDetectionUpdateResponse(SQLAlchemySchema):
     flashpoint_detection_enabled: bool = Field(
         ..., description="Whether flashpoint detection is enabled"
     )
+
+
+class CommunityServerNameUpdateRequest(StrictInputSchema):
+    """Request model for updating community server name and stats."""
+
+    name: str = Field(
+        ...,
+        description="Human-readable name for the community server",
+        min_length=1,
+        max_length=255,
+    )
+    server_stats: dict[str, Any] | None = Field(
+        None,
+        description="Aggregate server statistics (e.g., member_count)",
+    )
+
+
+class CommunityServerNameUpdateResponse(SQLAlchemySchema):
+    """Response model for community server name update."""
+
+    id: UUID = Field(..., description="Internal community server UUID")
+    platform_community_server_id: str = Field(
+        ..., description="Platform-specific ID (e.g., Discord guild ID)"
+    )
+    name: str = Field(..., description="Updated community server name")
+    server_stats: dict[str, Any] | None = Field(None, description="Aggregate server statistics")
 
 
 class WelcomeMessageUpdateRequest(StrictInputSchema):
@@ -137,6 +163,93 @@ async def lookup_community_server(
         name=community_server.name,
         is_active=community_server.is_active,
         flashpoint_detection_enabled=community_server.flashpoint_detection_enabled,
+    )
+
+
+@router.patch(
+    "/community-servers/{platform_community_server_id}/name",
+    response_model=CommunityServerNameUpdateResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized — requires service account"},
+        404: {"description": "Community server not found"},
+    },
+)
+async def update_community_server_name(
+    platform_community_server_id: str,
+    request_body: CommunityServerNameUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user_or_api_key)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    platform: str = Query("discord", description="Platform type"),
+) -> CommunityServerNameUpdateResponse:
+    """
+    Update the human-readable name for a community server.
+
+    This endpoint is called by the bot to sync the server/guild name from the
+    platform into the database. Only service accounts (bots) can call this.
+
+    Args:
+        platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
+        request_body: Contains the new name
+        platform: Platform type (default: "discord")
+
+    Returns:
+        Updated community server name info
+
+    Raises:
+        401: If not authenticated
+        403: If not a service account
+        404: If community server not found
+    """
+    logger.info(
+        "Updating community server name",
+        extra={
+            "user_id": current_user.id,
+            "platform_community_server_id": platform_community_server_id,
+            "server_name": request_body.name,
+            "platform": platform,
+        },
+    )
+
+    if not current_user.is_service_account:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only service accounts can update community server name",
+        )
+
+    community_server = await get_community_server_by_platform_id(
+        db=db,
+        community_server_id=platform_community_server_id,
+        platform=platform,
+        auto_create=False,
+    )
+
+    if not community_server:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Community server not found: {platform}:{platform_community_server_id}",
+        )
+
+    community_server.name = request_body.name
+    if request_body.server_stats is not None:
+        community_server.server_stats = request_body.server_stats
+    await db.commit()
+    await db.refresh(community_server)
+
+    logger.info(
+        "Community server name updated successfully",
+        extra={
+            "community_server_id": str(community_server.id),
+            "platform_community_server_id": platform_community_server_id,
+            "server_name": community_server.name,
+        },
+    )
+
+    return CommunityServerNameUpdateResponse(
+        id=community_server.id,
+        platform_community_server_id=community_server.platform_community_server_id,
+        name=community_server.name,
+        server_stats=community_server.server_stats,
     )
 
 

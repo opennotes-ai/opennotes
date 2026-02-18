@@ -38,6 +38,7 @@ export class RateNoteService {
         displayName: input.displayName,
         avatarUrl: input.avatarUrl,
         guildId: input.guildId,
+        channelId: input.channelId,
       };
 
       // Resolve Discord user ID to user profile UUID for comparison

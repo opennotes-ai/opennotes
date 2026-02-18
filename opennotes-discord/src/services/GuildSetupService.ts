@@ -79,6 +79,7 @@ export class GuildSetupService {
         const request: MonitoredChannelCreate = {
           community_server_id: guildId,
           channel_id: channel.id,
+          name: channel.name,
           enabled: true,
           similarity_threshold: config.similaritySearchDefaultThreshold,
           dataset_tags: ['snopes'],

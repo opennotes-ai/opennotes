@@ -867,6 +867,7 @@ export async function handleAiWriteNoteButton(interaction: ButtonInteraction): P
       displayName: interaction.user.displayName || interaction.user.username,
       avatarUrl: interaction.user.avatarURL() || undefined,
       guildId: interaction.guildId || undefined,
+      channelId: interaction.channelId || undefined,
     };
 
     const result = await apiClient.generateAiNote(requestId, userContext);
@@ -944,6 +945,7 @@ export async function handleRateNoteButton(interaction: ButtonInteraction): Prom
       displayName: interaction.user.displayName || interaction.user.username,
       avatarUrl: interaction.user.avatarURL() || undefined,
       guildId: interaction.guildId || undefined,
+      channelId: interaction.channelId || undefined,
     };
 
     await apiClient.rateNote({
@@ -1347,6 +1349,7 @@ export async function handleForcePublishButton(interaction: ButtonInteraction): 
       displayName: interaction.user.displayName || interaction.user.username,
       avatarUrl: interaction.user.avatarURL() || undefined,
       guildId: interaction.guildId || undefined,
+      channelId: interaction.channelId || undefined,
     };
 
     await apiClient.forcePublishNote(noteId, userContext);

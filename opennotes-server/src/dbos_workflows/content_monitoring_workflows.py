@@ -20,7 +20,8 @@ from uuid import UUID
 
 import orjson
 import pendulum
-from dbos import DBOS
+from dbos import DBOS, Queue
+from dbos._client import EnqueueOptions
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -38,6 +39,12 @@ _tracer = trace.get_tracer(__name__)
 AI_NOTE_GENERATION_WORKFLOW_NAME = "ai_note_generation_workflow"
 VISION_DESCRIPTION_WORKFLOW_NAME = "vision_description_workflow"
 AUDIT_LOG_WORKFLOW_NAME = "_audit_log_wrapper_workflow"
+
+content_monitoring_queue = Queue(
+    name="content_monitoring",
+    worker_concurrency=2,
+    concurrency=4,
+)
 
 
 def _retry_llm_call(func):
@@ -490,8 +497,12 @@ def start_ai_note_workflow(
     )
 
     client = get_dbos_client()
-    client.start_workflow(  # pyright: ignore[reportAttributeAccessIssue]
-        ai_note_generation_workflow,
+    options: EnqueueOptions = {
+        "queue_name": "content_monitoring",
+        "workflow_name": AI_NOTE_GENERATION_WORKFLOW_NAME,
+    }
+    client.enqueue(
+        options,
         community_server_id,
         request_id,
         content,
@@ -524,8 +535,12 @@ def call_persist_audit_log(
     from src.dbos_workflows.config import get_dbos_client
 
     client = get_dbos_client()
-    client.start_workflow(  # pyright: ignore[reportAttributeAccessIssue]
-        _audit_log_wrapper_workflow,
+    options: EnqueueOptions = {
+        "queue_name": "content_monitoring",
+        "workflow_name": AUDIT_LOG_WORKFLOW_NAME,
+    }
+    client.enqueue(
+        options,
         user_id,
         action,
         resource,

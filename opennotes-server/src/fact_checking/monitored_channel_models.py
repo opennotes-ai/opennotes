@@ -60,6 +60,7 @@ class MonitoredChannel(Base):
         index=True,
     )
     channel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationship to CommunityServer
     community_server: Mapped[CommunityServer] = relationship("CommunityServer", lazy="joined")

@@ -2269,6 +2269,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/community-servers/{platform_community_server_id}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Community Server Name
+         * @description Update the human-readable name for a community server.
+         *
+         *     This endpoint is called by the bot to sync the server/guild name from the
+         *     platform into the database. Only service accounts (bots) can call this.
+         *
+         *     Args:
+         *         platform_community_server_id: Platform-specific ID (e.g., Discord guild ID)
+         *         request_body: Contains the new name
+         *         platform: Platform type (default: "discord")
+         *
+         *     Returns:
+         *         Updated community server name info
+         *
+         *     Raises:
+         *         401: If not authenticated
+         *         403: If not a service account
+         *         404: If community server not found
+         */
+        patch: operations["update_community_server_name_api_v1_community_servers__platform_community_server_id__name_patch"];
+        trace?: never;
+    };
     "/api/v1/community-servers/{platform_community_server_id}/welcome-message": {
         parameters: {
             query?: never;
@@ -4537,6 +4573,53 @@ export interface components {
             flashpoint_detection_enabled: boolean;
         };
         /**
+         * CommunityServerNameUpdateRequest
+         * @description Request model for updating community server name and stats.
+         */
+        CommunityServerNameUpdateRequest: {
+            /**
+             * Name
+             * @description Human-readable name for the community server
+             */
+            name: string;
+            /**
+             * Server Stats
+             * @description Aggregate server statistics (e.g., member_count)
+             */
+            server_stats?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * CommunityServerNameUpdateResponse
+         * @description Response model for community server name update.
+         */
+        CommunityServerNameUpdateResponse: {
+            /**
+             * Id
+             * Format: uuid
+             * @description Internal community server UUID
+             */
+            id: string;
+            /**
+             * Platform Community Server Id
+             * @description Platform-specific ID (e.g., Discord guild ID)
+             */
+            platform_community_server_id: string;
+            /**
+             * Name
+             * @description Updated community server name
+             */
+            name: string;
+            /**
+             * Server Stats
+             * @description Aggregate server statistics
+             */
+            server_stats?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
          * CommunityServerResource
          * @description JSON:API resource object for a community server.
          */
@@ -5620,6 +5703,8 @@ export interface components {
             community_server_id: string;
             /** Channel Id */
             channel_id: string;
+            /** Name */
+            name?: string | null;
             /** Enabled */
             enabled: boolean;
             /** Similarity Threshold */
@@ -5652,6 +5737,11 @@ export interface components {
              * @description Discord channel ID
              */
             channel_id: string;
+            /**
+             * Name
+             * @description Human-readable channel name
+             */
+            name?: string | null;
             /**
              * Enabled
              * @description Whether monitoring is active
@@ -5759,6 +5849,11 @@ export interface components {
          * @description Attributes for updating a monitored channel via JSON:API.
          */
         MonitoredChannelUpdateAttributes: {
+            /**
+             * Name
+             * @description Human-readable channel name
+             */
+            name?: string | null;
             /**
              * Enabled
              * @description Whether monitoring is active
@@ -11849,6 +11944,67 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CommunityServerLookupResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_community_server_name_api_v1_community_servers__platform_community_server_id__name_patch: {
+        parameters: {
+            query?: {
+                /** @description Platform type */
+                platform?: string;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                platform_community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommunityServerNameUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityServerNameUpdateResponse"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authorized — requires service account */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Community server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

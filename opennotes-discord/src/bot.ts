@@ -180,6 +180,8 @@ export class Bot {
     }
     await this.ensureBotChannelsForAllGuilds();
 
+    await this.syncCommunityNames();
+
     await this.initializeMessageMonitoring();
     logger.info('Message monitoring system initialized');
 
@@ -444,6 +446,78 @@ export class Bot {
     }
 
     logger.info('Finished ensuring bot channels for all guilds');
+  }
+
+  private async syncCommunityNames(): Promise<void> {
+    logger.info('Starting community name sync', {
+      guildCount: this.client.guilds.cache.size,
+    });
+
+    for (const guild of this.client.guilds.cache.values()) {
+      try {
+        const communityServer = await apiClient.getCommunityServerByPlatformId(guild.id);
+        const storedName = communityServer.data.attributes.name;
+
+        const serverStats = { member_count: guild.memberCount };
+        await apiClient.updateCommunityServerName(guild.id, guild.name, serverStats);
+        if (storedName !== guild.name) {
+          logger.info('Synced community server name', {
+            guildId: guild.id,
+            oldName: storedName,
+            newName: guild.name,
+            memberCount: guild.memberCount,
+          });
+        }
+
+        const monitoredChannels = await apiClient.listMonitoredChannels(
+          communityServer.data.id,
+          false
+        );
+
+        for (const resource of monitoredChannels.data) {
+          const channelId = resource.attributes.channel_id;
+          const storedChannelName = resource.attributes.name;
+
+          try {
+            const discordChannel = await this.client.channels.fetch(channelId);
+
+            if (!discordChannel || !('name' in discordChannel)) {
+              continue;
+            }
+
+            const currentName = discordChannel.name;
+            if (storedChannelName !== currentName) {
+              await apiClient.updateMonitoredChannel(
+                channelId,
+                { name: currentName },
+                undefined,
+                communityServer.data.id
+              );
+              logger.info('Synced monitored channel name', {
+                guildId: guild.id,
+                channelId,
+                oldName: storedChannelName,
+                newName: currentName,
+              });
+            }
+          } catch (channelError) {
+            logger.warn('Could not fetch Discord channel for name sync', {
+              guildId: guild.id,
+              channelId,
+              error: channelError instanceof Error ? channelError.message : String(channelError),
+            });
+          }
+        }
+      } catch (error) {
+        logger.warn('Failed to sync names for guild', {
+          guildId: guild.id,
+          guildName: guild.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    logger.info('Finished community name sync');
   }
 
   private async onGuildCreate(guild: Guild): Promise<void> {

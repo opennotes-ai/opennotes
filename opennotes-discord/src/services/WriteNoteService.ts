@@ -42,6 +42,7 @@ export class WriteNoteService {
         displayName: input.displayName,
         avatarUrl: input.avatarUrl,
         guildId: input.guildId,
+        channelId: input.channelId,
       };
 
       const note = await this.apiClient.createNote({
