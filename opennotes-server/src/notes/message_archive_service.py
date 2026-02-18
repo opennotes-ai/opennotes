@@ -2,13 +2,15 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.config import settings
 from src.monitoring import get_logger
 from src.notes.message_archive_models import ContentType, MessageArchive
 from src.notes.message_archive_schemas import MessageArchiveCreate
+from src.notes.models import Note, Request
 
 if TYPE_CHECKING:
     from src.services.vision_service import VisionService
@@ -215,3 +217,119 @@ class MessageArchiveService:
         message_archive.soft_delete()
         await db.flush()
         return True
+
+    @staticmethod
+    def _resolve_note_action(
+        note: Note | None,
+    ) -> tuple[bool, bool, str | None]:
+        if note is None:
+            return False, True, None
+        if not note.ai_generated:
+            return False, False, "human_note"
+        if len(note.ratings) > 0:
+            return False, False, "rated_ai_note"
+        return True, True, None
+
+    @staticmethod
+    async def cascade_soft_delete(
+        db: AsyncSession,
+        message_archive_id: UUID,
+        dry_run: bool = False,
+    ) -> dict:
+        stmt = select(MessageArchive).where(MessageArchive.id == message_archive_id)
+        archive = (await db.execute(stmt)).scalar_one_or_none()
+
+        base = {
+            "archive_id": str(message_archive_id),
+            "archive_deleted": False,
+            "request_id": None,
+            "request_deleted": False,
+            "note_id": None,
+            "note_deleted": False,
+            "skipped_reason": None,
+            "dry_run": dry_run,
+        }
+
+        if archive is None:
+            return base
+
+        base["archive_id"] = str(archive.id)
+        base["archive_deleted"] = archive.deleted_at is None
+
+        if not dry_run and base["archive_deleted"]:
+            archive.soft_delete()
+
+        request = (
+            await db.execute(
+                select(Request).where(Request.message_archive_id == message_archive_id)
+            )
+        ).scalar_one_or_none()
+
+        if request is not None:
+            base["request_id"] = str(request.request_id)
+            base.update(await MessageArchiveService._resolve_request_cascade(db, request, dry_run))
+
+        if not dry_run:
+            await db.flush()
+
+        return base
+
+    @staticmethod
+    async def _resolve_request_cascade(
+        db: AsyncSession,
+        request: Request,
+        dry_run: bool,
+    ) -> dict:
+        if not request.requested_by.startswith("system-"):
+            return {"skipped_reason": "non_system_request"}
+
+        if request.note_id is None:
+            if not dry_run:
+                request.soft_delete()
+            return {"request_deleted": True}
+
+        note = (
+            await db.execute(
+                select(Note).where(Note.id == request.note_id).options(selectinload(Note.ratings))
+            )
+        ).scalar_one_or_none()
+
+        note_deleted, request_deleted, skipped_reason = MessageArchiveService._resolve_note_action(
+            note
+        )
+
+        if not dry_run and (note_deleted or request_deleted):
+            if note_deleted and note is not None:
+                note.soft_delete()
+            if request_deleted:
+                request.soft_delete()
+
+        return {
+            "note_id": str(note.id) if note else None,
+            "note_deleted": note_deleted,
+            "request_deleted": request_deleted,
+            "skipped_reason": skipped_reason,
+        }
+
+    @staticmethod
+    async def find_bad_archives(
+        db: AsyncSession,
+        min_content_length: int = 10,
+        max_similarity_score: float = 0.6,
+    ) -> list[UUID]:
+        stmt = (
+            select(MessageArchive.id)
+            .join(Request, Request.message_archive_id == MessageArchive.id)
+            .where(
+                MessageArchive.deleted_at.is_(None),
+                Request.requested_by.like("system-%"),
+                or_(
+                    MessageArchive.content_text.isnot(None)
+                    & (func.length(MessageArchive.content_text) < min_content_length),
+                    Request.similarity_score.isnot(None)
+                    & (Request.similarity_score < max_similarity_score),
+                ),
+            )
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())

@@ -109,6 +109,7 @@ class NoteInDB(NoteBase, TimestampSchema):
     force_published: bool = False
     force_published_by: UUID | None = None
     force_published_at: datetime | None = None
+    deleted_at: datetime | None = None
 
 
 class RequestInfo(SQLAlchemySchema):
@@ -265,6 +266,7 @@ class RequestInDB(RequestBase, TimestampSchema):
     requested_at: datetime
     status: RequestStatus
     note_id: UUID | None = None
+    deleted_at: datetime | None = None
 
 
 class RequestResponse(RequestInDB):

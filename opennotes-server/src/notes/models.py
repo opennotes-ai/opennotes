@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import pendulum
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -17,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -99,6 +101,9 @@ class Note(Base, TimestampMixin):
     )
     force_published_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
+    # Soft delete
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Relationships with lazy='raise' to prevent N+1 queries (explicit loading required)
     author: Mapped[UserProfile] = relationship(
         "UserProfile", foreign_keys=[author_id], lazy="raise"
@@ -119,7 +124,15 @@ class Note(Base, TimestampMixin):
         Index("idx_notes_created_at", "created_at"),
         Index("idx_notes_author_id", "author_id"),
         Index("idx_notes_status", "status"),
+        Index("idx_notes_deleted_at", "deleted_at"),
     )
+
+    @hybrid_property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        self.deleted_at = pendulum.now("UTC")
 
     @property
     def author_display_name(self) -> str:
@@ -218,6 +231,9 @@ class Request(Base, TimestampMixin):
     dataset_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     dataset_item_id: Mapped[str | None] = mapped_column(String(36), nullable=True)  # UUID string
 
+    # Soft delete
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Relationships with lazy loading to avoid N+1 queries
     message_archive: Mapped[MessageArchive | None] = relationship(
         "MessageArchive", foreign_keys=[message_archive_id], lazy="selectin"
@@ -239,7 +255,15 @@ class Request(Base, TimestampMixin):
         Index("idx_requests_requested_at", "requested_at"),
         Index("idx_requests_message_archive", "message_archive_id"),
         Index("idx_requests_note_status", "note_id", "status"),
+        Index("idx_requests_deleted_at", "deleted_at"),
     )
+
+    @hybrid_property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        self.deleted_at = pendulum.now("UTC")
 
 
 from src.notes.message_archive_models import MessageArchive  # noqa: E402

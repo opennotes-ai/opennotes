@@ -51,7 +51,8 @@ export class MessageMonitorService {
   private processingInterval?: NodeJS.Timeout;
   private isProcessing: boolean = false;
   private readonly maxQueueSize: number = 1000;
-  private static readonly MIN_CC_SCORE_THRESHOLD = 0.4;
+  private static readonly MIN_CC_SCORE_THRESHOLD = 0.6;
+  private static readonly MIN_CONTENT_LENGTH = 10;
 
   // Batch processing configuration
   private readonly BATCH_SIZE: number = 10;
@@ -112,6 +113,17 @@ export class MessageMonitorService {
         logger.debug('Skipping message with no extractable content', {
           messageId: message.id,
           channelId: message.channelId,
+        });
+        return;
+      }
+
+      const trimmedLength = content.trim().length;
+      if (trimmedLength < MessageMonitorService.MIN_CONTENT_LENGTH) {
+        logger.debug('Skipping short message below minimum length', {
+          messageId: message.id,
+          channelId: message.channelId,
+          contentLength: trimmedLength,
+          minLength: MessageMonitorService.MIN_CONTENT_LENGTH,
         });
         return;
       }
@@ -445,6 +457,34 @@ export class MessageMonitorService {
             topScore,
             topMatch: matches[0].title,
           });
+
+          const topMatch = matches[0];
+          const relevanceResult = await apiClient.checkClaimRelevance({
+            originalMessage: messageContent.content,
+            matchedContent: topMatch.content,
+            matchedSource: topMatch.source_url || topMatch.dataset_name,
+            similarityScore: topMatch.similarity_score,
+          });
+
+          if (relevanceResult && !relevanceResult.shouldFlag) {
+            logger.info('Claim relevance check determined match is not relevant, skipping note request', {
+              messageId: messageContent.messageId,
+              channelId: messageContent.channelId,
+              guildId: messageContent.guildId,
+              outcome: relevanceResult.outcome,
+              reasoning: relevanceResult.reasoning,
+              similarityScore: topMatch.similarity_score,
+            });
+            return;
+          }
+
+          if (!relevanceResult) {
+            logger.info('Claim relevance check failed, proceeding with note request (fail-open)', {
+              messageId: messageContent.messageId,
+              channelId: messageContent.channelId,
+              guildId: messageContent.guildId,
+            });
+          }
 
           await this.createNoteRequestForMatch(messageContent, similarityResponse);
         } else {

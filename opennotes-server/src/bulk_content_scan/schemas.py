@@ -7,7 +7,10 @@ from uuid import UUID
 
 from pydantic import Discriminator, Field, field_validator
 
+from src.claim_relevance_check.schemas import RelevanceCheckResult, RelevanceOutcome
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+
+__all__ = ["RelevanceCheckResult", "RelevanceOutcome"]
 
 
 class BulkScanStatus(StrEnum):
@@ -17,19 +20,6 @@ class BulkScanStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-class RelevanceOutcome(StrEnum):
-    """Outcome of LLM relevance check for content filtering.
-
-    Used to distinguish between different reasons why a relevance check
-    may succeed, fail, or be indeterminate due to content filtering.
-    """
-
-    RELEVANT = "relevant"
-    NOT_RELEVANT = "not_relevant"
-    INDETERMINATE = "indeterminate"
-    CONTENT_FILTERED = "content_filtered"
 
 
 class RiskLevel(StrEnum):
@@ -120,19 +110,6 @@ class ConversationFlashpointMatch(StrictInputSchema):
     risk_level: RiskLevel = Field(..., description="Categorical risk assessment level")
     reasoning: str = Field(..., description="Explanation of detected escalation signals")
     context_messages: int = Field(..., ge=0, description="Number of context messages analyzed")
-
-
-class RelevanceCheckResult(StrictInputSchema):
-    """Result from LLM relevance check for hybrid search matches."""
-
-    is_relevant: bool = Field(..., description="Whether the match is semantically relevant")
-    reasoning: str = Field(..., description="LLM's reasoning for the relevance decision")
-    confidence: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Model's confidence in the relevance decision (0.0-1.0)",
-    )
 
 
 MatchResult = Annotated[

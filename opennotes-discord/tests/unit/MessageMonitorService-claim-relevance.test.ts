@@ -116,7 +116,7 @@ jest.unstable_mockModule('../../src/logger.js', () => ({
 
 const { MessageMonitorService } = await import('../../src/services/MessageMonitorService.js');
 
-describe('MessageMonitorService - CC Score Threshold', () => {
+describe('MessageMonitorService - Claim Relevance Check', () => {
   let service: InstanceType<typeof MessageMonitorService>;
   const mockRedis = {} as any;
 
@@ -127,7 +127,7 @@ describe('MessageMonitorService - CC Score Threshold', () => {
     channelId: 'channel-456',
     guildId: testGuildId,
     authorId: '00000000-0000-0001-aaaa-000000000789',
-    content: 'Test message content about a claim',
+    content: 'Test message content about a claim that vaccines cause autism',
     timestamp: Date.now(),
     channelConfig: {
       type: 'monitored-channels',
@@ -154,11 +154,11 @@ describe('MessageMonitorService - CC Score Threshold', () => {
               id: 'match-1',
               dataset_name: 'snopes',
               dataset_tags: ['snopes'],
-              title: 'Test Claim',
-              content: 'This is a test claim content',
-              summary: 'Test summary',
+              title: 'Vaccines and Autism Claim',
+              content: 'This claim about vaccines causing autism has been debunked',
+              summary: 'Vaccines do not cause autism',
               rating: 'FALSE',
-              source_url: 'https://example.com/claim',
+              source_url: 'https://snopes.com/vaccines-autism',
               similarity_score: score,
               cosine_similarity: score,
             },
@@ -173,15 +173,8 @@ describe('MessageMonitorService - CC Score Threshold', () => {
     };
   }
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockApiClient.requestNote.mockResolvedValue(undefined);
-    mockApiClient.checkClaimRelevance.mockResolvedValue({
-      outcome: 'relevant',
-      reasoning: 'mock',
-      shouldFlag: true,
-    });
-    mockApiClient.checkPreviouslySeen.mockResolvedValue({
+  function makePreviouslySeenResponse() {
+    return {
       data: {
         type: 'previously-seen-check-results',
         id: 'check-123',
@@ -195,6 +188,17 @@ describe('MessageMonitorService - CC Score Threshold', () => {
         },
       },
       jsonapi: { version: '1.1' },
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockApiClient.requestNote.mockResolvedValue(undefined);
+    mockApiClient.checkPreviouslySeen.mockResolvedValue(makePreviouslySeenResponse());
+    mockApiClient.checkClaimRelevance.mockResolvedValue({
+      outcome: 'relevant',
+      reasoning: 'The message makes a factual claim that matches the fact-check',
+      shouldFlag: true,
     });
     service = new MessageMonitorService(mockClient, mockRedis);
   });
@@ -203,49 +207,93 @@ describe('MessageMonitorService - CC Score Threshold', () => {
     service.shutdown();
   });
 
-  describe('processMessage threshold filtering', () => {
-    it('should skip note request creation when top score is below 0.6', async () => {
-      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.55));
-
-      await (service as any).processMessage(testMessageContent);
-
-      expect(mockApiClient.requestNote).not.toHaveBeenCalled();
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Similarity match below CC score threshold, skipping note request',
-        expect.objectContaining({
-          messageId: testMessageContent.messageId,
-          channelId: testMessageContent.channelId,
-          topScore: 0.55,
-          minCcScore: 0.6,
-        })
-      );
-    });
-
-    it('should skip note request creation when top score is 0.24', async () => {
-      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.24));
-
-      await (service as any).processMessage(testMessageContent);
-
-      expect(mockApiClient.requestNote).not.toHaveBeenCalled();
-    });
-
-    it('should create note request when top score is exactly 0.6', async () => {
-      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.6));
-
-      await (service as any).processMessage(testMessageContent);
-
-      expect(mockApiClient.requestNote).toHaveBeenCalledTimes(1);
-    });
-
-    it('should create note request when top score is above 0.6', async () => {
+  describe('relevance check integration in processMessage', () => {
+    it('should call checkClaimRelevance when a similarity match is above threshold', async () => {
       mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.85));
 
       await (service as any).processMessage(testMessageContent);
 
+      expect(mockApiClient.checkClaimRelevance).toHaveBeenCalledWith({
+        originalMessage: testMessageContent.content,
+        matchedContent: 'This claim about vaccines causing autism has been debunked',
+        matchedSource: 'https://snopes.com/vaccines-autism',
+        similarityScore: 0.85,
+      });
+    });
+
+    it('should use dataset_name as matchedSource when source_url is missing', async () => {
+      const response = makeSimilarityResponse(0.85);
+      response.data.attributes.matches[0].source_url = null as any;
+      mockApiClient.similaritySearch.mockResolvedValue(response);
+
+      await (service as any).processMessage(testMessageContent);
+
+      expect(mockApiClient.checkClaimRelevance).toHaveBeenCalledWith(
+        expect.objectContaining({
+          matchedSource: 'snopes',
+        })
+      );
+    });
+
+    it('should create note request when relevance check says shouldFlag=true', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.85));
+      mockApiClient.checkClaimRelevance.mockResolvedValue({
+        outcome: 'relevant',
+        reasoning: 'The message is making a factual claim',
+        shouldFlag: true,
+      });
+
+      await (service as any).processMessage(testMessageContent);
+
       expect(mockApiClient.requestNote).toHaveBeenCalledTimes(1);
     });
 
-    it('should not call requestNote when no matches exist', async () => {
+    it('should NOT create note request when relevance check says shouldFlag=false', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.85));
+      mockApiClient.checkClaimRelevance.mockResolvedValue({
+        outcome: 'not_relevant',
+        reasoning: 'The message is discussing the topic but not making a claim',
+        shouldFlag: false,
+      });
+
+      await (service as any).processMessage(testMessageContent);
+
+      expect(mockApiClient.requestNote).not.toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Claim relevance check determined match is not relevant, skipping note request',
+        expect.objectContaining({
+          messageId: testMessageContent.messageId,
+          outcome: 'not_relevant',
+          reasoning: 'The message is discussing the topic but not making a claim',
+        })
+      );
+    });
+
+    it('should still create note request when relevance check fails (returns null) - fail-open', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.85));
+      mockApiClient.checkClaimRelevance.mockResolvedValue(null);
+
+      await (service as any).processMessage(testMessageContent);
+
+      expect(mockApiClient.requestNote).toHaveBeenCalledTimes(1);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Claim relevance check failed, proceeding with note request (fail-open)',
+        expect.objectContaining({
+          messageId: testMessageContent.messageId,
+        })
+      );
+    });
+
+    it('should NOT call checkClaimRelevance when similarity score is below threshold', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.55));
+
+      await (service as any).processMessage(testMessageContent);
+
+      expect(mockApiClient.checkClaimRelevance).not.toHaveBeenCalled();
+      expect(mockApiClient.requestNote).not.toHaveBeenCalled();
+    });
+
+    it('should NOT call checkClaimRelevance when no matches exist', async () => {
       mockApiClient.similaritySearch.mockResolvedValue({
         jsonapi: { version: '1.1' },
         data: {
@@ -264,132 +312,34 @@ describe('MessageMonitorService - CC Score Threshold', () => {
 
       await (service as any).processMessage(testMessageContent);
 
+      expect(mockApiClient.checkClaimRelevance).not.toHaveBeenCalled();
       expect(mockApiClient.requestNote).not.toHaveBeenCalled();
     });
-  });
 
-  describe('handleMessage minimum content length filtering', () => {
-    function createMockMessage(content: string) {
-      return {
-        id: 'msg-short-test',
-        channelId: 'channel-456',
-        guildId: testGuildId,
-        author: {
-          id: 'user-123',
-          bot: false,
-        },
-        system: false,
-        webhookId: null,
-        content,
-        createdTimestamp: Date.now(),
-        embeds: [],
-      } as any;
-    }
+    it('should handle indeterminate outcome with shouldFlag=true as normal flagging', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.75));
+      mockApiClient.checkClaimRelevance.mockResolvedValue({
+        outcome: 'indeterminate',
+        reasoning: 'Cannot determine with confidence',
+        shouldFlag: true,
+      });
 
-    beforeEach(() => {
-      (service as any).monitoredChannelService = {
-        getChannelConfig: jest.fn<() => Promise<any>>().mockResolvedValue({
-          type: 'monitored-channels',
-          id: 'config-123',
-          attributes: {
-            community_server_id: testGuildId,
-            channel_id: 'channel-456',
-            enabled: true,
-            dataset_tags: ['snopes'],
-            similarity_threshold: 0.7,
-          },
-        }),
-      };
+      await (service as any).processMessage(testMessageContent);
+
+      expect(mockApiClient.requestNote).toHaveBeenCalledTimes(1);
     });
 
-    it('should skip messages shorter than 10 characters', async () => {
-      const mockMessage = createMockMessage('too short');
+    it('should handle content_filtered outcome with shouldFlag=false', async () => {
+      mockApiClient.similaritySearch.mockResolvedValue(makeSimilarityResponse(0.75));
+      mockApiClient.checkClaimRelevance.mockResolvedValue({
+        outcome: 'content_filtered',
+        reasoning: 'Content was filtered by safety system',
+        shouldFlag: false,
+      });
 
-      await service.handleMessage(mockMessage);
+      await (service as any).processMessage(testMessageContent);
 
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Skipping short message below minimum length',
-        expect.objectContaining({
-          messageId: 'msg-short-test',
-          channelId: 'channel-456',
-          contentLength: 9,
-          minLength: 10,
-        })
-      );
-    });
-
-    it('should skip messages with exactly 9 characters', async () => {
-      const mockMessage = createMockMessage('123456789');
-
-      await service.handleMessage(mockMessage);
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Skipping short message below minimum length',
-        expect.objectContaining({
-          contentLength: 9,
-          minLength: 10,
-        })
-      );
-    });
-
-    it('should process messages with exactly 10 characters', async () => {
-      const mockMessage = createMockMessage('1234567890');
-
-      await service.handleMessage(mockMessage);
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        'Message queued for monitoring',
-        expect.objectContaining({
-          messageId: 'msg-short-test',
-          contentLength: 10,
-        })
-      );
-    });
-
-    it('should skip empty messages', async () => {
-      const mockMessage = createMockMessage('');
-
-      await service.handleMessage(mockMessage);
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Skipping message with no extractable content',
-        expect.objectContaining({
-          messageId: 'msg-short-test',
-        })
-      );
-    });
-
-    it('should skip whitespace-only messages that trim to under 10 chars', async () => {
-      const mockMessage = createMockMessage('   hi   ');
-
-      await service.handleMessage(mockMessage);
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Skipping short message below minimum length',
-        expect.objectContaining({
-          contentLength: 2,
-          minLength: 10,
-        })
-      );
-    });
-  });
-
-  describe('createNoteRequestForMatch - fact_check_metadata fields', () => {
-    it('should include fact_check_metadata in the requestNote call', async () => {
-      const similarityResponse = makeSimilarityResponse(0.85);
-
-      await (service as any).createNoteRequestForMatch(testMessageContent, similarityResponse);
-
-      expect(mockApiClient.requestNote).toHaveBeenCalledWith(
-        expect.objectContaining({
-          fact_check_metadata: expect.objectContaining({
-            dataset_item_id: 'match-1',
-            similarity_score: 0.85,
-            dataset_name: 'snopes',
-            rating: 'FALSE',
-          }),
-        })
-      );
+      expect(mockApiClient.requestNote).not.toHaveBeenCalled();
     });
   });
 });

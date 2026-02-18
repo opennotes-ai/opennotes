@@ -219,7 +219,9 @@ async def create_rating_jsonapi(
         attrs = body.data.attributes
 
         note_result = await db.execute(
-            select(Note).options(*loaders.full()).where(Note.id == attrs.note_id)
+            select(Note)
+            .options(*loaders.full())
+            .where(Note.id == attrs.note_id, Note.deleted_at.is_(None))
         )
         note = note_result.scalar_one_or_none()
         if not note:
@@ -248,7 +250,9 @@ async def create_rating_jsonapi(
         await db.flush()
         rating = result.scalar_one()
 
-        count_result = await db.execute(select(func.count(Note.id)))
+        count_result = await db.execute(
+            select(func.count(Note.id)).where(Note.deleted_at.is_(None))
+        )
         note_count = count_result.scalar() or 0
 
         await db.refresh(note, ["ratings"])
@@ -370,7 +374,9 @@ async def list_note_ratings_jsonapi(
     Returns JSON:API formatted response with data and jsonapi keys.
     """
     try:
-        note_result = await db.execute(select(Note).where(Note.id == note_id))
+        note_result = await db.execute(
+            select(Note).where(Note.id == note_id, Note.deleted_at.is_(None))
+        )
         note = note_result.scalar_one_or_none()
 
         if not note:
@@ -503,7 +509,9 @@ async def get_rating_stats_jsonapi(
     Service accounts can view all rating stats.
     """
     try:
-        note_result = await db.execute(select(Note).where(Note.id == note_id))
+        note_result = await db.execute(
+            select(Note).where(Note.id == note_id, Note.deleted_at.is_(None))
+        )
         note = note_result.scalar_one_or_none()
 
         if not note:

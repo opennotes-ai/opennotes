@@ -297,7 +297,7 @@ async def list_notes_jsonapi(
     Returns JSON:API formatted response with data, jsonapi, links, and meta.
     """
     try:
-        query = select(Note).options(*loaders.full())
+        query = select(Note).options(*loaders.full()).where(Note.deleted_at.is_(None))
 
         rated_by_list: list[UUID] | None = None
         if filter_rated_by_not_in:
@@ -351,7 +351,7 @@ async def list_notes_jsonapi(
         if filters:
             query = query.where(and_(*filters))
 
-        total_query = select(func.count(Note.id))
+        total_query = select(func.count(Note.id)).where(Note.deleted_at.is_(None))
         for join_spec in filters.joins:
             total_query = total_query.join(join_spec.target, join_spec.onclause)
         if filters:
@@ -402,7 +402,11 @@ async def get_note_jsonapi(
     Returns JSON:API error format for 404 and other errors.
     """
     try:
-        result = await db.execute(select(Note).options(*loaders.full()).where(Note.id == note_id))
+        result = await db.execute(
+            select(Note)
+            .options(*loaders.full())
+            .where(Note.id == note_id, Note.deleted_at.is_(None))
+        )
         note = result.scalar_one_or_none()
 
         if not note:
@@ -468,7 +472,9 @@ async def create_note_jsonapi(
         if attrs.request_id:
             duplicate_result = await db.execute(
                 select(Note).where(
-                    (Note.request_id == attrs.request_id) & (Note.author_id == attrs.author_id)
+                    (Note.request_id == attrs.request_id)
+                    & (Note.author_id == attrs.author_id)
+                    & (Note.deleted_at.is_(None))
                 )
             )
             if duplicate_result.scalar_one_or_none():
@@ -482,7 +488,10 @@ async def create_note_jsonapi(
 
         if note_dict.get("request_id"):
             request_result = await db.execute(
-                select(Request).where(Request.request_id == note_dict["request_id"])
+                select(Request).where(
+                    Request.request_id == note_dict["request_id"],
+                    Request.deleted_at.is_(None),
+                )
             )
             linked_request = request_result.scalar_one_or_none()
             if not linked_request:
@@ -503,7 +512,11 @@ async def create_note_jsonapi(
         db.add(note)
         await db.commit()
 
-        result = await db.execute(select(Note).options(*loaders.full()).where(Note.id == note.id))
+        result = await db.execute(
+            select(Note)
+            .options(*loaders.full())
+            .where(Note.id == note.id, Note.deleted_at.is_(None))
+        )
         note = result.scalar_one()
 
         logger.info(f"Created note {note.id} via JSON:API by user {current_user.id}")
@@ -565,7 +578,11 @@ async def update_note_jsonapi(
 
         await db.commit()
 
-        result = await db.execute(select(Note).options(*loaders.full()).where(Note.id == note.id))
+        result = await db.execute(
+            select(Note)
+            .options(*loaders.full())
+            .where(Note.id == note.id, Note.deleted_at.is_(None))
+        )
         note = result.scalar_one()
 
         logger.info(f"Updated note {note_id} via JSON:API by user {current_user.id}")
@@ -647,7 +664,11 @@ async def force_publish_note_jsonapi(
     Returns JSON:API formatted response with updated note resource.
     """
     try:
-        result = await db.execute(select(Note).options(*loaders.admin()).where(Note.id == note_id))
+        result = await db.execute(
+            select(Note)
+            .options(*loaders.admin())
+            .where(Note.id == note_id, Note.deleted_at.is_(None))
+        )
         note = result.scalar_one_or_none()
 
         if not note:
@@ -681,7 +702,9 @@ async def force_publish_note_jsonapi(
 
         if note.request_id:
             request_result = await db.execute(
-                select(Request).where(Request.request_id == note.request_id)
+                select(Request).where(
+                    Request.request_id == note.request_id, Request.deleted_at.is_(None)
+                )
             )
             associated_request = request_result.scalar_one_or_none()
             if associated_request:

@@ -5261,6 +5261,71 @@
         }
       }
     },
+    "/api/v2/claim-relevance-checks": {
+      "post": {
+        "tags": [
+          "claim-relevance-checks-jsonapi"
+        ],
+        "summary": "Create Claim Relevance Check",
+        "description": "Check if a fact-check match is relevant to a user's message.\n\nUses LLM to determine whether the matched content addresses a specific\nverifiable claim in the original message. Returns an outcome and reasoning.\n\nFail-open semantics: if the LLM is unavailable, returns indeterminate\nwith should_flag=true so legitimate matches are never silently dropped.\n\nJSON:API 1.1 action endpoint.",
+        "operationId": "create_claim_relevance_check_api_v2_claim_relevance_checks_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimRelevanceCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimRelevanceCheckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/hybrid-searches": {
       "post": {
         "tags": [
@@ -10801,6 +10866,153 @@
         ],
         "title": "CandidateStatus",
         "description": "Status values for fact-checked item candidates."
+      },
+      "ClaimRelevanceCheckAttributes": {
+        "properties": {
+          "original_message": {
+            "type": "string",
+            "maxLength": 50000,
+            "minLength": 1,
+            "title": "Original Message",
+            "description": "The user's original message to check for claims"
+          },
+          "matched_content": {
+            "type": "string",
+            "maxLength": 50000,
+            "minLength": 1,
+            "title": "Matched Content",
+            "description": "The matched fact-check content"
+          },
+          "matched_source": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Matched Source",
+            "description": "URL to the fact-check source"
+          },
+          "similarity_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Similarity Score",
+            "description": "Cosine similarity score of the match"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "original_message",
+          "matched_content",
+          "matched_source",
+          "similarity_score"
+        ],
+        "title": "ClaimRelevanceCheckAttributes",
+        "description": "Attributes for performing a claim relevance check via JSON:API."
+      },
+      "ClaimRelevanceCheckCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "claim-relevance-checks",
+            "title": "Type",
+            "description": "Resource type must be 'claim-relevance-checks'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ClaimRelevanceCheckAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "ClaimRelevanceCheckCreateData",
+        "description": "JSON:API data object for claim relevance check."
+      },
+      "ClaimRelevanceCheckRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ClaimRelevanceCheckCreateData"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ClaimRelevanceCheckRequest",
+        "description": "JSON:API request body for performing a claim relevance check."
+      },
+      "ClaimRelevanceCheckResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ClaimRelevanceCheckResultResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ClaimRelevanceCheckResponse",
+        "description": "JSON:API response for claim relevance check results."
+      },
+      "ClaimRelevanceCheckResultAttributes": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "description": "Relevance check outcome: relevant, not_relevant, indeterminate, or content_filtered"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "description": "Explanation of the relevance decision"
+          },
+          "should_flag": {
+            "type": "boolean",
+            "title": "Should Flag",
+            "description": "Whether the message should be flagged (true for relevant or indeterminate outcomes)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome",
+          "reasoning",
+          "should_flag"
+        ],
+        "title": "ClaimRelevanceCheckResultAttributes",
+        "description": "Attributes for claim relevance check result."
+      },
+      "ClaimRelevanceCheckResultResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "claim-relevance-checks"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/ClaimRelevanceCheckResultAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "ClaimRelevanceCheckResultResource",
+        "description": "JSON:API resource object for claim relevance check results."
       },
       "ClearPreviewResponse": {
         "properties": {

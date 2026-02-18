@@ -1646,26 +1646,22 @@ class TestRetryWithoutFactCheckEdgeCases:
     async def test_retry_without_fact_check_returns_indeterminate_when_llm_service_none(
         self,
         mock_session,
-        mock_embedding_service,
-        mock_redis,
     ) -> None:
         """When llm_service is None, should return INDETERMINATE."""
         import time
 
-        service = BulkContentScanService(
-            session=mock_session,
-            embedding_service=mock_embedding_service,
-            redis_client=mock_redis,
-            llm_service=None,
-        )
+        from src.claim_relevance_check.service import ClaimRelevanceService
+
+        service = ClaimRelevanceService(llm_service=None)
 
         outcome, reasoning = await service._retry_without_fact_check(
+            db=mock_session,
             original_message="Test message",
             start_time=time.monotonic(),
         )
 
         assert outcome == RelevanceOutcome.INDETERMINATE
-        assert "LLM service not configured" in reasoning
+        assert "not configured" in reasoning.lower()
 
 
 class TestFailOpenWithTighterThreshold:
