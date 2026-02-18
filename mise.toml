@@ -200,7 +200,7 @@ sources = ["src/**/*.ts", "tests/**/*.ts"]
 [tasks."test:schemathesis"]
 description = "Run Schemathesis property-based API tests"
 dir = "{{vars.server_dir}}"
-run = 'uv run pytest tests/integration/test_schemathesis_api.py -v "$@"'
+run = 'uv run pytest tests/schemathesis/ -v "$@"'
 env = { PYTHONPATH = ".", RATE_LIMIT_ENABLED = "false" }
 
 # ========================================
