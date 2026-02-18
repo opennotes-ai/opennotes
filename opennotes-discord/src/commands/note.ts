@@ -273,7 +273,7 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction): Pr
 
     await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
 
-    const userContext = extractUserContext(interaction.user, guildId);
+    const userContext = extractUserContext(interaction.user, guildId, undefined, interaction.channelId);
     const writeNoteService = serviceProvider.getWriteNoteService();
     const result = await writeNoteService.execute({
       messageId,
@@ -448,7 +448,7 @@ export async function createNoteRequest(params: {
     }
   }
 
-  const userContext = user ? extractUserContext(user, community_server_id) : undefined;
+  const userContext = user ? extractUserContext(user, community_server_id, undefined, channel?.id) : undefined;
   const requestNoteService = serviceProvider.getRequestNoteService();
   const result = await requestNoteService.execute({
     messageId,
@@ -829,7 +829,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
 
     await interaction.deferReply(ephemeral ? { flags: MessageFlags.Ephemeral } : {});
 
-    const userContext = extractUserContext(interaction.user, guildId);
+    const userContext = extractUserContext(interaction.user, guildId, undefined, interaction.channelId);
     const rateNoteService = serviceProvider.getRateNoteService();
     const result = await rateNoteService.execute({
       noteId,
@@ -839,6 +839,7 @@ async function handleRateSubcommand(interaction: ChatInputCommandInteraction): P
       displayName: userContext.displayName,
       avatarUrl: userContext.avatarUrl,
       guildId: userContext.guildId,
+      channelId: userContext.channelId,
     });
 
     if (!result.success) {
@@ -946,7 +947,7 @@ async function handleForcePublishSubcommand(interaction: ChatInputCommandInterac
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const userContext = extractUserContext(interaction.user, guildId, member);
+    const userContext = extractUserContext(interaction.user, guildId, member, interaction.channelId);
     const note = await apiClient.forcePublishNote(noteIdStr, userContext);
 
     const attrs = note.data.attributes;

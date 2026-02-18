@@ -134,6 +134,7 @@ describe('RequestNoteService', () => {
           displayName: 'Test User',
           avatarUrl: 'https://example.com/avatar.png',
           guildId: '1234567890123456789',
+          channelId: 'channel-123',
         }
       );
     });

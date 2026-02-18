@@ -20,6 +20,7 @@ describe('extractUserContext', () => {
       displayName: 'Test User',
       avatarUrl: 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
       guildId: '987654321',
+      channelId: undefined,
     });
   });
 
@@ -40,6 +41,7 @@ describe('extractUserContext', () => {
       displayName: 'Test Global',
       avatarUrl: 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
       guildId: undefined,
+      channelId: undefined,
     });
   });
 
@@ -60,6 +62,42 @@ describe('extractUserContext', () => {
       displayName: undefined,
       avatarUrl: 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
       guildId: undefined,
+      channelId: undefined,
     });
+  });
+
+  it('should include channelId when provided', () => {
+    const mockUser = {
+      id: '123456789',
+      username: 'testuser',
+      displayName: 'Test User',
+      globalName: 'Test Global',
+      displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
+    } as unknown as User;
+
+    const context = extractUserContext(mockUser, '987654321', null, '111222333');
+
+    expect(context).toEqual({
+      userId: '123456789',
+      username: 'testuser',
+      displayName: 'Test User',
+      avatarUrl: 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
+      guildId: '987654321',
+      channelId: '111222333',
+    });
+  });
+
+  it('should convert null channelId to undefined', () => {
+    const mockUser = {
+      id: '123456789',
+      username: 'testuser',
+      displayName: 'Test User',
+      globalName: null,
+      displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/123456789/avatar.png',
+    } as unknown as User;
+
+    const context = extractUserContext(mockUser, '987654321', null, null);
+
+    expect(context.channelId).toBeUndefined();
   });
 });

@@ -36,6 +36,7 @@ export class RequestNoteService {
         displayName: input.displayName,
         avatarUrl: input.avatarUrl,
         guildId: input.community_server_id,
+        channelId: input.channelId,
       };
 
       // Pass the platform ID (Discord guild ID) directly - server handles lookup/auto-creation
