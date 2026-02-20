@@ -6,148 +6,150 @@ Finds archives with short content (<10 chars) or low similarity scores (<0.6)
 that were created by system requests, and cascade soft-deletes them.
 
 Usage:
-    uv run python scripts/cleanup_bad_archives.py              # dry run
-    uv run python scripts/cleanup_bad_archives.py --execute    # apply changes
-    uv run python scripts/cleanup_bad_archives.py --min-length 15  # custom threshold
+    # Local (uses app Settings / .env):
+    uv run python scripts/cleanup_bad_archives.py
+
+    # Production (uses ~/.pgpass for auth):
+    uv run python scripts/cleanup_bad_archives.py --use-pgpass --dbhost <cloud-sql-host>
+    uv run python scripts/cleanup_bad_archives.py --use-pgpass --dbhost <host> --dbname postgres --execute
 """
 
 import argparse
 import asyncio
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from typing import Any
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+FIND_BAD_ARCHIVES_SQL = text("""
+    SELECT
+        ma.id AS archive_id,
+        ma.content_text,
+        r.id AS request_pk,
+        r.request_id,
+        r.requested_by,
+        r.similarity_score,
+        r.note_id
+    FROM message_archive ma
+    JOIN requests r ON r.message_archive_id = ma.id
+    WHERE ma.deleted_at IS NULL
+      AND r.deleted_at IS NULL
+      AND r.requested_by LIKE 'system-%'
+      AND (
+          (ma.content_text IS NOT NULL AND length(ma.content_text) < :min_length)
+          OR (r.similarity_score IS NOT NULL AND r.similarity_score < :max_score)
+      )
+""")
 
-from src.database import get_session_maker
-from src.notes.message_archive_models import MessageArchive
-from src.notes.models import Note, Request
+SOFT_DELETE_SQL = text("""
+    UPDATE {table} SET deleted_at = :now WHERE id = :id AND deleted_at IS NULL
+""")
+
+NOTE_INFO_SQL = text("""
+    SELECT n.id, n.ai_generated,
+           (SELECT count(*) FROM ratings nr WHERE nr.note_id = n.id) AS rating_count
+    FROM notes n
+    WHERE n.id = :note_id AND n.deleted_at IS NULL
+""")
 
 
-async def find_bad_archives(
+def _parse_pgpass(host: str, port: int = 5432, dbname: str = "opennotes") -> str:
+    pgpass_path = Path.home() / ".pgpass"
+    if not pgpass_path.exists():
+        print(f"ERROR: {pgpass_path} not found", file=sys.stderr)
+        sys.exit(1)
+
+    for raw_line in pgpass_path.read_text().splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split(":")
+        if len(parts) != 5:
+            continue
+        pg_host, pg_port, pg_db, pg_user, pg_pass = parts
+        host_match = pg_host in ("*", host)
+        port_match = pg_port in ("*", str(port))
+        db_match = pg_db in ("*", dbname)
+        if host_match and port_match and db_match:
+            return f"postgresql+asyncpg://{pg_user}:{pg_pass}@{host}:{port}/{dbname}"
+
+    print(f"ERROR: No matching entry in {pgpass_path} for {host}:{port}/{dbname}", file=sys.stderr)
+    print("\nAvailable entries:", file=sys.stderr)
+    for raw_line in pgpass_path.read_text().splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split(":")
+        if len(parts) == 5:
+            print(f"  {parts[0]}:{parts[1]}/{parts[2]} (user: {parts[3]})", file=sys.stderr)
+    sys.exit(1)
+
+
+def _make_session(database_url: str) -> async_sessionmaker[AsyncSession]:
+    engine = create_async_engine(database_url, echo=False, future=True, pool_pre_ping=True)
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def _soft_delete(db: AsyncSession, table: str, record_id: Any, *, execute: bool) -> bool:
+    if execute:
+        stmt = text(f"UPDATE {table} SET deleted_at = :now WHERE id = :id AND deleted_at IS NULL")
+        result = await db.execute(stmt, {"now": datetime.now(UTC), "id": record_id})
+        return result.rowcount > 0  # type: ignore[union-attr]
+    return True
+
+
+async def cascade_soft_delete(
     db: AsyncSession,
-    min_content_length: int = 10,
-    max_similarity_score: float = 0.6,
-) -> list[dict]:
-    stmt = (
-        select(
-            MessageArchive.id,
-            MessageArchive.content_text,
-            Request.request_id,
-            Request.requested_by,
-            Request.similarity_score,
-            Request.note_id,
-        )
-        .join(Request, Request.message_archive_id == MessageArchive.id)
-        .where(
-            MessageArchive.deleted_at.is_(None),
-            Request.deleted_at.is_(None),
-            Request.requested_by.like("system-%"),
-            or_(
-                and_(
-                    MessageArchive.content_text.isnot(None),
-                    func.length(MessageArchive.content_text) < min_content_length,
-                ),
-                and_(
-                    Request.similarity_score.isnot(None),
-                    Request.similarity_score < max_similarity_score,
-                ),
-            ),
-        )
-    )
-    result = await db.execute(stmt)
-    rows = result.all()
-    return [
-        {
-            "archive_id": row.id,
-            "content_text": row.content_text,
-            "request_id": row.request_id,
-            "requested_by": row.requested_by,
-            "similarity_score": row.similarity_score,
-            "note_id": row.note_id,
-        }
-        for row in rows
-    ]
-
-
-def _resolve_note_action(note: Note | None) -> tuple[bool, bool, str | None]:
-    if note is None:
-        return False, True, None
-    if not note.ai_generated:
-        return False, False, "human_note"
-    if len(note.ratings) > 0:
-        return False, False, "rated_ai_note"
-    return True, True, None
-
-
-async def cascade_soft_delete_archive(
-    db: AsyncSession,
-    archive_id: UUID,
+    entry: dict,
     *,
     execute: bool = False,
 ) -> dict:
-    archive = (
-        await db.execute(select(MessageArchive).where(MessageArchive.id == archive_id))
-    ).scalar_one_or_none()
-
-    if not archive:
-        return {"archive_id": str(archive_id), "error": "not_found"}
-
-    result = {
-        "archive_id": str(archive_id),
-        "content_preview": (archive.content_text or "")[:50],
+    result: dict[str, Any] = {
+        "archive_id": str(entry["archive_id"]),
+        "content_preview": (entry["content_text"] or "")[:50],
         "archive_deleted": False,
         "request_deleted": False,
         "note_deleted": False,
         "skipped_reason": None,
     }
 
-    if archive.deleted_at is None:
-        result["archive_deleted"] = True
-        if execute:
-            archive.soft_delete()
+    result["archive_deleted"] = True
+    await _soft_delete(db, "message_archive", entry["archive_id"], execute=execute)
 
-    request = (
-        await db.execute(select(Request).where(Request.message_archive_id == archive_id))
-    ).scalar_one_or_none()
+    result["request_id"] = entry["request_id"]
 
-    if not request:
-        return result
-
-    result["request_id"] = request.request_id
-
-    if not request.requested_by.startswith("system-"):
+    if not entry["requested_by"].startswith("system-"):
         result["skipped_reason"] = "non_system_request"
         return result
 
-    if request.note_id is None:
+    if entry["note_id"] is None:
         result["request_deleted"] = True
-        if execute:
-            request.soft_delete()
+        await _soft_delete(db, "requests", entry["request_pk"], execute=execute)
         return result
 
-    note = (
-        await db.execute(
-            select(Note).where(Note.id == request.note_id).options(selectinload(Note.ratings))
-        )
-    ).scalar_one_or_none()
+    note_row = (await db.execute(NOTE_INFO_SQL, {"note_id": entry["note_id"]})).first()
 
-    result["note_id"] = str(note.id) if note else None
-    note_deleted, request_deleted, skipped_reason = _resolve_note_action(note)
-    result["note_deleted"] = note_deleted
-    result["request_deleted"] = request_deleted
-    result["skipped_reason"] = skipped_reason
+    if note_row is None:
+        result["request_deleted"] = True
+        await _soft_delete(db, "requests", entry["request_pk"], execute=execute)
+        return result
 
-    if execute and (note_deleted or request_deleted):
-        if note_deleted and note is not None:
-            note.soft_delete()
-        if request_deleted:
-            request.soft_delete()
+    result["note_id"] = str(note_row.id)
 
+    if not note_row.ai_generated:
+        result["skipped_reason"] = "human_note"
+        return result
+    if note_row.rating_count > 0:
+        result["skipped_reason"] = "rated_ai_note"
+        return result
+
+    result["note_deleted"] = True
+    result["request_deleted"] = True
+    await _soft_delete(db, "notes", note_row.id, execute=execute)
+    await _soft_delete(db, "requests", entry["request_pk"], execute=execute)
     return result
 
 
@@ -157,14 +159,26 @@ async def run_cleanup(args: argparse.Namespace) -> None:
     print(f"Archive Cleanup {mode_label}")
     print(f"Min content length: {args.min_length}")
     print(f"Max similarity score: {args.max_score}")
+
+    if args.use_pgpass:
+        database_url = _parse_pgpass(args.dbhost, args.dbport, args.dbname)
+        session_maker = _make_session(database_url)
+        print(f"Database: {args.dbhost}:{args.dbport}/{args.dbname} (via pgpass)")
+    else:
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from src.database import get_session_maker
+
+        session_maker = get_session_maker()
+        print("Database: using app Settings (.env)")
+
     print(f"{'=' * 60}\n")
 
-    async with get_session_maker()() as db:
-        bad_archives = await find_bad_archives(
-            db,
-            min_content_length=args.min_length,
-            max_similarity_score=args.max_score,
+    async with session_maker() as db:
+        rows = await db.execute(
+            FIND_BAD_ARCHIVES_SQL,
+            {"min_length": args.min_length, "max_score": args.max_score},
         )
+        bad_archives = [row._asdict() for row in rows.all()]
 
         print(f"Found {len(bad_archives)} candidate archives\n")
 
@@ -182,9 +196,7 @@ async def run_cleanup(args: argparse.Namespace) -> None:
         }
 
         for entry in bad_archives:
-            result = await cascade_soft_delete_archive(
-                db, entry["archive_id"], execute=args.execute
-            )
+            result = await cascade_soft_delete(db, entry, execute=args.execute)
 
             content_preview = (entry["content_text"] or "")[:30]
             score = entry["similarity_score"]
@@ -240,6 +252,29 @@ def main() -> None:
         type=float,
         default=0.6,
         help="Maximum similarity score threshold (default: 0.6)",
+    )
+    parser.add_argument(
+        "--use-pgpass",
+        action="store_true",
+        help="Read credentials from ~/.pgpass instead of app Settings",
+    )
+    parser.add_argument(
+        "--dbhost",
+        type=str,
+        default="localhost",
+        help="Database host (used with --use-pgpass, default: localhost)",
+    )
+    parser.add_argument(
+        "--dbport",
+        type=int,
+        default=5432,
+        help="Database port (used with --use-pgpass, default: 5432)",
+    )
+    parser.add_argument(
+        "--dbname",
+        type=str,
+        default="opennotes",
+        help="Database name (used with --use-pgpass, default: opennotes)",
     )
     args = parser.parse_args()
     asyncio.run(run_cleanup(args))
