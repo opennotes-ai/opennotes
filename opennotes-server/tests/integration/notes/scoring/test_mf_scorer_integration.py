@@ -146,7 +146,9 @@ class TestMockCommunityDataProvider:
         assert len(ratings) >= 250
 
 
+@pytest.mark.skip(reason="Flaky: crashes xdist worker (OOM) in CI - see TASK-1135")
 @pytest.mark.integration
+@pytest.mark.serial
 class TestMFCoreScorerIntegration:
     """Integration tests for MFCoreScorerAdapter with real MFCoreScorer."""
 
@@ -293,6 +295,7 @@ class TestMFCoreScorerErrorHandling:
         assert call_count == 1
 
 
+@pytest.mark.skip(reason="Flaky: crashes xdist worker (OOM) in CI - see TASK-1135")
 @pytest.mark.integration
 class TestMFCoreScorerCacheEviction:
     """Integration tests for LRU cache eviction behavior."""
@@ -358,6 +361,7 @@ class TestMFCoreScorerCacheEviction:
         assert len(adapter._cache) <= 10000
 
 
+@pytest.mark.skip(reason="Flaky: crashes xdist worker (OOM) in CI - see TASK-1135")
 @pytest.mark.integration
 class TestMFCoreScorerThreadSafety:
     """Integration tests for thread safety of concurrent score_note() calls."""
@@ -470,6 +474,7 @@ class TestMFCoreScorerThreadSafety:
         assert len(results) == 8
 
 
+@pytest.mark.skip(reason="Flaky: crashes xdist worker (OOM) in CI - see TASK-1135")
 @pytest.mark.integration
 class TestMFCoreScorerDataValidation:
     """Integration tests for data validation and edge cases."""

@@ -662,8 +662,11 @@ async def test_subscriber_handler_timeout_nacks_message():
             await subscription_handler(mock_msg)
         return PubAck(stream="test-stream", seq=1, duplicate=False)
 
+    mock_settings = MagicMock()
+    mock_settings.NATS_HANDLER_TIMEOUT = 2
+
     with (
-        patch("src.events.subscriber.settings.NATS_HANDLER_TIMEOUT", 2),
+        patch("src.events.subscriber.get_settings", return_value=mock_settings),
         patch.object(nats_client, "is_connected", new_callable=AsyncMock, return_value=True),
         patch.object(nats_client, "ping", new_callable=AsyncMock, return_value=True),
         patch.object(nats_client, "publish", new_callable=AsyncMock, side_effect=mock_publish),
@@ -725,8 +728,11 @@ async def test_subscriber_partial_handler_timeout_nacks_message():
             await subscription_handler(mock_msg)
         return PubAck(stream="test-stream", seq=1, duplicate=False)
 
+    mock_settings = MagicMock()
+    mock_settings.NATS_HANDLER_TIMEOUT = 2
+
     with (
-        patch("src.events.subscriber.settings.NATS_HANDLER_TIMEOUT", 2),
+        patch("src.events.subscriber.get_settings", return_value=mock_settings),
         patch.object(nats_client, "is_connected", new_callable=AsyncMock, return_value=True),
         patch.object(nats_client, "ping", new_callable=AsyncMock, return_value=True),
         patch.object(nats_client, "publish", new_callable=AsyncMock, side_effect=mock_publish),
