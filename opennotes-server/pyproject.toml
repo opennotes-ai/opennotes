@@ -165,6 +165,7 @@ ignore = [
 "src/main.py" = ["E402", "PLC0415"]  # LoggingInstrumentor must be called before imports; lazy pyroscope import for optional profiling
 "src/claim_relevance_check/prompt_optimization/augment_dataset.py" = ["PLR0912"]  # augment_dataset() has clear branch structure for interactive/non-interactive modes
 "src/dbos_workflows/**/*.py" = ["PLC0415", "PLW0603"]  # Lazy imports required to avoid circular deps; global state for singleton adapter
+"src/simulation/workflows/**/*.py" = ["PLC0415"]  # Lazy imports required for DBOS workflow steps (same pattern as dbos_workflows)
 "src/bulk_content_scan/flashpoint_service.py" = ["PLC0415", "PLW0603"]  # Lazy dspy import to avoid heavy ML deps at startup; global for singleton
 "src/bulk_content_scan/flashpoint_utils.py" = ["PLC0415"]  # Lazy dspy import to avoid heavy ML deps at startup
 "src/common/filters.py" = ["PLR0911", "PLR0912", "PLC0415"]  # FilterBuilder._build_condition uses match with many operator cases; lazy import for OVERLAP to avoid circular
