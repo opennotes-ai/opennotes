@@ -16096,7 +16096,7 @@
             "type": "string",
             "maxLength": 64,
             "title": "Channel Id",
-            "description": "Discord channel ID"
+            "description": "Platform-specific channel ID"
           }
         },
         "additionalProperties": false,

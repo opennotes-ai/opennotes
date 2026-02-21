@@ -6822,7 +6822,7 @@ export interface components {
             platform_community_server_id: string;
             /**
              * Channel Id
-             * @description Discord channel ID
+             * @description Platform-specific channel ID
              */
             channel_id: string;
         };

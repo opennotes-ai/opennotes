@@ -619,7 +619,9 @@ async def get_or_create_profile_from_discord(
 
         # Ensure community membership exists if platform_community_server_id provided
         if platform_community_server_id:
-            await _ensure_community_membership(db, profile.id, platform_community_server_id)
+            await _ensure_community_membership(
+                db, profile.id, "discord", platform_community_server_id
+            )
 
         return profile
 
@@ -654,7 +656,9 @@ async def get_or_create_profile_from_discord(
 
         # Create community membership if platform_community_server_id provided
         if platform_community_server_id:
-            await _ensure_community_membership(db, profile.id, platform_community_server_id)
+            await _ensure_community_membership(
+                db, profile.id, "discord", platform_community_server_id
+            )
 
         await db.refresh(profile)
         return profile
@@ -681,7 +685,9 @@ async def get_or_create_profile_from_discord(
 
             # Ensure community membership exists if platform_community_server_id provided
             if platform_community_server_id:
-                await _ensure_community_membership(db, profile.id, platform_community_server_id)
+                await _ensure_community_membership(
+                    db, profile.id, "discord", platform_community_server_id
+                )
 
             return profile
 
@@ -694,10 +700,10 @@ async def get_or_create_profile_from_discord(
 
 
 async def _ensure_community_membership(
-    db: AsyncSession, profile_id: UUID, platform_community_server_id: str
+    db: AsyncSession, profile_id: UUID, platform: str, platform_community_server_id: str
 ) -> CommunityMember | None:
     """
-    Ensure community membership exists for the profile in the given guild.
+    Ensure community membership exists for the profile in the given community server.
 
     Internal helper function that creates community membership if:
     1. The community server exists
@@ -706,15 +712,15 @@ async def _ensure_community_membership(
     Args:
         db: Database session
         profile_id: User profile ID
+        platform: Platform identifier (e.g., 'discord', 'reddit')
         platform_community_server_id: Platform-specific community server ID (e.g., Discord guild ID)
 
     Returns:
         CommunityMember instance, or None if community server doesn't exist
     """
-    # Look up community server by platform ID
     result = await db.execute(
         select(CommunityServer).where(
-            CommunityServer.platform == "discord",
+            CommunityServer.platform == platform,
             CommunityServer.platform_community_server_id == platform_community_server_id,
         )
     )
