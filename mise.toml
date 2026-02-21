@@ -197,6 +197,13 @@ dir = "{{vars.discord_dir}}"
 run = "pnpm test \"$@\""
 sources = ["src/**/*.ts", "tests/**/*.ts"]
 
+[tasks."test:heavy"]
+description = "Run heavy/resource-intensive tests sequentially (OOM-risk under xdist)"
+dir = "{{vars.server_dir}}"
+run = 'uv run pytest tests/heavy/ -n 0 --timeout=120 -v "$@"'
+sources = ["src/**/*.py", "tests/heavy/**/*.py"]
+env = { PYTHONPATH = "." }
+
 [tasks."test:schemathesis"]
 description = "Run Schemathesis property-based API tests"
 dir = "{{vars.server_dir}}"

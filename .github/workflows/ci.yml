@@ -335,6 +335,10 @@ jobs:
         if: ${{ always() && steps.parallel-tests.outcome != 'skipped' }}
         run: mise run test:server -- tests/integration/ -n 0 -m "integration_messaging or serial" --cov=src --cov-report=xml --cov-report=term --cov-append
 
+      - name: Run heavy tests (sequential, OOM-risk under xdist)
+        if: ${{ always() && steps.parallel-tests.outcome != 'skipped' }}
+        run: mise run test:server -- tests/heavy/ -n 0 --timeout=120 --cov=src --cov-report=xml --cov-report=term --cov-append
+
       - name: Display coverage summary
         working-directory: opennotes-server
         run: |
