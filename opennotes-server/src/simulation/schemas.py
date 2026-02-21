@@ -1,10 +1,10 @@
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
-from src.common.base_schemas import StrictInputSchema, TimestampSchema
+from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema, TimestampSchema
 
 
 class SimAgentBase(StrictInputSchema):
@@ -62,3 +62,43 @@ class SimAgentResponse(TimestampSchema):
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
     deleted_at: str | None = None
+
+
+class PlaygroundNoteRequestAttributes(StrictInputSchema):
+    urls: list[AnyHttpUrl] = Field(..., min_length=1, max_length=20)
+    requested_by: str = Field(default="system-playground")
+
+
+class PlaygroundNoteRequestData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["playground-note-requests"]
+    attributes: PlaygroundNoteRequestAttributes
+
+
+class PlaygroundNoteRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: PlaygroundNoteRequestData
+
+
+class PlaygroundNoteRequestResultAttributes(SQLAlchemySchema):
+    request_id: str
+    requested_by: str
+    status: str
+    community_server_id: str
+    content: str | None = None
+    url: str
+    error: str | None = None
+
+
+class PlaygroundNoteRequestResultResource(BaseModel):
+    type: str = "requests"
+    id: str
+    attributes: PlaygroundNoteRequestResultAttributes
+
+
+class PlaygroundNoteRequestListResponse(SQLAlchemySchema):
+    data: list[PlaygroundNoteRequestResultResource]
+    jsonapi: dict[str, str] = {"version": "1.1"}
+    meta: dict[str, Any] | None = None

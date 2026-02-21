@@ -6701,6 +6701,78 @@
         }
       }
     },
+    "/api/v2/playgrounds/{community_server_id}/note-requests": {
+      "post": {
+        "tags": [
+          "playground-jsonapi"
+        ],
+        "summary": "Create Playground Note Requests",
+        "operationId": "create_playground_note_requests_api_v2_playgrounds__community_server_id__note_requests_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaygroundNoteRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/webhooks/register": {
       "post": {
         "tags": [
@@ -17585,6 +17657,64 @@
           "scorer_success_rate"
         ],
         "title": "PerformanceMetrics"
+      },
+      "PlaygroundNoteRequestAttributes": {
+        "properties": {
+          "urls": {
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "format": "uri"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Urls"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By",
+            "default": "system-playground"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "urls"
+        ],
+        "title": "PlaygroundNoteRequestAttributes"
+      },
+      "PlaygroundNoteRequestBody": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlaygroundNoteRequestData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PlaygroundNoteRequestBody"
+      },
+      "PlaygroundNoteRequestData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "playground-note-requests",
+            "title": "Type"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/PlaygroundNoteRequestAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "PlaygroundNoteRequestData"
       },
       "PreviouslySeenCheckAttributes": {
         "properties": {

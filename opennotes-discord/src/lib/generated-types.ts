@@ -2165,6 +2165,23 @@ export interface paths {
         patch: operations["update_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__patch"];
         trace?: never;
     };
+    "/api/v2/playgrounds/{community_server_id}/note-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Playground Note Requests */
+        post: operations["create_playground_note_requests_api_v2_playgrounds__community_server_id__note_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -7027,6 +7044,29 @@ export interface components {
              * @default 0
              */
             failed_scoring_operations: number;
+        };
+        /** PlaygroundNoteRequestAttributes */
+        PlaygroundNoteRequestAttributes: {
+            /** Urls */
+            urls: string[];
+            /**
+             * Requested By
+             * @default system-playground
+             */
+            requested_by: string;
+        };
+        /** PlaygroundNoteRequestBody */
+        PlaygroundNoteRequestBody: {
+            data: components["schemas"]["PlaygroundNoteRequestData"];
+        };
+        /** PlaygroundNoteRequestData */
+        PlaygroundNoteRequestData: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "playground-note-requests";
+            attributes: components["schemas"]["PlaygroundNoteRequestAttributes"];
         };
         /**
          * PreviouslySeenCheckAttributes
@@ -12875,6 +12915,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrchestratorSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_playground_note_requests_api_v2_playgrounds__community_server_id__note_requests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaygroundNoteRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
