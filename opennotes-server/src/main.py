@@ -703,7 +703,14 @@ app.include_router(health_router)
 asgi_app = wrap_app_with_gcp_trace_filter(app)
 
 
-@app.get("/metrics")
+@app.get(
+    "/metrics",
+    response_class=Response,
+    responses={
+        200: {"content": {"text/plain": {"schema": {"type": "string"}}}},
+        404: {"description": "Metrics disabled"},
+    },
+)
 async def metrics() -> Response:
     if not settings.ENABLE_METRICS:
         raise HTTPException(status_code=404, detail="Metrics disabled")
