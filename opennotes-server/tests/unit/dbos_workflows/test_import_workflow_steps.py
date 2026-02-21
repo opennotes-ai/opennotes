@@ -884,7 +884,7 @@ class TestProcessScrapeBatchStepParallelScraping:
         with (
             patch("src.database.get_session_maker", return_value=mock_session_maker),
             patch(
-                "src.fact_checking.import_pipeline.scrape_tasks.scrape_url_content",
+                "src.shared.content_extraction.scrape_url_content",
                 side_effect=mock_scrape,
             ),
             patch(
@@ -921,7 +921,7 @@ class TestProcessScrapeBatchStepParallelScraping:
         with (
             patch("src.database.get_session_maker", return_value=mock_session_maker),
             patch(
-                "src.fact_checking.import_pipeline.scrape_tasks.scrape_url_content",
+                "src.shared.content_extraction.scrape_url_content",
                 return_value="Good content",
             ),
             patch(
@@ -958,7 +958,7 @@ class TestProcessScrapeBatchStepParallelScraping:
         with (
             patch("src.database.get_session_maker", return_value=mock_session_maker),
             patch(
-                "src.fact_checking.import_pipeline.scrape_tasks.scrape_url_content",
+                "src.shared.content_extraction.scrape_url_content",
                 return_value=None,
             ),
             patch(
@@ -1020,7 +1020,7 @@ class TestProcessScrapeBatchStepParallelScraping:
         with (
             patch("src.database.get_session_maker", return_value=mock_session_maker),
             patch(
-                "src.fact_checking.import_pipeline.scrape_tasks.scrape_url_content",
+                "src.shared.content_extraction.scrape_url_content",
                 side_effect=_crash_scrape,
             ),
             patch(
@@ -1079,7 +1079,7 @@ class TestProcessScrapeBatchStepParallelScraping:
         with (
             patch("src.database.get_session_maker", return_value=mock_session_maker),
             patch(
-                "src.fact_checking.import_pipeline.scrape_tasks.scrape_url_content",
+                "src.shared.content_extraction.scrape_url_content",
                 return_value="content",
             ),
             patch(

@@ -10,14 +10,11 @@ Uses Trafilatura for robust web content extraction with:
 """
 
 import asyncio
-import hashlib
 import logging
 import random
 from typing import Any
-from urllib.parse import urlparse
 from uuid import UUID
 
-import trafilatura
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from taskiq import AsyncTaskiqTask, TaskiqResultTimeoutError
@@ -28,63 +25,30 @@ from src.fact_checking.import_pipeline.candidate_service import (
     extract_high_confidence_rating,
 )
 from src.fact_checking.import_pipeline.promotion import promote_candidate
+from src.shared.content_extraction import (
+    DEFAULT_BASE_DELAY,
+    DEFAULT_JITTER_RATIO,
+    DEFAULT_SCRAPE_TIMEOUT,
+    USER_AGENTS,
+    extract_domain,
+    get_random_user_agent,
+    scrape_url_content,
+)
 from src.tasks.broker import register_task
 
 logger = logging.getLogger(__name__)
 
 AUTO_PROMOTE_PREDICTION_THRESHOLD: float = 1.0
 
-DEFAULT_BASE_DELAY = 1.0
-DEFAULT_JITTER_RATIO = 0.5
-DEFAULT_SCRAPE_TIMEOUT = 120
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
+__all__ = [
+    "DEFAULT_BASE_DELAY",
+    "DEFAULT_JITTER_RATIO",
+    "DEFAULT_SCRAPE_TIMEOUT",
+    "USER_AGENTS",
+    "extract_domain",
+    "get_random_user_agent",
+    "scrape_url_content",
 ]
-
-
-def extract_domain(url: str) -> str:
-    """Extract normalized domain from a URL for rate limiting.
-
-    Args:
-        url: The URL to extract domain from.
-
-    Returns:
-        Normalized domain string (lowercase, www. prefix stripped).
-        For unparseable URLs, returns a hash of the URL prefix to avoid
-        conflating all unknown domains into a single rate limit bucket.
-    """
-    try:
-        parsed = urlparse(url)
-        domain = parsed.netloc.lower()
-        if domain.startswith("www."):
-            domain = domain[4:]
-        if domain:
-            return domain
-        url_hash = hashlib.sha256(url[:100].encode()).hexdigest()[:16]
-        logger.warning(
-            "Unable to extract domain from URL, using hash for rate limiting",
-            extra={"url": url[:100], "domain_hash": url_hash},
-        )
-        return f"unknown-{url_hash}"
-    except Exception:
-        url_hash = hashlib.sha256(url[:100].encode()).hexdigest()[:16]
-        logger.warning(
-            "Error parsing URL, using hash for rate limiting",
-            extra={"url": url[:100], "domain_hash": url_hash},
-        )
-        return f"unknown-{url_hash}"
-
-
-def get_random_user_agent() -> str:
-    """Get a random user agent from the rotation list."""
-    return random.choice(USER_AGENTS)
 
 
 async def get_candidate(
@@ -176,56 +140,6 @@ async def apply_predicted_rating_if_available(
         f"Auto-applied rating '{rating}' from predicted_ratings for candidate {candidate.id}"
     )
     return rating
-
-
-def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
-    """Scrape and extract main content from a URL using Trafilatura.
-
-    Trafilatura is designed for:
-    - News article extraction
-    - Clean main content extraction (no boilerplate)
-    - Handling various HTML structures
-
-    Note on thread safety: trafilatura.settings.use_config() creates a fresh
-    ConfigParser instance on each call (verified in trafilatura/settings.py),
-    so mutating the config here is thread-safe.
-
-    Args:
-        url: The URL to scrape.
-        user_agent: Optional custom user agent. If None, uses a random one from rotation.
-
-    Returns:
-        Extracted text content, or None if extraction failed.
-    """
-    try:
-        if user_agent is None:
-            user_agent = get_random_user_agent()
-
-        config = trafilatura.settings.use_config()  # pyright: ignore[reportAttributeAccessIssue]
-        config.set("DEFAULT", "USER_AGENT", user_agent)
-
-        downloaded = trafilatura.fetch_url(url, config=config)
-        if not downloaded:
-            logger.warning(f"Failed to download URL: {url}")
-            return None
-
-        content = trafilatura.extract(
-            downloaded,
-            include_comments=False,
-            include_tables=True,
-            no_fallback=False,
-            favor_precision=True,
-        )
-
-        if not content:
-            logger.warning(f"No content extracted from URL: {url}")
-            return None
-
-        return content.strip()
-
-    except Exception as e:
-        logger.exception(f"Error scraping URL {url}: {e}")
-        return None
 
 
 @register_task(
