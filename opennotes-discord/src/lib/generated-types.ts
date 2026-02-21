@@ -2128,6 +2128,43 @@ export interface paths {
         patch: operations["update_sim_agent_jsonapi_api_v2_sim_agents__agent_id__patch"];
         trace?: never;
     };
+    "/api/v2/simulation-orchestrators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Orchestrators Jsonapi */
+        get: operations["list_orchestrators_jsonapi_api_v2_simulation_orchestrators_get"];
+        put?: never;
+        /** Create Orchestrator Jsonapi */
+        post: operations["create_orchestrator_jsonapi_api_v2_simulation_orchestrators_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulation-orchestrators/{orchestrator_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Orchestrator Jsonapi */
+        get: operations["get_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Orchestrator Jsonapi */
+        delete: operations["delete_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Orchestrator Jsonapi */
+        patch: operations["update_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__patch"];
+        trace?: never;
+    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -6766,6 +6803,155 @@ export interface components {
              * @description Flagged category names
              */
             flagged_categories?: string[];
+        };
+        /** OrchestratorAttributes */
+        OrchestratorAttributes: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Turn Cadence Seconds */
+            turn_cadence_seconds: number;
+            /** Max Agents */
+            max_agents: number;
+            /** Removal Rate */
+            removal_rate: number;
+            /** Max Turns Per Agent */
+            max_turns_per_agent: number;
+            /** Agent Profile Ids */
+            agent_profile_ids?: string[] | null;
+            /** Scoring Config */
+            scoring_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** OrchestratorCreateAttributes */
+        OrchestratorCreateAttributes: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Turn Cadence Seconds */
+            turn_cadence_seconds: number;
+            /** Max Agents */
+            max_agents: number;
+            /** Removal Rate */
+            removal_rate: number;
+            /** Max Turns Per Agent */
+            max_turns_per_agent: number;
+            /** Agent Profile Ids */
+            agent_profile_ids?: string[];
+            /** Scoring Config */
+            scoring_config?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** OrchestratorCreateData */
+        OrchestratorCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'simulation-orchestrators'
+             * @constant
+             */
+            type: "simulation-orchestrators";
+            attributes: components["schemas"]["OrchestratorCreateAttributes"];
+        };
+        /** OrchestratorCreateRequest */
+        OrchestratorCreateRequest: {
+            data: components["schemas"]["OrchestratorCreateData"];
+        };
+        /** OrchestratorListResponse */
+        OrchestratorListResponse: {
+            /** Data */
+            data: components["schemas"]["OrchestratorResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /** OrchestratorResource */
+        OrchestratorResource: {
+            /**
+             * Type
+             * @default simulation-orchestrators
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["OrchestratorAttributes"];
+        };
+        /** OrchestratorSingleResponse */
+        OrchestratorSingleResponse: {
+            data: components["schemas"]["OrchestratorResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** OrchestratorUpdateAttributes */
+        OrchestratorUpdateAttributes: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Turn Cadence Seconds */
+            turn_cadence_seconds?: number | null;
+            /** Max Agents */
+            max_agents?: number | null;
+            /** Removal Rate */
+            removal_rate?: number | null;
+            /** Max Turns Per Agent */
+            max_turns_per_agent?: number | null;
+            /** Agent Profile Ids */
+            agent_profile_ids?: string[] | null;
+            /** Scoring Config */
+            scoring_config?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** OrchestratorUpdateData */
+        OrchestratorUpdateData: {
+            /**
+             * Type
+             * @description Resource type must be 'simulation-orchestrators'
+             * @constant
+             */
+            type: "simulation-orchestrators";
+            /**
+             * Id
+             * @description Orchestrator ID
+             */
+            id: string;
+            attributes: components["schemas"]["OrchestratorUpdateAttributes"];
+        };
+        /** OrchestratorUpdateRequest */
+        OrchestratorUpdateRequest: {
+            data: components["schemas"]["OrchestratorUpdateData"];
         };
         /**
          * ParticipantStatsAttributes
@@ -12517,6 +12703,178 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SimAgentSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_orchestrators_jsonapi_api_v2_simulation_orchestrators_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_orchestrator_jsonapi_api_v2_simulation_orchestrators_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrchestratorCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                orchestrator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                orchestrator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                orchestrator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrchestratorUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorSingleResponse"];
                 };
             };
             /** @description Validation Error */
