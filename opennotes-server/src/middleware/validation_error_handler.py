@@ -30,8 +30,9 @@ def _sanitize_loc(loc: tuple[str | int, ...] | list[str | int]) -> list[str | in
 
 async def sanitized_validation_exception_handler(
     request: Request,
-    exc: RequestValidationError,
+    exc: Exception,
 ) -> JSONResponse:
+    assert isinstance(exc, RequestValidationError)
     sanitized_errors = []
     for error in exc.errors():
         sanitized_error: dict[str, object] = {
