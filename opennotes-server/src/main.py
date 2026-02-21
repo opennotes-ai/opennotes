@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
@@ -88,6 +89,7 @@ from src.middleware.request_size import RequestSizeLimitMiddleware
 from src.middleware.security import SecurityHeadersMiddleware
 from src.middleware.timeout import TimeoutMiddleware
 from src.middleware.user_context import AuthenticatedUserContextMiddleware
+from src.middleware.validation_error_handler import sanitized_validation_exception_handler
 from src.monitoring import (
     DistributedHealthCoordinator,
     HealthChecker,
@@ -600,6 +602,8 @@ app.add_exception_handler(
         content={"error": "rate_limit_exceeded", "message": "Too many requests"},
     ),
 )
+
+app.add_exception_handler(RequestValidationError, sanitized_validation_exception_handler)
 
 if settings.ENABLE_METRICS:
     app.add_middleware(MetricsMiddleware)
