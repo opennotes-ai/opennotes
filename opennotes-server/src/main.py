@@ -115,6 +115,7 @@ from src.services.vision_service import VisionService
 from src.simulation.orchestrators_jsonapi_router import router as orchestrators_jsonapi_router
 from src.simulation.playground_jsonapi_router import router as playground_jsonapi_router
 from src.simulation.sim_agents_jsonapi_router import router as sim_agents_jsonapi_router
+from src.simulation.simulations_jsonapi_router import router as simulations_jsonapi_router
 from src.startup_validation import run_startup_checks
 from src.tasks.broker import PullBasedJetStreamBroker, get_broker, reset_broker
 from src.users.admin_router import router as admin_router
@@ -710,6 +711,11 @@ app.include_router(chunk_router, prefix=settings.API_V1_PREFIX)
 app.include_router(fact_check_import_router, prefix=settings.API_V1_PREFIX)
 app.include_router(candidates_jsonapi_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_jobs_router, prefix=settings.API_V1_PREFIX)
+app.include_router(
+    simulations_jsonapi_router,
+    prefix=settings.API_V1_PREFIX,
+    tags=["simulations-jsonapi"],
+)
 
 # Health routes
 app.include_router(health_router)
