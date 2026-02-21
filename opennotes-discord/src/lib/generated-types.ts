@@ -2091,6 +2091,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/sim-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sim Agents Jsonapi */
+        get: operations["list_sim_agents_jsonapi_api_v2_sim_agents_get"];
+        put?: never;
+        /** Create Sim Agent Jsonapi */
+        post: operations["create_sim_agent_jsonapi_api_v2_sim_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/sim-agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Sim Agent Jsonapi */
+        get: operations["get_sim_agent_jsonapi_api_v2_sim_agents__agent_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Sim Agent Jsonapi */
+        delete: operations["delete_sim_agent_jsonapi_api_v2_sim_agents__agent_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Sim Agent Jsonapi */
+        patch: operations["update_sim_agent_jsonapi_api_v2_sim_agents__agent_id__patch"];
+        trace?: never;
+    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -8045,6 +8082,159 @@ export interface components {
         SetRatingRequest: {
             data: components["schemas"]["SetRatingData"];
         };
+        /** SimAgentAttributes */
+        SimAgentAttributes: {
+            /** Name */
+            name: string;
+            /** Personality */
+            personality: string;
+            /** Model Name */
+            model_name: string;
+            /** Model Params */
+            model_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Tool Config */
+            tool_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Memory Compaction Strategy */
+            memory_compaction_strategy: string;
+            /** Memory Compaction Config */
+            memory_compaction_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** SimAgentCreateAttributes */
+        SimAgentCreateAttributes: {
+            /** Name */
+            name: string;
+            /** Personality */
+            personality: string;
+            /** Model Name */
+            model_name: string;
+            /** Model Params */
+            model_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Tool Config */
+            tool_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Memory Compaction Strategy */
+            memory_compaction_strategy?: string | null;
+            /** Memory Compaction Config */
+            memory_compaction_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+        };
+        /** SimAgentCreateData */
+        SimAgentCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'sim-agents'
+             * @constant
+             */
+            type: "sim-agents";
+            attributes: components["schemas"]["SimAgentCreateAttributes"];
+        };
+        /** SimAgentCreateRequest */
+        SimAgentCreateRequest: {
+            data: components["schemas"]["SimAgentCreateData"];
+        };
+        /** SimAgentListResponse */
+        SimAgentListResponse: {
+            /** Data */
+            data: components["schemas"]["SimAgentResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /** SimAgentResource */
+        SimAgentResource: {
+            /**
+             * Type
+             * @default sim-agents
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["SimAgentAttributes"];
+        };
+        /** SimAgentSingleResponse */
+        SimAgentSingleResponse: {
+            data: components["schemas"]["SimAgentResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** SimAgentUpdateAttributes */
+        SimAgentUpdateAttributes: {
+            /** Name */
+            name?: string | null;
+            /** Personality */
+            personality?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Model Params */
+            model_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Tool Config */
+            tool_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Memory Compaction Strategy */
+            memory_compaction_strategy?: string | null;
+            /** Memory Compaction Config */
+            memory_compaction_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+        };
+        /** SimAgentUpdateData */
+        SimAgentUpdateData: {
+            /**
+             * Type
+             * @description Resource type must be 'sim-agents'
+             * @constant
+             */
+            type: "sim-agents";
+            /**
+             * Id
+             * @description SimAgent ID
+             */
+            id: string;
+            attributes: components["schemas"]["SimAgentUpdateAttributes"];
+        };
+        /** SimAgentUpdateRequest */
+        SimAgentUpdateRequest: {
+            data: components["schemas"]["SimAgentUpdateData"];
+        };
         /**
          * SimilarityMatch
          * @description Match result from similarity scan.
@@ -12156,6 +12346,178 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sim_agents_jsonapi_api_v2_sim_agents_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_sim_agent_jsonapi_api_v2_sim_agents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimAgentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sim_agent_jsonapi_api_v2_sim_agents__agent_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_sim_agent_jsonapi_api_v2_sim_agents__agent_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_sim_agent_jsonapi_api_v2_sim_agents__agent_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimAgentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentSingleResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

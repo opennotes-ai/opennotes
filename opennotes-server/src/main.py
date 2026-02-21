@@ -112,6 +112,7 @@ from src.notes.stats_jsonapi_router import router as stats_jsonapi_router
 from src.search.fusion_weights_router import router as fusion_weights_router
 from src.services.ai_note_writer import AINoteWriter
 from src.services.vision_service import VisionService
+from src.simulation.sim_agents_jsonapi_router import router as sim_agents_jsonapi_router
 from src.startup_validation import run_startup_checks
 from src.tasks.broker import PullBasedJetStreamBroker, get_broker, reset_broker
 from src.users.admin_router import router as admin_router
@@ -678,6 +679,11 @@ app.include_router(
     bulk_content_scan_jsonapi_router,
     prefix=settings.API_V2_PREFIX,
     tags=["bulk-scans-jsonapi"],
+)
+app.include_router(
+    sim_agents_jsonapi_router,
+    prefix=settings.API_V2_PREFIX,
+    tags=["sim-agents-jsonapi"],
 )
 
 # API v1 routes
