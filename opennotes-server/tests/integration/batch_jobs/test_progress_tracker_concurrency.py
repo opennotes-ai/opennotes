@@ -35,8 +35,11 @@ async def redis_client(test_services) -> AsyncIterator[RedisClient]:
         # Reset circuit breaker AFTER client creation (ensures breaker is registered)
         # but BEFORE connect (so connection isn't blocked by tripped breaker)
         await circuit_breaker_registry.reset("redis")
-        # settings.REDIS_URL is set by test_services fixture to testcontainers URL
-        await client.connect(settings.REDIS_URL)
+        # Use os.environ directly because test_services does importlib.reload(config),
+        # which creates a new Settings singleton. The module-level 'settings' import
+        # still references the OLD singleton with the default REDIS_URL.
+        redis_url = os.environ.get("REDIS_URL", settings.REDIS_URL)
+        await client.connect(redis_url)
         yield client
         await client.disconnect()
     finally:

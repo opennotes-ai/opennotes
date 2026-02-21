@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from pydantic import BaseModel, Field
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -19,8 +21,12 @@ class InvalidUserProfile(BaseModel):
 
 
 @pytest.fixture
-async def redis_adapter():
-    adapter = RedisCacheAdapter()
+async def redis_adapter(test_services):
+    # Use os.environ directly because test_services does importlib.reload(config),
+    # which creates a new Settings singleton. The module-level 'settings' import
+    # still references the OLD singleton with the default REDIS_URL.
+    redis_url = os.environ.get("REDIS_URL")
+    adapter = RedisCacheAdapter(url=redis_url)
     try:
         await adapter.start()
         yield adapter

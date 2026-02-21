@@ -11,7 +11,7 @@ from nats.js.api import ConsumerConfig, PubAck, RetentionPolicy, StorageType, St
 from nats.js.errors import BadRequestError
 
 from src.circuit_breaker import circuit_breaker_registry
-from src.config import settings
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +63,22 @@ class NATSClientManager:
             max_startup_retries: Number of times to retry initial connection
             retry_backoff_base: Base for exponential backoff (wait = base^attempt seconds)
         """
-        servers = settings.NATS_SERVERS
-        has_auth = bool(settings.NATS_USERNAME and settings.NATS_PASSWORD)
+        servers = get_settings().NATS_SERVERS
+        has_auth = bool(get_settings().NATS_USERNAME and get_settings().NATS_PASSWORD)
         logger.info(
             f"Connecting to NATS cluster with {len(servers)} server(s): {servers} (auth: {has_auth})"
         )
 
         connect_kwargs: dict[str, Any] = {
             "servers": servers,
-            "connect_timeout": settings.NATS_CONNECT_TIMEOUT,
-            "max_reconnect_attempts": settings.NATS_MAX_RECONNECT_ATTEMPTS,
-            "reconnect_time_wait": settings.NATS_RECONNECT_WAIT,
+            "connect_timeout": get_settings().NATS_CONNECT_TIMEOUT,
+            "max_reconnect_attempts": get_settings().NATS_MAX_RECONNECT_ATTEMPTS,
+            "reconnect_time_wait": get_settings().NATS_RECONNECT_WAIT,
         }
 
         if has_auth:
-            connect_kwargs["user"] = settings.NATS_USERNAME
-            connect_kwargs["password"] = settings.NATS_PASSWORD
+            connect_kwargs["user"] = get_settings().NATS_USERNAME
+            connect_kwargs["password"] = get_settings().NATS_PASSWORD
 
         last_error: BaseException | None = None
         for attempt in range(max_startup_retries):
@@ -91,7 +91,7 @@ class NATSClientManager:
                 # Configure JetStream with configurable timeout for API operations
                 # Default 5s timeout is too short during concurrent startup operations
                 # which can cause subscribe/consumer_info timeouts
-                self.js = self.nc.jetstream(timeout=settings.NATS_SUBSCRIBE_TIMEOUT)
+                self.js = self.nc.jetstream(timeout=get_settings().NATS_SUBSCRIBE_TIMEOUT)
 
                 await self._ensure_stream()
 
@@ -151,8 +151,8 @@ class NATSClientManager:
 
         for attempt in range(max_retries):
             try:
-                await self.js.stream_info(settings.NATS_STREAM_NAME)
-                logger.info(f"Stream '{settings.NATS_STREAM_NAME}' already exists")
+                await self.js.stream_info(get_settings().NATS_STREAM_NAME)
+                logger.info(f"Stream '{get_settings().NATS_STREAM_NAME}' already exists")
                 return
             except Exception as e:
                 if attempt == max_retries - 1:
@@ -169,21 +169,21 @@ class NATSClientManager:
                 retry_delay = min(retry_delay * 2, 5.0)
 
         try:
-            logger.info(f"Creating stream '{settings.NATS_STREAM_NAME}'")
+            logger.info(f"Creating stream '{get_settings().NATS_STREAM_NAME}'")
             await self.js.add_stream(
                 StreamConfig(
-                    name=settings.NATS_STREAM_NAME,
-                    subjects=[f"{settings.NATS_STREAM_NAME}.>"],
+                    name=get_settings().NATS_STREAM_NAME,
+                    subjects=[f"{get_settings().NATS_STREAM_NAME}.>"],
                     retention=RetentionPolicy.WORK_QUEUE,
                     storage=StorageType.FILE,
-                    max_age=settings.NATS_STREAM_MAX_AGE_SECONDS,
-                    max_msgs=settings.NATS_STREAM_MAX_MESSAGES,
-                    max_bytes=settings.NATS_STREAM_MAX_BYTES,
-                    duplicate_window=settings.NATS_STREAM_DUPLICATE_WINDOW_SECONDS,
+                    max_age=get_settings().NATS_STREAM_MAX_AGE_SECONDS,
+                    max_msgs=get_settings().NATS_STREAM_MAX_MESSAGES,
+                    max_bytes=get_settings().NATS_STREAM_MAX_BYTES,
+                    duplicate_window=get_settings().NATS_STREAM_DUPLICATE_WINDOW_SECONDS,
                 )
             )
         except Exception as e:
-            logger.error(f"Failed to create stream '{settings.NATS_STREAM_NAME}': {e}")
+            logger.error(f"Failed to create stream '{get_settings().NATS_STREAM_NAME}': {e}")
             raise
 
     async def publish(
@@ -239,7 +239,7 @@ class NATSClientManager:
             return False
         try:
             jsm = self.js._jsm  # pyright: ignore[reportPrivateUsage]
-            await jsm.consumer_info(settings.NATS_STREAM_NAME, consumer_name)
+            await jsm.consumer_info(get_settings().NATS_STREAM_NAME, consumer_name)
             return True
         except Exception:
             return False
@@ -275,7 +275,7 @@ class NATSClientManager:
         if not self.js:
             raise RuntimeError("JetStream context not initialized")
 
-        consumer_name = f"{settings.NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
+        consumer_name = f"{get_settings().NATS_CONSUMER_NAME}_{subject.replace('.', '_')}"
         consumer_exists = await self._consumer_exists(consumer_name)
 
         try:
@@ -287,17 +287,17 @@ class NATSClientManager:
                         cb=callback,
                         durable=consumer_name,
                         queue=consumer_name,
-                        stream=settings.NATS_STREAM_NAME,
+                        stream=get_settings().NATS_STREAM_NAME,
                     ),
-                    timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
+                    timeout=get_settings().NATS_SUBSCRIBE_TIMEOUT,
                 )
             else:
                 logger.info(f"Creating new consumer '{consumer_name}'")
                 consumer_config = ConsumerConfig(
                     durable_name=consumer_name,
                     deliver_group=consumer_name,
-                    max_deliver=settings.NATS_MAX_DELIVER_ATTEMPTS,
-                    ack_wait=settings.NATS_ACK_WAIT_SECONDS,
+                    max_deliver=get_settings().NATS_MAX_DELIVER_ATTEMPTS,
+                    ack_wait=get_settings().NATS_ACK_WAIT_SECONDS,
                 )
                 subscription = await asyncio.wait_for(
                     self.js.subscribe(
@@ -305,7 +305,7 @@ class NATSClientManager:
                         cb=callback,
                         config=consumer_config,
                     ),
-                    timeout=settings.NATS_SUBSCRIBE_TIMEOUT,
+                    timeout=get_settings().NATS_SUBSCRIBE_TIMEOUT,
                 )
 
             self.active_subscriptions[subject] = SubscriptionInfo(
@@ -360,7 +360,7 @@ class NATSClientManager:
             jsm = self.js._jsm  # pyright: ignore[reportPrivateUsage]
             for subject, info in self.active_subscriptions.items():
                 try:
-                    await jsm.consumer_info(settings.NATS_STREAM_NAME, info.consumer_name)
+                    await jsm.consumer_info(get_settings().NATS_STREAM_NAME, info.consumer_name)
                 except Exception:
                     logger.warning(
                         f"Consumer '{info.consumer_name}' for subject '{subject}' "
@@ -387,7 +387,7 @@ class NATSClientManager:
 
         for subject, info in self.active_subscriptions.items():
             try:
-                await jsm.consumer_info(settings.NATS_STREAM_NAME, info.consumer_name)
+                await jsm.consumer_info(get_settings().NATS_STREAM_NAME, info.consumer_name)
             except Exception:
                 logger.info(
                     f"Consumer '{info.consumer_name}' missing, will re-subscribe to '{subject}'"

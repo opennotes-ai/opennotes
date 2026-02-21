@@ -22,7 +22,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.config import settings
+from src.config import get_settings
 from src.events.nats_client import nats_client
 from src.events.schemas import (
     BaseEvent,
@@ -61,7 +61,7 @@ class EventPublisher:
 
     def _get_subject(self, event_type: EventType) -> str:
         event_name = event_type.value.replace(".", "_")
-        return f"{settings.NATS_STREAM_NAME}.{event_name}"
+        return f"{get_settings().NATS_STREAM_NAME}.{event_name}"
 
     def _inject_trace_context(self, headers: dict[str, str]) -> dict[str, str]:
         """Inject W3C Trace Context, Baggage, and user context into NATS message headers.
@@ -94,11 +94,11 @@ class EventPublisher:
         return headers
 
     @retry(
-        stop=stop_after_attempt(settings.NATS_PUBLISH_MAX_RETRIES),
+        stop=stop_after_attempt(get_settings().NATS_PUBLISH_MAX_RETRIES),
         wait=wait_exponential(
             multiplier=1,
-            min=settings.NATS_PUBLISH_RETRY_MIN_WAIT,
-            max=settings.NATS_PUBLISH_RETRY_MAX_WAIT,
+            min=get_settings().NATS_PUBLISH_RETRY_MIN_WAIT,
+            max=get_settings().NATS_PUBLISH_RETRY_MAX_WAIT,
         ),
         retry=retry_if_exception_type((NATSError, TimeoutError)),
         reraise=True,

@@ -116,14 +116,13 @@ def pytest_configure(config: "pytest.Config") -> None:
 
 def pytest_collection_modifyitems(config, items):
     """
-    Handle integration_messaging tests with xdist.
+    Deselect tests that must run serially when xdist is active.
 
-    When xdist is enabled (parallel execution with -n > 0), deselect integration_messaging tests
-    because they use singleton redis_client and nats_client that don't work well
-    across multiple worker processes. These tests pass when run serially.
+    When xdist is enabled (parallel execution with -n > 0), deselect:
+    - integration_messaging: use singleton redis_client/nats_client
+    - serial: resource-heavy tests that crash xdist workers (e.g., ML scorer tests)
 
-    The issue is that pytest-xdist workers are separate Python processes, and
-    the singleton instances don't get properly synchronized across workers.
+    These tests run in a separate serial CI step with -n 0.
     """
     # Check if xdist is being used for actual parallelization (not just -n 0 which disables it)
     # The 'numprocesses' config option indicates parallelization is enabled
@@ -134,7 +133,7 @@ def pytest_collection_modifyitems(config, items):
     if xdist_numprocesses and xdist_numprocesses != "0":
         items_to_remove = []
         for item in items:
-            if "integration_messaging" in item.keywords:
+            if "integration_messaging" in item.keywords or "serial" in item.keywords:
                 items_to_remove.append(item)
 
         for item in items_to_remove:

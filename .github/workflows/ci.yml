@@ -278,16 +278,6 @@ jobs:
     if: needs.detect-changes.outputs.server == 'true' || needs.detect-changes.outputs.shared == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -337,35 +327,13 @@ jobs:
           docker build -t opennotes/postgres:18-pgvector-pgroonga docker/postgres
           echo "PostgreSQL image built with pgvector and pgroonga extensions"
 
-      - name: Start PostgreSQL with pgvector and pgroonga
-        run: |
-          docker run -d --name postgres \
-            -e POSTGRES_USER=opennotes \
-            -e POSTGRES_PASSWORD=opennotes_password \
-            -e POSTGRES_DB=opennotes_test \
-            -p 5432:5432 \
-            opennotes/postgres:18-pgvector-pgroonga
-          # Wait for PostgreSQL to be ready
-          timeout 60 bash -c 'until docker exec postgres pg_isready -U opennotes 2>/dev/null; do sleep 1; done'
-          echo "PostgreSQL with pgvector and pgroonga is ready"
+      - name: Run integration tests with coverage (parallel)
+        id: parallel-tests
+        run: mise run test:server -- tests/integration/ -n auto --cov=src --cov-report=xml --cov-report=term
 
-      - name: Start NATS with JetStream
-        run: |
-          docker run -d --name nats \
-            -p 4222:4222 -p 8222:8222 \
-            nats:2.10-alpine \
-            --jetstream --http_port=8222
-          # Wait for NATS to be ready
-          timeout 30 bash -c 'until wget -q --spider http://localhost:8222/healthz 2>/dev/null; do sleep 1; done'
-          echo "NATS with JetStream is ready"
-
-      - name: Run integration tests with coverage
-        env:
-          DATABASE_URL: postgresql+asyncpg://opennotes:opennotes_password@localhost:5432/opennotes_test
-          REDIS_URL: redis://localhost:6379/0
-          NATS_URL: nats://localhost:4222
-          SKIP_TESTCONTAINERS: "1"
-        run: mise run test:server -- tests/integration/ -n 0 --cov=src --cov-report=xml --cov-report=term
+      - name: Run integration messaging tests (serial)
+        if: ${{ always() && steps.parallel-tests.outcome != 'skipped' }}
+        run: mise run test:server -- tests/integration/ -n 0 -m "integration_messaging or serial" --cov=src --cov-report=xml --cov-report=term --cov-append
 
       - name: Display coverage summary
         working-directory: opennotes-server

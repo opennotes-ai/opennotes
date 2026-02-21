@@ -147,6 +147,7 @@ class TestMockCommunityDataProvider:
 
 
 @pytest.mark.integration
+@pytest.mark.serial
 class TestMFCoreScorerIntegration:
     """Integration tests for MFCoreScorerAdapter with real MFCoreScorer."""
 

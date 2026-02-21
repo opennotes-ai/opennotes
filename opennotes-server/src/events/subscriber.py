@@ -10,7 +10,7 @@ from opentelemetry.semconv._incubating.attributes.messaging_attributes import (
 )
 from opentelemetry.semconv.trace import SpanAttributes
 
-from src.config import settings
+from src.config import get_settings
 from src.events.nats_client import Subscription, nats_client
 from src.events.schemas import (
     AuditLogCreatedEvent,
@@ -129,7 +129,7 @@ class EventSubscriber:
 
     def _get_subject(self, event_type: EventType) -> str:
         event_name = event_type.value.replace(".", "_")
-        return f"{settings.NATS_STREAM_NAME}.{event_name}"
+        return f"{get_settings().NATS_STREAM_NAME}.{event_name}"
 
     def _get_event_class(self, event_type: EventType) -> type:
         mapping: dict[EventType, type] = {
@@ -195,7 +195,7 @@ class EventSubscriber:
                     handler_tasks = [
                         asyncio.wait_for(
                             handler(event),
-                            timeout=settings.NATS_HANDLER_TIMEOUT,
+                            timeout=get_settings().NATS_HANDLER_TIMEOUT,
                         )
                         for handler in handlers
                     ]
@@ -207,7 +207,7 @@ class EventSubscriber:
                         if isinstance(result, asyncio.TimeoutError):
                             logger.error(
                                 f"Handler {i} timeout for event {event.event_id} after "
-                                f"{settings.NATS_HANDLER_TIMEOUT}s"
+                                f"{get_settings().NATS_HANDLER_TIMEOUT}s"
                             )
                             failed = True
                         elif isinstance(result, Exception):
