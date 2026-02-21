@@ -333,7 +333,7 @@ jobs:
 
       - name: Run integration messaging tests (serial)
         if: ${{ always() && steps.parallel-tests.outcome != 'skipped' }}
-        run: mise run test:server -- tests/integration/ -n 0 -m integration_messaging --cov=src --cov-report=xml --cov-report=term --cov-append
+        run: mise run test:server -- tests/integration/ -n 0 -m "integration_messaging or serial" --cov=src --cov-report=xml --cov-report=term --cov-append
 
       - name: Display coverage summary
         working-directory: opennotes-server
