@@ -131,6 +131,5 @@ async def test_simulation_run_orchestrator_fk_restrict(db):
     db.add(run)
     await db.commit()
 
-    await db.execute(delete(SimulationOrchestrator).where(SimulationOrchestrator.id == orch.id))
     with pytest.raises(IntegrityError):
-        await db.commit()
+        await db.execute(delete(SimulationOrchestrator).where(SimulationOrchestrator.id == orch.id))
