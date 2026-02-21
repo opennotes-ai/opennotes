@@ -38,7 +38,7 @@ import logging
 from typing import Annotated
 
 import pendulum
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -240,9 +240,9 @@ async def register_discord(
 @limiter.limit("3/hour")
 async def register_email(
     request: Request,
-    email: str,
-    password: str,
-    display_name: str,
+    email: Annotated[str, Query(min_length=1)],
+    password: Annotated[str, Query(min_length=1)],
+    display_name: Annotated[str, Query(min_length=1, max_length=255)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserProfile:
     try:
@@ -467,7 +467,7 @@ async def login_email(
 @limiter.limit("10/hour")
 async def verify_email(
     request: Request,
-    token: str,
+    token: Annotated[str, Query(min_length=1)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserProfile:
     """
@@ -530,7 +530,7 @@ async def verify_email(
 @limiter.limit("3/hour")
 async def resend_verification_email(
     request: Request,
-    email: str,
+    email: Annotated[str, Query(min_length=1)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, str]:
     """
