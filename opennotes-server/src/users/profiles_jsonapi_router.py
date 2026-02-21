@@ -36,6 +36,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.monitoring import get_logger
 from src.users.audit_helper import extract_request_context
@@ -384,7 +385,12 @@ async def verify_service_account(
     return current_user
 
 
-@router.get("/profiles/me", response_class=JSONResponse, response_model=ProfileSingleResponse)
+@router.get(
+    "/profiles/me",
+    response_class=JSONResponse,
+    response_model=ProfileSingleResponse,
+    responses=AUTHENTICATED_RESPONSES,
+)
 async def get_current_profile_jsonapi(
     request: HTTPRequest,
     profile_id: Annotated[UUID, Depends(get_current_profile_id)],
@@ -646,6 +652,7 @@ async def unlink_identity_jsonapi(
     "/profiles/me/communities",
     response_class=JSONResponse,
     response_model=CommunityMembershipListResponse,
+    responses=AUTHENTICATED_RESPONSES,
 )
 async def list_user_communities_jsonapi(
     request: HTTPRequest,
@@ -755,6 +762,7 @@ async def get_public_profile_jsonapi(
     "/profiles/{profile_id}/opennotes-admin",
     response_class=JSONResponse,
     response_model=AdminStatusSingleResponse,
+    responses=AUTHENTICATED_RESPONSES,
 )
 async def get_admin_status_jsonapi(
     request: HTTPRequest,
@@ -805,6 +813,7 @@ async def get_admin_status_jsonapi(
     "/profiles/{profile_id}/opennotes-admin",
     response_class=JSONResponse,
     response_model=AdminStatusSingleResponse,
+    responses=AUTHENTICATED_RESPONSES,
 )
 async def update_admin_status_jsonapi(
     request: HTTPRequest,
@@ -866,7 +875,12 @@ async def update_admin_status_jsonapi(
         )
 
 
-@router.patch("/profiles/me", response_class=JSONResponse, response_model=ProfileSingleResponse)
+@router.patch(
+    "/profiles/me",
+    response_class=JSONResponse,
+    response_model=ProfileSingleResponse,
+    responses=AUTHENTICATED_RESPONSES,
+)
 async def update_profile_jsonapi(
     request: HTTPRequest,
     update_request: ProfileUpdateRequest,
@@ -935,6 +949,7 @@ async def update_profile_jsonapi(
     "/user-profiles/lookup",
     response_class=JSONResponse,
     response_model=UserProfileLookupResponse,
+    responses=AUTHENTICATED_RESPONSES,
 )
 async def lookup_user_profile_jsonapi(
     request: HTTPRequest,

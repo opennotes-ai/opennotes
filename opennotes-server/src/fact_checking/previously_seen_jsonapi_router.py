@@ -40,6 +40,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_pagination_links as create_pagination_links_base,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.fact_checking.embedding_service import EmbeddingService
@@ -56,7 +57,7 @@ from src.users.models import User
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
 
 @lru_cache

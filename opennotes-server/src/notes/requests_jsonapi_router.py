@@ -50,6 +50,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_pagination_links as create_pagination_links_base,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
@@ -70,7 +71,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
 
 def get_ai_note_writer(http_request: HTTPRequest) -> "AINoteWriter":

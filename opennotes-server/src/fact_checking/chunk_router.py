@@ -41,6 +41,7 @@ from src.batch_jobs.models import BatchJobStatus
 from src.batch_jobs.rechunk_service import ActiveJobExistsError, RechunkBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.batch_jobs.service import BatchJobService, InvalidStateTransitionError
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.middleware.rate_limiting import limiter
 from src.monitoring import get_logger
@@ -49,7 +50,7 @@ from src.users.profile_crud import get_profile_by_id
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/chunks", tags=["chunks"])
+router = APIRouter(prefix="/chunks", tags=["chunks"], responses=AUTHENTICATED_RESPONSES)
 
 
 def get_rechunk_batch_job_service(

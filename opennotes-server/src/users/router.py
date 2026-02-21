@@ -52,6 +52,7 @@ from src.auth.models import (
     UserUpdate,
 )
 from src.auth.revocation import revoke_all_user_tokens, revoke_token
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.middleware.rate_limiting import limiter
@@ -251,7 +252,9 @@ async def refresh_access_token(
     )
 
 
-@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/auth/logout", status_code=status.HTTP_204_NO_CONTENT, responses=AUTHENTICATED_RESPONSES
+)
 async def logout(
     request: Request,
     refresh_token: str,
@@ -307,7 +310,9 @@ async def logout(
         raise
 
 
-@router.post("/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT, responses=AUTHENTICATED_RESPONSES
+)
 async def logout_all(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -342,7 +347,9 @@ async def logout_all(
         raise
 
 
-@router.post("/auth/revoke-token", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/auth/revoke-token", status_code=status.HTTP_204_NO_CONTENT, responses=AUTHENTICATED_RESPONSES
+)
 async def revoke_current_token(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -396,7 +403,11 @@ async def revoke_current_token(
         raise
 
 
-@router.post("/auth/revoke-all-tokens", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/auth/revoke-all-tokens",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=AUTHENTICATED_RESPONSES,
+)
 async def revoke_all_tokens(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -434,14 +445,18 @@ async def revoke_all_tokens(
         raise
 
 
-@router.get("/users/me", response_model=UserResponse)
+@router.get("/users/me", response_model=UserResponse, responses=AUTHENTICATED_RESPONSES)
 async def get_current_user_profile(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     return current_user
 
 
-@router.get("/users/me/login-history", response_model=list[AuditLogResponse])
+@router.get(
+    "/users/me/login-history",
+    response_model=list[AuditLogResponse],
+    responses=AUTHENTICATED_RESPONSES,
+)
 async def get_login_history(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -470,7 +485,7 @@ async def get_login_history(
     return [AuditLogResponse.model_validate(log) for log in audit_logs]
 
 
-@router.patch("/users/me", response_model=UserResponse)
+@router.patch("/users/me", response_model=UserResponse, responses=AUTHENTICATED_RESPONSES)
 async def update_current_user_profile(
     request: Request,
     user_update: UserUpdate,
@@ -510,7 +525,10 @@ async def update_current_user_profile(
 
 
 @router.post(
-    "/users/me/api-keys", response_model=APIKeyResponse, status_code=status.HTTP_201_CREATED
+    "/users/me/api-keys",
+    response_model=APIKeyResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=AUTHENTICATED_RESPONSES,
 )
 async def create_user_api_key(
     request: Request,
@@ -537,7 +555,9 @@ async def create_user_api_key(
         raise
 
 
-@router.get("/users/me/api-keys", response_model=list[APIKeyResponse])
+@router.get(
+    "/users/me/api-keys", response_model=list[APIKeyResponse], responses=AUTHENTICATED_RESPONSES
+)
 async def list_user_api_keys(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -556,7 +576,11 @@ async def list_user_api_keys(
     ]
 
 
-@router.delete("/users/me/api-keys/{api_key_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/users/me/api-keys/{api_key_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=AUTHENTICATED_RESPONSES,
+)
 async def revoke_user_api_key(
     request: Request,
     api_key_id: UUID,

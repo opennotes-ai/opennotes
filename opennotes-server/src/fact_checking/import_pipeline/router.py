@@ -21,6 +21,7 @@ from src.batch_jobs import ActiveJobExistsError
 from src.batch_jobs.import_service import ImportBatchJobService
 from src.batch_jobs.schemas import BatchJobResponse
 from src.common.base_schemas import ResponseSchema, StrictInputSchema
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.fact_checking.import_pipeline.scrape_tasks import enqueue_scrape_batch
 from src.monitoring import get_logger
@@ -31,6 +32,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/fact-checking/import",
     tags=["fact-checking-import"],
+    responses=AUTHENTICATED_RESPONSES,
 )
 
 

@@ -31,6 +31,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
@@ -38,7 +39,7 @@ from src.users.models import User
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["community-servers-jsonapi"])
+router = APIRouter(tags=["community-servers-jsonapi"], responses=AUTHENTICATED_RESPONSES)
 
 
 class CommunityServerAttributes(SQLAlchemySchema):

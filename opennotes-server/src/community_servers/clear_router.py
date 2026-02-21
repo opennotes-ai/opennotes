@@ -20,13 +20,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.community_dependencies import verify_community_admin_by_uuid
 from src.auth.dependencies import get_current_user_or_api_key
 from src.common.base_schemas import SQLAlchemySchema
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.notes.models import Note
 from src.notes.models import Request as NoteRequest
 from src.users.models import User
 from src.users.profile_models import CommunityMember
 
-router = APIRouter(prefix="/community-servers", tags=["community-clear"])
+router = APIRouter(
+    prefix="/community-servers", tags=["community-clear"], responses=AUTHENTICATED_RESPONSES
+)
 logger = logging.getLogger(__name__)
 
 

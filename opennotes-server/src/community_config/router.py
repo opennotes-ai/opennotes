@@ -16,6 +16,7 @@ from src.auth.community_dependencies import (
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.community_config.models import CommunityConfig
 from src.database import get_db
 from src.monitoring import get_logger
@@ -24,7 +25,7 @@ from src.users.profile_models import CommunityMember
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["community-config"])
+router = APIRouter(tags=["community-config"], responses=AUTHENTICATED_RESPONSES)
 
 
 CONFIG_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")

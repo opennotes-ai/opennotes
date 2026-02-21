@@ -24,6 +24,7 @@ from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
 from src.cache.redis_client import redis_client
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.search.fusion_config import (
     FALLBACK_ALPHA,
     FusionConfig,
@@ -32,7 +33,11 @@ from src.search.fusion_config import (
 )
 from src.users.models import User
 
-router = APIRouter(prefix="/api/v1/admin/fusion-weights", tags=["admin", "search"])
+router = APIRouter(
+    prefix="/api/v1/admin/fusion-weights",
+    tags=["admin", "search"],
+    responses=AUTHENTICATED_RESPONSES,
+)
 logger = logging.getLogger(__name__)
 
 

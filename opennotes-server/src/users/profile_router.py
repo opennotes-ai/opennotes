@@ -60,6 +60,7 @@ from src.auth.profile_auth import (
 )
 from src.auth.profile_dependencies import get_current_active_profile
 from src.auth.revocation import revoke_token
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.middleware.rate_limiting import limiter
@@ -599,7 +600,12 @@ async def resend_verification_email(
         raise
 
 
-@router.post("/auth/migrate-profile", response_model=Token, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/auth/migrate-profile",
+    response_model=Token,
+    status_code=status.HTTP_201_CREATED,
+    responses=AUTHENTICATED_RESPONSES,
+)
 @limiter.limit("3/hour")
 async def migrate_legacy_user_to_profile(
     request: Request,
@@ -672,14 +678,14 @@ async def migrate_legacy_user_to_profile(
         raise
 
 
-@router.get("/me", response_model=UserProfileResponse)
+@router.get("/me", response_model=UserProfileResponse, responses=AUTHENTICATED_RESPONSES)
 async def get_current_profile_endpoint(
     current_profile: Annotated[UserProfile, Depends(get_current_active_profile)],
 ) -> UserProfile:
     return current_profile
 
 
-@router.patch("/me", response_model=UserProfileResponse)
+@router.patch("/me", response_model=UserProfileResponse, responses=AUTHENTICATED_RESPONSES)
 async def update_current_profile_endpoint(
     profile_update: UserProfileSelfUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -703,7 +709,9 @@ async def update_current_profile_endpoint(
         raise
 
 
-@router.post("/auth/revoke", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/auth/revoke", status_code=status.HTTP_204_NO_CONTENT, responses=AUTHENTICATED_RESPONSES
+)
 @limiter.limit("20/hour")
 async def revoke_profile_token(
     request: Request,

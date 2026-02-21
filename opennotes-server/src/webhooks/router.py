@@ -59,7 +59,9 @@ async def register_webhook(
     )
 
 
-@router.get("/{platform_community_server_id}", response_model=list[WebhookConfigResponse])
+@router.get(
+    "/by-community/{platform_community_server_id}", response_model=list[WebhookConfigResponse]
+)
 async def get_webhooks_by_community_server(
     platform_community_server_id: str,
     db: AsyncSession = Depends(get_db),

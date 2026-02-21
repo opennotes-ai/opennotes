@@ -2108,7 +2108,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhooks/{platform_community_server_id}": {
+    "/api/v1/webhooks/by-community/{platform_community_server_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2116,7 +2116,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Webhooks By Community Server */
-        get: operations["get_webhooks_by_community_server_api_v1_webhooks__platform_community_server_id__get"];
+        get: operations["get_webhooks_by_community_server_api_v1_webhooks_by_community__platform_community_server_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8762,6 +8762,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8789,6 +8796,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     revoke_current_token_api_v1_auth_revoke_token_post: {
@@ -8807,6 +8821,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     revoke_all_tokens_api_v1_auth_revoke_all_tokens_post: {
@@ -8820,6 +8841,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8845,6 +8873,13 @@ export interface operations {
                     "application/json": components["schemas"]["UserResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     update_current_user_profile_api_v1_users_me_patch: {
@@ -8868,6 +8903,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -8901,6 +8943,13 @@ export interface operations {
                     "application/json": components["schemas"]["AuditLogResponse"][];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -8930,6 +8979,13 @@ export interface operations {
                     "application/json": components["schemas"]["APIKeyResponse"][];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     create_user_api_key_api_v1_users_me_api_keys_post: {
@@ -8953,6 +9009,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["APIKeyResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -8978,6 +9041,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9228,6 +9298,13 @@ export interface operations {
                     "application/json": components["schemas"]["Token"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_current_profile_endpoint_api_v1_profile_me_get: {
@@ -9247,6 +9324,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserProfileResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -9272,6 +9356,13 @@ export interface operations {
                     "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9294,6 +9385,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9324,6 +9422,13 @@ export interface operations {
                         [key: string]: boolean;
                     };
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9360,6 +9465,13 @@ export interface operations {
                     "application/json": components["schemas"]["UserProfileResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9390,6 +9502,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AllFusionWeightsResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9426,6 +9545,13 @@ export interface operations {
                     "application/json": components["schemas"]["FusionWeightResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9456,6 +9582,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FusionWeightResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9489,6 +9622,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FusionWeightResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9524,6 +9664,13 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9570,6 +9717,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteListResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9605,6 +9759,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9638,6 +9799,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9664,6 +9832,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9706,6 +9881,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9738,6 +9920,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NoteSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9774,6 +9963,13 @@ export interface operations {
                     "application/json": components["schemas"]["RatingSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9806,6 +10002,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RatingListResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -9844,6 +10047,13 @@ export interface operations {
                     "application/json": components["schemas"]["RatingSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9877,6 +10087,13 @@ export interface operations {
                     "application/json": components["schemas"]["RatingStatsSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -9906,6 +10123,13 @@ export interface operations {
                     "application/json": components["schemas"]["ProfileSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     update_profile_jsonapi_api_v2_profiles_me_patch: {
@@ -9929,6 +10153,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ProfileSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10058,6 +10289,13 @@ export interface operations {
                     "application/json": components["schemas"]["CommunityMembershipListResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10122,6 +10360,13 @@ export interface operations {
                     "application/json": components["schemas"]["AdminStatusSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10159,6 +10404,13 @@ export interface operations {
                     "application/json": components["schemas"]["AdminStatusSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10194,6 +10446,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserProfileLookupResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10231,6 +10490,13 @@ export interface operations {
                     "application/json": components["schemas"]["CommunityServerSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10263,6 +10529,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CommunityServerSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10299,6 +10572,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteStatsSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10333,6 +10613,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ParticipantStatsSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10373,6 +10660,13 @@ export interface operations {
                     "application/json": components["schemas"]["RequestListJSONAPIResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10408,6 +10702,13 @@ export interface operations {
                     "application/json": components["schemas"]["RequestSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10440,6 +10741,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RequestSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10478,6 +10786,13 @@ export interface operations {
                     "application/json": components["schemas"]["RequestSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10511,6 +10826,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10541,6 +10863,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ScoringStatusJSONAPIResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10574,6 +10903,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NoteScoreSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10609,6 +10945,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NoteScoreListResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10652,6 +10995,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteScoreListResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10687,6 +11037,13 @@ export interface operations {
                     "application/json": components["schemas"]["ScoringResultResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10718,6 +11075,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     list_monitored_channels_jsonapi_api_v2_monitored_channels_get: {
@@ -10744,6 +11108,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MonitoredChannelListJSONAPIResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10780,6 +11151,13 @@ export interface operations {
                     "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10813,6 +11191,13 @@ export interface operations {
                     "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10845,6 +11230,13 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10883,6 +11275,13 @@ export interface operations {
                     "application/json": components["schemas"]["MonitoredChannelSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10919,6 +11318,13 @@ export interface operations {
                     "application/json": components["schemas"]["NotePublisherConfigListResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10954,6 +11360,13 @@ export interface operations {
                     "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -10987,6 +11400,13 @@ export interface operations {
                     "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11019,6 +11439,13 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11057,6 +11484,13 @@ export interface operations {
                     "application/json": components["schemas"]["NotePublisherConfigSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11094,6 +11528,13 @@ export interface operations {
                     "application/json": components["schemas"]["NotePublisherPostListResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11129,6 +11570,13 @@ export interface operations {
                     "application/json": components["schemas"]["NotePublisherPostSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11161,6 +11609,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["NotePublisherPostSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11197,6 +11652,13 @@ export interface operations {
                     "application/json": components["schemas"]["PreviouslySeenMessageListResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11232,6 +11694,13 @@ export interface operations {
                     "application/json": components["schemas"]["PreviouslySeenMessageSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11264,6 +11733,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PreviouslySeenMessageSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11300,6 +11776,13 @@ export interface operations {
                     "application/json": components["schemas"]["PreviouslySeenCheckResultResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11334,6 +11817,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SimilaritySearchResultResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11370,6 +11860,13 @@ export interface operations {
                     "application/json": components["schemas"]["ClaimRelevanceCheckResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11404,6 +11901,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HybridSearchResultResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11440,6 +11944,13 @@ export interface operations {
                     "application/json": components["schemas"]["BulkScanSingleResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11472,6 +11983,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BulkScanResultsJSONAPIResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11506,6 +12024,13 @@ export interface operations {
                     "application/json": components["schemas"]["RecentScanResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11538,6 +12063,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LatestScanJSONAPIResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11576,6 +12108,13 @@ export interface operations {
                     "application/json": components["schemas"]["NoteRequestsResultResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11610,6 +12149,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExplanationResultResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11655,7 +12201,7 @@ export interface operations {
             };
         };
     };
-    get_webhooks_by_community_server_api_v1_webhooks__platform_community_server_id__get: {
+    get_webhooks_by_community_server_api_v1_webhooks_by_community__platform_community_server_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -11807,6 +12353,13 @@ export interface operations {
                     "application/json": components["schemas"]["RatingThresholdsResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11839,6 +12392,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CommunityConfigResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -11875,6 +12435,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -11904,6 +12471,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11944,6 +12518,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CommunityServerLookupResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -12043,6 +12624,13 @@ export interface operations {
                     "application/json": components["schemas"]["WelcomeMessageUpdateResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12137,6 +12725,13 @@ export interface operations {
                     "application/json": components["schemas"]["CommunityAdminResponse"][];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12174,6 +12769,13 @@ export interface operations {
                     "application/json": components["schemas"]["CommunityAdminResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12207,6 +12809,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RemoveCommunityAdminResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -12244,6 +12853,13 @@ export interface operations {
                     "application/json": components["schemas"]["ClearResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12279,6 +12895,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClearPreviewResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -12316,6 +12939,13 @@ export interface operations {
                     "application/json": components["schemas"]["ClearResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12352,6 +12982,13 @@ export interface operations {
                     "application/json": components["schemas"]["ClearPreviewResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12384,6 +13021,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LLMConfigResponse"][];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -12422,6 +13066,13 @@ export interface operations {
                     "application/json": components["schemas"]["LLMConfigResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12456,6 +13107,13 @@ export interface operations {
                     "application/json": components["schemas"]["LLMConfigResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12483,6 +13141,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12526,6 +13191,13 @@ export interface operations {
                     "application/json": components["schemas"]["LLMConfigResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12563,6 +13235,13 @@ export interface operations {
                     "application/json": components["schemas"]["LLMConfigTestResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12597,6 +13276,13 @@ export interface operations {
                     "application/json": components["schemas"]["LLMUsageStatsResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12629,6 +13315,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description User lacks admin/moderator permission for the job's community */
             403: {
@@ -12670,6 +13363,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12732,6 +13432,13 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description User lacks admin/moderator permission for the community */
             403: {
                 headers: {
@@ -12782,6 +13489,13 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description User lacks admin/moderator permission for the community */
             403: {
                 headers: {
@@ -12830,6 +13544,13 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"][];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12864,6 +13585,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -12907,6 +13635,13 @@ export interface operations {
                     "application/json": components["schemas"]["EnqueueScrapeResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -12941,6 +13676,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -12983,6 +13725,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -13033,6 +13782,13 @@ export interface operations {
                     "application/json": components["schemas"]["CandidateListResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -13069,6 +13825,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CandidateSingleResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Candidate not found */
             404: {
@@ -13111,6 +13874,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -13157,6 +13927,13 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"][];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -13192,6 +13969,13 @@ export interface operations {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
             };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -13224,6 +14008,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobResponse"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Batch job not found */
             404: {
@@ -13258,6 +14049,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13309,6 +14107,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchJobProgress"];
                 };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Batch job not found */
             404: {

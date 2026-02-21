@@ -31,6 +31,7 @@ from src.bulk_content_scan.service import (
     create_note_requests_from_flagged_messages,
 )
 from src.cache.redis_client import redis_client
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
 from src.fact_checking.embedding_service import EmbeddingService
@@ -44,7 +45,9 @@ from src.users.profile_models import CommunityMember
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/bulk-content-scan", tags=["Bulk Content Scan"])
+router = APIRouter(
+    prefix="/bulk-content-scan", tags=["Bulk Content Scan"], responses=AUTHENTICATED_RESPONSES
+)
 
 
 async def get_redis() -> Redis:

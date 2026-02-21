@@ -10,13 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.community_dependencies import get_community_server_by_platform_id
 from src.auth.dependencies import get_current_user_or_api_key
 from src.common.base_schemas import SQLAlchemySchema, StrictInputSchema
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["community-servers"])
+router = APIRouter(tags=["community-servers"], responses=AUTHENTICATED_RESPONSES)
 
 
 class CommunityServerLookupResponse(SQLAlchemySchema):
@@ -170,7 +171,6 @@ async def lookup_community_server(
     "/community-servers/{platform_community_server_id}/name",
     response_model=CommunityServerNameUpdateResponse,
     responses={
-        401: {"description": "Not authenticated"},
         403: {"description": "Not authorized — requires service account"},
         404: {"description": "Community server not found"},
     },
@@ -334,7 +334,6 @@ async def update_welcome_message(
     "/community-servers/{platform_community_server_id}/flashpoint-detection",
     response_model=FlashpointDetectionUpdateResponse,
     responses={
-        401: {"description": "Not authenticated"},
         403: {"description": "Not authorized — requires service account"},
         404: {"description": "Community server not found"},
     },
