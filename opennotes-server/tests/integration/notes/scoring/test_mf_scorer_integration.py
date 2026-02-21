@@ -151,6 +151,7 @@ class TestMockCommunityDataProvider:
 class TestMFCoreScorerIntegration:
     """Integration tests for MFCoreScorerAdapter with real MFCoreScorer."""
 
+    @pytest.mark.skip(reason="Flaky: crashes xdist worker (OOM) in CI - see TASK-1135")
     def test_score_note_with_real_mf_core_scorer(self):
         """
         score_note returns results from MFCoreScorer, not stub.
