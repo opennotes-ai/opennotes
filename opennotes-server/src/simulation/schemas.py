@@ -1,7 +1,8 @@
+from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from src.common.base_schemas import StrictInputSchema, TimestampSchema
 
@@ -30,6 +31,24 @@ class SimAgentUpdate(StrictInputSchema):
     memory_compaction_strategy: str | None = Field(default=None, max_length=50)
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
+
+
+class SimActionType(str, Enum):
+    WRITE_NOTE = "write_note"
+    RATE_NOTE = "rate_note"
+    REACT_TO_NOTE = "react_to_note"
+    PASS_TURN = "pass_turn"
+
+
+class SimAgentAction(BaseModel):
+    action_type: SimActionType
+    request_id: str | None = Field(None, description="Request ID the note was written for")
+    note_id: str | None = Field(None, description="Note ID that was rated or reacted to")
+    summary: str | None = Field(None, description="Note summary text if wrote a note")
+    classification: str | None = Field(None, description="Note classification if wrote a note")
+    helpfulness_level: str | None = Field(None, description="Rating level if rated a note")
+    reaction_text: str | None = Field(None, description="Reaction text if reacted")
+    reasoning: str = Field(..., description="Brief explanation of why this action was chosen")
 
 
 class SimAgentResponse(TimestampSchema):
