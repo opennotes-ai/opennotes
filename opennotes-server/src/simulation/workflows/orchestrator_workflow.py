@@ -1,0 +1,572 @@
+from __future__ import annotations
+
+import random
+from typing import Any
+from uuid import UUID
+
+import pendulum
+from dbos import DBOS, Queue
+from sqlalchemy import func, select, update
+from sqlalchemy.orm import selectinload
+
+from src.dbos_workflows.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.monitoring import get_logger
+from src.simulation.models import SimAgentInstance, SimulationOrchestrator, SimulationRun
+from src.utils.async_compat import run_sync
+
+logger = get_logger(__name__)
+
+MAX_ITERATIONS: int = 10_000
+SPAWN_BATCH_SIZE: int = 5
+CIRCUIT_BREAKER_THRESHOLD: int = 5
+CIRCUIT_BREAKER_RESET_TIMEOUT: float = 300.0
+
+simulation_orchestrator_queue = Queue(
+    name="simulation_orchestrator",
+    worker_concurrency=1,
+    concurrency=2,
+)
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=3,
+    interval_seconds=2.0,
+    backoff_rate=2.0,
+)
+def initialize_run_step(simulation_run_id: str) -> dict[str, Any]:
+    from src.database import get_session_maker
+
+    async def _init() -> dict[str, Any]:
+        async with get_session_maker()() as session:
+            run_query = (
+                select(SimulationRun)
+                .options(selectinload(SimulationRun.orchestrator))
+                .where(SimulationRun.id == UUID(simulation_run_id))
+            )
+            result = await session.execute(run_query)
+            run = result.scalar_one_or_none()
+
+            if run is None:
+                raise ValueError(f"SimulationRun not found: {simulation_run_id}")
+
+            if run.status != "pending":
+                raise ValueError(
+                    f"SimulationRun {simulation_run_id} is '{run.status}', expected 'pending'"
+                )
+
+            orchestrator: SimulationOrchestrator = run.orchestrator
+
+            now = pendulum.now("UTC")
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == UUID(simulation_run_id))
+                .values(status="running", started_at=now)
+            )
+            await session.commit()
+
+            return {
+                "turn_cadence_seconds": orchestrator.turn_cadence_seconds,
+                "max_agents": orchestrator.max_agents,
+                "removal_rate": orchestrator.removal_rate,
+                "max_turns_per_agent": orchestrator.max_turns_per_agent,
+                "agent_profile_ids": orchestrator.agent_profile_ids or [],
+                "community_server_id": str(run.community_server_id),
+            }
+
+    return run_sync(_init())
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=3,
+    interval_seconds=2.0,
+    backoff_rate=2.0,
+)
+def check_run_status_step(simulation_run_id: str) -> str:
+    from src.database import get_session_maker
+
+    async def _check() -> str:
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun.status).where(SimulationRun.id == UUID(simulation_run_id))
+            )
+            status = result.scalar_one_or_none()
+            if status is None:
+                raise ValueError(f"SimulationRun not found: {simulation_run_id}")
+            return status
+
+    return run_sync(_check())
+
+
+@DBOS.step()
+def get_population_snapshot_step(simulation_run_id: str) -> dict[str, int]:
+    from src.database import get_session_maker
+
+    async def _snapshot() -> dict[str, int]:
+        run_uuid = UUID(simulation_run_id)
+        async with get_session_maker()() as session:
+            active_result = await session.execute(
+                select(func.count()).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                    SimAgentInstance.state == "active",
+                )
+            )
+            active_count = active_result.scalar() or 0
+
+            total_result = await session.execute(
+                select(func.count()).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                )
+            )
+            total_spawned = total_result.scalar() or 0
+
+            removed_result = await session.execute(
+                select(func.count()).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                    SimAgentInstance.state == "removed",
+                )
+            )
+            total_removed = removed_result.scalar() or 0
+
+            return {
+                "active_count": active_count,
+                "total_spawned": total_spawned,
+                "total_removed": total_removed,
+            }
+
+    return run_sync(_snapshot())
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=3,
+    interval_seconds=2.0,
+    backoff_rate=2.0,
+)
+def spawn_agents_step(
+    simulation_run_id: str,
+    config: dict[str, Any],
+    active_count: int,
+    total_spawned: int,
+) -> list[str]:
+    from src.database import get_session_maker
+    from src.simulation.models import SimAgent
+    from src.users.profile_models import CommunityMember, UserProfile
+
+    max_agents = config["max_agents"]
+    agent_profile_ids = config["agent_profile_ids"]
+    community_server_id = config["community_server_id"]
+
+    if active_count >= max_agents or not agent_profile_ids:
+        return []
+
+    to_spawn = min(SPAWN_BATCH_SIZE, max_agents - active_count)
+
+    async def _spawn() -> list[str]:
+        run_uuid = UUID(simulation_run_id)
+        cs_uuid = UUID(community_server_id)
+        new_instance_ids: list[str] = []
+        now = pendulum.now("UTC")
+
+        async with get_session_maker()() as session:
+            for i in range(to_spawn):
+                profile_index = (total_spawned + i) % len(agent_profile_ids)
+                profile_id_str = agent_profile_ids[profile_index]
+                profile_uuid = UUID(profile_id_str)
+
+                agent_result = await session.execute(
+                    select(SimAgent.name).where(SimAgent.id == profile_uuid)
+                )
+                agent_name = agent_result.scalar_one_or_none() or "Unknown"
+
+                instance_number = total_spawned + i + 1
+                display_name = f"SimAgent-{agent_name}-{instance_number}"
+
+                user_profile = UserProfile(
+                    display_name=display_name,
+                    is_human=False,
+                    is_active=True,
+                )
+                session.add(user_profile)
+                await session.flush()
+
+                community_member = CommunityMember(
+                    community_id=cs_uuid,
+                    profile_id=user_profile.id,
+                    role="member",
+                    joined_at=now,
+                    is_active=True,
+                )
+                session.add(community_member)
+
+                instance = SimAgentInstance(
+                    simulation_run_id=run_uuid,
+                    agent_profile_id=profile_uuid,
+                    user_profile_id=user_profile.id,
+                    state="active",
+                    turn_count=0,
+                )
+                session.add(instance)
+                await session.flush()
+
+                new_instance_ids.append(str(instance.id))
+
+            await session.commit()
+
+        return new_instance_ids
+
+    return run_sync(_spawn())
+
+
+@DBOS.step()
+def remove_agents_step(
+    simulation_run_id: str,
+    config: dict[str, Any],
+    active_count: int,
+) -> list[str]:
+    removal_rate = config["removal_rate"]
+
+    if removal_rate <= 0 or active_count <= 1:
+        return []
+
+    if random.random() >= removal_rate:
+        return []
+
+    from src.database import get_session_maker
+
+    async def _remove() -> list[str]:
+        run_uuid = UUID(simulation_run_id)
+        now = pendulum.now("UTC")
+
+        async with get_session_maker()() as session:
+            oldest_query = (
+                select(SimAgentInstance.id)
+                .where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                    SimAgentInstance.state == "active",
+                )
+                .order_by(SimAgentInstance.created_at.asc())
+                .limit(1)
+            )
+            oldest_result = await session.execute(oldest_query)
+            oldest_id = oldest_result.scalar_one_or_none()
+
+            if oldest_id is None:
+                return []
+
+            await session.execute(
+                update(SimAgentInstance)
+                .where(SimAgentInstance.id == oldest_id)
+                .values(
+                    state="removed",
+                    removal_reason="removal_rate",
+                    deleted_at=now,
+                )
+            )
+            await session.commit()
+
+            return [str(oldest_id)]
+
+    return run_sync(_remove())
+
+
+@DBOS.step()
+def schedule_turns_step(
+    simulation_run_id: str,
+    config: dict[str, Any],
+) -> dict[str, int]:
+    from src.database import get_session_maker
+
+    max_turns = config["max_turns_per_agent"]
+
+    async def _schedule() -> dict[str, int]:
+        from src.simulation.workflows.agent_turn_workflow import dispatch_agent_turn
+
+        run_uuid = UUID(simulation_run_id)
+
+        async with get_session_maker()() as session:
+            active_query = select(SimAgentInstance.id, SimAgentInstance.turn_count).where(
+                SimAgentInstance.simulation_run_id == run_uuid,
+                SimAgentInstance.state == "active",
+            )
+            result = await session.execute(active_query)
+            instances = result.all()
+
+        dispatched_count = 0
+        skipped_count = 0
+
+        for instance_id, turn_count in instances:
+            if turn_count >= max_turns:
+                skipped_count += 1
+                continue
+
+            await dispatch_agent_turn(instance_id, turn_count + 1)
+            dispatched_count += 1
+
+        return {
+            "dispatched_count": dispatched_count,
+            "skipped_count": skipped_count,
+        }
+
+    return run_sync(_schedule())
+
+
+@DBOS.step()
+def update_metrics_step(
+    simulation_run_id: str,
+    dispatched_count: int,
+    spawned_count: int,
+    removed_count: int,
+) -> dict[str, Any]:
+    from src.database import get_session_maker
+
+    async def _update() -> dict[str, Any]:
+        run_uuid = UUID(simulation_run_id)
+
+        async with get_session_maker()() as session:
+            result = await session.execute(
+                select(SimulationRun.metrics).where(SimulationRun.id == run_uuid)
+            )
+            current_metrics = result.scalar_one_or_none() or {}
+
+            updated_metrics = {
+                "total_turns": current_metrics.get("total_turns", 0) + dispatched_count,
+                "agents_spawned": current_metrics.get("agents_spawned", 0) + spawned_count,
+                "agents_removed": current_metrics.get("agents_removed", 0) + removed_count,
+                "iterations": current_metrics.get("iterations", 0) + 1,
+            }
+
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == run_uuid)
+                .values(metrics=updated_metrics)
+            )
+            await session.commit()
+
+            return updated_metrics
+
+    return run_sync(_update())
+
+
+@DBOS.step(
+    retries_allowed=True,
+    max_attempts=3,
+    interval_seconds=2.0,
+    backoff_rate=2.0,
+)
+def finalize_run_step(simulation_run_id: str, final_status: str) -> dict[str, Any]:
+    from src.database import get_session_maker
+
+    async def _finalize() -> dict[str, Any]:
+        run_uuid = UUID(simulation_run_id)
+        now = pendulum.now("UTC")
+
+        async with get_session_maker()() as session:
+            active_result = await session.execute(
+                select(func.count()).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                    SimAgentInstance.state == "active",
+                )
+            )
+            remaining_active = active_result.scalar() or 0
+
+            completion_state = "completed" if final_status == "completed" else "removed"
+            removal_reason = (
+                "simulation_cancelled" if final_status == "cancelled" else "simulation_completed"
+            )
+
+            if remaining_active > 0:
+                await session.execute(
+                    update(SimAgentInstance)
+                    .where(
+                        SimAgentInstance.simulation_run_id == run_uuid,
+                        SimAgentInstance.state == "active",
+                    )
+                    .values(
+                        state=completion_state,
+                        removal_reason=removal_reason,
+                    )
+                )
+
+            await session.execute(
+                update(SimulationRun)
+                .where(SimulationRun.id == run_uuid)
+                .values(status=final_status, completed_at=now)
+            )
+            await session.commit()
+
+            return {
+                "final_status": final_status,
+                "instances_finalized": remaining_active,
+            }
+
+    return run_sync(_finalize())
+
+
+@DBOS.workflow()
+def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:
+    workflow_id = DBOS.workflow_id
+    assert workflow_id is not None
+
+    logger.info(
+        "Starting orchestrator workflow",
+        extra={
+            "workflow_id": workflow_id,
+            "simulation_run_id": simulation_run_id,
+        },
+    )
+
+    try:
+        config = initialize_run_step(simulation_run_id)
+    except Exception:
+        logger.exception(
+            "Failed to initialize orchestrator",
+            extra={"simulation_run_id": simulation_run_id},
+        )
+        return {"simulation_run_id": simulation_run_id, "status": "failed", "error": "init_failed"}
+
+    circuit_breaker = CircuitBreaker(
+        threshold=CIRCUIT_BREAKER_THRESHOLD,
+        reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
+    )
+
+    final_status = "completed"
+    iteration = 0
+
+    while iteration < MAX_ITERATIONS:
+        iteration += 1
+
+        status = check_run_status_step(simulation_run_id)
+
+        if status == "cancelled":
+            final_status = "cancelled"
+            break
+
+        if status in ("completed", "failed"):
+            final_status = status
+            break
+
+        if status == "paused":
+            DBOS.sleep(config["turn_cadence_seconds"])
+            continue
+
+        try:
+            snapshot = get_population_snapshot_step(simulation_run_id)
+        except Exception:
+            logger.exception("Failed to get population snapshot")
+            continue
+
+        spawned_ids: list[str] = []
+        try:
+            spawned_ids = spawn_agents_step(
+                simulation_run_id,
+                config,
+                snapshot["active_count"],
+                snapshot["total_spawned"],
+            )
+        except Exception:
+            logger.exception("Failed to spawn agents")
+
+        removed_ids: list[str] = []
+        try:
+            removed_ids = remove_agents_step(
+                simulation_run_id,
+                config,
+                snapshot["active_count"] + len(spawned_ids),
+            )
+        except Exception:
+            logger.exception("Failed to remove agents")
+
+        dispatched_count = 0
+        try:
+            circuit_breaker.check()
+            turn_result = schedule_turns_step(simulation_run_id, config)
+            dispatched_count = turn_result["dispatched_count"]
+            circuit_breaker.record_success()
+        except CircuitOpenError:
+            logger.warning(
+                "Circuit breaker open, skipping turn scheduling",
+                extra={
+                    "simulation_run_id": simulation_run_id,
+                    "failures": circuit_breaker.failures,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to schedule turns")
+            circuit_breaker.record_failure()
+
+        try:
+            update_metrics_step(
+                simulation_run_id,
+                dispatched_count=dispatched_count,
+                spawned_count=len(spawned_ids),
+                removed_count=len(removed_ids),
+            )
+        except Exception:
+            logger.exception("Failed to update metrics")
+
+        DBOS.sleep(config["turn_cadence_seconds"])
+
+    if iteration >= MAX_ITERATIONS:
+        logger.warning(
+            "Orchestrator reached max iterations",
+            extra={
+                "simulation_run_id": simulation_run_id,
+                "max_iterations": MAX_ITERATIONS,
+            },
+        )
+
+    finalize_result = finalize_run_step(simulation_run_id, final_status)
+
+    logger.info(
+        "Orchestrator workflow completed",
+        extra={
+            "workflow_id": workflow_id,
+            "simulation_run_id": simulation_run_id,
+            "final_status": final_status,
+            "iterations": iteration,
+        },
+    )
+
+    return {
+        "simulation_run_id": simulation_run_id,
+        "status": final_status,
+        "iterations": iteration,
+        "instances_finalized": finalize_result["instances_finalized"],
+    }
+
+
+RUN_ORCHESTRATOR_WORKFLOW_NAME: str = run_orchestrator.__qualname__
+
+
+async def dispatch_orchestrator(simulation_run_id: UUID) -> str:
+    import asyncio
+
+    from dbos import EnqueueOptions
+
+    from src.dbos_workflows.config import get_dbos_client
+
+    client = get_dbos_client()
+    wf_id = f"orchestrator-{simulation_run_id}"
+    options: EnqueueOptions = {
+        "queue_name": "simulation_orchestrator",
+        "workflow_name": RUN_ORCHESTRATOR_WORKFLOW_NAME,
+        "workflow_id": wf_id,
+        "deduplication_id": wf_id,
+    }
+    handle = await asyncio.to_thread(
+        client.enqueue,
+        options,
+        str(simulation_run_id),
+    )
+
+    logger.info(
+        "Orchestrator workflow dispatched",
+        extra={
+            "simulation_run_id": str(simulation_run_id),
+            "workflow_id": handle.workflow_id,
+        },
+    )
+
+    return handle.workflow_id
