@@ -131,7 +131,7 @@ class PreviouslySeenCheckAttributes(StrictInputSchema):
         max_length=64,
         description="Platform-specific community server ID (e.g., Discord guild ID)",
     )
-    channel_id: str = Field(..., max_length=64, description="Discord channel ID")
+    channel_id: str = Field(..., max_length=64, description="Platform-specific channel ID")
 
 
 class PreviouslySeenCheckData(BaseModel):
