@@ -64,14 +64,19 @@ async def test_concurrent_progress_increments(tracker: BatchJobProgressTracker) 
 
     Without atomic HINCRBY, race conditions would cause lost updates when multiple
     coroutines read-modify-write the same counter.
+
+    Uses a semaphore to bound concurrency and avoid exhausting the testcontainers
+    Redis connection pool (each update_progress call makes multiple Redis operations).
     """
     job_id = uuid4()
     num_concurrent_updates = 100
+    sem = asyncio.Semaphore(10)
 
     await tracker.start_tracking(job_id)
 
     async def increment_once() -> None:
-        await tracker.update_progress(job_id, increment_processed=True)
+        async with sem:
+            await tracker.update_progress(job_id, increment_processed=True)
 
     tasks = [asyncio.create_task(increment_once()) for _ in range(num_concurrent_updates)]
     await asyncio.gather(*tasks)
@@ -91,11 +96,13 @@ async def test_concurrent_error_increments(tracker: BatchJobProgressTracker) -> 
     """Test that concurrent error increments are atomic."""
     job_id = uuid4()
     num_concurrent_updates = 50
+    sem = asyncio.Semaphore(10)
 
     await tracker.start_tracking(job_id)
 
     async def increment_error() -> None:
-        await tracker.update_progress(job_id, increment_errors=True)
+        async with sem:
+            await tracker.update_progress(job_id, increment_errors=True)
 
     tasks = [asyncio.create_task(increment_error()) for _ in range(num_concurrent_updates)]
     await asyncio.gather(*tasks)
@@ -113,14 +120,17 @@ async def test_concurrent_mixed_increments(tracker: BatchJobProgressTracker) -> 
     job_id = uuid4()
     num_processed = 75
     num_errors = 25
+    sem = asyncio.Semaphore(10)
 
     await tracker.start_tracking(job_id)
 
     async def increment_processed() -> None:
-        await tracker.update_progress(job_id, increment_processed=True)
+        async with sem:
+            await tracker.update_progress(job_id, increment_processed=True)
 
     async def increment_error() -> None:
-        await tracker.update_progress(job_id, increment_errors=True)
+        async with sem:
+            await tracker.update_progress(job_id, increment_errors=True)
 
     processed_tasks = [asyncio.create_task(increment_processed()) for _ in range(num_processed)]
     error_tasks = [asyncio.create_task(increment_error()) for _ in range(num_errors)]
