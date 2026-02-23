@@ -1029,3 +1029,107 @@ class TestNATSServersConfiguration:
         ):
             settings = create_settings_no_env_file()
             assert settings.NATS_SERVERS == ["nats://fallback:4222"]
+
+
+class TestVertexAIProjectValidation:
+    """Test VERTEXAI_PROJECT validation when vertex_ai/ models are configured (task-1137.02)."""
+
+    def test_vertex_ai_model_rejected_without_vertexai_project(self):
+        valid_key = "a" * 32
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "JWT_SECRET_KEY": valid_key,
+                    "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                    "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                    "DEFAULT_MINI_MODEL": "vertex_ai/gemini-2.5-flash",
+                },
+                clear=True,
+            ),
+            pytest.raises((ValueError, ValidationError), match="VERTEXAI_PROJECT"),
+        ):
+            create_settings_no_env_file()
+
+    def test_vertex_ai_full_model_rejected_without_vertexai_project(self):
+        valid_key = "a" * 32
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "JWT_SECRET_KEY": valid_key,
+                    "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                    "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                    "DEFAULT_FULL_MODEL": "vertex_ai/gemini-2.5-pro",
+                },
+                clear=True,
+            ),
+            pytest.raises((ValueError, ValidationError), match="VERTEXAI_PROJECT"),
+        ):
+            create_settings_no_env_file()
+
+    def test_vertex_ai_vision_model_rejected_without_vertexai_project(self):
+        valid_key = "a" * 32
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "JWT_SECRET_KEY": valid_key,
+                    "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                    "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                    "VISION_MODEL": "vertex_ai/gemini-2.5-pro",
+                },
+                clear=True,
+            ),
+            pytest.raises((ValueError, ValidationError), match="VERTEXAI_PROJECT"),
+        ):
+            create_settings_no_env_file()
+
+    def test_vertex_ai_model_accepted_with_vertexai_project(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_MINI_MODEL": "vertex_ai/gemini-2.5-flash",
+                "VERTEXAI_PROJECT": "my-gcp-project",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.DEFAULT_MINI_MODEL == "vertex_ai/gemini-2.5-flash"
+            assert settings.VERTEXAI_PROJECT == "my-gcp-project"
+
+    def test_openai_models_accepted_without_vertexai_project(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.DEFAULT_MINI_MODEL == "openai/gpt-5-mini"
+            assert settings.VERTEXAI_PROJECT is None
+
+    def test_vertex_ai_validation_skipped_in_testing_mode(self):
+        valid_key = "a" * 32
+        with patch.dict(
+            os.environ,
+            {
+                "JWT_SECRET_KEY": valid_key,
+                "CREDENTIALS_ENCRYPTION_KEY": TEST_CREDENTIALS_ENCRYPTION_KEY,
+                "ENCRYPTION_MASTER_KEY": TEST_ENCRYPTION_MASTER_KEY,
+                "DEFAULT_MINI_MODEL": "vertex_ai/gemini-2.5-flash",
+                "TESTING": "true",
+            },
+            clear=True,
+        ):
+            settings = create_settings_no_env_file()
+            assert settings.DEFAULT_MINI_MODEL == "vertex_ai/gemini-2.5-flash"
+            assert settings.VERTEXAI_PROJECT is None

@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
+from src.llm_config.constants import ADC_SENTINEL
 from src.llm_config.encryption import EncryptionService
 from src.llm_config.models import CommunityServerLLMConfig
 from src.llm_config.providers.base import LLMProvider
@@ -301,7 +302,7 @@ class LLMClientManager:
 
         Returns:
             Global API key if configured, None otherwise.
-            Returns "ADC" sentinel for vertex_ai (Application Default Credentials).
+            Returns ADC_SENTINEL for vertex_ai/gemini (Application Default Credentials).
         """
         if provider == "openai":
             key: str | None = settings.OPENAI_API_KEY
@@ -310,7 +311,9 @@ class LLMClientManager:
             anthropic_key: str | None = getattr(settings, "ANTHROPIC_API_KEY", None)
             return anthropic_key
         if provider in ("vertex_ai", "gemini"):
-            return "ADC"
+            if settings.VERTEXAI_PROJECT:
+                return ADC_SENTINEL
+            return None
         return None
 
     def invalidate_cache(self, community_server_id: UUID, provider: str | None = None) -> None:

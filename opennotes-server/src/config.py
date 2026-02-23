@@ -958,6 +958,25 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_vertex_ai_config(self) -> "Settings":
+        if self.TESTING:
+            return self
+        model_fields = [
+            self.DEFAULT_MINI_MODEL,
+            self.DEFAULT_FULL_MODEL,
+            self.VISION_MODEL,
+            self.RELEVANCE_CHECK_MODEL,
+            self.AI_NOTE_WRITER_MODEL,
+        ]
+        has_vertex_ai = any(m.startswith("vertex_ai/") for m in model_fields)
+        if has_vertex_ai and not self.VERTEXAI_PROJECT:
+            raise ValueError(
+                "VERTEXAI_PROJECT must be set when using vertex_ai/ model prefix. "
+                "Set VERTEXAI_PROJECT to your GCP project ID."
+            )
+        return self
+
     @property
     def is_development(self) -> bool:
         return self.ENVIRONMENT == "development"
