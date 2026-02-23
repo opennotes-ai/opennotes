@@ -13,7 +13,7 @@ Reference: https://jsonapi.org/format/
 """
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -51,6 +51,7 @@ router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
 notes_stats_filter_builder = FilterBuilder(
     FilterField(Note.created_at, operators=[FilterOperator.GTE, FilterOperator.LTE]),
+    FilterField(Note.deleted_at, operators=[FilterOperator.ISNULL]),
 ).add_auth_gated_filter(
     FilterField(
         Note.community_server_id,
@@ -59,7 +60,9 @@ notes_stats_filter_builder = FilterBuilder(
     ),
 )
 
-author_stats_filter_builder = FilterBuilder().add_auth_gated_filter(
+author_stats_filter_builder = FilterBuilder(
+    FilterField(Note.deleted_at, operators=[FilterOperator.ISNULL]),
+).add_auth_gated_filter(
     FilterField(
         Note.community_server_id,
         alias="community_server_id",
@@ -199,9 +202,9 @@ async def get_notes_stats_jsonapi(
             community_server_id__in=community_server_id_in_value,
             created_at__gte=filter_date_from,
             created_at__lte=filter_date_to,
+            deleted_at__isnull=True,
         )
 
-        filters.append(Note.deleted_at.is_(None))
         base_where = and_(*filters)
 
         total_result = await db.execute(select(func.count(Note.id)).where(base_where))
@@ -312,7 +315,7 @@ async def get_author_stats_jsonapi(
                     media_type=JSONAPI_CONTENT_TYPE,
                 )
 
-        community_filters = await author_stats_filter_builder.build_async(
+        base_filters = await author_stats_filter_builder.build_async(
             auth_checks={
                 "community_server_id": lambda csid: verify_community_membership_by_uuid(
                     csid, current_user, db, request
@@ -320,13 +323,12 @@ async def get_author_stats_jsonapi(
             }
             if not is_service_account(current_user)
             else None,
+            deleted_at__isnull=True,
             community_server_id=community_server_id_value,
             community_server_id__in=community_server_id_in_value,
         )
 
-        note_filters: list[Any] = [Note.author_id == author_id, Note.deleted_at.is_(None)]
-        note_filters.extend(community_filters)
-        notes_where = and_(*note_filters)
+        notes_where = and_(Note.author_id == author_id, *base_filters)
 
         notes_result = await db.execute(select(func.count(Note.id)).where(notes_where))
         notes_created = notes_result.scalar() or 0
@@ -335,10 +337,10 @@ async def get_author_stats_jsonapi(
             select(func.count(Rating.id))
             .select_from(Rating)
             .join(Note, Rating.note_id == Note.id)
-            .where(Rating.rater_id == author_id, Note.deleted_at.is_(None))
+            .where(Rating.rater_id == author_id)
         )
-        if community_filters:
-            ratings_query = ratings_query.where(and_(*community_filters))
+        if base_filters:
+            ratings_query = ratings_query.where(and_(*base_filters))
         ratings_result = await db.execute(ratings_query)
         ratings_given = ratings_result.scalar() or 0
 
