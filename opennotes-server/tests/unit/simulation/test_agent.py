@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from src.simulation.agent import (
     OpenNotesSimAgent,
@@ -13,7 +14,6 @@ from src.simulation.agent import (
     build_instructions,
     pass_turn,
     rate_note,
-    react_to_note,
     sim_agent,
     write_note,
 )
@@ -38,12 +38,12 @@ def sample_deps(mock_db):
         user_profile_id=uuid4(),
         available_requests=[
             {
-                "request_id": "req-001",
+                "request_id": str(uuid4()),
                 "content": "The earth is flat",
                 "status": "PENDING",
             },
             {
-                "request_id": "req-002",
+                "request_id": str(uuid4()),
                 "content": "Vaccines cause autism",
                 "status": "PENDING",
             },
@@ -94,14 +94,14 @@ class TestToolsRegistered:
     def test_rate_note_tool_registered(self):
         assert "rate_note" in self._get_tool_names()
 
-    def test_react_to_note_tool_registered(self):
-        assert "react_to_note" in self._get_tool_names()
+    def test_react_to_note_tool_not_registered(self):
+        assert "react_to_note" not in self._get_tool_names()
 
     def test_pass_turn_tool_registered(self):
         assert "pass_turn" in self._get_tool_names()
 
-    def test_four_tools_total(self):
-        assert len(sim_agent._function_toolset.tools) == 4
+    def test_three_tools_total(self):
+        assert len(sim_agent._function_toolset.tools) == 3
 
 
 class TestWriteNoteTool:
@@ -110,9 +110,10 @@ class TestWriteNoteTool:
         ctx = MagicMock()
         ctx.deps = sample_deps
 
+        req_id = sample_deps.available_requests[0]["request_id"]
         result = await write_note(
             ctx,
-            request_id="req-001",
+            request_id=req_id,
             summary="The earth is actually round",
             classification="NOT_MISLEADING",
         )
@@ -120,7 +121,7 @@ class TestWriteNoteTool:
         sample_deps.db.add.assert_called_once()
         sample_deps.db.flush.assert_awaited_once()
         note = sample_deps.db.add.call_args[0][0]
-        assert note.request_id == "req-001"
+        assert note.request_id == req_id
         assert note.summary == "The earth is actually round"
         assert note.classification == "NOT_MISLEADING"
         assert note.ai_generated is True
@@ -150,9 +151,10 @@ class TestWriteNoteTool:
         ctx = MagicMock()
         ctx.deps = sample_deps
 
+        req_id = sample_deps.available_requests[0]["request_id"]
         result = await write_note(
             ctx,
-            request_id="req-001",
+            request_id=req_id,
             summary="test",
             classification="INVALID",
         )
@@ -160,6 +162,87 @@ class TestWriteNoteTool:
         assert "Error" in result
         assert "INVALID" in result
         sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_note_validates_uuid_format(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.available_requests.append(
+            {"request_id": "not-a-uuid", "content": "test", "status": "PENDING"}
+        )
+
+        result = await write_note(
+            ctx,
+            request_id="not-a-uuid",
+            summary="test",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "Error" in result
+        assert "not a valid UUID" in result
+        sample_deps.db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_note_str_conversion_matches_uuid_request_ids(self, mock_db):
+        req_uuid = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[
+                {"request_id": req_uuid, "content": "test", "status": "PENDING"},
+            ],
+            available_notes=[],
+            agent_personality="test",
+            model_name="test",
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        result = await write_note(
+            ctx,
+            request_id=str(req_uuid),
+            summary="test note",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "Note created" in result
+        mock_db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_write_note_handles_integrity_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.flush = AsyncMock(side_effect=IntegrityError("duplicate", {}, None))
+
+        req_id = sample_deps.available_requests[0]["request_id"]
+        result = await write_note(
+            ctx,
+            request_id=req_id,
+            summary="test",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "Error" in result
+        assert "integrity error" in result
+
+    @pytest.mark.asyncio
+    async def test_write_note_handles_sqlalchemy_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.flush = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+
+        req_id = sample_deps.available_requests[0]["request_id"]
+        result = await write_note(
+            ctx,
+            request_id=req_id,
+            summary="test",
+            classification="NOT_MISLEADING",
+        )
+
+        assert "Error" in result
+        assert "database error" in result
 
 
 class TestRateNoteTool:
@@ -211,41 +294,92 @@ class TestRateNoteTool:
         assert "INVALID" in result
         sample_deps.db.execute.assert_not_awaited()
 
-
-class TestReactToNoteTool:
     @pytest.mark.asyncio
-    async def test_react_to_note_creates_reaction(self, sample_deps):
+    async def test_rate_note_validates_uuid_format(self, sample_deps):
         ctx = MagicMock()
         ctx.deps = sample_deps
-
-        note_id = sample_deps.available_notes[0]["note_id"]
-        result = await react_to_note(
-            ctx,
-            note_id=note_id,
-            reaction_text="Great note!",
+        sample_deps.available_notes.append(
+            {
+                "note_id": "not-a-uuid",
+                "summary": "test",
+                "classification": "NOT_MISLEADING",
+                "status": "NEEDS_MORE_RATINGS",
+            }
         )
 
-        sample_deps.db.add.assert_called_once()
-        sample_deps.db.flush.assert_awaited_once()
-        reaction = sample_deps.db.add.call_args[0][0]
-        assert f"[Reaction to note {note_id}]" in reaction.summary
-        assert "Great note!" in reaction.summary
-        assert reaction.ai_generated is True
-        assert "Reacted to note" in result
-
-    @pytest.mark.asyncio
-    async def test_react_to_note_validates_note_id(self, sample_deps):
-        ctx = MagicMock()
-        ctx.deps = sample_deps
-
-        result = await react_to_note(
+        result = await rate_note(
             ctx,
-            note_id="nonexistent",
-            reaction_text="test",
+            note_id="not-a-uuid",
+            helpfulness_level="HELPFUL",
         )
 
         assert "Error" in result
-        sample_deps.db.add.assert_not_called()
+        assert "not a valid UUID" in result
+        sample_deps.db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rate_note_str_conversion_matches_uuid_note_ids(self, mock_db):
+        note_uuid = uuid4()
+        deps = SimAgentDeps(
+            db=mock_db,
+            community_server_id=uuid4(),
+            agent_instance_id=uuid4(),
+            user_profile_id=uuid4(),
+            available_requests=[],
+            available_notes=[
+                {
+                    "note_id": note_uuid,
+                    "summary": "test",
+                    "classification": "NOT_MISLEADING",
+                    "status": "NEEDS_MORE_RATINGS",
+                },
+            ],
+            agent_personality="test",
+            model_name="test",
+        )
+        ctx = MagicMock()
+        ctx.deps = deps
+
+        result = await rate_note(
+            ctx,
+            note_id=str(note_uuid),
+            helpfulness_level="HELPFUL",
+        )
+
+        assert "Rated note" in result
+        mock_db.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rate_note_handles_integrity_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.execute = AsyncMock(side_effect=IntegrityError("fk violation", {}, None))
+
+        note_id = sample_deps.available_notes[0]["note_id"]
+        result = await rate_note(
+            ctx,
+            note_id=note_id,
+            helpfulness_level="HELPFUL",
+        )
+
+        assert "Error" in result
+        assert "integrity error" in result
+
+    @pytest.mark.asyncio
+    async def test_rate_note_handles_sqlalchemy_error(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+        sample_deps.db.execute = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
+
+        note_id = sample_deps.available_notes[0]["note_id"]
+        result = await rate_note(
+            ctx,
+            note_id=note_id,
+            helpfulness_level="HELPFUL",
+        )
+
+        assert "Error" in result
+        assert "database error" in result
 
 
 class TestPassTurnTool:
@@ -264,6 +398,15 @@ class TestInstructions:
 
         assert "skeptical fact-checker" in instructions
         assert "values evidence" in instructions
+
+    def test_instructions_do_not_mention_react(self, sample_deps):
+        ctx = MagicMock()
+        ctx.deps = sample_deps
+
+        instructions = build_instructions(ctx)
+
+        assert "react_to_note" not in instructions
+        assert "react to a note" not in instructions.lower()
 
     def test_different_personalities_different_prompts(self, mock_db):
         deps_a = SimAgentDeps(
@@ -314,7 +457,6 @@ class TestDeps:
 
     def test_deps_available_requests_accessible(self, sample_deps):
         assert len(sample_deps.available_requests) == 2
-        assert sample_deps.available_requests[0]["request_id"] == "req-001"
 
     def test_deps_available_notes_accessible(self, sample_deps):
         assert len(sample_deps.available_notes) == 1
@@ -337,9 +479,7 @@ class TestOutput:
     def test_action_type_enum_values(self):
         assert SimActionType.WRITE_NOTE == "write_note"
         assert SimActionType.RATE_NOTE == "rate_note"
-        assert SimActionType.REACT_TO_NOTE == "react_to_note"
         assert SimActionType.PASS_TURN == "pass_turn"
-        assert len(SimActionType) == 4
 
     def test_agent_output_type_is_sim_agent_action(self):
         assert sim_agent._output_type == SimAgentAction
@@ -368,9 +508,9 @@ class TestBuildTurnPrompt:
         agent = OpenNotesSimAgent()
         prompt = agent._build_turn_prompt(sample_deps)
 
-        assert "req-001" in prompt
+        req_id = sample_deps.available_requests[0]["request_id"]
+        assert req_id in prompt
         assert "The earth is flat" in prompt
-        assert "req-002" in prompt
 
     def test_prompt_includes_notes(self, sample_deps):
         agent = OpenNotesSimAgent()
@@ -378,6 +518,12 @@ class TestBuildTurnPrompt:
 
         assert "oblate spheroid" in prompt
         assert "NOT_MISLEADING" in prompt
+
+    def test_prompt_does_not_mention_react(self, sample_deps):
+        agent = OpenNotesSimAgent()
+        prompt = agent._build_turn_prompt(sample_deps)
+
+        assert "react to a note" not in prompt
 
     def test_prompt_empty_requests(self, mock_db):
         deps = SimAgentDeps(
