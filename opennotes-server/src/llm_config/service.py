@@ -96,7 +96,7 @@ class LLMService:
             Exception: If API call fails
         """
         if model and "/" in model:
-            provider, model = parse_provider_model(model)
+            provider = parse_provider_model(model)[0]
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -152,7 +152,7 @@ class LLMService:
             Exception: If API call fails
         """
         if model and "/" in model:
-            provider, model = parse_provider_model(model)
+            provider = parse_provider_model(model)[0]
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -371,7 +371,7 @@ class LLMService:
             Exception: If API call fails after retries
         """
         vision_model = model or settings.VISION_MODEL
-        provider, model_name = parse_provider_model(vision_model)
+        provider = parse_provider_model(vision_model)[0]
 
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
@@ -400,7 +400,7 @@ class LLMService:
             )
         ]
 
-        params = LiteLLMCompletionParams(model=model_name, max_tokens=max_tokens)
+        params = LiteLLMCompletionParams(model=vision_model, max_tokens=max_tokens)
         response = await llm_provider.complete(messages, params)
 
         logger.info(

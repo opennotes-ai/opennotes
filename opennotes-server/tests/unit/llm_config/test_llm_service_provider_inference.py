@@ -85,14 +85,14 @@ class TestCompleteProviderInference:
         mock_client_manager.get_client.assert_called_once_with(mock_db, None, "openai")
 
     @pytest.mark.asyncio
-    async def test_complete_passes_model_name_without_prefix_to_params(
+    async def test_complete_preserves_full_prefixed_model_in_params(
         self,
         llm_service: LLMService,
         mock_client_manager: MagicMock,
         mock_db: AsyncMock,
         mock_llm_response: LLMResponse,
     ) -> None:
-        """complete() should pass the model name (without provider prefix) to the provider."""
+        """complete() should preserve the full provider-prefixed model string for LiteLLM routing."""
         mock_provider = MagicMock()
         mock_provider.complete = AsyncMock(return_value=mock_llm_response)
         mock_client_manager.get_client = AsyncMock(return_value=mock_provider)
@@ -107,7 +107,7 @@ class TestCompleteProviderInference:
 
         call_args = mock_provider.complete.call_args
         params = call_args[0][1]
-        assert params.model == "gemini-2.5-flash"
+        assert params.model == "vertex_ai/gemini-2.5-flash"
 
     @pytest.mark.asyncio
     async def test_complete_without_slash_uses_explicit_provider(

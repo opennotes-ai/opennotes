@@ -51,12 +51,11 @@ def _get_default_model_for_provider(provider: str) -> str:
     otherwise returns provider-specific defaults.
     """
     if provider == "openai":
-        full_model = settings.DEFAULT_FULL_MODEL
-        return full_model.split("/")[-1] if "/" in full_model else full_model
+        return settings.DEFAULT_FULL_MODEL
     defaults = {
-        "anthropic": "claude-3-opus-20240229",
-        "vertex_ai": "gemini-2.5-pro",
-        "gemini": "gemini-2.5-pro",
+        "anthropic": "anthropic/claude-3-opus-20240229",
+        "vertex_ai": "vertex_ai/gemini-2.5-pro",
+        "gemini": "gemini/gemini-2.5-pro",
     }
     return defaults.get(provider, "unknown")
 
