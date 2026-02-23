@@ -69,6 +69,7 @@ dependencies = [
     "google-cloud-logging>=3.0,<4.0",
     "orjson>=3.10.0",
     "pendulum>=3.2.0",
+    "sanitary>=0.1.0",
 ]
 
 [project.optional-dependencies]

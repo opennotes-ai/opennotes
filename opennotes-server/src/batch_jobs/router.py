@@ -18,6 +18,7 @@ from src.batch_jobs.schemas import (
     BatchJobResponse,
 )
 from src.batch_jobs.service import BatchJobService, InvalidStateTransitionError
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.monitoring import get_logger
 from src.users.models import User
@@ -27,6 +28,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/batch-jobs",
     tags=["batch-jobs"],
+    responses=AUTHENTICATED_RESPONSES,
 )
 
 

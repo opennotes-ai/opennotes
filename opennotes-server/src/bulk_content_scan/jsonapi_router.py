@@ -47,6 +47,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.dbos_workflows.content_scan_workflow import dispatch_content_scan_workflow
@@ -65,7 +66,7 @@ from src.users.profile_models import CommunityMember
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
 
 class BulkScanCreateAttributes(StrictInputSchema):

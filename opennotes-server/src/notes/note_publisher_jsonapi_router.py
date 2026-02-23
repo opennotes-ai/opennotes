@@ -47,6 +47,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_pagination_links as create_pagination_links_base,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.llm_config.models import CommunityServer
 from src.monitoring import get_logger
@@ -55,7 +56,7 @@ from src.users.models import User
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
 _publisher_config_filter_builder = FilterBuilder(
     FilterField(

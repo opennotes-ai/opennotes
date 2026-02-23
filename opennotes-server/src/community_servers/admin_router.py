@@ -24,6 +24,7 @@ from src.auth.community_dependencies import (
     verify_community_admin,
 )
 from src.auth.dependencies import get_current_user_or_api_key
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.users.models import User
 from src.users.profile_crud import (
@@ -47,7 +48,9 @@ from src.users.profile_schemas import (
     UserProfileCreate,
 )
 
-router = APIRouter(prefix="/community-servers", tags=["community-admin"])
+router = APIRouter(
+    prefix="/community-servers", tags=["community-admin"], responses=AUTHENTICATED_RESPONSES
+)
 logger = logging.getLogger(__name__)
 
 

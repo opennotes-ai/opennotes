@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.community_dependencies import verify_community_admin_by_uuid
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.llm_config.encryption import EncryptionService
@@ -27,7 +28,9 @@ from src.llm_config.usage_tracker import LLMUsageTracker
 from src.monitoring import get_logger
 from src.users.profile_models import CommunityMember
 
-router = APIRouter(prefix="/community-servers", tags=["llm-config"])
+router = APIRouter(
+    prefix="/community-servers", tags=["llm-config"], responses=AUTHENTICATED_RESPONSES
+)
 logger = get_logger(__name__)
 
 # Safe error messages for API key validation failures

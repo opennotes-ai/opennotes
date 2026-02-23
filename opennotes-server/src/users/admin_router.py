@@ -20,12 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user_or_api_key
 from src.auth.permissions import is_service_account
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.users.models import User
 from src.users.profile_crud import get_profile_by_id, update_profile
 from src.users.profile_schemas import UserProfileResponse, UserProfileUpdate
 
-router = APIRouter(prefix="/api/v1/admin/profiles", tags=["admin"])
+router = APIRouter(
+    prefix="/api/v1/admin/profiles", tags=["admin"], responses=AUTHENTICATED_RESPONSES
+)
 logger = logging.getLogger(__name__)
 
 

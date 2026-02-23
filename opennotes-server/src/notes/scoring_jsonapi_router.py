@@ -37,6 +37,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.database import get_db
 from src.middleware.rate_limiting import limiter
@@ -80,7 +81,7 @@ scoring_adapter = ScoringAdapter()
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 scorer_factory = ScorerFactory()
 
 top_notes_filter_builder = FilterBuilder().add_auth_gated_filter(

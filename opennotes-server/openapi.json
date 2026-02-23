@@ -157,6 +157,9 @@
           "204": {
             "description": "Successful Response"
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -180,6 +183,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -199,6 +205,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -218,6 +227,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -244,6 +256,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -278,6 +293,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -346,6 +364,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -380,6 +401,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -414,6 +438,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -460,6 +487,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -552,6 +582,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "minLength": 1,
               "title": "Email"
             }
           },
@@ -561,6 +592,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "minLength": 1,
               "title": "Password"
             }
           },
@@ -570,6 +602,8 @@
             "required": true,
             "schema": {
               "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
               "title": "Display Name"
             }
           }
@@ -696,6 +730,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "minLength": 1,
               "title": "Token"
             }
           }
@@ -739,6 +774,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "minLength": 1,
               "title": "Email"
             }
           }
@@ -788,6 +824,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -814,6 +853,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -849,6 +891,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -878,6 +923,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -948,6 +996,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1015,6 +1066,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1070,6 +1124,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -1135,6 +1192,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1190,6 +1250,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -1255,6 +1318,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -1322,6 +1388,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -1581,6 +1650,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1643,6 +1715,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -1708,6 +1783,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -1782,6 +1860,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1837,6 +1918,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -1903,6 +1987,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1968,6 +2055,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2032,6 +2122,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -2108,6 +2201,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2173,6 +2269,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2205,6 +2304,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         },
         "security": [
@@ -2241,6 +2343,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -2461,6 +2566,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2572,6 +2680,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2645,6 +2756,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -2725,6 +2839,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2804,6 +2921,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2869,6 +2989,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -2976,6 +3099,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3057,6 +3183,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -3219,6 +3348,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3281,6 +3413,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -3345,6 +3480,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -3418,6 +3556,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3482,6 +3623,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3536,6 +3680,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -3602,6 +3749,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3666,6 +3816,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -3807,6 +3960,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3872,6 +4028,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3907,6 +4066,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           }
         }
       }
@@ -4008,6 +4170,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -4070,6 +4235,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4135,6 +4303,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4209,6 +4380,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -4269,6 +4443,9 @@
                 "schema": {}
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4380,6 +4557,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -4442,6 +4622,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4507,6 +4690,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4581,6 +4767,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -4641,6 +4830,9 @@
                 "schema": {}
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4768,6 +4960,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -4830,6 +5025,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4895,6 +5093,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -4990,6 +5191,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5052,6 +5256,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -5118,6 +5325,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5182,6 +5392,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -5248,6 +5461,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5312,6 +5528,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -5378,6 +5597,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5442,6 +5664,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -5508,6 +5733,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5573,6 +5801,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5637,6 +5868,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -5713,6 +5947,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5778,6 +6015,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -5832,13 +6072,13 @@
         }
       }
     },
-    "/api/v1/webhooks/{platform_community_server_id}": {
+    "/api/v1/webhooks/by-community/{platform_community_server_id}": {
       "get": {
         "tags": [
           "webhooks"
         ],
         "summary": "Get Webhooks By Community Server",
-        "operationId": "get_webhooks_by_community_server_api_v1_webhooks__platform_community_server_id__get",
+        "operationId": "get_webhooks_by_community_server_api_v1_webhooks_by_community__platform_community_server_id__get",
         "parameters": [
           {
             "name": "platform_community_server_id",
@@ -5860,7 +6100,7 @@
                   "items": {
                     "$ref": "#/components/schemas/WebhookConfigResponse"
                   },
-                  "title": "Response Get Webhooks By Community Server Api V1 Webhooks  Platform Community Server Id  Get"
+                  "title": "Response Get Webhooks By Community Server Api V1 Webhooks By Community  Platform Community Server Id  Get"
                 }
               }
             }
@@ -6062,6 +6302,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -6125,6 +6368,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -6190,6 +6436,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -6263,6 +6512,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -6341,6 +6593,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -6511,6 +6766,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -6680,6 +6938,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -6745,6 +7006,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -6818,6 +7082,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -6895,6 +7162,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -6970,6 +7240,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -7047,6 +7320,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -7123,6 +7399,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -7198,6 +7477,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -7264,6 +7546,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -7338,6 +7623,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -7421,6 +7709,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -7485,6 +7776,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -7561,6 +7855,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -7635,6 +7932,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -7700,6 +8000,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "403": {
             "description": "User lacks admin/moderator permission for the job's community"
           },
@@ -7761,6 +8064,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "403": {
             "description": "User lacks permission for the job's community or is not an OpenNotes admin"
@@ -7859,6 +8165,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "403": {
             "description": "User lacks admin/moderator permission for the community"
           },
@@ -7946,6 +8255,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "403": {
             "description": "User lacks admin/moderator permission for the community"
           },
@@ -8029,6 +8341,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -8093,6 +8408,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "429": {
             "description": "An import job is already in progress (rate limited)"
@@ -8162,6 +8480,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -8226,6 +8547,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "429": {
             "description": "A scrape job is already in progress (rate limited)"
@@ -8294,6 +8618,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "429": {
             "description": "A promotion job is already in progress (rate limited)"
@@ -8495,6 +8822,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -8570,6 +8900,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "404": {
             "description": "Candidate not found"
           },
@@ -8638,6 +8971,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "429": {
             "description": "A bulk approval job is already in progress (rate limited)"
           },
@@ -8705,6 +9041,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "422": {
             "description": "Validation Error",
@@ -8813,6 +9152,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -8878,6 +9220,9 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
           "404": {
             "description": "Batch job not found"
           },
@@ -8936,6 +9281,9 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "404": {
             "description": "Batch job not found"
@@ -9007,6 +9355,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated"
           },
           "404": {
             "description": "Batch job not found"
@@ -9394,10 +9745,15 @@
           "200": {
             "description": "Successful Response",
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
+          },
+          "404": {
+            "description": "Metrics disabled"
           }
         }
       }

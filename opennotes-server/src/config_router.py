@@ -5,13 +5,14 @@ from pydantic import Field
 
 from src.auth.dependencies import get_current_user_or_api_key
 from src.common.base_schemas import SQLAlchemySchema
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.config import settings
 from src.monitoring import get_logger
 from src.users.models import User
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["config"])
+router = APIRouter(tags=["config"], responses=AUTHENTICATED_RESPONSES)
 
 
 class RatingThresholdsResponse(SQLAlchemySchema):

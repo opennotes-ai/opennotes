@@ -29,6 +29,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_error_response as create_error_response_model,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
 from src.fact_checking.import_pipeline.candidate_schemas import (
@@ -51,6 +52,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/fact-checking/candidates",
     tags=["fact-checking-candidates"],
+    responses=AUTHENTICATED_RESPONSES,
 )
 
 

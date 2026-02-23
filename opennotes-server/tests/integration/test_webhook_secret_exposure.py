@@ -64,7 +64,7 @@ async def test_get_webhooks_excludes_secret():
 
         await client.post("/api/v1/webhooks/register", json=webhook_data)
 
-        response = await client.get(f"/api/v1/webhooks/{platform_id}")
+        response = await client.get(f"/api/v1/webhooks/by-community/{platform_id}")
 
         assert response.status_code == 200
         webhooks = response.json()
@@ -140,7 +140,7 @@ async def test_secret_never_exposed_in_list_operations():
             }
             await client.post("/api/v1/webhooks/register", json=webhook_data)
 
-        response = await client.get(f"/api/v1/webhooks/{platform_id}")
+        response = await client.get(f"/api/v1/webhooks/by-community/{platform_id}")
 
         assert response.status_code == 200
         webhooks = response.json()

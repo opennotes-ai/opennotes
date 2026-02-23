@@ -53,6 +53,7 @@ from src.common.jsonapi import (
 from src.common.jsonapi import (
     create_pagination_links as create_pagination_links_base,
 )
+from src.common.responses import AUTHENTICATED_RESPONSES
 from src.database import get_db
 from src.events.publisher import event_publisher
 from src.monitoring import get_logger
@@ -71,7 +72,7 @@ from src.users.models import User
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(responses=AUTHENTICATED_RESPONSES)
 
 
 class NoteCreateAttributes(StrictInputSchema):
