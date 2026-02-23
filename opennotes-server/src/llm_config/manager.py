@@ -288,6 +288,8 @@ class LLMClientManager:
             return full_model.split("/")[-1] if "/" in full_model else full_model
         defaults = {
             "anthropic": "claude-3-opus-20240229",
+            "vertex_ai": "gemini-2.5-pro",
+            "gemini": "gemini-2.5-pro",
         }
         return defaults.get(provider, "unknown")
 
@@ -296,10 +298,11 @@ class LLMClientManager:
         Get global API key for a provider from environment settings.
 
         Args:
-            provider: Provider name ('openai', 'anthropic', etc.)
+            provider: Provider name ('openai', 'anthropic', 'vertex_ai', etc.)
 
         Returns:
-            Global API key if configured, None otherwise
+            Global API key if configured, None otherwise.
+            Returns "ADC" sentinel for vertex_ai (Application Default Credentials).
         """
         if provider == "openai":
             key: str | None = settings.OPENAI_API_KEY
@@ -307,6 +310,8 @@ class LLMClientManager:
         if provider == "anthropic":
             anthropic_key: str | None = getattr(settings, "ANTHROPIC_API_KEY", None)
             return anthropic_key
+        if provider in ("vertex_ai", "gemini"):
+            return "ADC"
         return None
 
     def invalidate_cache(self, community_server_id: UUID, provider: str | None = None) -> None:

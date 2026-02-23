@@ -48,7 +48,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None,
         default_model: str,
         settings: LiteLLMProviderSettings,
         provider_name: str = "litellm",
@@ -57,7 +57,7 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         Initialize LiteLLM provider.
 
         Args:
-            api_key: API key for the underlying provider
+            api_key: API key for the underlying provider (None for ADC-based providers like Vertex AI)
             default_model: Default model (e.g., "gpt-5.1", "claude-3-opus-20240229")
             settings: Provider settings
             provider_name: Name of the underlying provider for tracking (e.g., "openai", "anthropic")
@@ -122,10 +122,11 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
                 "frequency_penalty": params.frequency_penalty,
                 "presence_penalty": params.presence_penalty,
                 "response_format": params.response_format,
-                "api_key": self.api_key,
                 "timeout": self.settings.timeout,
             }
         )
+        if self.api_key and self._provider_name not in ("vertex_ai", "gemini"):
+            request_kwargs["api_key"] = self.api_key
 
         logger.debug(
             "LiteLLM completion request",
@@ -218,10 +219,11 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
                 "frequency_penalty": params.frequency_penalty,
                 "presence_penalty": params.presence_penalty,
                 "stream": True,
-                "api_key": self.api_key,
                 "timeout": self.settings.timeout,
             }
         )
+        if self.api_key and self._provider_name not in ("vertex_ai", "gemini"):
+            request_kwargs["api_key"] = self.api_key
 
         try:
             response = await litellm.acompletion(**request_kwargs)
@@ -244,9 +246,14 @@ class LiteLLMProvider(LLMProvider[LiteLLMProviderSettings, LiteLLMCompletionPara
         """
         Validate the API key by making a minimal request.
 
+        For vertex_ai/gemini providers, returns True since ADC validation
+        is handled by the Google auth SDK, not by API key testing.
+
         Returns:
             True if API key is valid, False otherwise
         """
+        if self._provider_name in ("vertex_ai", "gemini"):
+            return True
         try:
             await litellm.acompletion(
                 model=self.default_model,

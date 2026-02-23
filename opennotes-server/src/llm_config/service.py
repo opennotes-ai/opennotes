@@ -25,7 +25,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.config import settings
+from src.config import parse_provider_model, settings
 from src.llm_config.manager import LLMClientManager
 from src.llm_config.providers import LiteLLMCompletionParams
 from src.llm_config.providers.base import LLMMessage, LLMResponse
@@ -95,6 +95,9 @@ class LLMService:
             ValueError: If no LLM configuration found for provider
             Exception: If API call fails
         """
+        if model and "/" in model:
+            provider, model = parse_provider_model(model)
+
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
         if not llm_provider:
@@ -148,6 +151,9 @@ class LLMService:
             ValueError: If no LLM configuration found for provider
             Exception: If API call fails
         """
+        if model and "/" in model:
+            provider, model = parse_provider_model(model)
+
         llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
         if not llm_provider:
@@ -346,8 +352,8 @@ class LLMService:
         Generate image description using LiteLLM vision capabilities.
 
         Automatically retries on errors with exponential backoff.
-        Uses OpenAI provider credentials but can work with any LiteLLM-supported
-        vision model.
+        Routes through the appropriate provider based on model prefix
+        (e.g., "openai/gpt-5.1", "vertex_ai/gemini-2.5-flash").
 
         Args:
             db: Database session
@@ -361,16 +367,17 @@ class LLMService:
             Generated description text
 
         Raises:
-            ValueError: If no OpenAI configuration found
+            ValueError: If no provider configuration found
             Exception: If API call fails after retries
         """
-        llm_provider = await self.client_manager.get_client(db, community_server_id, "openai")
+        vision_model = model or settings.VISION_MODEL
+        provider, model_name = parse_provider_model(vision_model)
+
+        llm_provider = await self.client_manager.get_client(db, community_server_id, provider)
 
         if not llm_provider:
             context = f"community server {community_server_id}" if community_server_id else "global"
-            raise ValueError(f"No OpenAI configuration found for {context}")
-
-        vision_model = model or settings.VISION_MODEL
+            raise ValueError(f"No {provider} configuration found for {context}")
 
         logger.debug(
             "Generating image description",
@@ -379,43 +386,34 @@ class LLMService:
                 "community_server_id": str(community_server_id) if community_server_id else None,
                 "model": vision_model,
                 "detail": detail,
+                "provider": provider,
             },
         )
 
-        response = await litellm.acompletion(
-            model=vision_model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": settings.VISION_PROMPT,
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_url, "detail": detail},
-                        },
-                    ],
-                }
-            ],
-            max_tokens=max_tokens,
-            api_key=llm_provider.api_key,
-        )
+        messages = [
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": settings.VISION_PROMPT},
+                    {"type": "image_url", "image_url": {"url": image_url, "detail": detail}},
+                ],
+            )
+        ]
 
-        description = response.choices[0].message.content or ""  # pyright: ignore[reportAttributeAccessIssue]
+        params = LiteLLMCompletionParams(model=model_name, max_tokens=max_tokens)
+        response = await llm_provider.complete(messages, params)
 
         logger.info(
             "Image description generated successfully",
             extra={
                 "image_url": image_url[:100],
                 "community_server_id": str(community_server_id) if community_server_id else None,
-                "tokens_used": response.usage.total_tokens if response.usage else 0,  # pyright: ignore[reportAttributeAccessIssue]
-                "description_length": len(description),
+                "tokens_used": response.tokens_used,
+                "description_length": len(response.content),
             },
         )
 
-        return description
+        return response.content
 
     def invalidate_cache(self, community_server_id: UUID, provider: str | None = None) -> None:
         """

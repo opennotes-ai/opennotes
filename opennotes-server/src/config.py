@@ -16,6 +16,13 @@ _settings_instance: "Settings | None" = None
 _settings_initialized: bool = False
 
 
+def parse_provider_model(model_str: str) -> tuple[str, str]:
+    if "/" in model_str:
+        provider, _, model = model_str.partition("/")
+        return (provider, model)
+    return ("openai", model_str)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -670,6 +677,15 @@ class Settings(BaseSettings):
         "Auto-detected from GOOGLE_CLOUD_PROJECT environment variable in Cloud Run.",
         validation_alias=AliasChoices("GCP_PROJECT_ID", "GOOGLE_CLOUD_PROJECT"),
     )
+    VERTEXAI_PROJECT: str | None = Field(
+        default=None,
+        description="GCP project ID for Vertex AI. Required when using vertex_ai/ model prefix. "
+        "Set automatically on Cloud Run via env var.",
+    )
+    VERTEXAI_LOCATION: str = Field(
+        default="us-central1",
+        description="GCP region for Vertex AI API calls",
+    )
 
     SMTP_HOST: str = Field(default="localhost", description="SMTP server hostname")
     SMTP_PORT: int = Field(default=587, description="SMTP server port (587 for TLS, 465 for SSL)")
@@ -756,9 +772,9 @@ class Settings(BaseSettings):
     )
 
     VISION_MODEL: str = Field(
-        default="gpt-5.1",
+        default="openai/gpt-5.1",
         min_length=1,
-        description="OpenAI vision model to use for image descriptions",
+        description="Vision model in provider/model format for LiteLLM compatibility",
     )
     VISION_PROMPT: str = Field(
         default="Describe this image concisely for fact-checking purposes. Focus on text, claims, or notable content. Be brief.",
@@ -785,13 +801,9 @@ class Settings(BaseSettings):
         description="Enable LLM-based relevance filtering for hybrid search results",
     )
     RELEVANCE_CHECK_MODEL: str = Field(
-        default="gpt-5-mini",
+        default="openai/gpt-5-mini",
         min_length=1,
-        description="LLM model to use for relevance checking (should be fast and cheap)",
-    )
-    RELEVANCE_CHECK_PROVIDER: str = Field(
-        default="openai",
-        description="LLM provider for relevance checking",
+        description="LLM model in provider/model format for relevance checking (should be fast and cheap)",
     )
     RELEVANCE_CHECK_MAX_TOKENS: int = Field(
         default=2000,
@@ -814,9 +826,9 @@ class Settings(BaseSettings):
         description="Enable automatic AI-generated community notes for fact-check matches",
     )
     AI_NOTE_WRITER_MODEL: str = Field(
-        default="gpt-5.1",
+        default="openai/gpt-5.1",
         min_length=1,
-        description="OpenAI model to use for AI note generation",
+        description="AI note generation model in provider/model format for LiteLLM compatibility",
     )
     AI_NOTE_WRITER_SYSTEM_PROMPT: str = Field(
         default="You are a helpful assistant that writes concise, informative community notes. "
