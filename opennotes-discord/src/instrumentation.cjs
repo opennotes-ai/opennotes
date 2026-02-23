@@ -13,6 +13,8 @@
  * - OTEL_SDK_DISABLED: Set to 'true' to disable OTel (useful for tests)
  * - ENABLE_TRACING: Set to 'true' to enable (defaults to false)
  * - ENABLE_CONSOLE_TRACING: Set to 'true' for console span export
+ * - OTEL_METRICS_EXPORTER: Set to 'none' to disable metrics export
+ * - OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: Metrics-specific OTLP endpoint (falls back to OTEL_EXPORTER_OTLP_ENDPOINT)
  *
  * Created: task-998
  */
@@ -33,6 +35,8 @@ if (ENABLE_TRACING && !OTEL_SDK_DISABLED) {
       ATTR_DEPLOYMENT_ENVIRONMENT,
     } = require('@opentelemetry/semantic-conventions');
     const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
+    const { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-grpc');
+    const { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
     const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
     const { BatchSpanProcessor, ConsoleSpanExporter } = require('@opentelemetry/sdk-trace-base');
     const { propagation, context: otelContext } = require('@opentelemetry/api');
@@ -122,9 +126,30 @@ if (ENABLE_TRACING && !OTEL_SDK_DISABLED) {
       );
     }
 
+    const metricsDisabled = process.env.OTEL_METRICS_EXPORTER === 'none';
+    const metricReaders = [];
+
+    if (!metricsDisabled) {
+      const metricsEndpoint =
+        process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT || endpoint;
+
+      const metricExporter = new OTLPMetricExporter({
+        url: metricsEndpoint,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+      });
+
+      metricReaders.push(
+        new PeriodicExportingMetricReader({
+          exporter: metricExporter,
+          exportIntervalMillis: 60000,
+        })
+      );
+    }
+
     const sdk = new NodeSDK({
       resource,
       spanProcessors,
+      metricReaders,
       instrumentations: [
         getNodeAutoInstrumentations({
           '@opentelemetry/instrumentation-fs': { enabled: false },
@@ -139,7 +164,7 @@ if (ENABLE_TRACING && !OTEL_SDK_DISABLED) {
       JSON.stringify({
         timestamp: new Date().toISOString(),
         level: 'INFO',
-        message: `OpenTelemetry initialized: service=${SERVICE_NAME}, version=${SERVICE_VERSION}, env=${ENVIRONMENT}, endpoint=${endpoint}`,
+        message: `OpenTelemetry initialized: service=${SERVICE_NAME}, version=${SERVICE_VERSION}, env=${ENVIRONMENT}, endpoint=${endpoint}, metrics=${metricsDisabled ? 'disabled' : 'enabled'}`,
       })
     );
 
