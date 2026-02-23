@@ -9,6 +9,7 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from src.config import settings
 from src.monitoring import get_logger
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ _TRANSIENT_ERRORS = (TimeoutError, ConnectionError, OSError)
 _API_KEY_ENV_VARS = {
     "openai/": "OPENAI_API_KEY",
     "anthropic/": "ANTHROPIC_API_KEY",
+    "vertex_ai/": "VERTEXAI_PROJECT",
 }
 
 
@@ -38,7 +40,6 @@ class FlashpointDetectionService:
     thresholds and produce ROC-style safety-at-audit-budget curves.
     """
 
-    DEFAULT_MODEL = "openai/gpt-5-mini"
     DEFAULT_MAX_CONTEXT = 5
     DEFAULT_SCORE_THRESHOLD = 50
 
@@ -50,12 +51,12 @@ class FlashpointDetectionService:
         """Initialize the flashpoint detection service.
 
         Args:
-            model: The LLM model to use (defaults to DEFAULT_MODEL)
+            model: The LLM model to use (defaults to settings.DEFAULT_MINI_MODEL)
             optimized_model_path: Path to optimized DSPy program (optional).
                 Defaults to data/flashpoints/optimized_detector.json relative
                 to the opennotes-server root.
         """
-        self.model = model or self.DEFAULT_MODEL
+        self.model = model or settings.DEFAULT_MINI_MODEL
         self._lm: dspy.LM | None = None
         self._detector: RubricDetector | None = None
         self._optimized_path = optimized_model_path
@@ -224,7 +225,7 @@ def get_flashpoint_service(
     global _flashpoint_service
 
     if _flashpoint_service is not None:
-        requested_model = model or FlashpointDetectionService.DEFAULT_MODEL
+        requested_model = model or settings.DEFAULT_MINI_MODEL
         if model is not None and requested_model != _flashpoint_service.model:
             warnings.warn(
                 f"get_flashpoint_service() singleton already created with "
