@@ -20,7 +20,7 @@ class TestCompactorImplementsProtocol:
         assert isinstance(compactor, MemoryCompactor)
 
     def test_semantic_dedup_implements_protocol(self):
-        async def noop(text: str) -> list[float]:
+        async def noop(texts: list[str]) -> list[list[float]]:
             return []
 
         compactor = SemanticDedupCompactor(embed=noop)
@@ -71,7 +71,7 @@ class TestCompactorFactoryCreate:
         assert isinstance(compactor, SummarizeAndPruneCompactor)
 
     def test_creates_semantic_dedup(self):
-        async def noop(text: str) -> list[float]:
+        async def noop(texts: list[str]) -> list[list[float]]:
             return []
 
         compactor = CompactorFactory.create("semantic_dedup", embed=noop)

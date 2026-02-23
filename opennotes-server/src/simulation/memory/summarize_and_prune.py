@@ -4,27 +4,15 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
+from src.simulation.memory.message_utils import _extract_text
 
 DEFAULT_KEEP_RECENT = 10
-
-
-def _extract_text(message: ModelMessage) -> str:
-    if isinstance(message, dict):
-        parts = message.get("parts", [])
-        texts = []
-        for part in parts:
-            if isinstance(part, dict):
-                content = part.get("content", "")
-                if content:
-                    texts.append(str(content))
-        return " ".join(texts)
-    return str(message)
 
 
 def _make_summary_message(summary_text: str) -> ModelMessage:
     return {
         "kind": "request",
-        "parts": [{"part_kind": "user-prompt", "content": summary_text}],
+        "parts": [{"part_kind": "system-prompt", "content": summary_text}],
     }
 
 

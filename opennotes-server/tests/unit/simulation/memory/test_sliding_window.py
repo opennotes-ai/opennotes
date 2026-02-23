@@ -97,3 +97,67 @@ class TestSlidingWindowKeepsLastN:
         assert result.messages[0]["parts"][0]["part_kind"] == "system-prompt"
         for msg in result.messages[1:]:
             assert msg["parts"][0]["part_kind"] != "system-prompt"
+
+    @pytest.mark.asyncio
+    async def test_window_size_1_with_system_message(self):
+        compactor = SlidingWindowCompactor()
+        messages = [_make_system_message("system")]
+        messages.extend(_make_user_message(f"msg-{i}") for i in range(10))
+
+        result = await compactor.compact(messages, {"window_size": 1})
+
+        assert len(result.messages) == 1
+        assert result.messages[0]["parts"][0]["part_kind"] == "system-prompt"
+        assert result.compacted_count == 1
+
+    @pytest.mark.asyncio
+    async def test_window_size_1_without_system_message(self):
+        compactor = SlidingWindowCompactor()
+        messages = [_make_user_message(f"msg-{i}") for i in range(10)]
+
+        result = await compactor.compact(messages, {"window_size": 1})
+
+        assert len(result.messages) == 1
+        assert result.messages[0]["parts"][0]["content"] == "msg-9"
+        assert result.compacted_count == 1
+
+    @pytest.mark.asyncio
+    async def test_window_size_2_with_system_message(self):
+        compactor = SlidingWindowCompactor()
+        messages = [_make_system_message("system")]
+        messages.extend(_make_user_message(f"msg-{i}") for i in range(10))
+
+        result = await compactor.compact(messages, {"window_size": 2})
+
+        assert len(result.messages) == 2
+        assert result.messages[0]["parts"][0]["part_kind"] == "system-prompt"
+        assert result.messages[1]["parts"][0]["content"] == "msg-9"
+
+
+class TestSlidingWindowPydanticAiTypes:
+    @pytest.mark.asyncio
+    async def test_handles_pydantic_ai_model_request(self):
+        from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
+
+        compactor = SlidingWindowCompactor()
+        messages = [ModelRequest(parts=[SystemPromptPart(content="system")])]
+        messages.extend(ModelRequest(parts=[UserPromptPart(content=f"msg-{i}")]) for i in range(10))
+
+        result = await compactor.compact(messages, {"window_size": 5})
+
+        assert len(result.messages) == 5
+        assert isinstance(result.messages[0], ModelRequest)
+        assert isinstance(result.messages[0].parts[0], SystemPromptPart)
+
+    @pytest.mark.asyncio
+    async def test_window_size_1_with_pydantic_ai_system(self):
+        from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
+
+        compactor = SlidingWindowCompactor()
+        messages = [ModelRequest(parts=[SystemPromptPart(content="system")])]
+        messages.extend(ModelRequest(parts=[UserPromptPart(content=f"msg-{i}")]) for i in range(5))
+
+        result = await compactor.compact(messages, {"window_size": 1})
+
+        assert len(result.messages) == 1
+        assert isinstance(result.messages[0].parts[0], SystemPromptPart)

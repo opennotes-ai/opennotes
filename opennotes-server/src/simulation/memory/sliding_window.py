@@ -3,16 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
+from src.simulation.memory.message_utils import _is_system_message
 
 DEFAULT_WINDOW_SIZE = 50
-
-
-def _is_system_message(message: ModelMessage) -> bool:
-    if isinstance(message, dict):
-        for part in message.get("parts", []):
-            if isinstance(part, dict) and part.get("part_kind") == "system-prompt":
-                return True
-    return False
 
 
 class SlidingWindowCompactor:
@@ -39,7 +32,8 @@ class SlidingWindowCompactor:
             non_system_messages = messages[1:]
 
         if system_message is not None:
-            kept = non_system_messages[-(window_size - 1) :]
+            remaining = window_size - 1
+            kept = non_system_messages[-remaining:] if remaining > 0 else []
             result_messages = [system_message, *kept]
         else:
             result_messages = non_system_messages[-window_size:]

@@ -43,7 +43,7 @@ class TestSummarizeAndPruneCompactor:
         mock_summarizer.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_summary_content_format(self):
+    async def test_summary_uses_system_prompt_part_kind(self):
         mock_summarizer = AsyncMock(return_value="Condensed history")
         compactor = SummarizeAndPruneCompactor(summarizer=mock_summarizer)
         messages = [_make_user_message(f"msg-{i}") for i in range(15)]
@@ -52,7 +52,7 @@ class TestSummarizeAndPruneCompactor:
 
         summary_msg = result.messages[0]
         assert summary_msg["kind"] == "request"
-        assert summary_msg["parts"][0]["part_kind"] == "user-prompt"
+        assert summary_msg["parts"][0]["part_kind"] == "system-prompt"
         assert summary_msg["parts"][0]["content"] == "Condensed history"
 
     @pytest.mark.asyncio
@@ -118,3 +118,32 @@ class TestSummarizeAndPruneCompactor:
 
         assert result.compacted_count == 4
         assert result.messages[1:] == messages[-3:]
+
+    @pytest.mark.asyncio
+    async def test_summary_not_user_prompt(self):
+        mock_summarizer = AsyncMock(return_value="Summary")
+        compactor = SummarizeAndPruneCompactor(summarizer=mock_summarizer)
+        messages = [_make_user_message(f"msg-{i}") for i in range(15)]
+
+        result = await compactor.compact(messages, {"keep_recent": 5})
+
+        summary_msg = result.messages[0]
+        assert summary_msg["parts"][0]["part_kind"] != "user-prompt"
+
+
+class TestSummarizeAndPrunePydanticAiTypes:
+    @pytest.mark.asyncio
+    async def test_extracts_text_from_pydantic_ai_messages(self):
+        from pydantic_ai.messages import ModelRequest, UserPromptPart
+
+        mock_summarizer = AsyncMock(return_value="Summary")
+        compactor = SummarizeAndPruneCompactor(summarizer=mock_summarizer)
+        messages = [ModelRequest(parts=[UserPromptPart(content=f"msg-{i}")]) for i in range(15)]
+
+        result = await compactor.compact(messages, {"keep_recent": 5})
+
+        mock_summarizer.assert_called_once()
+        call_arg = mock_summarizer.call_args[0][0]
+        assert "msg-0" in call_arg
+        assert "msg-9" in call_arg
+        assert result.compacted_count == 6

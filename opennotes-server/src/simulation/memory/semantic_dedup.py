@@ -5,21 +5,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
+from src.simulation.memory.message_utils import _extract_text, _is_system_message
 
 DEFAULT_SIMILARITY_THRESHOLD = 0.92
-
-
-def _extract_text(message: ModelMessage) -> str:
-    if isinstance(message, dict):
-        parts = message.get("parts", [])
-        texts = []
-        for part in parts:
-            if isinstance(part, dict):
-                content = part.get("content", "")
-                if content:
-                    texts.append(str(content))
-        return " ".join(texts)
-    return str(message)
+DEFAULT_MAX_MESSAGES = 500
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -37,7 +26,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 class SemanticDedupCompactor:
-    def __init__(self, embed: Callable[[str], Awaitable[list[float]]]) -> None:
+    def __init__(self, embed: Callable[[list[str]], Awaitable[list[list[float]]]]) -> None:
         self._embed = embed
 
     async def compact(
@@ -45,6 +34,7 @@ class SemanticDedupCompactor:
     ) -> CompactionResult:
         original_count = len(messages)
         threshold: float = config.get("similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD)
+        max_messages: int = config.get("max_messages", DEFAULT_MAX_MESSAGES)
 
         if not messages:
             return CompactionResult(
@@ -52,17 +42,34 @@ class SemanticDedupCompactor:
                 original_count=0,
                 compacted_count=0,
                 strategy="semantic_dedup",
-                metadata={"similarity_threshold": threshold, "duplicates_removed": 0},
+                metadata={
+                    "similarity_threshold": threshold,
+                    "duplicates_removed": 0,
+                    "max_messages": max_messages,
+                },
             )
 
-        kept_messages: list[ModelMessage] = []
+        preserved: list[tuple[int, ModelMessage]] = []
+        candidates: list[tuple[int, ModelMessage]] = []
+        for idx, msg in enumerate(messages):
+            if _is_system_message(msg):
+                preserved.append((idx, msg))
+            else:
+                candidates.append((idx, msg))
+
+        if len(candidates) > max_messages:
+            overflow = candidates[:-max_messages]
+            candidates = candidates[-max_messages:]
+            preserved.extend(overflow)
+
+        texts = [_extract_text(msg) for _, msg in candidates]
+        embeddings = await self._embed(texts) if texts else []
+
+        kept_indices: list[int] = []
         kept_embeddings: list[list[float]] = []
         duplicates_removed = 0
 
-        for message in messages:
-            text = _extract_text(message)
-            embedding = await self._embed(text)
-
+        for i, embedding in enumerate(embeddings):
             is_duplicate = False
             for prior_embedding in kept_embeddings:
                 similarity = _cosine_similarity(embedding, prior_embedding)
@@ -73,16 +80,23 @@ class SemanticDedupCompactor:
             if is_duplicate:
                 duplicates_removed += 1
             else:
-                kept_messages.append(message)
+                kept_indices.append(i)
                 kept_embeddings.append(embedding)
 
+        deduped: list[tuple[int, ModelMessage]] = [candidates[i] for i in kept_indices]
+
+        all_kept = preserved + deduped
+        all_kept.sort(key=lambda t: t[0])
+        result_messages = [msg for _, msg in all_kept]
+
         return CompactionResult(
-            messages=kept_messages,
+            messages=result_messages,
             original_count=original_count,
-            compacted_count=len(kept_messages),
+            compacted_count=len(result_messages),
             strategy="semantic_dedup",
             metadata={
                 "similarity_threshold": threshold,
                 "duplicates_removed": duplicates_removed,
+                "max_messages": max_messages,
             },
         )
