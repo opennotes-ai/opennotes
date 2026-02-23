@@ -516,7 +516,7 @@ def process_scrape_batch_step(
 
         from src.database import get_session_maker
         from src.fact_checking.candidate_models import CandidateStatus, FactCheckedItemCandidate
-        from src.fact_checking.import_pipeline.scrape_tasks import (
+        from src.shared.content_extraction import (
             extract_domain,
             scrape_url_content,
         )

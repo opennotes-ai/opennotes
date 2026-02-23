@@ -111,7 +111,7 @@ class CommunityServer(Base):
         Index("idx_community_servers_is_active", "is_active"),
         Index("idx_community_servers_is_public", "is_public"),
         CheckConstraint(
-            "platform IN ('discord', 'reddit', 'slack', 'matrix', 'discourse', 'other')",
+            "platform IN ('discord', 'reddit', 'slack', 'matrix', 'discourse', 'playground', 'other')",
             name="ck_community_servers_platform",
         ),
     )

@@ -226,6 +226,13 @@ def test_sqlalchemy_relationships():
             NotePublisherConfig,
             NotePublisherPost,
         )
+        from src.simulation.models import (  # noqa: F401
+            SimAgent,
+            SimAgentInstance,
+            SimAgentMemory,
+            SimulationOrchestrator,
+            SimulationRun,
+        )
         from src.users.models import User  # noqa: F401
         from src.users.profile_models import (  # noqa: F401
             CommunityMember,
@@ -761,6 +768,13 @@ def template_database(test_services):
         NotePublisherConfig,
         NotePublisherPost,
     )
+    from src.simulation.models import (  # noqa: F401
+        SimAgent,
+        SimAgentInstance,
+        SimAgentMemory,
+        SimulationOrchestrator,
+        SimulationRun,
+    )
     from src.users.models import User  # noqa: F401
     from src.users.profile_models import (  # noqa: F401
         CommunityMember,
@@ -909,8 +923,15 @@ async def setup_database(request):
         return
 
     import src.database
-
-    # Import all models
+    from src.llm_config.models import CommunityServer  # noqa: F401
+    from src.simulation.models import (  # noqa: F401
+        SimAgent,
+        SimAgentInstance,
+        SimAgentMemory,
+        SimulationOrchestrator,
+        SimulationRun,
+    )
+    from src.users.profile_models import UserProfile  # noqa: F401
 
     # Get worker ID for pytest-xdist
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
@@ -1467,6 +1488,25 @@ async def community_server(db):
     await db.commit()
     await db.refresh(server)
 
+    return server.id
+
+
+@pytest.fixture
+async def playground_community_server(db):
+    from uuid import uuid4
+
+    from src.llm_config.models import CommunityServer
+
+    server = CommunityServer(
+        id=uuid4(),
+        platform="playground",
+        platform_community_server_id=f"playground-{uuid4().hex[:8]}",
+        name="Test Playground",
+        is_active=True,
+    )
+    db.add(server)
+    await db.commit()
+    await db.refresh(server)
     return server.id
 
 

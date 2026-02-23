@@ -2091,6 +2091,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v2/sim-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sim Agents Jsonapi */
+        get: operations["list_sim_agents_jsonapi_api_v2_sim_agents_get"];
+        put?: never;
+        /** Create Sim Agent Jsonapi */
+        post: operations["create_sim_agent_jsonapi_api_v2_sim_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/sim-agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Sim Agent Jsonapi */
+        get: operations["get_sim_agent_jsonapi_api_v2_sim_agents__agent_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Sim Agent Jsonapi */
+        delete: operations["delete_sim_agent_jsonapi_api_v2_sim_agents__agent_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Sim Agent Jsonapi */
+        patch: operations["update_sim_agent_jsonapi_api_v2_sim_agents__agent_id__patch"];
+        trace?: never;
+    };
+    "/api/v2/simulation-orchestrators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Orchestrators Jsonapi */
+        get: operations["list_orchestrators_jsonapi_api_v2_simulation_orchestrators_get"];
+        put?: never;
+        /** Create Orchestrator Jsonapi */
+        post: operations["create_orchestrator_jsonapi_api_v2_simulation_orchestrators_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulation-orchestrators/{orchestrator_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Orchestrator Jsonapi */
+        get: operations["get_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Orchestrator Jsonapi */
+        delete: operations["delete_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Orchestrator Jsonapi */
+        patch: operations["update_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__patch"];
+        trace?: never;
+    };
+    "/api/v2/playgrounds/{community_server_id}/note-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Playground Note Requests */
+        post: operations["create_playground_note_requests_api_v2_playgrounds__community_server_id__note_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webhooks/register": {
         parameters: {
             query?: never;
@@ -3041,6 +3132,92 @@ export interface paths {
         get: operations["get_batch_job_progress_api_v1_batch_jobs__job_id__progress_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Simulations */
+        get: operations["list_simulations_api_v2_simulations_get"];
+        put?: never;
+        /** Create Simulation */
+        post: operations["create_simulation_api_v2_simulations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulations/{simulation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Simulation */
+        get: operations["get_simulation_api_v2_simulations__simulation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulations/{simulation_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Simulation */
+        post: operations["pause_simulation_api_v2_simulations__simulation_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulations/{simulation_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Simulation */
+        post: operations["resume_simulation_api_v2_simulations__simulation_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v2/simulations/{simulation_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Simulation */
+        post: operations["cancel_simulation_api_v2_simulations__simulation_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6730,6 +6907,155 @@ export interface components {
              */
             flagged_categories?: string[];
         };
+        /** OrchestratorAttributes */
+        OrchestratorAttributes: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Turn Cadence Seconds */
+            turn_cadence_seconds: number;
+            /** Max Agents */
+            max_agents: number;
+            /** Removal Rate */
+            removal_rate: number;
+            /** Max Turns Per Agent */
+            max_turns_per_agent: number;
+            /** Agent Profile Ids */
+            agent_profile_ids?: string[] | null;
+            /** Scoring Config */
+            scoring_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** OrchestratorCreateAttributes */
+        OrchestratorCreateAttributes: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Turn Cadence Seconds */
+            turn_cadence_seconds: number;
+            /** Max Agents */
+            max_agents: number;
+            /** Removal Rate */
+            removal_rate: number;
+            /** Max Turns Per Agent */
+            max_turns_per_agent: number;
+            /** Agent Profile Ids */
+            agent_profile_ids?: string[];
+            /** Scoring Config */
+            scoring_config?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** OrchestratorCreateData */
+        OrchestratorCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'simulation-orchestrators'
+             * @constant
+             */
+            type: "simulation-orchestrators";
+            attributes: components["schemas"]["OrchestratorCreateAttributes"];
+        };
+        /** OrchestratorCreateRequest */
+        OrchestratorCreateRequest: {
+            data: components["schemas"]["OrchestratorCreateData"];
+        };
+        /** OrchestratorListResponse */
+        OrchestratorListResponse: {
+            /** Data */
+            data: components["schemas"]["OrchestratorResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /** OrchestratorResource */
+        OrchestratorResource: {
+            /**
+             * Type
+             * @default simulation-orchestrators
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["OrchestratorAttributes"];
+        };
+        /** OrchestratorSingleResponse */
+        OrchestratorSingleResponse: {
+            data: components["schemas"]["OrchestratorResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** OrchestratorUpdateAttributes */
+        OrchestratorUpdateAttributes: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Turn Cadence Seconds */
+            turn_cadence_seconds?: number | null;
+            /** Max Agents */
+            max_agents?: number | null;
+            /** Removal Rate */
+            removal_rate?: number | null;
+            /** Max Turns Per Agent */
+            max_turns_per_agent?: number | null;
+            /** Agent Profile Ids */
+            agent_profile_ids?: string[] | null;
+            /** Scoring Config */
+            scoring_config?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** OrchestratorUpdateData */
+        OrchestratorUpdateData: {
+            /**
+             * Type
+             * @description Resource type must be 'simulation-orchestrators'
+             * @constant
+             */
+            type: "simulation-orchestrators";
+            /**
+             * Id
+             * @description Orchestrator ID
+             */
+            id: string;
+            attributes: components["schemas"]["OrchestratorUpdateAttributes"];
+        };
+        /** OrchestratorUpdateRequest */
+        OrchestratorUpdateRequest: {
+            data: components["schemas"]["OrchestratorUpdateData"];
+        };
         /**
          * ParticipantStatsAttributes
          * @description Attributes for participant statistics resource.
@@ -6804,6 +7130,29 @@ export interface components {
              * @default 0
              */
             failed_scoring_operations: number;
+        };
+        /** PlaygroundNoteRequestAttributes */
+        PlaygroundNoteRequestAttributes: {
+            /** Urls */
+            urls: string[];
+            /**
+             * Requested By
+             * @default system-playground
+             */
+            requested_by: string;
+        };
+        /** PlaygroundNoteRequestBody */
+        PlaygroundNoteRequestBody: {
+            data: components["schemas"]["PlaygroundNoteRequestData"];
+        };
+        /** PlaygroundNoteRequestData */
+        PlaygroundNoteRequestData: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "playground-note-requests";
+            attributes: components["schemas"]["PlaygroundNoteRequestAttributes"];
         };
         /**
          * PreviouslySeenCheckAttributes
@@ -8045,6 +8394,159 @@ export interface components {
         SetRatingRequest: {
             data: components["schemas"]["SetRatingData"];
         };
+        /** SimAgentAttributes */
+        SimAgentAttributes: {
+            /** Name */
+            name: string;
+            /** Personality */
+            personality: string;
+            /** Model Name */
+            model_name: string;
+            /** Model Params */
+            model_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Tool Config */
+            tool_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Memory Compaction Strategy */
+            memory_compaction_strategy: string;
+            /** Memory Compaction Config */
+            memory_compaction_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** SimAgentCreateAttributes */
+        SimAgentCreateAttributes: {
+            /** Name */
+            name: string;
+            /** Personality */
+            personality: string;
+            /** Model Name */
+            model_name: string;
+            /** Model Params */
+            model_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Tool Config */
+            tool_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Memory Compaction Strategy */
+            memory_compaction_strategy?: string | null;
+            /** Memory Compaction Config */
+            memory_compaction_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+        };
+        /** SimAgentCreateData */
+        SimAgentCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'sim-agents'
+             * @constant
+             */
+            type: "sim-agents";
+            attributes: components["schemas"]["SimAgentCreateAttributes"];
+        };
+        /** SimAgentCreateRequest */
+        SimAgentCreateRequest: {
+            data: components["schemas"]["SimAgentCreateData"];
+        };
+        /** SimAgentListResponse */
+        SimAgentListResponse: {
+            /** Data */
+            data: components["schemas"]["SimAgentResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /** SimAgentResource */
+        SimAgentResource: {
+            /**
+             * Type
+             * @default sim-agents
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["SimAgentAttributes"];
+        };
+        /** SimAgentSingleResponse */
+        SimAgentSingleResponse: {
+            data: components["schemas"]["SimAgentResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** SimAgentUpdateAttributes */
+        SimAgentUpdateAttributes: {
+            /** Name */
+            name?: string | null;
+            /** Personality */
+            personality?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Model Params */
+            model_params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Tool Config */
+            tool_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Memory Compaction Strategy */
+            memory_compaction_strategy?: string | null;
+            /** Memory Compaction Config */
+            memory_compaction_config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Community Server Id */
+            community_server_id?: string | null;
+        };
+        /** SimAgentUpdateData */
+        SimAgentUpdateData: {
+            /**
+             * Type
+             * @description Resource type must be 'sim-agents'
+             * @constant
+             */
+            type: "sim-agents";
+            /**
+             * Id
+             * @description SimAgent ID
+             */
+            id: string;
+            attributes: components["schemas"]["SimAgentUpdateAttributes"];
+        };
+        /** SimAgentUpdateRequest */
+        SimAgentUpdateRequest: {
+            data: components["schemas"]["SimAgentUpdateData"];
+        };
         /**
          * SimilarityMatch
          * @description Match result from similarity scan.
@@ -8190,6 +8692,99 @@ export interface components {
          */
         SimilaritySearchResultResponse: {
             data: components["schemas"]["SimilaritySearchResultResource"];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+        };
+        /** SimulationAttributes */
+        SimulationAttributes: {
+            /** Orchestrator Id */
+            orchestrator_id: string;
+            /** Community Server Id */
+            community_server_id: string;
+            /** Status */
+            status: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Paused At */
+            paused_at?: string | null;
+            /** Metrics */
+            metrics?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** SimulationCreateAttributes */
+        SimulationCreateAttributes: {
+            /**
+             * Orchestrator Id
+             * Format: uuid
+             */
+            orchestrator_id: string;
+            /**
+             * Community Server Id
+             * Format: uuid
+             */
+            community_server_id: string;
+        };
+        /** SimulationCreateData */
+        SimulationCreateData: {
+            /**
+             * Type
+             * @description Resource type must be 'simulations'
+             * @constant
+             */
+            type: "simulations";
+            attributes: components["schemas"]["SimulationCreateAttributes"];
+        };
+        /** SimulationCreateRequest */
+        SimulationCreateRequest: {
+            data: components["schemas"]["SimulationCreateData"];
+        };
+        /** SimulationListResponse */
+        SimulationListResponse: {
+            /** Data */
+            data: components["schemas"]["SimulationResource"][];
+            /**
+             * Jsonapi
+             * @default {
+             *       "version": "1.1"
+             *     }
+             */
+            jsonapi: {
+                [key: string]: string;
+            };
+            links?: components["schemas"]["JSONAPILinks"] | null;
+            meta?: components["schemas"]["JSONAPIMeta"] | null;
+        };
+        /** SimulationResource */
+        SimulationResource: {
+            /**
+             * Type
+             * @default simulations
+             */
+            type: string;
+            /** Id */
+            id: string;
+            attributes: components["schemas"]["SimulationAttributes"];
+        };
+        /** SimulationSingleResponse */
+        SimulationSingleResponse: {
+            data: components["schemas"]["SimulationResource"];
             /**
              * Jsonapi
              * @default {
@@ -12168,6 +12763,387 @@ export interface operations {
             };
         };
     };
+    list_sim_agents_jsonapi_api_v2_sim_agents_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_sim_agent_jsonapi_api_v2_sim_agents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimAgentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sim_agent_jsonapi_api_v2_sim_agents__agent_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_sim_agent_jsonapi_api_v2_sim_agents__agent_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_sim_agent_jsonapi_api_v2_sim_agents__agent_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimAgentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimAgentSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_orchestrators_jsonapi_api_v2_simulation_orchestrators_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_orchestrator_jsonapi_api_v2_simulation_orchestrators_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrchestratorCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                orchestrator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                orchestrator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                orchestrator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrchestratorUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrchestratorSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_playground_note_requests_api_v2_playgrounds__community_server_id__note_requests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                community_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaygroundNoteRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     register_webhook_api_v1_webhooks_register_post: {
         parameters: {
             query?: never;
@@ -14121,6 +15097,207 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_simulations_api_v2_simulations_get: {
+        parameters: {
+            query?: {
+                "page[number]"?: number;
+                "page[size]"?: number;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_simulation_api_v2_simulations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_simulation_api_v2_simulations__simulation_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_simulation_api_v2_simulations__simulation_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_simulation_api_v2_simulations__simulation_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_simulation_api_v2_simulations__simulation_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                simulation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationSingleResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

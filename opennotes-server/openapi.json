@@ -6031,6 +6031,748 @@
         }
       }
     },
+    "/api/v2/sim-agents": {
+      "post": {
+        "tags": [
+          "sim-agents-jsonapi"
+        ],
+        "summary": "Create Sim Agent Jsonapi",
+        "operationId": "create_sim_agent_jsonapi_api_v2_sim_agents_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimAgentCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimAgentSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sim-agents-jsonapi"
+        ],
+        "summary": "List Sim Agents Jsonapi",
+        "operationId": "list_sim_agents_jsonapi_api_v2_sim_agents_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page[number]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page[Number]"
+            }
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page[Size]"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimAgentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/sim-agents/{agent_id}": {
+      "get": {
+        "tags": [
+          "sim-agents-jsonapi"
+        ],
+        "summary": "Get Sim Agent Jsonapi",
+        "operationId": "get_sim_agent_jsonapi_api_v2_sim_agents__agent_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimAgentSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "sim-agents-jsonapi"
+        ],
+        "summary": "Update Sim Agent Jsonapi",
+        "operationId": "update_sim_agent_jsonapi_api_v2_sim_agents__agent_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimAgentUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimAgentSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sim-agents-jsonapi"
+        ],
+        "summary": "Delete Sim Agent Jsonapi",
+        "operationId": "delete_sim_agent_jsonapi_api_v2_sim_agents__agent_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulation-orchestrators": {
+      "post": {
+        "tags": [
+          "simulation-orchestrators-jsonapi"
+        ],
+        "summary": "Create Orchestrator Jsonapi",
+        "operationId": "create_orchestrator_jsonapi_api_v2_simulation_orchestrators_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchestratorSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "simulation-orchestrators-jsonapi"
+        ],
+        "summary": "List Orchestrators Jsonapi",
+        "operationId": "list_orchestrators_jsonapi_api_v2_simulation_orchestrators_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page[number]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page[Number]"
+            }
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page[Size]"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchestratorListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulation-orchestrators/{orchestrator_id}": {
+      "get": {
+        "tags": [
+          "simulation-orchestrators-jsonapi"
+        ],
+        "summary": "Get Orchestrator Jsonapi",
+        "operationId": "get_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orchestrator_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Orchestrator Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchestratorSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "simulation-orchestrators-jsonapi"
+        ],
+        "summary": "Update Orchestrator Jsonapi",
+        "operationId": "update_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orchestrator_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Orchestrator Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchestratorSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "simulation-orchestrators-jsonapi"
+        ],
+        "summary": "Delete Orchestrator Jsonapi",
+        "operationId": "delete_orchestrator_jsonapi_api_v2_simulation_orchestrators__orchestrator_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orchestrator_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Orchestrator Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/playgrounds/{community_server_id}/note-requests": {
+      "post": {
+        "tags": [
+          "playground-jsonapi"
+        ],
+        "summary": "Create Playground Note Requests",
+        "operationId": "create_playground_note_requests_api_v2_playgrounds__community_server_id__note_requests_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "community_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Community Server Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaygroundNoteRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/webhooks/register": {
       "post": {
         "tags": [
@@ -9361,6 +10103,401 @@
           },
           "404": {
             "description": "Batch job not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulations": {
+      "post": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Create Simulation",
+        "operationId": "create_simulation_api_v2_simulations_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "List Simulations",
+        "operationId": "list_simulations_api_v2_simulations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page[number]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page[Number]"
+            }
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page[Size]"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulations/{simulation_id}": {
+      "get": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Get Simulation",
+        "operationId": "get_simulation_api_v2_simulations__simulation_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulations/{simulation_id}/pause": {
+      "post": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Pause Simulation",
+        "operationId": "pause_simulation_api_v2_simulations__simulation_id__pause_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulations/{simulation_id}/resume": {
+      "post": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Resume Simulation",
+        "operationId": "resume_simulation_api_v2_simulations__simulation_id__resume_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/simulations/{simulation_id}/cancel": {
+      "post": {
+        "tags": [
+          "simulations-jsonapi"
+        ],
+        "summary": "Cancel Simulation",
+        "operationId": "cancel_simulation_api_v2_simulations__simulation_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Simulation Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationSingleResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -16298,6 +17435,489 @@
         "title": "OpenAIModerationMatch",
         "description": "Match result from OpenAI moderation scan."
       },
+      "OrchestratorAttributes": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id"
+          },
+          "turn_cadence_seconds": {
+            "type": "integer",
+            "title": "Turn Cadence Seconds"
+          },
+          "max_agents": {
+            "type": "integer",
+            "title": "Max Agents"
+          },
+          "removal_rate": {
+            "type": "number",
+            "title": "Removal Rate"
+          },
+          "max_turns_per_agent": {
+            "type": "integer",
+            "title": "Max Turns Per Agent"
+          },
+          "agent_profile_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile Ids"
+          },
+          "scoring_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoring Config"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "turn_cadence_seconds",
+          "max_agents",
+          "removal_rate",
+          "max_turns_per_agent",
+          "is_active"
+        ],
+        "title": "OrchestratorAttributes"
+      },
+      "OrchestratorCreateAttributes": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id"
+          },
+          "turn_cadence_seconds": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Turn Cadence Seconds"
+          },
+          "max_agents": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Agents"
+          },
+          "removal_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Removal Rate"
+          },
+          "max_turns_per_agent": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Turns Per Agent"
+          },
+          "agent_profile_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Agent Profile Ids"
+          },
+          "scoring_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoring Config"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "turn_cadence_seconds",
+          "max_agents",
+          "removal_rate",
+          "max_turns_per_agent"
+        ],
+        "title": "OrchestratorCreateAttributes"
+      },
+      "OrchestratorCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "simulation-orchestrators",
+            "title": "Type",
+            "description": "Resource type must be 'simulation-orchestrators'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/OrchestratorCreateAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "OrchestratorCreateData"
+      },
+      "OrchestratorCreateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrchestratorCreateData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "OrchestratorCreateRequest"
+      },
+      "OrchestratorListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OrchestratorResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "OrchestratorListResponse"
+      },
+      "OrchestratorResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulation-orchestrators"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/OrchestratorAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "OrchestratorResource"
+      },
+      "OrchestratorSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrchestratorResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "OrchestratorSingleResponse"
+      },
+      "OrchestratorUpdateAttributes": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id"
+          },
+          "turn_cadence_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Cadence Seconds"
+          },
+          "max_agents": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Agents"
+          },
+          "removal_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removal Rate"
+          },
+          "max_turns_per_agent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Turns Per Agent"
+          },
+          "agent_profile_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile Ids"
+          },
+          "scoring_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoring Config"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "OrchestratorUpdateAttributes"
+      },
+      "OrchestratorUpdateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "simulation-orchestrators",
+            "title": "Type",
+            "description": "Resource type must be 'simulation-orchestrators'"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Orchestrator ID"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/OrchestratorUpdateAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "id",
+          "attributes"
+        ],
+        "title": "OrchestratorUpdateData"
+      },
+      "OrchestratorUpdateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrchestratorUpdateData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "OrchestratorUpdateRequest"
+      },
       "ParticipantStatsAttributes": {
         "properties": {
           "notes_created": {
@@ -16432,6 +18052,64 @@
           "scorer_success_rate"
         ],
         "title": "PerformanceMetrics"
+      },
+      "PlaygroundNoteRequestAttributes": {
+        "properties": {
+          "urls": {
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "format": "uri"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Urls"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By",
+            "default": "system-playground"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "urls"
+        ],
+        "title": "PlaygroundNoteRequestAttributes"
+      },
+      "PlaygroundNoteRequestBody": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlaygroundNoteRequestData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "PlaygroundNoteRequestBody"
+      },
+      "PlaygroundNoteRequestData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "playground-note-requests",
+            "title": "Type"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/PlaygroundNoteRequestAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "PlaygroundNoteRequestData"
       },
       "PreviouslySeenCheckAttributes": {
         "properties": {
@@ -18848,6 +20526,469 @@
         "title": "SetRatingRequest",
         "description": "JSON:API request body for setting rating on a candidate."
       },
+      "SimAgentAttributes": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "personality": {
+            "type": "string",
+            "title": "Personality"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "model_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Params"
+          },
+          "tool_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Config"
+          },
+          "memory_compaction_strategy": {
+            "type": "string",
+            "title": "Memory Compaction Strategy"
+          },
+          "memory_compaction_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compaction Config"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "personality",
+          "model_name",
+          "memory_compaction_strategy"
+        ],
+        "title": "SimAgentAttributes"
+      },
+      "SimAgentCreateAttributes": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "personality": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Personality"
+          },
+          "model_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Model Name"
+          },
+          "model_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Params"
+          },
+          "tool_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Config"
+          },
+          "memory_compaction_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compaction Strategy"
+          },
+          "memory_compaction_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compaction Config"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "personality",
+          "model_name"
+        ],
+        "title": "SimAgentCreateAttributes"
+      },
+      "SimAgentCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "sim-agents",
+            "title": "Type",
+            "description": "Resource type must be 'sim-agents'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimAgentCreateAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "SimAgentCreateData"
+      },
+      "SimAgentCreateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SimAgentCreateData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimAgentCreateRequest"
+      },
+      "SimAgentListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SimAgentResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimAgentListResponse"
+      },
+      "SimAgentResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "sim-agents"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimAgentAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "SimAgentResource"
+      },
+      "SimAgentSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SimAgentResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimAgentSingleResponse"
+      },
+      "SimAgentUpdateAttributes": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "model_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Params"
+          },
+          "tool_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Config"
+          },
+          "memory_compaction_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compaction Strategy"
+          },
+          "memory_compaction_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compaction Config"
+          },
+          "community_server_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community Server Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SimAgentUpdateAttributes"
+      },
+      "SimAgentUpdateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "sim-agents",
+            "title": "Type",
+            "description": "Resource type must be 'sim-agents'"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "SimAgent ID"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimAgentUpdateAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "id",
+          "attributes"
+        ],
+        "title": "SimAgentUpdateData"
+      },
+      "SimAgentUpdateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SimAgentUpdateData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimAgentUpdateRequest"
+      },
       "SimilarityMatch": {
         "properties": {
           "scan_type": {
@@ -19094,6 +21235,266 @@
         ],
         "title": "SimilaritySearchResultResponse",
         "description": "JSON:API response for similarity search results."
+      },
+      "SimulationAttributes": {
+        "properties": {
+          "orchestrator_id": {
+            "type": "string",
+            "title": "Orchestrator Id"
+          },
+          "community_server_id": {
+            "type": "string",
+            "title": "Community Server Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "orchestrator_id",
+          "community_server_id",
+          "status"
+        ],
+        "title": "SimulationAttributes"
+      },
+      "SimulationCreateAttributes": {
+        "properties": {
+          "orchestrator_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Orchestrator Id"
+          },
+          "community_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Community Server Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "orchestrator_id",
+          "community_server_id"
+        ],
+        "title": "SimulationCreateAttributes"
+      },
+      "SimulationCreateData": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "simulations",
+            "title": "Type",
+            "description": "Resource type must be 'simulations'"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimulationCreateAttributes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "attributes"
+        ],
+        "title": "SimulationCreateData"
+      },
+      "SimulationCreateRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SimulationCreateData"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimulationCreateRequest"
+      },
+      "SimulationListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationResource"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPIMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimulationListResponse"
+      },
+      "SimulationResource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "simulations"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "attributes": {
+            "$ref": "#/components/schemas/SimulationAttributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attributes"
+        ],
+        "title": "SimulationResource"
+      },
+      "SimulationSingleResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SimulationResource"
+          },
+          "jsonapi": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Jsonapi",
+            "default": {
+              "version": "1.1"
+            }
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JSONAPILinks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "SimulationSingleResponse"
       },
       "TierInfo": {
         "properties": {
