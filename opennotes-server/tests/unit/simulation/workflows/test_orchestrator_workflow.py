@@ -72,7 +72,7 @@ class TestWorkflowNameConstants:
 
 
 class TestInitializeRunStep:
-    def test_initialize_run_loads_config_and_transitions_status(self) -> None:
+    def test_initialize_run_atomic_update_and_loads_config(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import initialize_run_step
 
         run_id = uuid4()
@@ -86,14 +86,17 @@ class TestInitializeRunStep:
         mock_orchestrator.agent_profile_ids = [str(uuid4())]
 
         mock_run = MagicMock()
-        mock_run.status = "pending"
         mock_run.community_server_id = cs_id
         mock_run.orchestrator = mock_orchestrator
 
+        update_result = MagicMock()
+        update_result.scalar_one_or_none.return_value = run_id
+
+        run_result = MagicMock()
+        run_result.scalar_one.return_value = mock_run
+
         mock_session = AsyncMock()
-        select_result = MagicMock()
-        select_result.scalar_one_or_none.return_value = mock_run
-        mock_session.execute = AsyncMock(side_effect=[select_result, None])
+        mock_session.execute = AsyncMock(side_effect=[update_result, run_result])
         mock_session.commit = AsyncMock()
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
@@ -112,10 +115,14 @@ class TestInitializeRunStep:
     def test_initialize_run_fails_if_run_not_found(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import initialize_run_step
 
+        update_result = MagicMock()
+        update_result.scalar_one_or_none.return_value = None
+
+        check_result = MagicMock()
+        check_result.scalar_one_or_none.return_value = None
+
         mock_session = AsyncMock()
-        empty_result = MagicMock()
-        empty_result.scalar_one_or_none.return_value = None
-        mock_session.execute = AsyncMock(return_value=empty_result)
+        mock_session.execute = AsyncMock(side_effect=[update_result, check_result])
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
@@ -126,25 +133,60 @@ class TestInitializeRunStep:
         ):
             initialize_run_step.__wrapped__(str(uuid4()))
 
-    def test_initialize_run_fails_if_not_pending(self) -> None:
+    def test_initialize_run_fails_if_completed(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import initialize_run_step
 
-        mock_run = MagicMock()
-        mock_run.status = "running"
+        update_result = MagicMock()
+        update_result.scalar_one_or_none.return_value = None
+
+        check_result = MagicMock()
+        check_result.scalar_one_or_none.return_value = "completed"
 
         mock_session = AsyncMock()
-        select_result = MagicMock()
-        select_result.scalar_one_or_none.return_value = mock_run
-        mock_session.execute = AsyncMock(return_value=select_result)
+        mock_session.execute = AsyncMock(side_effect=[update_result, check_result])
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
 
         with (
             _patch_run_sync(),
             _patch_session(mock_session_ctx),
-            pytest.raises(ValueError, match="expected 'pending'"),
+            pytest.raises(ValueError, match="expected 'pending' or 'running'"),
         ):
             initialize_run_step.__wrapped__(str(uuid4()))
+
+    def test_initialize_run_accepts_running_on_retry(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import initialize_run_step
+
+        run_id = uuid4()
+        cs_id = uuid4()
+
+        mock_orchestrator = MagicMock()
+        mock_orchestrator.turn_cadence_seconds = 10
+        mock_orchestrator.max_agents = 5
+        mock_orchestrator.removal_rate = 0.0
+        mock_orchestrator.max_turns_per_agent = 100
+        mock_orchestrator.agent_profile_ids = [str(uuid4())]
+
+        mock_run = MagicMock()
+        mock_run.community_server_id = cs_id
+        mock_run.orchestrator = mock_orchestrator
+
+        update_result = MagicMock()
+        update_result.scalar_one_or_none.return_value = run_id
+
+        run_result = MagicMock()
+        run_result.scalar_one.return_value = mock_run
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[update_result, run_result])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = initialize_run_step.__wrapped__(str(run_id))
+
+        assert result["turn_cadence_seconds"] == 10
 
 
 class TestCheckRunStatusStep:
@@ -243,10 +285,13 @@ class TestSpawnAgentsStep:
 
         mock_session = AsyncMock()
 
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+
         agent_name_result = MagicMock()
         agent_name_result.scalar_one_or_none.return_value = "TestAgent"
 
-        mock_session.execute = AsyncMock(return_value=agent_name_result)
+        mock_session.execute = AsyncMock(side_effect=[count_result, agent_name_result])
 
         added_objects: list = []
 
@@ -280,6 +325,26 @@ class TestSpawnAgentsStep:
 
         assert result == []
 
+    def test_spawn_agents_idempotent_check(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
+
+        config = _make_config(max_agents=5, agent_profile_ids=[str(uuid4())])
+
+        mock_session = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 5
+        mock_session.execute = AsyncMock(return_value=count_result)
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with _patch_run_sync(), _patch_session(mock_session_ctx):
+            result = spawn_agents_step.__wrapped__(
+                str(uuid4()), config, active_count=0, total_spawned=0
+            )
+
+        assert result == []
+
     def test_spawn_agents_round_robin_profile_selection(self) -> None:
         from src.simulation.workflows.orchestrator_workflow import spawn_agents_step
 
@@ -288,11 +353,13 @@ class TestSpawnAgentsStep:
 
         mock_session = AsyncMock()
 
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+
         agent_name_result = MagicMock()
         agent_name_result.scalar_one_or_none.return_value = "Agent"
 
-        original_execute = AsyncMock(return_value=agent_name_result)
-        mock_session.execute = original_execute
+        mock_session.execute = AsyncMock(side_effect=[count_result] + [agent_name_result] * 5)
         mock_session.add = MagicMock(
             side_effect=lambda obj: setattr(obj, "id", uuid4())
             if hasattr(obj, "id") and obj.id is None
@@ -321,7 +388,11 @@ class TestRemoveAgentsStep:
         mock_session = AsyncMock()
         oldest_result = MagicMock()
         oldest_result.scalar_one_or_none.return_value = oldest_id
-        mock_session.execute = AsyncMock(side_effect=[oldest_result, None])
+
+        remove_result = MagicMock()
+        remove_result.scalar_one_or_none.return_value = oldest_id
+
+        mock_session.execute = AsyncMock(side_effect=[oldest_result, remove_result])
         mock_session.commit = AsyncMock()
 
         mock_session_ctx = _make_mock_session_ctx(mock_session)
@@ -352,6 +423,34 @@ class TestRemoveAgentsStep:
         config = _make_config(removal_rate=1.0)
 
         result = remove_agents_step.__wrapped__(str(uuid4()), config, active_count=1)
+
+        assert result == []
+
+    def test_remove_agents_handles_concurrent_removal(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import remove_agents_step
+
+        config = _make_config(removal_rate=1.0)
+        oldest_id = uuid4()
+
+        mock_session = AsyncMock()
+        oldest_result = MagicMock()
+        oldest_result.scalar_one_or_none.return_value = oldest_id
+
+        remove_result = MagicMock()
+        remove_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(side_effect=[oldest_result, remove_result])
+        mock_session.commit = AsyncMock()
+
+        mock_session_ctx = _make_mock_session_ctx(mock_session)
+
+        with (
+            _patch_run_sync(),
+            _patch_session(mock_session_ctx),
+            patch("src.simulation.workflows.orchestrator_workflow.random") as mock_random,
+        ):
+            mock_random.random.return_value = 0.0
+            result = remove_agents_step.__wrapped__(str(uuid4()), config, active_count=3)
 
         assert result == []
 
@@ -717,6 +816,40 @@ class TestRunOrchestratorWorkflow:
 
         assert result["iterations"] == 3
         assert result["status"] == "completed"
+
+    def test_run_orchestrator_finalize_failure_fallback(self) -> None:
+        from src.simulation.workflows.orchestrator_workflow import run_orchestrator
+
+        run_id = str(uuid4())
+        config = _make_config()
+        finalize_calls = [0]
+
+        def mock_finalize(rid, status):
+            finalize_calls[0] += 1
+            if finalize_calls[0] == 1:
+                raise RuntimeError("DB connection lost")
+            return {"final_status": "failed", "instances_finalized": 0}
+
+        with (
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.initialize_run_step",
+                return_value=config,
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.check_run_status_step",
+                return_value="cancelled",
+            ),
+            patch(
+                "src.simulation.workflows.orchestrator_workflow.finalize_run_step",
+                side_effect=mock_finalize,
+            ),
+            patch("src.simulation.workflows.orchestrator_workflow.DBOS") as mock_dbos,
+        ):
+            mock_dbos.workflow_id = "wf-test"
+            result = run_orchestrator.__wrapped__(simulation_run_id=run_id)
+
+        assert result["status"] == "failed"
+        assert finalize_calls[0] == 2
 
 
 class TestDispatchOrchestrator:

@@ -36,7 +36,6 @@ class SimAgent(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         primary_key=True,
         server_default=text("uuidv7()"),
-        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     personality: Mapped[str] = mapped_column(Text, nullable=False)
@@ -55,7 +54,13 @@ class SimAgent(Base, TimestampMixin):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (Index("idx_sim_agents_deleted_at", "deleted_at"),)
+    __table_args__ = (
+        Index("idx_sim_agents_deleted_at", "deleted_at"),
+        CheckConstraint(
+            "memory_compaction_strategy IN ('sliding_window', 'summarize_and_prune', 'semantic_dedup')",
+            name="ck_sim_agents_memory_compaction_strategy",
+        ),
+    )
 
     @hybrid_property
     def is_deleted(self) -> bool:
@@ -72,13 +77,11 @@ class SimAgentMemory(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         primary_key=True,
         server_default=text("uuidv7()"),
-        index=True,
     )
     agent_instance_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("sim_agent_instances.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     message_history: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
@@ -90,7 +93,17 @@ class SimAgentMemory(Base, TimestampMixin):
     compaction_strategy: Mapped[str | None] = mapped_column(String(50), nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
-    __table_args__ = (Index("idx_sim_agent_memories_agent_instance_id", "agent_instance_id"),)
+    agent_instance: Mapped[SimAgentInstance] = relationship(
+        "SimAgentInstance", back_populates="memory", lazy="raise"
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_sim_agent_memories_agent_instance_id",
+            "agent_instance_id",
+            unique=True,
+        ),
+    )
 
 
 class SimulationOrchestrator(Base, TimestampMixin):
@@ -100,7 +113,6 @@ class SimulationOrchestrator(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         primary_key=True,
         server_default=text("uuidv7()"),
-        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -150,7 +162,6 @@ class SimulationRun(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         primary_key=True,
         server_default=text("uuidv7()"),
-        index=True,
     )
     orchestrator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -164,9 +175,7 @@ class SimulationRun(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default="pending", index=True
-    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -211,7 +220,6 @@ class SimAgentInstance(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         primary_key=True,
         server_default=text("uuidv7()"),
-        index=True,
     )
     simulation_run_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -231,9 +239,7 @@ class SimAgentInstance(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    state: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default="active", index=True
-    )
+    state: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
     turn_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_turn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     removal_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -244,6 +250,9 @@ class SimAgentInstance(Base, TimestampMixin):
     )
     agent_profile: Mapped[SimAgent] = relationship("SimAgent", lazy="raise")
     user_profile: Mapped[UserProfile] = relationship("UserProfile", lazy="raise")
+    memory: Mapped[SimAgentMemory | None] = relationship(
+        "SimAgentMemory", back_populates="agent_instance", uselist=False, lazy="raise"
+    )
 
     __table_args__ = (
         Index("idx_sim_agent_instances_deleted_at", "deleted_at"),

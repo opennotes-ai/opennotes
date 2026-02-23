@@ -480,7 +480,7 @@ class TestPersistStateStep:
         assert mock_session.execute.await_count == 2
         mock_session.commit.assert_awaited_once()
 
-    def test_persist_state_creates_memory_when_none(self) -> None:
+    def test_persist_state_creates_memory_with_upsert(self) -> None:
         from src.simulation.workflows.agent_turn_workflow import persist_state_step
 
         agent_instance_id = str(uuid4())
@@ -488,7 +488,6 @@ class TestPersistStateStep:
         action = {"action_type": "pass_turn", "reasoning": "idle"}
 
         mock_session = AsyncMock()
-        mock_session.add = MagicMock()
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
@@ -513,10 +512,8 @@ class TestPersistStateStep:
             )
 
         assert result["persisted"] is True
-        mock_session.add.assert_called_once()
-        added_obj = mock_session.add.call_args[0][0]
-        assert added_obj.turn_count == 1
-        assert added_obj.message_history == new_messages
+        assert mock_session.execute.await_count == 2
+        mock_session.commit.assert_awaited_once()
 
 
 class TestRunAgentTurnWorkflow:

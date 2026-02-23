@@ -205,12 +205,7 @@ def build_deps_step(
     return run_sync(_build())
 
 
-@DBOS.step(
-    retries_allowed=True,
-    max_attempts=2,
-    interval_seconds=5.0,
-    backoff_rate=2.0,
-)
+@DBOS.step(retries_allowed=False)
 def execute_agent_turn_step(
     context: dict[str, Any],
     deps_data: dict[str, Any],
@@ -278,6 +273,8 @@ def persist_state_step(
     from src.database import get_session_maker
 
     async def _persist() -> dict[str, Any]:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         now = pendulum.now("UTC")
         instance_uuid = UUID(agent_instance_id)
 
@@ -292,12 +289,22 @@ def persist_state_step(
                     )
                 )
             else:
-                new_memory = SimAgentMemory(
-                    agent_instance_id=instance_uuid,
-                    message_history=new_messages,
-                    turn_count=1,
+                stmt = (
+                    pg_insert(SimAgentMemory)
+                    .values(
+                        agent_instance_id=instance_uuid,
+                        message_history=new_messages,
+                        turn_count=1,
+                    )
+                    .on_conflict_do_update(
+                        index_elements=["agent_instance_id"],
+                        set_={
+                            "message_history": new_messages,
+                            "turn_count": SimAgentMemory.turn_count + 1,
+                        },
+                    )
                 )
-                session.add(new_memory)
+                await session.execute(stmt)
 
             await session.execute(
                 update(SimAgentInstance)

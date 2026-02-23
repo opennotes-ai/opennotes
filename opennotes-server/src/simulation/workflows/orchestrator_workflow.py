@@ -38,31 +38,43 @@ def initialize_run_step(simulation_run_id: str) -> dict[str, Any]:
     from src.database import get_session_maker
 
     async def _init() -> dict[str, Any]:
+        run_uuid = UUID(simulation_run_id)
+        now = pendulum.now("UTC")
+
         async with get_session_maker()() as session:
+            atomic_update = (
+                update(SimulationRun)
+                .where(
+                    SimulationRun.id == run_uuid,
+                    SimulationRun.status.in_(["pending", "running"]),
+                )
+                .values(status="running", started_at=now)
+                .returning(SimulationRun.id)
+            )
+            update_result = await session.execute(atomic_update)
+            updated_id = update_result.scalar_one_or_none()
+
+            if updated_id is None:
+                check_result = await session.execute(
+                    select(SimulationRun.status).where(SimulationRun.id == run_uuid)
+                )
+                existing_status = check_result.scalar_one_or_none()
+                if existing_status is None:
+                    raise ValueError(f"SimulationRun not found: {simulation_run_id}")
+                raise ValueError(
+                    f"SimulationRun {simulation_run_id} is '{existing_status}', "
+                    f"expected 'pending' or 'running'"
+                )
+
             run_query = (
                 select(SimulationRun)
                 .options(selectinload(SimulationRun.orchestrator))
-                .where(SimulationRun.id == UUID(simulation_run_id))
+                .where(SimulationRun.id == run_uuid)
             )
-            result = await session.execute(run_query)
-            run = result.scalar_one_or_none()
-
-            if run is None:
-                raise ValueError(f"SimulationRun not found: {simulation_run_id}")
-
-            if run.status != "pending":
-                raise ValueError(
-                    f"SimulationRun {simulation_run_id} is '{run.status}', expected 'pending'"
-                )
-
+            run_result = await session.execute(run_query)
+            run = run_result.scalar_one()
             orchestrator: SimulationOrchestrator = run.orchestrator
 
-            now = pendulum.now("UTC")
-            await session.execute(
-                update(SimulationRun)
-                .where(SimulationRun.id == UUID(simulation_run_id))
-                .values(status="running", started_at=now)
-            )
             await session.commit()
 
             return {
@@ -170,7 +182,17 @@ def spawn_agents_step(
         now = pendulum.now("UTC")
 
         async with get_session_maker()() as session:
-            for i in range(to_spawn):
+            current_count_result = await session.execute(
+                select(func.count()).where(
+                    SimAgentInstance.simulation_run_id == run_uuid,
+                )
+            )
+            current_total = current_count_result.scalar() or 0
+            adjusted_to_spawn = min(to_spawn, max_agents - active_count)
+            if current_total >= max_agents:
+                return []
+
+            for i in range(adjusted_to_spawn):
                 profile_index = (total_spawned + i) % len(agent_profile_ids)
                 profile_id_str = agent_profile_ids[profile_index]
                 profile_uuid = UUID(profile_id_str)
@@ -248,6 +270,7 @@ def remove_agents_step(
                 )
                 .order_by(SimAgentInstance.created_at.asc())
                 .limit(1)
+                .with_for_update(skip_locked=True)
             )
             oldest_result = await session.execute(oldest_query)
             oldest_id = oldest_result.scalar_one_or_none()
@@ -255,18 +278,26 @@ def remove_agents_step(
             if oldest_id is None:
                 return []
 
-            await session.execute(
+            remove_result = await session.execute(
                 update(SimAgentInstance)
-                .where(SimAgentInstance.id == oldest_id)
+                .where(
+                    SimAgentInstance.id == oldest_id,
+                    SimAgentInstance.state == "active",
+                )
                 .values(
                     state="removed",
                     removal_reason="removal_rate",
                     deleted_at=now,
                 )
+                .returning(SimAgentInstance.id)
             )
+            removed_id = remove_result.scalar_one_or_none()
             await session.commit()
 
-            return [str(oldest_id)]
+            if removed_id is None:
+                return []
+
+            return [str(removed_id)]
 
     return run_sync(_remove())
 
@@ -386,6 +417,7 @@ def finalize_run_step(simulation_run_id: str, final_status: str) -> dict[str, An
                     .values(
                         state=completion_state,
                         removal_reason=removal_reason,
+                        deleted_at=now,
                     )
                 )
 
@@ -402,6 +434,29 @@ def finalize_run_step(simulation_run_id: str, final_status: str) -> dict[str, An
             }
 
     return run_sync(_finalize())
+
+
+def _finalize_with_fallback(
+    simulation_run_id: str,
+    final_status: str,
+) -> tuple[dict[str, Any], str]:
+    try:
+        result = finalize_run_step(simulation_run_id, final_status)
+        return result, final_status
+    except Exception:
+        logger.exception(
+            "Failed to finalize run, attempting to set failed status",
+            extra={"simulation_run_id": simulation_run_id},
+        )
+    try:
+        result = finalize_run_step(simulation_run_id, "failed")
+        return result, "failed"
+    except Exception:
+        logger.exception(
+            "Failed to set failed status on run",
+            extra={"simulation_run_id": simulation_run_id},
+        )
+    return {"final_status": "failed", "instances_finalized": 0}, "failed"
 
 
 @DBOS.workflow()
@@ -517,7 +572,7 @@ def run_orchestrator(simulation_run_id: str) -> dict[str, Any]:
             },
         )
 
-    finalize_result = finalize_run_step(simulation_run_id, final_status)
+    finalize_result, final_status = _finalize_with_fallback(simulation_run_id, final_status)
 
     logger.info(
         "Orchestrator workflow completed",
