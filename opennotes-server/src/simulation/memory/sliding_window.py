@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
-from src.simulation.memory.message_utils import _is_system_message
+from src.simulation.memory.message_utils import is_system_message
 
 DEFAULT_WINDOW_SIZE = 50
 
@@ -27,7 +27,7 @@ class SlidingWindowCompactor:
         system_message: ModelMessage | None = None
         non_system_messages = messages
 
-        if messages and _is_system_message(messages[0]):
+        if messages and is_system_message(messages[0]):
             system_message = messages[0]
             non_system_messages = messages[1:]
 

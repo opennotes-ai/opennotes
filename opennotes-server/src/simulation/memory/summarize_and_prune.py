@@ -4,12 +4,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.simulation.memory.compactor_protocol import CompactionResult, ModelMessage
-from src.simulation.memory.message_utils import _extract_text
+from src.simulation.memory.message_utils import extract_text
 
 DEFAULT_KEEP_RECENT = 10
 
 
-def _make_summary_message(summary_text: str) -> ModelMessage:
+def _make_summary_message(summary_text: str) -> Any:
     return {
         "kind": "request",
         "parts": [{"part_kind": "system-prompt", "content": summary_text}],
@@ -38,7 +38,7 @@ class SummarizeAndPruneCompactor:
         old_messages = messages[:-keep_recent]
         recent_messages = messages[-keep_recent:]
 
-        old_text = "\n".join(_extract_text(m) for m in old_messages)
+        old_text = "\n".join(extract_text(m) for m in old_messages)
         summary = await self._summarizer(old_text)
 
         summary_message = _make_summary_message(summary)

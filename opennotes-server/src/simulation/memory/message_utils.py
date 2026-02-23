@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        SystemPromptPart,
+    )
 
 try:
     from pydantic_ai.messages import (
@@ -14,7 +21,7 @@ except ImportError:
     _HAS_PYDANTIC_AI = False
 
 
-def _extract_text(message: Any) -> str:
+def extract_text(message: Any) -> str:
     if _HAS_PYDANTIC_AI:
         if isinstance(message, ModelRequest):
             texts: list[str] = []
@@ -26,8 +33,9 @@ def _extract_text(message: Any) -> str:
         if isinstance(message, ModelResponse):
             texts = []
             for part in message.parts:
-                if hasattr(part, "content") and isinstance(part.content, str):
-                    texts.append(part.content)
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    texts.append(content)
             return " ".join(texts)
 
     if isinstance(message, dict):
@@ -43,7 +51,7 @@ def _extract_text(message: Any) -> str:
     return str(message)
 
 
-def _is_system_message(message: Any) -> bool:
+def is_system_message(message: Any) -> bool:
     if _HAS_PYDANTIC_AI and isinstance(message, ModelRequest):
         return any(isinstance(part, SystemPromptPart) for part in message.parts)
 
