@@ -121,19 +121,20 @@ def pytest_collection_modifyitems(config, items):
     When xdist is enabled (parallel execution with -n > 0), deselect:
     - integration_messaging: use singleton redis_client/nats_client
     - serial: resource-heavy tests that crash xdist workers (e.g., ML scorer tests)
+    - heavy: OOM-risk tests (e.g., matrix factorization) that live in tests/heavy/
 
-    These tests run in a separate serial CI step with -n 0.
+    These tests run in separate serial CI steps with -n 0.
     """
-    # Check if xdist is being used for actual parallelization (not just -n 0 which disables it)
-    # The 'numprocesses' config option indicates parallelization is enabled
-    # When -n 0, xdist plugin is loaded but numprocesses will be 0 or None
     xdist_numprocesses = config.getoption("numprocesses", default=None)
 
-    # Only deselect if xdist is being used for actual parallelization (numprocesses > 0 or "auto")
     if xdist_numprocesses and xdist_numprocesses != "0":
         items_to_remove = []
         for item in items:
-            if "integration_messaging" in item.keywords or "serial" in item.keywords:
+            if (
+                "integration_messaging" in item.keywords
+                or "serial" in item.keywords
+                or "heavy" in item.keywords
+            ):
                 items_to_remove.append(item)
 
         for item in items_to_remove:
