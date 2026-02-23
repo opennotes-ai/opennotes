@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 from uuid import UUID
@@ -61,7 +62,7 @@ class SimAgentResponse(TimestampSchema):
     memory_compaction_strategy: str
     memory_compaction_config: dict[str, Any] | None = None
     community_server_id: UUID | None = None
-    deleted_at: str | None = None
+    deleted_at: datetime | None = None
 
 
 class PlaygroundNoteRequestAttributes(StrictInputSchema):

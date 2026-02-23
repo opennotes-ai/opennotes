@@ -77,10 +77,17 @@ def get_random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
 
-def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
+def scrape_url_content(
+    url: str,
+    user_agent: str | None = None,
+    extraction_config: ExtractionConfig | None = None,
+) -> str | None:
     try:
         if user_agent is None:
             user_agent = get_random_user_agent()
+
+        if extraction_config is None:
+            extraction_config = ExtractionConfig()
 
         config = trafilatura.settings.use_config()  # pyright: ignore[reportAttributeAccessIssue]
         config.set("DEFAULT", "USER_AGENT", user_agent)
@@ -92,10 +99,10 @@ def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
 
         content = trafilatura.extract(
             downloaded,
-            include_comments=False,
-            include_tables=True,
-            no_fallback=False,
-            favor_precision=True,
+            include_comments=extraction_config.include_comments,
+            include_tables=extraction_config.include_tables,
+            no_fallback=extraction_config.no_fallback,
+            favor_precision=extraction_config.favor_precision,
         )
 
         if not content:
@@ -112,6 +119,7 @@ def scrape_url_content(url: str, user_agent: str | None = None) -> str | None:
 async def extract_content_from_url(
     url: str,
     config: ExtractionConfig | None = None,
+    timeout: float = DEFAULT_SCRAPE_TIMEOUT,
 ) -> ExtractedContent:
     if config is None:
         config = ExtractionConfig()
@@ -123,7 +131,13 @@ async def extract_content_from_url(
     total_delay = config.base_delay + jitter
     await asyncio.sleep(total_delay)
 
-    content = await asyncio.to_thread(scrape_url_content, url, user_agent)
+    try:
+        content = await asyncio.wait_for(
+            asyncio.to_thread(scrape_url_content, url, user_agent, config),
+            timeout=timeout,
+        )
+    except TimeoutError:
+        raise ContentExtractionError(f"Timeout after {timeout}s extracting content from URL: {url}")
 
     if not content:
         raise ContentExtractionError(f"Failed to extract content from URL: {url}")

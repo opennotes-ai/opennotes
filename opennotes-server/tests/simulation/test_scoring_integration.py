@@ -8,6 +8,7 @@ import pytest
 from src.notes.scoring.tier_config import ScoringTier
 from src.notes.scoring_schemas import NoteScoreResponse, ScoreConfidence
 from src.simulation.scoring_integration import (
+    SCORING_BATCH_SIZE,
     CoverageResult,
     ScoringMetrics,
     ScoringRunResult,
@@ -51,12 +52,14 @@ def _mock_db_for_trigger(run, note_count, notes):
     count_result = MagicMock()
     count_result.scalar.return_value = note_count
 
-    notes_result = MagicMock()
-    notes_scalars = MagicMock()
-    notes_scalars.all.return_value = notes
-    notes_result.scalars.return_value = notes_scalars
+    batch_result = MagicMock()
+    batch_scalars = MagicMock()
+    batch_scalars.all.return_value = notes
+    batch_result.scalars.return_value = batch_scalars
 
-    db.execute = AsyncMock(side_effect=[count_result, notes_result, None])
+    update_result = MagicMock()
+
+    db.execute = AsyncMock(side_effect=[count_result, batch_result, update_result])
     db.commit = AsyncMock()
     return db
 
@@ -111,21 +114,7 @@ async def test_trigger_scoring_uses_existing_pipeline():
         content=None,
     )
 
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=run)
-
-    count_result = MagicMock()
-    count_result.scalar.return_value = 5
-
-    notes_result = MagicMock()
-    notes_scalars = MagicMock()
-    notes_scalars.all.return_value = [note]
-    notes_result.scalars.return_value = notes_scalars
-
-    update_result = MagicMock()
-
-    db.execute = AsyncMock(side_effect=[count_result, notes_result, update_result])
-    db.commit = AsyncMock()
+    db = _mock_db_for_trigger(run, 5, [note])
 
     with (
         patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
@@ -168,19 +157,7 @@ async def test_trigger_scoring_updates_run_metrics():
         content=None,
     )
 
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=run)
-
-    count_result = MagicMock()
-    count_result.scalar.return_value = 10
-
-    notes_result = MagicMock()
-    notes_scalars = MagicMock()
-    notes_scalars.all.return_value = [note]
-    notes_result.scalars.return_value = notes_scalars
-
-    db.execute = AsyncMock(side_effect=[count_result, notes_result, MagicMock()])
-    db.commit = AsyncMock()
+    db = _mock_db_for_trigger(run, 10, [note])
 
     with (
         patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
@@ -224,19 +201,7 @@ async def test_trigger_scoring_status_helpful():
         content=None,
     )
 
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=run)
-
-    count_result = MagicMock()
-    count_result.scalar.return_value = 5
-
-    notes_result = MagicMock()
-    notes_scalars = MagicMock()
-    notes_scalars.all.return_value = [note]
-    notes_result.scalars.return_value = notes_scalars
-
-    db.execute = AsyncMock(side_effect=[count_result, notes_result, MagicMock()])
-    db.commit = AsyncMock()
+    db = _mock_db_for_trigger(run, 5, [note])
 
     with (
         patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
@@ -253,8 +218,7 @@ async def test_trigger_scoring_status_helpful():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
-    update_call = db.execute.call_args_list[2]
-    assert update_call is not None
+    assert db.execute.call_count == 3
 
 
 @pytest.mark.unit
@@ -276,19 +240,7 @@ async def test_trigger_scoring_status_not_helpful():
         content=None,
     )
 
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=run)
-
-    count_result = MagicMock()
-    count_result.scalar.return_value = 3
-
-    notes_result = MagicMock()
-    notes_scalars = MagicMock()
-    notes_scalars.all.return_value = [note]
-    notes_result.scalars.return_value = notes_scalars
-
-    db.execute = AsyncMock(side_effect=[count_result, notes_result, MagicMock()])
-    db.commit = AsyncMock()
+    db = _mock_db_for_trigger(run, 3, [note])
 
     with (
         patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
@@ -333,19 +285,7 @@ async def test_trigger_scoring_accumulates_metrics():
         content=None,
     )
 
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=run)
-
-    count_result = MagicMock()
-    count_result.scalar.return_value = 50
-
-    notes_result = MagicMock()
-    notes_scalars = MagicMock()
-    notes_scalars.all.return_value = [note]
-    notes_result.scalars.return_value = notes_scalars
-
-    db.execute = AsyncMock(side_effect=[count_result, notes_result, MagicMock()])
-    db.commit = AsyncMock()
+    db = _mock_db_for_trigger(run, 50, [note])
 
     with (
         patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
@@ -575,19 +515,7 @@ async def test_trigger_scoring_handles_scoring_error_gracefully():
         content=None,
     )
 
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=run)
-
-    count_result = MagicMock()
-    count_result.scalar.return_value = 2
-
-    notes_result = MagicMock()
-    notes_scalars = MagicMock()
-    notes_scalars.all.return_value = [note1, note2]
-    notes_result.scalars.return_value = notes_scalars
-
-    db.execute = AsyncMock(side_effect=[count_result, notes_result, MagicMock()])
-    db.commit = AsyncMock()
+    db = _mock_db_for_trigger(run, 2, [note1, note2])
 
     with (
         patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
@@ -604,6 +532,64 @@ async def test_trigger_scoring_handles_scoring_error_gracefully():
         result = await trigger_scoring_for_simulation(run.id, db)
 
     assert result.scores_computed == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_trigger_scoring_batch_update_uses_case():
+    cs_id = uuid4()
+    run = _make_run(community_server_id=cs_id)
+    note1 = _make_note(community_server_id=cs_id)
+    note2 = _make_note(community_server_id=cs_id)
+
+    responses = [
+        NoteScoreResponse(
+            note_id=note1.id,
+            score=0.9,
+            confidence=ScoreConfidence.STANDARD,
+            algorithm="bayesian_average_tier0",
+            rating_count=6,
+            tier=0,
+            tier_name="Minimal",
+            calculated_at=None,
+            content=None,
+        ),
+        NoteScoreResponse(
+            note_id=note2.id,
+            score=0.3,
+            confidence=ScoreConfidence.STANDARD,
+            algorithm="bayesian_average_tier0",
+            rating_count=6,
+            tier=0,
+            tier_name="Minimal",
+            calculated_at=None,
+            content=None,
+        ),
+    ]
+
+    db = _mock_db_for_trigger(run, 2, [note1, note2])
+
+    with (
+        patch("src.simulation.scoring_integration.ScorerFactory") as mock_factory_cls,
+        patch(
+            "src.simulation.scoring_integration.calculate_note_score",
+            new_callable=AsyncMock,
+            side_effect=responses,
+        ),
+    ):
+        mock_factory = MagicMock()
+        mock_factory.get_scorer.return_value = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+
+        result = await trigger_scoring_for_simulation(run.id, db)
+
+    assert result.scores_computed == 2
+    assert db.execute.call_count == 3
+
+
+@pytest.mark.unit
+def test_scoring_batch_size_constant():
+    assert SCORING_BATCH_SIZE == 100
 
 
 @pytest.mark.unit

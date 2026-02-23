@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +20,8 @@ from src.notes.scoring_utils import calculate_note_score
 from src.simulation.models import SimulationRun
 
 logger = logging.getLogger(__name__)
+
+SCORING_BATCH_SIZE = 100
 
 
 @dataclass
@@ -84,46 +86,67 @@ async def trigger_scoring_for_simulation(
     scorer = factory.get_scorer(str(community_server_id), note_count)
     scorer_type = type(scorer).__name__
 
-    notes_result = await db.execute(
-        select(Note)
-        .where(
-            Note.community_server_id == community_server_id,
-            Note.deleted_at.is_(None),
-        )
-        .options(selectinload(Note.ratings))
-    )
-    notes = notes_result.scalars().all()
-
     scores_computed = 0
-    for note in notes:
-        try:
-            score_response = await calculate_note_score(note, note_count, scorer)
+    offset = 0
 
-            status_update = "NEEDS_MORE_RATINGS"
-            if score_response.rating_count >= settings.MIN_RATINGS_NEEDED:
-                status_update = (
-                    "CURRENTLY_RATED_HELPFUL"
-                    if score_response.score >= 0.5
-                    else "CURRENTLY_RATED_NOT_HELPFUL"
+    while True:
+        batch_result = await db.execute(
+            select(Note)
+            .where(
+                Note.community_server_id == community_server_id,
+                Note.deleted_at.is_(None),
+            )
+            .options(selectinload(Note.ratings))
+            .limit(SCORING_BATCH_SIZE)
+            .offset(offset)
+        )
+        batch = batch_result.scalars().all()
+
+        if not batch:
+            break
+
+        score_mapping: dict[UUID, int] = {}
+        status_mapping: dict[UUID, str] = {}
+
+        for note in batch:
+            try:
+                score_response = await calculate_note_score(note, note_count, scorer)
+
+                status_update = "NEEDS_MORE_RATINGS"
+                if score_response.rating_count >= settings.MIN_RATINGS_NEEDED:
+                    status_update = (
+                        "CURRENTLY_RATED_HELPFUL"
+                        if score_response.score >= 0.5
+                        else "CURRENTLY_RATED_NOT_HELPFUL"
+                    )
+
+                score_mapping[note.id] = int(score_response.score * 100)
+                status_mapping[note.id] = status_update
+                scores_computed += 1
+            except Exception:
+                logger.exception(
+                    "Failed to score note",
+                    extra={
+                        "note_id": str(note.id),
+                        "simulation_run_id": str(simulation_run_id),
+                    },
                 )
 
+        if score_mapping:
+            note_ids = list(score_mapping.keys())
             await db.execute(
                 update(Note)
-                .where(Note.id == note.id)
+                .where(Note.id.in_(note_ids))
                 .values(
-                    helpfulness_score=int(score_response.score * 100),
-                    status=status_update,
+                    helpfulness_score=case(score_mapping, value=Note.id),
+                    status=case(status_mapping, value=Note.id),
                 )
             )
-            scores_computed += 1
-        except Exception:
-            logger.exception(
-                "Failed to score note",
-                extra={
-                    "note_id": str(note.id),
-                    "simulation_run_id": str(simulation_run_id),
-                },
-            )
+
+        if len(batch) < SCORING_BATCH_SIZE:
+            break
+
+        offset += SCORING_BATCH_SIZE
 
     result = ScoringRunResult(
         scores_computed=scores_computed,

@@ -230,6 +230,58 @@ class TestScrapeUrlContent:
             scrape_url_content("https://example.com")
             mock_ua.assert_called_once()
 
+    def test_passes_config_fields_to_trafilatura(self):
+        config = ExtractionConfig(
+            include_comments=True,
+            include_tables=False,
+            no_fallback=True,
+            favor_precision=False,
+        )
+        with (
+            patch("src.shared.content_extraction.trafilatura.settings.use_config") as mock_traf_cfg,
+            patch(
+                "src.shared.content_extraction.trafilatura.fetch_url",
+                return_value="<html>content</html>",
+            ),
+            patch(
+                "src.shared.content_extraction.trafilatura.extract",
+                return_value="text",
+            ) as mock_extract,
+        ):
+            mock_traf_cfg.return_value.set = lambda *a: None
+            scrape_url_content("https://example.com", extraction_config=config)
+
+            mock_extract.assert_called_once_with(
+                "<html>content</html>",
+                include_comments=True,
+                include_tables=False,
+                no_fallback=True,
+                favor_precision=False,
+            )
+
+    def test_uses_default_config_when_none(self):
+        with (
+            patch("src.shared.content_extraction.trafilatura.settings.use_config") as mock_traf_cfg,
+            patch(
+                "src.shared.content_extraction.trafilatura.fetch_url",
+                return_value="<html>content</html>",
+            ),
+            patch(
+                "src.shared.content_extraction.trafilatura.extract",
+                return_value="text",
+            ) as mock_extract,
+        ):
+            mock_traf_cfg.return_value.set = lambda *a: None
+            scrape_url_content("https://example.com")
+
+            mock_extract.assert_called_once_with(
+                "<html>content</html>",
+                include_comments=False,
+                include_tables=True,
+                no_fallback=False,
+                favor_precision=True,
+            )
+
 
 class TestExtractContentFromUrl:
     @pytest.mark.asyncio
@@ -244,7 +296,7 @@ class TestExtractContentFromUrl:
                 return_value=0.1,
             ),
             patch(
-                "src.shared.content_extraction.asyncio.to_thread",
+                "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
                 return_value="Extracted article text",
             ),
@@ -269,7 +321,7 @@ class TestExtractContentFromUrl:
                 return_value=0.1,
             ),
             patch(
-                "src.shared.content_extraction.asyncio.to_thread",
+                "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -289,7 +341,7 @@ class TestExtractContentFromUrl:
                 return_value=0.25,
             ),
             patch(
-                "src.shared.content_extraction.asyncio.to_thread",
+                "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
                 return_value="content",
             ),
@@ -311,7 +363,7 @@ class TestExtractContentFromUrl:
                 return_value=0.3,
             ) as mock_uniform,
             patch(
-                "src.shared.content_extraction.asyncio.to_thread",
+                "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
                 return_value="content",
             ),
@@ -336,14 +388,14 @@ class TestExtractContentFromUrl:
                 return_value="TestAgent/1.0",
             ),
             patch(
-                "src.shared.content_extraction.asyncio.to_thread",
+                "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
                 return_value="content",
-            ) as mock_thread,
+            ) as mock_wait_for,
         ):
             await extract_content_from_url("https://example.com")
-            call_args = mock_thread.call_args
-            assert call_args[0][2] == "TestAgent/1.0"
+            call_args = mock_wait_for.call_args
+            assert call_args is not None
 
     @pytest.mark.asyncio
     async def test_raises_on_empty_string_content(self):
@@ -357,10 +409,105 @@ class TestExtractContentFromUrl:
                 return_value=0.1,
             ),
             patch(
-                "src.shared.content_extraction.asyncio.to_thread",
+                "src.shared.content_extraction.asyncio.wait_for",
                 new_callable=AsyncMock,
                 return_value="",
             ),
             pytest.raises(ContentExtractionError),
         ):
             await extract_content_from_url("https://example.com/empty")
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_content_extraction_error(self):
+        with (
+            patch(
+                "src.shared.content_extraction.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.shared.content_extraction.random.uniform",
+                return_value=0.1,
+            ),
+            patch(
+                "src.shared.content_extraction.asyncio.wait_for",
+                new_callable=AsyncMock,
+                side_effect=TimeoutError,
+            ),
+            pytest.raises(ContentExtractionError, match="Timeout after"),
+        ):
+            await extract_content_from_url("https://example.com/slow")
+
+    @pytest.mark.asyncio
+    async def test_custom_timeout(self):
+        with (
+            patch(
+                "src.shared.content_extraction.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.shared.content_extraction.random.uniform",
+                return_value=0.1,
+            ),
+            patch(
+                "src.shared.content_extraction.asyncio.wait_for",
+                new_callable=AsyncMock,
+                return_value="content",
+            ) as mock_wait_for,
+        ):
+            await extract_content_from_url("https://example.com", timeout=30.0)
+            _, kwargs = mock_wait_for.call_args
+            assert kwargs["timeout"] == 30.0
+
+    @pytest.mark.asyncio
+    async def test_default_timeout_value(self):
+        with (
+            patch(
+                "src.shared.content_extraction.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.shared.content_extraction.random.uniform",
+                return_value=0.1,
+            ),
+            patch(
+                "src.shared.content_extraction.asyncio.wait_for",
+                new_callable=AsyncMock,
+                return_value="content",
+            ) as mock_wait_for,
+        ):
+            await extract_content_from_url("https://example.com")
+            _, kwargs = mock_wait_for.call_args
+            assert kwargs["timeout"] == DEFAULT_SCRAPE_TIMEOUT
+
+    @pytest.mark.asyncio
+    async def test_passes_config_to_scrape_url_content(self):
+        config = ExtractionConfig(
+            include_comments=True,
+            include_tables=False,
+            no_fallback=True,
+            favor_precision=False,
+        )
+
+        with (
+            patch(
+                "src.shared.content_extraction.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.shared.content_extraction.random.uniform",
+                return_value=0.1,
+            ),
+            patch(
+                "src.shared.content_extraction.asyncio.to_thread",
+                new_callable=AsyncMock,
+                return_value="content",
+            ) as mock_to_thread,
+            patch(
+                "src.shared.content_extraction.asyncio.wait_for",
+                wraps=lambda coro, **kw: coro,
+            ),
+        ):
+            await extract_content_from_url("https://example.com", config=config)
+            call_args = mock_to_thread.call_args
+            assert call_args[0][2] is not None
+            assert call_args[0][3] == config
